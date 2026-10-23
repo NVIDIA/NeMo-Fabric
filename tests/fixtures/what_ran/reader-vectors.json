@@ -1,0 +1,1023 @@
+{
+  "description": "Shared what_ran reader vectors. Each case applies its patch to base: a path with value sets that member (an empty path replaces the whole object), and a path with remove deletes it. Rust and Python readers keep every valid case and read every invalid case as absent; the generated run-result schema accepts and rejects the same cases.",
+  "base": {
+    "schema": "nemo.fabric.what_ran",
+    "version": "v1alpha1",
+    "fabric": {
+      "core_version": {
+        "value": "0.6.0",
+        "source": "observed",
+        "collected_by": "host_core",
+        "method": "crate_version"
+      },
+      "host_core_version": {
+        "state": "not_applicable",
+        "reason": "local_run",
+        "source": "observed",
+        "collected_by": "host_core",
+        "method": "crate_version"
+      }
+    },
+    "adapter": {
+      "id": "nvidia.fabric.claude",
+      "package_version": {
+        "state": "unsupported",
+        "reason": "key_not_declared",
+        "source": "reported",
+        "collected_by": "adapter",
+        "method": "adapter_report"
+      }
+    },
+    "harness": {
+      "name": {
+        "state": "unsupported",
+        "reason": "key_not_declared",
+        "source": "reported",
+        "collected_by": "adapter",
+        "method": "adapter_report"
+      },
+      "version": {
+        "state": "unsupported",
+        "reason": "key_not_declared",
+        "source": "reported",
+        "collected_by": "adapter",
+        "method": "adapter_report"
+      }
+    },
+    "models": {
+      "default": {
+        "provider": "anthropic",
+        "requested": {
+          "value": "claude-sonnet-4-5",
+          "source": "configured",
+          "collected_by": "host_core",
+          "method": "resolved_plan"
+        },
+        "served": {
+          "state": "unsupported",
+          "reason": "key_not_declared",
+          "source": "reported",
+          "collected_by": "adapter",
+          "method": "adapter_report"
+        }
+      }
+    },
+    "mcp": {
+      "servers": {
+        "docs": {
+          "origin": "plan",
+          "transport": "streamable-http",
+          "endpoint": {
+            "value": "https://docs.example.com:443",
+            "source": "configured",
+            "collected_by": "host_core",
+            "method": "resolved_plan"
+          },
+          "runtime": {
+            "connected": {
+              "state": "unsupported",
+              "reason": "key_not_declared",
+              "source": "reported",
+              "collected_by": "adapter",
+              "method": "adapter_report"
+            },
+            "protocol_version": {
+              "state": "unsupported",
+              "reason": "key_not_declared",
+              "source": "reported",
+              "collected_by": "adapter",
+              "method": "adapter_report"
+            },
+            "server_name": {
+              "state": "unsupported",
+              "reason": "key_not_declared",
+              "source": "reported",
+              "collected_by": "adapter",
+              "method": "adapter_report"
+            },
+            "server_version": {
+              "state": "unsupported",
+              "reason": "key_not_declared",
+              "source": "reported",
+              "collected_by": "adapter",
+              "method": "adapter_report"
+            },
+            "tool_names": {
+              "state": "unsupported",
+              "reason": "key_not_declared",
+              "source": "reported",
+              "collected_by": "adapter",
+              "method": "adapter_report"
+            }
+          }
+        },
+        "files": {
+          "origin": "plan",
+          "transport": "stdio",
+          "endpoint": {
+            "value": "files-mcp",
+            "source": "configured",
+            "collected_by": "host_core",
+            "method": "resolved_plan"
+          },
+          "runtime": {
+            "connected": {
+              "state": "unsupported",
+              "reason": "key_not_declared",
+              "source": "reported",
+              "collected_by": "adapter",
+              "method": "adapter_report"
+            },
+            "protocol_version": {
+              "state": "unsupported",
+              "reason": "key_not_declared",
+              "source": "reported",
+              "collected_by": "adapter",
+              "method": "adapter_report"
+            },
+            "server_name": {
+              "state": "unsupported",
+              "reason": "key_not_declared",
+              "source": "reported",
+              "collected_by": "adapter",
+              "method": "adapter_report"
+            },
+            "server_version": {
+              "state": "unsupported",
+              "reason": "key_not_declared",
+              "source": "reported",
+              "collected_by": "adapter",
+              "method": "adapter_report"
+            },
+            "tool_names": {
+              "state": "unsupported",
+              "reason": "key_not_declared",
+              "source": "reported",
+              "collected_by": "adapter",
+              "method": "adapter_report"
+            }
+          }
+        }
+      }
+    },
+    "environment": {
+      "provider": "local"
+    }
+  },
+  "valid": [
+    {
+      "name": "local run as core collects it",
+      "patch": []
+    },
+    {
+      "name": "known values of every value type",
+      "patch": [
+        {
+          "path": [
+            "harness",
+            "version"
+          ],
+          "value": {
+            "value": "2.1.0",
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "harness_init_message"
+          }
+        },
+        {
+          "path": [
+            "mcp",
+            "servers",
+            "docs",
+            "runtime",
+            "connected"
+          ],
+          "value": {
+            "value": true,
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "mcp_initialize"
+          }
+        },
+        {
+          "path": [
+            "mcp",
+            "servers",
+            "docs",
+            "runtime",
+            "tool_names"
+          ],
+          "value": {
+            "value": [
+              "search",
+              "fetch"
+            ],
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "mcp_initialize"
+          }
+        }
+      ]
+    },
+    {
+      "name": "task core result relayed by an OpenShell host",
+      "patch": [
+        {
+          "path": [
+            "fabric",
+            "core_version",
+            "collected_by"
+          ],
+          "value": "task_core"
+        },
+        {
+          "path": [
+            "fabric",
+            "host_core_version"
+          ],
+          "value": {
+            "value": "0.6.0",
+            "source": "observed",
+            "collected_by": "host_core",
+            "method": "crate_version"
+          }
+        },
+        {
+          "path": [
+            "environment",
+            "provider"
+          ],
+          "value": "openshell"
+        }
+      ]
+    },
+    {
+      "name": "harness-origin MCP entry without a transport",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers",
+            "plugin"
+          ],
+          "value": {
+            "origin": "harness",
+            "endpoint": {
+              "state": "not_applicable",
+              "reason": "not_configured",
+              "source": "configured",
+              "collected_by": "host_core",
+              "method": "resolved_plan"
+            },
+            "runtime": {
+              "connected": {
+                "value": true,
+                "source": "reported",
+                "collected_by": "adapter",
+                "method": "harness_status"
+              },
+              "protocol_version": {
+                "state": "unavailable",
+                "reason": "not_collected",
+                "source": "reported",
+                "collected_by": "adapter",
+                "method": "harness_status"
+              },
+              "server_name": {
+                "state": "unavailable",
+                "reason": "not_collected",
+                "source": "reported",
+                "collected_by": "adapter",
+                "method": "harness_status"
+              },
+              "server_version": {
+                "state": "unavailable",
+                "reason": "not_collected",
+                "source": "reported",
+                "collected_by": "adapter",
+                "method": "harness_status"
+              },
+              "tool_names": {
+                "state": "unavailable",
+                "reason": "not_collected",
+                "source": "reported",
+                "collected_by": "adapter",
+                "method": "harness_status"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "unknown properties and vendor codes",
+      "patch": [
+        {
+          "path": [
+            "workspace"
+          ],
+          "value": {
+            "base_commit": {
+              "value": "abc"
+            }
+          }
+        },
+        {
+          "path": [
+            "fabric",
+            "core_version",
+            "confidence"
+          ],
+          "value": "high"
+        },
+        {
+          "path": [
+            "fabric",
+            "core_version",
+            "collected_by"
+          ],
+          "value": "acme.collector"
+        },
+        {
+          "path": [
+            "harness",
+            "version",
+            "reason"
+          ],
+          "value": "acme:withheld#1"
+        },
+        {
+          "path": [
+            "harness",
+            "version",
+            "method"
+          ],
+          "value": "acme.lookup/v2#names"
+        }
+      ]
+    },
+    {
+      "name": "no adapter ID, models or MCP servers",
+      "patch": [
+        {
+          "path": [
+            "adapter",
+            "id"
+          ],
+          "remove": true
+        },
+        {
+          "path": [
+            "models"
+          ],
+          "value": {}
+        },
+        {
+          "path": [
+            "mcp",
+            "servers"
+          ],
+          "value": {}
+        }
+      ]
+    },
+    {
+      "name": "128-character code",
+      "patch": [
+        {
+          "path": [
+            "harness",
+            "version",
+            "reason"
+          ],
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    {
+      "name": "truncation markers next to models and MCP servers",
+      "patch": [
+        {
+          "path": [
+            "models_truncated"
+          ],
+          "value": {
+            "reason": "entry_cap",
+            "dropped": 1
+          }
+        },
+        {
+          "path": [
+            "mcp",
+            "servers_truncated"
+          ],
+          "value": {
+            "reason": "byte_budget",
+            "dropped": 3
+          }
+        }
+      ]
+    },
+    {
+      "name": "vendor truncation reason",
+      "patch": [
+        {
+          "path": [
+            "models_truncated"
+          ],
+          "value": {
+            "reason": "acme.quota",
+            "dropped": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "minimal section left by the byte budget",
+      "patch": [
+        {
+          "path": [],
+          "value": {
+            "schema": "nemo.fabric.what_ran",
+            "version": "v1alpha1",
+            "what_ran_truncated": {
+              "reason": "byte_budget",
+              "dropped": 1
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "invalid": [
+    {
+      "name": "value with state",
+      "patch": [
+        {
+          "path": [
+            "harness",
+            "version",
+            "value"
+          ],
+          "value": "2.1.0"
+        }
+      ]
+    },
+    {
+      "name": "value with reason only",
+      "patch": [
+        {
+          "path": [
+            "fabric",
+            "core_version",
+            "reason"
+          ],
+          "value": "local_run"
+        }
+      ]
+    },
+    {
+      "name": "neither value nor state",
+      "patch": [
+        {
+          "path": [
+            "harness",
+            "version",
+            "state"
+          ],
+          "remove": true
+        },
+        {
+          "path": [
+            "harness",
+            "version",
+            "reason"
+          ],
+          "remove": true
+        }
+      ]
+    },
+    {
+      "name": "state without reason",
+      "patch": [
+        {
+          "path": [
+            "harness",
+            "version",
+            "reason"
+          ],
+          "remove": true
+        }
+      ]
+    },
+    {
+      "name": "unknown state",
+      "patch": [
+        {
+          "path": [
+            "harness",
+            "version",
+            "state"
+          ],
+          "value": "withheld"
+        }
+      ]
+    },
+    {
+      "name": "unknown source",
+      "patch": [
+        {
+          "path": [
+            "harness",
+            "version",
+            "source"
+          ],
+          "value": "guessed"
+        }
+      ]
+    },
+    {
+      "name": "number for a string value",
+      "patch": [
+        {
+          "path": [
+            "fabric",
+            "core_version",
+            "value"
+          ],
+          "value": 6
+        }
+      ]
+    },
+    {
+      "name": "null value",
+      "patch": [
+        {
+          "path": [
+            "fabric",
+            "core_version",
+            "value"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "string for a boolean value",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers",
+            "docs",
+            "runtime",
+            "connected"
+          ],
+          "value": {
+            "value": "true",
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "mcp_initialize"
+          }
+        }
+      ]
+    },
+    {
+      "name": "non-string tool name",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers",
+            "docs",
+            "runtime",
+            "tool_names"
+          ],
+          "value": {
+            "value": [
+              "search",
+              1
+            ],
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "mcp_initialize"
+          }
+        }
+      ]
+    },
+    {
+      "name": "method outside the code pattern",
+      "patch": [
+        {
+          "path": [
+            "models",
+            "default",
+            "requested",
+            "method"
+          ],
+          "value": "models.Default.model"
+        }
+      ]
+    },
+    {
+      "name": "empty reason",
+      "patch": [
+        {
+          "path": [
+            "harness",
+            "version",
+            "reason"
+          ],
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "129-character code",
+      "patch": [
+        {
+          "path": [
+            "harness",
+            "version",
+            "reason"
+          ],
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    {
+      "name": "non-ASCII code",
+      "patch": [
+        {
+          "path": [
+            "harness",
+            "version",
+            "reason"
+          ],
+          "value": "réason"
+        }
+      ]
+    },
+    {
+      "name": "code with a trailing newline",
+      "patch": [
+        {
+          "path": [
+            "harness",
+            "version",
+            "reason"
+          ],
+          "value": "key_not_declared\n"
+        }
+      ]
+    },
+    {
+      "name": "number for a boolean value",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers",
+            "docs",
+            "runtime",
+            "connected"
+          ],
+          "value": {
+            "value": 1,
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "mcp_initialize"
+          }
+        }
+      ]
+    },
+    {
+      "name": "missing collected_by",
+      "patch": [
+        {
+          "path": [
+            "fabric",
+            "core_version",
+            "collected_by"
+          ],
+          "remove": true
+        }
+      ]
+    },
+    {
+      "name": "missing section",
+      "patch": [
+        {
+          "path": [
+            "harness"
+          ],
+          "remove": true
+        }
+      ]
+    },
+    {
+      "name": "missing harness name",
+      "patch": [
+        {
+          "path": [
+            "harness",
+            "name"
+          ],
+          "remove": true
+        }
+      ]
+    },
+    {
+      "name": "fact that is not an object",
+      "patch": [
+        {
+          "path": [
+            "adapter",
+            "package_version"
+          ],
+          "value": "1.0.0"
+        }
+      ]
+    },
+    {
+      "name": "model without provider",
+      "patch": [
+        {
+          "path": [
+            "models",
+            "default",
+            "provider"
+          ],
+          "remove": true
+        }
+      ]
+    },
+    {
+      "name": "plan MCP entry without a transport",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers",
+            "docs",
+            "transport"
+          ],
+          "remove": true
+        }
+      ]
+    },
+    {
+      "name": "plan MCP entry with a null transport",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers",
+            "docs",
+            "transport"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "MCP entry without runtime facts",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers",
+            "docs",
+            "runtime"
+          ],
+          "remove": true
+        }
+      ]
+    },
+    {
+      "name": "non-string environment provider",
+      "patch": [
+        {
+          "path": [
+            "environment",
+            "provider"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "another schema",
+      "patch": [
+        {
+          "path": [
+            "schema"
+          ],
+          "value": "acme.what_ran"
+        }
+      ]
+    },
+    {
+      "name": "another version",
+      "patch": [
+        {
+          "path": [
+            "version"
+          ],
+          "value": "v1beta1"
+        }
+      ]
+    },
+    {
+      "name": "missing version",
+      "patch": [
+        {
+          "path": [
+            "version"
+          ],
+          "remove": true
+        }
+      ]
+    },
+    {
+      "name": "string instead of an object",
+      "patch": [
+        {
+          "path": [],
+          "value": "not an object"
+        }
+      ]
+    },
+    {
+      "name": "array instead of an object",
+      "patch": [
+        {
+          "path": [],
+          "value": [
+            "fact"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "truncation marker without a dropped count",
+      "patch": [
+        {
+          "path": [
+            "models_truncated"
+          ],
+          "value": {
+            "reason": "entry_cap"
+          }
+        }
+      ]
+    },
+    {
+      "name": "truncation marker with a zero dropped count",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers_truncated"
+          ],
+          "value": {
+            "reason": "byte_budget",
+            "dropped": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "truncation marker with a string dropped count",
+      "patch": [
+        {
+          "path": [
+            "models_truncated"
+          ],
+          "value": {
+            "reason": "entry_cap",
+            "dropped": "1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "truncation reason outside the code pattern",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers_truncated"
+          ],
+          "value": {
+            "reason": "Entry Cap",
+            "dropped": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "truncation marker that is not an object",
+      "patch": [
+        {
+          "path": [
+            "models_truncated"
+          ],
+          "value": "entry_cap"
+        }
+      ]
+    },
+    {
+      "name": "schema and version only, without the minimal marker",
+      "patch": [
+        {
+          "path": [],
+          "value": {
+            "schema": "nemo.fabric.what_ran",
+            "version": "v1alpha1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "minimal section with a null marker",
+      "patch": [
+        {
+          "path": [],
+          "value": {
+            "schema": "nemo.fabric.what_ran",
+            "version": "v1alpha1",
+            "what_ran_truncated": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "minimal section with a zero dropped count",
+      "patch": [
+        {
+          "path": [],
+          "value": {
+            "schema": "nemo.fabric.what_ran",
+            "version": "v1alpha1",
+            "what_ran_truncated": {
+              "reason": "byte_budget",
+              "dropped": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "minimal section with a malformed section",
+      "patch": [
+        {
+          "path": [],
+          "value": {
+            "schema": "nemo.fabric.what_ran",
+            "version": "v1alpha1",
+            "what_ran_truncated": {
+              "reason": "byte_budget",
+              "dropped": 1
+            },
+            "harness": "codex"
+          }
+        }
+      ]
+    },
+    {
+      "name": "null section",
+      "patch": [
+        {
+          "path": [
+            "harness"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "null models_truncated",
+      "patch": [
+        {
+          "path": [
+            "models_truncated"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "null servers_truncated",
+      "patch": [
+        {
+          "path": [
+            "mcp",
+            "servers_truncated"
+          ],
+          "value": null
+        }
+      ]
+    }
+  ]
+}

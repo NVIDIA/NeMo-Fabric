@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+from copy import deepcopy
 from inspect import signature
 from pathlib import Path
 from typing import Any
@@ -1999,6 +2000,79 @@ def test_run_result_wraps_normalized_usage():
     assert result.usage.cost_usd == 0.25
     assert isinstance(result.usage.cost_usd, float)
     assert result.usage.metadata == {"provider": "test"}
+
+
+_WHAT_RAN_VECTORS = json.loads(
+    (
+        Path(__file__).resolve().parents[1]
+        / "fixtures"
+        / "what_ran"
+        / "reader-vectors.json"
+    ).read_text(encoding="utf-8")
+)
+
+
+def _what_ran_vector(case: dict[str, Any]) -> Any:
+    """Apply one shared reader vector's patch to the base ``what_ran``."""
+
+    what_ran = deepcopy(_WHAT_RAN_VECTORS["base"])
+    for operation in case["patch"]:
+        path = operation["path"]
+        if not path:
+            what_ran = deepcopy(operation["value"])
+            continue
+        *parents, last = path
+        parent = what_ran
+        for key in parents:
+            parent = parent[key]
+        if operation.get("remove"):
+            del parent[last]
+        else:
+            parent[last] = deepcopy(operation["value"])
+    return what_ran
+
+
+def test_run_result_exposes_what_ran_as_a_detached_json_mapping():
+    what_ran = _what_ran_vector(_WHAT_RAN_VECTORS["valid"][0])
+    result = RunResult.from_mapping(_run_result(what_ran=what_ran))
+
+    detached = result.what_ran
+    detached["fabric"]["core_version"]["value"] = "mutated"
+
+    assert result.what_ran == what_ran
+    assert result["what_ran"] == what_ran
+    assert result.to_mapping()["what_ran"] == what_ran
+    assert "what_ran" not in result.extra_fields
+
+
+@pytest.mark.parametrize(
+    "case", _WHAT_RAN_VECTORS["valid"], ids=lambda case: case["name"]
+)
+def test_run_result_keeps_valid_what_ran_vector(case):
+    what_ran = _what_ran_vector(case)
+
+    result = RunResult.from_mapping(_run_result(what_ran=what_ran))
+
+    assert result.what_ran == what_ran
+
+
+@pytest.mark.parametrize(
+    "case", _WHAT_RAN_VECTORS["invalid"], ids=lambda case: case["name"]
+)
+def test_run_result_reads_invalid_what_ran_vector_as_none(case):
+    result = RunResult.from_mapping(_run_result(what_ran=_what_ran_vector(case)))
+
+    assert result.what_ran is None
+    assert result.to_mapping()["what_ran"] is None
+    assert result.status == "succeeded"
+
+
+@pytest.mark.parametrize("mapping", [_run_result(), _run_result(what_ran=None)])
+def test_run_result_without_what_ran_reads_none(mapping):
+    result = RunResult.from_mapping(mapping)
+
+    assert result.what_ran is None
+    assert result.to_mapping()["what_ran"] is None
 
 
 @pytest.mark.parametrize(

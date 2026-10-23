@@ -32,6 +32,17 @@ async def test_native_sdk(hermes_shim_agent_dir: Path):
     await smoke(Fabric(), hermes_shim_agent_dir)
 
 
+async def test_native_one_shot_exposes_core_and_plan_facts(hermes_shim_agent_dir):
+    result = await Fabric().run(
+        hermes_shim_config(), base_dir=hermes_shim_agent_dir, input="hello native"
+    )
+    assert result.status == "succeeded"
+    assert result.what_ran["fabric"]["core_version"]["value"] == native.version()
+    assert result.what_ran["adapter"]["id"] == "test.fabric.hermes_shim"
+    assert result.what_ran["harness"]["version"]["reason"] == "key_not_declared"
+    assert result.what_ran["environment"] == {"provider": "local"}
+
+
 @pytest.mark.parametrize("new_value", ["rotated-secret", None])
 async def test_named_environment_changes_require_runtime_restart(
     hermes_shim_agent_dir, new_value
