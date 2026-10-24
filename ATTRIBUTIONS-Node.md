@@ -25777,7 +25777,7 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
 IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
 
-## body-parser - 2.3.0
+## body-parser - 2.4.0
 
 **Repository URL**: https://github.com/expressjs/body-parser
 **License Type(s)**: MIT
@@ -35192,7 +35192,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## qs - 6.16.0
+## qs - 6.16.1
 
 **Repository URL**: https://github.com/ljharb/qs
 **License Type(s)**: BSD-3-Clause
@@ -38324,7 +38324,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## zod - 4.6.5
+## zod - 4.6.6
 
 **Repository URL**: https://github.com/colinhacks/zod
 **License Type(s)**: MIT
