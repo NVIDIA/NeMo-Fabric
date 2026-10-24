@@ -432,6 +432,105 @@ def test_hermes_missing_credential_stops_before_provider_creation(launcher):
     )
 
 
+@pytest.mark.parametrize("relay,mcp", [(False, False), (True, True)])
+def test_langgraph_openshell_workload_uses_sdk_consumer_and_host_provider(
+    launcher, relay, mcp
+):
+    _, root, _ = launcher
+    secret = "test-model-key-must-not-appear-in-command-arguments"
+    profile = root / "langgraph-model-profile.yaml"
+    profile.write_text("id: custom-langgraph\n")
+    completed = _run(
+        launcher,
+        ROOT / "examples/langgraph_custom_agent/demo-openshell-sdk.sh",
+        {
+            "OPENSHELL_EXAMPLE_MODE": "caller_owned",
+            "OPENSHELL_LANGGRAPH_RELAY": str(relay).lower(),
+            "OPENSHELL_LANGGRAPH_MCP": str(mcp).lower(),
+            "OPENAI_API_KEY": secret,
+            "MOCK_EXPECTED_MODEL_API_KEY": secret,
+            "OPENSHELL_MODEL_PROVIDER_PROFILE": str(profile),
+            "OPENSHELL_LANGGRAPH_BASE_URL": "https://models.example.test/v1",
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    operations = _operations(root)
+    call = next(operation for operation in operations if operation["command"] == "uv")
+    assert "examples.langgraph_custom_agent.consumer.openshell" in call["args"]
+    assert ("--relay" in call["args"]) is relay
+    assert ("--mcp" in call["args"]) is mcp
+    assert call["args"][call["args"].index("--base-url") + 1] == (
+        "https://models.example.test/v1"
+    )
+    profile_call = next(
+        operation
+        for operation in operations
+        if operation["command"] == "openshell" and "profile" in operation["args"]
+    )
+    assert profile_call["args"][profile_call["args"].index("--file") + 1] == (
+        str(profile)
+    )
+    provider_call = next(
+        operation
+        for operation in operations
+        if operation["command"] == "openshell"
+        and "provider" in operation["args"]
+        and operation["args"][operation["args"].index("provider") + 1] == "create"
+    )
+    assert provider_call["args"][provider_call["args"].index("--type") + 1] == (
+        "custom-langgraph"
+    )
+    assert provider_call["model_key_matches_expected"]
+    assert secret not in json.dumps(operations)
+
+
+def test_langgraph_default_profile_uses_nvidia_key_when_both_keys_exist(launcher):
+    _, root, _ = launcher
+    completed = _run(
+        launcher,
+        ROOT / "examples/langgraph_custom_agent/demo-openshell-sdk.sh",
+        {
+            "OPENSHELL_EXAMPLE_MODE": "caller_owned",
+            "NVIDIA_API_KEY": "expected-nvidia-key",
+            "OPENAI_API_KEY": "different-openai-key",
+            "MOCK_EXPECTED_MODEL_API_KEY": "expected-nvidia-key",
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    provider_call = next(
+        operation
+        for operation in _operations(root)
+        if operation["command"] == "openshell" and "create" in operation["args"]
+        and "provider" in operation["args"]
+    )
+    assert provider_call["model_key_matches_expected"]
+
+
+def test_langgraph_default_profile_falls_back_to_openai_key(launcher):
+    _, root, _ = launcher
+    completed = _run(
+        launcher,
+        ROOT / "examples/langgraph_custom_agent/demo-openshell-sdk.sh",
+        {
+            "OPENSHELL_EXAMPLE_MODE": "caller_owned",
+            "NVIDIA_API_KEY": "",
+            "OPENAI_API_KEY": "fallback-model-key",
+            "MOCK_EXPECTED_MODEL_API_KEY": "fallback-model-key",
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    provider_call = next(
+        operation
+        for operation in _operations(root)
+        if operation["command"] == "openshell" and "create" in operation["args"]
+        and "provider" in operation["args"]
+    )
+    assert provider_call["model_key_matches_expected"]
+
+
 @pytest.mark.parametrize(
     "environment,message",
     [({"MOCK_OS": "Darwin"}, "requires Linux"),
