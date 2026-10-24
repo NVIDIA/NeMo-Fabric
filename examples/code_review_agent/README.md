@@ -187,118 +187,6 @@ collects Relay ATOF records; it is not native model-response streaming.
 
 Install Node.js and OpenClaw, then install the [OpenClaw adapter](../../adapters/python/openclaw/README.md). This variant uses the `NVIDIA_API_KEY` configured for the default demo and retains the default code-review skill. OpenClaw does not currently support Relay telemetry.
 
-### OpenShell through the NeMo Fabric SDK
-
-`openshell_sdk_consumer.py` is the end-to-end integration example: the host
-uses the normal SDK to attach or prepare an environment, start and invoke the
-OpenClaw runtime, then stop and release it. The packaged agent has no OpenShell
-client or lifecycle code. The shared launcher builds the task image, starts a
-local gateway, configures the NVIDIA credential provider, and exercises both
-caller-owned and Fabric-owned lifecycles.
-
-Set `NVIDIA_API_KEY`, then run from the repository root on Linux with Docker,
-Rust/Cargo, `uv`, and the dependencies listed in
-[`examples/openshell/README.md`](../openshell/README.md):
-
-```bash
-bash examples/openshell/run-demo.sh \
-  examples/code_review_agent/demo-openshell-openclaw-sdk.sh
-```
-
-Set `OPENSHELL_EXAMPLE_MODE=caller_owned` or `fabric_owned` to run one mode.
-The launcher writes normalized results under `.tmp/code-review/`. This path
-uses `Fabric.attach_environment` or `Fabric.prepare_environment` and
-`Fabric.start_runtime_in`; it does not send raw runtime control commands.
-
-The same SDK lifecycle can run Hermes instead of OpenClaw. The Hermes image
-installs the NeMo Fabric Hermes adapter and pins Hermes to the Relay-compatible
-revision used by `just install-hermes-agent`:
-
-```bash
-bash examples/openshell/run-demo.sh \
-  examples/code_review_agent/demo-openshell-hermes-sdk.sh
-```
-
-Set `OPENSHELL_CODE_REVIEW_RELAY=true` to enable Hermes' NeMo Relay integration
-and collect its ATIF/ATOF artifacts. The image uses Python 3.14 and Relay 0.10;
-the host still uses the same SDK/provider consumer and hosted NVIDIA credential
-setup. Hermes without Relay is the default. This route keeps all OpenShell
-lifecycle code on the host and does not use the raw OpenShell Python client.
-Hermes uses its terminal tool to read the sample repository before answering.
-The launcher writes its report to the selected results directory and collects
-runtime artifacts into that directory's `artifacts/` subdirectory; `/sandbox/artifacts`
-is the separate task-side root inside OpenShell.
-
-For a different OpenAI-compatible endpoint, set
-`OPENSHELL_CODE_REVIEW_BASE_URL` and `OPENSHELL_CODE_REVIEW_MODEL`. Set
-`OPENSHELL_MODEL_PROVIDER_PROFILE` to an OpenShell provider profile that grants
-egress to its DNS hostname, and provide its credential through
-`OPENAI_API_KEY`. OpenShell 0.1.2 rejects IP-literal endpoints for
-policy-controlled TCP; for a private service, use a hostname that resolves to
-the service from the sandbox and scope the profile's `allowed_ips` to its
-address (for example, `10.0.0.10/32`). A local inference URL that uses an IP
-literal cannot be used directly through this OpenShell policy path.
-
-### Raw/direct OpenShell Code Review
-
-The [direct OpenShell consumer](openshell.py) demonstrates the lower-level
-control path for the same sample task. It runs two review turns in a real
-OpenShell sandbox; the host uses OpenShell's Python SDK to invoke
-`fabric-agent-ctl` directly, while `fabric-agent-ctl serve` runs inside the
-sandbox. This example bypasses NeMo Fabric's environment provider and
-host-side lifecycle SDK. The SDK example above demonstrates that full path.
-
-Prerequisites are Docker with Linux containers, the OpenShell CLI, and a registered OpenShell gateway. Match the OpenShell CLI and Python SDK to the gateway version; this example was tested with `0.1.2`. Build from the NeMo Fabric repository root so the image contains the current native extension, server, adapter, code-review skill, and sample repository. The Dockerfile uses public, digest-pinned Python, Node, OpenClaw, Rust, and uv images:
-
-```sh
-docker build -f examples/code_review_agent/Dockerfile.openshell \
-  -t fabric-code-review:initial-scope .
-uv pip install --python .venv/bin/python openshell==0.1.2
-```
-
-The image records its installed descriptor inventory in `/opt/fabric/runtime-server.json`. It advertises interface version 2.
-
-The current CLI exposes `serve`, `start`, `invoke`, and `stop`. The example waits for the socket, then starts, invokes, and stops using the returned runtime ID. A sandbox can own multiple runtime IDs; invoking or stopping one does not affect the others. Rebuild the image and create a new sandbox after updating the CLI; an existing sandbox keeps its original image and command protocol.
-
-Select a registered test gateway using `OPENSHELL_GATEWAY` and set `OPENSHELL_WORKSPACE` to the test workspace. The real `OPENAI_API_KEY` belongs in the environment of the workstation shell running `openshell provider create`, outside the sandbox. OpenShell stores that credential at the gateway and supplies a shadow credential to processes inside the sandbox.
-
-The example's policy has no standalone network rules; the attached provider profile supplies the NVIDIA egress rule. Import that profile, then create the `hosted` provider:
-
-```sh
-openshell provider profile import --file examples/code_review_agent/openshell-provider.yaml
-openshell provider create --name hosted --type nvidia-code-review --credential OPENAI_API_KEY
-openshell sandbox create --name code-review --from fabric-code-review:initial-scope \
-  --provider hosted --policy examples/code_review_agent/openshell-policy.yaml \
-  --env ADAPTER_PYTHON=/opt/fabric/bin/python --env TMPDIR=/sandbox/tmp \
-  --no-tty --detach -- sleep infinity
-```
-
-The provider profile allows the example's Node/Python binaries to reach NVIDIA inference. The policy grants write access to sandbox storage. OpenShell does not forward every image environment variable to exec calls, so the sandbox creation command explicitly selects the adapter interpreter and temporary directory. If the provider name or model endpoint changes, update the provider profile and policy to match. The example never creates or deletes a caller-owned sandbox.
-
-Run the two-turn review using the registered gateway:
-
-```sh
-.venv/bin/python -m examples.code_review_agent.openshell \
-  --workspace "$OPENSHELL_WORKSPACE" --sandbox code-review \
-  --output-dir ".tmp/code-review-$(date -u +%Y%m%dT%H%M%SZ)" \
-  --input "The contract is that answer() returns 42. Review calculator.py and remember review tag cedar-4827." \
-  --input "Recall the review tag from our previous turn, summarize the finding, and suggest the smallest correction."
-```
-
-For a local plaintext gateway, add `--gateway 127.0.0.1:PORT`. `--model`, `--base-url`, and `--api-key-env` override the model connection. The command prints one JSON report containing the prompts, runtime ID, normalized review results, command timings and exit codes, stop result, and any structured error. `--output-dir` writes that report to `report.json` and a readable review transcript to `transcript.md`, including failed runs. The output directory must be new; existing results are preserved. The records omit raw stderr and exception details. The command does not retry an invocation after an uncertain outcome; it attempts stop for a confirmed runtime even when an invocation fails. A missing start response leaves runtime ownership unknown and requires sandbox cleanup.
-
-After stop, the runtime server and socket remain reachable and caller-owned files remain. Another runtime can start in the same sandbox. Ordinary SDK stop does not prove that harness descendants exited, so `fabric.unclean` remains through server shutdown. Delete the sandbox through OpenShell after collecting evidence. The image excludes the optional Linux `setpriv` wrapper because OpenShell blocks capability activation. Qualify conversation continuity with a fresh tag on the first invocation and recall the tag on the second without including the tag again. Preserve the normalized review and stop results, independently read a retained file, and verify another runtime can start after stopping the first.
-
-After saving the report and transcript on your workstation, delete only the example sandbox. OpenShell's supervisor then cleans up the sandbox processes. The gateway, provider, and saved results remain available:
-
-```sh
-openshell sandbox delete code-review --workspace "$OPENSHELL_WORKSPACE"
-```
-
-To run the example again, repeat the sandbox creation command above and choose a new `--output-dir`.
-
-If an invocation times out or cleanup fails, runtime IDs keep command routing separate, while the enclosing sandbox supervisor remains responsible for descendant cleanup. Successful SDK stop alone is not evidence that harness children exited.
-
 ### OpenHands (`openhands`)
 
 On Python 3.12 or later, install the tested OpenHands SDK and tools, then install
@@ -515,3 +403,41 @@ npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-qwen
 Set `NVIDIA_API_KEY` to run the example. The variant keeps the code-review skill,
 uses Qwen's non-interactive default approval mode, and blocks shell and edit
 tools. The variant does not configure an MCP server or Relay telemetry.
+
+## Run Hermes in OpenShell
+
+Run the same Hermes code-review agent inside an OpenShell sandbox. The host
+[`openshell_sdk_consumer.py`](openshell_sdk_consumer.py) uses the normal NeMo
+Fabric SDK to attach or prepare the environment, invoke two review turns on
+one runtime, then stop and release it. The agent and adapter run inside the
+sandbox without OpenShell-specific lifecycle code.
+
+The shared [OpenShell launcher](../openshell/README.md) builds the Hermes task
+image, starts a local gateway, configures the model provider, and exercises
+caller-owned and NeMo Fabric-owned sandbox lifecycles. On Linux, meet the
+launcher's prerequisites, set `NVIDIA_API_KEY`, and run from the repository root:
+
+```bash
+bash examples/openshell/run-demo.sh \
+  examples/code_review_agent/demo-openshell-hermes-sdk.sh
+```
+
+Set `OPENSHELL_EXAMPLE_MODE=caller_owned` or `fabric_owned` to run one mode.
+Hermes reads the sample repository with its terminal tool. The launcher saves
+normalized reports under `.tmp/code-review-hermes/` and collects declared artifacts
+into each result directory's `artifacts/` subdirectory. Set
+`OPENSHELL_CODE_REVIEW_RELAY=true` to include Hermes' NeMo Relay ATOF/ATIF
+artifacts. The image uses Python 3.14, a pinned Hermes source revision, and
+Relay 0.10; Relay is off by default.
+
+For a different OpenAI-compatible endpoint, set
+`OPENSHELL_CODE_REVIEW_BASE_URL` and `OPENSHELL_CODE_REVIEW_MODEL`. Set
+`OPENSHELL_MODEL_PROVIDER_PROFILE` to an OpenShell provider profile that grants
+egress to its DNS hostname, and provide its credential through
+`OPENAI_API_KEY`. OpenShell 0.1.2 rejects IP-literal endpoints for
+policy-controlled TCP; for a private service, use a hostname that resolves to
+the service from the sandbox and scope the profile's `allowed_ips` to its
+address (for example, `10.0.0.10/32`). A local inference URL that uses an IP
+literal cannot be used directly through this OpenShell policy path.
+
+The [custom LangGraph example](../langgraph_custom_agent/README.md#run-the-custom-agent-in-openshell) uses the same SDK and launcher with an application-owned agent and dedicated adapter.
