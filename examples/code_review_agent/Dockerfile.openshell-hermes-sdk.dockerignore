@@ -1,0 +1,24 @@
+# Keep the Hermes image build context to its adapter and review workload.
+**
+!Cargo.toml
+!Cargo.lock
+!pyproject.toml
+!LICENSE
+!adapters/
+!adapters/python/
+!adapters/python/common/
+!adapters/python/common/**
+!adapters/python/hermes/
+!adapters/python/hermes/**
+!examples/
+!examples/__init__.py
+!examples/code_review_agent/
+!examples/code_review_agent/**
+**/__pycache__
+**/*.pyc
+**/*.so
+**/.venv
+**/node_modules
+**/dist
+examples/code_review_agent/artifacts
+examples/code_review_agent/results

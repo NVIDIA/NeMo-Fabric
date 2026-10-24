@@ -39,7 +39,9 @@ const OPEN_SHELL_PROVIDER_COMMAND: &str = "fabric-environment-openshell";
 const OPEN_SHELL_PROVIDER_COMMAND_ENV: &str = "NEMO_FABRIC_OPEN_SHELL_PROVIDER";
 const PROVIDER_PROTOCOL_VERSION: &str = "fabric.environment-provider.v1alpha1";
 const MAX_PROVIDER_REQUEST_BYTES: usize = 1024 * 1024;
-const MAX_PROVIDER_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+// Artifact collection can return 2 MiB of bytes as decimal JSON arrays, which
+// expand to at most about 8 MiB before the provider protocol envelope.
+const MAX_PROVIDER_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
 const DEFAULT_PROVIDER_OPERATION_TIMEOUT_SECONDS: u64 = 30;
 const PROVIDER_RESPONSE_GRACE_SECONDS: u64 = 15;
 const PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS: u64 = 30;
@@ -971,16 +973,15 @@ impl ProviderOperation<'_> {
 
     fn response_timeout(&self) -> Duration {
         let operation_seconds = match self {
-            Self::Prepare { environment, .. } => {
-                setting_seconds(&environment.settings, "ready_timeout_seconds", 60)
-                    .saturating_add(setting_seconds(
-                        &environment.settings,
-                        "delete_timeout_seconds",
-                        30,
-                    ))
-                    .saturating_add(6 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS)
-            }
-            Self::Attach { .. } => 3 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS,
+            Self::Prepare { environment, .. } => readiness_seconds(environment, true)
+                .saturating_add(setting_seconds(
+                    &environment.settings,
+                    "delete_timeout_seconds",
+                    30,
+                ))
+                .saturating_add(6 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS),
+            Self::Attach { environment, .. } => readiness_seconds(environment, false)
+                .saturating_add(3 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS),
             Self::RuntimeCommand {
                 timeout_seconds, ..
             } => timeout_seconds.saturating_add(2 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS),
@@ -994,6 +995,16 @@ impl ProviderOperation<'_> {
         };
         Duration::from_secs(operation_seconds.saturating_add(PROVIDER_RESPONSE_GRACE_SECONDS))
     }
+}
+
+fn readiness_seconds(environment: &EnvironmentPlan, includes_sandbox_wait: bool) -> u64 {
+    let provider_count = environment
+        .settings
+        .get("providers")
+        .and_then(Value::as_array)
+        .map_or(0, |providers| providers.len() as u64);
+    let waits = provider_count.saturating_add(u64::from(includes_sandbox_wait));
+    setting_seconds(&environment.settings, "ready_timeout_seconds", 60).saturating_mul(waits)
 }
 
 fn setting_seconds(settings: &serde_json::Map<String, Value>, key: &str, default: u64) -> u64 {
@@ -1079,6 +1090,42 @@ mod tests {
         };
 
         assert_eq!(operation.response_timeout(), Duration::from_secs(285));
+    }
+
+    #[test]
+    fn attach_response_timeout_covers_each_provider_readiness_wait() {
+        let environment: EnvironmentPlan = serde_json::from_value(serde_json::json!({
+            "provider": OPEN_SHELL_PROVIDER_ID,
+            "control_location": ControlLocation::InEnvControl,
+            "ownership": EnvironmentOwnership::CallerOwned,
+            "workspace": null,
+            "artifacts": null,
+            "env": {},
+            "env_names": [],
+            "connection": {},
+            "metadata": {},
+            "settings": {
+                "ready_timeout_seconds": 180,
+                "providers": ["model", "tools"]
+            }
+        }))
+        .expect("environment fixture");
+        let reference = EnvironmentReference {
+            provider: OPEN_SHELL_PROVIDER_ID.to_string(),
+            resource: BTreeMap::new(),
+        };
+        let attach = ProviderOperation::Attach {
+            environment_id: "environment-test",
+            environment: &environment,
+            reference: &reference,
+        };
+        assert_eq!(attach.response_timeout(), Duration::from_secs(465));
+
+        let prepare = ProviderOperation::Prepare {
+            environment_id: "environment-test",
+            environment: &environment,
+        };
+        assert_eq!(prepare.response_timeout(), Duration::from_secs(765));
     }
 
     #[test]

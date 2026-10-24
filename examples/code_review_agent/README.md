@@ -210,6 +210,35 @@ The launcher writes normalized results under `.tmp/code-review/`. This path
 uses `Fabric.attach_environment` or `Fabric.prepare_environment` and
 `Fabric.start_runtime_in`; it does not send raw runtime control commands.
 
+The same SDK lifecycle can run Hermes instead of OpenClaw. The Hermes image
+installs the NeMo Fabric Hermes adapter and pins Hermes to the Relay-compatible
+revision used by `just install-hermes-agent`:
+
+```bash
+bash examples/openshell/run-demo.sh \
+  examples/code_review_agent/demo-openshell-hermes-sdk.sh
+```
+
+Set `OPENSHELL_CODE_REVIEW_RELAY=true` to enable Hermes' NeMo Relay integration
+and collect its ATIF/ATOF artifacts. The image uses Python 3.14 and Relay 0.10;
+the host still uses the same SDK/provider consumer and hosted NVIDIA credential
+setup. Hermes without Relay is the default. This route keeps all OpenShell
+lifecycle code on the host and does not use the raw OpenShell Python client.
+Hermes uses its terminal tool to read the sample repository before answering.
+The launcher writes its report to the selected results directory and collects
+runtime artifacts into that directory's `artifacts/` subdirectory; `/sandbox/artifacts`
+is the separate task-side root inside OpenShell.
+
+For a different OpenAI-compatible endpoint, set
+`OPENSHELL_CODE_REVIEW_BASE_URL` and `OPENSHELL_CODE_REVIEW_MODEL`. Set
+`OPENSHELL_MODEL_PROVIDER_PROFILE` to an OpenShell provider profile that grants
+egress to its DNS hostname, and provide its credential through
+`OPENAI_API_KEY`. OpenShell 0.1.2 rejects IP-literal endpoints for
+policy-controlled TCP; for a private service, use a hostname that resolves to
+the service from the sandbox and scope the profile's `allowed_ips` to its
+address (for example, `10.0.0.10/32`). A local inference URL that uses an IP
+literal cannot be used directly through this OpenShell policy path.
+
 ### Raw/direct OpenShell Code Review
 
 The [direct OpenShell consumer](openshell.py) demonstrates the lower-level

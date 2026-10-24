@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run the OpenClaw code-review agent through the normal host SDK.
+"""Run a code-review harness through the normal host SDK.
 
 Configure an OpenShell sandbox, start the task-side Fabric runtime, invoke the
 agent across review turns, and collect the report on the host.
@@ -13,18 +13,26 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
 from nemo_fabric import (
+    DiscoveryConfig,
     EnvironmentConfig,
     EnvironmentReference,
     Fabric,
     FabricConfig,
     RunRequest,
+    ToolsConfig,
 )
 
-from examples.code_review_agent.config import openclaw_config
+from examples.code_review_agent.config import (
+    CODE_REVIEW_INSTRUCTION,
+    hermes_config,
+    openclaw_config,
+    with_relay,
+)
 
 
 DEFAULT_PROMPTS = (
@@ -33,12 +41,39 @@ DEFAULT_PROMPTS = (
     "suggest the smallest correction.",
 )
 TASK_ROOT = "/sandbox/code-review"
+TASK_ARTIFACT_ROOT = "/sandbox/artifacts"
+HERMES_TASK_DISCOVERY_PATH = "/opt/fabric/adapters/python/hermes"
 
 
 def build_config(args: argparse.Namespace) -> FabricConfig:
-    """Build the standard OpenClaw config with OpenShell environment settings."""
+    """Build a harness config with OpenShell environment settings."""
 
-    config = openclaw_config()
+    harness = getattr(args, "harness", "openclaw")
+    relay_enabled = getattr(args, "relay", False)
+    task_discovery_paths = None
+    if harness == "hermes":
+        config = hermes_config()
+        hermes_descriptor = (
+            Path(__file__).resolve().parents[2]
+            / "adapters/python/hermes/hermes.fabric-adapter.json"
+        )
+        if not hermes_descriptor.is_file():
+            raise FileNotFoundError(
+                "Hermes adapter descriptor is missing from this checkout"
+            )
+        config.discovery = DiscoveryConfig(local_paths=[hermes_descriptor])
+        task_discovery_paths = [HERMES_TASK_DISCOVERY_PATH]
+        config.instructions.system.content = (
+            f"{CODE_REVIEW_INSTRUCTION} Use the terminal tool to read workspace files."
+        )
+        config.tools = ToolsConfig(enabled=["terminal"])
+        config.runtime.max_turns = 6
+    else:
+        config = openclaw_config()
+    if relay_enabled:
+        if harness != "hermes":
+            raise ValueError("Relay is supported for the Hermes harness only")
+        config = with_relay(config)
     config.metadata.name = "openshell-code-review"
     model = config.models["default"]
     model.provider = "openai"
@@ -47,15 +82,13 @@ def build_config(args: argparse.Namespace) -> FabricConfig:
     model.api_key_env = "OPENAI_API_KEY"
     model.max_tokens = 1024
     config.skills.paths = [f"{TASK_ROOT}/skills/code-review"]
-    config.runtime.artifacts = str(
-        Path(args.results_file).resolve().parent / "artifacts"
-    )
+    config.runtime.artifacts = Path(args.results_file).resolve().parent / "artifacts"
     config.environment = EnvironmentConfig(
         provider="openshell",
         ownership=args.ownership,
         control_location="in_env_control",
         workspace=f"{TASK_ROOT}/repos/my-service",
-        artifacts=f"{TASK_ROOT}/artifacts/code-review",
+        artifacts=TASK_ARTIFACT_ROOT,
         connection={"gateway": args.gateway, "workspace": args.workspace},
         settings={
             "image": args.image,
@@ -63,6 +96,11 @@ def build_config(args: argparse.Namespace) -> FabricConfig:
             "policy_yaml": Path(args.policy_file).read_text(encoding="utf-8"),
             "providers": ["hosted"],
             "sandbox_name": args.sandbox_name,
+            **(
+                {"task_discovery_paths": task_discovery_paths}
+                if task_discovery_paths is not None
+                else {}
+            ),
         },
     )
     if args.ownership == "caller_owned":
@@ -110,10 +148,22 @@ async def run_demo(args: argparse.Namespace) -> dict[str, Any]:
                     context={"turn": index},
                 )
             )
-            report["reviews"].append(result.to_mapping())
+            review = result.to_mapping()
+            report["reviews"].append(review)
             if result.status != "succeeded":
                 report["error"] = {
                     "code": "invoke_failed",
+                    "request_id": result.request_id,
+                }
+                break
+            output = review.get("output")
+            if (
+                args.harness == "hermes"
+                and isinstance(output, dict)
+                and output.get("completed") is False
+            ):
+                report["error"] = {
+                    "code": "hermes_incomplete",
                     "request_id": result.request_id,
                 }
                 break
@@ -121,7 +171,13 @@ async def run_demo(args: argparse.Namespace) -> dict[str, Any]:
             report["status"] = "succeeded"
     except Exception as error:
         # Keep process output out of reports; SDK exceptions may include command data.
-        report["error"] = {"code": type(error).__name__}
+        if os.environ.get("OPENSHELL_CODE_REVIEW_DEBUG_ERRORS") == "true":
+            print(f"Code-review SDK failure: {error}", file=sys.stderr)
+        failure = {"code": getattr(error, "code", None) or type(error).__name__}
+        stage = getattr(error, "stage", None)
+        if isinstance(stage, str):
+            failure["stage"] = stage
+        report["error"] = failure
     finally:
         try:
             if runtime is not None:
@@ -176,11 +232,19 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--results-file", required=True)
     parser.add_argument("--sandbox-name", required=True)
     parser.add_argument("--sandbox-id")
+    parser.add_argument("--harness", choices=("openclaw", "hermes"), default="openclaw")
+    parser.add_argument("--relay", action="store_true")
     parser.add_argument(
-        "--model", default="nvidia/nemotron-3.5-lightning-30b-a3b"
+        "--model",
+        default=os.environ.get(
+            "OPENSHELL_CODE_REVIEW_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b"
+        ),
     )
     parser.add_argument(
-        "--base-url", default="https://integrate.api.nvidia.com/v1"
+        "--base-url",
+        default=os.environ.get(
+            "OPENSHELL_CODE_REVIEW_BASE_URL", "https://integrate.api.nvidia.com/v1"
+        ),
     )
     parser.add_argument("--input", dest="inputs", action="append")
     return parser
@@ -190,11 +254,13 @@ def main() -> None:
     args = _parser().parse_args()
     if args.ownership == "caller_owned" and not args.sandbox_id:
         raise SystemExit("--sandbox-id is required for caller_owned mode")
+    if args.relay and args.harness != "hermes":
+        raise SystemExit("--relay requires --harness hermes")
     args.inputs = args.inputs or list(DEFAULT_PROMPTS)
     if len(args.inputs) != 2:
         raise SystemExit("--input must be supplied exactly twice")
-    if not os.environ.get("NVIDIA_API_KEY"):
-        raise SystemExit("NVIDIA_API_KEY is required to configure the hosted provider")
+    if not (os.environ.get("OPENAI_API_KEY") or os.environ.get("NVIDIA_API_KEY")):
+        raise SystemExit("OPENAI_API_KEY or NVIDIA_API_KEY is required for the model provider")
     report = asyncio.run(run_demo(args))
     if report["status"] != "succeeded":
         raise SystemExit(1)
