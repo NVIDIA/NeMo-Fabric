@@ -37490,7 +37490,7 @@ If the Work includes a "NOTICE" text file as part of its distribution, then any 
 END OF TERMS AND CONDITIONS
 ```
 
-## undici - 6.29.0
+## undici - 6.29.1
 
 **Repository URL**: https://github.com/nodejs/undici
 **License Type(s)**: MIT
@@ -37552,7 +37552,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## undici - 8.11.2
+## undici - 8.12.3
 
 **Repository URL**: https://github.com/nodejs/undici
 **License Type(s)**: MIT
