@@ -3296,6 +3296,198 @@
       },
       "sha256": "e5da937cefdfddf59720e9e04fbc22d3abd0f7418eaab99ffaeee8c0c3bc681b",
       "source": "adapters/python/remote-agent/remote-agent.fabric-adapter.json"
+    },
+    "nvidia.fabric.strands": {
+      "descriptor": {
+        "adapter_id": "nvidia.fabric.strands",
+        "adapter_kind": "process",
+        "capabilities": {
+          "cancellation": false,
+          "service": false,
+          "streaming": false,
+          "updates": false
+        },
+        "config": {
+          "accepts": [
+            "models",
+            "mcp",
+            "instructions.system",
+            "models.base_url"
+          ],
+          "system_instruction_modes": [
+            "append"
+          ]
+        },
+        "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "run_result": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "nemo_fabric.versions.v1": {
+                "type": "object"
+              },
+              "session_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "stop_reason": {
+                "enum": [
+                  "end_turn",
+                  "max_tokens",
+                  "max_turn_requests",
+                  "refusal",
+                  "cancelled"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "session_id",
+              "stop_reason"
+            ],
+            "type": "object"
+          },
+          "usage": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "nemo_fabric.detailed_token_usage.v1": {
+                "additionalProperties": false,
+                "properties": {
+                  "cache_write_input_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "cached_input_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "input_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "input_tokens_include_cache": {
+                    "type": "boolean"
+                  },
+                  "output_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "output_tokens_include_reasoning": {
+                    "type": "boolean"
+                  },
+                  "total_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "model_schema": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "model": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "provider": {
+                  "const": "bedrock"
+                }
+              },
+              "required": [
+                "provider",
+                "model"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "api_key_env": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                  "type": "string"
+                },
+                "base_url": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "model": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "provider": {
+                  "enum": [
+                    "openai",
+                    "nvidia"
+                  ]
+                }
+              },
+              "required": [
+                "provider",
+                "model",
+                "base_url"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "requirements": {
+          "binaries": [
+            "node",
+            "strands"
+          ]
+        },
+        "runner": {
+          "command": "node",
+          "script": "dist/cli.js"
+        },
+        "settings_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "builtin_tools": {
+              "items": {
+                "enum": [
+                  "shell",
+                  "read",
+                  "write",
+                  "edit",
+                  "web_fetch"
+                ]
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "insecure_http_model_hosts": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "max_invocations": {
+              "default": 100,
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "ecosystem": "typescript",
+      "package": {
+        "name": "nemo-fabric-adapters-strands",
+        "version": "0.6.0"
+      },
+      "sha256": "cd9705cdebacc722821b8f27544b44e6891d99fc1d9af32c53d618bc44b0523e",
+      "source": "adapters/typescript/strands/strands.fabric-adapter.json"
     }
   },
   "catalog_version": "0.6.0",
