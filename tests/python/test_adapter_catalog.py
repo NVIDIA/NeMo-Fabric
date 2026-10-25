@@ -137,7 +137,7 @@ def _checked_in_descriptors(repo_root: Path) -> list[Path]:
 def test_every_checked_in_copy_of_a_bundled_descriptor_matches_its_source(
     bundle, repo_root: Path
 ):
-    # Bundled adapters always attach the versions report, and core fails a run
+    # Bundled adapters may attach a versions report, and core fails a run
     # whose result carries an undeclared key, so a copy used by an example or a
     # CLI preset must stay byte-identical to the descriptor it copies, as the
     # CLI's packaged-descriptor test already requires for its own copies.

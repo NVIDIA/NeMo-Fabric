@@ -200,3 +200,55 @@ for (const scenario of ["parent exits", "forced shutdown", "partial startup"]) {
     }
   });
 }
+
+test("retries process-group termination after a failed stop", { skip: process.platform === "win32" }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "fabric-acp-retry-"));
+  const marker = join(directory, "pids.json");
+  const session = await startAcpSession({
+    command: process.execPath,
+    args: [fixture],
+    cwd: process.cwd(),
+    env: { ...process.env, TEST_DESCENDANT_MARKER: marker, TEST_IGNORE_SIGTERM: "1" },
+    shutdownTimeoutMs: 100,
+  });
+  const pids = JSON.parse(await readFile(marker, "utf8"));
+  const originalKill = process.kill.bind(process);
+  let failTermination = true;
+  const kill = t.mock.method(process, "kill", (pid, signal) => {
+    if (pid === -pids.parent && signal === "SIGTERM" && failTermination) {
+      failTermination = false;
+      throw Object.assign(new Error("termination denied"), { code: "EPERM" });
+    }
+    return originalKill(pid, signal);
+  });
+  let cleanupError;
+  try {
+    await assert.rejects(session.stop(), { code: "EPERM" });
+    originalKill(pids.child, 0);
+    await assert.rejects(session.prompt("after failed stop"), { code: "acp_session_stopped" });
+    await Promise.all([session.stop(), session.stop()]);
+    await waitForProcessToStop(pids.parent);
+    await waitForProcessToStop(pids.child);
+    assert.equal(kill.mock.calls.filter(({ arguments: [pid, signal] }) => pid === -pids.parent && signal === "SIGTERM").length, 2);
+    const signalCount = kill.mock.callCount();
+    await session.stop();
+    assert.equal(kill.mock.callCount(), signalCount);
+  } finally {
+    try {
+      kill.mock.restore();
+    } catch (error) {
+      cleanupError ??= error;
+    }
+    for (const pid of [pids.parent, pids.child]) {
+      try { originalKill(pid, "SIGKILL"); } catch (error) {
+        if (error.code !== "ESRCH") cleanupError ??= error;
+      }
+    }
+    try {
+      await session.stop();
+    } catch (error) {
+      cleanupError ??= error;
+    }
+  }
+  if (cleanupError !== undefined) throw cleanupError;
+});

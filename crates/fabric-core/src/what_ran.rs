@@ -1755,9 +1755,14 @@ mod tests {
                     .as_array()
                     .is_some_and(|accepts| accepts.contains(&json!(field)))
             };
-            // A model each adapter's model schema accepts: its fixed provider
-            // if it has one, and every connection field the schema names.
-            let model_fields = &descriptor["model_schema"]["properties"];
+            // Use the first model alternative when the adapter offers choices,
+            // its fixed provider, and every connection field the schema names.
+            let model_schema = &descriptor["model_schema"];
+            let model_schema = model_schema["oneOf"]
+                .as_array()
+                .and_then(|alternatives| alternatives.first())
+                .unwrap_or(model_schema);
+            let model_fields = &model_schema["properties"];
             let provider = model_fields["provider"]["const"]
                 .as_str()
                 .unwrap_or("nvidia");
