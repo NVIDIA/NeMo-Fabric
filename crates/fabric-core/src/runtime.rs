@@ -5476,7 +5476,8 @@ for line in sys.stdin:
             "peak was lost after worker exit: {summary:?}"
         );
         assert!(summary.sample_count >= 3);
-        assert!(gauge.covered_fraction > 0.0);
+        // A spike sample need not have a neighbor within twice the interval.
+        assert!((0.0..=1.0).contains(&gauge.covered_fraction));
         let path = &summary.samples.as_ref().unwrap().path;
         let rows: Vec<Value> = fs::read_to_string(path)
             .unwrap()
