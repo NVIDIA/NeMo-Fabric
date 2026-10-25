@@ -8,6 +8,8 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { isAbsolute, join, resolve } from "node:path";
 
+import { Agent, fetch as undiciFetch } from "undici";
+
 import type { AgentUsage } from "nemo-fabric-adapter-contract";
 import type { AdapterStartInput } from "nemo-fabric-adapters-common";
 import { LifecycleError } from "nemo-fabric-adapters-common";
@@ -32,7 +34,7 @@ interface KiloClient {
   };
 }
 interface KiloServer { url: string; close(): Promise<void> }
-type ClientFactory = (options: {baseUrl: string; directory: string}) => KiloClient;
+type ClientFactory = (options: {baseUrl: string; directory: string; fetch: (request: Request) => Promise<Response>}) => KiloClient;
 type ServerFactory = (workspace: string, environment: NodeJS.ProcessEnv, executable: string) => Promise<KiloServer>;
 type SpawnFactory = typeof spawn;
 type PortFactory = () => Promise<number>;
@@ -40,6 +42,8 @@ type PortFactory = () => Promise<number>;
 const START_TIMEOUT_MS = 30_000;
 const STOP_TIMEOUT_MS = 5_000;
 const PROMPT_TIMEOUT_MS = 30 * 60_000;
+// A prompt answers only when its turn ends, so PROMPT_TIMEOUT_MS bounds it instead of Node's 300 s fetch timeouts.
+const KILO_DISPATCHER = new Agent({headersTimeout: 0, bodyTimeout: 0});
 const ENVIRONMENT_VARIABLE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/gu;
 const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
 const INHERITED_ENVIRONMENT_NAMES = new Set([
@@ -338,6 +342,18 @@ export function extractPromptOutcome(data: unknown): KiloPromptOutcome {
   return { ...(text.length === 0 ? {} : {text}), ...(info.error === undefined ? {} : {error: true}), ...(Object.keys(usage).length === 0 ? {} : {usage}) };
 }
 
+export async function kiloFetch(request: Request): Promise<Response> {
+  const response = await undiciFetch(request.url, {
+    method: request.method,
+    headers: [...request.headers],
+    body: request.body,
+    duplex: "half",
+    signal: request.signal,
+    dispatcher: KILO_DISPATCHER,
+  });
+  return response as unknown as Response;
+}
+
 async function loadClientFactory(): Promise<ClientFactory> {
   try {
     const sdk = await import("@kilocode/sdk/v2");
@@ -417,7 +433,7 @@ export class KiloSdkSessionFactory implements KiloSessionFactory {
       const clientFactory = await this.clientLoader();
       const executable = this.serverFactory === startKiloServer ? await resolveKiloExecutable() : "kilo";
       server = await this.serverFactory(workspace, childEnvironment(input, profile, configured.content, model.apiKeyEnv, configured.credential), executable);
-      const client = clientFactory({baseUrl: server.url, directory: workspace});
+      const client = clientFactory({baseUrl: server.url, directory: workspace, fetch: kiloFetch});
       await verifySkills(client, workspace, skills);
       const created = await client.session.create({directory: workspace, agent: "build", model: {providerID: model.provider, id: model.model}}, {throwOnError: true});
       if (!isRecord(created.data) || typeof created.data.id !== "string") throw new Error("missing session id");
