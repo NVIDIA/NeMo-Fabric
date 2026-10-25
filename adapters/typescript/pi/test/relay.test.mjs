@@ -844,6 +844,77 @@ test("drains unsuccessful and successful Relay health responses", async () => {
   assert.deepEqual(cancelled, [0, 1]);
 });
 
+test("rejects a gateway exit during a successful health probe", async (t) => {
+  for (const boundary of ["fetch", "body cancellation"]) {
+    await t.test(boundary, async () => {
+      const child = new MockChild();
+      await assert.rejects(
+        waitForRelayGateway(child, "http://127.0.0.1:41000/healthz", {
+          async fetch() {
+            if (boundary === "fetch") child.exitCode = 17;
+            return {
+              ok: true,
+              body: {
+                async cancel() {
+                  if (boundary === "body cancellation") child.exitCode = 17;
+                },
+              },
+            };
+          },
+        }),
+        /exited with status 17 before becoming ready/u,
+      );
+    });
+  }
+});
+
+test("rejects a successful health probe at the readiness deadline", async (t) => {
+  for (const boundary of ["fetch", "body cancellation"]) {
+    await t.test(boundary, async (subtest) => {
+      let now = 0;
+      subtest.mock.method(performance, "now", () => now);
+      await assert.rejects(
+        waitForRelayGateway(new MockChild(), "http://127.0.0.1:41000/healthz", {
+          timeoutMs: 25,
+          async fetch() {
+            if (boundary === "fetch") now = 25;
+            return {
+              ok: true,
+              body: {
+                async cancel() {
+                  if (boundary === "body cancellation") now = 25;
+                },
+              },
+            };
+          },
+        }),
+        /did not become ready/u,
+      );
+    });
+  }
+});
+
+test("limits a health probe to the remaining readiness budget", async (t) => {
+  let now = 0;
+  t.mock.method(performance, "now", () => now);
+  const timeouts = [];
+  t.mock.method(AbortSignal, "timeout", (milliseconds) => {
+    timeouts.push(milliseconds);
+    return new AbortController().signal;
+  });
+  await assert.rejects(
+    waitForRelayGateway(new MockChild(), "http://127.0.0.1:41000/healthz", {
+      timeoutMs: 25,
+      async fetch() {
+        now = 25;
+        throw new Error("still initializing");
+      },
+    }),
+    /did not become ready/u,
+  );
+  assert.deepEqual(timeouts, [25]);
+});
+
 test("escalates gateway shutdown from terminate to kill and is safe after exit", async () => {
   const mockChild = new MockChild();
   mockChild.kill = function (signal) {
