@@ -118,7 +118,7 @@ def test_openclaw_runtime_reports_accept_complete_native_evidence(service_check_
     assert report.runtime["activity"] == "busy"
 
 
-def test_runtime_reports_reject_mixed_harness_evidence(service_check_report):
+def test_runtime_reports_reject_wrong_stage_evidence(service_check_report):
     data = {
         **service_check_report,
         "scope": "runtime",
@@ -126,7 +126,7 @@ def test_runtime_reports_reject_mixed_harness_evidence(service_check_report):
         "runtime": {"state": "active", "activity": "idle"},
     }
     del data["service_id"]
-    data["checks"][1]["source"] = "fabric.adapter.pi.interface"
+    data["checks"][1]["source"] = "fabric.adapter.liveness"
     with pytest.raises(FabricConfigError):
         CheckReport.from_mapping(data)
 

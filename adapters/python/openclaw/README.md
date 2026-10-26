@@ -118,6 +118,13 @@ Checks can run while connected runtimes are invoking. Timeouts return `unknown/p
 
 ## Runtime Health
 
+Use a Gateway service check before starting runtimes or to monitor a shared
+Gateway that serves several runtimes. Use a runtime check after starting a
+runtime to verify the selected agent and Chat Completions endpoint. A Gateway
+can pass `active` while a runtime fails `active`: for example, the Gateway
+returns a valid model inventory that no longer includes the runtime's selected
+agent. Both `ready` checks include configured channel health.
+
 Use runtime-scoped `Fabric.check()` to check the agent selected by a NeMo Fabric runtime. These checks support owned Gateways and runtimes connected to a prepared or attached service. The SDK uses the same request for local and OpenShell environments; OpenShell forwards the request through `fabric-agent-ctl check`.
 
 | Level | Native evidence |

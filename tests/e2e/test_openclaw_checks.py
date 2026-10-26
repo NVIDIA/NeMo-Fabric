@@ -529,10 +529,11 @@ async def test_owned_runtime_checks_through_sdk_and_sandbox_command_bridge(
         report = await fabric.check(environment=environment, request=request)
         assert report.outcome == "passed", report.to_mapping()
         assert [check["name"] for check in report.checks] == ["live", "active", "ready"]
-        assert all(
-            check["source"].startswith("fabric.adapter.openclaw.")
-            for check in report.checks
-        )
+        assert [check["source"] for check in report.checks] == [
+            "fabric.adapter.liveness",
+            "fabric.adapter.interface",
+            "fabric.adapter.readiness",
+        ]
         assert not request_path.exists()
         state_path.write_text(json.dumps({"ready": False}))
         assert (

@@ -578,6 +578,11 @@ fn valid_remote_report(report: &CheckReport, request: &CheckRequest) -> bool {
         return false;
     }
     let levels = [CheckStage::Live, CheckStage::Active, CheckStage::Ready];
+    let sources = [
+        CheckSource::AdapterLiveness,
+        CheckSource::AdapterInterface,
+        CheckSource::AdapterReadiness,
+    ];
     let count = match level {
         CheckLevel::Live => 1,
         CheckLevel::Active => 2,
@@ -600,13 +605,7 @@ fn valid_remote_report(report: &CheckReport, request: &CheckRequest) -> bool {
             return false;
         }
         if check.outcome == CheckOutcome::Passed
-            && (check.observed_at.is_none()
-                || check.source
-                    != [
-                        CheckSource::AdapterLiveness,
-                        CheckSource::AdapterInterface,
-                        CheckSource::AdapterReadiness,
-                    ][index])
+            && (check.observed_at.is_none() || check.source != sources[index])
         {
             return false;
         }
@@ -815,7 +814,6 @@ pub fn check_service(service: &ServiceHandle, request: &CheckRequest) -> Result<
                     probe,
                     remaining,
                     CheckScope::Service,
-                    Some(&binding.service.adapter_id),
                 )
             };
             report.outcome = result.outcome;
@@ -1068,13 +1066,7 @@ fn verify_health_mac(
 }
 
 fn probe_runtime(runtime: &RuntimeHandle, level: CheckLevel, timeout: f64) -> AdapterCheckResult {
-    probe_target(
-        &runtime.runtime_id,
-        level,
-        timeout,
-        CheckScope::Runtime,
-        runtime.adapter_id.as_deref(),
-    )
+    probe_target(&runtime.runtime_id, level, timeout, CheckScope::Runtime)
 }
 
 fn probe_target(
@@ -1082,7 +1074,6 @@ fn probe_target(
     level: CheckLevel,
     timeout: f64,
     scope: CheckScope,
-    adapter_id: Option<&str>,
 ) -> AdapterCheckResult {
     let started = Instant::now();
     let budget = Duration::try_from_secs_f64(timeout).unwrap_or(Duration::MAX);
@@ -1175,13 +1166,10 @@ fn probe_target(
                     && time <= DateTime::<Utc>::from(SystemTime::now())
             })
         });
-        let expected_source = match (scope, level) {
-            (CheckScope::Service, CheckLevel::Live) => CheckSource::AdapterLiveness,
-            (CheckScope::Service, CheckLevel::Active) => CheckSource::AdapterInterface,
-            (CheckScope::Service, CheckLevel::Ready) => CheckSource::AdapterReadiness,
-            (_, CheckLevel::Live) => CheckSource::AdapterLiveness,
-            (_, CheckLevel::Active) => CheckSource::AdapterInterface,
-            (_, CheckLevel::Ready) => CheckSource::AdapterReadiness,
+        let expected_source = match level {
+            CheckLevel::Live => CheckSource::AdapterLiveness,
+            CheckLevel::Active => CheckSource::AdapterInterface,
+            CheckLevel::Ready => CheckSource::AdapterReadiness,
         };
         if (observation.outcome == CheckOutcome::Passed) != observation.reason_code.is_none()
             || (observation.outcome == CheckOutcome::Passed
@@ -1401,9 +1389,9 @@ mod tests {
         assert_eq!(report.outcome, CheckOutcome::Passed);
         assert!(valid_remote_report(&report, &request));
         assert_eq!(peer.join().unwrap().len(), 3);
-        let mut mixed = report;
-        mixed.checks[1].source = CheckSource::PiInterface;
-        assert!(!valid_remote_report(&mixed, &request));
+        let mut wrong_stage = report;
+        wrong_stage.checks[1].source = CheckSource::AdapterLiveness;
+        assert!(!valid_remote_report(&wrong_stage, &request));
         cleanup(&runtime);
     }
 
