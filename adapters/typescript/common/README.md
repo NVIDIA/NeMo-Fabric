@@ -58,3 +58,9 @@ contract. Published package manifests use the registry version instead.
 ## Model Endpoint Policy
 
 `insecureHttpModelHosts(settings, errorCode)` validates and normalizes the explicit `insecure_http_model_hosts` setting. `modelEndpointAllowed(url, hosts, allowPrivateHttp)` applies the shared HTTPS, loopback HTTP, and exact HTTP host policy used by OpenCode, Qwen, and Kilo. The optional private IPv4 argument preserves Kilo's existing opt-in. These utilities do not apply to MCP endpoints.
+
+`withPackageVersion(runtime, packageJson, servedModel?)` wraps a runtime so that each result carries the `nemo_fabric.versions.v1` extension with the adapter's package version, read synchronously from `packageJson` when the runtime starts. Declare that key as `{"type": "object"}` under `extension_schemas.run_result` in the adapter descriptor. The harness name and version and the served models read `unsupported` with reason `no_source`. The optional `servedModel(input)` callback receives the start input and returns a `ServedModelFact`, or `undefined` to keep `unsupported` with reason `no_source` for every role.
+
+`ServedModelFact` is `{role: string; fact: JsonObject}`: the served-model fact for one model role. Build a fact without a value with `missingFact(state, reason, method)`, for example `missingFact("unavailable", "not_attributed", "harness_api")`; `method` defaults to `adapter_report`.
+
+`packageVersionReport(packageVersion, modelRoles, servedModel?)` builds the report object itself. `servedModel`, a `ServedModelFact`, gives its role that fact, and every other role keeps `unsupported` with reason `no_source`; a role that is not in `modelRoles` adds no entry. Like NeMo Fabric core, the report keeps at most 16 roles in sorted order and skips a role longer than 128 characters.

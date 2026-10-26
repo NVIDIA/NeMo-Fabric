@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import ctypes
+import importlib.metadata
 import json
 import os
 import shutil
@@ -397,6 +398,20 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     assert result.status == "succeeded"
     assert result.output == {"response": "OpenClaw response"}
     assert result.usage.total_tokens == 5
+    assert result.extensions["nemo_fabric.versions.v1"]["harness"] == {
+        "name": {
+            "value": "openclaw",
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "adapter_report",
+        },
+        "version": {
+            "value": "2026.9.4",
+            "source": "reported",
+            "collected_by": "adapter",
+            "method": "harness_probe",
+        },
+    }
     assert request == {
         "model": "openclaw/default",
         "messages": [
@@ -1595,6 +1610,12 @@ async def test_openclaw_plan_doctor_and_run_without_credentials(
     assert report.status == "pass"
     assert result.status == "succeeded"
     assert result.output == {"response": "OpenClaw response"}
+    # Core moved the adapter's versions report into what_ran.
+    assert "adapter" not in result.metadata
+    assert result.what_ran["harness"]["version"]["value"] == "2026.9.4"
+    assert result.what_ran["adapter"]["package_version"]["value"] == (
+        importlib.metadata.version("nemo-fabric-adapters-openclaw")
+    )
 
 
 @pytest.mark.skipif(

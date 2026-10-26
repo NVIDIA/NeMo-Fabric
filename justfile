@@ -294,6 +294,7 @@ clean:
         adapters/typescript/qwen/dist \
         adapters/typescript/kilo/dist \
         adapters/typescript/kiro/dist \
+        adapters/typescript/strands/dist \
         adapters/python/*/build \
         adapters/python/*/dist \
         sdk/python/*/build \
@@ -306,7 +307,8 @@ clean:
         adapters/typescript/opencode/*.tgz \
         adapters/typescript/qwen/*.tgz \
         adapters/typescript/kilo/*.tgz \
-        adapters/typescript/kiro/*.tgz
+        adapters/typescript/kiro/*.tgz \
+        adapters/typescript/strands/*.tgz
     find . \
         \( -path './.venv' -o -path './.git' \) -prune -o \
         -type d \( \
@@ -382,6 +384,9 @@ install-typescript-kilo: install-typescript-contract
 # Install the Kiro ACP adapter for source development. The Kiro CLI is caller-managed.
 install-typescript-kiro: install-typescript-contract
     npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro --include-workspace-root --ignore-scripts
+
+install-typescript-strands: install-typescript-contract
+    npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-strands --include-workspace-root --ignore-scripts
 
 # Install every maintained TypeScript package.
 install-typescript: install-typescript-contract install-typescript-adapters

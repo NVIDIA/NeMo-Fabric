@@ -62,6 +62,8 @@ def config(
 def test_opencode_descriptor_declares_the_minimum_supported_surface():
     descriptor = json.loads(DESCRIPTOR.read_text(encoding="utf-8"))
 
+    # Validate accounting separately from planning and version declarations.
+    usage_schema = descriptor["extension_schemas"].pop("usage")
     accounting_schema = json.loads(
         (ROOT / "schemas/extensions/usage-accounting.schema.json").read_text(
             encoding="utf-8"
@@ -69,21 +71,19 @@ def test_opencode_descriptor_declares_the_minimum_supported_surface():
     )
     definitions = accounting_schema.pop("$defs")
     accounting_schema.pop("$schema")
+    assert usage_schema == {
+        "type": "object",
+        "properties": {
+            "nemo_fabric.usage_accounting.v1": accounting_schema,
+            "nemo_fabric.detailed_token_usage.v1": {
+                "$ref": "#/$defs/ReportedUsage"
+            },
+        },
+        "additionalProperties": False,
+        "$defs": definitions,
+    }
 
     assert descriptor == {
-        "extension_schemas": {
-            "usage": {
-                "type": "object",
-                "properties": {
-                    "nemo_fabric.usage_accounting.v1": accounting_schema,
-                    "nemo_fabric.detailed_token_usage.v1": {
-                        "$ref": "#/$defs/ReportedUsage"
-                    },
-                },
-                "additionalProperties": False,
-                "$defs": definitions,
-            }
-        },
         "contract_version": "fabric.adapter/v1alpha2",
         "adapter_id": "nvidia.fabric.opencode",
         "adapter_kind": "process",
@@ -163,6 +163,14 @@ def test_opencode_descriptor_declares_the_minimum_supported_surface():
                 }
             },
             "additionalProperties": False,
+        },
+        "extension_schemas": {
+            "run_result": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"nemo_fabric.versions.v1": {"type": "object"}},
+                "additionalProperties": False,
+            }
         },
         "capabilities": {
             "streaming": False,

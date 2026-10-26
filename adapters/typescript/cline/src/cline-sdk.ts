@@ -134,12 +134,22 @@ async function loadClineSdk(): Promise<ClineSdkModule> {
   return sdk;
 }
 
+/**
+ * The model role Cline runs: `default`, or the only configured role. Returns
+ * `undefined` when no role or several roles without `default` are configured.
+ */
+export function selectedModelRole(config: AgentConfig): string | undefined {
+  const roles = Object.keys(config.models ?? {});
+  if (roles.includes("default")) return "default";
+  return roles.length === 1 ? roles[0] : undefined;
+}
+
 function selectModel(config: AgentConfig): AgentModelConfig {
-  const entries = Object.entries(config.models ?? {});
-  if (entries.length === 0) {
+  if (Object.keys(config.models ?? {}).length === 0) {
     throw new LifecycleError("cline_model_required", "The Cline adapter requires one configured model");
   }
-  const selected = config.models?.default ?? (entries.length === 1 ? entries[0]?.[1] : undefined);
+  const role = selectedModelRole(config);
+  const selected = role === undefined ? undefined : config.models?.[role];
   if (selected === undefined) {
     throw new LifecycleError(
       "cline_model_ambiguous",
