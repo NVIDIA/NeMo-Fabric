@@ -3057,6 +3057,17 @@ class ModelUsage(FabricMapping):
         if not isinstance(models, list):
             raise FabricConfigError("models must be an array")
         data["models"] = tuple(PerModelUsage.from_mapping(model) for model in models)
+        if (
+            data["models_exhaustive"]
+            and not data["models"]
+            and any(
+                (data[field] or 0) > 0 or (data["observed"].get(field) or 0) > 0
+                for field in _MODEL_USAGE_TOKEN_FIELDS
+            )
+        ):
+            raise FabricConfigError(
+                "exhaustive empty model list conflicts with positive tokens"
+            )
         identities = [(model.get("provider"), model.model) for model in data["models"]]
         if len(set(identities)) != len(identities):
             raise FabricConfigError("duplicate provider/model identity")
