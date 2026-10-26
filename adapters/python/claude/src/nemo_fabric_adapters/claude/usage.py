@@ -145,14 +145,16 @@ class ClaudeInvocationUsage:
             return
         if isinstance(message, ResultMessage):
             if injected_turn(message):
-                # The SDK can omit the user echo. Terminal origin still proves
-                # these preceding root frames belong to an injected turn.
-                self._calls.clear()
-                self._current.clear()
-                self._children.clear()
-                self._child_summaries.clear()
-                self._scope_gap = False
-                self._retry_gap = False
+                # An injected user echo already excluded its frames. Preserve
+                # earlier calls and gaps; only roll back the ambiguous prefix
+                # when that echo was absent.
+                if not self._injected:
+                    self._calls.clear()
+                    self._current.clear()
+                    self._children.clear()
+                    self._child_summaries.clear()
+                    self._scope_gap = False
+                    self._retry_gap = False
             else:
                 self._result = message
             self._injected = False

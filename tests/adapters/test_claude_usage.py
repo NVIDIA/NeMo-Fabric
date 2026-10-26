@@ -6,7 +6,7 @@
 import json
 from pathlib import Path
 
-from claude_agent_sdk import ResultMessage, StreamEvent, SystemMessage
+from claude_agent_sdk import ResultMessage, StreamEvent, SystemMessage, UserMessage
 from claude_agent_sdk._internal.message_parser import parse_message
 import pytest
 
@@ -169,6 +169,34 @@ def test_injected_result_rolls_back_preceding_root_frames_without_user_echo():
     )
     usage = owner.finish()
     assert (usage.input_tokens, usage.output_tokens) == (30, 4)
+
+
+@pytest.mark.parametrize("prior_retry", [False, True])
+def test_explicit_injected_echo_keeps_earlier_owned_calls_and_gaps(prior_retry):
+    owner = ClaudeUsageSession().start()
+    call(owner, identity="owned-before")
+    if prior_retry:
+        owner.observe(SystemMessage(subtype="api_retry", data={"error_status": 429}))
+    owner.observe(
+        UserMessage(content="notification", origin={"kind": "task-notification"})
+    )
+    call(owner, identity="injected")
+    owner.observe(result(origin={"kind": "task-notification"}))
+    call(owner, identity="owned-after")
+    owner.observe(
+        result(
+            usage={
+                "input_tokens": 20,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+                "output_tokens": 4,
+            }
+        )
+    )
+    usage = owner.finish()
+    assert usage.extensions[KEY]["observed"]["input_tokens"] == 20
+    assert usage.extensions[KEY]["observed"]["output_tokens"] == 4
+    assert usage.input_tokens == (None if prior_retry else 20)
 
 
 def test_substitute_crash_cannot_report_zero_or_erase_observed_calls():
