@@ -20,6 +20,7 @@ from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import provenance
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapters.nooa.model_support import build_models
 from nemo_fabric_adapters.nooa.model_support import close_models
@@ -28,6 +29,8 @@ from nemo_fabric_adapters.nooa.telemetry import RelayTelemetry
 from nemo_fabric_adapters.nooa.usage import InvocationUsage
 from nemo_fabric_adapters.nooa.usage import owned_work_pending
 from nemo_fabric_adapters.nooa.usage import running_jobs
+
+_PACKAGE_DISTRIBUTION = "nemo-fabric-adapters-nooa"
 
 ADAPTER = "python"
 HARNESS = "nooa-bench"
@@ -181,6 +184,7 @@ class BenchRuntime:
         self._workspace: Path | None = None
         self._instruction: str | None = None
         self._telemetry: RelayTelemetry | None = None
+        self._model_roles: list[str] = []
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._bench_agent_factory is not None:
@@ -190,6 +194,7 @@ class BenchRuntime:
             )
 
         config = _agent_config(payload)
+        self._model_roles = list(config.models)
         role = _selected_model_role(config)
         models: dict[str, Any] = {}
         bench_agent_factory: Callable[..., Any] | None = None
@@ -237,6 +242,19 @@ class BenchRuntime:
         self._telemetry = telemetry
 
     async def invoke(
+        self,
+        request: AgentRunRequest,
+        runtime_context: RuntimeContext,
+    ) -> AgentRunResult:
+        """Run one invocation and report this adapter's package version."""
+
+        result = await self._invoke(request, runtime_context)
+        result.extensions[provenance.VERSIONS_REPORT_KEY] = (
+            provenance.package_version_report(_PACKAGE_DISTRIBUTION, self._model_roles)
+        )
+        return result
+
+    async def _invoke(
         self,
         request: AgentRunRequest,
         runtime_context: RuntimeContext,

@@ -1,0 +1,139 @@
+---
+title: "Struct WhatRan"
+sidebar-title: "WhatRan"
+slug: "/reference/api/rust-library-reference/nemo-fabric-core/what_ran/struct-whatran"
+description: "What executed for one invocation."
+position: 13
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct WhatRan &#123;\n    pub schema: <a href=\"https://doc.rust-lang.org/1.94.1/alloc/string/struct.String.html\">String</a>,\n    pub version: <a href=\"https://doc.rust-lang.org/1.94.1/alloc/string/struct.String.html\">String</a>,\n    pub fabric: <a href=\"https://doc.rust-lang.org/1.94.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-fabricfacts.mdx\">FabricFacts</a>&gt;,\n    pub adapter: <a href=\"https://doc.rust-lang.org/1.94.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-adapterfacts.mdx\">AdapterFacts</a>&gt;,\n    pub harness: <a href=\"https://doc.rust-lang.org/1.94.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-harnessfacts.mdx\">HarnessFacts</a>&gt;,\n    pub models: <a href=\"https://doc.rust-lang.org/1.94.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.1/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.1/alloc/string/struct.String.html\">String</a>, <a href=\"struct-modelfacts.mdx\">ModelFacts</a>&gt;&gt;,\n    pub models_truncated: <a href=\"https://doc.rust-lang.org/1.94.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-truncatedentries.mdx\">TruncatedEntries</a>&gt;,\n    pub mcp: <a href=\"https://doc.rust-lang.org/1.94.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-mcpfacts.mdx\">McpFacts</a>&gt;,\n    pub environment: <a href=\"https://doc.rust-lang.org/1.94.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-environmentfacts.mdx\">EnvironmentFacts</a>&gt;,\n    pub what_ran_truncated: <a href=\"https://doc.rust-lang.org/1.94.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-truncatedentries.mdx\">TruncatedEntries</a>&gt;,\n&#125;"}} /></pre>
+
+What executed for one invocation.
+
+Every section is present, unless `what_ran_truncated` is present: then the object is a minimal one that the byte budget left with only its schema name and version, and every section may be absent.
+
+Decoding a `WhatRan` directly checks the shape of every section and fact, and that no section is `null`. `RunResult` also checks the schema name and version, that every section is present unless `what_ran_truncated` is, and that every `plan` MCP entry names its transport.
+
+## Fields
+
+### `schema: String`
+
+Schema name, `nemo.fabric.what_ran`.
+
+### `version: String`
+
+Contract version, `v1alpha1`.
+
+### `fabric: Option<FabricFacts>`
+
+NeMo Fabric core that ran the adapter.
+
+### `adapter: Option<AdapterFacts>`
+
+Adapter that ran.
+
+### `harness: Option<HarnessFacts>`
+
+Harness behind the adapter.
+
+### `models: Option<BTreeMap<String, ModelFacts>>`
+
+Model facts keyed by the role names of the plan's `models` settings. At most 16 roles, in sorted key order, each key at most 128 characters.
+
+### `models_truncated: Option<TruncatedEntries>`
+
+Model roles dropped from `models`. Absent when none was dropped, never `null`.
+
+### `mcp: Option<McpFacts>`
+
+MCP server facts.
+
+### `environment: Option<EnvironmentFacts>`
+
+Environment the runtime ran in.
+
+### `what_ran_truncated: Option<TruncatedEntries>`
+
+Present only on a minimal object: every section was dropped to keep the object within 128 KiB, with reason `byte_budget` and a dropped count of 1.
+
+## Trait Implementations
+
+### `impl Clone for WhatRan`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.1/core/clone/trait.Clone.html\">Clone</a> for <a href=\"struct-whatran.mdx\">WhatRan</a>"}} /></pre>
+
+#### `clone`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.1/core/clone/trait.Clone.html#tymethod.clone\">clone</a>(&amp;self) -&gt; <a href=\"struct-whatran.mdx\">WhatRan</a>"}} /></pre>
+
+#### `clone_from`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.1/core/clone/trait.Clone.html#method.clone_from\">clone_from</a>(&amp;mut self, source: &amp;Self)"}} /></pre>
+
+### `impl Debug for WhatRan`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.1/core/fmt/trait.Debug.html\">Debug</a> for <a href=\"struct-whatran.mdx\">WhatRan</a>"}} /></pre>
+
+#### `fmt`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.1/core/fmt/trait.Debug.html#tymethod.fmt\">fmt</a>(&amp;self, f: &amp;mut <a href=\"https://doc.rust-lang.org/1.94.1/core/fmt/struct.Formatter.html\">Formatter</a>&lt;'_&gt;) -&gt; <a href=\"https://doc.rust-lang.org/1.94.1/core/fmt/type.Result.html\">Result</a>"}} /></pre>
+
+### `impl<'de> Deserialize<'de> for WhatRan`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;'de&gt; <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html\">Deserialize</a>&lt;'de&gt; for <a href=\"struct-whatran.mdx\">WhatRan</a>"}} /></pre>
+
+#### `deserialize`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html#tymethod.deserialize\">deserialize</a>&lt;__D&gt;(__deserializer: __D) -&gt; <a href=\"https://doc.rust-lang.org/1.94.1/core/result/enum.Result.html\">Result</a>&lt;Self, __D::<a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserializer.html#associatedtype.Error\">Error</a>&gt;where\n    __D: <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserializer.html\">Deserializer</a>&lt;'de&gt;,"}} /></pre>
+
+### `impl JsonSchema for WhatRan`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl JsonSchema for <a href=\"struct-whatran.mdx\">WhatRan</a>"}} /></pre>
+
+#### `schema_name`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn schema_name() -&gt; <a href=\"https://doc.rust-lang.org/1.94.1/alloc/borrow/enum.Cow.html\">Cow</a>&lt;'static, <a href=\"https://doc.rust-lang.org/1.94.1/std/primitive.str.html\">str</a>&gt;"}} /></pre>
+
+#### `schema_id`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn schema_id() -&gt; <a href=\"https://doc.rust-lang.org/1.94.1/alloc/borrow/enum.Cow.html\">Cow</a>&lt;'static, <a href=\"https://doc.rust-lang.org/1.94.1/std/primitive.str.html\">str</a>&gt;"}} /></pre>
+
+#### `json_schema`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn json_schema(generator: &amp;mut SchemaGenerator) -&gt; Schema"}} /></pre>
+
+#### `inline_schema`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn inline_schema() -&gt; <a href=\"https://doc.rust-lang.org/1.94.1/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+### `impl PartialEq for WhatRan`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.1/core/cmp/trait.PartialEq.html\">PartialEq</a> for <a href=\"struct-whatran.mdx\">WhatRan</a>"}} /></pre>
+
+#### `eq`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.1/core/cmp/trait.PartialEq.html#tymethod.eq\">eq</a>(&amp;self, other: &amp;<a href=\"struct-whatran.mdx\">WhatRan</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.1/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+#### `ne`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.1/core/cmp/trait.PartialEq.html#method.ne\">ne</a>(&amp;self, other: <a href=\"https://doc.rust-lang.org/1.94.1/std/primitive.reference.html\">&amp;Rhs</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.1/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+### `impl Serialize for WhatRan`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\">Serialize</a> for <a href=\"struct-whatran.mdx\">WhatRan</a>"}} /></pre>
+
+#### `serialize`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html#tymethod.serialize\">serialize</a>&lt;__S&gt;(&amp;self, __serializer: __S) -&gt; <a href=\"https://doc.rust-lang.org/1.94.1/core/result/enum.Result.html\">Result</a>&lt;__S::<a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html#associatedtype.Ok\">Ok</a>, __S::<a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html#associatedtype.Error\">Error</a>&gt;where\n    __S: <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html\">Serializer</a>,"}} /></pre>
+
+### `impl Eq for WhatRan`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.1/core/cmp/trait.Eq.html\">Eq</a> for <a href=\"struct-whatran.mdx\">WhatRan</a>"}} /></pre>
+
+### `impl StructuralPartialEq for WhatRan`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.1/core/marker/trait.StructuralPartialEq.html\">StructuralPartialEq</a> for <a href=\"struct-whatran.mdx\">WhatRan</a>"}} /></pre>

@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { serve } from "nemo-fabric-adapters-common";
+import { serve, withPackageVersion } from "nemo-fabric-adapters-common";
 
 const [major, minor] = process.versions.node.split(".").map(Number);
 if (major === undefined || minor === undefined || major < 22 || (major === 22 && minor < 19)) {
@@ -14,5 +14,5 @@ await serve(async () => {
     import("./qwen-sdk.js"),
     import("./runtime.js"),
   ]);
-  return new QwenAdapterRuntime(new QwenSdkSessionFactory());
+  return withPackageVersion(new QwenAdapterRuntime(new QwenSdkSessionFactory()), new URL("../package.json", import.meta.url));
 });
