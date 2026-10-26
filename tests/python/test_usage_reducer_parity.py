@@ -8,6 +8,7 @@ From adapter-contract/typescript, run:
 """
 
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -71,6 +72,8 @@ def test_python_and_typescript_reducers_emit_the_same_wire_evidence(reduced):
     node = shutil.which("node")
     module = ROOT / "adapter-contract/typescript/dist/usage.js"
     if node is None or not module.exists():
+        if os.environ.get("FABRIC_REQUIRE_TYPESCRIPT_REDUCER_PARITY") == "1":
+            pytest.fail("TypeScript reducer parity requires Node and the built contract")
         pytest.skip("build the TypeScript contract to run cross-binding reducer parity")
     source = """
 import { pathToFileURL } from 'node:url';
