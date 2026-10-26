@@ -56,6 +56,24 @@ environment, and telemetry without starting a runtime:
 .venv/bin/python -m examples.code_review_agent --plan
 ```
 
+### Collect Resource Stats
+
+The example collects before/after invocation stats by default. Add `--stats sampled` to collect periodic readings and retain peak, mean, and coverage summaries. This option composes with the harness selected by `--variant`:
+
+```bash
+.venv/bin/python -m examples.code_review_agent \
+  --variant deepagents \
+  --stats sampled \
+  --stats-interval-ms 1000 \
+  --stats-max-samples 1000 \
+  --input "Review calculator.py. Read the file first; do not edit it." \
+  > run-result.json
+```
+
+Install the [Deep Agents requirements](../../adapters/python/deepagents/README.md) and set `ADAPTER_PYTHON` to that environment's interpreter before running. Use `--stats before-after` for readings before and after the invocation or `--stats off` to disable invocation stats. Interval and retention overrides require sampled mode. The interval defaults to 1000 ms (range 100–60000), and retention defaults to 10000 readings including before/after readings (range 2–100000). Omit `--show-output` to keep redirected output valid JSON.
+
+For a complete self-hosted model command and a captured result walkthrough, see [Resource Usage and Stats](../../docs/sdk/system-stats.mdx). The same `--model`, `--base-url`, and `--api-key-env` overrides work with `--stats`.
+
 ### Change the Skills
 
 The default configuration loads `skills/code-review`. Remove the skill without
@@ -486,3 +504,20 @@ npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-qwen
 Set `NVIDIA_API_KEY` to run the example. The variant keeps the code-review skill,
 uses Qwen's non-interactive default approval mode, and blocks shell and edit
 tools. The variant does not configure an MCP server or Relay telemetry.
+
+### AWS Strands (`strands`)
+
+Run the standard AWS Strands harness through the shared ACP runner. From the repository root:
+
+```bash
+npm install --global @strands-agents/cli@0.2.1
+just install-typescript-strands
+npm run build --prefix adapter-contract/typescript
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-strands
+export NVIDIA_API_KEY="<your-key>"
+.venv/bin/python -m examples.code_review_agent --variant strands --plan
+.venv/bin/python -m examples.code_review_agent --variant strands --input "Review the workspace changes."
+```
+
+This variant uses the NVIDIA model configured in `strands_config()`, append-only review instructions, and the native read tool. Tool calls run with the task environment's permissions. Normalized skills and Relay telemetry are unsupported. For Bedrock or a keyless custom endpoint, update the default `ModelConfig` as shown in the [adapter guide](../../adapters/typescript/strands/README.md). No Dockerfile is required.

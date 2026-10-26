@@ -14,7 +14,13 @@ from collections.abc import Callable
 from contextlib import AsyncExitStack
 from typing import Any
 
-from nemo_fabric import Fabric, FabricConfig, ModelConfig
+from nemo_fabric import (
+    Fabric,
+    FabricConfig,
+    ModelConfig,
+    SystemStatsConfig,
+    SystemStatsSamplingConfig,
+)
 
 from examples.code_review_agent.config import (
     BASE_DIR,
@@ -26,6 +32,7 @@ from examples.code_review_agent.config import (
     hermes_config,
     kilo_config,
     kiro_config,
+    strands_config,
     nooa_config,
     openclaw_config,
     openhands_config,
@@ -39,6 +46,7 @@ CONFIG_BUILDERS: dict[str, Callable[[], FabricConfig]] = {
     "hermes": hermes_config,
     "kilo": kilo_config,
     "kiro": kiro_config,
+    "strands": strands_config,
     "claude": claude_config,
     "cline": cline_config,
     "codex": codex_config,
@@ -75,6 +83,21 @@ async def main() -> None:
         "--model", help="Override the selected variant's default model ID."
     )
     parser.add_argument("--base-url", help="Override the default model endpoint URL.")
+    parser.add_argument(
+        "--stats",
+        choices=("off", "before-after", "sampled"),
+        help="Disable invocation stats, collect readings before and after the invocation, or enable periodic sampling. Defaults to the variant's configuration.",
+    )
+    parser.add_argument(
+        "--stats-interval-ms",
+        type=int,
+        help="Sampling interval in milliseconds (100–60000); requires --stats sampled. Default: 1000.",
+    )
+    parser.add_argument(
+        "--stats-max-samples",
+        type=int,
+        help="Maximum retained samples including before/after readings (2–100000); requires --stats sampled. Default: 10000.",
+    )
     parser.add_argument(
         "--api-key-env",
         help="Override the environment variable containing the model credential.",
@@ -166,7 +189,16 @@ async def main() -> None:
         parser.error("--stream cannot be combined with --plan")
     if (
         args.variant
-        in {"cline", "droid", "kilo", "kiro", "openclaw", "openhands", "qwen"}
+        in {
+            "cline",
+            "droid",
+            "kilo",
+            "kiro",
+            "strands",
+            "openclaw",
+            "openhands",
+            "qwen",
+        }
         and args.relay
     ):
         display_name = {
@@ -174,6 +206,7 @@ async def main() -> None:
             "droid": "Factory Droid",
             "kilo": "Kilo Code",
             "kiro": "Kiro",
+            "strands": "Strands",
             "openclaw": "OpenClaw",
             "openhands": "OpenHands",
             "qwen": "Qwen Code",
@@ -230,6 +263,28 @@ async def main() -> None:
             )
 
     config = CONFIG_BUILDERS[args.variant]()
+    if (
+        args.stats_interval_ms is not None or args.stats_max_samples is not None
+    ) and args.stats != "sampled":
+        parser.error(
+            "--stats-interval-ms and --stats-max-samples require --stats sampled"
+        )
+    if args.stats == "off":
+        config.system_stats = None
+    elif args.stats == "before-after":
+        config.system_stats = SystemStatsConfig()
+    elif args.stats == "sampled":
+        sampling_options = {}
+        if args.stats_interval_ms is not None:
+            sampling_options["interval_ms"] = args.stats_interval_ms
+        if args.stats_max_samples is not None:
+            sampling_options["max_samples"] = args.stats_max_samples
+        try:
+            config.system_stats = SystemStatsConfig(
+                sampling=SystemStatsSamplingConfig(**sampling_options)
+            )
+        except ValueError as error:
+            parser.error(str(error))
     if args.model is not None:
         if args.variant == "kiro":
             config.models["default"] = ModelConfig(provider="kiro", model=args.model)
