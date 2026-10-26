@@ -22,6 +22,25 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use agent_execution::AgentRunResultValidationError;`
 - `pub use agent_execution::AgentRunStatus;`
 - `pub use agent_execution::AgentUsage;`
+- `pub use check::AdapterCheckRequest;`
+- `pub use check::AdapterCheckResult;`
+- `pub use check::CheckLevel;`
+- `pub use check::CheckObservation;`
+- `pub use check::CheckOutcome;`
+- `pub use check::CheckReason;`
+- `pub use check::CheckReport;`
+- `pub use check::CheckRequest;`
+- `pub use check::CheckRuntimeState;`
+- `pub use check::CheckScope;`
+- `pub use check::CheckSource;`
+- `pub use check::CheckStage;`
+- `pub use check::CheckVersion;`
+- `pub use check::RuntimeActivity;`
+- `pub use check::RuntimeObservation;`
+- `pub use check::ServerObservation;`
+- `pub use check::ServerState;`
+- `pub use check::check_environment;`
+- `pub use check::check_service;`
 - `pub use config::AdapterConfigField;`
 - `pub use config::AdapterConfigSupport;`
 - `pub use config::AdapterDescriptor;`
@@ -160,6 +179,7 @@ Core config and runtime contract for NeMo Fabric.
 - [adapter_contract](adapter-contract/index.mdx): Shared southbound adapter contract metadata.
 - [agent_config](agent-config/index.mdx): Configuration projected southbound to an adapter target.
 - [agent_execution](agent-execution/index.mdx): Request and result structures exchanged with an adapter target.
+- [check](check/index.mdx): Runtime health checks and shared contracts.
 - [config](config/index.mdx): NeMo Fabric config models and loading helpers.
 - [doctor](doctor/index.mdx): Plan diagnostics for NeMo Fabric.
 - [error](error/index.mdx): Error types for NeMo Fabric core.

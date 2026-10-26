@@ -277,6 +277,19 @@ redirects, then prints one JSON document containing `atof_records` and the
 separate terminal `result`. Redirect-decision marks remain in configured Relay
 ATOF artifacts; Pi's startup marks are not included in `atof_records`.
 
+## Runtime Health
+
+Local SDK callers can use `Fabric.check()` with the runtime's environment and
+exact runtime ID. Pi supports three ordered health levels:
+
+| Level | Evidence |
+| --- | --- |
+| `live` | Completed initialization, unchanged session identity, and a fresh native `extensionRunner.createContext().isIdle()` response. Both idle and busy responses pass. |
+| `active` | Liveness plus completed extension binding and an available request interface. |
+| `ready` | Earlier levels plus the selected model remaining configured, required tools remaining active or callable through other tools, and required MCP transports having no observed error or closure. |
+
+Health probes use an authenticated channel during invocations. MCP failures and closures remain observable after startup. Stop and ownership changes invalidate observations collected in flight.
+
 ## Dependency Rationale
 
 `@earendil-works/pi-coding-agent` provides the native Pi session, resources,
