@@ -14,9 +14,9 @@ pub enum CheckSource {
     Server,
     ServerTransport,
     Adapter,
-    PiSession,
-    PiInterface,
-    PiSetup,
+    AdapterLiveness,
+    AdapterInterface,
+    AdapterReadiness,
 }
 ```
 
@@ -42,23 +42,23 @@ Runtime-server transport observation.
 
 Unobserved adapter transport or unsupported probe.
 
-### `PiSession`
+### `AdapterLiveness`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "PiSession"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "AdapterLiveness"}} /></pre>
 
-Fresh native Pi context observation.
+Adapter observation of native process, session, or service liveness.
 
-### `PiInterface`
+### `AdapterInterface`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "PiInterface"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "AdapterInterface"}} /></pre>
 
-Pi initialization and interface guards.
+Adapter observation of the selected request interface.
 
-### `PiSetup`
+### `AdapterReadiness`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "PiSetup"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "AdapterReadiness"}} /></pre>
 
-Pi model, tool, and connection inspection.
+Adapter observation of required setup or native readiness.
 
 ## Trait Implementations
 

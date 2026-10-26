@@ -5,27 +5,9 @@
 // Do not edit it directly; run `npm run generate` instead.
 
 /**
- * Diagnostic codes for health observations.
- */
-export type CheckReason =
-  | "server_stopping"
-  | "capabilities_unverified"
-  | "runtime_unavailable"
-  | "agent_exited"
-  | "session_closed"
-  | "endpoint_unavailable"
-  | "health_failed"
-  | "probe_timeout"
-  | "probe_error"
-  | "observation_changed"
-  | "unsupported_adapter"
-  | "unsupported_level"
-  | "unsupported_scope";
-
-/**
  * Result of one adapter health probe.
  */
-export interface AdapterCheckResult {
+export type AdapterCheckResult = {
   /**
    * Current agent activity.
    */
@@ -49,7 +31,66 @@ export interface AdapterCheckResult {
     | "fabric.runtime_server"
     | "fabric.runtime_server.transport"
     | "fabric.adapter"
-    | "fabric.adapter.pi.session"
-    | "fabric.adapter.pi.interface"
-    | "fabric.adapter.pi.setup";
-}
+    | "fabric.adapter.liveness"
+    | "fabric.adapter.interface"
+    | "fabric.adapter.readiness";
+} & (
+  | {
+      /**
+       * Current agent activity.
+       */
+      activity: "idle" | "busy" | "stopping" | "stopped" | "unknown";
+      observed_at: string;
+      outcome: "passed";
+      reason_code: null;
+      /**
+       * Fixed evidence source.
+       */
+      source:
+        | "fabric.runtime_server"
+        | "fabric.runtime_server.transport"
+        | "fabric.adapter"
+        | "fabric.adapter.liveness"
+        | "fabric.adapter.interface"
+        | "fabric.adapter.readiness";
+    }
+  | {
+      /**
+       * Current agent activity.
+       */
+      activity: "idle" | "busy" | "stopping" | "stopped" | "unknown";
+      /**
+       * Native observation time in UTC, or null if no observation was made.
+       */
+      observed_at: string | null;
+      outcome: "failed" | "unknown" | "unsupported";
+      reason_code: CheckReason;
+      /**
+       * Fixed evidence source.
+       */
+      source:
+        | "fabric.runtime_server"
+        | "fabric.runtime_server.transport"
+        | "fabric.adapter"
+        | "fabric.adapter.liveness"
+        | "fabric.adapter.interface"
+        | "fabric.adapter.readiness";
+    }
+);
+/**
+ * Diagnostic codes for health observations.
+ */
+export type CheckReason =
+  | "server_stopping"
+  | "capabilities_unverified"
+  | "runtime_unavailable"
+  | "agent_exited"
+  | "session_closed"
+  | "endpoint_unavailable"
+  | "health_failed"
+  | "probe_timeout"
+  | "probe_error"
+  | "observation_changed"
+  | "unsupported_adapter"
+  | "unsupported_level"
+  | "unsupported_scope";

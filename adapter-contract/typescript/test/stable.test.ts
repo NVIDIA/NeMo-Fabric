@@ -34,7 +34,7 @@ const descriptor: AdapterDescriptor = {
 
 const healthRequest: AdapterCheckRequest = { runtime_id: "runtime-1", level: "ready", timeout_seconds: 3 };
 const healthResult: AdapterCheckResult = { outcome: "passed", reason_code: null, activity: "busy",
-  source: "fabric.adapter.pi.session", observed_at: "2026-10-19T12:00:00Z" };
+  source: "fabric.adapter.liveness", observed_at: "2026-10-19T12:00:00Z" };
 void healthRequest;
 // @ts-expect-error operational is not a supported health level
 const removedHealthLevel: AdapterCheckRequest = { runtime_id: "runtime-1", level: "operational", timeout_seconds: 3 };
@@ -43,6 +43,17 @@ void healthResult;
 // @ts-expect-error a health result preserves its required null fields
 const incompleteHealth: AdapterCheckResult = { outcome: "unknown", activity: "unknown", source: "fabric.adapter" };
 void incompleteHealth;
+
+// @ts-expect-error passing health results require a null reason
+const invalidHealthReason: AdapterCheckResult = { ...healthResult, reason_code: "probe_error" };
+// @ts-expect-error passing health results require an observation timestamp
+const missingHealthTime: AdapterCheckResult = { ...healthResult, observed_at: null };
+// @ts-expect-error nonpassing health results require a reason
+const missingFailureReason: AdapterCheckResult = { ...healthResult, outcome: "unknown", reason_code: null };
+void invalidHealthReason;
+void missingHealthTime;
+void missingFailureReason;
+
 
 const usage: AgentUsage = {
   input_tokens: 20,

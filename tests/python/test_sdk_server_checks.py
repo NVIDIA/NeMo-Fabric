@@ -5,6 +5,7 @@
 
 import asyncio
 import json
+import os
 import time
 import sys
 from unittest.mock import MagicMock
@@ -139,6 +140,38 @@ async def test_native_sdk_routes_server_checks_without_starting_a_runtime(
     assert command["operation"] == "check"
     assert set(command) == {"operation", "timeout_seconds"}
     assert 0 < command["timeout_seconds"] <= 3
+
+
+@pytest.mark.parametrize(
+    ("code", "reason"),
+    [
+        ("probe_timeout", "probe_timeout"),
+        ("gateway_timeout", "probe_timeout"),
+        ("provider_unavailable", "probe_error"),
+    ],
+)
+async def test_native_provider_preserves_early_timeout_reason(
+    code, reason, server_environment, tmp_path
+):
+    provider = tmp_path / "provider"
+    provider.write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys\n"
+        "request = json.loads(sys.stdin.readline())\n"
+        "print(json.dumps({'protocol_version': request['protocol_version'], "
+        "'request_id': request['request_id'], 'status': 'failed', "
+        f"'error': {{'code': {code!r}, 'message': 'TEST_ONLY_PRIVATE'}}}}), flush=True)\n"
+    )
+    provider.chmod(0o700)
+    os.environ["NEMO_FABRIC_OPEN_SHELL_PROVIDER"] = str(provider)
+    report = await Fabric().check(
+        environment=server_environment,
+        request=CheckRequest(scope="server", timeout_seconds=3),
+    )
+    assert report.outcome == "unknown"
+    assert report.reason_code == reason
+    assert report.elapsed_ms < 3000
+    assert "TEST_ONLY_PRIVATE" not in json.dumps(report.to_mapping())
 
 
 @pytest.mark.parametrize("stopping", [False, True])

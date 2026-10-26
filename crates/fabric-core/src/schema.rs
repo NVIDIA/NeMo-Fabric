@@ -621,6 +621,31 @@ mod tests {
     }
 
     #[test]
+    fn adapter_check_result_schema_enforces_outcome_evidence() {
+        let schema = generate_schema(SchemaName::AdapterCheckResult).expect("health result schema");
+        let validator = jsonschema::validator_for(&schema).expect("valid schema");
+        for outcome in ["passed", "failed", "unknown", "unsupported"] {
+            for reason in [None, Some("probe_error")] {
+                for observed_at in [None, Some("2026-10-19T12:00:00Z")] {
+                    let result = serde_json::json!({
+                        "outcome": outcome,
+                        "reason_code": reason,
+                        "activity": "unknown",
+                        "source": "fabric.adapter",
+                        "observed_at": observed_at
+                    });
+                    let expected = if outcome == "passed" {
+                        reason.is_none() && observed_at.is_some()
+                    } else {
+                        reason.is_some()
+                    };
+                    assert_eq!(validator.is_valid(&result), expected, "{result}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn agent_run_result_schema_enforces_failure_and_artifact_invariants() {
         let schema = generate_schema(SchemaName::AgentRunResult).expect("schema generation");
         let validator = jsonschema::validator_for(&schema).expect("valid result schema");

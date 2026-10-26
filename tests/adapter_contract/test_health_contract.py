@@ -14,7 +14,7 @@ def test_check_probe_contract_round_trips_required_nulls():
         "outcome": "passed",
         "reason_code": None,
         "activity": "busy",
-        "source": "fabric.adapter.pi.session",
+        "source": "fabric.adapter.liveness",
         "observed_at": "2026-10-19T12:00:00Z",
     }
     assert AdapterCheckResult.from_mapping(result).to_mapping() == result
@@ -47,6 +47,7 @@ def test_check_probe_requests_reject_invalid_data(fields):
     "changes",
     [
         {"source": "PRIVATE"},
+        {"source": "fabric.adapter.vendor.TEST_ONLY_PRIVATE"},
         {"raw": "PRIVATE"},
         {"reason_code": "probe_error"},
         {"observed_at": None},
@@ -60,8 +61,27 @@ def test_check_probe_results_reject_invalid_evidence(changes):
                 "outcome": "passed",
                 "reason_code": None,
                 "activity": "idle",
-                "source": "fabric.adapter.pi.session",
+                "source": "fabric.adapter.liveness",
                 "observed_at": "2026-10-19T12:00:00Z",
                 **changes,
             }
         )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "fabric.adapter.liveness",
+        "fabric.adapter.interface",
+        "fabric.adapter.readiness",
+    ],
+)
+def test_health_sources_are_adapter_independent(source):
+    result = {
+        "outcome": "passed",
+        "reason_code": None,
+        "activity": "busy",
+        "source": source,
+        "observed_at": "2026-10-19T12:00:00Z",
+    }
+    assert AdapterCheckResult.from_mapping(result).to_mapping() == result

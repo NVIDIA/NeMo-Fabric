@@ -164,9 +164,9 @@ class AdapterCheckResult(ContractModel):
         "fabric.runtime_server",
         "fabric.runtime_server.transport",
         "fabric.adapter",
-        "fabric.adapter.pi.session",
-        "fabric.adapter.pi.interface",
-        "fabric.adapter.pi.setup",
+        "fabric.adapter.liveness",
+        "fabric.adapter.interface",
+        "fabric.adapter.readiness",
     ]
     observed_at: str | None
 

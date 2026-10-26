@@ -114,15 +114,15 @@ pub enum CheckSource {
     /// Unobserved adapter transport or unsupported probe.
     #[serde(rename = "fabric.adapter")]
     Adapter,
-    /// Fresh native Pi context observation.
-    #[serde(rename = "fabric.adapter.pi.session")]
-    PiSession,
-    /// Pi initialization and interface guards.
-    #[serde(rename = "fabric.adapter.pi.interface")]
-    PiInterface,
-    /// Pi model, tool, and connection inspection.
-    #[serde(rename = "fabric.adapter.pi.setup")]
-    PiSetup,
+    /// Adapter observation of native process, session, or service liveness.
+    #[serde(rename = "fabric.adapter.liveness")]
+    AdapterLiveness,
+    /// Adapter observation of the selected request interface.
+    #[serde(rename = "fabric.adapter.interface")]
+    AdapterInterface,
+    /// Adapter observation of required setup or native readiness.
+    #[serde(rename = "fabric.adapter.readiness")]
+    AdapterReadiness,
 }
 
 fn timeout_default() -> f64 {
@@ -147,6 +147,27 @@ fn required_fields(schema: &mut Schema) {
         schema.insert("required".into(), serde_json::Value::Array(names));
     }
 }
+
+fn adapter_check_result_schema(schema: &mut Schema) {
+    required_fields(schema);
+    let properties = schema.get("properties").expect("result properties").clone();
+    let required = schema.get("required").expect("result fields").clone();
+    let mut passed = properties.clone();
+    passed["outcome"] = serde_json::json!({"const": "passed"});
+    passed["reason_code"] = serde_json::json!({"type": "null"});
+    passed["observed_at"] = serde_json::json!({"type": "string"});
+    let mut nonpassing = properties;
+    nonpassing["outcome"] = serde_json::json!({"enum": ["failed", "unknown", "unsupported"]});
+    nonpassing["reason_code"] = serde_json::json!({"$ref": "#/$defs/CheckReason"});
+    schema.insert(
+        "oneOf".into(),
+        serde_json::json!([
+            {"type": "object", "additionalProperties": false, "properties": passed, "required": required},
+            {"type": "object", "additionalProperties": false, "properties": nonpassing, "required": required}
+        ]),
+    );
+}
+
 fn timeout<'de, D: Deserializer<'de>>(deserializer: D) -> std::result::Result<f64, D::Error> {
     let value = f64::deserialize(deserializer)?;
     if !value.is_finite() || value <= 0.0 {
@@ -297,7 +318,7 @@ pub struct AdapterCheckRequest {
 /// Result of one adapter health probe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[schemars(transform = required_fields)]
+#[schemars(transform = adapter_check_result_schema)]
 pub struct AdapterCheckResult {
     /// Probe outcome.
     pub outcome: CheckOutcome,
@@ -524,6 +545,11 @@ pub fn check_environment(
                         .ok()
                         .filter(valid_server_report)
                         .unwrap_or_else(|| unobserved_report(request, CheckReason::ProbeError))
+                }
+                Err(crate::FabricError::EnvironmentProviderOperation { code, .. })
+                    if code == "probe_timeout" =>
+                {
+                    unobserved_report(request, CheckReason::ProbeTimeout)
                 }
                 _ => unobserved_report(request, CheckReason::ProbeError),
             };

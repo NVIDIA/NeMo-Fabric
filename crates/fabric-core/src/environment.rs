@@ -509,7 +509,8 @@ where
         }
     };
     let request_id = new_id("health-provider-request");
-    let mut process = ProviderProcess::spawn(command, "runtime_command")?;
+    let mut process =
+        ProviderProcess::spawn_with_deadline(command, "runtime_command", Some((started, budget)))?;
     let result = (|| {
         let mut request = serde_json::to_value(ProviderRequest {
             protocol_version: PROVIDER_PROTOCOL_VERSION,
@@ -585,14 +586,18 @@ where
                     "invalid health command result".into(),
                 )
             }),
-            ProviderOutcome::Failed { .. } => provider_error(
+            ProviderOutcome::Failed { error } => provider_error(
                 "runtime_command",
-                "probe_error",
+                if matches!(error.code.as_str(), "probe_timeout" | "gateway_timeout") {
+                    "probe_timeout"
+                } else {
+                    "probe_error"
+                },
                 "health command failed".into(),
             ),
         }
     })();
-    process.shutdown();
+    process.shutdown_check(started, budget);
     result
 }
 
@@ -866,6 +871,65 @@ fn environment_resource_key(environment: &EnvironmentHandle) -> Result<String> {
     .to_string())
 }
 
+struct ProviderPipe<R> {
+    inner: R,
+    deadline: Option<(Instant, Duration)>,
+    stopping: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl<R: Read> Read for ProviderPipe<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let Some((started, budget)) = self.deadline else {
+            return self.inner.read(buffer);
+        };
+        loop {
+            if self.stopping.load(std::sync::atomic::Ordering::Relaxed)
+                || started.elapsed() >= budget
+            {
+                return Ok(0);
+            }
+            match self.inner.read(buffer) {
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(
+                        Duration::from_millis(2).min(budget.saturating_sub(started.elapsed())),
+                    );
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                result => return result,
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+fn set_provider_pipe_nonblocking(pipe: &impl std::os::fd::AsRawFd) -> std::io::Result<()> {
+    let descriptor = pipe.as_raw_fd();
+    let flags = unsafe { libc::fcntl(descriptor, libc::F_GETFL) };
+    if flags < 0 || unsafe { libc::fcntl(descriptor, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+fn reap_health_provider(mut child: Child, started: Instant, budget: Duration) {
+    let _ = child.kill();
+    loop {
+        if matches!(child.try_wait(), Ok(Some(_))) {
+            return;
+        }
+        if started.elapsed() >= budget {
+            let _ = thread::Builder::new()
+                .name("fabric-health-provider-reaper".into())
+                .spawn(move || {
+                    let _ = child.wait();
+                });
+            return;
+        }
+        thread::sleep(Duration::from_millis(2).min(budget.saturating_sub(started.elapsed())));
+    }
+}
+
 struct ProviderProcess {
     command: OsString,
     child: Child,
@@ -874,10 +938,19 @@ struct ProviderProcess {
     responses: Receiver<std::io::Result<Vec<u8>>>,
     responses_thread: Option<thread::JoinHandle<()>>,
     stderr_thread: Option<thread::JoinHandle<()>>,
+    stopping: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl ProviderProcess {
     fn spawn(command: OsString, operation: &str) -> Result<Self> {
+        Self::spawn_with_deadline(command, operation, None)
+    }
+
+    fn spawn_with_deadline(
+        command: OsString,
+        operation: &str,
+        deadline: Option<(Instant, Duration)>,
+    ) -> Result<Self> {
         let mut child = Command::new(&command)
             .args(["serve", "--stdio"])
             .stdin(Stdio::piped())
@@ -911,6 +984,40 @@ impl ProviderProcess {
                     code: "provider_protocol_error".to_string(),
                     message: "provider stdout was unavailable".to_string(),
                 })?;
+        let stderr =
+            child
+                .stderr
+                .take()
+                .ok_or_else(|| FabricError::EnvironmentProviderOperation {
+                    provider: OPEN_SHELL_PROVIDER_ID.to_string(),
+                    operation: operation.to_string(),
+                    code: "provider_protocol_error".to_string(),
+                    message: "provider stderr was unavailable".to_string(),
+                })?;
+
+        let stopping = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        #[cfg(unix)]
+        if let Some((started, budget)) = deadline
+            && (set_provider_pipe_nonblocking(&stdout).is_err()
+                || set_provider_pipe_nonblocking(&stderr).is_err())
+        {
+            reap_health_provider(child, started, budget);
+            return provider_error(
+                operation,
+                "provider_io",
+                "health provider pipes could not be configured".into(),
+            );
+        }
+        let stdout = ProviderPipe {
+            inner: stdout,
+            deadline,
+            stopping: stopping.clone(),
+        };
+        let mut stderr = ProviderPipe {
+            inner: stderr,
+            deadline,
+            stopping: stopping.clone(),
+        };
         let (response_sender, responses) = mpsc::sync_channel(1);
         let responses_thread = thread::spawn(move || {
             let mut stdout = BufReader::new(stdout);
@@ -936,16 +1043,6 @@ impl ProviderProcess {
                 }
             }
         });
-        let mut stderr =
-            child
-                .stderr
-                .take()
-                .ok_or_else(|| FabricError::EnvironmentProviderOperation {
-                    provider: OPEN_SHELL_PROVIDER_ID.to_string(),
-                    operation: operation.to_string(),
-                    code: "provider_protocol_error".to_string(),
-                    message: "provider stderr was unavailable".to_string(),
-                })?;
         // Drain stderr to preserve transport liveness; routine errors never expose it.
         let stderr_thread = thread::spawn(move || {
             let mut chunk = [0_u8; 4096];
@@ -963,6 +1060,7 @@ impl ProviderProcess {
             responses,
             responses_thread: Some(responses_thread),
             stderr_thread: Some(stderr_thread),
+            stopping,
         })
     }
 
@@ -1011,6 +1109,25 @@ impl ProviderProcess {
                 code: "provider_wait_failed".to_string(),
                 message: error.to_string(),
             })
+    }
+
+    fn shutdown_check(mut self, started: Instant, budget: Duration) {
+        self.stopping
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        reap_health_provider(self.child, started, budget);
+        for reader in [self.responses_thread.take(), self.stderr_thread.take()]
+            .into_iter()
+            .flatten()
+        {
+            while !reader.is_finished() && started.elapsed() < budget {
+                thread::sleep(
+                    Duration::from_millis(2).min(budget.saturating_sub(started.elapsed())),
+                );
+            }
+            if reader.is_finished() {
+                let _ = reader.join();
+            }
+        }
     }
 
     fn shutdown(&mut self) {
@@ -1270,6 +1387,91 @@ mod tests {
         retire_runtime_provider_process(&first_key, &first);
         retire_runtime_provider_process(&second_key, &second);
         fs::remove_dir_all(directory).expect("remove fixture");
+    }
+
+    #[test]
+    fn health_provider_cleanup_is_bounded_with_inherited_pipes() {
+        for pipe in ["stdout", "stderr", "both"] {
+            for response in ["timeout", "valid", "malformed"] {
+                let (directory, command) = provider_script(&format!(
+                    r#"
+import json, subprocess, sys, time
+from pathlib import Path
+request = json.loads(sys.stdin.readline())
+directory = Path(__file__).parent
+child_code = '''
+import os, sys, time
+from pathlib import Path
+directory = Path(sys.argv[1])
+(directory / 'holding').write_text(str(os.getpid()))
+deadline = time.monotonic() + 2
+while time.monotonic() < deadline and not (directory / 'release').exists():
+    time.sleep(0.005)
+(directory / 'released').touch()
+'''
+pipe = {pipe:?}
+subprocess.Popen(
+    [sys.executable, '-c', child_code, str(directory)],
+    stdin=subprocess.DEVNULL,
+    stdout=None if pipe in ('stdout', 'both') else subprocess.DEVNULL,
+    stderr=None if pipe in ('stderr', 'both') else subprocess.DEVNULL,
+    start_new_session=True,
+)
+while not (directory / 'holding').exists():
+    time.sleep(0.005)
+response = {response:?}
+if response == 'timeout':
+    time.sleep(5)
+elif response == 'malformed':
+    print('{{', flush=True)
+else:
+    print(json.dumps({{'protocol_version': request['protocol_version'],
+                      'request_id': request['request_id'], 'status': 'succeeded',
+                      'output': {{'returned': True}}}}), flush=True)
+"#
+                ));
+                let environment: EnvironmentHandle = serde_json::from_value(serde_json::json!({
+                    "environment_id": "health-cleanup",
+                    "provider": "openshell",
+                    "control_location": "in_env_control",
+                    "ownership": "caller_owned"
+                }))
+                .expect("environment fixture");
+                let timeout_seconds = if response == "timeout" { 0.3 } else { 1.0 };
+                let task = TaskCommand::Check { timeout_seconds };
+                let started = Instant::now();
+                let result = request_check_provider_process::<Value>(
+                    command,
+                    ProviderOperation::RuntimeCommand {
+                        environment: &environment,
+                        command: &task,
+                        timeout_seconds: 1,
+                    },
+                    timeout_seconds,
+                );
+                let elapsed = started.elapsed();
+                fs::write(directory.join("release"), "").expect("release pipe holder");
+                for _ in 0..100 {
+                    if directory.join("released").exists() {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
+                fs::remove_dir_all(directory).expect("remove fixture");
+                assert!(
+                    elapsed < Duration::from_millis(1500),
+                    "{pipe}/{response} cleanup took {elapsed:?}"
+                );
+                if response == "valid" {
+                    assert_eq!(
+                        result.expect("valid health response"),
+                        serde_json::json!({"returned": true})
+                    );
+                } else {
+                    assert!(result.is_err(), "{pipe}/{response} must fail");
+                }
+            }
+        }
     }
 
     #[test]

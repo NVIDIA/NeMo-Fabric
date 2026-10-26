@@ -114,18 +114,18 @@
           "type": "string"
         },
         {
-          "const": "fabric.adapter.pi.session",
-          "description": "Fresh native Pi context observation.",
+          "const": "fabric.adapter.liveness",
+          "description": "Adapter observation of native process, session, or service liveness.",
           "type": "string"
         },
         {
-          "const": "fabric.adapter.pi.interface",
-          "description": "Pi initialization and interface guards.",
+          "const": "fabric.adapter.interface",
+          "description": "Adapter observation of the selected request interface.",
           "type": "string"
         },
         {
-          "const": "fabric.adapter.pi.setup",
-          "description": "Pi model, tool, and connection inspection.",
+          "const": "fabric.adapter.readiness",
+          "description": "Adapter observation of required setup or native readiness.",
           "type": "string"
         }
       ]
@@ -164,6 +164,76 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "Result of one adapter health probe.",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "$ref": "#/$defs/RuntimeActivity",
+          "description": "Current agent activity."
+        },
+        "observed_at": {
+          "type": "string"
+        },
+        "outcome": {
+          "const": "passed"
+        },
+        "reason_code": {
+          "type": "null"
+        },
+        "source": {
+          "$ref": "#/$defs/CheckSource",
+          "description": "Fixed evidence source."
+        }
+      },
+      "required": [
+        "activity",
+        "observed_at",
+        "outcome",
+        "reason_code",
+        "source"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "$ref": "#/$defs/RuntimeActivity",
+          "description": "Current agent activity."
+        },
+        "observed_at": {
+          "description": "Native observation time in UTC, or null if no observation was made.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "failed",
+            "unknown",
+            "unsupported"
+          ]
+        },
+        "reason_code": {
+          "$ref": "#/$defs/CheckReason"
+        },
+        "source": {
+          "$ref": "#/$defs/CheckSource",
+          "description": "Fixed evidence source."
+        }
+      },
+      "required": [
+        "activity",
+        "observed_at",
+        "outcome",
+        "reason_code",
+        "source"
+      ],
+      "type": "object"
+    }
+  ],
   "properties": {
     "activity": {
       "$ref": "#/$defs/RuntimeActivity",

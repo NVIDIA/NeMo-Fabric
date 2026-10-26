@@ -45,9 +45,9 @@ CheckSource = Literal[
     "fabric.runtime_server",
     "fabric.runtime_server.transport",
     "fabric.adapter",
-    "fabric.adapter.pi.session",
-    "fabric.adapter.pi.interface",
-    "fabric.adapter.pi.setup",
+    "fabric.adapter.liveness",
+    "fabric.adapter.interface",
+    "fabric.adapter.readiness",
 ]
 
 
@@ -127,9 +127,9 @@ class _Observation(_StrictModel):
             and self.source
             != {
                 "server": "fabric.runtime_server",
-                "live": "fabric.adapter.pi.session",
-                "active": "fabric.adapter.pi.interface",
-                "ready": "fabric.adapter.pi.setup",
+                "live": "fabric.adapter.liveness",
+                "active": "fabric.adapter.interface",
+                "ready": "fabric.adapter.readiness",
             }[self.name]
         ):
             raise ValueError("invalid evidence source")

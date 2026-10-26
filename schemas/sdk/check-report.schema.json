@@ -218,18 +218,18 @@
           "type": "string"
         },
         {
-          "const": "fabric.adapter.pi.session",
-          "description": "Fresh native Pi context observation.",
+          "const": "fabric.adapter.liveness",
+          "description": "Adapter observation of native process, session, or service liveness.",
           "type": "string"
         },
         {
-          "const": "fabric.adapter.pi.interface",
-          "description": "Pi initialization and interface guards.",
+          "const": "fabric.adapter.interface",
+          "description": "Adapter observation of the selected request interface.",
           "type": "string"
         },
         {
-          "const": "fabric.adapter.pi.setup",
-          "description": "Pi model, tool, and connection inspection.",
+          "const": "fabric.adapter.readiness",
+          "description": "Adapter observation of required setup or native readiness.",
           "type": "string"
         }
       ]

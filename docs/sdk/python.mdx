@@ -66,7 +66,6 @@ config = FabricConfig(
     },
 )
 
-
 async def main() -> None:
     fabric = Fabric()
     result = await fabric.run(
@@ -76,7 +75,6 @@ async def main() -> None:
 
     print(result.status)
     print(result.output.response)
-
 
 asyncio.run(main())
 ```
@@ -255,9 +253,24 @@ bridge, and response decoding. The default timeout is three seconds.
 
 Local server checks and runtime requests return `unsupported/unsupported_scope`.
 
+```mermaid
+flowchart LR
+    SDK["Fabric SDK"] --> Core["Rust core"]
+    Core --> Provider["OpenShell provider"]
+    Provider -->|"Gateway exec"| CLI["fabric-agent-ctl check"]
+    CLI -->|"private Unix socket"| Server["Runtime server"]
+```
+
+The runtime server responds on its local socket while runtime invocations run
+in separate worker threads.
+
 ### Sandbox Command Bridge
 
 `fabric-agent-ctl check` checks server responsiveness with a three-second default deadline. Use `--timeout-seconds SECONDS` to set another positive, finite budget. Checks work before a runtime exists and during an invocation. Completed checks return a `fabric.check/v1alpha1` server report in `result`, with `changed: false`; passed health exits 0, while a stopping server or a timeout exits 1. The public `Fabric.check()` method maps OpenShell server requests to this command.
+
+`fabric.check/v1alpha1` identifies the shared report schema returned by
+`Fabric.check()` and `fabric-agent-ctl check`. The executable ships with
+`nemo-fabric-runtime` and follows the SDK package release.
 
 `fabric-agent-ctl serve` starts one runtime server per sandbox. The `start`, `invoke`, and `stop` commands call the existing `Fabric.start_runtime()`, `Runtime.invoke()`, and `Runtime.stop()` methods. Start accepts `FabricConfig` and returns the SDK `RuntimeHandle` mapping. Invoke accepts a full `RunRequest` through `--request` or any JSON SDK input through `--input`, and returns the SDK `RunResult` mapping. Stop returns JSON null. These payloads occupy the response envelope's `result` field; command diagnostics remain separate. Targeted commands require the returned runtime ID and exact agent name. The caller waits for the private socket before start. Caller-side preflight uses `Fabric.plan()` and `Fabric.doctor()`; startup validates configuration against installed descriptors.
 
@@ -677,7 +690,6 @@ import asyncio
 
 from nemo_fabric import Fabric
 
-
 async def main():
     fabric = Fabric()
     async with await fabric.prepare_service(config) as service:
@@ -685,7 +697,6 @@ async def main():
             async with await fabric.start_runtime(config, service=service) as second:
                 first_result = await first.invoke(input="Inspect the repository")
                 second_result = await second.invoke(input="Review the latest patch")
-
 
 asyncio.run(main())
 ```
@@ -699,7 +710,6 @@ an attachment only removes NeMo Fabric-owned clients and temporary state.
 import asyncio
 
 from nemo_fabric import Fabric, ServiceReference
-
 
 async def main():
     reference = ServiceReference.from_mapping(
@@ -717,7 +727,6 @@ async def main():
     async with await fabric.attach_service(config, reference) as service:
         async with await fabric.start_runtime(config, service=service) as runtime:
             result = await runtime.invoke(input="Review the latest patch")
-
 
 asyncio.run(main())
 ```
@@ -923,7 +932,6 @@ For Harbor, these measurements come from the adapter host inside the task runner
 
 A failed read appears as `{"status": "unavailable", "reason": "..."}`; an unsupported provider or operating system uses `"unsupported"`. Collection failures preserve the adapter outcome, including a normalized failed result. Disabled collection, older results, and execution backends without collection have `system_stats=None`. Protocol failures and timeouts that raise without a `RunResult` still raise. When sampling is enabled, NeMo Fabric retains sample and summary artifacts where possible even if the adapter exchange fails. These measurements require neither NeMo Relay collection nor invocation recording.
 
-
 ### Sampled Peaks and Means
 
 A process can allocate 400 MiB during execution and return to 80 MiB before the final reading. Endpoints miss that spike. Enable native sampling independently of Relay or invocation recording:
@@ -1059,7 +1067,6 @@ from nemo_fabric import (
     ModelConfig,
 )
 
-
 async def main() -> None:
     config = FabricConfig(
         metadata=MetadataConfig(name="streaming-agent"),
@@ -1076,7 +1083,6 @@ async def main() -> None:
             print(record)
         result = await stream.result()
         print(result.status, result.output)
-
 
 asyncio.run(main())
 ```
@@ -1174,10 +1180,8 @@ NeMo Fabric concurrency limit or scheduler.
 ```python
 import asyncio
 
-
 async def review_one(prompt: str):
     return await Fabric().run(config, input=prompt)
-
 
 async def main() -> None:
     results = await asyncio.gather(
@@ -1185,7 +1189,6 @@ async def main() -> None:
         review_one("Review patch B"),
     )
     print([result.status for result in results])
-
 
 asyncio.run(main())
 ```
