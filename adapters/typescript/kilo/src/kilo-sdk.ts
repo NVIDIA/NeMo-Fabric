@@ -82,6 +82,7 @@ async function skillPaths(input: AdapterStartInput): Promise<string[]> {
   return paths;
 }
 
+/** Map normalized tool policy to non-interactive Kilo permissions, with blocked tools taking precedence. */
 function toolPermission(input: AdapterStartInput): Record<string, unknown> {
   if (input.config.tools?.definitions !== undefined) {
     throw new LifecycleError("kilo_tool_definitions_unsupported", "Kilo Code does not support normalized tool definitions through this adapter");
@@ -111,6 +112,8 @@ function toolPermission(input: AdapterStartInput): Record<string, unknown> {
     }
   } else {
     permission.read = protectedRead;
+    // Kilo Code asks before shell commands outside its read-only allowlist, and nothing answers in a headless run.
+    permission.bash = "allow";
   }
   for (const name of blocked) permission[name] = "deny";
   return permission;
