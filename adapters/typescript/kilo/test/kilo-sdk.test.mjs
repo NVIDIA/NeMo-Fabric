@@ -94,14 +94,15 @@ test("projects normalized configuration into an isolated Kilo Code server", asyn
   await writeFile(join(skill, "SKILL.md"), "# Review\n", "utf8");
   let serverEnvironment;
   let clientOptions;
+  const startupSignals = [];
   let createParameters;
   let deleteParameters;
   let deleteSignal;
   const client = {
-    app: {skills: async () => ({data: [{name: "review", location: join(skill, "SKILL.md"), content: "# Review"}]})},
-    mcp: {status: async () => ({data: {local: {status: "connected"}}})},
+    app: {skills: async (_parameters, options) => { startupSignals.push(options.signal); return {data: [{name: "review", location: join(skill, "SKILL.md"), content: "# Review"}]}; }},
+    mcp: {status: async (_parameters, options) => { startupSignals.push(options.signal); return {data: {local: {status: "connected"}}}; }},
     session: {
-      create: async (parameters) => { createParameters = parameters; return {data: {id: "session-1"}}; },
+      create: async (parameters, options) => { createParameters = parameters; startupSignals.push(options.signal); return {data: {id: "session-1"}}; },
       prompt: async () => ({data: {info: {}, parts: [{type: "text", text: "done"}]}}),
       delete: async (parameters, options) => { deleteParameters = parameters; deleteSignal = options.signal; },
     },
@@ -131,6 +132,8 @@ test("projects normalized configuration into an isolated Kilo Code server", asyn
     assert.deepEqual(projected.skills.paths, [skill]);
     assert.deepEqual(projected.mcp.local, {type: "local", command: ["mcp-server", "--stdio"], environment: {MODE: "test"}});
     assert.equal(clientOptions.fetch, kiloFetch);
+    assert.equal(startupSignals.length, 3);
+    assert.ok(startupSignals.every((signal) => signal instanceof AbortSignal));
     assert.equal(serverEnvironment.KILO_DISABLE_PROJECT_CONFIG, "1");
     assert.equal(serverEnvironment.MODEL_KEY, "secret");
     assert.equal(serverEnvironment.NVIDIA_API_KEY, undefined);
