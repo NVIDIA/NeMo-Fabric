@@ -8,8 +8,8 @@
 //! does not depend on NeMo Relay. Names are trimmed and compared case-insensitively.
 //! An explicit provider restricts aliases and model-path suffixes to that provider.
 //! Without a provider, lookup tries provider-qualified keys from the model path
-//! before model-only suffixes. For each candidate key, the first matching
-//! catalog entry wins.
+//! before model-only suffixes. A model-only key must identify one provider;
+//! an ambiguous match stops lookup without trying shorter model names.
 //!
 //! NeMo Fabric ships one catalog, embedded at build time, with the list prices
 //! of models that its presets, docs, and examples use. Each entry cites the
@@ -61,7 +61,7 @@ struct BundledCatalog {
 pub struct PricingCatalog {
     /// Catalog format version. Must be `1`.
     pub version: u32,
-    /// Price entries. For each lookup key, the first matching entry wins.
+    /// Price entries with provider-qualified model identifiers and aliases.
     pub entries: Vec<ModelPricing>,
 }
 
@@ -263,11 +263,23 @@ impl PricingCatalog {
 
     /// Find `model`, keeping an explicit provider on every alias or suffix.
     /// Without a provider, try the model path's provider prefix before model-only
-    /// suffixes. The first matching entry in listed order wins for each key.
+    /// suffixes. A model-only match must identify one provider.
     pub(crate) fn pricing_for(&self, provider: Option<&str>, model: &str) -> Option<&ModelPricing> {
-        lookup_keys(provider, model)
-            .iter()
-            .find_map(|key| self.entries.iter().find(|entry| entry.matches(key)))
+        for key in lookup_keys(provider, model) {
+            let mut matches = self.entries.iter().filter(|entry| entry.matches(&key));
+            let Some(first) = matches.next() else {
+                continue;
+            };
+            if key.provider.is_none()
+                && matches.any(|entry| {
+                    normalized_provider(&entry.provider) != normalized_provider(&first.provider)
+                })
+            {
+                return None;
+            }
+            return Some(first);
+        }
+        None
     }
 
     fn validate(&self) -> Result<(), PricingCatalogError> {
@@ -893,6 +905,42 @@ mod tests {
         let (entry, origin) = prices.find(Some("custom-route"), "model", true).unwrap();
         assert_eq!(entry.provider, "custom-route");
         assert_eq!(origin, PriceOrigin::User);
+    }
+
+    #[test]
+    fn providerless_lookup_rejects_cross_provider_model_and_alias_ambiguity() {
+        for reversed in [false, true] {
+            let mut aliased = flat_entry("other", "different-model", 3.0, 4.0);
+            aliased["aliases"] = json!(["shared-model"]);
+            let mut entries = vec![flat_entry("native", "shared-model", 1.0, 2.0), aliased];
+            if reversed {
+                entries.reverse();
+            }
+            let catalog = catalog(json!(entries));
+            assert!(catalog.pricing_for(None, "shared-model").is_none());
+            assert_eq!(
+                found(&catalog, Some("native"), "shared-model"),
+                ("native", "shared-model")
+            );
+            assert_eq!(
+                found(&catalog, None, "native/shared-model"),
+                ("native", "shared-model")
+            );
+            assert_eq!(
+                found(&catalog, None, "different-model"),
+                ("other", "different-model")
+            );
+        }
+    }
+
+    #[test]
+    fn ambiguous_model_key_does_not_fall_through_to_a_shorter_model() {
+        let catalog = catalog(json!([
+            flat_entry("first", "path/shared-model", 1.0, 2.0),
+            flat_entry("second", "path/shared-model", 3.0, 4.0),
+            flat_entry("third", "shared-model", 5.0, 6.0)
+        ]));
+        assert!(catalog.pricing_for(None, "path/shared-model").is_none());
     }
 
     // Validation, mirroring NeMo Relay's catalog validation tests.

@@ -399,8 +399,6 @@ pub(crate) fn apply_pricing_with_evidence(
         return;
     }
     let mut any_user = false;
-    let mut root_cache_read_required = false;
-    let mut root_cache_write_required = false;
     for model in &mut usage.models {
         let cost = &mut model.usage.token_cost;
         cost.applied = None;
@@ -470,8 +468,6 @@ pub(crate) fn apply_pricing_with_evidence(
                 || model.usage.cache_write_input_tokens.value == Some(0);
             let complete = match &complete_rates {
                 Some(rates) => {
-                    root_cache_read_required |= rates.cache_read != Some(rates.input);
-                    root_cache_write_required |= rates.cache_write != Some(rates.input);
                     if !write_tariff_known && model.usage.input_tokens.value != Some(0) {
                         Err("cache_write_tariff_unverified")
                     } else {
@@ -584,8 +580,6 @@ pub(crate) fn apply_pricing_with_evidence(
                     Ok((charge, rates, all_parts_priced)) => {
                         any = true;
                         charges = charges.and_then(|total| total.checked_add(charge));
-                        root_cache_read_required |= rates.cache_read != Some(rates.input);
-                        root_cache_write_required |= rates.cache_write != Some(rates.input);
                         cost.applied_calls.push(Some(AppliedPricing {
                             catalog_sha256: match origin {
                                 PriceOrigin::Bundled => prices.bundled_sha256(),
@@ -635,25 +629,27 @@ pub(crate) fn apply_pricing_with_evidence(
     .iter()
     .any(|m| m.reason.as_deref() == Some("inconsistent_usage"));
     let accounting = usage.accounting.as_mut().expect("checked accounting");
-    let complete = if !accounting.models_exhaustive || usage.models.is_empty() {
+    let complete = if !accounting.models_exhaustive {
         Err("model_scope_unverified")
     } else if inconsistent {
         Err("inconsistent_usage")
+    } else if usage.models.is_empty() {
+        // An exhaustive empty model inventory and complete zero counts prove
+        // zero token cost without selecting a model tariff.
+        if usage.input_tokens.value == Some(0) && usage.output_tokens.value == Some(0) {
+            Ok(0)
+        } else {
+            Err("model_scope_unverified")
+        }
     } else if usage.models.iter().any(|model| {
         model.usage.token_cost.estimated.reason.as_deref() == Some("cache_write_tariff_unverified")
     }) {
         Err("cache_write_tariff_unverified")
-    } else if usage.input_tokens.value.is_none()
-        || usage.output_tokens.value.is_none()
-        || (root_cache_read_required
-            && usage.cached_input_tokens.value.is_none()
-            && usage.input_tokens.value != Some(0))
-        || (root_cache_write_required
-            && usage.cache_write_input_tokens.value.is_none()
-            && usage.input_tokens.value != Some(0))
-    {
+    } else if usage.input_tokens.value.is_none() || usage.output_tokens.value.is_none() {
         Err("pricing_usage_incomplete")
     } else {
+        // Each complete model price already checks its own tariff's required
+        // cache counts. A combined cache breakdown need not be available.
         usage.models.iter().try_fold(0_u64, |sum, model| {
             sum.checked_add(
                 model

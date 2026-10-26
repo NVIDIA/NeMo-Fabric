@@ -1258,13 +1258,13 @@ accounting remains available in `result.usage` and is not certified complete by
 catalog estimates. Both distinguish `amount_nano_usd` from `observed_nano_usd`
 in integer nano-USD.
 Estimates retain their pricing basis and distinct selected rate snapshots.
-Set `FabricConfig(pricing=PricingConfig(catalog_path="prices.json"))` for a
-Relay-compatible catalog override; planning freezes its bytes. An explicitly established provider must match the catalog entry's provider, including aliases and shorter model paths. A different provider's entry cannot price that source solely because the model name matches. When no provider identity is available, an explicit user catalog can match the model name alone. Bundled provider prices apply only
-when the configured route establishes the native provider. Unknown model,
-cache-price or request-tier evidence affects estimates without erasing tokens.
-Nonzero Anthropic cache writes currently lack expiry-price evidence, so their
-complete estimate remains unknown; independently priceable parts remain observed.
-Known zero writes need no expiry evidence. Estimates are not invoices.
+Set `FabricConfig(pricing=PricingConfig(catalog_path="prices.json"))` for a Relay-compatible catalog override. Planning freezes the catalog's contents.
+
+When usage identifies a provider, the matching catalog entry must name that provider. Aliases and shorter model paths do not permit another provider's prices. Without a provider identity, an explicit user catalog can match a model name that identifies one provider. An ambiguous match leaves the estimate unavailable; lookup does not continue to a shorter model name. Bundled prices also require evidence of a native provider route.
+
+Missing model, cache-price or request-tier evidence affects estimates without erasing tokens. Nonzero Anthropic cache writes currently lack expiry-price evidence, so their complete estimate remains unknown; independently priceable parts remain observed. Known zero writes need no expiry evidence.
+
+Complete per-model estimates can be combined even when the invocation's combined cache breakdown is unavailable. An exhaustive empty model list with complete zero input and output counts has zero estimated token cost. Estimates are not invoices.
 
 `summarize_usage` requires an explicit expected invocation inventory. It retains
 missing results in coverage, keeps complete totals separate from observed sums,

@@ -573,3 +573,160 @@ fn exhaustive_empty_model_list_preserves_unknown_and_zero_work() {
         assert_eq!(result["input_tokens"], tokens["input_tokens"]);
     }
 }
+
+#[test]
+fn complete_model_prices_do_not_require_a_combined_cache_breakdown() {
+    for (field, cache_rate, count, first_cost) in [
+        ("cached_input_tokens", 0.1, 20, 92_000),
+        ("cache_write_input_tokens", 1.25, 10, 112_500),
+    ] {
+        let mut first = json!({
+            "input_tokens": 100, "cached_input_tokens": 0, "cache_write_input_tokens": 0,
+            "input_tokens_include_cache": true, "output_tokens": 5, "output_tokens_include_reasoning": true
+        });
+        first[field] = json!(count);
+        let mut second = first.clone();
+        second.as_object_mut().unwrap().remove(field);
+        let mut first_rates = json!({
+            "input_per_million": 1.0, "output_per_million": 2.0,
+            "cache_read_per_million": 1.0, "cache_write_per_million": 1.0
+        });
+        first_rates[if field == "cached_input_tokens" {
+            "cache_read_per_million"
+        } else {
+            "cache_write_per_million"
+        }] = json!(cache_rate);
+        let entries = [
+            ("first", first_rates),
+            (
+                "second",
+                json!({
+                    "input_per_million": 1.0, "output_per_million": 2.0,
+                    "cache_read_per_million": 1.0, "cache_write_per_million": 1.0
+                }),
+            ),
+        ]
+        .into_iter()
+        .map(|(model, rates)| {
+            json!({
+                "provider": "fixture", "model_id": model, "rates": rates,
+                "prompt_cache": {"read_accounting": "included_in_prompt_tokens"},
+                "pricing_as_of": "2026-10-26", "pricing_source": "test fixture"
+            })
+        })
+        .collect::<Vec<_>>();
+        let catalog = UserPriceCatalog::from_bytes(
+            "prices.json".into(),
+            &serde_json::to_vec(&json!({"version": 1, "entries": entries})).unwrap(),
+        )
+        .unwrap();
+        let mut evidence = json!({"models_exhaustive": true, "gaps": [], "models": [
+            {"provider": "fixture", "model": "first", "gaps": [], "reported": first},
+            {"provider": "fixture", "model": "second", "gaps": [], "reported": second}
+        ]});
+        let mut raw = AgentUsage::default();
+        raw.extensions
+            .insert("nemo_fabric.usage_accounting.v1".into(), evidence.clone());
+        let result = normalize_model_usage(&raw, Some(&catalog), false)
+            .unwrap()
+            .unwrap();
+        let value = serde_json::to_value(&result).unwrap();
+        assert!(value[field].is_null(), "{field}");
+        assert_eq!(
+            result.models[0].cost.estimated.amount_nano_usd,
+            Some(first_cost)
+        );
+        assert_eq!(
+            result.models[1].cost.estimated.amount_nano_usd,
+            Some(110_000)
+        );
+        assert_eq!(
+            result.cost.estimated.amount_nano_usd,
+            Some(first_cost + 110_000),
+            "{field}"
+        );
+
+        // Complete model prices cannot settle an invocation-wide input gap.
+        evidence["gaps"] = json!([{"dimensions": ["input_tokens"], "reason": "unfinished_work"}]);
+        raw.extensions
+            .insert("nemo_fabric.usage_accounting.v1".into(), evidence);
+        let unsettled = normalize_model_usage(&raw, Some(&catalog), false)
+            .unwrap()
+            .unwrap();
+        assert_eq!(unsettled.cost.estimated.amount_nano_usd, None);
+        assert_eq!(
+            unsettled.cost.estimated.observed_nano_usd,
+            Some(first_cost + 110_000)
+        );
+    }
+}
+
+#[test]
+fn zero_token_cost_requires_explicit_zero_counts_and_exhaustive_model_scope() {
+    for (counts, exhaustive, expected) in [
+        (json!({}), true, None),
+        (
+            json!({"input_tokens": 0, "input_tokens_include_cache": true,
+            "output_tokens": 0, "output_tokens_include_reasoning": true}),
+            false,
+            None,
+        ),
+        (
+            json!({"input_tokens": 0, "input_tokens_include_cache": true,
+            "output_tokens": 0, "output_tokens_include_reasoning": true}),
+            true,
+            Some(0),
+        ),
+    ] {
+        let mut raw = AgentUsage::default();
+        raw.extensions
+            .insert("nemo_fabric.detailed_token_usage.v1".into(), counts);
+        raw.extensions.insert(
+            "nemo_fabric.usage_accounting.v1".into(),
+            json!({"models_exhaustive": exhaustive, "models": [], "gaps": []}),
+        );
+        let result = normalize_model_usage(&raw, None, false).unwrap().unwrap();
+        assert_eq!(result.cost.estimated.amount_nano_usd, expected);
+        assert_eq!(result.cost.estimated.observed_nano_usd, expected);
+    }
+}
+
+#[test]
+fn request_tiers_price_complete_calls_without_certifying_a_partial_inventory() {
+    let catalog = UserPriceCatalog::from_bytes("prices.json".into(), &serde_json::to_vec(&json!({
+        "version": 1, "entries": [{
+            "provider": "fixture", "model_id": "model",
+            "rate_schedule": {"type": "prompt_token_threshold", "tiers": [
+                {"max_prompt_tokens": 100, "rates": {"input_per_million": 1.0, "output_per_million": 2.0}},
+                {"min_prompt_tokens": 101, "rates": {"input_per_million": 10.0, "output_per_million": 20.0}}
+            ]},
+            "prompt_cache": {"read_accounting": "included_in_prompt_tokens"},
+            "pricing_as_of": "2026-10-26", "pricing_source": "test fixture"
+        }]
+    })).unwrap()).unwrap();
+    let requests = [100, 101].into_iter().map(|input| json!({"usage": {
+        "input_tokens": input, "cached_input_tokens": 0, "cache_write_input_tokens": 0,
+        "input_tokens_include_cache": true, "output_tokens": 1, "output_tokens_include_reasoning": true
+    }})).collect::<Vec<_>>();
+    for exhaustive in [true, false] {
+        let mut raw = AgentUsage::default();
+        raw.extensions.insert(
+            "nemo_fabric.usage_accounting.v1".into(),
+            json!({
+                "models_exhaustive": true, "gaps": [], "models": [{
+                    "provider": "fixture", "model": "model", "gaps": [],
+                    "requests_exhaustive": exhaustive, "requests": requests
+                }]
+            }),
+        );
+        let result = normalize_model_usage(&raw, Some(&catalog), false)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            result.cost.estimated.amount_nano_usd,
+            exhaustive.then_some(1_132_000)
+        );
+        assert_eq!(result.cost.estimated.observed_nano_usd, Some(1_132_000));
+        assert_eq!(result.models[0].cost.applied_rates.len(), 2);
+    }
+}
