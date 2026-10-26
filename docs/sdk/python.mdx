@@ -271,16 +271,30 @@ stop at the runtime server; runtime requests select the owned agent and use the
 local SDK health path inside the sandbox. Health uses an independent provider
 worker during remote invocations.
 
+
+The diagram shows the local runtime adapter path. OpenShell adds the provider
+and command bridge before this path; server checks stop at the runtime server.
+
 ```mermaid
 flowchart LR
     SDK["Fabric SDK"] --> Core["Rust core"]
-    Core --> Provider["OpenShell provider"]
-    Provider -->|"Gateway exec"| CLI["fabric-agent-ctl check"]
-    CLI -->|"private Unix socket"| Server["Runtime server"]
+    Core -->|"start / invoke / stop<br/>stdin / stdout"| Lifecycle
+    Core -->|"check<br/>authenticated loopback TCP"| Health
+    Endpoint["health.endpoint.json<br/>port and shared secret"] -.->|"endpoint discovery"| Core
+    subgraph Host["Adapter host process"]
+        Lifecycle["Lifecycle dispatcher"] -->|"await operation"| Adapter["Adapter runtime instance"]
+        Health["Health listener"] -->|"check native state"| Adapter
+        Adapter --> Harness["Native harness SDK"]
+    end
 ```
 
-The runtime server responds on its local socket while runtime invocations run
-in separate worker threads.
+The lifecycle dispatcher awaits each start, invocation, or stop operation. The
+health listener checks the same adapter runtime through a separate connection,
+so checks can run while an invocation is pending. The host publishes the port
+and a per-process shared secret in a private `health.endpoint.json` file under
+`FABRIC_HOME`; the Rust core reads that file and authenticates health requests
+and responses. Each health request carries the remaining timeout budget, which the host applies
+to the probe.
 
 ### Sandbox Command Bridge
 

@@ -14,7 +14,7 @@ const passed = () => ({
   outcome: "passed",
   reason_code: null,
   activity: "idle",
-  source: "fabric.adapter.pi.session",
+  source: "fabric.adapter.liveness",
   observed_at: new Date().toISOString(),
 });
 

@@ -48,6 +48,8 @@ owns the ordered lifecycle pipe. Endpoint credentials are generated per process
 and stored in a private file under `FABRIC_HOME`. HMAC-SHA256 signs requests
 and responses with a fresh client challenge. The host verifies each response against that challenge and invalidates in-flight observations when shutdown begins.
 
+Refer to the [SDK health transport diagram](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#runtime-health) for lifecycle and health request routing.
+
 ## Dependency Rationale
 
 `ajv` enforces the canonical JSON Schema contracts at the process boundary;

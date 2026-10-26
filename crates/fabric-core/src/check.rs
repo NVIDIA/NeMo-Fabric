@@ -559,9 +559,9 @@ fn valid_remote_report(report: &CheckReport, request: &CheckRequest) -> bool {
             && (check.observed_at.is_none()
                 || check.source
                     != [
-                        CheckSource::PiSession,
-                        CheckSource::PiInterface,
-                        CheckSource::PiSetup,
+                        CheckSource::AdapterLiveness,
+                        CheckSource::AdapterInterface,
+                        CheckSource::AdapterReadiness,
                     ][index])
         {
             return false;
@@ -1003,9 +1003,9 @@ fn probe_runtime(runtime_id: &str, level: CheckLevel, timeout: f64) -> AdapterCh
             })
         });
         let expected_source = match level {
-            CheckLevel::Live => CheckSource::PiSession,
-            CheckLevel::Active => CheckSource::PiInterface,
-            CheckLevel::Ready => CheckSource::PiSetup,
+            CheckLevel::Live => CheckSource::AdapterLiveness,
+            CheckLevel::Active => CheckSource::AdapterInterface,
+            CheckLevel::Ready => CheckSource::AdapterReadiness,
         };
         if (observation.outcome == CheckOutcome::Passed) != observation.reason_code.is_none()
             || (observation.outcome == CheckOutcome::Passed
@@ -1166,9 +1166,9 @@ mod tests {
     fn passed(level: CheckLevel) -> serde_json::Value {
         serde_json::json!({"outcome": "passed", "reason_code": null, "activity": "busy",
             "source": match level {
-                CheckLevel::Live => "fabric.adapter.pi.session",
-                CheckLevel::Active => "fabric.adapter.pi.interface",
-                _ => "fabric.adapter.pi.setup",
+                CheckLevel::Live => "fabric.adapter.liveness",
+                CheckLevel::Active => "fabric.adapter.interface",
+                _ => "fabric.adapter.readiness",
             }, "observed_at": utc_now()})
     }
 

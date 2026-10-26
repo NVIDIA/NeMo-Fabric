@@ -55,7 +55,7 @@ def check_report_fixture():
                 "name": "live",
                 "outcome": "passed",
                 "reason_code": None,
-                "source": "fabric.adapter.pi.session",
+                "source": "fabric.adapter.liveness",
                 "observed_at": now,
             }
         ],
@@ -89,7 +89,7 @@ def test_request_defaults_and_immutable_report(check_report):
     report = CheckReport.from_mapping(check_report)
     detached = report.to_mapping()
     detached["checks"][0]["source"] = "PRIVATE"
-    assert report.to_mapping()["checks"][0]["source"] == "fabric.adapter.pi.session"
+    assert report.to_mapping()["checks"][0]["source"] == "fabric.adapter.liveness"
 
 
 def test_report_fields_cannot_be_reassigned_or_deleted(check_report):

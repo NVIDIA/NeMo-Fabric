@@ -919,8 +919,8 @@ class PiSdkSessionHandle implements PiSessionHandle {
       const idle = this.session.extensionRunner.createContext().isIdle();
       if (typeof idle !== "boolean") return unobservedHealth("probe_error");
       const activity = idle ? "idle" : "busy";
-      const source: CheckSource = level === "live" ? "fabric.adapter.pi.session"
-        : level === "active" ? "fabric.adapter.pi.interface" : "fabric.adapter.pi.setup";
+      const source: CheckSource = level === "live" ? "fabric.adapter.liveness"
+        : level === "active" ? "fabric.adapter.interface" : "fabric.adapter.readiness";
       const observed_at = new Date().toISOString();
       if (level !== "live" && this.state.shutdownRequested) return {
         outcome: "failed", reason_code: "endpoint_unavailable", activity: "stopping", source, observed_at,

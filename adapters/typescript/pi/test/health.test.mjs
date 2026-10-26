@@ -55,7 +55,7 @@ test("health dispatch reaches a busy session without another prompt", async () =
             outcome: "passed",
             reason_code: null,
             activity: "busy",
-            source: "fabric.adapter.pi.session",
+            source: "fabric.adapter.liveness",
             observed_at: new Date().toISOString(),
           };
         },
@@ -111,7 +111,7 @@ test("stopping invalidates an observation and prevents fresh probes", async () =
             outcome: "passed",
             reason_code: null,
             activity: "idle",
-            source: "fabric.adapter.pi.session",
+            source: "fabric.adapter.liveness",
             observed_at: new Date().toISOString(),
           };
         },

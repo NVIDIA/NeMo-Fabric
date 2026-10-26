@@ -41,9 +41,9 @@ def runtime_check_report_fixture():
                     "observed_at": now,
                 }
                 for level, source in [
-                    ("live", "fabric.adapter.pi.session"),
-                    ("active", "fabric.adapter.pi.interface"),
-                    ("ready", "fabric.adapter.pi.setup"),
+                    ("live", "fabric.adapter.liveness"),
+                    ("active", "fabric.adapter.interface"),
+                    ("ready", "fabric.adapter.readiness"),
                 ]
             ],
         }

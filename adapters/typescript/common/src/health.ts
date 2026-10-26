@@ -17,7 +17,7 @@ const validateResult = new Ajv({ strict: false }).compile(
 );
 const LIMIT = 16 * 1024;
 
-export function unobservedHealth(reason: CheckReason): AdapterCheckResult {
+export function unobservedHealth(reason: CheckReason): AdapterCheckResult & { outcome: "unknown" } {
   return { outcome: "unknown", reason_code: reason, activity: "unknown", source: "fabric.adapter", observed_at: null };
 }
 

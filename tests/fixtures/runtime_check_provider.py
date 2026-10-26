@@ -25,6 +25,40 @@ for line in sys.stdin:
     elif operation == "runtime_command":
         command = frame["command"]
         name = command["operation"]
+        if name == "check" and (
+            directory := os.environ.get("FABRIC_TEST_HEALTH_PIPE_DIR")
+        ):
+            root = Path(directory)
+            mode = root / "mode"
+            if mode.exists():
+                retained = mode.read_text()
+                subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-c",
+                        """
+import os, sys, time
+from pathlib import Path
+root = Path(sys.argv[1])
+(root / f"{os.getpid()}.holding").touch()
+started = time.monotonic()
+while not (root / "release").exists() and time.monotonic() - started < 8:
+    time.sleep(0.01)
+""",
+                        directory,
+                    ],
+                    stdin=subprocess.DEVNULL,
+                    stdout=sys.stdout
+                    if retained in ("stdout", "both")
+                    else subprocess.DEVNULL,
+                    stderr=sys.stderr
+                    if retained in ("stderr", "both")
+                    else subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                import time
+
+                time.sleep(10)
         arguments = [sys.executable, "-m", "nemo_fabric.runtime_server", name]
         payload = None
         if name == "check":
