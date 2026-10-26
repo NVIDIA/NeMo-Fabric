@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # NVIDIA NeMo Fabric TypeScript Adapter Workspace
 
 This private npm workspace coordinates the independently published common,
-Cline, Pi, OpenCode, Qwen Code, Kilo Code, and Kiro adapter packages. It
+Cline, Pi, OpenCode, Qwen Code, Kilo Code, AWS Kiro, and AWS Strands adapter packages. It
 provides shared build, test, package-content, and consumer-install checks
 without becoming a published package itself.
 
@@ -76,3 +76,5 @@ npm dependency.
 The OpenCode adapter runs with Bun 1.4.2 or later. Source and package checks
 run its process lifecycle under Bun while using Node.js for TypeScript builds
 and the shared workspace tooling.
+
+The [AWS Strands adapter](strands/README.md) runs the standard Strands harness through the shared ACP runner. Install the CLI separately, then use `just install-typescript-strands` to install the adapter workspace dependencies.

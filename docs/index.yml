@@ -24,6 +24,8 @@ navigation:
     contents:
       - page: Python SDK
         path: ./sdk/python.mdx
+      - page: Resource Usage and Stats
+        path: ./sdk/system-stats.mdx
   - section: Adapter Contract
     contents:
       - page: Overview
@@ -76,6 +78,8 @@ navigation:
             path: ./integrations/harness/kilo.mdx
           - page: Kiro
             path: ./integrations/harness/kiro.mdx
+          - page: AWS Strands
+            path: ./integrations/harness/strands.mdx
           - page: mini-SWE-agent
             path: ./integrations/harness/mini-swe-agent.mdx
           - page: OpenClaw
