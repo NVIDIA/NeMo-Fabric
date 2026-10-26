@@ -376,6 +376,98 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
             assert telemetry_plan is None
 
 
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        (
+            [],
+            {"collect": ["process", "cgroup.cpu", "cgroup.memory", "cgroup.pressure"]},
+        ),
+        (["--stats", "off"], None),
+        (
+            ["--stats", "before-after"],
+            {"collect": ["process", "cgroup.cpu", "cgroup.memory", "cgroup.pressure"]},
+        ),
+        (
+            ["--stats", "sampled"],
+            {
+                "collect": [
+                    "process",
+                    "cgroup.cpu",
+                    "cgroup.memory",
+                    "cgroup.pressure",
+                ],
+                "sampling": {"interval_ms": 1000, "max_samples": 10000},
+            },
+        ),
+        (
+            [
+                "--stats",
+                "sampled",
+                "--stats-interval-ms",
+                "100",
+                "--stats-max-samples",
+                "2",
+            ],
+            {
+                "collect": [
+                    "process",
+                    "cgroup.cpu",
+                    "cgroup.memory",
+                    "cgroup.pressure",
+                ],
+                "sampling": {"interval_ms": 100, "max_samples": 2},
+            },
+        ),
+    ],
+)
+def test_stats_options_survive_example_planning(options, expected):
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            "--variant",
+            "deepagents",
+            *options,
+            "--plan",
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    plan = json.loads(completed.stdout)
+    assert plan["config"]["system_stats"] == expected
+    assert "system_stats" not in plan["agent_config"]
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--stats-interval-ms", "100"],
+        ["--stats", "off", "--stats-max-samples", "2"],
+        ["--stats", "before-after", "--stats-interval-ms", "1000"],
+        ["--stats", "sampled", "--stats-interval-ms", "99"],
+        ["--stats", "sampled", "--stats-interval-ms", "60001"],
+        ["--stats", "sampled", "--stats-max-samples", "1"],
+        ["--stats", "sampled", "--stats-max-samples", "100001"],
+    ],
+)
+def test_stats_options_reject_invalid_sampling_before_execution(options):
+    completed = subprocess.run(
+        [sys.executable, "-m", "examples.code_review_agent", *options, "--plan"],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 2
+    assert "error:" in completed.stderr
+    assert "Traceback" not in completed.stderr
+
+
 def test_kilo_model_endpoint_overrides_project_into_plan():
     completed = subprocess.run(
         [
@@ -1019,3 +1111,14 @@ async def test_example_entrypoint_streams_relay_records_and_terminal_result(
     runtime.invoke_stream.assert_called_once_with(input="review this")
     stream.result.assert_awaited_once_with()
     runtime_context.__aexit__.assert_awaited_once()
+
+
+def test_strands_variant_projects_read_only_harness_tools():
+    from examples.code_review_agent import strands_config
+
+    plan = Fabric().plan(strands_config(), base_dir=BASE_DIR)
+    agent_config = plan.to_mapping()["agent_config"]
+    assert agent_config["harness"]["settings"]["builtin_tools"] == ["read"]
+    assert agent_config["instructions"]["system"]["mode"] == "append"
+    assert agent_config.get("tools") is None
+    assert agent_config.get("skills") is None

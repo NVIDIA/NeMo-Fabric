@@ -40,6 +40,7 @@ from nemo_fabric import RelayObservabilityConfig
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
 from nemo_fabric import RuntimeConfig
+from nemo_fabric import SystemStatsConfig
 from nemo_fabric import ToolsConfig
 from nemo_fabric.integrations.harbor.models import FabricRunPayload
 from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
@@ -97,7 +98,7 @@ if _HARBOR_IMPORT_ERROR is not None:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             raise ModuleNotFoundError(
                 "nemo_fabric.integrations.harbor requires the Harbor optional "
-                "dependency and a compatible Harbor release (0.23.x) on Python "
+                "dependency and a compatible Harbor release (0.24.x) on Python "
                 "3.12 or later; install nemo-fabric[harbor] on a supported interpreter"
             ) from _HARBOR_IMPORT_ERROR
 
@@ -170,6 +171,10 @@ else:
         )
         fabric_telemetry: Literal["none", "relay"] = Field(
             default="none", description="Enable Relay-backed ATIF and ATOF telemetry."
+        )
+        fabric_system_stats: SystemStatsConfig | None = Field(
+            default_factory=SystemStatsConfig,
+            description="Invocation stats selection and optional sampling; null disables stats.",
         )
         fabric_python: str = Field(
             default="python3",
@@ -286,8 +291,8 @@ else:
         reward calculation. NeMo Fabric owns the selected agent harness invocation.
         """
 
-        # Current Harbor main gates task skills and MCP servers on these fields;
-        # the published 0.23.0 capabilities model does not define them yet.
+        # Harbor gates task skills and MCP servers on these fields; __init__ sets
+        # them from the selected adapter's metadata.
         capabilities = AgentCapabilities()
         options_model = FabricAgentOptions
         options: FabricAgentOptions
@@ -564,7 +569,7 @@ else:
             )
 
         def _build_config(self) -> FabricConfig:
-            return build_harbor_config(
+            config = build_harbor_config(
                 adapter_id=self.fabric_adapter_id,
                 workspace=self.fabric_workspace,
                 harness_settings=self.fabric_harness_settings,
@@ -587,6 +592,11 @@ else:
                     *self.fabric_discovery_paths,
                 ),
             )
+            stats = self.options.fabric_system_stats
+            config.system_stats = (
+                stats.model_copy(deep=True) if stats is not None else None
+            )
+            return config
 
         def _resolve_environment_config_base_dir(self) -> str:
             if self.fabric_config_bundle is not None:
