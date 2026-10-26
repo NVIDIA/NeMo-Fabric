@@ -147,26 +147,43 @@ export async function waitForRelayGateway(
   const fetchRequest = options.fetch ?? fetch;
   const pollIntervalMs = options.pollIntervalMs ?? 100;
   const deadline = performance.now() + timeoutMs;
-  while (performance.now() < deadline) {
+  while (true) {
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) {
+      break;
+    }
     if (processExited(child)) {
       throw new RelayGatewayError(
         `NeMo Relay gateway exited with status ${child.exitCode ?? child.signalCode} before becoming ready`,
       );
     }
+    let ready = false;
     try {
       const response = await fetchRequest(healthUrl, {
         method: "HEAD",
-        signal: AbortSignal.timeout(1_000),
+        signal: AbortSignal.timeout(Math.min(1_000, Math.ceil(remaining))),
       });
-      const ready = response.ok;
       await response.body?.cancel();
-      if (ready) {
-        return;
-      }
+      ready = response.ok;
     } catch {
       // Retry until the gateway exits or the readiness deadline expires.
     }
-    await delay(Math.min(pollIntervalMs, Math.max(0, deadline - performance.now())));
+    if (ready) {
+      if (processExited(child)) {
+        throw new RelayGatewayError(
+          `NeMo Relay gateway exited with status ${child.exitCode ?? child.signalCode} before becoming ready`,
+        );
+      }
+      if (performance.now() >= deadline) {
+        break;
+      }
+      return;
+    }
+    const remainingAfterProbe = deadline - performance.now();
+    if (remainingAfterProbe <= 0) {
+      break;
+    }
+    await delay(Math.min(pollIntervalMs, remainingAfterProbe));
   }
   throw new RelayGatewayError(`NeMo Relay gateway did not become ready at ${healthUrl}`);
 }
