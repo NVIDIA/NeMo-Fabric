@@ -12,10 +12,7 @@ sessions, and Relay telemetry.
 
 ## Install the Adapter
 
-The adapter supports Python 3.11 through 3.14. Hermes Agent 0.20 and later is
-no longer installable from PyPI. For ordinary invocations, follow the
-[Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation).
-Hermes v0.22.5 and the pinned Hermes source require Relay `>=0.10,<0.11` on supported Python 3.14 platforms.
+The adapter package supports Python 3.11 through 3.14. Use [Hermes Agent v0.22.5](https://github.com/NousResearch/hermes-agent/releases/tag/v0.22.5) with Python 3.14. This release includes dependency security fixes absent from v2026.9.24 and supports Relay telemetry and streaming. Hermes Agent 0.20 and later is not installable from PyPI. Follow the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation) and select v0.22.5.
 
 Install the NeMo Fabric runtime and bare Hermes adapter into the Python
 environment that runs Hermes Agent:
@@ -33,11 +30,7 @@ python -m pip install nemo-fabric-adapters-hermes
 
 The adapter's `relay` and `full` extras install `nemo-relay>=0.10,<0.11`. Install Hermes Agent separately in the same environment. Keep that environment separate from applications that use Relay 0.11 for other NeMo Fabric adapters. The adapter reports a compatibility error at startup if Relay telemetry is enabled with an unsupported Hermes or Relay installation.
 
-For Relay telemetry or streaming in local NeMo Fabric development, run the
-following command from the repository root. The recipe checks out the merged,
-unreleased Hermes Relay 0.10 revision and creates an isolated Python 3.14
-environment with the adapter's `relay` extra. Update it to a compatible release
-when one is available:
+For local NeMo Fabric development, run the following command from the repository root. The recipe checks out Hermes Agent v0.22.5 at commit `bf0203a794a07aac3ff764972ab9087baa4e4f4e` and creates an isolated Python 3.14 environment with the adapter's `relay` extra. Hermes declares its Python package version as `0.0.0`; use the Git tag and commit to identify the release when reviewing scanner results.
 
 ```bash
 just install-hermes-agent

@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 args = sys.argv[1:]
 if args == ["--version"]:
-    print("OpenClaw 2026.9.4 (fabric test)")
+    print("OpenClaw 2026.9.34 (fabric test)")
     raise SystemExit(0)
 if args[:3] == ["config", "validate", "--json"]:
     with open(os.environ["OPENCLAW_CONFIG_PATH"], encoding="utf-8") as stream:
@@ -76,7 +76,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/startupz":
             body = json.dumps(
-                {"ok": True, "status": "started", "version": "2026.9.4"}
+                {"ok": True, "status": "started", "version": "2026.9.34"}
             ).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")

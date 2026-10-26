@@ -301,9 +301,9 @@ def test_claude_calculator_run_uses_current_adapter_contract():
     assert "-e /opt/nemo-fabric/sdk/python/nemo-fabric-runtime" in dockerfile
     assert '-e "/opt/nemo-fabric/sdk/python/nemo-fabric[' in dockerfile
     assert "nemo-fabric[claude,openclaw]" in dockerfile
-    assert "node:24.16.0-bookworm-slim" in dockerfile
+    assert "node:24.22.1-bookworm-slim" in dockerfile
     assert (
-        "npm install --global openclaw@2026.9.4 --allow-scripts=openclaw" in dockerfile
+        "npm install --global openclaw@2026.9.34 --allow-scripts=openclaw" in dockerfile
     )
     assert "@openai/codex" not in dockerfile
 

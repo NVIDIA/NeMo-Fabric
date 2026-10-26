@@ -15,10 +15,12 @@ Chat Completions endpoint.
 Install OpenClaw separately with npm, then install the adapter:
 
 ```bash
-# Requires Node.js >=24.16.0 <25 or >=26.1.0, and npm 11.16+.
-npm install --global openclaw@2026.9.4 --allow-scripts=openclaw
+# Requires Node.js >=24.22.1 <25 or >=26.12.1, and npm 11.16+.
+npm install --global openclaw@2026.9.34 --allow-scripts=openclaw
 pip install "nemo-fabric[openclaw]"
 ```
 
 The adapter supports only OpenClaw's default `openclaw` agent runtime. It does
 not install OpenClaw. Relay telemetry is not supported.
+
+When upgrading a caller-owned Gateway from OpenClaw 2026.9.4, stop the Gateway and back up its state directory. Run `openclaw doctor --fix` with the 2026.9.34 executable and the same `OPENCLAW_STATE_DIR` and `OPENCLAW_CONFIG_PATH`, then restart the Gateway. The older session database requires this migration. Keep the backup for rollback. Managed NeMo Fabric runtimes start with fresh temporary state.

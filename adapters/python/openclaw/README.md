@@ -34,8 +34,8 @@ Managed runtimes and NeMo Fabric-owned services also require the pinned OpenClaw
 version:
 
 ```bash
-# Requires Node.js >=24.16.0 <25 or >=26.1.0, and npm 11.16+.
-npm install --global openclaw@2026.9.4 --allow-scripts=openclaw
+# Requires Node.js >=24.22.1 <25 or >=26.12.1, and npm 11.16+.
+npm install --global openclaw@2026.9.34 --allow-scripts=openclaw
 ```
 
 An attachment to a caller-owned Gateway does not require a local OpenClaw
@@ -44,6 +44,12 @@ prepared use, if `openclaw` is not in `PATH`, set
 `harness.settings.openclaw_command` to the absolute path of the executable. A
 bare command is resolved through `PATH`; a relative path containing a directory
 is resolved from the NeMo Fabric base directory.
+
+### Upgrade a Gateway With Retained State
+
+When upgrading a caller-owned Gateway from OpenClaw 2026.9.4, stop the Gateway and back up its state directory before starting 2026.9.34. Use the new executable with the same `OPENCLAW_STATE_DIR` and `OPENCLAW_CONFIG_PATH` to run `openclaw doctor --fix`, then restart the Gateway. Version 2026.9.34 rejects the older session database until this migration completes. Keep the backup for rollback.
+
+Managed runtimes and NeMo Fabric-owned services use temporary state directories, so each new Gateway starts with fresh state.
 
 ## Configuration
 
@@ -195,7 +201,7 @@ shows a sanitized service handle:
     "agent_id": "default"
   },
   "metadata": {
-    "openclaw_version": "2026.9.4"
+    "openclaw_version": "2026.9.34"
   }
 }
 ```

@@ -391,11 +391,11 @@ install-typescript-strands: install-typescript-contract
 # Install every maintained TypeScript package.
 install-typescript: install-typescript-contract install-typescript-adapters
 
-# Pin the merged upstream Hermes Relay 0.10 integration until it is released.
+# Install Hermes Agent v0.22.5 with its Relay 0.10 integration.
 install-hermes-agent:
     #!/usr/bin/env bash
     set -euo pipefail
-    hermes_commit="a62979dc3601c9eae455bff5b35ba8f9bed0df30"
+    hermes_commit="bf0203a794a07aac3ff764972ab9087baa4e4f4e"
     hermes_checkout="$REPO_ROOT/external/hermes-agent"
     hermes_diff_pathspec=()
 
@@ -436,6 +436,10 @@ install-hermes-agent:
        ! "$REPO_ROOT/.venv-hermes/bin/python" -c 'import sys; assert sys.version_info[:2] == (3, 14)' 2>/dev/null; then
         uv venv --python 3.14 --clear "$REPO_ROOT/.venv-hermes"
     fi
+    # Use the release lockfile, including upstream's security dependency overrides.
+    UV_PROJECT_ENVIRONMENT="$REPO_ROOT/.venv-hermes" uv sync \
+        --project "$hermes_checkout" --frozen --no-default-groups --extra mcp \
+        --config-settings-package hermes-agent:editable_mode=compat
     uv pip install --python "$REPO_ROOT/.venv-hermes/bin/python" \
         --editable "$REPO_ROOT/adapter-contract/python" \
         --editable "$REPO_ROOT/adapters/python/common" \
@@ -443,8 +447,7 @@ install-hermes-agent:
         --editable "$REPO_ROOT/sdk/python/nemo-fabric-collector" \
         --editable "$REPO_ROOT/sdk/python/nemo-fabric-runtime" \
         --editable "$REPO_ROOT/sdk/python/nemo-fabric" \
-        --config-settings-package hermes-agent:editable_mode=compat \
-        --editable "$hermes_checkout[mcp]" pytest pytest-asyncio pyyaml
+        pytest pytest-asyncio pyyaml
 
 test-hermes: install-hermes-agent
     .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py tests/adapters/test_hermes_config_builder.py tests/adapters/test_hermes_streaming.py tests/adapters/test_hermes_health.py tests/e2e/test_hermes_e2e.py tests/e2e/test_hermes_checks.py -q

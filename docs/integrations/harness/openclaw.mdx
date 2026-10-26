@@ -40,13 +40,19 @@ Refer to the official OpenClaw [installation documentation](https://docs.opencla
 To install OpenClaw from an npm package, then install the NeMo Fabric runtime and adapter run the following commands.
 
 ```bash
-# Requires Node.js >=24.16.0 <25 or >=26.1.0, and npm 11.16+
-npm install --global openclaw@2026.9.4 --allow-scripts=openclaw
+# Requires Node.js >=24.22.1 <25 or >=26.12.1, and npm 11.16+
+npm install --global openclaw@2026.9.34 --allow-scripts=openclaw
 pip install "nemo-fabric[openclaw]"
 ```
 
 To install the adapter without the NeMo Fabric runtime, use
 `nemo-fabric-adapters-openclaw`. The adapter package does not install OpenClaw.
+
+### Upgrade a Gateway With Retained State
+
+When upgrading a caller-owned Gateway from OpenClaw 2026.9.4, stop the Gateway and back up its state directory. Run `openclaw doctor --fix` with the 2026.9.34 executable and the same `OPENCLAW_STATE_DIR` and `OPENCLAW_CONFIG_PATH`, then restart the Gateway. Version 2026.9.34 rejects the older session database until this migration completes. Keep the backup for rollback.
+
+Managed runtimes and NeMo Fabric-owned services use temporary state directories, so each new Gateway starts with fresh state.
 
 ## Configure the Adapter
 

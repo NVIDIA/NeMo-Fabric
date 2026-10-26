@@ -183,17 +183,21 @@ def test_openclaw_rejects_invalid_port_range(settings: dict[str, object]):
 
 
 def test_openclaw_accepts_supported_version():
-    adapter._validate_openclaw_version("OpenClaw 2026.9.4 (3a9d69d)")
+    assert (
+        adapter._validate_openclaw_version("OpenClaw 2026.9.34 (3a9d69d)")
+        == "2026.9.34"
+    )
 
 
-def test_openclaw_rejects_unsupported_version():
+@pytest.mark.parametrize("version", ["2026.9.4", "2026.9.5", "2026.10.7"])
+def test_openclaw_rejects_unsupported_version(version: str):
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
-        adapter._validate_openclaw_version("OpenClaw 2026.9.5 (abcdef0)")
+        adapter._validate_openclaw_version(f"OpenClaw {version} (abcdef0)")
 
     assert caught.value.code == "openclaw_unsupported_version"
     assert caught.value.metadata == {
-        "detected_version": "2026.9.5",
-        "supported_versions": ["2026.9.4"],
+        "detected_version": version,
+        "supported_versions": ["2026.9.34"],
     }
 
 
@@ -908,7 +912,7 @@ async def test_openclaw_prepared_service_supports_multiple_runtime_sessions(
     assert info is not None
     assert info["adapter_id"] == "nvidia.fabric.openclaw"
     assert info["service_type"] == "openclaw_gateway"
-    assert info["metadata"] == {"openclaw_version": "2026.9.4"}
+    assert info["metadata"] == {"openclaw_version": "2026.9.34"}
     assert "gateway_token" not in json.dumps(info)
     assert connection_path.parent.stat().st_mode & 0o777 == 0o700
     assert connection_path.stat().st_mode & 0o777 == 0o600
@@ -1015,7 +1019,7 @@ async def test_openclaw_prepared_service_supports_multiple_runtime_sessions(
             }
         )
         assert attached_info is not None
-        assert attached_info["metadata"] == {"openclaw_version": "2026.9.4"}
+        assert attached_info["metadata"] == {"openclaw_version": "2026.9.34"}
         await attached.stop()
         assert not stopped_capture.exists()
 

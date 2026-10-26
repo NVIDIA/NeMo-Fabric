@@ -149,12 +149,7 @@ that runs Hermes Agent:
 pip install "nemo-fabric[hermes-agent]"
 ```
 
-These packages do not install Hermes Agent. Released Hermes Agent v2026.9.24
-requires Relay 0.8.x and supports ordinary runs only with this adapter. Do not
-install the adapter's `relay` or `full` extra into that environment.
-Relay telemetry and streaming require the merged, unreleased upstream Hermes
-revision on Python 3.14. For local development, create its isolated environment
-from the repository root:
+These packages do not install Hermes Agent. Use [Hermes Agent v0.22.5](https://github.com/NousResearch/hermes-agent/releases/tag/v0.22.5) with Python 3.14. This release includes dependency security fixes absent from v2026.9.24 and supports ordinary runs, Relay 0.10 telemetry, and streaming. For local development, create the isolated environment from the repository root:
 
 ```bash
 just install-hermes-agent
