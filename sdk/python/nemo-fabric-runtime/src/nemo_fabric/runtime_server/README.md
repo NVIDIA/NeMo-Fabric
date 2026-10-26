@@ -41,6 +41,8 @@ Use `--request FILE` to forward a complete public `RunRequest`, including `reque
 
 Each completed check preserves a `fabric.check/v1alpha1` report in `result`, with `scope: "server"`, a server state, UTC observation and completion times, elapsed milliseconds, and one server observation. `runtime_id`, `requested_level`, and `runtime` are null. `changed` is always false. A passed check exits 0; failed or unknown health exits 1. Check errors have `effects: "none"`. Missing or invalid responses produce fixed transport errors with `result: null`.
 
+`fabric.check/v1alpha1` identifies the shared health request and report format so readers can reject formats they do not support. The identifier stays the same across SDK releases while the health format remains compatible. `fabric-agent-ctl` ships with `nemo-fabric-runtime`; the executable and all subcommands follow the SDK package release.
+
 Report timing covers the client call, including connection, response decoding, and validation. `completed_at` records client completion; each `observed_at` records when the server collected the evidence. Successful checks, confirmed failures, and timeouts use the same timing interval.
 
 Checks use one three-second deadline for connection, sending, and response decoding. Use `fabric-agent-ctl check --timeout-seconds 1` to select another positive, finite budget. A timeout returns `unknown/probe_timeout`, with an unobserved server observation. The public `Fabric.check(environment=..., request=CheckRequest(scope="server"))` method maps OpenShell server requests to this command.
