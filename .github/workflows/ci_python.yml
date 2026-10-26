@@ -84,6 +84,14 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
 
+      - name: Set up Node.js for reducer parity
+        if: matrix.platform == 'linux-amd64' && matrix.python-version == '3.12'
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: adapter-contract/typescript/package-lock.json
+
       - name: Cache cargo build
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -100,7 +108,15 @@ jobs:
         run: |
           uv sync --no-default-groups --group adapter-tests --group collector --group test --extra claude --extra codex --extra deepagents --extra mini-swe-agent --extra openclaw --extra openhands --extra remote-agent ${{ (matrix.python-version == '3.12' || matrix.python-version == '3.13') && '--extra nooa' || '' }} ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} --extra relay
 
+      - name: Build TypeScript contract for reducer parity
+        if: matrix.platform == 'linux-amd64' && matrix.python-version == '3.12'
+        run: |
+          just install-typescript-contract
+          npm run build --prefix adapter-contract/typescript
+
       - name: Run pytest
+        env:
+          FABRIC_REQUIRE_TYPESCRIPT_REDUCER_PARITY: ${{ matrix.platform == 'linux-amd64' && matrix.python-version == '3.12' && '1' || '0' }}
         run: |
           set -euo pipefail
           just --set no_uv true test-python
