@@ -1076,7 +1076,7 @@ pub struct RuntimeConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 1, max = u32::MAX))]
     pub max_turns: Option<u32>,
-    /// Opt-in per-invocation run record. Core-only; never sent to adapters.
+    /// Opt-in local request journal. Core-only; never sent to adapters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record: Option<RecordConfig>,
     /// Additive normalized runtime fields.
@@ -1091,14 +1091,15 @@ impl RuntimeConfig {
     }
 }
 
-/// Per-invocation run record settings.
+/// Opt-in local request journal settings.
 ///
-/// When enabled, core appends a start line and an end line for each local
-/// invocation to `<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`.
+/// When enabled, core appends lifecycle events and a terminal summary for each
+/// request to `<artifact root>/.fabric/requests/<recording_id>/run.jsonl`.
+/// The journal can contain sensitive result data and error messages.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RecordConfig {
-    /// Whether to write a run record for each invocation. Requires an
+    /// Whether to write a journal for each request. Requires an
     /// artifact root, the `local` environment provider, and a `process` or
     /// `python` adapter.
     pub enabled: bool,

@@ -483,9 +483,9 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 ## <kbd>class</kbd> `RecordConfig`
 
-Opt-in per-invocation run record.
+Opt-in local request journal.
 
-When ``enabled`` is true, NeMo Fabric writes ``<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`` for each invocation. It requires an artifact root, the ``local`` environment provider, and a ``process`` or ``python`` adapter.
+When ``enabled`` is true, NeMo Fabric appends lifecycle events and a terminal summary to ``<artifact root>/.fabric/requests/<recording_id>/run.jsonl`` for each request. The journal can contain sensitive result data and error messages. It requires an artifact root, the ``local`` environment provider, and a ``process`` or ``python`` adapter.
 
 
 

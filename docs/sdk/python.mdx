@@ -1490,9 +1490,9 @@ backpressure. The consumer decides whether to wait, retry, scale out, or fail.
 - Review the examples in the GitHub repo [`examples/`](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples).
 
 
-## Opt-in run recording
+## Opt-in Run Recording
 
-Set `runtime.record.enabled` and a host-side artifact root to save local runs:
+Set `runtime.record.enabled` and a host-side artifact root to retain evidence from local runs:
 
 ```python
 from nemo_fabric import RecordConfig
@@ -1507,61 +1507,44 @@ The CLI accepts the same settings:
 nemo-fabric run --preset scripted --input "Inspect the example" --record --artifacts ./runs
 ```
 
-Recording supports the local environment provider with Python or process adapters.
-It is disabled when the record setting is omitted. Enabling it without an artifact
-root or with an unsupported execution location fails validation.
+Recording supports the local environment provider with Python or process adapters. It is disabled by default. Enabling it without an artifact root or at an unsupported execution location fails validation. Recording requires neither a benchmark framework nor NeMo Relay.
 
-Each invocation writes bounded start/end lines to
-`.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`. The start line retains
-identities and configured model names. It omits prompts, output, credentials,
-exception messages and arbitrary adapter metadata. Allowlisted context identity
-keys retain string or integer values; other context values are omitted.
+### One Run Journal
 
-The sibling `run-result.json` contains the complete returned result and can
-contain sensitive output. One-shot results are finalized after runtime shutdown;
-persistent-runtime results describe the invocation before a later shutdown.
-An invocation end record never establishes the outcome of a later shutdown.
-Saved results are created exclusively and never replace an existing file or
-symlink. Recording failures add diagnostics without retrying paid work or
-replacing the execution outcome. No result file is promised when execution
-raises before returning a result.
+Each recorded request writes one journal at `<artifact-root>/.fabric/requests/<recording_id>/run.jsonl`. The recording ID identifies this journal; it is separate from the caller's request ID. Reusing a request ID does not combine separate requests into one file.
 
-The start/end record's elapsed time covers its invocation window, including start
-record I/O and core preparation. It excludes end-record writes, full-result
-persistence and one-shot runtime startup/shutdown. It is not pure model time or
-the caller's task schedule interval. Record I/O is synchronous and best effort.
-Each record line is limited to 64 KiB; oversized lines stop that record without
-replacing the available execution result.
+JSONL means one JSON object per line. New events are appended during execution. Each record has a schema and version, recording and request identities, an append sequence, a full UTC timestamp, monotonic elapsed seconds, a source, a kind and a typed payload. Runtime and invocation IDs appear after those identities are known. Nested objects remain structured data inside each line.
 
-### Inspect a saved run
+The final record retains the full returned result or a typed error when no result was returned. A one-shot request finishes after its owned runtime shutdown. An invocation on a persistent runtime finishes before any later shutdown; its final record does not establish that later outcome. Configuration resolution occurs before request recording begins.
+
+The journal can contain output and other sensitive result data. Treat it with the same access controls as the returned result. Native harness artifacts and task work products remain separate and can be referenced by the result. Native resource collection continues to publish its own sample and summary artifacts separately from invocation recording.
+
+Recording appends to an exclusively created private file and never replaces an existing file or symlink. Writes are synchronous and best effort. A storage failure stops further writes and produces a diagnostic without retrying model work or replacing the execution outcome. A process crash can leave a journal with no final summary. That establishes retained evidence, not completion or zero consumption.
+
+### Inspect a Saved Run
+
+Use the saved journal path with the inspector:
 
 ```bash
-python -m nemo_fabric.reporting runs/.fabric/<runtime_id>/<invocation_id>/run-result.json
-python -m nemo_fabric.reporting runs/.fabric/<runtime_id>/<invocation_id>/run-result.json --details
-python -m nemo_fabric.reporting runs/.fabric/<runtime_id>/<invocation_id>/run-result.json --json
+python -m nemo_fabric.reporting "runs/.fabric/requests/<recording_id>/run.jsonl"
+python -m nemo_fabric.reporting "runs/.fabric/requests/<recording_id>/run.jsonl" --details
+python -m nemo_fabric.reporting "runs/.fabric/requests/<recording_id>/run.jsonl" --json
 ```
 
-Replace the placeholder IDs with the returned `run_result` artifact path. The
-default overview separates execution, scoped elapsed time, complete token totals,
-observed subtotals, cache breakdown and each cost amount. It names accounting
-gaps and exposes diagnostic paths. Estimates retain their pricing basis and are
-not invoices. An execution failure can retain complete usage; successful
-execution does not establish task correctness or complete accounting.
+Replace `<recording_id>` with the recorded directory name or use the returned `run_log` artifact path. The default view shows harness and model identities, execution status, start and finish times, and a two-column measurement table. Durations use seconds with three decimal places. The readable view shows the UTC date and timezone once when both times fall on the same date; stored timestamps always include the full date and UTC timezone.
 
-Use `--details` for the final resource snapshot and pricing evidence. Resource
-snapshots describe the runtime process tree, not inference GPU usage. The CPU
-counter is cumulative since host start; endpoint RSS is not a peak. Rounded
-currency and human-readable units affect text only. JSON retains exact values,
-and positive amounts never display as zero.
+Token values describe the invocation's complete counts unless marked `recorded; total unknown`. `Unavailable` is not zero. Cache-read and cache-write tokens are included in input and must not be added again. Execution failure can retain complete usage; execution success does not establish task correctness or complete accounting.
 
-The inspector accepts an explicit `run-record.jsonl` to show the invocation
-boundary when a full result is unavailable. It retains complete lines before a
-truncated tail and rejects duplicate or conflicting lines. The bounded record preserves validated normalized accounting, including complete
-and observed counts, when present in the invocation result. Legacy numeric usage
-remains unverified diagnostics. Missing evidence never becomes zero.
+Provider-reported cost and catalog estimates remain separate. An estimate is not an invoice. A partial estimate is labeled `recorded; full estimate unknown`. Text formatting does not change stored values, and a positive cost never displays as zero.
 
-A full result remains authoritative over its matching sibling record. The reader
-checks identities, skips sibling symlinks, and never opens referenced logs or
-telemetry payloads or uses them to fill missing counts. Each inspected file is
-limited to 16 MiB; larger saved results remain unchanged and can be inspected
-separately. Recording requires no benchmark framework, task labels or Relay.
+Use `--details` for a bounded execution history, relevant diagnostic messages, resource scope, pricing evidence and artifact references. Individual resource samples do not flood the timeline. CPU and memory describe the measured agent-side processes, not remote model-server resources. Endpoint memory is not a peak; a sampled peak is the highest collected reading and can miss shorter spikes. Availability depends on the evidence retained for that request.
+
+`--json` prints the inspector's structured summary to stdout. It does not create another file or copy the entire journal. The terminal record retains the returned result, while earlier records retain the execution history. The inspector does not open referenced artifacts or use logs and traces to fill missing counts.
+
+### Interrupted and Older Records
+
+The reader accepts the legacy saved-result and invocation-record formats. A valid final result remains authoritative; unknown final values are never filled from earlier events. An unfinished trailing line can be ignored. Malformed complete records, changed identities and duplicate terminal summaries are errors.
+
+The reader processes journals incrementally rather than loading the entire event stream. It limits retained history and rejects a terminal record larger than its supported 16 MiB record size with an explicit error. The saved evidence is not silently truncated or modified. Diagnostic records have a separate 64 KiB limit. Structured invocation evidence and terminal results are not discarded by that diagnostic limit.
+
+The inspector retains up to 1 MiB of display history, with a 64 KiB reserve for lifecycle milestones. It marks shortened fields and reports omitted entries. Unknown event kinds retain their envelope in this view without copying their payload. The saved journal and final result remain unchanged.

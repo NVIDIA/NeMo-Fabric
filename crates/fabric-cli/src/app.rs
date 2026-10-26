@@ -87,10 +87,10 @@ enum ExampleCommand {
     },
 }
 
-/// Config switches that turn on the run record.
+/// Config switches that enable the request journal.
 #[derive(Debug, Default, Args)]
 struct RecordSwitches {
-    /// Write a run record for each invocation (sets `runtime.record.enabled`).
+    /// Save request events and the final result or error in `run.jsonl`.
     /// Needs `--artifacts` unless the example sets an artifact root.
     #[arg(long)]
     record: bool,

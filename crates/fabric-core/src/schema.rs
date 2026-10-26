@@ -73,7 +73,7 @@ pub enum SchemaName {
     FabricEvent,
     /// Runtime resource snapshot schema.
     RuntimeResourceSnapshot,
-    /// One bounded start/end invocation record line.
+    /// One typed event or terminal summary in a recorded request journal.
     RunRecordLine,
 }
 
