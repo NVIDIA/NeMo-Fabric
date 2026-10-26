@@ -24,6 +24,8 @@ navigation:
     contents:
       - page: Python SDK
         path: ./sdk/python.mdx
+      - page: Resource Usage and Stats
+        path: ./sdk/system-stats.mdx
   - section: Adapter Contract
     contents:
       - page: Overview
