@@ -47,7 +47,7 @@ is resolved from the NeMo Fabric base directory.
 
 ### Upgrade a Gateway With Retained State
 
-When upgrading a caller-owned Gateway from OpenClaw 2026.9.4, stop the Gateway and back up its state directory before starting 2026.9.34. Use the new executable with the same `OPENCLAW_STATE_DIR` and `OPENCLAW_CONFIG_PATH` to run `openclaw doctor --fix`, then restart the Gateway. Version 2026.9.34 rejects the older session database until this migration completes. Keep the backup for rollback.
+When upgrading a caller-owned Gateway from OpenClaw 2026.9.4, stop the Gateway and run `openclaw backup create --verify` with the Gateway's existing `OPENCLAW_STATE_DIR` and `OPENCLAW_CONFIG_PATH` before upgrading. The backup must include the active config, its include files, and all configured agent directories, including paths outside the state directory. Protect the archive because it can contain credentials. Use the 2026.9.34 executable with the same path settings to run `openclaw doctor --fix`, then restart the Gateway. Version 2026.9.34 rejects the older session database until this migration completes. Keep the verified backup for rollback.
 
 Managed runtimes and NeMo Fabric-owned services use temporary state directories, so each new Gateway starts with fresh state.
 
