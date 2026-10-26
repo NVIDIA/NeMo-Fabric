@@ -16,8 +16,11 @@ import httpx
 from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import provenance
 from nemo_fabric_adapters.common import openai_chat
 from nemo_fabric_adapters.common import utils as common_utils
+
+_PACKAGE_DISTRIBUTION = "nemo-fabric-adapters-remote-agent"
 
 
 DEFAULT_API_TYPE = "openai-responses"
@@ -127,9 +130,11 @@ class RemoteAgentRuntime:
         self._api_type = DEFAULT_API_TYPE
         self._messages: list[dict[str, str]] = []
         self._relay_streaming = False
+        self._model_roles: list[str] = []
 
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
+        self._model_roles = list(config.models)
         context = contract.RuntimeContext.from_mapping(payload["runtime_context"])
         settings = config.harness.settings if config.harness is not None else {}
         self._api_type = settings.get("api_type", DEFAULT_API_TYPE)
@@ -207,6 +212,19 @@ class RemoteAgentRuntime:
         self._runtime_id = context.runtime_id
 
     async def invoke(
+        self,
+        request: contract.AgentRunRequest,
+        context: contract.RuntimeContext,
+    ) -> contract.AgentRunResult:
+        """Run one invocation and report this adapter's package version."""
+
+        result = await self._invoke(request, context)
+        result.extensions[provenance.VERSIONS_REPORT_KEY] = (
+            provenance.package_version_report(_PACKAGE_DISTRIBUTION, self._model_roles)
+        )
+        return result
+
+    async def _invoke(
         self,
         request: contract.AgentRunRequest,
         context: contract.RuntimeContext,
