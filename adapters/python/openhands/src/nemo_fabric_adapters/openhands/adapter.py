@@ -17,8 +17,11 @@ from typing import NamedTuple
 from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import provenance
 from nemo_fabric_adapters.common import utils as common_utils
 from nemo_fabric_adapters.openhands.usage import CompletionReports
+
+_PACKAGE_DISTRIBUTION = "nemo-fabric-adapters-openhands"
 
 HARNESS = "OpenHands"
 DEFAULT_MAX_ITERATIONS = 500
@@ -360,9 +363,11 @@ class OpenHandsRuntime:
         self._profile_store_temp: tempfile.TemporaryDirectory[str] | None = None
         self._runtime_id: str | None = None
         self._completion_reports: CompletionReports | None = None
+        self._model_roles: list[str] = []
 
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
+        self._model_roles = list(config.models)
         context = contract.RuntimeContext.from_mapping(payload.get("runtime_context"))
         base_dir = common_utils.base_dir(payload)
         instruction = common_instructions.system_instruction(
@@ -443,6 +448,19 @@ class OpenHandsRuntime:
         self._runtime_id = context.runtime_id
 
     async def invoke(
+        self,
+        request: contract.AgentRunRequest,
+        context: contract.RuntimeContext,
+    ) -> contract.AgentRunResult:
+        """Run one invocation and report this adapter's package version."""
+
+        result = await self._invoke(request, context)
+        result.extensions[provenance.VERSIONS_REPORT_KEY] = (
+            provenance.package_version_report(_PACKAGE_DISTRIBUTION, self._model_roles)
+        )
+        return result
+
+    async def _invoke(
         self,
         request: contract.AgentRunRequest,
         context: contract.RuntimeContext,

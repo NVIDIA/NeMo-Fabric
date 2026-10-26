@@ -97,7 +97,7 @@ if _HARBOR_IMPORT_ERROR is not None:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             raise ModuleNotFoundError(
                 "nemo_fabric.integrations.harbor requires the Harbor optional "
-                "dependency and a compatible Harbor release (0.23.x) on Python "
+                "dependency and a compatible Harbor release (0.24.x) on Python "
                 "3.12 or later; install nemo-fabric[harbor] on a supported interpreter"
             ) from _HARBOR_IMPORT_ERROR
 
@@ -286,8 +286,8 @@ else:
         reward calculation. NeMo Fabric owns the selected agent harness invocation.
         """
 
-        # Current Harbor main gates task skills and MCP servers on these fields;
-        # the published 0.23.0 capabilities model does not define them yet.
+        # Harbor gates task skills and MCP servers on these fields; __init__ sets
+        # them from the selected adapter's metadata.
         capabilities = AgentCapabilities()
         options_model = FabricAgentOptions
         options: FabricAgentOptions

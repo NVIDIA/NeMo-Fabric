@@ -29,6 +29,7 @@ OPENCODE_PACKAGE = "nemo-fabric-adapters-opencode"
 QWEN_PACKAGE = "nemo-fabric-adapters-qwen"
 KILO_PACKAGE = "nemo-fabric-adapters-kilo"
 KIRO_PACKAGE = "nemo-fabric-adapters-kiro"
+STRANDS_PACKAGE = "nemo-fabric-adapters-strands"
 
 
 def _read_json_object(path: Path) -> dict[str, Any]:
@@ -84,6 +85,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     qwen_package_path = root / ADAPTERS_DIRECTORY / "qwen" / "package.json"
     kilo_package_path = root / ADAPTERS_DIRECTORY / "kilo" / "package.json"
     kiro_package_path = root / ADAPTERS_DIRECTORY / "kiro" / "package.json"
+    strands_package_path = root / ADAPTERS_DIRECTORY / "strands" / "package.json"
 
     contract_package = _read_json_object(contract_package_path)
     contract_lock = _read_json_object(contract_lock_path)
@@ -97,6 +99,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     qwen_package = _read_json_object(qwen_package_path)
     kilo_package = _read_json_object(kilo_package_path)
     kiro_package = _read_json_object(kiro_package_path)
+    strands_package = _read_json_object(strands_package_path)
 
     contract_lock_packages = _require_object(
         contract_lock.get("packages"), f"a packages object in {contract_lock_path}"
@@ -145,6 +148,10 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     adapters_lock_kiro = _require_object(
         adapters_lock_packages.get("kiro"),
         f"{KIRO_PACKAGE} metadata in {adapters_lock_path}",
+    )
+    adapters_lock_strands = _require_object(
+        adapters_lock_packages.get("strands"),
+        f"{STRANDS_PACKAGE} metadata in {adapters_lock_path}",
     )
 
     _require_named_package(
@@ -200,8 +207,12 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         adapters_lock_kilo, KILO_PACKAGE, f"kilo entry of {adapters_lock_path}"
     )
     _require_named_package(kiro_package, KIRO_PACKAGE, str(kiro_package_path))
+    _require_named_package(strands_package, STRANDS_PACKAGE, str(strands_package_path))
     _require_named_package(
         adapters_lock_kiro, KIRO_PACKAGE, f"kiro entry of {adapters_lock_path}"
+    )
+    _require_named_package(
+        adapters_lock_strands, STRANDS_PACKAGE, f"strands entry of {adapters_lock_path}"
     )
 
     source_values = {
@@ -219,6 +230,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
             (qwen_package_path, qwen_package),
             (kilo_package_path, kilo_package),
             (kiro_package_path, kiro_package),
+            (strands_package_path, strands_package),
         )
     }
 
@@ -245,7 +257,9 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         kilo_package,
         adapters_lock_kilo,
         kiro_package,
+        strands_package,
         adapters_lock_kiro,
+        adapters_lock_strands,
     ):
         package["version"] = version
 
@@ -265,7 +279,9 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         (kilo_package, str(kilo_package_path)),
         (adapters_lock_kilo, f"kilo entry of {adapters_lock_path}"),
         (kiro_package, str(kiro_package_path)),
+        (strands_package, str(strands_package_path)),
         (adapters_lock_kiro, f"kiro entry of {adapters_lock_path}"),
+        (adapters_lock_strands, f"strands entry of {adapters_lock_path}"),
     ):
         _set_exact_dependency(package, CONTRACT_PACKAGE, version, description)
     for package, description in (
@@ -282,7 +298,9 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         (kilo_package, str(kilo_package_path)),
         (adapters_lock_kilo, f"kilo entry of {adapters_lock_path}"),
         (kiro_package, str(kiro_package_path)),
+        (strands_package, str(strands_package_path)),
         (adapters_lock_kiro, f"kiro entry of {adapters_lock_path}"),
+        (adapters_lock_strands, f"strands entry of {adapters_lock_path}"),
     ):
         _set_exact_dependency(package, COMMON_PACKAGE, version, description)
 
@@ -299,6 +317,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         qwen_package_path: qwen_package,
         kilo_package_path: kilo_package,
         kiro_package_path: kiro_package,
+        strands_package_path: strands_package,
     }
     changed_paths = [
         path
