@@ -48,9 +48,9 @@ async def gateway_health_fixture():
 @pytest.mark.parametrize(
     ("level", "path", "source"),
     [
-        ("live", "/healthz", "fabric.adapter.openclaw.gateway"),
-        ("active", "/v1/models", "fabric.adapter.openclaw.interface"),
-        ("ready", "/readyz", "fabric.adapter.openclaw.readiness"),
+        ("live", "/healthz", "fabric.adapter.liveness"),
+        ("active", "/v1/models", "fabric.adapter.interface"),
+        ("ready", "/readyz", "fabric.adapter.readiness"),
     ],
 )
 async def test_gateway_health_uses_native_read_only_evidence(
@@ -85,7 +85,7 @@ async def test_gateway_readiness_includes_native_channel_failures(gateway_health
 
     assert result["outcome"] == "failed"
     assert result["reason_code"] == "health_failed"
-    assert result["source"] == "fabric.adapter.openclaw.readiness"
+    assert result["source"] == "fabric.adapter.readiness"
     assert result["observed_at"] is not None
     assert [request.url.path for request in requests] == [
         "/healthz",

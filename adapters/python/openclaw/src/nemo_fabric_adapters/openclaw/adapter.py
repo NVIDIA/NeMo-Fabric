@@ -817,9 +817,9 @@ class OpenClawRuntime:
             "observed_at": None,
         }
         endpoints = {
-            "live": ("/healthz", "fabric.adapter.openclaw.gateway"),
-            "active": ("/v1/models", "fabric.adapter.openclaw.interface"),
-            "ready": ("/readyz", "fabric.adapter.openclaw.readiness"),
+            "live": ("/healthz", "fabric.adapter.liveness"),
+            "active": ("/v1/models", "fabric.adapter.interface"),
+            "ready": ("/readyz", "fabric.adapter.readiness"),
         }
         if level not in endpoints:
             return {

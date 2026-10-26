@@ -175,7 +175,6 @@ fn report_required_fields(schema: &mut Schema) {
     }
 }
 
-
 fn adapter_check_result_schema(schema: &mut Schema) {
     required_fields(schema);
     let properties = schema.get("properties").expect("result properties").clone();
@@ -1370,9 +1369,9 @@ mod tests {
     fn gateway_passed(level: CheckLevel) -> serde_json::Value {
         serde_json::json!({"outcome": "passed", "reason_code": null, "activity": "unknown",
             "source": match level {
-                CheckLevel::Live => "fabric.adapter.openclaw.gateway",
-                CheckLevel::Active => "fabric.adapter.openclaw.interface",
-                _ => "fabric.adapter.openclaw.readiness",
+                CheckLevel::Live => "fabric.adapter.liveness",
+                CheckLevel::Active => "fabric.adapter.interface",
+                _ => "fabric.adapter.readiness",
             }, "observed_at": utc_now()})
     }
 

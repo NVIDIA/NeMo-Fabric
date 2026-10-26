@@ -27,7 +27,7 @@ async def health_channel_fixture(tmp_path):
             "outcome": "passed",
             "reason_code": None,
             "activity": "unknown",
-            "source": "fabric.adapter.openclaw.gateway",
+            "source": "fabric.adapter.liveness",
             "observed_at": datetime.now(timezone.utc).isoformat(),
         }
     )
@@ -237,7 +237,7 @@ async def test_health_deadline_cancels_only_the_probe(health_channel, health_exc
             "outcome": "passed",
             "reason_code": None,
             "activity": "unknown",
-            "source": "fabric.adapter.openclaw.gateway",
+            "source": "fabric.adapter.liveness",
             "observed_at": None,
         },
         RuntimeError("TEST_ONLY_PRIVATE"),
@@ -356,7 +356,7 @@ def health_runtime_fixture():
             "outcome": "passed",
             "reason_code": None,
             "activity": "unknown",
-            "source": "fabric.adapter.openclaw.gateway",
+            "source": "fabric.adapter.liveness",
             "observed_at": datetime.now(timezone.utc).isoformat(),
         }
     )

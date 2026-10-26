@@ -249,12 +249,6 @@ class _Report(_StrictModel):
                 raise ValueError("invalid probe order")
             if any(check.outcome != "passed" for check in self.checks[:-1]):
                 raise ValueError("later checks ran after nonpassing evidence")
-            prefix = "fabric.adapter.openclaw." if service else "fabric.adapter.pi."
-            if any(
-                check.outcome == "passed" and not check.source.startswith(prefix)
-                for check in self.checks
-            ):
-                raise ValueError("evidence does not match the target scope")
             if self.outcome == "passed" and (
                 len(self.checks) != len(levels)
                 or not service

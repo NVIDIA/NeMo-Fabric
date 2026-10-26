@@ -56,9 +56,9 @@ def service_check_report_fixture():
                 "observed_at": now,
             }
             for level, source in [
-                ("live", "fabric.adapter.openclaw.gateway"),
-                ("active", "fabric.adapter.openclaw.interface"),
-                ("ready", "fabric.adapter.openclaw.readiness"),
+                ("live", "fabric.adapter.liveness"),
+                ("active", "fabric.adapter.interface"),
+                ("ready", "fabric.adapter.readiness"),
             ]
         ],
     }
