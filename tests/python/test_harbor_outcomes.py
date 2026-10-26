@@ -379,7 +379,10 @@ async def test_bridge_retains_runner_failure_record(bridge, code, exception):
 
 
 @pytest.mark.parametrize("runner_failure", [False, True])
-async def test_inner_deadline_enters_harbor_agent_timeout_path(bridge, runner_failure):
+async def test_inner_deadline_enters_harbor_agent_timeout_path(
+    bridge, runner_failure, tmp_path
+):
+    from harbor.models.trial.paths import TrialPaths
     from harbor.models.trial.result import TrialResult
     from harbor.trial.errors import AgentTimeoutError
     from harbor.trial.trial import Trial
@@ -402,6 +405,7 @@ async def test_inner_deadline_enters_harbor_agent_timeout_path(bridge, runner_fa
     mock_trial.agent = agent
     mock_trial.agent_environment = environment
     mock_trial.user_agent = None
+    mock_trial.paths = TrialPaths(trial_dir=tmp_path)
     mock_trial._now.return_value = datetime.now(timezone.utc)
     mock_trial._phase_network_policy = MagicMock(return_value=AsyncExitStack())
     mock_trial._log_context.return_value = nullcontext()

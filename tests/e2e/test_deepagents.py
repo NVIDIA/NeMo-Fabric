@@ -9,6 +9,7 @@ RUN_FABRIC_DEEPAGENTS_INTEGRATION=1 NVIDIA_API_KEY=... \
 
 from __future__ import annotations
 
+import importlib.metadata
 import importlib.util
 import json
 import os
@@ -53,6 +54,25 @@ async def test_deepagents_persistent_host_with_mock_model(api_server, tmp_path):
     assert first["output"]["resumed"] is False, results
     assert second["output"]["resumed"] is True, results
     assert "user_count=2" in second["output"]["response"], results
+    # Core read the adapter's versions report into what_ran.
+    for result in (first, second):
+        assert result.what_ran["harness"] == {
+            "name": {**_reported("deepagents"), "method": "adapter_report"},
+            "version": _reported(importlib.metadata.version("deepagents")),
+        }, results
+        assert result.what_ran["adapter"]["package_version"] == _reported(
+            importlib.metadata.version("nemo-fabric-adapters-deepagents")
+        )
+        assert "adapter" not in result.metadata
+
+
+def _reported(value: str) -> dict[str, str]:
+    return {
+        "value": value,
+        "source": "reported",
+        "collected_by": "adapter",
+        "method": "package_metadata",
+    }
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
