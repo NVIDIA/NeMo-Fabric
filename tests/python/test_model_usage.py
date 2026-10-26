@@ -535,3 +535,51 @@ def test_pricing_basis_optional_user_catalog_attribute_preserves_source_presence
     parsed = PricingBasis.from_mapping(source)
     assert parsed.user_catalog_sha256 == user_catalog.get("user_catalog_sha256")
     assert parsed.to_mapping() == source
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "input_tokens",
+        "cached_input_tokens",
+        "cache_write_input_tokens",
+        "output_tokens",
+        "total_tokens",
+    ],
+)
+@pytest.mark.parametrize("observed", [False, True])
+def test_exhaustive_empty_model_list_rejects_positive_tokens(field, observed):
+    usage = {"models_exhaustive": True, "models": [], "gaps": [], "cost": {}}
+    values = {field: 1}
+    if field == "total_tokens":
+        values.update(input_tokens=1, output_tokens=0)
+    if observed:
+        usage["observed"] = values
+    else:
+        usage.update(values)
+    with pytest.raises(FabricConfigError, match="exhaustive empty model list"):
+        ModelUsage.from_mapping(usage)
+
+
+@pytest.mark.parametrize("value", [None, 0])
+def test_exhaustive_empty_model_list_preserves_unknown_and_zero_work(value):
+    fields = [
+        "input_tokens",
+        "cached_input_tokens",
+        "cache_write_input_tokens",
+        "output_tokens",
+        "total_tokens",
+    ]
+    usage = {
+        "models_exhaustive": True,
+        "models": [],
+        "gaps": [],
+        "cost": {},
+        **dict.fromkeys(fields, value),
+    }
+    usage["observed"] = dict.fromkeys(fields, value)
+    parsed = ModelUsage.from_mapping(usage)
+    assert parsed.models_exhaustive is True
+    assert parsed.models == ()
+    assert parsed.input_tokens == value
+    assert parsed.observed.input_tokens == value
