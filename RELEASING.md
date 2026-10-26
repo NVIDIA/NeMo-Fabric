@@ -32,7 +32,7 @@ package-specific tag pushes:
 | Ecosystem | Published Surface |
 |---|---|
 | crates.io | `nemo-fabric-core`, `nemo-fabric-cli` |
-| npm | `nemo-fabric-adapter-contract`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-droid`, `nemo-fabric-adapters-pi`, `nemo-fabric-adapters-opencode`, `nemo-fabric-adapters-qwen`, `nemo-fabric-adapters-kiro` |
+| npm | `nemo-fabric-adapter-contract`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-droid`, `nemo-fabric-adapters-pi`, `nemo-fabric-adapters-opencode`, `nemo-fabric-adapters-qwen`, `nemo-fabric-adapters-kiro`, `nemo-fabric-adapters-strands` |
 | GitHub Actions | `nemo-fabric`, `nemo-fabric-runtime`, `nemo-fabric-collector`, `nemo-fabric-adapter-catalog`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-claude`, `nemo-fabric-adapters-codex`, `nemo-fabric-adapters-deepagents`, `nemo-fabric-adapters-hermes`, and `nemo-fabric-adapters-nooa` wheel artifacts |
 | Fern | The documentation site |
 
@@ -544,7 +544,8 @@ After the release is live, verify:
        nemo-fabric-adapters-pi \
        nemo-fabric-adapters-opencode \
        nemo-fabric-adapters-qwen \
-       nemo-fabric-adapters-kiro; do
+       nemo-fabric-adapters-kiro \
+       nemo-fabric-adapters-strands; do
        npm view "${package}@<release-version>" version \
          --registry="$npmjs_registry"
        npm view "$package" dist-tags --registry="$npmjs_registry"
@@ -561,7 +562,8 @@ After the release is live, verify:
        "nemo-fabric-adapters-pi@<release-version>" \
        "nemo-fabric-adapters-opencode@<release-version>" \
        "nemo-fabric-adapters-qwen@<release-version>" \
-       "nemo-fabric-adapters-kiro@<release-version>"
+       "nemo-fabric-adapters-kiro@<release-version>" \
+       "nemo-fabric-adapters-strands@<release-version>"
      npm audit signatures --registry="$npmjs_registry"
    )
    ```

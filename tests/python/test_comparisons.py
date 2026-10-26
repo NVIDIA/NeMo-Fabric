@@ -61,6 +61,74 @@ def report(tmp_path, attempts, complete=True):
     return summarize_attempts(attempts, root=tmp_path, inventory_complete=complete)
 
 
+def _write_run_log(
+    path,
+    *,
+    result=None,
+    invocation=None,
+    error=None,
+    terminal=True,
+    runtime_id="runtime",
+):
+    rows = []
+
+    def append(kind, seconds, data, *, identities=False):
+        rows.append(
+            {
+                "schema": "nemo.fabric.run",
+                "version": "v1alpha1",
+                "recording_id": "recording",
+                "request_id": "request",
+                "sequence": len(rows),
+                "time": f"2026-10-25T19:01:{10 + seconds:02}.000Z",
+                "elapsed_seconds": seconds,
+                "source": "fabric",
+                "kind": kind,
+                "data": data,
+                **(
+                    {"runtime_id": runtime_id, "invocation_id": "invocation"}
+                    if identities
+                    else {}
+                ),
+            }
+        )
+
+    append(
+        "request_started",
+        0,
+        {"harness": "example", "models": {}, "outcome_scope": "one_shot_lifecycle"},
+    )
+    if invocation is not None:
+        append(
+            "invocation_finished",
+            2,
+            {
+                key: invocation[key]
+                for key in ("status", "model_usage")
+                if key in invocation
+            },
+            identities=True,
+        )
+    if terminal:
+        append(
+            "summary",
+            3,
+            {
+                "outcome_scope": "one_shot_lifecycle",
+                "result": result,
+                "error": error,
+                "request_started_at": rows[0]["time"],
+                "request_finished_at": "2026-10-25T19:01:13.000Z",
+                "elapsed_seconds": 3,
+            },
+            identities=result is not None
+            or invocation is not None
+            or runtime_id != "runtime",
+        )
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    return path
+
+
 def test_custom_task_needs_no_evaluator_or_harbor(tmp_path, attempt):
     summary = report(tmp_path, [attempt])
     group = summary["configurations"]["baseline"]
@@ -289,16 +357,11 @@ def test_labels_cannot_inject_terminal_controls_or_new_rows(tmp_path, attempt):
 
 
 def test_outer_request_evidence_remains_no_result_not_zero(tmp_path, attempt):
-    document = {
-        "schema": "nemo.fabric.request_record",
-        "version": "v1alpha1",
-        "kind": "end",
-        "state": "no_result",
-        "stage": "start",
-        "request_id": "request",
-        "time": "2026-10-21T00:00:00Z",
-    }
-    (tmp_path / "result.json").write_text(json.dumps(document))
+    _write_run_log(
+        tmp_path / "run.jsonl",
+        error={"stage": "start", "code": "startup_failed", "retryable": False},
+    )
+    attempt["requests"][0]["evidence"] = "run.jsonl"
     row = report(tmp_path, [attempt])["attempts"][0]
     assert row["requests"][0]["state"] == "no_result"
     assert row["usage"]["dimensions"]["input_tokens"]["observed_sum"] is None
@@ -505,31 +568,18 @@ def test_record_fallback_checks_canonical_identity_and_never_promotes_legacy_cou
     tmp_path, attempt, result, record, condition
 ):
     request = attempt["requests"][0]
-    request.update(evidence="request-end.json", record="fallback.jsonl")
+    request.update(evidence="request-end.jsonl", record="fallback.jsonl")
     if condition == "wrong_runtime":
-        outer = {
-            "schema": "nemo.fabric.request_record",
-            "version": "v1alpha1",
-            "kind": "end",
-            "state": "returned",
-            "time": "2026-10-21T00:00:00Z",
-            "request_id": "request",
-            "runtime_id": "different",
-            "invocation_id": "invocation",
-            "result": "result.json",
-        }
-        (tmp_path / "request-end.json").write_text(json.dumps(outer))
+        _write_run_log(
+            tmp_path / "request-end.jsonl",
+            runtime_id="different",
+            error={"stage": "invoke", "code": "transport_failed", "retryable": False},
+        )
     elif condition == "startup_conflict":
-        outer = {
-            "schema": "nemo.fabric.request_record",
-            "version": "v1alpha1",
-            "kind": "end",
-            "state": "no_result",
-            "stage": "start",
-            "time": "2026-10-21T00:00:00Z",
-            "request_id": "request",
-        }
-        (tmp_path / "request-end.json").write_text(json.dumps(outer))
+        _write_run_log(
+            tmp_path / "request-end.jsonl",
+            error={"stage": "start", "code": "startup_failed", "retryable": False},
+        )
     else:
         lines = [json.loads(line) for line in record.read_text().splitlines()]
         if condition == "wrong_request":
@@ -697,11 +747,13 @@ def test_report_shows_independent_metric_and_evaluation_coverage(
     (tmp_path / "result.json").write_text(json.dumps(result))
     attempt["evaluation"] = {"status": "passed", "evaluator": "tests", "version": "v1"}
     text = render_comparison_summary(report(tmp_path, [attempt]))
-    assert "50 observed, incomplete (0/1 complete)" in text
+    assert "50 recorded; total unknown (0/1 complete)" in text
     assert "2 (1/1 complete)" in text
-    assert "unavailable (0/1 complete)" in text
+    assert "Unavailable (0/1 complete)" in text
     assert "1/1 passed; 1/1 evaluated" in text
-    assert "Total tokens" in text
+    assert "Total tokens" in render_comparison_summary(
+        report(tmp_path, [attempt]), details=True
+    )
 
 
 def test_inventory_warnings_precede_table_and_missing_results_remain_visible(
@@ -729,7 +781,7 @@ def test_timing_uses_caller_attempt_median_and_rejects_mixed_scopes(
     other = {**attempt, "attempt_id": "other", "elapsed_ms": 10000, "requests": []}
     summary = report(tmp_path, [attempt, other])
     text = render_comparison_summary(summary)
-    assert "8 s median (2/2 timed)" in text
+    assert "8.000 s median (2/2 timed)" in text
     assert "caller_attempt" in text
     assert "16 s" not in text
     other["elapsed_scope"] = "adapter_exchange"
@@ -767,5 +819,119 @@ def test_provider_cost_remains_visible_when_available(tmp_path, attempt, result,
         assert "Provider-reported cost:" not in text
     else:
         assert "Provider-reported cost: $0.000000010" in text
-        assert ("$0.000000010 observed, incomplete" in text) == (mode == "observed")
+        assert ("$0.000000010 recorded; total unknown" in text) == (mode == "observed")
     assert "Provider-reported cost:" in render_comparison_summary(summary, details=True)
+
+
+@pytest.mark.parametrize("condition", ["returned", "final_no_result", "interrupted"])
+def test_unified_journal_preserves_accounting_once_and_keeps_outer_result_state(
+    tmp_path, attempt, result, condition
+):
+    final_result = result if condition == "returned" else None
+    error = (
+        {"stage": "stop", "code": "shutdown_failed", "retryable": False}
+        if condition == "final_no_result"
+        else None
+    )
+    path = _write_run_log(
+        tmp_path / "run.jsonl",
+        result=final_result,
+        invocation=result,
+        error=error,
+        terminal=condition != "interrupted",
+    )
+    if condition == "interrupted":
+        with path.open("a") as stream:
+            stream.write('{"kind":')
+    attempt["requests"][0]["evidence"] = "run.jsonl"
+    summary = report(tmp_path, [attempt])
+    group = summary["configurations"]["baseline"]
+    assert group["usage"]["dimensions"]["input_tokens"]["complete_total"] == 100
+    assert group["usage"]["accounting_evidence_count"] == 1
+    assert group["execution"]["available_result_count"] == (
+        1 if condition == "returned" else 0
+    )
+    assert group["execution"]["missing_result_count"] == (
+        0 if condition == "returned" else 1
+    )
+    view = summary["attempts"][0]["requests"][0]
+    assert view["accounting_source"] == (
+        "result" if condition == "returned" else "record"
+    )
+    if condition == "final_no_result":
+        assert view["state"] == "no_result"
+        assert view["summary"]["execution_error"]["code"] == "shutdown_failed"
+
+
+@pytest.mark.parametrize("condition", ["missing", "invalid"])
+def test_terminal_result_unknown_accounting_is_not_repaired_from_earlier_journal_event(
+    tmp_path, attempt, result, condition
+):
+    returned = deepcopy(result)
+    if condition == "missing":
+        returned.pop("model_usage")
+    else:
+        returned["model_usage"]["input_tokens"] = -1
+    _write_run_log(tmp_path / "run.jsonl", result=returned, invocation=result)
+    attempt["requests"][0]["evidence"] = "run.jsonl"
+    row = report(tmp_path, [attempt])["attempts"][0]
+    assert row["requests"][0]["state"] == "available"
+    assert row["requests"][0]["accounting_source"] == "result"
+    dimension = row["usage"]["dimensions"]["input_tokens"]
+    assert dimension["complete_total"] is None
+    assert dimension["observed_sum"] is None
+
+
+def test_synthetic_example_writes_one_valid_run_log_per_request_without_inventing_evaluation(
+    tmp_path, monkeypatch, capsys
+):
+    from examples.attempt_comparison.__main__ import main
+    from jsonschema import Draft202012Validator
+
+    root = tmp_path / "example"
+    monkeypatch.setattr(sys, "argv", ["attempt_comparison", str(root)])
+    main()
+    assert "Synthetic example" in capsys.readouterr().out
+    schema_path = (
+        Path(__file__).resolve().parents[2] / "schemas/sdk/run-record-line.schema.json"
+    )
+    validator = Draft202012Validator(json.loads(schema_path.read_text()))
+    for scenario in ("normal", "partial", "interrupted", "missing"):
+        files = list((root / scenario).iterdir())
+        assert [path.name for path in files] == ["run.jsonl"]
+        for line in files[0].read_text().splitlines():
+            validator.validate(json.loads(line))
+    summary = read_comparison_manifest(root / "manifest.json")
+    baseline = summary["configurations"]["baseline"]
+    candidate = summary["configurations"]["candidate"]
+    assert baseline["usage"]["dimensions"]["input_tokens"]["complete_total"] == 100
+    assert candidate["usage"]["dimensions"]["input_tokens"]["complete_total"] is None
+    assert candidate["usage"]["dimensions"]["input_tokens"]["observed_sum"] == 180
+    assert candidate["usage"]["dimensions"]["input_tokens"]["expected_count"] == 3
+    assert candidate["execution"]["available_result_count"] == 1
+    assert candidate["execution"]["missing_result_count"] == 2
+    assert candidate["evaluation"]["not_evaluated"] == 3
+    assert candidate["timing"]["available_attempt_count"] == 0
+    before = (root / "manifest.json").read_bytes()
+    with pytest.raises(SystemExit):
+        main()
+    assert (root / "manifest.json").read_bytes() == before
+
+
+def test_fallback_without_invocation_identity_cannot_replace_identified_request(
+    tmp_path, attempt
+):
+    _write_run_log(
+        tmp_path / "outer.jsonl",
+        runtime_id="identified-runtime",
+        error={"stage": "invoke", "code": "transport_failed", "retryable": False},
+    )
+    _write_run_log(
+        tmp_path / "fallback.jsonl",
+        error={"stage": "start", "code": "startup_failed", "retryable": False},
+    )
+    attempt["requests"][0].update(evidence="outer.jsonl", record="fallback.jsonl")
+    row = report(tmp_path, [attempt])["attempts"][0]
+    assert row["requests"][0]["record_error"] == "identity_mismatch"
+    assert "accounting_source" not in row["requests"][0]
+    assert row["usage"]["dimensions"]["input_tokens"]["complete_total"] is None

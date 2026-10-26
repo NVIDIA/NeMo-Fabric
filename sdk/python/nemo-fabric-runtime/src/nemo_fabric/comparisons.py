@@ -62,6 +62,11 @@ def _accounting_source(summary: Mapping[str, Any]) -> dict[str, Any]:
 def _record_accounting(
     view: dict[str, Any], summary: Mapping[str, Any]
 ) -> dict[str, Any] | None:
+    # A terminal request failure can retain a settled invocation projection.
+    # Its accounting remains usable without turning the outer request into a
+    # returned result. The canonical reader has already checked its identities.
+    if summary.get("schema") == "nemo.fabric.request_summary":
+        summary = summary.get("invocation_summary") or {}
     if (
         summary.get("schema") != "nemo.fabric.invocation_record_summary"
         or summary.get("model_usage") is None
@@ -118,15 +123,15 @@ def _request(
     except (OSError, ValueError, UnicodeError):
         view["record_error"] = "invalid_or_unreadable_record"
         return view, None
-    if (
-        record["request_id"] != request_id
-        or record["schema"] != "nemo.fabric.invocation_record_summary"
-    ):
+    if record["request_id"] != request_id or record["schema"] not in {
+        "nemo.fabric.invocation_record_summary",
+        "nemo.fabric.request_summary",
+    }:
         view["record_error"] = "identity_or_record_type_mismatch"
         return view, None
     if summary is not None:
         if any(
-            field in summary and summary[field] != record[field]
+            field in summary and summary[field] != record.get(field)
             for field in ("runtime_id", "invocation_id")
         ):
             view["record_error"] = "identity_mismatch"
@@ -468,11 +473,11 @@ def _value(field: Mapping[str, Any], *, money: bool = False) -> str:
     if complete is not None:
         value = format_money(complete) if money else f"{complete:,}"
     elif observed is not None:
-        value = f"{format_money(observed) if money else f'{observed:,}'} observed, incomplete"
+        value = f"{format_money(observed) if money else f'{observed:,}'} recorded; total unknown"
     elif field.get("aggregation_error") == "incompatible_pricing":
         value = "incompatible pricing groups"
     else:
-        value = "unavailable"
+        value = "Unavailable"
     return f"{value} ({field['complete_count']}/{field['expected_count']} complete)"
 
 
@@ -499,7 +504,7 @@ def _timing(group: Mapping[str, Any], scopes: set[str]) -> str:
     )
     observations = timing["observations"]
     if not observations:
-        return f"unavailable {coverage}"
+        return f"Unavailable {coverage}"
     if len(scopes) != 1:
         return f"mixed scopes {coverage}"
     duration = format_duration_ms(median(row["elapsed_ms"] for row in observations))
@@ -584,27 +589,12 @@ def render_comparison_summary(
         lines.append(
             f"  Results: {execution['available_result_count']}/{execution['listed_request_count']} returned; {execution['missing_result_count']} missing. Attempts listed: {attempts}."
         )
-        if execution["statuses"]:
-            lines.append(
-                "  Execution: "
-                + ", ".join(
-                    f"{count} {status}"
-                    for status, count in sorted(execution["statuses"].items())
-                )
-            )
         lines.append(f"  Caller attempt time: {_timing(group, scopes)}.")
         other_tokens = {
             "total_tokens": "Total tokens",
             "cached_input_tokens": "Cache reads",
             "cache_write_input_tokens": "Cache writes",
         }
-        other_gaps = [
-            f"{label}: {_value(dimensions[key])}"
-            for key, label in other_tokens.items()
-            if dimensions[key]["complete_total"] is None
-        ]
-        if other_gaps:
-            lines.append("  Other token gaps: " + "; ".join(other_gaps))
         bases = alignment["configuration_bases"][name]
         if bases:
             label = (
@@ -638,7 +628,7 @@ def render_comparison_summary(
             )
         if details:
             lines.append(
-                "  Other tokens: "
+                "  Token details: "
                 + "; ".join(
                     f"{label}: {_value(dimensions[key])}"
                     for key, label in other_tokens.items()
@@ -650,20 +640,30 @@ def render_comparison_summary(
                     "  Catalog pricing bases: "
                     + json.dumps(bases, ensure_ascii=True, sort_keys=True)
                 )
-            lines.append(
-                "  Execution statuses: "
-                + json.dumps(execution["statuses"], ensure_ascii=True)
-                + "; evaluators: "
-                + json.dumps(evaluation["evaluators"], ensure_ascii=True)
-                + f"; {evaluation['not_evaluated']} attempts not evaluated."
-            )
+            if execution["statuses"]:
+                lines.append(
+                    "  Returned execution results: "
+                    + "; ".join(
+                        f"{count} {status}"
+                        for status, count in sorted(execution["statuses"].items())
+                    )
+                )
+            if evaluation["evaluators"]:
+                lines.append(
+                    "  Evaluators: "
+                    + "; ".join(
+                        f"{_label(item['name'])} version {_label(item['version'])}"
+                        for item in evaluation["evaluators"]
+                    )
+                )
             lines.append(
                 f"  Accounting sources: {json.dumps(group['accounting_sources'], ensure_ascii=True)}; result and record are never counted twice."
             )
             if group["timing"]["observations"]:
-                lines.append(
-                    "  Caller timing boundaries: "
-                    + json.dumps(group["timing"]["observations"], ensure_ascii=True)
+                lines.append("  Caller timing boundaries:")
+                lines.extend(
+                    f"    {_label(item['attempt_id'])}: {format_duration_ms(item['elapsed_ms'])}; {_label(item['scope'])}"
+                    for item in group["timing"]["observations"]
                 )
             lines.append(
                 "  Listed task revisions: "
@@ -676,7 +676,7 @@ def render_comparison_summary(
         "Evaluator verdicts are caller-supplied; execution success is not task correctness."
     )
     lines.append(
-        "Observed spend is incomplete, not a bill or a ranking. Details and JSON retain evidence and pricing groups."
+        "Recorded amounts with unknown totals cannot show which configuration is cheaper. Details and JSON retain sources and pricing groups."
     )
     return "\n".join(lines)
 

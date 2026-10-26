@@ -1024,6 +1024,11 @@ async def _run_native_lifecycle(
             root = _record_root(plan, runtime_config)
             if root is not None:
                 failure.details["record_root"] = root
+            run_file = getattr(error, "fabric_record_path", None)
+            if isinstance(run_file, str) and run_file:
+                failure.details["run_file"] = run_file
+                failure.add_note(f"Run evidence file: {run_file}")
+            elif root is not None:
                 failure.add_note(f"Run evidence location: {root}")
             if failure is error:
                 raise

@@ -11,7 +11,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 ## Modules
 
 - [`nemo_fabric.accounting`](./nemo_fabric.accounting.md#module-nemo_fabricaccounting): Typed model accounting and invocation summaries with explicit coverage.
-- [`nemo_fabric.reporting`](./nemo_fabric.reporting.md#module-nemo_fabricreporting): Inspect saved invocation evidence without a benchmark manifest or trace import.
+- [`nemo_fabric.reporting`](./nemo_fabric.reporting.md#module-nemo_fabricreporting): Inspect saved run journals and legacy results without importing traces.
 - [`nemo_fabric.comparisons`](./nemo_fabric.comparisons.md#module-nemo_fabriccomparisons): Compare caller-defined task attempts using saved NeMo Fabric invocation evidence.
 - [`nemo_fabric.client`](./nemo_fabric.client.md#module-nemo_fabricclient): Native Python client for resolving and running NVIDIA NeMo Fabric agents.
 - [`nemo_fabric.capabilities`](./nemo_fabric.capabilities.md#module-nemo_fabriccapabilities): Metadata-only adapter inspection for host-side admission.
@@ -48,7 +48,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`models.MetadataConfig`](./nemo_fabric.models.md#class-metadataconfig): Human-readable agent identity.
 - [`models.ModelConfig`](./nemo_fabric.models.md#class-modelconfig): Configuration for one model role.
 - [`models.PricingConfig`](./nemo_fabric.models.md#class-pricingconfig): Frozen Relay-compatible price-catalog override, read during planning.
-- [`models.RecordConfig`](./nemo_fabric.models.md#class-recordconfig): Opt-in per-invocation run record.
+- [`models.RecordConfig`](./nemo_fabric.models.md#class-recordconfig): Opt-in local request journal.
 - [`models.RelayAtifConfig`](./nemo_fabric.models.md#class-relayatifconfig): NeMo Relay ATIF export configuration.
 - [`models.RelayAtofConfig`](./nemo_fabric.models.md#class-relayatofconfig): NeMo Relay ATOF export configuration.
 - [`models.RelayAtofFileSinkConfig`](./nemo_fabric.models.md#class-relayatoffilesinkconfig): NeMo Relay ATOF file sink configuration.
@@ -118,14 +118,12 @@ SPDX-License-Identifier: Apache-2.0 -->
 ## Functions
 
 - [`accounting.summarize_usage`](./nemo_fabric.accounting.md#function-summarize_usage): Summarize invocations against an explicit expected identity manifest.
-- [`reporting.main`](./nemo_fabric.reporting.md#function-main): Inspect a saved invocation result as a concise summary or JSON.
-- [`reporting.read_evidence`](./nemo_fabric.reporting.md#function-read_evidence): Read a full result, invocation record or outer request record; never follow references.
-- [`reporting.read_invocation_record`](./nemo_fabric.reporting.md#function-read_invocation_record): Read bounded start/end evidence; a truncated tail never creates a result.
+- [`reporting.main`](./nemo_fabric.reporting.md#function-main): Inspect a saved run journal or legacy result as readable text or JSON.
+- [`reporting.read_evidence`](./nemo_fabric.reporting.md#function-read_evidence): Read a run journal or legacy result without opening referenced artifacts.
+- [`reporting.read_invocation_record`](./nemo_fabric.reporting.md#function-read_invocation_record): Read legacy start/end evidence; a truncated tail never creates a result.
 - [`reporting.read_result`](./nemo_fabric.reporting.md#function-read_result): Read one saved full result without requiring task labels or a manifest.
-- [`reporting.render_invocation_record_summary`](./nemo_fabric.reporting.md#function-render_invocation_record_summary): Describe the invocation interval without assuming whole-runtime success.
-- [`reporting.render_request_summary`](./nemo_fabric.reporting.md#function-render_request_summary): Explain missing execution evidence without assigning zero spend.
-- [`reporting.render_result_summary`](./nemo_fabric.reporting.md#function-render_result_summary): Render a concise overview; details add resource and pricing evidence.
-- [`reporting.summarize_request`](./nemo_fabric.reporting.md#function-summarize_request): Describe outer dispatch evidence without fabricating an invocation result.
+- [`reporting.render_invocation_record_summary`](./nemo_fabric.reporting.md#function-render_invocation_record_summary): Render legacy invocation evidence without claiming one-shot completion.
+- [`reporting.render_result_summary`](./nemo_fabric.reporting.md#function-render_result_summary): Render concise measurement values; details add retained history and sources.
 - [`reporting.summarize_result`](./nemo_fabric.reporting.md#function-summarize_result): Describe one returned invocation, preserving independent usable evidence.
 - [`comparisons.main`](./nemo_fabric.comparisons.md#function-main): Print an explicit comparison manifest as a table or JSON without running agents.
 - [`comparisons.read_comparison_manifest`](./nemo_fabric.comparisons.md#function-read_comparison_manifest): Read a bounded manifest; evidence paths are relative to its explicit root.

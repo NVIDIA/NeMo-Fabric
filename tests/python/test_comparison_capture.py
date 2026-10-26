@@ -112,7 +112,7 @@ for line in sys.stdin:
             saved = next(
                 artifact.path
                 for artifact in result.artifacts.artifacts
-                if artifact.kind == "run_result"
+                if artifact.kind == "run_log"
             )
             attempts.append(
                 {
@@ -139,7 +139,7 @@ for line in sys.stdin:
                 "configuration_id": "partial",
                 "requests_complete": True,
                 "requests": [
-                    {"request_id": "scheduled", "evidence": "never-returned.json"}
+                    {"request_id": "scheduled", "evidence": "never-returned/run.jsonl"}
                 ],
             }
         )
@@ -171,4 +171,4 @@ for line in sys.stdin:
         "failed": 1
     }
     assert summary["configurations"]["normal"]["evaluation"]["not_evaluated"] == 1
-    assert "7 observed, incomplete" in render_comparison_summary(summary)
+    assert "7 recorded; total unknown" in render_comparison_summary(summary)

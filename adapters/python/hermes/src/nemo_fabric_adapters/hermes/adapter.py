@@ -15,6 +15,7 @@ import inspect
 import logging
 import os
 import sys
+from collections.abc import Callable
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -30,6 +31,7 @@ from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import provenance
 from nemo_fabric_adapters.hermes import configuration
 from nemo_fabric_adapters.hermes import telemetry
 
@@ -37,7 +39,61 @@ from nemo_fabric_adapters.hermes import telemetry
 # The actual internal hermes default  as of v0.21 is `sys.maxsize`
 DEFAULT_MAX_ITERATIONS: int = 90
 LOGGER = logging.getLogger(__name__)
+_PACKAGE_DISTRIBUTION = "nemo-fabric-adapters-hermes"
+_HARNESS_NAME = "hermes-agent"
+_METHOD_HARNESS_API = "harness_api"
 hermes_mcp_server_config = configuration.hermes_mcp_server_config
+
+
+class HermesVersionCallMissingError(Exception):
+    """The installed Hermes Agent predates its version call."""
+
+
+def hermes_version() -> str:
+    """The running Hermes Agent's version from its version call.
+
+    Returns the same ``derived_version`` that ``hermes --version`` prints, which
+    keeps the commit and dirty marker of a source checkout. ``get_version_info()``
+    can run several ``git`` commands, so callers run it through a
+    :class:`provenance.BlockingProbe`. Raises
+    :class:`HermesVersionCallMissingError` only when the version call itself
+    can't be imported; an error raised inside the call propagates unchanged.
+    """
+
+    try:
+        from hermes_cli.version_info import get_version_info
+    except ImportError as error:
+        raise HermesVersionCallMissingError from error
+
+    return get_version_info().derived_version
+
+
+async def probe_hermes_version(
+    probe: provenance.BlockingProbe,
+    version_call: Callable[[], str] = hermes_version,
+    timeout: float = provenance.PROBE_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Hermes's version as a reported fact, bounded by the probe time limit."""
+
+    try:
+        version = await probe.call(version_call, timeout=timeout)
+    except TimeoutError:
+        return provenance.missing_fact(
+            "collection_failed", "timeout", _METHOD_HARNESS_API
+        )
+    except HermesVersionCallMissingError:
+        return provenance.no_source_fact()
+    except Exception:
+        # Provenance never fails a run, whatever Hermes's version call raises.
+        LOGGER.exception("Hermes version call failed")
+        return provenance.missing_fact(
+            "collection_failed", "no_result", _METHOD_HARNESS_API
+        )
+    if not isinstance(version, str) or not version or version == "unknown":
+        return provenance.missing_fact(
+            "unavailable", "empty_response", _METHOD_HARNESS_API
+        )
+    return provenance.known_fact(version, _METHOD_HARNESS_API)
 
 
 def main() -> None:
@@ -66,6 +122,11 @@ class HermesRuntime:
         self._relay_plugin_config: dict[str, Any] | None = None
         self._relay_plugin_config_path: Path | None = None
         self._active_invoke_task: asyncio.Task[tuple[dict[str, Any], str]] | None = None
+        self._version_probe = provenance.BlockingProbe()
+        self._harness_version = provenance.missing_fact(
+            "unavailable", "not_collected", _METHOD_HARNESS_API
+        )
+        self._package_version = provenance.package_version_fact(_PACKAGE_DISTRIBUTION)
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -151,6 +212,7 @@ class HermesRuntime:
             from hermes_state import SessionDB
             from run_agent import AIAgent
 
+            self._harness_version = await probe_hermes_version(self._version_probe)
             with redirect_stdout(StringIO()):
                 if relay_enabled:
                     common_utils.reject_ambient_relay_plugin_config()
@@ -223,7 +285,35 @@ class HermesRuntime:
             await self.stop()
             raise
 
+    def _versions_extensions(self) -> dict[str, Any]:
+        return {
+            provenance.VERSIONS_REPORT_KEY: provenance.versions_report(
+                package_version=self._package_version,
+                harness_name=provenance.known_fact(
+                    "hermes-agent", provenance.METHOD_ADAPTER_REPORT
+                ),
+                harness_version=self._harness_version,
+                served_models={
+                    role: provenance.no_source_fact()
+                    for role in (
+                        self._agent_config.models
+                        if self._agent_config is not None
+                        else ()
+                    )
+                },
+            )
+        }
+
     async def invoke(
+        self,
+        request: AgentRunRequest,
+        runtime_context: RuntimeContext,
+    ) -> AgentRunResult:
+        result = await self._invoke(request, runtime_context)
+        result.extensions.update(self._versions_extensions())
+        return result
+
+    async def _invoke(
         self,
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
@@ -372,6 +462,7 @@ class HermesRuntime:
             status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
             output=output,
             error=error,
+            extensions={},
         )
 
     async def _authenticate_mcp_servers(self) -> None:
