@@ -20,6 +20,10 @@ workflows:
 
 [Run NeMo Fabric agents with Harbor](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/harbor)
 
+## Resource Stats
+
+For an example of collecting resource stats inside a task container, follow the [SWE-bench walkthrough](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/harbor/swebench/README.md#run-deep-agents-with-resource-stats). The [Resource Usage and Stats](../../sdk/system-stats.mdx) guide explains the configuration model, collection scope, and metric interpretation.
+
 ## Environment Forwarding
 
 Harbor delivers values into the task environment. NeMo Fabric forwards values from its task-side process to the adapter. Listing a variable in `environment.env_names` does not deliver it from the Harbor host to the task.
