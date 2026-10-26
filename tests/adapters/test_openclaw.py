@@ -31,7 +31,11 @@ from nemo_fabric_adapters.openclaw import adapter
 from nemo_fabric_adapters.openclaw import _windows_job
 
 
-def _context(workspace: Path, runtime_id: str = "openclaw-runtime") -> RuntimeContext:
+def _context(
+    workspace: Path,
+    runtime_id: str = "openclaw-runtime",
+    deadline_millis: int | None = None,
+) -> RuntimeContext:
     payload = {
         "runtime_id": runtime_id,
         "invocation_id": "openclaw-invocation",
@@ -46,6 +50,8 @@ def _context(workspace: Path, runtime_id: str = "openclaw-runtime") -> RuntimeCo
         },
         "artifacts": {},
     }
+    if deadline_millis is not None:
+        payload["deadline_millis"] = deadline_millis
     return RuntimeContext.from_mapping(payload)
 
 
@@ -1118,6 +1124,47 @@ async def test_openclaw_read_failure_is_not_retryable(
 
     assert caught.value.code == "openclaw_transport_failed"
     assert caught.value.retryable is False
+
+
+async def test_openclaw_invocation_deadline_bounds_the_gateway_request(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    context = _context(tmp_path, deadline_millis=int(time.time() * 1000) + 50)
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = None
+    runtime._client = MagicMock()
+    runtime._config = _config(tmp_path / "openclaw")
+    runtime._context = context
+    runtime._port = 12345
+    runtime._process = mock_process
+
+    async def wait_for_gateway(*_args, **_kwargs):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        adapter, "_invoke_gateway", AsyncMock(side_effect=wait_for_gateway)
+    )
+
+    result = await asyncio.wait_for(
+        runtime.invoke(AgentRunRequest(input="Hello."), context), timeout=5
+    )
+
+    assert result.status == adapter.contract.AgentRunStatus.FAILED
+    assert result.error is not None
+    assert result.error.code == "timeout"
+
+
+async def test_openclaw_read_timeout_applies_only_when_configured():
+    runtime = adapter.OpenClawRuntime()
+    unset = runtime._client_for({}, "token")
+    configured = runtime._client_for({"read_timeout_seconds": 30}, "token")
+    try:
+        assert unset.timeout.read is None
+        assert configured.timeout.read == 30
+    finally:
+        await unset.aclose()
+        await configured.aclose()
 
 
 async def test_openclaw_process_exit_fails_active_invocation(

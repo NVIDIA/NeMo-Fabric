@@ -39,7 +39,8 @@ from nemo_fabric_adapters.openclaw import _windows_job
 
 
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 30.0
-DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 10.0
+# Fabric gives the adapter host 10 s to stop, including this wait.
+DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
 DEFAULT_READ_TIMEOUT_SECONDS = 600.0
 HEALTH_CHECK_INTERVAL_SECONDS = 2.0
@@ -125,6 +126,19 @@ def _validate_attach_config(config: contract.AgentConfig) -> None:
             "OpenClaw attach_service cannot verify deployment-owned configuration",
             metadata={"fields": unsupported},
         )
+
+
+def _read_timeout(settings: dict[str, Any]) -> float | None:
+    """Return the configured Gateway read timeout.
+
+    Without one, Fabric's invocation deadline bounds the response.
+    """
+
+    if "read_timeout_seconds" not in settings:
+        return None
+    return _positive_setting(
+        settings, "read_timeout_seconds", DEFAULT_READ_TIMEOUT_SECONDS
+    )
 
 
 def _positive_setting(settings: dict[str, Any], name: str, default: float) -> float:
@@ -1120,9 +1134,7 @@ class OpenClawRuntime:
                         "connect_timeout_seconds",
                         DEFAULT_CONNECT_TIMEOUT_SECONDS,
                     ),
-                    read=_positive_setting(
-                        settings, "read_timeout_seconds", DEFAULT_READ_TIMEOUT_SECONDS
-                    ),
+                    read=_read_timeout(settings),
                     write=DEFAULT_READ_TIMEOUT_SECONDS,
                     pool=DEFAULT_CONNECT_TIMEOUT_SECONDS,
                 ),
@@ -1165,9 +1177,7 @@ class OpenClawRuntime:
                 connect=_positive_setting(
                     settings, "connect_timeout_seconds", DEFAULT_CONNECT_TIMEOUT_SECONDS
                 ),
-                read=_positive_setting(
-                    settings, "read_timeout_seconds", DEFAULT_READ_TIMEOUT_SECONDS
-                ),
+                read=_read_timeout(settings),
                 write=DEFAULT_READ_TIMEOUT_SECONDS,
                 pool=DEFAULT_CONNECT_TIMEOUT_SECONDS,
             ),
@@ -1574,16 +1584,17 @@ class OpenClawRuntime:
         )
         model = _selected_model(self._config)
         try:
-            text, usage = await self._invoke_monitored_gateway(
-                self._client,
-                f"{gateway_url}/v1/chat/completions",
-                messages=messages,
-                temperature=model.temperature,
-                top_p=model.top_p,
-                max_tokens=model.max_tokens,
-                user=context.runtime_id,
-                agent_id=self._agent_id,
-            )
+            async with asyncio.timeout_at(lifecycle.invocation_deadline(context)):
+                text, usage = await self._invoke_monitored_gateway(
+                    self._client,
+                    f"{gateway_url}/v1/chat/completions",
+                    messages=messages,
+                    temperature=model.temperature,
+                    top_p=model.top_p,
+                    max_tokens=model.max_tokens,
+                    user=context.runtime_id,
+                    agent_id=self._agent_id,
+                )
         except lifecycle.LifecycleError:
             raise
         except httpx.HTTPStatusError as error:
@@ -1603,6 +1614,16 @@ class OpenClawRuntime:
                 "OpenClaw Gateway request could not be completed",
                 retryable=False,
             ) from error
+        except TimeoutError:
+            return contract.AgentRunResult(
+                status=contract.AgentRunStatus.FAILED,
+                output={},
+                error=contract.AgentRunError(
+                    code="timeout",
+                    message="OpenClaw invocation timed out",
+                    retryable=False,
+                ),
+            )
         except Exception as error:
             raise lifecycle.LifecycleError(
                 "openclaw_invalid_response",
