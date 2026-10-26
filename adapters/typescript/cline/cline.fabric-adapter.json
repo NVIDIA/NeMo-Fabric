@@ -98,6 +98,9 @@
             "provider"
           ],
           "additionalProperties": false
+        },
+        "nemo_fabric.versions.v1": {
+          "type": "object"
         }
       },
       "required": [

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { ClineSdkSessionFactory } from "../dist/cline-sdk.js";
+import { ClineSdkSessionFactory, selectedModelRole } from "../dist/cline-sdk.js";
 import { clineUsageHooks } from "../dist/usage.js";
 
 function input(overrides = {}) {
@@ -511,3 +511,11 @@ for (const [provider, baseUrl, expected] of [
     }
   });
 }
+
+test("the selected model role is default, or the only configured role", () => {
+  assert.equal(selectedModelRole({ models: { default: {}, judge: {} } }), "default");
+  assert.equal(selectedModelRole({ models: { primary: {} } }), "primary");
+  assert.equal(selectedModelRole({ models: { primary: {}, judge: {} } }), undefined);
+  assert.equal(selectedModelRole({ models: {} }), undefined);
+  assert.equal(selectedModelRole({}), undefined);
+});

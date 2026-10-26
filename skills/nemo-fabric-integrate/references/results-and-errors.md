@@ -24,7 +24,10 @@ Every invocation that reaches the adapter boundary returns a normalized
 | `telemetry` | References to NVIDIA NeMo Relay or other telemetry streams from the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
 | `metadata` | Result-specific structured metadata. |
+| `what_ran` | Optional core and resolved-plan evidence. Facts identify their source, collector, and collection method. |
 | `runtime_id`, `invocation_id`, `request_id` | Correlation IDs across runtimes, logs, telemetry, and artifacts. |
+
+`what_ran` is `None` for older results or provenance the reader cannot decode. Check for `what_ran_truncated` before reading sections, because a byte-budget marker permits sections to be absent. A configured model or MCP endpoint does not establish the served model or a successful connection. Recorded conditions alone do not prove that runs are equivalent.
 
 Handle a result with this status-first pattern:
 
