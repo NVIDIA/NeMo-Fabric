@@ -98,6 +98,46 @@ def test_existing_flat_sampling_extensions_load_as_normalized_fields():
     assert config.to_mapping()["models"]["default"]["max_tokens"] == 512
 
 
+@pytest.mark.parametrize(
+    "effort", ["off", "none", "high", "future-native-level", " high "]
+)
+def test_model_config_preserves_native_reasoning_effort(effort):
+    raw = _repository_adapter_config().to_mapping()
+    raw["models"]["default"]["native_reasoning_effort"] = effort
+    config = FabricConfig.from_mapping(raw)
+
+    model = config.models["default"]
+    assert model.native_reasoning_effort == effort
+    assert "native_reasoning_effort" not in (model.model_extra or {})
+    assert config.to_mapping()["models"]["default"]["native_reasoning_effort"] == effort
+
+
+@pytest.mark.parametrize("extra", [{}, {"native_reasoning_effort": None}])
+def test_model_config_omits_unset_native_reasoning_effort(extra):
+    model = ModelConfig(provider="nvidia", model="test-model", **extra)
+
+    assert model.native_reasoning_effort is None
+    assert "native_reasoning_effort" not in model.to_mapping()
+
+
+@pytest.mark.parametrize("effort", ["", " \t\n", True, 1, [], {}])
+def test_model_config_rejects_invalid_native_reasoning_effort(effort):
+    with pytest.raises(ValidationError, match="native_reasoning_effort"):
+        ModelConfig(
+            provider="nvidia", model="test-model", native_reasoning_effort=effort
+        )
+
+
+def test_plan_rejects_native_reasoning_effort_without_adapter_opt_in():
+    config = _repository_adapter_config()
+    config.models["default"].native_reasoning_effort = "high"
+
+    with pytest.raises(
+        FabricConfigError, match=r"models.default.native_reasoning_effort"
+    ):
+        Fabric().plan(config)
+
+
 def test_model_config_bounds_max_tokens_to_u64():
     maximum = (1 << 64) - 1
 

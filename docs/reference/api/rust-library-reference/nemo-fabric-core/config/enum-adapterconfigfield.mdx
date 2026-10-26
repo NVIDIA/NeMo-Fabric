@@ -16,6 +16,7 @@ pub enum AdapterConfigField {
     ModelTemperature,
     ModelTopP,
     ModelMaxTokens,
+    ModelNativeReasoningEffort,
     SystemInstructions,
     MaxTurns,
     EnabledTools,
@@ -62,6 +63,12 @@ Model nucleus sampling probability.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "ModelMaxTokens"}} /></pre>
 
 Maximum model response tokens.
+
+### `ModelNativeReasoningEffort`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "ModelNativeReasoningEffort"}} /></pre>
+
+Native reasoning effort, with `off` reserved for disabling reasoning.
 
 ### `SystemInstructions`
 

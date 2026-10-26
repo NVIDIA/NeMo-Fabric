@@ -864,6 +864,9 @@ pub enum AdapterConfigField {
     /// Maximum model response tokens.
     #[serde(rename = "models.max_tokens")]
     ModelMaxTokens,
+    /// Native reasoning effort, with `off` reserved for disabling reasoning.
+    #[serde(rename = "models.native_reasoning_effort")]
+    ModelNativeReasoningEffort,
     /// Portable system instructions.
     #[serde(rename = "instructions.system")]
     SystemInstructions,
@@ -986,6 +989,10 @@ pub struct ModelConfig {
     )]
     #[schemars(range(min = 1, max = u64::MAX))]
     pub max_tokens: Option<u64>,
+    /// Adapter-native reasoning effort. `off` requests disabled reasoning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub native_reasoning_effort: Option<String>,
     /// Optional environment variable containing an API key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key_env: Option<String>,
@@ -1987,6 +1994,16 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
                 "must be greater than zero",
             );
         }
+        if model
+            .native_reasoning_effort
+            .as_ref()
+            .is_some_and(|value| value.trim().is_empty())
+        {
+            return invalid_config(
+                format!("models.{role}.native_reasoning_effort"),
+                "must contain at least one non-whitespace character",
+            );
+        }
     }
     if let Some(environment) = &config.environment {
         for name in environment.env.keys() {
@@ -2822,6 +2839,14 @@ pub(crate) fn adapter_config_compatibility_issues(
 
     for (role, model) in &config.models {
         let legacy_extensions = legacy_model_sampling_extensions(model, descriptor);
+        if model.native_reasoning_effort.is_some()
+            && !accepts(AdapterConfigField::ModelNativeReasoningEffort)
+        {
+            issues.push(incompatible(
+                format!("models.{role}.native_reasoning_effort"),
+                "the adapter does not declare an equivalent native mapping".to_string(),
+            ));
+        }
         if model.base_url.is_some() && !accepts(AdapterConfigField::ModelBaseUrl) {
             issues.push(incompatible(
                 format!("models.{role}.base_url"),
@@ -3000,6 +3025,22 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
                 "config.system_instruction_modes must not contain duplicate modes",
             );
         }
+    }
+    if descriptor
+        .config
+        .accepts
+        .contains(&AdapterConfigField::ModelNativeReasoningEffort)
+        && !descriptor
+            .model_schema
+            .as_ref()
+            .and_then(|schema| schema.get("properties"))
+            .and_then(Value::as_object)
+            .is_some_and(|properties| properties.contains_key("native_reasoning_effort"))
+    {
+        return invalid_adapter_descriptor(
+            path,
+            "config.accepts `models.native_reasoning_effort` requires model_schema.properties.native_reasoning_effort",
+        );
     }
     for (field, schema) in [
         ("settings_schema", descriptor.settings_schema.as_ref()),
@@ -4345,6 +4386,162 @@ mod tests {
         assert!(inspect_adapter_config(mismatch, &path).is_err());
     }
 
+    #[test]
+    fn native_reasoning_effort_preserves_roles_and_omits_unset_values() {
+        let path =
+            repository_adapter_dir().join("python/deepagents/deepagents.fabric-adapter.json");
+        let mut descriptor = load_adapter_descriptor(&path).expect("descriptor");
+        descriptor.config.accepts.push(
+            serde_json::from_value(serde_json::json!("models.native_reasoning_effort"))
+                .expect("effort acceptance field"),
+        );
+        descriptor.model_schema = Some(
+            serde_json::json!({
+                "type": "object",
+                "properties": {"native_reasoning_effort": {"type": "string"}}
+            })
+            .as_object()
+            .expect("model schema")
+            .clone(),
+        );
+        let mut config = typed_config(&descriptor.adapter_id);
+        for (role, effort) in [
+            ("default", serde_json::json!(" high ")),
+            ("review", serde_json::json!("off")),
+            ("unset", Value::Null),
+        ] {
+            config.models.insert(
+                role.to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "provider": "nvidia", "model": "test-model", "native_reasoning_effort": effort
+                }))
+                .expect("model"),
+            );
+        }
+        validate_config(&config).expect("native strings");
+        validate_adapter_config_compatibility(&config, Some(&descriptor)).expect("opted in");
+        let projected =
+            project_agent_config(&config, &CapabilityPlan::default(), Some(&descriptor), None);
+        crate::agent_config::validate_agent_config(&projected).expect("projected config");
+        let projected = serde_json::to_value(projected).expect("projected JSON");
+        let authored = serde_json::to_value(&config).expect("authoring JSON");
+        for value in [&projected, &authored] {
+            assert_eq!(
+                value["models"]["default"]["native_reasoning_effort"],
+                " high "
+            );
+            assert_eq!(value["models"]["review"]["native_reasoning_effort"], "off");
+            assert!(
+                value["models"]["unset"]
+                    .get("native_reasoning_effort")
+                    .is_none()
+            );
+            assert!(value["models"]["default"].get("extensions").is_none());
+        }
+        let omitted: ModelConfig = serde_json::from_value(serde_json::json!({
+            "provider": "nvidia", "model": "test-model"
+        }))
+        .expect("omitted effort");
+        assert!(
+            serde_json::to_value(omitted)
+                .expect("model JSON")
+                .get("native_reasoning_effort")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn native_reasoning_effort_rejects_blanks_and_non_strings() {
+        for value in [serde_json::json!(""), serde_json::json!(" \t\n")] {
+            let raw = serde_json::json!({
+                "provider": "nvidia", "model": "test-model", "native_reasoning_effort": value
+            });
+            let mut config = typed_config("nvidia.fabric.langchain.deepagents");
+            config.models.insert(
+                "review".to_string(),
+                serde_json::from_value(raw.clone()).expect("model"),
+            );
+            assert!(
+                matches!(validate_config(&config), Err(FabricError::InvalidConfig { field, .. })
+                if field == "models.review.native_reasoning_effort")
+            );
+            let model = serde_json::from_value(raw).expect("projected model");
+            let mut projected = AgentConfig::default();
+            projected.models.insert("review".to_string(), model);
+            assert!(
+                matches!(crate::agent_config::validate_agent_config(&projected), Err(FabricError::InvalidConfig { field, .. })
+                if field == "agent_config.models.review.native_reasoning_effort")
+            );
+        }
+        for value in [
+            serde_json::json!(true),
+            serde_json::json!(1),
+            serde_json::json!([]),
+            serde_json::json!({}),
+        ] {
+            let raw = serde_json::json!({
+                "provider": "nvidia", "model": "test-model", "native_reasoning_effort": value
+            });
+            assert!(serde_json::from_value::<ModelConfig>(raw.clone()).is_err());
+            assert!(serde_json::from_value::<crate::AgentModelConfig>(raw).is_err());
+        }
+    }
+
+    #[test]
+    fn native_reasoning_effort_requires_adapter_opt_in_and_declared_values() {
+        let path =
+            repository_adapter_dir().join("python/deepagents/deepagents.fabric-adapter.json");
+        let mut descriptor = load_adapter_descriptor(&path).expect("descriptor");
+        let mut config = config_with_model(&descriptor.adapter_id, "nvidia");
+        config.models.insert(
+            "review".to_string(),
+            serde_json::from_value(serde_json::json!({
+                "provider": "nvidia", "model": "review-model", "native_reasoning_effort": "high"
+            }))
+            .expect("model"),
+        );
+        assert!(
+            adapter_config_compatibility_issues(&config, Some(&descriptor))
+                .iter()
+                .any(|issue| issue.field == "models.review.native_reasoning_effort")
+        );
+        descriptor.config.accepts.push(
+            serde_json::from_value(serde_json::json!("models.native_reasoning_effort"))
+                .expect("effort acceptance field"),
+        );
+        for schema in [
+            None,
+            Some(
+                serde_json::json!({"type": "object"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        ] {
+            descriptor.model_schema = schema;
+            assert!(validate_adapter_descriptor_shape(&descriptor, &path).is_err());
+        }
+        descriptor.model_schema = Some(serde_json::json!({
+            "type": "object",
+            "properties": {"native_reasoning_effort": {"type": "string", "enum": ["off", "high"]}}
+        }).as_object().unwrap().clone());
+        validate_adapter_descriptor_shape(&descriptor, &path).expect("declared effort schema");
+        validate_adapter_config_compatibility(&config, Some(&descriptor))
+            .expect("supported effort");
+        config.models.insert(
+            "review".to_string(),
+            serde_json::from_value(serde_json::json!({
+                "provider": "nvidia", "model": "review-model", "native_reasoning_effort": "bogus"
+            }))
+            .expect("unknown effort string"),
+        );
+        assert!(
+            adapter_config_compatibility_issues(&config, Some(&descriptor))
+                .iter()
+                .any(|issue| issue.field == "models.review.native_reasoning_effort")
+        );
+    }
+
     fn typed_config(adapter_id: &str) -> FabricConfig {
         serde_json::from_value(serde_json::json!({
             "schema_version": "fabric.agent/v1alpha1",
@@ -4373,6 +4570,7 @@ mod tests {
                 temperature: None,
                 top_p: None,
                 max_tokens: None,
+                native_reasoning_effort: None,
                 api_key_env: None,
                 base_url: None,
                 settings: serde_json::Map::new(),
@@ -5614,6 +5812,7 @@ mod tests {
                 temperature: Some(0.2),
                 top_p: Some(0.8),
                 max_tokens: Some(512),
+                native_reasoning_effort: None,
                 api_key_env: Some("NVIDIA_API_KEY".to_string()),
                 base_url: Some("https://models.example/v1".to_string()),
                 settings: serde_json::Map::new(),
@@ -5852,6 +6051,7 @@ mod tests {
                     temperature: None,
                     top_p: None,
                     max_tokens: None,
+                    native_reasoning_effort: None,
                     api_key_env: None,
                     base_url: None,
                     settings: serde_json::Map::new(),
@@ -5866,6 +6066,7 @@ mod tests {
                     temperature: Some(0.2),
                     top_p: None,
                     max_tokens: None,
+                    native_reasoning_effort: None,
                     api_key_env: None,
                     base_url: None,
                     settings: serde_json::Map::new(),
@@ -5901,6 +6102,7 @@ mod tests {
                 temperature: None,
                 top_p: None,
                 max_tokens: None,
+                native_reasoning_effort: None,
                 api_key_env: None,
                 base_url: None,
                 settings: serde_json::Map::new(),
@@ -5915,6 +6117,7 @@ mod tests {
                 temperature: None,
                 top_p: None,
                 max_tokens: None,
+                native_reasoning_effort: None,
                 api_key_env: None,
                 base_url: Some("https://example.test/v1".to_string()),
                 settings: serde_json::Map::new(),
@@ -5980,6 +6183,7 @@ mod tests {
                     temperature: None,
                     top_p: None,
                     max_tokens: None,
+                    native_reasoning_effort: None,
                     api_key_env: None,
                     base_url: None,
                     settings: serde_json::Map::new(),
@@ -6236,6 +6440,7 @@ mod tests {
                 temperature: None,
                 top_p: None,
                 max_tokens: None,
+                native_reasoning_effort: None,
                 api_key_env: None,
                 base_url: None,
                 settings: serde_json::Map::new(),
@@ -6259,6 +6464,7 @@ mod tests {
                     temperature: None,
                     top_p: None,
                     max_tokens: None,
+                    native_reasoning_effort: None,
                     api_key_env: None,
                     base_url: None,
                     settings: serde_json::Map::new(),

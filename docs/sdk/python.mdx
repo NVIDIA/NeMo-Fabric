@@ -263,6 +263,7 @@ Relay subfields:
 | `models.<role>.temperature` | No | No | Yes | Yes | Yes |
 | `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared |
 | `models.<role>.top_p`, `.max_tokens` | No | No | Yes | Yes | Yes; passed through LiteLLM |
+| `models.<role>.native_reasoning_effort` | No | No | No | No | No |
 | `instructions.system` | `replace`, `append` | `replace`; maps to Codex base instructions | `replace` | `replace` | `replace` |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core |
 | `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core |
@@ -282,6 +283,12 @@ Relay subfields:
 | `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes |
 | `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes |
 | Other additive `extensions` on typed config objects | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor |
+
+`models.<role>.native_reasoning_effort` is an optional non-blank string.
+Omitted or null values are excluded from the projected model. Other strings are
+preserved exactly; `off` is reserved for disabling reasoning. The shared contract
+is available, but maintained adapters have not opted in yet. Setting the field
+fails planning until the selected adapter declares support and allowed values.
 
 Model selection is deterministic: the `default` role wins; otherwise a single
 named role is selected. More than one role without `default` fails planning.

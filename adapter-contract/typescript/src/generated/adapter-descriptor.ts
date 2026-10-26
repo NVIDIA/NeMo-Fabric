@@ -41,6 +41,7 @@ export type AdapterConfigField =
   | "models.temperature"
   | "models.top_p"
   | "models.max_tokens"
+  | "models.native_reasoning_effort"
   | "instructions.system"
   | "runtime.max_turns"
   | "tools.enabled"

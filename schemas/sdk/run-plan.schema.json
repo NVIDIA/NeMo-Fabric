@@ -29,6 +29,11 @@
           "type": "string"
         },
         {
+          "const": "models.native_reasoning_effort",
+          "description": "Native reasoning effort, with `off` reserved for disabling reasoning.",
+          "type": "string"
+        },
+        {
           "const": "instructions.system",
           "description": "Portable system instructions.",
           "type": "string"
@@ -695,6 +700,15 @@
           "minLength": 1,
           "pattern": "\\S",
           "type": "string"
+        },
+        "native_reasoning_effort": {
+          "description": "Adapter-native reasoning effort. `off` requests disabled reasoning.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "provider": {
           "description": "Model provider identifier.",
@@ -1890,6 +1904,15 @@
         "model": {
           "description": "Provider model identifier.",
           "type": "string"
+        },
+        "native_reasoning_effort": {
+          "description": "Adapter-native reasoning effort. `off` requests disabled reasoning.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "provider": {
           "description": "Model provider name.",

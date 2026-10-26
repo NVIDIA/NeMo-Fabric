@@ -248,6 +248,10 @@ export interface AgentModelConfig {
    */
   model: string;
   /**
+   * Adapter-native reasoning effort. `off` requests disabled reasoning.
+   */
+  native_reasoning_effort?: string | null;
+  /**
    * Model provider identifier.
    */
   provider: string;

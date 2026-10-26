@@ -85,6 +85,10 @@ pub struct AgentModelConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 1, max = u64::MAX))]
     pub max_tokens: Option<u64>,
+    /// Adapter-native reasoning effort. `off` requests disabled reasoning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub native_reasoning_effort: Option<String>,
     /// Optional provider API base URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
@@ -266,6 +270,12 @@ pub(crate) fn validate_agent_config(config: &AgentConfig) -> Result<()> {
             &model.provider,
         )?;
         require_non_blank(format!("agent_config.models.{role}.model"), &model.model)?;
+        if let Some(effort) = &model.native_reasoning_effort {
+            require_non_blank(
+                format!("agent_config.models.{role}.native_reasoning_effort"),
+                effort,
+            )?;
+        }
     }
     if let Some(system) = config
         .instructions
@@ -360,6 +370,7 @@ pub(crate) fn project_agent_config(
                         model: model.model.clone(),
                         api_key_env: model.api_key_env.clone(),
                         temperature: model.temperature,
+                        native_reasoning_effort: model.native_reasoning_effort.clone(),
                         top_p: (!legacy_extensions.contains_key("top_p"))
                             .then_some(model.top_p)
                             .flatten(),

@@ -9,6 +9,7 @@ import type {
   AdapterTargetDescriptor,
   AdapterTelemetryProviderSupport,
   AgentConfig,
+  AgentModelConfig,
   AgentUsage,
   ControlLocation,
   EnvironmentOwnership,
@@ -57,6 +58,7 @@ const config: AgentConfig = {
       model: "example-model",
       provider: "example-provider",
       temperature: null,
+      native_reasoning_effort: "high",
     },
   },
   mcp: {
@@ -76,6 +78,26 @@ const config: AgentConfig = {
   },
   tools: { enabled: null },
 };
+
+const disabledReasoning: AgentModelConfig = {
+  provider: "example-provider",
+  model: "example-model",
+  native_reasoning_effort: "off",
+};
+const unsetReasoning: AgentModelConfig = {
+  provider: "example-provider",
+  model: "example-model",
+  native_reasoning_effort: null,
+};
+const invalidReasoning: AgentModelConfig = {
+  provider: "example-provider",
+  model: "example-model",
+  // @ts-expect-error native effort accepts strings, not booleans
+  native_reasoning_effort: false,
+};
+void disabledReasoning;
+void unsetReasoning;
+void invalidReasoning;
 
 const serviceAccountAuthentication: McpAuthenticationConfig = {
   client_id: "fabric-service",

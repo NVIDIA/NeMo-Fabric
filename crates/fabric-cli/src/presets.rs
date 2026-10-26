@@ -324,6 +324,7 @@ fn model(
         temperature: None,
         top_p: None,
         max_tokens: None,
+        native_reasoning_effort: None,
         api_key_env: api_key_env.map(str::to_string),
         base_url: base_url.map(str::to_string),
         settings: Map::new(),

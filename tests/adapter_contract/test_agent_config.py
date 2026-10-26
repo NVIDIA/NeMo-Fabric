@@ -209,6 +209,41 @@ def test_agent_model_config_round_trips_normalized_sampling_fields():
     assert model.to_mapping()["max_tokens"] == 512
 
 
+@pytest.mark.parametrize(
+    "effort", ["off", "none", "high", "future-native-level", " high "]
+)
+def test_agent_model_config_preserves_native_reasoning_effort(effort):
+    raw = {
+        "provider": "nvidia",
+        "model": "test-model",
+        "native_reasoning_effort": effort,
+    }
+    model = AgentModelConfig.from_mapping(raw)
+
+    assert model.native_reasoning_effort == effort
+    assert model.to_mapping() == raw
+
+
+@pytest.mark.parametrize("extra", [{}, {"native_reasoning_effort": None}])
+def test_agent_model_config_omits_unset_native_reasoning_effort(extra):
+    model = AgentModelConfig(provider="nvidia", model="test-model", **extra)
+
+    assert model.native_reasoning_effort is None
+    assert "native_reasoning_effort" not in model.to_mapping()
+
+
+@pytest.mark.parametrize("effort", ["", " \t\n", True, 1, [], {}])
+def test_agent_model_config_rejects_invalid_native_reasoning_effort(effort):
+    with pytest.raises(ContractValidationError, match="native_reasoning_effort"):
+        AgentModelConfig.from_mapping(
+            {
+                "provider": "nvidia",
+                "model": "test-model",
+                "native_reasoning_effort": effort,
+            }
+        )
+
+
 def test_agent_model_config_accepts_u64_max_tokens():
     maximum = (1 << 64) - 1
 

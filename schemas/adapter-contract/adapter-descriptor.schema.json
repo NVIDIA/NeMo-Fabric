@@ -29,6 +29,11 @@
           "type": "string"
         },
         {
+          "const": "models.native_reasoning_effort",
+          "description": "Native reasoning effort, with `off` reserved for disabling reasoning.",
+          "type": "string"
+        },
+        {
           "const": "instructions.system",
           "description": "Portable system instructions.",
           "type": "string"

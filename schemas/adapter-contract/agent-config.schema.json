@@ -201,6 +201,15 @@
           "pattern": "\\S",
           "type": "string"
         },
+        "native_reasoning_effort": {
+          "description": "Adapter-native reasoning effort. `off` requests disabled reasoning.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "provider": {
           "description": "Model provider identifier.",
           "minLength": 1,

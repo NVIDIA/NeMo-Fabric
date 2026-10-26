@@ -308,6 +308,13 @@ class ModelConfig(FabricBaseModel):
     model: str = Field(min_length=1)
     api_key_env: str | None = None
     temperature: float | None = None
+    native_reasoning_effort: str | None = Field(
+        default=None,
+        strict=True,
+        min_length=1,
+        pattern=r"\S",
+        description="Adapter-native reasoning effort. 'off' requests disabled reasoning.",
+    )
     top_p: float | None = Field(default=None, strict=True, ge=0, le=1)
     max_tokens: int | None = Field(
         default=None,

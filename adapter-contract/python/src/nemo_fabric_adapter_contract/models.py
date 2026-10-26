@@ -147,6 +147,7 @@ class AgentModelConfig(AgentContractBlock):
     model: str
     api_key_env: str | None = _optional()
     temperature: float | None = _optional()
+    native_reasoning_effort: str | None = _optional()
     top_p: float | None = _optional()
     max_tokens: int | None = _optional()
     base_url: str | None = _optional()
@@ -163,6 +164,8 @@ class AgentModelConfig(AgentContractBlock):
                 path=("provider",),
             )
         _nonblank(self.model, "model")
+        if self.native_reasoning_effort is not None:
+            _nonblank(self.native_reasoning_effort, "native_reasoning_effort")
         if self.api_key_env is not None:
             _nonblank(self.api_key_env, "api_key_env")
         if self.top_p is not None and not 0 <= self.top_p <= 1:

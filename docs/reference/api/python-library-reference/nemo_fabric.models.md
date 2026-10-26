@@ -674,6 +674,7 @@ The model defines the following fields:
 | `model` | `str` | Yes | — | `MinLen(min_length=1)` | — |
 | `api_key_env` | `str \| None` | No | `None` | — | — |
 | `temperature` | `float \| None` | No | `None` | — | — |
+| `native_reasoning_effort` | `str \| None` | No | `None` | `Strict(strict=True), MinLen(min_length=1), _PydanticGeneralMetadata(pattern='\\S')` | Adapter-native reasoning effort. 'off' requests disabled reasoning. |
 | `top_p` | `float \| None` | No | `None` | `Strict(strict=True), Ge(ge=0), Le(le=1)` | — |
 | `max_tokens` | `int \| None` | No | `None` | `Strict(strict=True), Gt(gt=0), Le(le=18446744073709551615)` | — |
 | `base_url` | `str \| None` | No | `None` | `MinLen(min_length=1)` | — |
