@@ -84,8 +84,9 @@ variables, explicit NeMo Fabric `environment.env` values, variables named by
 `environment.env_names`, and the selected model credential. Other parent
 variables are not forwarded.
 
-The adapter is non-interactive. It denies follow-up questions, access outside
-the workspace, doom-loop continuation, and direct reads of `.env` files. These
+The adapter is non-interactive. It allows shell commands when `tools.enabled` is
+omitted, and denies follow-up questions, access outside the workspace,
+doom-loop continuation, and direct reads of `.env` files. These
 permission rules are not a filesystem sandbox and cannot prevent an enabled
 shell tool from reading workspace files.
 
