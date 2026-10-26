@@ -13,7 +13,7 @@ def format_money(value: int | None) -> str:
     them as free execution. JSON retains the original nanoUSD quantity.
     """
     if value is None:
-        return "unavailable"
+        return "Unavailable"
     decimals = 2 if value == 0 else min(9, max(2, 12 - len(str(value))))
     quantum = 10 ** (9 - decimals)
     rounded = (value + quantum // 2) // quantum
@@ -23,16 +23,7 @@ def format_money(value: int | None) -> str:
 
 def format_duration_ms(value: int | float) -> str:
     """Format a measured duration without changing its measurement scope."""
-    if value < 1000:
-        return f"{value:g} ms"
-    seconds = value / 1000
-    if seconds < 60:
-        return f"{seconds:.3f}".rstrip("0").rstrip(".") + " s"
-    minutes, seconds = divmod(seconds, 60)
-    if minutes < 60:
-        return f"{int(minutes)} min {seconds:g} s"
-    hours, minutes = divmod(int(minutes), 60)
-    return f"{hours} h {minutes} min {seconds:g} s"
+    return f"{value / 1000:.3f} s"
 
 
 def format_bytes(value: int) -> str:

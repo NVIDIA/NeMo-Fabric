@@ -7,7 +7,7 @@ use clap::error::ErrorKind;
 use clap::{ArgGroup, Args, Parser, Subcommand};
 use nemo_fabric_core::{
     ResolveContext, RunRequest, RunStatus, doctor_plan, resolve_diagnostic_plan_from_config,
-    resolve_run_plan_from_config, run_plan, run_record_folder,
+    resolve_run_plan_from_config, run_record_folder,
 };
 
 use crate::examples;
@@ -87,10 +87,10 @@ enum ExampleCommand {
     },
 }
 
-/// Config switches that turn on the run record.
+/// Config switches that enable the request journal.
 #[derive(Debug, Default, Args)]
 struct RecordSwitches {
-    /// Write a run record for each invocation (sets `runtime.record.enabled`).
+    /// Save request events and the final result or error in `run.jsonl`.
     /// Needs `--artifacts` unless the example sets an artifact root.
     #[arg(long)]
     record: bool,
@@ -292,9 +292,15 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             if let Some(folder) = run_record_folder(&plan) {
                 eprintln!("nemo-fabric: run record under {}", folder.display());
             }
-            let result = match run_plan(&plan, RunRequest::text(input)) {
+            let result = match nemo_fabric_core::runtime::run_plan_with_recording_context(
+                &plan,
+                RunRequest::text(input),
+            ) {
                 Ok(result) => result,
-                Err(error) => {
+                Err((error, _stage, record_path)) => {
+                    if let Some(path) = record_path {
+                        eprintln!("nemo-fabric: run file {}", path.display());
+                    }
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
@@ -305,7 +311,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             },
                         }))?
                     );
-                    return Err(error.into());
+                    return Err((*error).into());
                 }
             };
             for event in result

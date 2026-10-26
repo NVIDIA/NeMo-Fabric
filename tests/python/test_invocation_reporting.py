@@ -3,7 +3,7 @@
 
 from copy import deepcopy
 import json
-from pathlib import Path
+import re
 
 import pytest
 
@@ -11,10 +11,14 @@ from nemo_fabric.reporting import (
     read_evidence,
     read_result,
     render_result_summary,
-    render_request_summary,
     summarize_result,
 )
 from nemo_fabric.types import RunResult
+
+
+def table_value(text, label):
+    rows = [re.split(r"\s{2,}", row, maxsplit=1) for row in text.splitlines()]
+    return dict(row for row in rows if len(row) == 2)[label]
 
 
 @pytest.fixture(name="result")
@@ -49,10 +53,10 @@ def test_one_off_result_needs_no_task_labels_or_benchmark_manifest(tmp_path, res
     summary = read_result(path)
     text = render_result_summary(summary)
     assert summary["status"] == "succeeded"
-    assert "input 100" in text
-    assert "reads 0" in text
-    assert "Provider-reported cost: $0.000000010 (complete)" in text
-    assert "Catalog estimate: unavailable" in text
+    assert table_value(text, "Input tokens") == "100"
+    assert table_value(text, "Cache read tokens") == "0"
+    assert table_value(text, "Provider-reported cost, USD") == "$0.000000010"
+    assert table_value(text, "Estimated cost, USD") == "Unavailable"
     assert summary["result_path"] == str(path)
 
 
@@ -77,9 +81,11 @@ def test_partial_input_preserves_observations_and_independent_output(result):
     assert dimensions["input_tokens"]["observed_sum"] == 50
     assert dimensions["output_tokens"]["complete_total"] == 2
     text = render_result_summary(summary)
-    assert "input 50 (observed, incomplete)" in text
-    assert "output 2 (complete)" in text
-    assert "Some invocation-owned model work was unfinished at return." in text
+    assert table_value(text, "Input tokens") == "50 recorded; total unknown"
+    assert table_value(text, "Output tokens") == "2"
+    assert (
+        "input tokens, total tokens: some model work was unfinished at return" in text
+    )
 
 
 def test_legacy_usage_does_not_become_normalized_or_zero(result):
@@ -130,7 +136,7 @@ def test_result_outcome_boundary_survives_the_reader(result):
     ]
     summary = summarize_result(result)
     assert summary["outcome_boundary"] == "one_shot_lifecycle"
-    assert 'Outcome boundary: "one_shot_lifecycle"' in render_result_summary(
+    assert "Outcome covers: request through runtime shutdown" in render_result_summary(
         summary, details=True
     )
 
@@ -217,7 +223,9 @@ def test_result_reads_only_matching_core_sibling_for_timing(
     summary = read_result(path)
     assert summary["execution_interval"]["elapsed_ms"] == 123
     assert summary["execution_interval"]["scope"] == "core_invocation"
-    assert "before shutdown: 123 ms" in render_result_summary(summary)
+    assert "Core invocation interval: 0.123 s" in render_result_summary(
+        summary, details=True
+    )
     assert summary["status"] == result["status"]
     record_lines[1]["runtime_id"] = "other"
     record.write_text("".join(json.dumps(row) + "\n" for row in record_lines))
@@ -269,7 +277,7 @@ def test_failed_result_shows_structured_error_without_losing_usage_or_dumping_me
     }
     assert "adapter_failure" in text
     assert "private model request details" not in text
-    assert "input 100" in text
+    assert table_value(text, "Input tokens") == "100"
 
 
 def test_foreign_runtime_snapshot_is_rejected_without_erasing_usage(result):
@@ -342,18 +350,19 @@ def test_core_accounting_failure_event_is_visible_without_replacing_execution(re
     assert summary["model_usage"] is None
     assert summary["accounting_error"] == "invalid_model_usage"
     assert summary["legacy_usage"] == {"input_tokens": 100}
-    assert "accounting was invalid" in render_result_summary(summary)
+    assert "accounting is invalid" in render_result_summary(summary)
 
 
 def test_overview_separates_token_and_cost_coverage_and_keeps_exact_json(result):
     summary = summarize_result(result)
     text = render_result_summary(summary)
-    assert (
-        "Token coverage: input/output/total complete; cache breakdown complete" in text
-    )
-    assert "Tokens: input 100; output 2; total 102" in text
-    assert "Provider-reported cost: $0.000000010 (complete)" in text
-    assert "Catalog estimate: unavailable" in text
+    assert "Token coverage" not in text
+    assert text.count("Input tokens") == 1
+    assert table_value(text, "Input tokens") == "100"
+    assert table_value(text, "Output tokens") == "2"
+    assert table_value(text, "Total tokens") == "102"
+    assert table_value(text, "Provider-reported cost, USD") == "$0.000000010"
+    assert table_value(text, "Estimated cost, USD") == "Unavailable"
     assert "Invocation:" not in text
     assert summary["usage"]["dimensions"]["reported_cost"]["complete_total"] == 10
 
@@ -366,10 +375,10 @@ def test_overview_names_missing_token_dimensions_without_hiding_complete_output(
         {"dimensions": ["input_tokens", "total_tokens"], "reason": "unfinished_work"}
     )
     text = render_result_summary(summarize_result(result))
-    assert "input 50 (observed, incomplete)" in text
-    assert "total unavailable" in text
-    assert "output 2 (complete)" in text
-    assert "Token coverage: input/output/total incomplete" in text
+    assert table_value(text, "Input tokens") == "50 recorded; total unknown"
+    assert table_value(text, "Total tokens") == "Unavailable"
+    assert table_value(text, "Output tokens") == "2"
+    assert "Token coverage" not in text
     assert "unfinished at return" in text
 
 
@@ -380,7 +389,10 @@ def test_accounted_models_are_not_presented_as_served_model_provenance(result):
         {"provider": "anthropic", "model": "helper\x1b[2J"},
     ]
     text = render_result_summary(summary)
-    assert 'Accounted models: "openai/main-model", "anthropic/helper\\u001b[2J"' in text
+    assert "Accounted models:" not in text
+    detail = render_result_summary(summary, details=True)
+    assert "openai/main-model" in detail
+    assert "anthropic/helper\\u001b[2J" in detail
     assert '"served":' not in text
     assert "\x1b" not in text
 
@@ -412,12 +424,12 @@ def test_missing_cache_breakdown_does_not_label_complete_token_totals_incomplete
         }
     )
     text = render_result_summary(summarize_result(result))
-    assert "Tokens: input 100; output 2; total 102" in text
-    assert (
-        "Token coverage: input/output/total complete; cache breakdown unavailable"
-        in text
-    )
-    assert "Cache (included in input): reads unavailable; writes unavailable" in text
+    assert table_value(text, "Input tokens") == "100"
+    assert table_value(text, "Output tokens") == "2"
+    assert table_value(text, "Total tokens") == "102"
+    assert "Token coverage" not in text
+    assert table_value(text, "Cache read tokens") == "Unavailable"
+    assert table_value(text, "Cache write tokens") == "Unavailable"
 
 
 def test_catalog_identity_is_visible_without_dumping_the_basis(result):
@@ -437,10 +449,11 @@ def test_catalog_identity_is_visible_without_dumping_the_basis(result):
     summary = summarize_result(result)
     overview = render_result_summary(summary)
     detail = render_result_summary(summary, details=True)
-    assert "Catalog estimate: $0.000280 (complete)" in overview
-    assert "Pricing basis: catalog; bundled aaaaaaaaaaaa" in overview
+    assert table_value(overview, "Estimated cost, USD") == "$0.000280"
+    assert "aaaaaaaaaaaa" not in overview
+    assert "Packaged table fingerprint: sha256:" + "a" * 64 in detail
     assert "applicable_tariff_no_missing_counts_v1" not in overview
-    assert "applicable_tariff_no_missing_counts_v1" in detail
+    assert "The estimate requires known token counts and applicable prices." in detail
     assert summary["usage"]["pricing"] == pricing
 
 
@@ -474,8 +487,10 @@ def test_record_projection_retains_normalized_accounting_without_full_result(
     from nemo_fabric.reporting import render_invocation_record_summary
 
     text = render_invocation_record_summary(summary)
-    assert "input 50 (observed, incomplete)" in text if partial else "input 100" in text
-    assert "Invocation outcome before runtime shutdown: succeeded" in text
+    assert table_value(text, "Input tokens") == (
+        "50 recorded; total unknown" if partial else "100"
+    )
+    assert "does not establish the one-shot shutdown outcome" in text
     assert not (tmp_path / "run-result.json").exists()
 
 
@@ -529,9 +544,9 @@ def test_ordinary_full_result_preserves_system_stats_without_recording(result):
     assert summary["system_stats"]["after"] == result["system_stats"]["after"]
     assert summary["resource_window"]["cpu_counter_change_seconds"] == 2
     text = render_result_summary(summary, details=True)
-    assert "Elapsed (adapter exchange): 123 ms" in text
-    assert "not invocation CPU" in text
-    assert "System stats collected groups" in text
+    assert table_value(text, "Request execution time") == "0.123 s"
+    assert "Concurrent work can contribute" in text
+    assert "Measured processes: adapter host and its child processes" in text
 
 
 def test_process_stats_not_collected_never_implies_zero(result):
@@ -563,140 +578,10 @@ def test_details_retain_resource_scope_while_overview_stays_compact(result):
     summary = summarize_result(result)
     overview = render_result_summary(summary)
     detail = render_result_summary(summary, details=True)
-    assert "Elapsed (adapter exchange): 123 ms" in overview
+    assert table_value(overview, "Request execution time") == "0.123 s"
     assert "process-tree" not in overview
-    assert "not invocation CPU" in detail
-    assert "not a peak" in detail
+    assert "Concurrent work can contribute" in detail
+    assert "Endpoint memory is not a peak or time average." in detail
     assert "Invocation:" in detail
-    assert "System stats collected groups" in detail
+    assert "Measured processes: adapter host and its child processes" in detail
     assert "bytes" not in detail  # Human-readable memory uses binary units.
-
-
-def _execution_facts():
-    path = Path(__file__).parents[1] / "fixtures/what_ran/reader-vectors.json"
-    return json.loads(path.read_text())["base"]
-
-
-def test_full_result_keeps_execution_facts_without_recording(result):
-    result["what_ran"] = _execution_facts()
-    summary = summarize_result(result)
-    assert summary["what_ran"] == result["what_ran"]
-    assert summary["provenance_error"] is None
-    text = render_result_summary(summary)
-    assert '"requested": "claude-sonnet-4-5", "served": null' in text
-    assert "Accounted models" not in text
-
-
-def test_record_only_keeps_bounded_execution_facts(tmp_path, record_lines):
-    record_lines[1]["what_ran"] = _execution_facts()
-    path = tmp_path / "run-record.jsonl"
-    write_record(path, record_lines)
-    summary = read_evidence(path)
-    assert summary["what_ran"] == record_lines[1]["what_ran"]
-    assert summary["status"] == "succeeded"
-    assert summary["elapsed_ms"] == 123
-
-
-def test_unreadable_execution_facts_keep_execution_and_accounting(result):
-    result["what_ran"] = {"schema": "nemo.fabric.what_ran", "version": "future"}
-    summary = summarize_result(result)
-    assert summary["what_ran"] is None
-    assert summary["provenance_error"] == "unreadable_what_ran"
-    assert summary["status"] == "succeeded"
-    assert summary["usage"]["dimensions"]["input_tokens"]["complete_total"] == 100
-    assert "facts were unreadable" in render_result_summary(summary)
-
-
-def test_full_result_facts_remain_authoritative_over_sibling_record(
-    tmp_path, record_lines, result
-):
-    record_lines[1]["what_ran"] = _execution_facts()
-    write_record(tmp_path / "run-record.jsonl", record_lines)
-    result["what_ran"] = {"schema": "unreadable"}
-    path = tmp_path / "run-result.json"
-    path.write_text(json.dumps(result))
-    summary = read_evidence(path)
-    assert summary["what_ran"] is None
-    assert summary["provenance_error"] == "unreadable_what_ran"
-
-
-def test_minimal_execution_facts_show_byte_budget_omission(result):
-    result["what_ran"] = {
-        "schema": "nemo.fabric.what_ran",
-        "version": "v1alpha1",
-        "what_ran_truncated": {"reason": "byte_budget", "dropped": 1},
-    }
-    summary = summarize_result(result)
-    assert summary["what_ran"] == result["what_ran"]
-    assert "Execution facts were truncated to fit a byte budget." in render_result_summary(
-        summary
-    )
-
-
-def test_absent_execution_facts_are_not_malformed(result):
-    summary = summarize_result(result)
-    assert summary["what_ran"] is None
-    assert summary["provenance_error"] is None
-    assert "facts were unreadable" not in render_result_summary(summary)
-
-
-@pytest.mark.parametrize("stage", ["start", "invoke"])
-def test_request_failure_has_no_fabricated_invocation_or_zero_spend(tmp_path, stage):
-    path = tmp_path / "request-end.json"
-    path.write_text(
-        json.dumps(
-            {
-                "schema": "nemo.fabric.request_record",
-                "version": "v1alpha1",
-                "request_id": "request",
-                "time": "2026-10-21T00:00:00.000Z",
-                "kind": "end",
-                "state": "no_result",
-                "stage": stage,
-            }
-        )
-    )
-    summary = read_evidence(path)
-    assert summary["state"] == "no_result"
-    assert "runtime_id" not in summary and "usage" not in summary
-    assert "Usage and spend are unknown" in render_request_summary(summary)
-
-
-def test_start_record_does_not_claim_the_dispatch_finished(tmp_path):
-    path = tmp_path / "request-start.json"
-    path.write_text(
-        json.dumps(
-            {
-                "schema": "nemo.fabric.request_record",
-                "version": "v1alpha1",
-                "request_id": "request",
-                "time": "2026-10-21T00:00:00.000Z",
-                "kind": "start",
-            }
-        )
-    )
-    summary = read_evidence(path)
-    assert summary["state"] == "registered"
-    assert "no outcome" in render_request_summary(summary)
-
-
-def test_request_result_reference_is_not_followed_or_treated_as_saved(tmp_path):
-    path = tmp_path / "request-end.json"
-    path.write_text(
-        json.dumps(
-            {
-                "schema": "nemo.fabric.request_record",
-                "version": "v1alpha1",
-                "request_id": "request",
-                "time": "2026-10-21T00:00:00.000Z",
-                "kind": "end",
-                "state": "returned",
-                "runtime_id": "rt",
-                "invocation_id": "inv",
-                "result": "../../sensitive.json",
-            }
-        )
-    )
-    summary = read_evidence(path)
-    assert summary["result_reference"] == "../../sensitive.json"
-    assert "does not confirm" in render_request_summary(summary)

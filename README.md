@@ -51,9 +51,9 @@ NeMo Fabric includes adapters for the following harnesses and execution targets.
 
 Opt in to local run evidence with `runtime.record.enabled` and an artifact root,
 or use `nemo-fabric run --preset scripted --record --artifacts ./runs`.
-Recording saves a bounded invocation record and the finalized full result.
-Inspect a saved result with `python -m nemo_fabric.reporting <run-result.json>`;
-add `--details` for resources and pricing evidence or `--json` for exact values.
+Recording saves request events, runtime stderr, optional resource samples and the final result in one `run.jsonl` file.
+Inspect it with `python -m nemo_fabric.reporting <run.jsonl>`;
+add `--details` for execution history and measurement sources or `--json` for a structured summary.
 See [run recording](docs/sdk/python.mdx#opt-in-run-recording) for boundaries and limitations.
 
 ## NVIDIA Ecosystem

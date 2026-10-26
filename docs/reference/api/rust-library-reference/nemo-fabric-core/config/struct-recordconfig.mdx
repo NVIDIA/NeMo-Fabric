@@ -1,7 +1,7 @@
 ---
 title: "Struct Record Config"
 sidebar-title: "RecordConfig"
-description: "Per-invocation run record settings."
+description: "Opt-in local request journal settings."
 position: 55
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -11,15 +11,15 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RecordConfig &#123;\n    pub enabled: <a href=\"https://doc.rust-lang.org/1.94.1/std/primitive.bool.html\">bool</a>,\n&#125;"}} /></pre>
 
-Per-invocation run record settings.
+Opt-in local request journal settings.
 
-When enabled, core appends a start line and an end line for each local invocation to `<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`.
+When enabled, core appends lifecycle events and a terminal summary for each request to `<artifact root>/.fabric/requests/<recording_id>/run.jsonl`. The journal can contain sensitive result data and error messages.
 
 ## Fields
 
 ### `enabled: bool`
 
-Whether to write a run record for each invocation. Requires an artifact root, the `local` environment provider, and a `process` or `python` adapter.
+Whether to write a journal for each request. Requires an artifact root, the `local` environment provider, and a `process` or `python` adapter.
 
 ## Trait Implementations
 

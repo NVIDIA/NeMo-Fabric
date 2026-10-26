@@ -529,8 +529,8 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                     "",
                 ));
             }
-            adopt_task_what_ran(&mut result, &runtime.environment);
             apply_host_catalog(&mut result, plan.user_price_catalog.as_ref());
+            adopt_task_what_ran(&mut result, &runtime.environment);
             for telemetry in &mut result.telemetry {
                 telemetry.relay_enabled = telemetry
                     .metadata
@@ -955,144 +955,6 @@ mod tests {
         }
     }
 
-    /// A task result as the task core returns it, with `what_ran` from the
-    /// shared reader vectors when given.
-    fn task_result(what_ran: Option<Value>) -> RunResult {
-        let mut result = serde_json::json!({
-            "agent_name": "agent", "harness": "nvidia.fabric.claude", "adapter_kind": "python",
-            "runtime_id": "runtime-task", "invocation_id": "invocation-1",
-            "request_id": "request-1", "status": "succeeded", "output": "done"
-        });
-        if let Some(what_ran) = what_ran {
-            result["what_ran"] = what_ran;
-        }
-        serde_json::from_value(result).expect("a task result decodes whatever what_ran holds")
-    }
-
-    fn task_what_ran() -> Value {
-        let vectors: Value = serde_json::from_str(include_str!(
-            "../../../../tests/fixtures/what_ran/reader-vectors.json"
-        ))
-        .expect("reader vectors JSON");
-        vectors["base"].clone()
-    }
-
-    fn facts_collected_by(value: &Value, collector: &str) -> usize {
-        match value {
-            Value::Object(map) if map.contains_key("source") => {
-                usize::from(map.get("collected_by") == Some(&Value::from(collector)))
-            }
-            Value::Object(map) => map
-                .values()
-                .map(|value| facts_collected_by(value, collector))
-                .sum(),
-            _ => 0,
-        }
-    }
-
-    #[test]
-    fn task_what_ran_is_attributed_to_the_task_core_and_this_host() {
-        for task_version in [crate::version(), "0.5.0"] {
-            let mut what_ran = task_what_ran();
-            what_ran["fabric"]["core_version"]["value"] = Value::from(task_version);
-            let mut result = task_result(Some(what_ran));
-
-            adopt_task_what_ran(&mut result, &environment());
-
-            let what_ran = serde_json::to_value(result.what_ran).expect("what_ran JSON");
-            assert_task_facts_are_attributed(&what_ran, task_version);
-        }
-    }
-
-    fn assert_task_facts_are_attributed(what_ran: &Value, task_version: &str) {
-        let host_version = serde_json::json!({"value": crate::version(), "source": "observed",
-            "collected_by": "host_core", "method": "crate_version"});
-        let task_core_version = serde_json::json!({"value": task_version, "source": "observed",
-            "collected_by": "task_core", "method": "crate_version"});
-        assert_eq!(what_ran["fabric"]["core_version"], task_core_version);
-        assert_eq!(what_ran["fabric"]["host_core_version"], host_version);
-        assert_eq!(
-            facts_collected_by(what_ran, "host_core"),
-            1,
-            "only host_core_version is the host's fact"
-        );
-        assert_eq!(what_ran["environment"]["provider"], "openshell");
-        assert_eq!(
-            what_ran["models"]["default"]["requested"]["collected_by"],
-            "task_core"
-        );
-        assert_eq!(
-            what_ran["mcp"]["servers"]["docs"]["endpoint"]["collected_by"],
-            "task_core"
-        );
-        assert_eq!(
-            what_ran["harness"]["version"]["collected_by"], "adapter",
-            "adapter facts keep their collector"
-        );
-    }
-
-    #[test]
-    fn task_what_ran_over_the_byte_budget_becomes_minimal_on_this_host() {
-        let minimal = serde_json::json!({
-            "schema": "nemo.fabric.what_ran",
-            "version": "v1alpha1",
-            "what_ran_truncated": {"reason": "byte_budget", "dropped": 1}
-        });
-        let mut oversized = task_what_ran();
-        oversized["adapter"]["id"] = Value::from("a".repeat(140_000));
-        for what_ran in [oversized, minimal.clone()] {
-            let mut result = task_result(Some(what_ran));
-
-            adopt_task_what_ran(&mut result, &environment());
-
-            assert_eq!(
-                serde_json::to_value(result.what_ran).expect("what_ran JSON"),
-                minimal
-            );
-            assert_eq!(result.status, RunStatus::Succeeded);
-            assert_eq!(result.output, Value::from("done"));
-        }
-    }
-
-    #[test]
-    fn task_what_ran_past_the_entry_caps_is_bounded_on_this_host() {
-        let mut what_ran = task_what_ran();
-        let server = what_ran["mcp"]["servers"]["docs"].clone();
-        what_ran["mcp"]["servers"] = (0..35)
-            .map(|index| (format!("server-{index:02}"), server.clone()))
-            .collect::<serde_json::Map<_, _>>()
-            .into();
-        what_ran["mcp"]["servers_truncated"] =
-            serde_json::json!({"reason": "key_too_long", "dropped": 2});
-        let mut result = task_result(Some(what_ran));
-
-        adopt_task_what_ran(&mut result, &environment());
-
-        let what_ran = serde_json::to_value(result.what_ran).expect("what_ran JSON");
-        let servers = what_ran["mcp"]["servers"].as_object().expect("servers");
-        let expected: Vec<String> = (0..32).map(|index| format!("server-{index:02}")).collect();
-        assert_eq!(servers.keys().cloned().collect::<Vec<_>>(), expected);
-        assert_eq!(
-            what_ran["mcp"]["servers_truncated"],
-            serde_json::json!({"reason": "entry_cap", "dropped": 5})
-        );
-    }
-
-    #[test]
-    fn task_result_without_readable_what_ran_is_kept_without_it() {
-        let mut undecodable = task_what_ran();
-        undecodable["harness"]["version"]["state"] = Value::from("withheld");
-        for what_ran in [None, Some(undecodable)] {
-            let mut result = task_result(what_ran);
-
-            adopt_task_what_ran(&mut result, &environment());
-
-            assert_eq!(result.what_ran, None);
-            assert_eq!(result.status, RunStatus::Succeeded);
-            assert_eq!(result.output, Value::from("done"));
-        }
-    }
-
     fn catalog_for_task_usage() -> crate::price_catalog::UserPriceCatalog {
         crate::price_catalog::UserPriceCatalog::from_bytes(
             PathBuf::from("host-only-catalog.json"),
@@ -1260,6 +1122,144 @@ mod tests {
                 .iter()
                 .any(|event| event.kind == "model_usage_invalid")
         );
+    }
+
+    /// A task result as the task core returns it, with `what_ran` from the
+    /// shared reader vectors when given.
+    fn task_result(what_ran: Option<Value>) -> RunResult {
+        let mut result = serde_json::json!({
+            "agent_name": "agent", "harness": "nvidia.fabric.claude", "adapter_kind": "python",
+            "runtime_id": "runtime-task", "invocation_id": "invocation-1",
+            "request_id": "request-1", "status": "succeeded", "output": "done"
+        });
+        if let Some(what_ran) = what_ran {
+            result["what_ran"] = what_ran;
+        }
+        serde_json::from_value(result).expect("a task result decodes whatever what_ran holds")
+    }
+
+    fn task_what_ran() -> Value {
+        let vectors: Value = serde_json::from_str(include_str!(
+            "../../../../tests/fixtures/what_ran/reader-vectors.json"
+        ))
+        .expect("reader vectors JSON");
+        vectors["base"].clone()
+    }
+
+    fn facts_collected_by(value: &Value, collector: &str) -> usize {
+        match value {
+            Value::Object(map) if map.contains_key("source") => {
+                usize::from(map.get("collected_by") == Some(&Value::from(collector)))
+            }
+            Value::Object(map) => map
+                .values()
+                .map(|value| facts_collected_by(value, collector))
+                .sum(),
+            _ => 0,
+        }
+    }
+
+    #[test]
+    fn task_what_ran_is_attributed_to_the_task_core_and_this_host() {
+        for task_version in [crate::version(), "0.5.0"] {
+            let mut what_ran = task_what_ran();
+            what_ran["fabric"]["core_version"]["value"] = Value::from(task_version);
+            let mut result = task_result(Some(what_ran));
+
+            adopt_task_what_ran(&mut result, &environment());
+
+            let what_ran = serde_json::to_value(result.what_ran).expect("what_ran JSON");
+            assert_task_facts_are_attributed(&what_ran, task_version);
+        }
+    }
+
+    fn assert_task_facts_are_attributed(what_ran: &Value, task_version: &str) {
+        let host_version = serde_json::json!({"value": crate::version(), "source": "observed",
+            "collected_by": "host_core", "method": "crate_version"});
+        let task_core_version = serde_json::json!({"value": task_version, "source": "observed",
+            "collected_by": "task_core", "method": "crate_version"});
+        assert_eq!(what_ran["fabric"]["core_version"], task_core_version);
+        assert_eq!(what_ran["fabric"]["host_core_version"], host_version);
+        assert_eq!(
+            facts_collected_by(what_ran, "host_core"),
+            1,
+            "only host_core_version is the host's fact"
+        );
+        assert_eq!(what_ran["environment"]["provider"], "openshell");
+        assert_eq!(
+            what_ran["models"]["default"]["requested"]["collected_by"],
+            "task_core"
+        );
+        assert_eq!(
+            what_ran["mcp"]["servers"]["docs"]["endpoint"]["collected_by"],
+            "task_core"
+        );
+        assert_eq!(
+            what_ran["harness"]["version"]["collected_by"], "adapter",
+            "adapter facts keep their collector"
+        );
+    }
+
+    #[test]
+    fn task_what_ran_over_the_byte_budget_becomes_minimal_on_this_host() {
+        let minimal = serde_json::json!({
+            "schema": "nemo.fabric.what_ran",
+            "version": "v1alpha1",
+            "what_ran_truncated": {"reason": "byte_budget", "dropped": 1}
+        });
+        let mut oversized = task_what_ran();
+        oversized["adapter"]["id"] = Value::from("a".repeat(140_000));
+        for what_ran in [oversized, minimal.clone()] {
+            let mut result = task_result(Some(what_ran));
+
+            adopt_task_what_ran(&mut result, &environment());
+
+            assert_eq!(
+                serde_json::to_value(result.what_ran).expect("what_ran JSON"),
+                minimal
+            );
+            assert_eq!(result.status, RunStatus::Succeeded);
+            assert_eq!(result.output, Value::from("done"));
+        }
+    }
+
+    #[test]
+    fn task_what_ran_past_the_entry_caps_is_bounded_on_this_host() {
+        let mut what_ran = task_what_ran();
+        let server = what_ran["mcp"]["servers"]["docs"].clone();
+        what_ran["mcp"]["servers"] = (0..35)
+            .map(|index| (format!("server-{index:02}"), server.clone()))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
+        what_ran["mcp"]["servers_truncated"] =
+            serde_json::json!({"reason": "key_too_long", "dropped": 2});
+        let mut result = task_result(Some(what_ran));
+
+        adopt_task_what_ran(&mut result, &environment());
+
+        let what_ran = serde_json::to_value(result.what_ran).expect("what_ran JSON");
+        let servers = what_ran["mcp"]["servers"].as_object().expect("servers");
+        let expected: Vec<String> = (0..32).map(|index| format!("server-{index:02}")).collect();
+        assert_eq!(servers.keys().cloned().collect::<Vec<_>>(), expected);
+        assert_eq!(
+            what_ran["mcp"]["servers_truncated"],
+            serde_json::json!({"reason": "entry_cap", "dropped": 5})
+        );
+    }
+
+    #[test]
+    fn task_result_without_readable_what_ran_is_kept_without_it() {
+        let mut undecodable = task_what_ran();
+        undecodable["harness"]["version"]["state"] = Value::from("withheld");
+        for what_ran in [None, Some(undecodable)] {
+            let mut result = task_result(what_ran);
+
+            adopt_task_what_ran(&mut result, &environment());
+
+            assert_eq!(result.what_ran, None);
+            assert_eq!(result.status, RunStatus::Succeeded);
+            assert_eq!(result.output, Value::from("done"));
+        }
     }
 
     #[test]

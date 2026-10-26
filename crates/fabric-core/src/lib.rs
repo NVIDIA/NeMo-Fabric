@@ -24,8 +24,8 @@ mod task_command;
 mod time;
 pub mod usage_accounting;
 mod usage_normalization;
-pub use record::run_record_folder;
 pub mod what_ran;
+pub use record::run_record_folder;
 
 pub use adapter_contract::{ADAPTER_CONTRACT_VERSION, AdapterExtensionPoint};
 pub use agent_execution::{

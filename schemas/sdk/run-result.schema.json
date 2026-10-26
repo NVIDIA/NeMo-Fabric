@@ -927,7 +927,11 @@
         },
         "tool_names": {
           "$ref": "#/$defs/Fact_for_Array_of_string",
-          "description": "Raw tool names the server lists, each bounded by the string length\nrule."
+          "description": "Raw tool names the server lists, each bounded by the string length\nrule. At most 64 names, in sorted order."
+        },
+        "tool_names_truncated": {
+          "$ref": "#/$defs/TruncatedEntries",
+          "description": "Tool names dropped from `tool_names`, by the adapter's helper or by\ncore. Absent when none was dropped, never `null`."
         }
       },
       "required": [
@@ -2113,7 +2117,7 @@
         },
         "what_ran_truncated": {
           "$ref": "#/$defs/TruncatedEntries",
-          "description": "Present only on a minimal object: every section was dropped to fit\nits containing record's byte budget, with reason `byte_budget` and\na dropped count of 1. The full-result object uses a 128 KiB budget."
+          "description": "Present only on a minimal object: every section was dropped to keep\nthe object within 128 KiB, with reason `byte_budget` and a dropped\ncount of 1."
         }
       },
       "required": [

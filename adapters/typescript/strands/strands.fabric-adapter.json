@@ -123,6 +123,9 @@
             "refusal",
             "cancelled"
           ]
+        },
+        "nemo_fabric.versions.v1": {
+          "type": "object"
         }
       },
       "required": [
