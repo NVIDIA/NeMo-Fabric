@@ -161,6 +161,7 @@ nemo-fabric-adapters-openclaw = { path = "adapters/python/openclaw", editable = 
 nemo-fabric-adapters-remote-agent = { path = "adapters/python/remote-agent", editable = true }
 
 [tool.pytest.ini_options]
+markers = ["integration: verifies behavior across component or language boundaries"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 testpaths = ["tests"]
