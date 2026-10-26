@@ -19,7 +19,11 @@ from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import provenance
 from nemo_fabric_adapters.common import openai_chat
 from nemo_fabric_adapters.common import utils as common_utils
-from nemo_fabric_adapter_contract.usage import UsageObservation, usage_from_observations
+from nemo_fabric_adapter_contract.usage import (
+    ACCOUNTING_KEY,
+    UsageObservation,
+    usage_from_observations,
+)
 
 _PACKAGE_DISTRIBUTION = "nemo-fabric-adapters-remote-agent"
 
@@ -360,6 +364,7 @@ class RemoteAgentRuntime:
             payload["max_output_tokens"] = model.max_tokens
         if metadata is not None:
             payload["metadata"] = metadata
+        latest_usage: dict[str, Any] = {}
         async with self._client.stream(
             "POST", self._endpoint, json=payload
         ) as response:
@@ -367,32 +372,24 @@ class RemoteAgentRuntime:
             async for event, value in _sse_events(response):
                 value = _event_object(value, "event")
                 report = value.get("response")
-                if (
-                    isinstance(report, dict)
-                    and isinstance(report.get("usage"), dict)
-                    and on_usage is not None
-                ):
-                    raw = report["usage"]
-                    details = _usage_object(raw.get("input_tokens_details"))
-                    on_usage(
-                        _usage(
-                            raw.get("input_tokens"),
-                            raw.get("output_tokens"),
-                            raw.get("total_tokens"),
-                            cached_input_tokens=details.get("cached_tokens"),
-                        )
-                    )
+                if isinstance(report, dict) and report.get("usage") is not None:
+                    raw = _usage_object(report["usage"])
+                    candidate = _responses_usage(raw)
+                    # Empty or unknown-only objects provide no newer counters.
+                    # Reported zero remains usable evidence, not an omission.
+                    if candidate.extensions[ACCOUNTING_KEY]["observed"]:
+                        latest_usage = raw
+                        if on_usage is not None:
+                            on_usage(candidate)
                 if event == "response.completed":
                     completed = _event_object(value["response"], "response")
-                    usage = _usage_object(completed.get("usage"))
-                    details = _usage_object(usage.get("input_tokens_details"))
-                    return _response_text(completed), _usage(
-                        usage.get("input_tokens"),
-                        usage.get("output_tokens"),
-                        usage.get("total_tokens"),
-                        cached_input_tokens=details.get("cached_tokens"),
-                        input_tokens_include_cache=True,
-                    )
+                    raw = _usage_object(completed.get("usage"))
+                    usage = _responses_usage(raw)
+                    if not usage.extensions[ACCOUNTING_KEY]["observed"]:
+                        usage = _responses_usage(
+                            latest_usage, gap_reason=contract.GapReason.MISSING_USAGE
+                        )
+                    return _response_text(completed), usage
         raise RuntimeError("remote agent response ended without completion")
 
     async def _invoke_completions(
@@ -536,6 +533,22 @@ def _usage_object(value: Any) -> dict[str, Any]:
     return value
 
 
+def _responses_usage(
+    raw: dict[str, Any],
+    *,
+    gap_reason: contract.GapReason = contract.GapReason.SCOPE_UNVERIFIED,
+) -> contract.AgentUsage:
+    details = _usage_object(raw.get("input_tokens_details"))
+    return _usage(
+        raw.get("input_tokens"),
+        raw.get("output_tokens"),
+        raw.get("total_tokens"),
+        cached_input_tokens=details.get("cached_tokens"),
+        input_tokens_include_cache=True,
+        gap_reason=gap_reason,
+    )
+
+
 def _usage(
     input_tokens: int | None,
     output_tokens: int | None,
@@ -544,6 +557,7 @@ def _usage(
     cached_input_tokens: int | None = None,
     cache_write_input_tokens: int | None = None,
     input_tokens_include_cache: bool = True,
+    gap_reason: contract.GapReason = contract.GapReason.SCOPE_UNVERIFIED,
 ) -> contract.AgentUsage:
     return usage_from_observations(
         [
@@ -557,7 +571,7 @@ def _usage(
                     output_tokens_include_reasoning=True,
                     total_tokens=total_tokens,
                 ),
-                gap=contract.GapReason.SCOPE_UNVERIFIED,
+                gap=gap_reason,
                 tokens_aligned=True,
             )
         ]

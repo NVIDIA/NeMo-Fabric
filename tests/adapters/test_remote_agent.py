@@ -550,3 +550,111 @@ def test_remote_agent_descriptor_and_module_entrypoint(repo_root: Path):
         "integration_modes": ["remote_service"],
     }
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    ("final_usage", "expected_input"),
+    [
+        pytest.param("omitted", 10, id="omitted-final-usage"),
+        pytest.param(None, 10, id="null-final-usage"),
+        pytest.param({}, 10, id="empty-final-usage"),
+        pytest.param("empty_intermediate", 10, id="empty-intermediate-snapshot"),
+        pytest.param(
+            {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+            0,
+            id="reported-zero-final-usage",
+        ),
+        pytest.param(
+            {"input_tokens": 20, "output_tokens": 4, "total_tokens": 24},
+            20,
+            id="new-final-snapshot",
+        ),
+    ],
+)
+async def test_remote_responses_keep_latest_usage_without_transferring_it_to_next_request(
+    monkeypatch, repo_root, final_usage, expected_input
+):
+    requests = 0
+    completed = {
+        "output": [
+            {"type": "message", "content": [{"type": "output_text", "text": "done"}]}
+        ]
+    }
+    if final_usage not in ("omitted", "empty_intermediate"):
+        completed["usage"] = final_usage
+
+    def respond(request):
+        nonlocal requests
+        requests += 1
+        events = []
+        if requests == 1:
+            events.append(
+                (
+                    "response.in_progress",
+                    {
+                        "response": {
+                            "usage": {
+                                "input_tokens": 10,
+                                "output_tokens": 2,
+                                "total_tokens": 12,
+                            }
+                        }
+                    },
+                )
+            )
+        if requests == 1 and final_usage == "empty_intermediate":
+            events.append(("response.in_progress", {"response": {"usage": {}}}))
+        terminal = completed if requests == 1 else {"output": completed["output"]}
+        events.append(("response.completed", {"response": terminal}))
+        payload = "".join(
+            "event: " + kind + "\ndata: " + json.dumps(value) + "\n\n"
+            for kind, value in events
+        )
+        return httpx.Response(200, text=payload)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    monkeypatch.setattr(adapter.httpx, "AsyncClient", MagicMock(return_value=client))
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {
+                "settings": {
+                    "base_url": "https://agents.example.test/v1",
+                    "api_type": "openai-responses",
+                }
+            },
+            "models": {"default": {"provider": "test", "model": "fabric-echo"}},
+        }
+    )
+    context = _context()
+    runtime = adapter.RemoteAgentRuntime()
+    await runtime.start(
+        {
+            "config": config,
+            "runtime_context": context.to_mapping(),
+            "base_dir": str(repo_root),
+        }
+    )
+    try:
+        result = await runtime.invoke(AgentRunRequest(input="First."), context)
+        accounting = result.usage.extensions["nemo_fabric.usage_accounting.v1"]
+        assert result.status == "succeeded"
+        assert result.usage.input_tokens is None
+        assert accounting["observed"]["input_tokens"] == expected_input
+        if (
+            final_usage is None
+            or final_usage in ("omitted", "empty_intermediate")
+            or final_usage == {}
+        ):
+            assert any(
+                gap["reason"] == "missing_usage" and "input_tokens" in gap["dimensions"]
+                for gap in accounting["gaps"]
+            )
+        following = await runtime.invoke(AgentRunRequest(input="Second."), context)
+        assert (
+            following.usage.extensions["nemo_fabric.usage_accounting.v1"][
+                "observed"
+            ].get("input_tokens")
+            is None
+        )
+    finally:
+        await runtime.stop()
