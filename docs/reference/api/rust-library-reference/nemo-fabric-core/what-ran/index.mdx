@@ -1,0 +1,55 @@
+---
+title: "Module what_ran"
+sidebar-title: "what_ran"
+slug: "/reference/api/rust-library-reference/nemo-fabric-core/what_ran"
+description: "What executed for one invocation, and how NeMo Fabric learned each fact."
+position: 157
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+What executed for one invocation, and how NeMo Fabric learned each fact.
+
+[`WhatRan`](struct-whatran.mdx) rides on [`RunResult`](../runtime/struct-runresult.mdx). Each fact is a [`Fact`](enum-fact.mdx): a value, or a [`FactState`](enum-factstate.mdx) with a reason, and in both cases the [`FactSource`](enum-factsource.mdx), the component that collected it and the method it used. A few names fixed by the run plan stay plain strings: the adapter ID, each model role's provider, the environment provider, and each MCP server's origin and transport.
+
+A string value longer than 256 characters, in a string fact or as an element of a string-list fact, keeps its first 240 characters, then `~`, then the first 15 hex digits of its SHA-256. Map keys and the plain names above are never cut.
+
+`models` keeps at most 16 roles and `mcp.servers` at most 32 servers, in sorted key order. An entry whose key is longer than 128 characters is dropped. While the compact JSON of the whole object is larger than 128 KiB, MCP server entries are dropped from the end of the sorted order, then model roles. Dropped entries are counted in a [`TruncatedEntries`](struct-truncatedentries.mdx) marker next to the map: `models_truncated` and `mcp.servers_truncated`. If the object is still too large with no MCP server and no model role, it is replaced by a minimal one that holds only the schema name, the version and the `what_ran_truncated` marker.
+
+`what_ran` is evidence. It never decides which runs are compared.
+
+Compatibility rules for readers:
+
+- `source` and `state` are closed sets. A new value changes [`WHAT_RAN_VERSION`](constant-what-ran-version.mdx).
+- `collected_by`, `method` and `reason` are open. Readers accept values they do not know.
+- Readers accept unknown properties. Adding an optional property keeps [`WHAT_RAN_VERSION`](constant-what-ran-version.mdx); removing one or changing its meaning changes it. The Rust types drop unknown properties when they decode, so a host that relays a task core's result drops them too.
+- A fact holds `value`, or `state` and `reason`, never both. A `RunResult` reader that finds a fact breaking this, any other value the schema rejects, or another schema or version reads `what_ran` as absent and still decodes the result.
+
+## Structs
+
+- [AdapterFacts](struct-adapterfacts.mdx): Adapter facts.
+- [EnvironmentFacts](struct-environmentfacts.mdx): Environment facts.
+- [FabricFacts](struct-fabricfacts.mdx): NeMo Fabric core facts.
+- [FactOrigin](struct-factorigin.mdx): Who collected a fact and how.
+- [HarnessFacts](struct-harnessfacts.mdx): Harness facts.
+- [KnownFact](struct-knownfact.mdx): A fact with a value.
+- [McpFacts](struct-mcpfacts.mdx): MCP facts.
+- [McpRuntimeFacts](struct-mcpruntimefacts.mdx): What the harness learned about one MCP server when it connected.
+- [McpServerFacts](struct-mcpserverfacts.mdx): Facts about one MCP server.
+- [MissingFact](struct-missingfact.mdx): A fact without a value.
+- [ModelFacts](struct-modelfacts.mdx): Facts about one model role.
+- [TruncatedEntries](struct-truncatedentries.mdx): Entries core dropped to keep `what_ran` within its bounds: next to a map for the entries dropped from it, or as `what_ran_truncated` for the whole object.
+- [WhatRan](struct-whatran.mdx): What executed for one invocation.
+
+## Enums
+
+- [Fact](enum-fact.mdx): One fact: a `value`, or a `state` with a `reason`, never both.
+- [FactSource](enum-factsource.mdx): How NeMo Fabric learned a fact.
+- [FactState](enum-factstate.mdx): Why a fact has no value. A collector picks the first state that matches, in declaration order.
+
+## Constants
+
+- [WHAT_RAN_SCHEMA](constant-what-ran-schema.mdx): Schema name written into every [`WhatRan`](struct-whatran.mdx).
+- [WHAT_RAN_VERSION](constant-what-ran-version.mdx): Contract version written into every [`WhatRan`](struct-whatran.mdx).

@@ -10,7 +10,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { access, chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const npmCli = process.env.npm_execpath;
 if (npmCli === undefined) {
@@ -29,6 +29,7 @@ const packageRoots = [
   join(repositoryRoot, "adapters/typescript/qwen"),
   join(repositoryRoot, "adapters/typescript/kilo"),
   join(repositoryRoot, "adapters/typescript/kiro"),
+  join(repositoryRoot, "adapters/typescript/strands"),
 ];
 
 function npm(args, cwd) {
@@ -155,6 +156,19 @@ function runKiroCli(kiroRoot, consumerRoot, requests, env = process.env) {
   return invocation.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
 
+function runStrandsCli(strandsRoot, consumerRoot, requests, env = process.env) {
+  const invocation = spawnSync(process.execPath, [join(strandsRoot, "dist/cli.js")], {
+    cwd: consumerRoot,
+    encoding: "utf8",
+    env,
+    input: `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`,
+    timeout: 60_000,
+  });
+  if (invocation.error) throw invocation.error;
+  if (invocation.status !== 0) throw new Error(`Installed Strands CLI adapter failed: ${invocation.stderr}`);
+  return invocation.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
 function startRequest(consumerRoot) {
   return {
     operation: "start",
@@ -278,6 +292,18 @@ function kiroStartRequest(consumerRoot) {
     payload: {
       ...request.payload,
       agent_name: "kiro-install-check",
+      config: {},
+    },
+  };
+}
+
+function strandsStartRequest(consumerRoot) {
+  const request = openCodeStartRequest(consumerRoot);
+  return {
+    ...request,
+    payload: {
+      ...request.payload,
+      agent_name: "strands-install-check",
       config: {},
     },
   };
@@ -624,6 +650,47 @@ try {
   ) {
     throw new Error(`Packaged Kiro lifecycle failed: ${JSON.stringify(kiroResponses)}`);
   }
+  const strandsRoot = join(consumerRoot, "node_modules/nemo-fabric-adapters-strands");
+  const strandsDescriptor = JSON.parse(await readFile(join(strandsRoot, "strands.fabric-adapter.json"), "utf8"));
+  if (strandsDescriptor.runner?.command !== "node" || strandsDescriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("Installed Strands descriptor does not reference its packaged CLI");
+  }
+  const [missingStrandsResponse] = runStrandsCli(strandsRoot, consumerRoot,
+    [strandsStartRequest(consumerRoot)], { ...process.env, PATH: missingKiroBin });
+  if (missingStrandsResponse.outcome?.error?.code !== "strands_harness_unavailable") {
+    throw new Error(`Adapter-only install did not report the missing Strands CLI: ${JSON.stringify(missingStrandsResponse)}`);
+  }
+  const strandsBin = join(temporaryRoot, "strands-bin");
+  await mkdir(strandsBin);
+  const strandsFixture = join(repositoryRoot, "adapters/typescript/strands/test/fixtures/acp-agent.mjs");
+  if (process.platform === "win32") {
+    const scripts = join(strandsBin, "node_modules/@strands-agents/cli/bin");
+    await mkdir(scripts, { recursive: true });
+    await writeFile(join(scripts, "strands.js"), `import(${JSON.stringify(pathToFileURL(strandsFixture).href)});\n`);
+  } else {
+    await writeFile(join(strandsBin, "strands"), '#!/bin/sh\nexec "$TEST_NODE_EXECUTABLE" "$TEST_STRANDS_FIXTURE" "$@"\n');
+    await chmod(join(strandsBin, "strands"), 0o755);
+  }
+  const strandsStart = strandsStartRequest(consumerRoot);
+  strandsStart.payload.runtime_context.environment.env = {
+    PATH: `${strandsBin}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
+    TEST_NODE_EXECUTABLE: process.execPath, TEST_STRANDS_FIXTURE: strandsFixture,
+  };
+  const strandsResponses = runStrandsCli(strandsRoot, consumerRoot, [strandsStart,
+    { operation: "invoke", payload: { request: { input: "remember-me" }, runtime_context: {
+      ...strandsStart.payload.runtime_context, invocation_id: "strands-one" } } },
+    { operation: "invoke", payload: { request: { input: "recall" }, runtime_context: {
+      ...strandsStart.payload.runtime_context, invocation_id: "strands-two" } } },
+    { operation: "stop", payload: { runtime_id: strandsStart.payload.runtime_context.runtime_id } },
+  ]);
+  if (strandsResponses.length !== 4 || strandsResponses[0].outcome?.status !== "succeeded" ||
+      strandsResponses[1].outcome?.output?.output?.response !== "remember-me" ||
+      strandsResponses[2].outcome?.output?.output?.response !== "remember-me" ||
+      strandsResponses[2].outcome?.output?.usage?.input_tokens !== 12 ||
+      strandsResponses[3].outcome?.status !== "succeeded") {
+    throw new Error(`Packaged Strands lifecycle failed: ${JSON.stringify(strandsResponses)}`);
+  }
+
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });
 }
