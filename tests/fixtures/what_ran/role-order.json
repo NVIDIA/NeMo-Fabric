@@ -1,0 +1,40 @@
+{
+  "description": "Model roles past the 16-role cap. Rust core, the Python helper and the TypeScript helper sort role keys by Unicode code point (UTF-8 byte order) and keep the first 16, so all three keep the same roles. U+10000 sorts after U+E000 by code point but before it by UTF-16 code unit.",
+  "roles": [
+    "\ud800\udc00",
+    "\ue000",
+    "role-14",
+    "role-13",
+    "role-12",
+    "role-11",
+    "role-10",
+    "role-09",
+    "role-08",
+    "role-07",
+    "role-06",
+    "role-05",
+    "role-04",
+    "role-03",
+    "role-02",
+    "role-01",
+    "role-00"
+  ],
+  "kept": [
+    "role-00",
+    "role-01",
+    "role-02",
+    "role-03",
+    "role-04",
+    "role-05",
+    "role-06",
+    "role-07",
+    "role-08",
+    "role-09",
+    "role-10",
+    "role-11",
+    "role-12",
+    "role-13",
+    "role-14",
+    "\ue000"
+  ]
+}

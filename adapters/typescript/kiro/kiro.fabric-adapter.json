@@ -40,7 +40,8 @@
         "stop_reason": {
           "type": "string",
           "enum": ["end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled"]
-        }
+        },
+        "nemo_fabric.versions.v1": {"type": "object"}
       },
       "required": ["session_id", "stop_reason"],
       "additionalProperties": false
