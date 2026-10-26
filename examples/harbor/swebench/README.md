@@ -76,6 +76,109 @@ uv run --extra harbor harbor run \
 
 The job must complete with one trial and no exception.
 
+## Run Deep Agents with Resource Stats
+
+This recipe runs the Django task with Deep Agents, a self-hosted Nemotron model, and native resource sampling. Use a checkout containing the `fabric_system_stats` bridge option. Run from the NeMo Fabric repository root with Docker available:
+
+```bash
+uv sync --frozen --group adapters --extra harbor --extra deepagents
+mkdir -p "$PWD/outputs"
+export RUNS_DIR="$(mktemp -d "$PWD/outputs/stats-swebench.XXXXXX")"
+mkdir -p "$RUNS_DIR/tmp"
+export TMPDIR="$RUNS_DIR/tmp"
+export JOB_NAME="stats-django-$(date +%Y%m%d-%H%M%S)"
+.venv/bin/harbor download swe-bench/django__django-13741 \
+  --output-dir "$RUNS_DIR/task" --export
+export TASK_DIR="$RUNS_DIR/task/django__django-13741"
+
+mkdir -p "$TASK_DIR/environment/vendor"
+git ls-files -z | tar --null -czf \
+  "$TASK_DIR/environment/vendor/nemo-fabric-source.tar.gz" -T -
+uv export --frozen --no-default-groups --extra deepagents \
+  --no-emit-workspace --no-emit-local --no-hashes \
+  --output-file "$TASK_DIR/environment/vendor/harness-constraints.txt"
+cp examples/harbor/swebench/deepagents/Dockerfile "$TASK_DIR/environment/Dockerfile"
+docker build -t fabric-stats-django:dev "$TASK_DIR/environment"
+sed -i '/^\[environment\]$/a docker_image = "fabric-stats-django:dev"' "$TASK_DIR/task.toml"
+
+git rev-parse HEAD > "$RUNS_DIR/source-commit.txt"
+docker image inspect fabric-stats-django:dev --format '{{.Id}}' > "$RUNS_DIR/image-id.txt"
+docker run --rm fabric-stats-django:dev \
+  uv pip freeze --python /opt/nemo-fabric-venv/bin/python > "$RUNS_DIR/task-packages.txt"
+```
+
+Each preparation creates a fresh task and results directory. To run the prepared task again, keep `TASK_DIR` and `RUNS_DIR` and choose a new `JOB_NAME`; skip the download and image preparation.
+
+The image builds the native runtime and Python adapter from this checkout and constrains harness dependencies to `uv.lock`. The source archive includes tracked files with their current working-tree contents; include any new runtime source files in the archive before testing them. Task instructions and verification remain unchanged. Record the task revision, image ID, and resolved package versions with the experiment; the task and base image tags can change over time.
+
+Check installation before invoking the model:
+
+```bash
+.venv/bin/harbor run --path "$TASK_DIR" \
+  --agent nemo_fabric.integrations.harbor:FabricAgent \
+  --ak fabric_adapter_id=nvidia.fabric.langchain.deepagents \
+  --ak fabric_python=/opt/nemo-fabric-venv/bin/python \
+  --install-only --job-name "${JOB_NAME}-install" \
+  --jobs-dir "$RUNS_DIR/jobs" --n-concurrent 1
+```
+
+Set the endpoint to a server reachable from the task container, and provide its credential or a nonempty placeholder for an unauthenticated server:
+
+```bash
+export MODEL_BASE_URL="http://your-model-host:8000/v1"
+export MODEL_API_KEY="unused"
+
+.venv/bin/harbor run --path "$TASK_DIR" \
+  --agent nemo_fabric.integrations.harbor:FabricAgent \
+  --model nvidia/nemotron-3-ultra-550b-a55b \
+  --ak fabric_adapter_id=nvidia.fabric.langchain.deepagents \
+  --ak fabric_python=/opt/nemo-fabric-venv/bin/python \
+  --ak "fabric_model_base_url=$MODEL_BASE_URL" \
+  --ak fabric_model_api_key_env=MODEL_API_KEY \
+  --ae 'MODEL_API_KEY=${MODEL_API_KEY}' \
+  --ak 'fabric_harness_settings={"deepagents":{"backend":{"type":"local_shell"}}}' \
+  --ak 'fabric_enabled_tools=["execute","ls","read_file","write_file","edit_file","glob","grep","write_todos"]' \
+  --ak 'fabric_environment_env={"PATH":"/opt/miniconda3/envs/testbed/bin:/opt/miniconda3/bin:/usr/local/bin:/usr/bin:/bin"}' \
+  --ak fabric_max_turns=200 \
+  --ak fabric_timeout_sec=3300 \
+  --ak 'fabric_system_stats={"sampling":{"interval_ms":1000,"max_samples":10000}}' \
+  --job-name "$JOB_NAME" --jobs-dir "$RUNS_DIR/jobs" \
+  --n-concurrent 1 --n-attempts 1 --max-retries 0
+```
+
+The local-shell backend lets Deep Agents run commands in the task container. It requires the explicit tool allowlist shown above, which includes `execute` and the file tools. Its command environment is explicit; the testbed Python comes first on `PATH`. For this harness, `fabric_max_turns` maps to the graph recursion limit. Harbor's verifier runs after the measured invocation. `TMPDIR` keeps temporary Compose files in the workspace so Docker launchers with a private `/tmp` can access the same files as Harbor.
+
+`fabric_system_stats` accepts the SDK configuration object. Omit it for all groups with before/after collection, use `--ak fabric_system_stats=null` to disable invocation stats, or add `"collect":["process","cgroup.cpu"]` to select groups. Invalid settings fail host preflight. Host and task runtime versions must both support the selected configuration.
+
+Inspect the downloaded result and locate its raw samples:
+
+```bash
+RESULT_PATH="$(find "$RUNS_DIR/jobs/$JOB_NAME" -path '*/agent/fabric-result-*.json' -print -quit)"
+jq '{status, runtime_id, invocation_id, request_id, system_stats}' "$RESULT_PATH"
+AGENT_DIR="$(dirname "$RESULT_PATH")"
+REMOTE_SAMPLES="$(jq -r '.system_stats.sampled.samples.path' "$RESULT_PATH")"
+cat "$AGENT_DIR/${REMOTE_SAMPLES#/logs/agent/}"
+```
+
+Paths inside `RunResult` refer to the task filesystem. Harbor downloads `/logs/agent` into the trial's `agent` directory, retaining the `fabric-artifacts` subtree. Keep the runner payload (`fabric-run-*.json`), result, samples, summary, and Harbor verifier result together. Agent completion and verifier reward answer different questions.
+
+### Captured Container Run
+
+A Linux run with the locked Deep Agents 0.7.9 environment and the model above produced the following observations. The agent reached `deepagents_recursion_limit_reached`, so Harbor recorded an execution error and did not run the verifier. The finalized stats and raw samples remain available despite that failure; there is no verifier reward to interpret as zero.
+
+| Measurement | Observed value |
+| --- | --- |
+| Invocation duration | 239.198 seconds |
+| Process-tree CPU estimate | 71.95 CPU-seconds |
+| Sampled process RSS peak / mean / final | 985.99 / 355.20 / 201.79 MiB |
+| Sampled process count peak / final | 12 / 1 |
+| Visible CPU / memory limits | 1 core / 4 GiB |
+| Cgroup CPU usage delta | 73.185 CPU-seconds |
+| Cgroup throttled-time delta | 360.323 seconds |
+| Samples / dropped samples / RSS coverage | 236 / 0 / 100% |
+
+In this run, peak RSS is nearly five times the final reading. Actual measurements and agent outcomes vary between runs. For metric definitions, collection scope, and coverage, see [Resource Usage and Stats](../../../docs/sdk/system-stats.mdx).
+
 ## Run One Task with Hermes Agent
 
 The default Hermes Agent command uses NVIDIA's hosted API:
