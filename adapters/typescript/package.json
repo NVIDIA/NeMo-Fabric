@@ -12,16 +12,17 @@
     "opencode",
     "qwen",
     "kilo",
-    "kiro"
+    "kiro",
+    "strands"
   ],
   "scripts": {
-    "build": "npm run build --workspace nemo-fabric-adapters-common && npm run build --workspace nemo-fabric-adapters-cline && npm run build --workspace nemo-fabric-adapters-droid && npm run build --workspace nemo-fabric-adapters-pi && npm run build --workspace nemo-fabric-adapters-opencode && npm run build --workspace nemo-fabric-adapters-qwen && npm run build --workspace nemo-fabric-adapters-kilo && npm run build --workspace nemo-fabric-adapters-kiro",
+    "build": "npm run build --workspace nemo-fabric-adapters-common && npm run build --workspace nemo-fabric-adapters-cline && npm run build --workspace nemo-fabric-adapters-droid && npm run build --workspace nemo-fabric-adapters-pi && npm run build --workspace nemo-fabric-adapters-opencode && npm run build --workspace nemo-fabric-adapters-qwen && npm run build --workspace nemo-fabric-adapters-kilo && npm run build --workspace nemo-fabric-adapters-kiro && npm run build --workspace nemo-fabric-adapters-strands",
     "pack:check": "npm run pack:contents && npm run pack:install-check",
-    "pack:contents": "npm run pack:check --workspace nemo-fabric-adapters-common && npm run pack:check --workspace nemo-fabric-adapters-cline && npm run pack:check --workspace nemo-fabric-adapters-droid && npm run pack:check --workspace nemo-fabric-adapters-pi && npm run pack:check --workspace nemo-fabric-adapters-opencode && npm run pack:check --workspace nemo-fabric-adapters-qwen && npm run pack:check --workspace nemo-fabric-adapters-kilo && npm run pack:check --workspace nemo-fabric-adapters-kiro",
+    "pack:contents": "npm run pack:check --workspace nemo-fabric-adapters-common && npm run pack:check --workspace nemo-fabric-adapters-cline && npm run pack:check --workspace nemo-fabric-adapters-droid && npm run pack:check --workspace nemo-fabric-adapters-pi && npm run pack:check --workspace nemo-fabric-adapters-opencode && npm run pack:check --workspace nemo-fabric-adapters-qwen && npm run pack:check --workspace nemo-fabric-adapters-kilo && npm run pack:check --workspace nemo-fabric-adapters-kiro && npm run pack:check --workspace nemo-fabric-adapters-strands",
     "pack:install-check": "node scripts/check-install.mjs",
     "test": "npm run test:units && npm run test:dependencies && npm run pack:check",
     "test:dependencies": "npm ls --all && node scripts/audit-dependencies.mjs",
-    "test:units": "node --test scripts/audit-dependencies.test.mjs && npm test --workspace nemo-fabric-adapters-common && npm test --workspace nemo-fabric-adapters-cline && npm test --workspace nemo-fabric-adapters-droid && npm test --workspace nemo-fabric-adapters-pi && npm test --workspace nemo-fabric-adapters-opencode && npm test --workspace nemo-fabric-adapters-qwen && npm test --workspace nemo-fabric-adapters-kilo && npm test --workspace nemo-fabric-adapters-kiro"
+    "test:units": "node --test scripts/audit-dependencies.test.mjs && npm test --workspace nemo-fabric-adapters-common && npm test --workspace nemo-fabric-adapters-cline && npm test --workspace nemo-fabric-adapters-droid && npm test --workspace nemo-fabric-adapters-pi && npm test --workspace nemo-fabric-adapters-opencode && npm test --workspace nemo-fabric-adapters-qwen && npm test --workspace nemo-fabric-adapters-kilo && npm test --workspace nemo-fabric-adapters-kiro && npm run test --workspace nemo-fabric-adapters-strands"
   },
   "devDependencies": {
     "nemo-fabric-adapter-contract": "file:../../adapter-contract/typescript"
