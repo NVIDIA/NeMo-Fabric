@@ -56,6 +56,24 @@ environment, and telemetry without starting a runtime:
 .venv/bin/python -m examples.code_review_agent --plan
 ```
 
+### Collect Resource Stats
+
+The example collects before/after invocation stats by default. Add `--stats sampled` to collect periodic readings and retain peak, mean, and coverage summaries. This option composes with the harness selected by `--variant`:
+
+```bash
+.venv/bin/python -m examples.code_review_agent \
+  --variant deepagents \
+  --stats sampled \
+  --stats-interval-ms 1000 \
+  --stats-max-samples 1000 \
+  --input "Review calculator.py. Read the file first; do not edit it." \
+  > run-result.json
+```
+
+Install the [Deep Agents requirements](../../adapters/python/deepagents/README.md) and set `ADAPTER_PYTHON` to that environment's interpreter before running. Use `--stats before-after` for readings before and after the invocation or `--stats off` to disable invocation stats. Interval and retention overrides require sampled mode. The interval defaults to 1000 ms (range 100–60000), and retention defaults to 10000 readings including before/after readings (range 2–100000). Omit `--show-output` to keep redirected output valid JSON.
+
+For a complete self-hosted model command and a captured result walkthrough, see [Resource Usage and Stats](../../docs/sdk/system-stats.mdx). The same `--model`, `--base-url`, and `--api-key-env` overrides work with `--stats`.
+
 ### Change the Skills
 
 The default configuration loads `skills/code-review`. Remove the skill without

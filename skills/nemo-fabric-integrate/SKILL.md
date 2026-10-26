@@ -407,6 +407,7 @@ result-field and error inventory, and
 Link to these canonical sources instead of duplicating them:
 
 - [Python SDK guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx)
+- [Resource usage and stats](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/system-stats.mdx) for collection controls, local and remote scope, sample quality, and repeatable code-review and Harbor examples. Harbor accepts the SDK configuration through `fabric_system_stats`; omission uses before/after collection, and explicit null disables invocation stats.
 - [NeMo Fabric overview](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/about-nemo-fabric/overview.mdx) and
   [installation guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx)
 - Generated API reference (public API index; the installed `nemo_fabric` type
