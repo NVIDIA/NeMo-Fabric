@@ -50,6 +50,7 @@ def test_publisher_only_triggers_for_public_release_channels():
         "nemo-fabric-adapters-droid",
         "nemo-fabric-adapters-kilo",
         "nemo-fabric-adapters-kiro",
+        "nemo-fabric-adapters-strands",
         "nemo-fabric-adapters-opencode",
         "nemo-fabric-adapters-pi",
         "nemo-fabric-adapters-qwen",
@@ -104,6 +105,7 @@ def test_publisher_publishes_packages_in_dependency_order():
         "adapters/typescript/qwen",
         "adapters/typescript/kilo",
         "adapters/typescript/kiro",
+        "adapters/typescript/strands",
     )
     positions = [run.index(directory) for directory in directories]
     assert positions == sorted(positions)

@@ -15,12 +15,14 @@ import shutil
 import subprocess
 from dataclasses import asdict
 from dataclasses import dataclass
+from dataclasses import field
 from dataclasses import is_dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from claude_agent_sdk import AssistantMessage
 from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk import ClaudeSDKClient
 from claude_agent_sdk import ClaudeSDKError
@@ -32,6 +34,7 @@ from claude_agent_sdk import Message
 from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import StreamEvent
+from claude_agent_sdk import SystemMessage
 from claude_agent_sdk import HookMatcher
 from claude_agent_sdk._errors import MessageParseError
 from nemo_fabric_adapter_contract.codec import ContractValidationError
@@ -45,6 +48,7 @@ from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import provenance
 from nemo_fabric_adapters.common import relay_artifacts
 from nemo_fabric_adapters.common import relay_gateway
 from nemo_fabric_adapters.common import relay_hooks
@@ -876,7 +880,77 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
     return _failure("claude_failed", "Claude invocation failed")
 
 
+_PACKAGE_DISTRIBUTION = "nemo-fabric-adapters-claude"
+_HARNESS_NAME = "claude-code"
+_METHOD_INIT_MESSAGE = "harness_init_message"
+_METHOD_HARNESS_API = "harness_api"
+# Claude Code names its own API-error messages with this model.
 _SYNTHETIC_MODEL = "<synthetic>"
+
+
+@dataclass
+class InvocationMessages:
+    """One invocation's messages, and why collecting them failed, if it did."""
+
+    items: list[Message] = field(default_factory=list)
+    failure: str | None = None
+
+
+def served_model_fact(messages: InvocationMessages | None) -> dict[str, Any]:
+    """The model that served this invocation's main thread, as a fact.
+
+    Only assistant messages without a ``parent_tool_use_id`` count, so a
+    subagent's model never decides it, and Claude Code's ``<synthetic>``
+    API-error messages are skipped. One distinct model is reported. Two or
+    more read ``not_attributed``, and none reads ``empty_response``. A stream
+    that failed reads ``collection_failed``, and an invocation that never
+    queried Claude Code reads ``not_collected``.
+    """
+
+    if messages is None:
+        return provenance.missing_fact(
+            "unavailable", "not_collected", _METHOD_HARNESS_API
+        )
+    if messages.failure is not None:
+        return provenance.missing_fact(
+            "collection_failed", messages.failure, _METHOD_HARNESS_API
+        )
+    models = {
+        message.model
+        for message in messages.items
+        if isinstance(message, AssistantMessage)
+        and message.parent_tool_use_id is None
+        and isinstance(message.model, str)
+        and message.model
+        and message.model != _SYNTHETIC_MODEL
+    }
+    if not models:
+        return provenance.missing_fact(
+            "unavailable", "empty_response", _METHOD_HARNESS_API
+        )
+    if len(models) > 1:
+        return provenance.missing_fact(
+            "unavailable", "not_attributed", _METHOD_HARNESS_API
+        )
+    return provenance.known_fact(models.pop(), _METHOD_HARNESS_API)
+
+
+def init_message_version(messages: list[Message]) -> dict[str, Any] | None:
+    """The Claude Code version the latest init message names, as a fact.
+
+    ``None`` when no init message arrived. An init message without a version
+    reads ``unavailable`` with reason ``empty_response``.
+    """
+
+    for message in reversed(messages):
+        if isinstance(message, SystemMessage) and message.subtype == "init":
+            version = message.data.get("claude_code_version")
+            if isinstance(version, str) and version:
+                return provenance.known_fact(version, _METHOD_INIT_MESSAGE)
+            return provenance.missing_fact(
+                "unavailable", "empty_response", _METHOD_INIT_MESSAGE
+            )
+    return None
 
 
 def _agent_run_result(
@@ -1055,6 +1129,11 @@ class ClaudeRuntime:
         self._mcp_config_path: Path | None = None
         self._unusable = False
         self._usage_session = ClaudeUsageSession()
+        self._package_version = provenance.package_version_fact(_PACKAGE_DISTRIBUTION)
+        self._harness_version = provenance.missing_fact(
+            "unavailable", "not_collected", _METHOD_INIT_MESSAGE
+        )
+        self._invocation_messages: InvocationMessages | None = None
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._client is not None:
@@ -1110,6 +1189,26 @@ class ClaudeRuntime:
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
     ) -> AgentRunResult:
+        self._invocation_messages = None
+        result = await self._invoke(request, runtime_context)
+        result.extensions.update(
+            (
+                {
+                    provenance.VERSIONS_REPORT_KEY: self._versions_report(
+                        self._agent_config, self._invocation_messages
+                    )
+                }
+                if self._agent_config is not None
+                else {}
+            )
+        )
+        return result
+
+    async def _invoke(
+        self,
+        request: AgentRunRequest,
+        runtime_context: RuntimeContext,
+    ) -> AgentRunResult:
         client = self._client
         agent_config = self._agent_config
         fabric_runtime_id = self._fabric_runtime_id
@@ -1123,12 +1222,13 @@ class ClaudeRuntime:
                 "claude_runtime_mismatch",
                 "Claude invocation does not match the connected runtime",
             )
+        messages: InvocationMessages | None = None
         if self._unusable:
             return _agent_run_result(
                 _failure(
                     "claude_runtime_unavailable",
                     "Claude runtime cannot accept another invocation after a runtime failure",
-                )
+                ),
             )
 
         invocation_deadline = lifecycle.invocation_deadline(runtime_context)
@@ -1140,6 +1240,7 @@ class ClaudeRuntime:
         except ClaudeSDKError as error:
             output = sdk_failure(error)
         else:
+            messages = InvocationMessages()
             relay = self._relay
             atif_before = (
                 relay_artifacts.snapshot_atif_files(relay.plugin_config)
@@ -1152,7 +1253,8 @@ class ClaudeRuntime:
                 client,
                 prompt,
                 _remaining_timeout(invocation_deadline),
-                usage_owner,
+                usage_owner=usage_owner,
+                collected=messages,
             )
             if (
                 output.get("completed")
@@ -1189,17 +1291,47 @@ class ClaudeRuntime:
             output, usage_owner.finish() if usage_owner is not None else None
         )
 
+    def _versions_report(
+        self, config: AgentConfig, messages: InvocationMessages | None
+    ) -> dict[str, Any]:
+        """Report this runtime's versions and this invocation's served model.
+
+        The harness version is refreshed from any init message. The served
+        model belongs to the role Claude Code runs; another role has no source.
+        """
+
+        version = init_message_version(messages.items if messages else [])
+        if version is not None:
+            self._harness_version = version
+        served = {role: provenance.no_source_fact() for role in config.models}
+        served[_selected_model_role(config)] = served_model_fact(messages)
+        return provenance.versions_report(
+            package_version=self._package_version,
+            harness_name=provenance.known_fact(
+                _HARNESS_NAME, provenance.METHOD_ADAPTER_REPORT
+            ),
+            harness_version=self._harness_version,
+            served_models=served,
+        )
+
     async def _run_query(
         self,
         client: ClaudeSDKClient,
         prompt: str,
         remaining_timeout: float,
         usage_owner: ClaudeInvocationUsage | None = None,
+        collected: InvocationMessages | None = None,
     ) -> dict[str, Any]:
-        """Run one SDK query and normalize its terminal result."""
+        """Run one SDK query and normalize its terminal result.
 
+        Every message other than terminal results and partial usage events is appended to
+        ``collected``, which also records why the stream failed, if it did.
+        """
+
+        collected = InvocationMessages() if collected is None else collected
+        self._invocation_messages = collected
+        messages = collected.items
         usage_owner = usage_owner or self._usage_session.start()
-        messages: list[Message] = []
         result: ResultMessage | None = None
         deadline = asyncio.timeout(remaining_timeout)
         try:
@@ -1209,18 +1341,33 @@ class ClaudeRuntime:
                     received = False
                     async for message in client.receive_response():
                         received = True
+                        was_injected = usage_owner.injected_turn_active
                         usage_owner.observe(message)
                         if isinstance(message, ResultMessage):
                             if injected_turn(message):
-                                messages.clear()
+                                if not was_injected:
+                                    # Keep runtime facts when rolling back an ambiguous prefix.
+                                    messages[:] = [
+                                        item
+                                        for item in messages
+                                        if isinstance(item, SystemMessage)
+                                        and item.subtype == "init"
+                                    ]
                             else:
                                 result = message
-                        elif not isinstance(message, StreamEvent):
+                        elif not isinstance(message, StreamEvent) and (
+                            not usage_owner.injected_turn_active
+                            or (
+                                isinstance(message, SystemMessage)
+                                and message.subtype == "init"
+                            )
+                        ):
                             messages.append(message)
                     if not received:
                         break
         except (TimeoutError, ClaudeSDKError) as error:
             self._unusable = True
+            collected.failure = "timeout" if deadline.expired() else "no_result"
             await self._interrupt_failed_invocation()
             output = (
                 _failure("timeout", "Claude invocation timed out")
@@ -1238,6 +1385,7 @@ class ClaudeRuntime:
         else:
             if result is None:
                 self._unusable = True
+                collected.failure = "no_result"
                 output = _failure(
                     "claude_missing_result", "Claude returned no terminal result"
                 )

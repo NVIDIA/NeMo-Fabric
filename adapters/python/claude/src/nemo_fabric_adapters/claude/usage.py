@@ -97,6 +97,11 @@ class ClaudeInvocationUsage:
         self._result: ResultMessage | None = None
         self._snapshot: AgentUsage | None = None
 
+    @property
+    def injected_turn_active(self) -> bool:
+        """Whether the current source messages belong to an injected turn."""
+        return self._injected
+
     def observe(self, message: Message) -> None:
         """Read public source fields; retain no prompt, response or tool text."""
         if self._snapshot is not None:

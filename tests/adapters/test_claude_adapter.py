@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.metadata
 import json
 import os
 import sys
@@ -28,9 +29,12 @@ from claude_agent_sdk import ConversationResetMessage
 from claude_agent_sdk import Message
 from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
+from claude_agent_sdk import StreamEvent
 from claude_agent_sdk import SystemMessage
 from claude_agent_sdk import TextBlock
+from claude_agent_sdk import UserMessage
 from claude_agent_sdk._errors import MessageParseError
+from claude_agent_sdk._internal.message_parser import parse_message
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import AgentRunResult
@@ -53,6 +57,8 @@ ANTHROPIC_AUTH_ENV_NAMES = {
 }
 
 DETAILED_TOKEN_USAGE_KEY = "nemo_fabric.detailed_token_usage.v1"
+VERSIONS_REPORT_KEY = "nemo_fabric.versions.v1"
+CLAUDE_STREAMS = ROOT / "tests" / "fixtures" / "claude_streams"
 
 
 def lifecycle_invocation(
@@ -239,6 +245,12 @@ def test_claude_descriptor_is_narrow_and_versioned():
                     "exit_code": {"type": "integer"},
                     "timeout_seconds": {"type": "number", "minimum": 0},
                 },
+                "additionalProperties": False,
+            },
+            "run_result": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"nemo_fabric.versions.v1": {"type": "object"}},
                 "additionalProperties": False,
             },
         },
@@ -1943,45 +1955,46 @@ def test_main_serves_persistent_runtime(monkeypatch):
     )
 
 
+def usage_stream_frames(
+    identity: str, count: int, *, model: str = "claude-test"
+) -> list[StreamEvent]:
+    return [
+        StreamEvent(
+            uuid="fixture",
+            session_id="claude-session",
+            event={
+                "type": "message_start",
+                "message": {
+                    "id": identity,
+                    "model": model,
+                    "usage": {
+                        "input_tokens": count,
+                        "cache_read_input_tokens": 0,
+                        "cache_creation_input_tokens": 0,
+                    },
+                },
+            },
+        ),
+        StreamEvent(
+            uuid="fixture",
+            session_id="claude-session",
+            event={
+                "type": "message_delta",
+                "delta": {"stop_reason": "end_turn"},
+                "usage": {"output_tokens": 2},
+            },
+        ),
+        StreamEvent(
+            uuid="fixture",
+            session_id="claude-session",
+            event={"type": "message_stop"},
+        ),
+    ]
+
+
 async def test_claude_injected_terminal_does_not_end_owned_query(
     claude_payload, monkeypatch
 ):
-    from claude_agent_sdk import StreamEvent
-
-    def frames(identity, count):
-        return [
-            StreamEvent(
-                uuid="fixture",
-                session_id="claude-session",
-                event={
-                    "type": "message_start",
-                    "message": {
-                        "id": identity,
-                        "model": "claude-test",
-                        "usage": {
-                            "input_tokens": count,
-                            "cache_read_input_tokens": 0,
-                            "cache_creation_input_tokens": 0,
-                        },
-                    },
-                },
-            ),
-            StreamEvent(
-                uuid="fixture",
-                session_id="claude-session",
-                event={
-                    "type": "message_delta",
-                    "delta": {"stop_reason": "end_turn"},
-                    "usage": {"output_tokens": 2},
-                },
-            ),
-            StreamEvent(
-                uuid="fixture",
-                session_id="claude-session",
-                event={"type": "message_stop"},
-            ),
-        ]
-
     injected = running_total_result(0.10)
     injected.origin = {"kind": "task-notification"}
     owned = running_total_result(0.20)
@@ -1994,8 +2007,13 @@ async def test_claude_injected_terminal_does_not_end_owned_query(
     install_scripted_client(
         monkeypatch,
         [
-            [*frames("late", 10), injected],
-            [*frames("owned", 20), owned],
+            [*usage_stream_frames("late", 10), injected],
+            [
+                SystemMessage(subtype="init", data={"claude_code_version": "2.1.294"}),
+                *usage_stream_frames("owned", 20),
+                AssistantMessage(content=[TextBlock(text="done")], model="claude-test"),
+                owned,
+            ],
         ],
     )
     runtime = adapter.ClaudeRuntime()
@@ -2004,6 +2022,83 @@ async def test_claude_injected_terminal_does_not_end_owned_query(
     await runtime.stop()
     assert (result.usage.input_tokens, result.usage.output_tokens) == (20, 2)
     assert all(event["type"] != "StreamEvent" for event in result.output["events"])
+
+    report = result.extensions[VERSIONS_REPORT_KEY]
+    assert report["harness"]["version"] == reported("2.1.294", "harness_init_message")
+    assert report["models"]["default"]["served"] == reported(
+        "claude-test", "harness_api"
+    )
+
+
+@pytest.mark.parametrize(
+    "echoed", [False, True], ids=["ambiguous-prefix", "explicit-echo"]
+)
+async def test_claude_injected_turn_preserves_owned_provenance(
+    claude_payload, monkeypatch, echoed
+):
+    injected = running_total_result(0.10)
+    injected.origin = {"kind": "task-notification"}
+    owned = running_total_result(0.20)
+    owned.usage = {
+        "input_tokens": 20,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "output_tokens": 4 if echoed else 2,
+    }
+    first: list[Message] = [
+        SystemMessage(subtype="init", data={"claude_code_version": "2.1.294"})
+    ]
+    if echoed:
+        first.extend(
+            [
+                *usage_stream_frames("owned-before", 10, model="claude-a"),
+                AssistantMessage(content=[TextBlock(text="before")], model="claude-a"),
+                UserMessage(
+                    content="notification", origin={"kind": "task-notification"}
+                ),
+            ]
+        )
+    first.extend(
+        [
+            *usage_stream_frames("injected", 100, model="claude-injected"),
+            AssistantMessage(
+                content=[TextBlock(text="notification")], model="claude-injected"
+            ),
+            injected,
+        ]
+    )
+    install_scripted_client(
+        monkeypatch,
+        [
+            first,
+            [
+                *usage_stream_frames(
+                    "owned-after", 10 if echoed else 20, model="claude-b"
+                ),
+                AssistantMessage(content=[TextBlock(text="after")], model="claude-b"),
+                owned,
+            ],
+        ],
+    )
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(lifecycle_start(claude_payload))
+    try:
+        result = await runtime.invoke(*lifecycle_invocation(claude_payload))
+    finally:
+        await runtime.stop()
+
+    assert (result.usage.input_tokens, result.usage.output_tokens) == (
+        20,
+        4 if echoed else 2,
+    )
+    report = result.extensions[VERSIONS_REPORT_KEY]
+    expected = (
+        served_state("unavailable", "not_attributed")
+        if echoed
+        else reported("claude-b", "harness_api")
+    )
+    assert report["models"]["default"]["served"] == expected
+    assert report["harness"]["version"] == reported("2.1.294", "harness_init_message")
 
 
 async def test_claude_relay_finalization_failure_keeps_model_observations(
@@ -2168,3 +2263,237 @@ async def test_direct_claude_does_not_inherit_relay_only_upstream_override(
         assert runtime._usage_session.provider == "anthropic"
     finally:
         await runtime.stop()
+
+
+def stream_messages(name: str) -> list[Message]:
+    """Parse a saved Claude Code stream with the SDK's own message parser."""
+
+    lines = (CLAUDE_STREAMS / name).read_text(encoding="utf-8").splitlines()
+    return [parse_message(json.loads(line)) for line in lines]
+
+
+async def versions_reports(
+    claude_payload: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    streams: list[list[Message]],
+) -> list[dict[str, Any]]:
+    """Run one invocation per stream and return each result's versions report."""
+
+    install_scripted_client(monkeypatch, streams)
+    start_payload = dict(claude_payload)
+    start_payload.pop("request")
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(lifecycle_start(start_payload))
+    reports = []
+    for _ in streams:
+        result = await runtime.invoke(*lifecycle_invocation(claude_payload))
+        reports.append(result.extensions[VERSIONS_REPORT_KEY])
+    await runtime.stop()
+    return reports
+
+
+def reported(value: str, method: str) -> dict[str, str]:
+    return {
+        "value": value,
+        "source": "reported",
+        "collected_by": "adapter",
+        "method": method,
+    }
+
+
+async def test_claude_reports_the_cli_version_from_its_init_message(
+    claude_payload, monkeypatch
+):
+    reports = await versions_reports(
+        claude_payload,
+        monkeypatch,
+        [stream_messages("normal.jsonl"), [running_total_result(0.1)]],
+    )
+
+    package_version = importlib.metadata.version("nemo-fabric-adapters-claude")
+    for report in reports:
+        # A later invocation without an init message keeps the runtime's version.
+        assert report["adapter"] == {
+            "package_version": reported(package_version, "package_metadata")
+        }
+        assert report["harness"] == {
+            "name": reported("claude-code", "adapter_report"),
+            "version": reported("2.1.294", "harness_init_message"),
+        }
+
+
+async def test_claude_versions_report_matches_the_descriptor(
+    claude_payload, monkeypatch
+):
+    install_scripted_client(monkeypatch, [stream_messages("normal.jsonl")])
+    start_payload = dict(claude_payload)
+    start_payload.pop("request")
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(lifecycle_start(start_payload))
+    result = await runtime.invoke(*lifecycle_invocation(claude_payload))
+    await runtime.stop()
+    descriptor = json.loads(
+        (ROOT / "adapters/python/claude/claude.fabric-adapter.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    jsonschema.validate(
+        result.extensions, descriptor["extension_schemas"]["run_result"]
+    )
+
+
+async def test_claude_without_an_init_message_reads_the_version_as_not_collected(
+    claude_payload, monkeypatch
+):
+    [report] = await versions_reports(
+        claude_payload, monkeypatch, [[running_total_result(0.1)]]
+    )
+
+    assert report["harness"]["version"] == {
+        "state": "unavailable",
+        "reason": "not_collected",
+        "source": "reported",
+        "collected_by": "adapter",
+        "method": "harness_init_message",
+    }
+
+
+def wire_lines(name: str) -> list[dict[str, Any]]:
+    lines = (CLAUDE_STREAMS / name).read_text(encoding="utf-8").splitlines()
+    return [json.loads(line) for line in lines]
+
+
+def assistant_line(model: str, parent_tool_use_id: str | None = None) -> dict[str, Any]:
+    """Claude Code's wire shape of an assistant message, from the saved stream."""
+
+    [line] = [
+        line for line in wire_lines("normal.jsonl") if line["type"] == "assistant"
+    ]
+    line["message"]["model"] = model
+    line["parent_tool_use_id"] = parent_tool_use_id
+    return line
+
+
+def parsed_stream(*middle: dict[str, Any]) -> list[Message]:
+    """The saved init and result lines around ``middle``, through the SDK parser."""
+
+    init, _, result = wire_lines("normal.jsonl")
+    return [parse_message(line) for line in (init, *middle, result)]
+
+
+def served_state(state: str, reason: str) -> dict[str, str]:
+    return {
+        "state": state,
+        "reason": reason,
+        "source": "reported",
+        "collected_by": "adapter",
+        "method": "harness_api",
+    }
+
+
+SERVED = "claude-served-snapshot-20991231"
+
+
+@pytest.mark.parametrize(
+    ("stream", "expected"),
+    [
+        pytest.param(
+            lambda: stream_messages("normal.jsonl"),
+            reported(SERVED, "harness_api"),
+            id="one-main-thread-model",
+        ),
+        pytest.param(
+            lambda: parsed_stream(
+                assistant_line("claude-a"), assistant_line("claude-b")
+            ),
+            served_state("unavailable", "not_attributed"),
+            id="two-main-thread-models",
+        ),
+        pytest.param(
+            lambda: parsed_stream(
+                assistant_line(SERVED),
+                assistant_line("claude-haiku-child", parent_tool_use_id="toolu_01"),
+            ),
+            reported(SERVED, "harness_api"),
+            id="main-and-child-models",
+        ),
+        pytest.param(
+            lambda: parsed_stream(
+                assistant_line(SERVED), assistant_line("<synthetic>")
+            ),
+            reported(SERVED, "harness_api"),
+            id="real-and-synthetic",
+        ),
+        pytest.param(
+            lambda: stream_messages("api-error.jsonl"),
+            served_state("unavailable", "empty_response"),
+            id="synthetic-only",
+        ),
+        pytest.param(
+            lambda: parsed_stream(),
+            served_state("unavailable", "empty_response"),
+            id="no-assistant-message",
+        ),
+    ],
+)
+async def test_claude_reports_the_main_thread_served_model(
+    claude_payload, monkeypatch, stream, expected
+):
+    [report] = await versions_reports(claude_payload, monkeypatch, [stream()])
+
+    assert report["models"] == {"default": {"served": expected}}
+
+
+async def test_claude_reports_the_served_model_under_a_sole_non_default_role(
+    claude_payload, monkeypatch
+):
+    claude_payload["config"]["models"] = {
+        "primary": claude_payload["config"]["models"].pop("default")
+    }
+
+    [report] = await versions_reports(
+        claude_payload, monkeypatch, [stream_messages("normal.jsonl")]
+    )
+
+    assert report["models"] == {"primary": {"served": reported(SERVED, "harness_api")}}
+
+
+async def test_claude_served_model_is_isolated_per_invocation(
+    claude_payload, monkeypatch
+):
+    reports = await versions_reports(
+        claude_payload,
+        monkeypatch,
+        [
+            parsed_stream(assistant_line("claude-a")),
+            parsed_stream(assistant_line("claude-b")),
+            stream_messages("api-error.jsonl"),
+        ],
+    )
+
+    assert [report["models"]["default"]["served"] for report in reports] == [
+        reported("claude-a", "harness_api"),
+        reported("claude-b", "harness_api"),
+        served_state("unavailable", "empty_response"),
+    ]
+
+
+async def test_claude_served_model_reads_collection_failed_when_the_stream_fails(
+    claude_payload, monkeypatch
+):
+    async def respond(_client: MagicMock) -> AsyncIterator[Message]:
+        yield parse_message(assistant_line(SERVED))
+        raise CLIConnectionError("stream closed")
+
+    install_fake_client(monkeypatch, respond)
+    start_payload = dict(claude_payload)
+    start_payload.pop("request")
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(lifecycle_start(start_payload))
+    result = await runtime.invoke(*lifecycle_invocation(claude_payload))
+    await runtime.stop()
+
+    assert result.extensions[VERSIONS_REPORT_KEY]["models"]["default"]["served"] == (
+        served_state("collection_failed", "no_result")
+    )

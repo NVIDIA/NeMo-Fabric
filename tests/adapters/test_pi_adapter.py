@@ -77,6 +77,7 @@ def test_pi_descriptor_declares_the_supported_surface():
     assert descriptor["extension_schemas"]["run_result"] == {
         "type": "object",
         "properties": {
+            "nemo_fabric.versions.v1": {"type": "object"},
             "pi_turn_count": {"type": "integer", "minimum": 0},
             "pi_turn_started": {"type": "boolean"},
         },
