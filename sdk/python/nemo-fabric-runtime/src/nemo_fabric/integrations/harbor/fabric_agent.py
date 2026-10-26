@@ -40,6 +40,7 @@ from nemo_fabric import RelayObservabilityConfig
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
 from nemo_fabric import RuntimeConfig
+from nemo_fabric import SystemStatsConfig
 from nemo_fabric import ToolsConfig
 from nemo_fabric.integrations.harbor.models import FabricRunPayload
 from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
@@ -170,6 +171,10 @@ else:
         )
         fabric_telemetry: Literal["none", "relay"] = Field(
             default="none", description="Enable Relay-backed ATIF and ATOF telemetry."
+        )
+        fabric_system_stats: SystemStatsConfig | None = Field(
+            default_factory=SystemStatsConfig,
+            description="Invocation stats selection and optional sampling; null disables stats.",
         )
         fabric_python: str = Field(
             default="python3",
@@ -564,7 +569,7 @@ else:
             )
 
         def _build_config(self) -> FabricConfig:
-            return build_harbor_config(
+            config = build_harbor_config(
                 adapter_id=self.fabric_adapter_id,
                 workspace=self.fabric_workspace,
                 harness_settings=self.fabric_harness_settings,
@@ -587,6 +592,11 @@ else:
                     *self.fabric_discovery_paths,
                 ),
             )
+            stats = self.options.fabric_system_stats
+            config.system_stats = (
+                stats.model_copy(deep=True) if stats is not None else None
+            )
+            return config
 
         def _resolve_environment_config_base_dir(self) -> str:
             if self.fabric_config_bundle is not None:

@@ -85,7 +85,8 @@ async def test_sdk_returns_typed_samples_and_artifacts_without_relay_or_recordin
         sampled.resident_memory_bytes.sampled_peak
         >= sampled.resident_memory_bytes.final_value
     )
-    assert 0 < sampled.resident_memory_bytes.covered_fraction <= 1
+    # Gaps above twice the sampling interval do not contribute coverage.
+    assert 0 <= sampled.resident_memory_bytes.covered_fraction <= 1
     assert (
         RunResult.from_mapping(result.to_mapping()).system_stats == result.system_stats
     )
