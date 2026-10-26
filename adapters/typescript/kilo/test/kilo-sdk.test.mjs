@@ -9,6 +9,10 @@ import {createServer} from "node:http";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {PassThrough} from "node:stream";
+import {setImmediate as nextTurn} from "node:timers/promises";
+
+import {createKiloClient} from "@kilocode/sdk/v2";
+import undiciTimers from "undici/lib/util/timers.js";
 
 import {classifySpawnError, closeChild, extractPromptOutcome, kiloFetch, KiloSdkSessionFactory, startKiloServer} from "../dist/kilo-sdk.js";
 
@@ -282,3 +286,79 @@ test("sends Kilo Code requests and their abort signal through the adapter fetch"
     server.close();
   }
 });
+
+for (const phase of ["headers", "body"]) {
+  for (const expire of [false, true]) {
+    test(`real SDK prompt with delayed ${phase} ${expire ? "aborts at the adapter deadline" : "survives the transport deadline"}`, {timeout: 10_000}, async () => {
+      const workspace = await mkdtemp(join(tmpdir(), "kilo-adapter-http-test-"));
+      let ready;
+      const requestReady = new Promise((resolveReady) => { ready = resolveReady; });
+      let closed;
+      const requestClosed = new Promise((resolveClosed) => { closed = resolveClosed; });
+      let aborted;
+      const sessionAborted = new Promise((resolveAborted) => { aborted = resolveAborted; });
+      let pendingResponse;
+      const server = createServer((request, response) => {
+        request.resume();
+        request.on("end", () => {
+          response.setHeader("content-type", "application/json");
+          if (request.url.startsWith("/session/session-1/message")) {
+            pendingResponse = response;
+            response.on("close", closed);
+            if (phase === "body") response.write('{"info":{},"parts":');
+            else ready();
+            return;
+          }
+          if (request.url.startsWith("/session/session-1/abort")) aborted();
+          response.end(JSON.stringify({id: "session-1"}));
+        });
+      });
+      let handle;
+      try {
+        await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+        const url = `http://127.0.0.1:${server.address().port}`;
+        const factory = new KiloSdkSessionFactory(
+          async () => (options) => createKiloClient({...options, fetch: async (request) => {
+            const response = await options.fetch(request);
+            if (phase === "body" && request.url.includes("/message")) ready();
+            return response;
+          }}),
+          async () => ({url, close: async () => {}}),
+          expire ? 500 : 5_000,
+        );
+        handle = await factory.create({
+          agentName: "reviewer",
+          baseDir: workspace,
+          config: {models: {default: {provider: "nvidia", model: "nemotron", api_key_env: "MODEL_KEY"}}},
+          runtimeContext: {runtime_id: "r", invocation_id: "i", request_id: "q", artifacts: {}, environment: {environment_id: "e", provider: "local", ownership: "caller_owned", control_location: "external_control", workspace, env: {MODEL_KEY: "test"}}},
+        });
+        const prompting = handle.prompt("wait for the result");
+        if (expire) {
+          const rejected = assert.rejects(prompting, (error) => error.code === "kilo_prompt_timeout");
+          await requestReady;
+          await rejected;
+          await Promise.all([sessionAborted, requestClosed]);
+        } else {
+          // Attach a rejection handler before advancing the transport clock.
+          const outcome = prompting.then((value) => ({value}), (error) => ({error}));
+          await requestReady;
+          await nextTurn();
+          // Undici's pinned version exposes this clock for tests. Advance its
+          // 300 s parser deadlines without waiting five minutes or advancing
+          // the adapter's independent prompt deadline.
+          undiciTimers.tick();
+          undiciTimers.tick(301_000);
+          await nextTurn();
+          const parts = [{type: "text", text: "done"}];
+          pendingResponse.end(phase === "body" ? `${JSON.stringify(parts)}}` : JSON.stringify({info: {}, parts}));
+          assert.deepEqual(await outcome, {value: {text: "done"}});
+        }
+      } finally {
+        await handle?.stop();
+        server.closeAllConnections();
+        await new Promise((resolveClose) => server.close(resolveClose));
+        await rm(workspace, {recursive: true, force: true});
+      }
+    });
+  }
+}

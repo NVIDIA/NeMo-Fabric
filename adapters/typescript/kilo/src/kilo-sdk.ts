@@ -195,6 +195,7 @@ function buildConfig(input: AdapterStartInput, skills: string[]): {content: stri
   };
 }
 
+/** Verify configured skills loaded, bounding the status request by the startup timeout. */
 async function verifySkills(client: KiloClient, workspace: string, configured: string[]): Promise<void> {
   if (configured.length === 0) return;
   let data: unknown;
@@ -209,6 +210,7 @@ async function verifySkills(client: KiloClient, workspace: string, configured: s
   }
 }
 
+/** Verify configured MCP servers connected within the status request's startup timeout. */
 async function verifyMcp(client: KiloClient, workspace: string, configured: string[]): Promise<void> {
   if (configured.length === 0) return;
   let data: unknown;
@@ -345,6 +347,7 @@ export function extractPromptOutcome(data: unknown): KiloPromptOutcome {
   return { ...(text.length === 0 ? {} : {text}), ...(info.error === undefined ? {} : {error: true}), ...(Object.keys(usage).length === 0 ? {} : {usage}) };
 }
 
+/** Forward SDK requests without transport response timeouts, retaining the caller's abort signal. */
 export async function kiloFetch(request: Request): Promise<Response> {
   const response = await undiciFetch(request.url, {
     method: request.method,
@@ -423,6 +426,7 @@ class KiloSdkSessionHandle implements KiloSessionHandle {
 
 export class KiloSdkSessionFactory implements KiloSessionFactory {
   constructor(private readonly clientLoader: () => Promise<ClientFactory> = loadClientFactory, private readonly serverFactory: ServerFactory = startKiloServer, private readonly promptTimeoutMs: number = PROMPT_TIMEOUT_MS) {}
+  /** Start an isolated server and session, with cancellation deadlines on startup requests. */
   async create(input: AdapterStartInput): Promise<KiloSessionHandle> {
     const model = selectModel(input.config);
     const workspace = await workspacePath(input);
