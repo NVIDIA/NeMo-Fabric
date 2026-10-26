@@ -11,12 +11,17 @@ pub mod doctor;
 mod endpoint;
 mod environment;
 pub mod error;
+mod measurement;
+pub mod model_usage;
+pub mod pricing;
 pub mod resource_snapshot;
 pub mod runtime;
 pub mod schema;
 pub mod system_stats;
 mod task_command;
 mod time;
+pub mod usage_accounting;
+mod usage_normalization;
 pub mod what_ran;
 
 pub use adapter_contract::{ADAPTER_CONTRACT_VERSION, AdapterExtensionPoint};

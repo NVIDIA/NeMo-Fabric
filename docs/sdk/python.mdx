@@ -1178,6 +1178,7 @@ Important fields:
 | `status` | Terminal invocation status such as success, failure, or cancellation. |
 | `output` | Harness output normalized to the configured output schema. |
 | `error` | Structured failure metadata when available. |
+| `model_usage` | Optional normalized complete counts, observations, gaps and provider-reported cost. Catalog estimates remain unavailable. |
 | `usage` | Optional `RunUsage` with invocation-local input, cached-input, output, and total token counts, reported cost in USD, and provider metadata. |
 | `system_stats` | Optional `InvocationSystemStats`: monotonic adapter exchange duration, before/after observations with availability, and an optional CPU counter difference estimate. |
 | `resource_snapshot` | Optional `RuntimeResourceSnapshot` of the runtime, read once after the adapter returned the result. |
@@ -1214,6 +1215,54 @@ Each counter is optional: missing values are unknown, not zero. `cached_input_to
 If NeMo Fabric cannot resolve config, start a runtime, or obtain a normalized result,
 the SDK raises a `FabricError` subclass instead of returning a partial
 `RunResult`.
+
+### Complete counts and useful observations
+
+`result.model_usage` is present when the adapter supplies the declared
+`nemo_fabric.usage_accounting.v1` evidence. Its token fields are independently
+nullable counts: input includes cache reads and writes, output includes
+reasoning, and total requires known input plus output. The independent raw
+provider total remains in `result.usage`.
+
+Typed access to `model_usage` requires an updated SDK. Permissive readers can retain or ignore the new field; closed validators must use the updated result schema. Current readers still accept older results without this field.
+
+```python
+from nemo_fabric import summarize_usage
+
+if result.model_usage is not None:
+    print(result.model_usage.input_tokens)          # Complete count, or None.
+    print(result.model_usage.observed.input_tokens) # Available observations.
+    print(result.model_usage.gaps)                 # Affected dimensions/reasons.
+    print(result.model_usage.cost.reported.amount_nano_usd)
+
+summary = summarize_usage(
+    [result], expected=[(result.runtime_id, result.invocation_id)]
+)
+print(summary["dimensions"]["input_tokens"])
+```
+
+A complete count covers work initiated by the invocation, including descendants,
+at return. Owned unfinished work or missing usage leaves only the affected
+complete counts unknown. Failure alone is not a gap. Observations remain visible
+but are not guaranteed mathematical lower bounds. Returned evidence is frozen;
+late usage never transfers to a later invocation. If accounting passes the adapter contract but cannot be normalized, `model_usage` is absent and a sanitized
+`model_usage_invalid` event records the accounting failure. The execution status,
+output and raw usage remain available. Undeclared or structurally invalid adapter
+extensions still fail the adapter contract. Legacy usage without supported
+accounting remains available in `result.usage` and is not certified complete by
+`summarize_usage`.
+
+`cost.reported` contains only provider-reported amounts. Complete and observed
+amounts use integer nano-USD. Catalog estimates are not available;
+`cost.estimated` has no amounts and no typed pricing setting is exposed. The stable
+result shape retains optional pricing-basis fields for persisted evidence.
+
+`summarize_usage` requires an explicit expected invocation inventory. It retains
+missing results in coverage, keeps complete totals separate from observed sums,
+checks uint64 overflow and separates incompatible pricing bases. It never adds
+legacy, log or Relay/ATIF values to native accounting. Do not rank partial spend
+as cheaper or silently remove timed-out attempts from comparisons.
+
 
 ### What Ran
 

@@ -2051,6 +2051,580 @@ Return a detached, JSON-compatible mapping for serialization.
 
 ---
 
+## <kbd>class</kbd> `PricingBasis`
+
+Validated comparison basis for persisted catalog estimates.
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `basis` | `str` |
+| `currency` | `str` |
+| `normalization_version` | `str` |
+| `assumption_policy` | `str` |
+| `bundled_catalog_sha256` | `str` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+### <kbd>property</kbd> user_catalog_sha256
+
+Return the user catalog fingerprint when supplied, otherwise None.
+
+
+---
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+## <kbd>class</kbd> `AppliedPricing`
+
+Selected price entry and integer nano-USD rates per million tokens.
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `catalog_sha256` | `str` |
+| `provider` | `str` |
+| `model_id` | `str` |
+| `pricing_as_of` | `str` |
+| `pricing_source` | `str` |
+| `rates` | `dict[str, int \| None]` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+## <kbd>class</kbd> `TokenCounts`
+
+Independently nullable tokens in one fixed invocation/model scope.
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `input_tokens` | `int \| None` |
+| `cached_input_tokens` | `int \| None` |
+| `cache_write_input_tokens` | `int \| None` |
+| `output_tokens` | `int \| None` |
+| `total_tokens` | `int \| None` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+## <kbd>class</kbd> `UsageGap`
+
+Dimension-specific incompleteness with an optional stable diagnostic.
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `dimensions` | `tuple[str, ...]` |
+| `reason` | `str` |
+| `code` | `str \| None` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+## <kbd>class</kbd> `CostAmount`
+
+Complete and observed amounts in integer nano-USD, never an invoice guarantee.
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `amount_nano_usd` | `int \| None` |
+| `observed_nano_usd` | `int \| None` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+## <kbd>class</kbd> `TokenCost`
+
+Provider-reported amounts and separate catalog estimates with their basis.
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `reported` | `CostAmount` |
+| `estimated` | `CostAmount` |
+| `pricing` | `PricingBasis \| None` |
+| `applied_rates` | `tuple[AppliedPricing, ...]` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+## <kbd>class</kbd> `PerModelUsage`
+
+Normalized counts for a source-established accounting model/provider.
+
+A configured identity requires source proof that the included calls used it. An outer requested alias alone does not establish accounting attribution. This identity does not replace served-model provenance.
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `model` | `str` |
+| `input_tokens` | `int \| None` |
+| `cached_input_tokens` | `int \| None` |
+| `cache_write_input_tokens` | `int \| None` |
+| `output_tokens` | `int \| None` |
+| `total_tokens` | `int \| None` |
+| `observed` | `TokenCounts` |
+| `gaps` | `tuple[UsageGap, ...]` |
+| `cost` | `TokenCost` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+### <kbd>property</kbd> provider
+
+Return the accounting provider when reported, otherwise None.
+
+
+---
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+## <kbd>class</kbd> `ModelUsage`
+
+Complete normalized tokens, observations, gaps and separately typed costs.
+
+Input includes cache and output includes reasoning. All counts belong to this invocation, including descendants. Late work never moves to another invocation. Observations are not guaranteed mathematical lower bounds.
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `input_tokens` | `int \| None` |
+| `cached_input_tokens` | `int \| None` |
+| `cache_write_input_tokens` | `int \| None` |
+| `output_tokens` | `int \| None` |
+| `total_tokens` | `int \| None` |
+| `observed` | `TokenCounts` |
+| `gaps` | `tuple[UsageGap, ...]` |
+| `models_exhaustive` | `bool` |
+| `models` | `tuple[PerModelUsage, ...]` |
+| `cost` | `TokenCost` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
 ## <kbd>class</kbd> `RunResult`
 
 Normalized terminal result from one NeMo Fabric invocation.
@@ -2072,6 +2646,7 @@ The model is both attribute-accessible and mapping-compatible. A harness failure
  - <b>`output`</b>:  Object-shaped adapter output as ``RunOutput``; non-object values  are preserved as-is.
  - <b>`error`</b>:  Structured failure, or ``None`` on success.
  - <b>`usage`</b>:  Normalized invocation usage, or ``None`` when unavailable.
+ - <b>`model_usage`</b>:  Complete counts, observations and accounting gaps, or  ``None`` when supported accounting evidence is unavailable.
  - <b>`resource_snapshot`</b>:  Runtime resource snapshot read once after the  adapter returned this result, or ``None`` when the runtime's  resources could not be observed.
  - <b>`system_stats`</b>:  Invocation duration and endpoint observations, or None  for older results or execution backends without collection.
  - <b>`artifacts`</b>:  Normalized artifact manifest.
@@ -2098,6 +2673,7 @@ The mapping exposes the following typed fields:
 | `output` | `RunOutput \| JSONValue` |
 | `error` | `ErrorInfo \| None` |
 | `usage` | `RunUsage \| None` |
+| `model_usage` | `ModelUsage \| None` |
 | `system_stats` | `InvocationSystemStats \| None` |
 | `resource_snapshot` | `RuntimeResourceSnapshot \| None` |
 | `artifacts` | `ArtifactManifest` |

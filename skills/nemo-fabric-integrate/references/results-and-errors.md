@@ -17,6 +17,7 @@ Every invocation that reaches the adapter boundary returns a normalized
 | `error` | Structured failure metadata when available. Branch on `status`, not on this field. |
 | `output` | Harness output normalized to the configured output schema. |
 | `usage` | Optional `RunUsage` with invocation-local input, cached-input, output, and total token counts, reported cost in USD, and provider metadata. |
+| `model_usage` | Optional normalized accounting: independently nullable complete counts, observations, dimension-specific gaps and provider-reported cost. |
 | `system_stats` | Optional `InvocationSystemStats`: adapter exchange duration, before/after process-tree observations, and an optional CPU counter difference estimate. |
 | `resource_snapshot` | Optional `RuntimeResourceSnapshot` of the runtime, read once after the adapter returned the result. `None` when the read failed. |
 | `artifacts` | Output files, logs, patches, and other materialized references. |
@@ -37,7 +38,24 @@ else:
     handle_failure(result.status, result.error, result.events)  # failed, cancelled, ...
 ```
 
-Read usage only when the target reports it:
+Prefer normalized accounting when the target reports it:
+
+```python
+from nemo_fabric import summarize_usage
+
+if result.model_usage is not None:
+    complete_input = result.model_usage.input_tokens
+    observed_input = result.model_usage.observed.input_tokens
+    gaps = result.model_usage.gaps
+
+summary = summarize_usage(
+    [result], expected=[(result.runtime_id, result.invocation_id)]
+)
+```
+
+Complete counts cover invocation-owned work at return. Observations can be incomplete and are not guaranteed lower bounds. Failure alone does not invalidate settled usage, and late usage never moves to a later invocation. `summarize_usage` requires the expected invocation inventory so missing results remain visible in coverage; list every expected invocation when aggregating multiple results. It does not certify legacy usage or fill missing values from logs or Relay. Keep provider-reported cost separate from estimates. Typed access requires an updated SDK; closed validators must use the updated result schema. Current readers accept older results without this field. See the [Python SDK accounting guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#complete-counts-and-useful-observations).
+
+Legacy usage remains available when a target has no supported accounting evidence:
 
 ```python
 if result.usage is not None:
