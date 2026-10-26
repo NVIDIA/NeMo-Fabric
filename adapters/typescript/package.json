@@ -29,8 +29,14 @@
   },
   "overrides": {
     "@opencode/core": {
-      "@modelcontextprotocol/client": "2.2.0",
-      "@modelcontextprotocol/core": "2.2.0"
+      "@modelcontextprotocol/client": {
+        ".": "2.2.0",
+        "zod": "4.6.6"
+      },
+      "@modelcontextprotocol/core": {
+        ".": "2.2.0",
+        "zod": "4.6.6"
+      }
     },
     "@parcel/watcher": "2.6.0",
     "@earendil-works/pi-coding-agent@1.0.3": {
