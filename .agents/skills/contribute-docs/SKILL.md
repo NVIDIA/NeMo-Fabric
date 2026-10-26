@@ -37,6 +37,7 @@ Use this skill for docs-only or example-heavy changes.
       or adapters have changed.
 - [ ] New or regenerated MDX files use `{/* ... */}` for top-of-file SPDX comments
 - [ ] Run `just docs` when the docs site changed
+- [ ] Parse and render changed Mermaid diagrams with Mermaid; Fern configuration and link checks do not validate diagram syntax
 
 ## References
 
