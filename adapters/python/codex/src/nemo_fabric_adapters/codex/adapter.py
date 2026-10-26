@@ -79,8 +79,12 @@ import nemo_fabric_adapters.common.relay_hooks as relay_hooks
 import nemo_fabric_adapters.common.relay_artifacts as relay_artifacts
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import provenance
 
 INTERRUPT_TIMEOUT_SECONDS = 5.0
+_PACKAGE_DISTRIBUTION = "nemo-fabric-adapters-codex"
+_HARNESS_NAME = "codex"
+_METHOD_HARNESS_API = "harness_api"
 CLOCK_RESOLUTION_SECONDS = time.get_clock_info("monotonic").resolution
 SANDBOXES = {
     "read-only": Sandbox.read_only,
@@ -1086,6 +1090,35 @@ def _response_usage(value: Any) -> ReportedUsage:
     )
 
 
+async def read_cli_version(
+    thread: Any, timeout: float = provenance.PROBE_TIMEOUT_SECONDS
+) -> dict[str, Any]:
+    """The version of the Codex CLI that created ``thread``, from its thread data.
+
+    One bounded ``thread/read`` request: a timeout reads ``collection_failed``
+    with reason ``timeout``, and a failed request reads reason ``no_result``.
+    """
+
+    try:
+        async with asyncio.timeout(timeout):
+            response = await thread.read()
+    except TimeoutError:
+        return provenance.missing_fact(
+            "collection_failed", "timeout", _METHOD_HARNESS_API
+        )
+    except Exception:
+        # Provenance failures must not prevent execution; cancellation still propagates.
+        return provenance.missing_fact(
+            "collection_failed", "no_result", _METHOD_HARNESS_API
+        )
+    version = getattr(getattr(response, "thread", None), "cli_version", None)
+    if not isinstance(version, str) or not version:
+        return provenance.missing_fact(
+            "unavailable", "empty_response", _METHOD_HARNESS_API
+        )
+    return provenance.known_fact(version, _METHOD_HARNESS_API)
+
+
 def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
     normalized = dict(output)
     failed = bool(normalized.pop("failed", False))
@@ -1520,6 +1553,10 @@ class CodexRuntime:
         self._api_key_home: tempfile.TemporaryDirectory | None = None
         self._mcp_authentication_checked = False
         self._unusable = False
+        self._harness_version = provenance.missing_fact(
+            "unavailable", "not_collected", _METHOD_HARNESS_API
+        )
+        self._package_version = provenance.package_version_fact(_PACKAGE_DISTRIBUTION)
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._client is not None:
@@ -1584,6 +1621,7 @@ class CodexRuntime:
                 base_dir,
                 relay=relay,
             )
+            harness_version = await read_cli_version(thread)
         except CodexAdapterError as error:
             await self._cleanup_failed_start()
             raise _as_lifecycle_error(error) from error
@@ -1605,8 +1643,35 @@ class CodexRuntime:
         self._base_dir = base_dir
         self._fabric_runtime_id = fabric_runtime_id
         self._thread = thread
+        self._harness_version = harness_version
+
+    def _versions_extensions(self) -> dict[str, Any]:
+        return {
+            provenance.VERSIONS_REPORT_KEY: provenance.versions_report(
+                package_version=self._package_version,
+                harness_name=provenance.known_fact(
+                    "codex", provenance.METHOD_ADAPTER_REPORT
+                ),
+                harness_version=self._harness_version,
+                served_models={
+                    role: provenance.no_source_fact()
+                    for role in (
+                        self._config.models if self._config is not None else ()
+                    )
+                },
+            )
+        }
 
     async def invoke(
+        self,
+        request: AgentRunRequest,
+        runtime_context: RuntimeContext,
+    ) -> AgentRunResult:
+        result = await self._invoke(request, runtime_context)
+        result.extensions.update(self._versions_extensions())
+        return result
+
+    async def _invoke(
         self,
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
@@ -1636,7 +1701,7 @@ class CodexRuntime:
                 _failure(
                     "codex_runtime_unavailable",
                     "Codex runtime cannot accept another invocation after a runtime failure",
-                )
+                ),
             )
 
         invocation_deadline = lifecycle.invocation_deadline(runtime_context)

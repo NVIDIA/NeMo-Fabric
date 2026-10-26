@@ -99,6 +99,14 @@
         "timeout_seconds": {"type": "number", "minimum": 0}
       },
       "additionalProperties": false
+    },
+    "run_result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "nemo_fabric.versions.v1": {"type": "object"}
+      },
+      "additionalProperties": false
     }
   },
   "config": {
