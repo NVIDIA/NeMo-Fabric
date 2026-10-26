@@ -7046,6 +7046,10 @@ mod tests {
     fn invocation_extensions_are_fail_closed_and_schema_validated() {
         let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+        // Start from a descriptor that declares no result extension schema.
+        descriptor
+            .extension_schemas
+            .remove(&AdapterExtensionPoint::RunResult);
         let request = AgentRunRequest {
             input: serde_json::json!("review"),
             relay_session_root: None,
@@ -7105,6 +7109,119 @@ mod tests {
         let resolved = resolved_adapter(path, descriptor);
         validate_agent_run_result_extensions(&result, Some(&resolved))
             .expect("declared result extension");
+    }
+
+    /// Every bundled descriptor under `adapters/`.
+    fn bundled_descriptor_paths() -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        for language in ["python", "typescript"] {
+            let root = repository_root().join("adapters").join(language);
+            for adapter in fs::read_dir(&root).expect("adapter directory") {
+                let adapter = adapter.expect("adapter entry").path();
+                let Ok(files) = fs::read_dir(&adapter) else {
+                    continue;
+                };
+                for file in files {
+                    let file = file.expect("adapter file").path();
+                    if file
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.ends_with(".fabric-adapter.json"))
+                    {
+                        paths.push(file);
+                    }
+                }
+            }
+        }
+        paths.sort();
+        paths
+    }
+
+    // The descriptor loader and the result-extension check below predate
+    // report-key ingestion and run unchanged in an older core, which treats
+    // `nemo_fabric.versions.v1` as an ordinary optional object property.
+    #[test]
+    fn a_descriptor_declaring_the_versions_key_passes_the_pre_ingestion_checks() {
+        let paths = bundled_descriptor_paths();
+        assert!(!paths.is_empty(), "bundled descriptors must be discovered");
+        let report = serde_json::json!({
+            "adapter": {"package_version": {"value": "0.6.0", "source": "reported",
+                        "collected_by": "adapter", "method": "package_metadata"}}
+        });
+        for path in paths {
+            let descriptor = load_adapter_descriptor(&path).expect("descriptor loads");
+            let run_result = &descriptor.extension_schemas[&AdapterExtensionPoint::RunResult];
+            assert_eq!(
+                run_result["properties"]["nemo_fabric.versions.v1"],
+                serde_json::json!({"type": "object"}),
+                "{}",
+                path.display()
+            );
+            // Core skips an empty extensions block, so check optionality on
+            // the schema too: a required key would reject an older adapter's
+            // result that carries other keys but not this one.
+            assert!(
+                !run_result
+                    .get("required")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(
+                        |required| required.contains(&serde_json::json!("nemo_fabric.versions.v1"))
+                    ),
+                "{}",
+                path.display()
+            );
+            let base = required_result_extensions(run_result);
+            let resolved = resolved_adapter(path.clone(), descriptor);
+            let mut with_report = base.clone();
+            with_report.insert("nemo_fabric.versions.v1".to_string(), report.clone());
+            for extensions in [base, with_report] {
+                let result: AgentRunResult = serde_json::from_value(serde_json::json!({
+                    "status": "succeeded",
+                    "output": "done",
+                    "extensions": extensions
+                }))
+                .expect("agent result");
+                validate_agent_run_result_extensions(&result, Some(&resolved)).unwrap_or_else(
+                    |error| {
+                        panic!(
+                            "{} rejected {:?}: {error}",
+                            path.display(),
+                            result.extensions
+                        )
+                    },
+                );
+            }
+        }
+    }
+
+    /// The smallest values for the keys other than the versions key that a
+    /// `run_result` schema requires, such as a session ID.
+    fn required_result_extensions(
+        schema: &serde_json::Map<String, serde_json::Value>,
+    ) -> serde_json::Map<String, serde_json::Value> {
+        let required = schema
+            .get("required")
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        required
+            .iter()
+            .map(|key| key.as_str().expect("required key"))
+            // A descriptor that required the versions key would break an
+            // older core's results that omit it, so the base never adds it.
+            .filter(|key| *key != "nemo_fabric.versions.v1")
+            .map(|key| {
+                let property = &schema["properties"][key];
+                let value = match (property.get("enum"), property["type"].as_str()) {
+                    (Some(values), _) => values[0].clone(),
+                    (None, Some("string")) => serde_json::json!("value"),
+                    (None, Some("integer")) => serde_json::json!(0),
+                    (None, Some("boolean")) => serde_json::json!(false),
+                    (None, other) => panic!("no sample for {key}: {other:?}"),
+                };
+                (key.to_string(), value)
+            })
+            .collect()
     }
 
     #[test]
