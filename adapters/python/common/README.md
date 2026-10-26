@@ -125,8 +125,9 @@ runtime.
 ## Relay Gateway Readiness
 
 The Claude and Codex adapters wait up to 30 seconds for the supervised Relay
-gateway's HTTP health endpoint. This budget includes configuration validation
-and required worker initialization. Process exit is checked before each health
+gateway's HTTP health endpoint after launch, including required worker initialization.
+The Relay CLI check and plugin configuration writing happen before launch and
+are outside this readiness wait. Process exit is checked before each health
 probe and again before accepting a successful response. An exit during an
 unsuccessful probe is detected at the next poll. A gateway that never becomes
 healthy fails when the budget expires and is stopped.
