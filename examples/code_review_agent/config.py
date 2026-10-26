@@ -35,6 +35,7 @@ CLINE_DESCRIPTOR = "../../adapters/typescript/cline/cline.fabric-adapter.json"
 DROID_DESCRIPTOR = "../../adapters/typescript/droid/droid.fabric-adapter.json"
 QWEN_DESCRIPTOR = "../../adapters/typescript/qwen/qwen.fabric-adapter.json"
 KILO_DESCRIPTOR = "../../adapters/typescript/kilo/kilo.fabric-adapter.json"
+STRANDS_DESCRIPTOR = "../../adapters/typescript/strands/strands.fabric-adapter.json"
 KIRO_DESCRIPTOR = "../../adapters/typescript/kiro/kiro.fabric-adapter.json"
 CODE_REVIEW_INSTRUCTION = (
     "You are a concise code reviewer. Read the relevant workspace files before "
@@ -266,6 +267,24 @@ def kiro_config() -> FabricConfig:
         workspace=WORKSPACE,
         artifacts="./artifacts/kiro",
     )
+    return config
+
+
+def strands_config() -> FabricConfig:
+    """Return the standard Strands harness through the shared ACP runner."""
+    config = kiro_config()
+    config.discovery = DiscoveryConfig(local_paths=[STRANDS_DESCRIPTOR])
+    config.harness = HarnessConfig(
+        adapter_id="nvidia.fabric.strands",
+        resolution="preinstalled",
+        settings={"builtin_tools": ["read"]},
+    )
+    config.models = {"default": _nvidia_code_review_model()}
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(mode="append", content=CODE_REVIEW_INSTRUCTION)
+    )
+    config.runtime.artifacts = "./artifacts/strands"
+    config.environment.artifacts = "./artifacts/strands"
     return config
 
 

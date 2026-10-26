@@ -5,6 +5,7 @@
 
 import asyncio
 import json
+from pathlib import Path
 from threading import Event
 from unittest.mock import MagicMock
 
@@ -53,6 +54,23 @@ async def test_recorded_start_failure_exposes_evidence_location(
         f"Run evidence location: {tmp_path / 'runs/.fabric'}"
     ]
     assert caught.value.__cause__ is native.run_plan.side_effect
+
+
+async def test_recorded_failure_exposes_exact_native_run_file(recorded_plan, tmp_path):
+    original = RuntimeError("original startup error")
+    original.fabric_stage = "start"
+    run_file = str(tmp_path / "runs/.fabric/requests/recording-example/run.jsonl")
+    original.fabric_record_path = run_file
+    native = MagicMock(spec=["run_plan"])
+    native.run_plan.side_effect = original
+    with pytest.raises(FabricRuntimeError) as caught:
+        await _run_native_lifecycle(native, recorded_plan, {"request_id": "req"})
+    assert str(caught.value) == "original startup error"
+    assert caught.value.stage == "start"
+    assert caught.value.details["run_file"] == run_file
+    assert caught.value.details["record_root"] == str(tmp_path / "runs/.fabric")
+    assert caught.value.__notes__ == [f"Run evidence file: {run_file}"]
+    assert caught.value.__cause__ is original
 
 
 async def test_recorded_failure_preserves_existing_structured_error_identity(
@@ -104,6 +122,12 @@ async def test_recorded_process_launch_failure_retains_start_stage(
     with pytest.raises(FabricRuntimeError) as caught:
         await Fabric().run(blocking_adapter_config, base_dir=tmp_path, input="hello")
     assert caught.value.stage == "start"
+    run_file = Path(caught.value.details["run_file"])
+    rows = [json.loads(line) for line in run_file.read_text().splitlines()]
+    assert run_file.name == "run.jsonl"
+    assert rows[0]["kind"] == "request_started"
+    assert rows[-1]["kind"] == "summary"
+    assert rows[-1]["data"]["error"]["stage"] == "start"
 
 
 async def test_recorded_cancellation_keeps_cancellation_and_evidence_location(

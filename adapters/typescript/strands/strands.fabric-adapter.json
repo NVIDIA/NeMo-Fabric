@@ -1,0 +1,180 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "adapter_id": "nvidia.fabric.strands",
+  "adapter_kind": "process",
+  "runner": {
+    "command": "node",
+    "script": "dist/cli.js"
+  },
+  "requirements": {
+    "binaries": [
+      "node",
+      "strands"
+    ]
+  },
+  "config": {
+    "accepts": [
+      "models",
+      "mcp",
+      "instructions.system",
+      "models.base_url"
+    ],
+    "system_instruction_modes": [
+      "append"
+    ]
+  },
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "builtin_tools": {
+        "type": "array",
+        "items": {
+          "enum": [
+            "shell",
+            "read",
+            "write",
+            "edit",
+            "web_fetch"
+          ]
+        },
+        "uniqueItems": true
+      },
+      "max_invocations": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10000,
+        "default": 100
+      },
+      "insecure_http_model_hosts": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "additionalProperties": false
+  },
+  "model_schema": {
+    "oneOf": [
+      {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "const": "bedrock"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "provider",
+          "model"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "enum": [
+              "openai",
+              "nvidia"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "base_url": {
+            "type": "string",
+            "minLength": 1
+          },
+          "api_key_env": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "base_url"
+        ],
+        "additionalProperties": false
+      }
+    ]
+  },
+  "extension_schemas": {
+    "run_result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stop_reason": {
+          "type": "string",
+          "enum": [
+            "end_turn",
+            "max_tokens",
+            "max_turn_requests",
+            "refusal",
+            "cancelled"
+          ]
+        }
+      },
+      "required": [
+        "session_id",
+        "stop_reason"
+      ],
+      "additionalProperties": false
+    },
+    "usage": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "nemo_fabric.detailed_token_usage.v1": {
+          "type": "object",
+          "properties": {
+            "input_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cached_input_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cache_write_input_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "input_tokens_include_cache": {
+              "type": "boolean"
+            },
+            "output_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "output_tokens_include_reasoning": {
+              "type": "boolean"
+            },
+            "total_tokens": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "capabilities": {
+    "streaming": false,
+    "cancellation": false,
+    "updates": false,
+    "service": false
+  }
+}

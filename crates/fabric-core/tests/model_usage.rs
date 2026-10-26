@@ -519,3 +519,57 @@ fn dimension_scoped_request_omission_keeps_independent_complete_output() {
     assert_eq!(result["output_tokens"], 5);
     assert!(result["total_tokens"].is_null());
 }
+
+#[test]
+fn exhaustive_empty_model_list_rejects_positive_tokens() {
+    for observed in [false, true] {
+        for field in [
+            "input_tokens",
+            "cached_input_tokens",
+            "cache_write_input_tokens",
+            "output_tokens",
+            "total_tokens",
+        ] {
+            let tokens = json!({field: 1});
+            let mut usage: AgentUsage =
+                serde_json::from_value(if observed || field == "cache_write_input_tokens" {
+                    json!({})
+                } else {
+                    tokens.clone()
+                })
+                .unwrap();
+            let mut accounting = json!({"models_exhaustive": true, "models": [], "gaps": []});
+            if observed {
+                accounting["observed"] = tokens;
+            } else if field == "cache_write_input_tokens" {
+                usage
+                    .extensions
+                    .insert("nemo_fabric.detailed_token_usage.v1".into(), tokens);
+            }
+            usage
+                .extensions
+                .insert("nemo_fabric.usage_accounting.v1".into(), accounting);
+            let error = normalize_model_usage(&usage, None, false).unwrap_err();
+            assert!(
+                error.to_string().contains("exhaustive empty model list"),
+                "{field}, observed={observed}: {error}"
+            );
+        }
+    }
+}
+
+#[test]
+fn exhaustive_empty_model_list_preserves_unknown_and_zero_work() {
+    for tokens in [
+        json!({}),
+        json!({"input_tokens": 0, "cached_input_tokens": 0, "input_tokens_include_cache": true, "output_tokens": 0, "total_tokens": 0}),
+    ] {
+        let result = normalize(
+            tokens.clone(),
+            json!({"models_exhaustive": true, "models": [], "gaps": [], "observed": tokens}),
+        );
+        assert_eq!(result["models_exhaustive"], true);
+        assert!(result.get("models").is_none());
+        assert_eq!(result["input_tokens"], tokens["input_tokens"]);
+    }
+}

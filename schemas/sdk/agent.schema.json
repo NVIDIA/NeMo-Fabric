@@ -574,10 +574,10 @@
     },
     "RecordConfig": {
       "additionalProperties": false,
-      "description": "Per-invocation run record settings.\n\nWhen enabled, core appends a start line and an end line for each local\ninvocation to `<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`.",
+      "description": "Opt-in local request journal settings.\n\nWhen enabled, core appends lifecycle events and a terminal summary for each\nrequest to `<artifact root>/.fabric/requests/<recording_id>/run.jsonl`.\nThe journal can contain sensitive result data and error messages.",
       "properties": {
         "enabled": {
-          "description": "Whether to write a run record for each invocation. Requires an\nartifact root, the `local` environment provider, and a `process` or\n`python` adapter.",
+          "description": "Whether to write a journal for each request. Requires an\nartifact root, the `local` environment provider, and a `process` or\n`python` adapter.",
           "type": "boolean"
         }
       },
@@ -1366,7 +1366,7 @@
               "type": "null"
             }
           ],
-          "description": "Opt-in per-invocation run record. Core-only; never sent to adapters."
+          "description": "Opt-in local request journal. Core-only; never sent to adapters."
         },
         "timeout_seconds": {
           "description": "Maximum duration of one invocation in seconds.",

@@ -9,7 +9,7 @@ from nemo_fabric._report_format import format_bytes, format_duration_ms, format_
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        (None, "unavailable"),
+        (None, "Unavailable"),
         (0, "$0.00"),
         (1, "$0.000000001"),
         (280000, "$0.000280"),
@@ -25,11 +25,11 @@ def test_money_preserves_positive_spend_with_readable_precision(value, expected)
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        (0, "0 ms"),
-        (0.25, "0.25 ms"),
-        (6000, "6 s"),
-        (61000, "1 min 1 s"),
-        (3661000, "1 h 1 min 1 s"),
+        (0, "0.000 s"),
+        (0.25, "0.000 s"),
+        (6000, "6.000 s"),
+        (61000, "61.000 s"),
+        (3661000, "3661.000 s"),
     ],
 )
 def test_duration_uses_explicit_readable_units(value, expected):

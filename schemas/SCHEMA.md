@@ -129,8 +129,7 @@ descriptor schema.
 
 ### Results, Artifacts, and Diagnostics
 
-- `sdk/request-record`: outer request evidence when startup or invocation returns no result.
-- `sdk/run-record-line`: bounded opt-in invocation start/end evidence, including validated normalized accounting when available.
+- `sdk/run-record-line`: typed request journal events with UTC timestamps, monotonic elapsed seconds and a terminal result or no-result error. Diagnostic records have a separate size bound; terminal results retain their full output and available accounting.
 - `sdk/run-result`: normalized consumer-facing invocation result.
 - `sdk/artifact-manifest`: normalized artifact references.
 - `sdk/error-info`: structured runtime or adapter error metadata.
