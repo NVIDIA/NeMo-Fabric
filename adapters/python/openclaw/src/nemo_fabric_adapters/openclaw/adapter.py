@@ -809,6 +809,7 @@ class OpenClawRuntime:
         self._harness_version = provenance.missing_fact(
             "unavailable", "not_collected", _METHOD_VERSION_PROBE
         )
+        self._package_version = provenance.package_version_fact(_PACKAGE_DISTRIBUTION)
 
     async def start(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         config: contract.AgentConfig = payload["config"]
@@ -1452,7 +1453,7 @@ class OpenClawRuntime:
         models = self._config.models if self._config is not None else {}
         return {
             provenance.VERSIONS_REPORT_KEY: provenance.versions_report(
-                package_version=provenance.package_version_fact(_PACKAGE_DISTRIBUTION),
+                package_version=self._package_version,
                 harness_name=provenance.known_fact(
                     _HARNESS_NAME, provenance.METHOD_ADAPTER_REPORT
                 ),

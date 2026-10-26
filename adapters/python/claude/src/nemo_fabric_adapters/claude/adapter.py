@@ -33,6 +33,7 @@ from claude_agent_sdk import Message
 from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import SystemMessage
+from claude_agent_sdk import UserMessage
 from claude_agent_sdk import HookMatcher
 from claude_agent_sdk._errors import MessageParseError
 from nemo_fabric_adapter_contract.codec import ContractValidationError
@@ -842,12 +843,53 @@ _METHOD_HARNESS_API = "harness_api"
 _SYNTHETIC_MODEL = "<synthetic>"
 
 
+def _injected_turn(message: UserMessage | ResultMessage) -> bool:
+    """Whether the SDK attributes this turn to a source other than the caller."""
+
+    origin = message.origin
+    return origin is not None and (
+        not isinstance(origin, dict) or origin.get("kind") != "human"
+    )
+
+
 @dataclass
 class InvocationMessages:
-    """One invocation's messages, and why collecting them failed, if it did."""
+    """Caller-owned messages and runtime initialization facts for one invocation."""
 
     items: list[Message] = field(default_factory=list)
     failure: str | None = None
+    skipped_injected_result: bool = False
+    _injected: bool = field(default=False, init=False)
+
+    def observe(self, message: Message) -> ResultMessage | None:
+        """Collect owned evidence and return only the caller's terminal result."""
+
+        if (
+            isinstance(message, UserMessage)
+            and message.parent_tool_use_id is None
+            and message.origin is not None
+        ):
+            self._injected = _injected_turn(message)
+        if isinstance(message, ResultMessage):
+            was_injected = self._injected
+            self._injected = False
+            if _injected_turn(message):
+                self.skipped_injected_result = True
+                if not was_injected:
+                    # Without a user echo, preceding model messages have no
+                    # reliable owner. Keep runtime initialization evidence.
+                    self.items[:] = [
+                        item
+                        for item in self.items
+                        if isinstance(item, SystemMessage) and item.subtype == "init"
+                    ]
+                return None
+            return message
+        if not self._injected or (
+            isinstance(message, SystemMessage) and message.subtype == "init"
+        ):
+            self.items.append(message)
+        return None
 
 
 def served_model_fact(messages: InvocationMessages | None) -> dict[str, Any]:
@@ -955,6 +997,7 @@ def _detailed_token_usage(usage: dict[str, Any]) -> dict[str, int | bool]:
 
 def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
     normalized = dict(output)
+    usage_unattributed = normalized.pop("_usage_unattributed", False)
     failed = bool(normalized.pop("failed", False))
     reported_error = normalized.pop("error", None)
     error = None
@@ -967,7 +1010,7 @@ def _agent_run_result(output: dict[str, Any]) -> AgentRunResult:
             retryable=bool(reported.get("retryable", False)),
             extensions=metadata if isinstance(metadata, dict) else {},
         )
-    raw_usage = normalized.get("usage")
+    raw_usage = None if usage_unattributed else normalized.get("usage")
     usage = raw_usage if isinstance(raw_usage, dict) else {}
     tokens = {
         name: value
@@ -1332,23 +1375,25 @@ class ClaudeRuntime:
     ) -> dict[str, Any]:
         """Run one SDK query and normalize its terminal result.
 
-        Every message other than the terminal result is appended to
-        ``collected``, which also records why the stream failed, if it did.
+        The same deadline bounds all response reads, including injected turns.
         """
 
         collected = InvocationMessages() if collected is None else collected
         self._invocation_messages = collected
-        messages = collected.items
         result: ResultMessage | None = None
         deadline = asyncio.timeout(remaining_timeout)
         try:
             async with deadline:
                 await client.query(prompt)
-                async for message in client.receive_response():
-                    if isinstance(message, ResultMessage):
-                        result = message
-                    else:
-                        messages.append(message)
+                while result is None:
+                    received = False
+                    async for message in client.receive_response():
+                        received = True
+                        terminal = collected.observe(message)
+                        if terminal is not None:
+                            result = terminal
+                    if not received:
+                        break
         except (TimeoutError, ClaudeSDKError) as error:
             self._unusable = True
             collected.failure = "timeout" if deadline.expired() else "no_result"
@@ -1365,7 +1410,7 @@ class ClaudeRuntime:
             if result is None or not _result_failed(result):
                 raise
             LOGGER.exception("Claude SDK stream raised after a failed terminal result")
-            output = self._normalize_invocation(messages, result)
+            output = self._normalize_invocation(collected, result)
         else:
             if result is None:
                 self._unusable = True
@@ -1374,17 +1419,25 @@ class ClaudeRuntime:
                     "claude_missing_result", "Claude returned no terminal result"
                 )
             else:
-                output = self._normalize_invocation(messages, result)
+                output = self._normalize_invocation(collected, result)
         return output
 
     def _normalize_invocation(
         self,
-        messages: list[Message],
+        collected: InvocationMessages,
         result: ResultMessage,
     ) -> dict[str, Any]:
         try:
-            output = normalize_result(messages, result)
-            output["cost_usd"] = self._invocation_cost(messages, result)
+            output = normalize_result(collected.items, result)
+            output["cost_usd"] = self._invocation_cost(
+                collected.items,
+                result,
+                skipped_injected_result=collected.skipped_injected_result,
+            )
+            if collected.skipped_injected_result:
+                # The terminal usage may include or omit work before the
+                # injected turn, so it cannot establish a complete total.
+                output["_usage_unattributed"] = True
             if not output["failed"]:
                 invalid_session = _validate_result_session(
                     self._claude_session_id, result
@@ -1402,6 +1455,8 @@ class ClaudeRuntime:
         self,
         messages: list[Message],
         result: ResultMessage,
+        *,
+        skipped_injected_result: bool = False,
     ) -> float | None:
         """Convert Claude Code's running cost total into this invocation's cost.
 
@@ -1427,7 +1482,13 @@ class ClaudeRuntime:
         reset = any(
             isinstance(message, ConversationResetMessage) for message in messages
         )
-        if total is None or previous is None or reset or total < previous:
+        if (
+            skipped_injected_result
+            or total is None
+            or previous is None
+            or reset
+            or total < previous
+        ):
             return None
         # Drop float subtraction noise such as 0.19999999999999998. A tenth of a
         # nanodollar is far below the price of a single token.
