@@ -157,10 +157,11 @@ fn run_config(
 fn run_resolved_plan(py: Python<'_>, plan_json: String, request_json: String) -> PyResult<String> {
     let plan = parse_run_plan(plan_json)?;
     let request = parse_run_request(request_json)?;
-    let result = match py.detach(|| nemo_fabric_core::runtime::run_plan_with_stage(&plan, request))
+    let result = match py
+        .detach(|| nemo_fabric_core::runtime::run_plan_with_recording_context(&plan, request))
     {
         Ok(result) => result,
-        Err((error, stage)) => {
+        Err((error, stage, record_path)) => {
             let stage = match stage {
                 ErrorStage::Config => "config",
                 ErrorStage::Plan => "plan",
@@ -171,9 +172,14 @@ fn run_resolved_plan(py: Python<'_>, plan_json: String, request_json: String) ->
                 ErrorStage::Release => "release",
                 ErrorStage::Artifact => "artifact",
             };
-            let failure = to_py_error(error);
+            let failure = to_py_error(*error);
             // Preserve lifecycle stage without parsing diagnostic text.
             failure.value(py).setattr("fabric_stage", stage)?;
+            if let Some(path) = record_path {
+                failure
+                    .value(py)
+                    .setattr("fabric_record_path", path.to_string_lossy().as_ref())?;
+            }
             return Err(failure);
         }
     };

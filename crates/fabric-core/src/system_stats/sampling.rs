@@ -20,6 +20,7 @@ use super::{
     CgroupObservation, Measurement, ResourceObservation, SystemStatsMetricGroup,
     SystemStatsSamplingConfig, cgroup,
 };
+use crate::record::RunRecorder;
 use crate::resource_snapshot::{LocalHostProcess, snapshot_local_host};
 use crate::runtime::{ArtifactRef, InvocationHandle};
 
@@ -201,31 +202,53 @@ impl Gauge {
 // without duplicating it or placing it after the final endpoint.
 struct SampleFile {
     writer: Option<File>,
+    journal: Option<RunRecorder>,
     next: u32,
     failed: bool,
 }
 impl SampleFile {
-    fn write(&mut self, sequence: u32, record: &serde_json::Value) {
+    fn write(&mut self, sequence: u32, record: &SampleRecord) {
         if sequence < self.next {
             return;
         }
         if sequence != self.next {
             self.failed = true;
             self.writer = None;
+            self.journal = None;
             return;
         }
         self.next += 1;
-        if let Some(writer) = &mut self.writer {
-            if serde_json::to_writer(&mut *writer, record).is_err()
-                || writer.write_all(b"\n").is_err()
-            {
+        if let Some(journal) = &self.journal {
+            if !journal.resource_sample(
+                record.offset_seconds,
+                &record.reading.adapter_tree,
+                &record.reading.cgroup,
+                record.reading.collection_seconds,
+            ) {
                 self.failed = true;
-                self.writer = None;
+                self.journal = None;
             }
+        } else if let Some(writer) = &mut self.writer
+            && (serde_json::to_writer(&mut *writer, record).is_err()
+                || writer.write_all(b"\n").is_err())
+        {
+            self.failed = true;
+            self.writer = None;
         }
     }
 }
-type Pending = (Arc<Mutex<SampleFile>>, u32, serde_json::Value);
+#[derive(Debug, Clone, Serialize)]
+struct SampleRecord {
+    schema_version: &'static str,
+    runtime_id: String,
+    invocation_id: String,
+    request_id: String,
+    offset_seconds: f64,
+    #[serde(flatten)]
+    reading: Reading,
+}
+
+type Pending = (Arc<Mutex<SampleFile>>, u32, SampleRecord);
 fn flush_pending(pending: Option<Pending>) {
     if let Some((file, sequence, record)) = pending {
         file.lock()
@@ -241,7 +264,8 @@ struct SampleState {
     next_due: Instant,
     closed: bool,
     file: Option<Arc<Mutex<SampleFile>>>,
-    pending: Option<serde_json::Value>,
+    pending: Option<SampleRecord>,
+    journal: bool,
     path: Option<PathBuf>,
     diagnostics: Vec<String>,
     count: u32,
@@ -314,13 +338,14 @@ impl SampleState {
             self.cgroup_invalid = true;
         }
         if self.file.is_some() {
-            self.pending = Some(serde_json::json!({
-                "schema_version": "fabric.system_stats/v1alpha1",
-                "runtime_id": self.ids.runtime_id, "invocation_id": self.ids.invocation_id,
-                "request_id": self.ids.request_id, "offset_seconds": t,
-                "adapter_tree": reading.adapter_tree, "cgroup": reading.cgroup,
-                "collection_seconds": reading.collection_seconds,
-            }));
+            self.pending = Some(SampleRecord {
+                schema_version: "fabric.system_stats/v1alpha1",
+                runtime_id: self.ids.runtime_id.clone(),
+                invocation_id: self.ids.invocation_id.clone(),
+                request_id: self.ids.request_id.clone(),
+                offset_seconds: t,
+                reading: reading.clone(),
+            });
         }
     }
 
@@ -366,10 +391,21 @@ impl SampleState {
             diagnostics: self.diagnostics.clone(),
             samples: self.path.as_ref().map(|path| ArtifactRef {
                 name: "system_stats_samples".into(),
-                kind: "system_stats_samples".into(),
+                kind: if self.journal {
+                    "run_log".into()
+                } else {
+                    "system_stats_samples".into()
+                },
                 path: path.clone(),
                 media_type: Some("application/x-ndjson".into()),
-                metadata: BTreeMap::new(),
+                metadata: if self.journal {
+                    BTreeMap::from([(
+                        "record_kind".into(),
+                        serde_json::Value::from("resource_sample"),
+                    )])
+                } else {
+                    BTreeMap::new()
+                },
             }),
             cgroup_target_continuous: !self.cgroup_invalid
                 && self.largest_gap <= f64::from(self.config.interval_ms) / 500.0,
@@ -501,20 +537,36 @@ impl StatsSession {
         reader: SystemReader,
         before: &Reading,
         home: &Path,
+        journal: Option<RunRecorder>,
     ) -> Self {
         let path = home.join("system-stats.jsonl");
-        let opened = OpenOptions::new().write(true).create_new(true).open(&path);
-        let (file, path, mut diagnostics) = match opened {
-            Ok(file) => (
+        let uses_journal = journal.is_some();
+        let (file, path, mut diagnostics) = if let Some(journal) = journal {
+            let path = journal.path();
+            (
                 Some(Arc::new(Mutex::new(SampleFile {
-                    writer: Some(file),
+                    writer: None,
+                    journal: Some(journal),
                     next: 0,
                     failed: false,
                 }))),
                 Some(path),
                 Vec::new(),
-            ),
-            Err(_) => (None, None, vec!["sample_file_unavailable".into()]),
+            )
+        } else {
+            match OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(file) => (
+                    Some(Arc::new(Mutex::new(SampleFile {
+                        writer: Some(file),
+                        journal: None,
+                        next: 0,
+                        failed: false,
+                    }))),
+                    Some(path),
+                    Vec::new(),
+                ),
+                Err(_) => (None, None, vec!["sample_file_unavailable".into()]),
+            }
         };
         let ticker = Arc::clone(&TICKER);
         if !ticker.start() {
@@ -529,6 +581,7 @@ impl StatsSession {
             closed: false,
             file,
             pending: None,
+            journal: uses_journal,
             path,
             diagnostics,
             count: 0,
@@ -696,6 +749,7 @@ mod tests {
             },
             baseline,
             &root,
+            None,
         );
         (root, session)
     }
@@ -798,5 +852,197 @@ mod tests {
         assert!(summary.cgroup_target_continuous);
         drop(session);
         let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+#[cfg(test)]
+mod journal_tests {
+    use super::*;
+    use crate::RuntimeResourceSnapshot;
+    use crate::config::{FabricConfig, ResolveContext, resolve_run_plan_from_config};
+    use crate::record::{OutcomeScope, RunRecorder};
+    use crate::runtime::{ErrorStage, RunRequest, RunResult, new_id};
+    use serde_json::{Value, json};
+
+    fn reading(cpu: f64) -> Reading {
+        Reading {
+            adapter_tree: ResourceObservation::Available {
+                snapshot: RuntimeResourceSnapshot {
+                    runtime_id: "rt".into(),
+                    started_at: "2026-10-25T00:00:00.000Z".into(),
+                    observed_at: "2026-10-25T00:00:01.000Z".into(),
+                    resident_memory_bytes: 80,
+                    process_count: 1,
+                    cpu_time_seconds: cpu,
+                },
+            },
+            cgroup: CgroupObservation::Unsupported {
+                reason: "test".into(),
+            },
+            collection_seconds: 0.01,
+        }
+    }
+
+    fn fixture() -> (PathBuf, RunRecorder, StatsSession, RunResult) {
+        let root = std::env::temp_dir().join(new_id("journal-sampling"));
+        std::fs::create_dir_all(&root).unwrap();
+        let config: FabricConfig = serde_json::from_value(json!({
+            "schema_version":"fabric.agent/v1alpha1","metadata":{"name":"demo"},
+            "harness":{"adapter_id":"nvidia.fabric.hermes","resolution":"preinstalled"},
+            "runtime":{"artifacts":root,"record":{"enabled":true}}
+        }))
+        .unwrap();
+        let plan = resolve_run_plan_from_config(config, ResolveContext::new(&root)).unwrap();
+        let mut request = RunRequest::text("test");
+        request.request_id = "req".into();
+        let recorder = RunRecorder::start(&plan, &request, OutcomeScope::Invocation).unwrap();
+        let ids = InvocationHandle {
+            runtime_id: "rt".into(),
+            invocation_id: "inv".into(),
+            request_id: "req".into(),
+        };
+        recorder.invocation_started(&ids, Duration::from_secs(60));
+        let session = StatsSession::prepare(
+            &SystemStatsSamplingConfig::default(),
+            &ids,
+            SystemReader {
+                runtime_id: "rt".into(),
+                host: None,
+                local: false,
+                collect: super::super::default_groups(),
+            },
+            &reading(1.0),
+            &root,
+            Some(recorder.clone()),
+        );
+        let result =
+            serde_json::from_value(json!({"agent_name":"demo","harness":"nvidia.fabric.hermes",
+            "adapter_kind":"python","runtime_id":"rt","invocation_id":"inv","request_id":"req",
+            "status":"succeeded","output":"kept"}))
+            .unwrap();
+        (root, recorder, session, result)
+    }
+
+    fn rows(recorder: &RunRecorder) -> Vec<Value> {
+        std::fs::read_to_string(recorder.path())
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn journal_samples_preserve_endpoint_order_without_separate_files() {
+        let (root, recorder, session, result) = fixture();
+        let delayed = {
+            let mut state = session.state.lock().unwrap();
+            state.push(0.5, &reading(2.0));
+            state.pending()
+        };
+        let summary = session.finish(1.0, &reading(3.0));
+        flush_pending(delayed);
+        recorder.finish(Ok(result), ErrorStage::Invoke).unwrap();
+        let rows = rows(&recorder);
+        let samples: Vec<_> = rows
+            .iter()
+            .filter(|row| row["kind"] == "resource_sample")
+            .collect();
+        assert_eq!(
+            samples
+                .iter()
+                .map(|row| row["data"]["offset_seconds"].as_f64().unwrap())
+                .collect::<Vec<_>>(),
+            vec![0.0, 0.5, 1.0]
+        );
+        assert_eq!(summary.samples.as_ref().unwrap().path, recorder.path());
+        assert_eq!(
+            summary.samples.as_ref().unwrap().metadata["record_kind"],
+            "resource_sample"
+        );
+        assert_eq!(summary.sample_count, 3);
+        assert_eq!(summary.cpu_time_seconds_estimate.value(), Some(&2.0));
+        assert!(!root.join("system-stats.jsonl").exists());
+        assert!(!root.join("system-stats-summary.json").exists());
+        assert_eq!(rows.last().unwrap()["kind"], "summary");
+    }
+
+    #[test]
+    fn closed_journal_retains_reductions_and_reports_missing_series() {
+        let (_root, recorder, session, result) = fixture();
+        recorder.finish(Ok(result), ErrorStage::Invoke).unwrap();
+        let summary = session.finish(1.0, &reading(2.0));
+        assert!(summary.samples.is_none());
+        assert!(summary.truncated);
+        assert!(
+            summary
+                .diagnostics
+                .iter()
+                .any(|code| code == "sample_write_failed")
+        );
+        assert_eq!(summary.sample_count, 2);
+        assert_eq!(summary.cpu_time_seconds_estimate.value(), Some(&1.0));
+        assert_eq!(rows(&recorder).last().unwrap()["kind"], "summary");
+    }
+    #[test]
+    fn no_result_keeps_resource_evidence_without_inventing_usage() {
+        let (_root, recorder, session, _result) = fixture();
+        let sampled = session.finish(1.0, &reading(2.0));
+        let mut stats = super::super::InvocationSystemStats::new(
+            reading(1.0).adapter_tree,
+            reading(2.0).adapter_tree,
+            1.0,
+        );
+        stats.sampled = Some(sampled);
+        recorder.capture_system_stats(&stats);
+        let error = crate::FabricError::InvalidConfig {
+            field: "test".into(),
+            reason: "failed exchange".into(),
+        };
+        recorder.finish(Err(error), ErrorStage::Invoke).unwrap_err();
+        let rows = rows(&recorder);
+        let summary = &rows.last().unwrap()["data"];
+        assert!(summary["result"].is_null());
+        assert_eq!(
+            summary["system_stats"],
+            serde_json::to_value(stats).unwrap()
+        );
+        assert_eq!(summary["error"]["stage"], "invoke");
+    }
+
+    #[test]
+    fn oversized_sample_does_not_block_terminal_publication() {
+        let (_root, recorder, session, mut result) = fixture();
+        let mut oversized = reading(2.0);
+        oversized.cgroup = CgroupObservation::Unavailable {
+            reason: "x".repeat(70 * 1024),
+        };
+        let pending = {
+            let mut state = session.state.lock().unwrap();
+            state.push(0.5, &oversized);
+            state.pending()
+        };
+        flush_pending(pending);
+        let sampled = session.finish(1.0, &reading(3.0));
+        assert!(sampled.samples.is_none());
+        assert!(
+            sampled
+                .diagnostics
+                .iter()
+                .any(|code| code == "sample_write_failed")
+        );
+        let mut stats = super::super::InvocationSystemStats::new(
+            reading(1.0).adapter_tree,
+            reading(3.0).adapter_tree,
+            1.0,
+        );
+        stats.sampled = Some(sampled);
+        result.system_stats = Some(stats);
+        let returned = recorder.finish(Ok(result), ErrorStage::Invoke).unwrap();
+        let rows = rows(&recorder);
+        assert_eq!(rows.last().unwrap()["kind"], "summary");
+        assert_eq!(
+            rows.last().unwrap()["data"]["result"],
+            serde_json::to_value(returned).unwrap()
+        );
     }
 }

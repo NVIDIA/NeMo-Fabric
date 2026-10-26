@@ -216,11 +216,31 @@ impl UsageAccounting {
         };
         let evidence: Self = serde_json::from_value(value.clone())
             .map_err(|error| AccountingError(error.to_string()))?;
-        validate_record(
-            &reported_usage(usage)?,
-            evidence.observed.as_ref(),
-            &evidence.gaps,
-        )?;
+        let reported = reported_usage(usage)?;
+        validate_record(&reported, evidence.observed.as_ref(), &evidence.gaps)?;
+        if evidence.models_exhaustive
+            && evidence.models.is_empty()
+            && std::iter::once(&reported)
+                .chain(evidence.observed.as_ref())
+                .any(|counts| {
+                    [
+                        counts.input_tokens,
+                        counts.cached_input_tokens,
+                        counts.cache_write_input_tokens,
+                        counts.output_tokens,
+                        counts.reasoning_tokens,
+                        counts.total_tokens,
+                        counts.peak_request_input_tokens,
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .any(|count| count > 0)
+                })
+        {
+            return Err(AccountingError(
+                "exhaustive empty model list conflicts with positive tokens".into(),
+            ));
+        }
         let mut identities = BTreeSet::new();
         for model in &evidence.models {
             if model.model.trim().is_empty()

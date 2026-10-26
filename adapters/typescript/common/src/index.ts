@@ -28,3 +28,8 @@ export {
   type AcpSessionOptions,
   type AcpSessionReadinessNotification,
 } from "./acp-runner.js";
+
+export {
+  VERSIONS_REPORT_KEY, boundedText, missingFact, packageVersionFact,
+  packageVersionReport, withPackageVersion, type ServedModelFact,
+} from "./provenance.js";

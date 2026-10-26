@@ -923,7 +923,7 @@ For readings **80 MiB → 400 MiB → 80 MiB** at 0, 1, and 2 seconds, the final
 
 Sampling uses one process-wide scheduler, retains both endpoints, and bounds intermediate retention with `max_samples`. The result exposes retained/dropped sample counts, collection time, largest gap, truncation, per-gauge covered time, diagnostics, and artifact references. Late samples are discarded after invocation closes. A full series preserves the final endpoint rather than silently reporting an old value as final. Counter resets, changed targets, missing observations, and long gaps invalidate affected sampled CPU estimates. Sampling does not replace endpoint-derived CPU or cgroup deltas; collection quality and continuity are reported under `sampled`.
 
-With an artifact root, the layout is:
+With recording disabled and an artifact root, the layout is:
 
 ```text
 artifacts/.fabric/<runtime_id>/<invocation_id>/
@@ -932,6 +932,8 @@ artifacts/.fabric/<runtime_id>/<invocation_id>/
   system-stats-summary.json
   stdout.txt
 ```
+
+With recording enabled, samples and reductions use the [single run journal](#resource-measurements-in-the-journal). With recording disabled, the following standalone artifact behavior applies.
 
 Every sample and saved summary carries the existing runtime, invocation, and request IDs. `RunResult.artifacts` references both stats files. Without an explicit artifact root, these files use the runtime's temporary `.fabric` directory. Optional stats persistence failures produce diagnostics and preserve the agent outcome. A known series write failure suppresses its artifact reference while retaining in-memory reductions and a `sample_write_failed` diagnostic. Samples and a summary are retained even if the adapter protocol raises without a normalized result; they do not invent a terminal agent status or a second lifecycle journal. Consumers should handle an interrupted last JSONL line explicitly.
 
@@ -1186,6 +1188,7 @@ Important fields:
 | `telemetry` | References to NeMo Relay or other telemetry streams produced by the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
 | `metadata` | Result-specific structured metadata. |
+| `what_ran` | What executed for this invocation, and how NeMo Fabric learned each fact. |
 | `runtime_id`, `invocation_id`, `request_id` | IDs for correlation across runtimes, logs, telemetry, and artifacts. |
 
 These are structured correlation fields, not interchangeable metadata:
@@ -1269,6 +1272,142 @@ checks uint64 overflow and separates incompatible pricing bases. It never adds
 legacy, log or Relay/ATIF values to native accounting. Do not rank partial spend
 as cheaper or silently remove timed-out attempts from comparisons.
 
+
+### What Ran
+
+`what_ran` records what executed for the invocation, as schema
+`nemo.fabric.what_ran` version `v1alpha1`. Each fact is an object with a
+`value`, or with a `state` and a `reason` when it has no value. Both forms
+carry `source`, `collected_by`, and `method`:
+
+- `source` is `observed` when NeMo Fabric core saw the fact itself, `reported`
+  when the adapter, harness, an MCP server, or a remote service said so, and
+  `configured` when it comes from the resolved plan.
+- `state` is `not_applicable` when the fact cannot exist for this run,
+  `unsupported` when there is no source for it, `collection_failed` when the
+  source failed, and `unavailable` when NeMo Fabric holds no value and no
+  evidence for the other states.
+- `collected_by`, `method`, and `reason` are open codes that match
+  `^[a-z0-9_.:#+/-]{1,128}$`. Accept values you do not recognize.
+  `collected_by` is `task_core` for facts a core inside an OpenShell sandbox
+  collected. `method` names the technique, such as `crate_version`,
+  `resolved_plan`, or `adapter_report`.
+
+| Part | Facts |
+| --- | --- |
+| `fabric` | `core_version` of the core that ran the adapter. `host_core_version` is `not_applicable` with reason `local_run` in a local run, and the host core's version in an OpenShell run. |
+| `adapter` | `id` from the plan, and the reported `package_version`. |
+| `harness` | The reported `name` and `version` of the harness program. |
+| `models.<role>` | `provider` and the `requested` model from the plan, and the reported `served` model. |
+| `mcp.servers.<name>` | `origin`, `transport`, the configured `endpoint`, and a `runtime` block with the reported `connected`, `protocol_version`, `server_name`, `server_version`, and `tool_names`. |
+| `environment` | The environment `provider`, such as `local` or `openshell`. |
+
+An adapter reports its facts through the result keys `nemo_fabric.versions.v1`
+(package version, harness name and version, and served models) and
+`nemo_fabric.mcp.v1` (MCP `runtime` blocks) when its descriptor declares them.
+Bundled adapters other than Strands report their package version. Strands
+declares the versions report key but does not emit a report. Its adapter package
+version, harness facts and served-model facts have state `unavailable` with
+reason `key_omitted`.
+
+The Claude Code, Codex, Hermes Agent, OpenClaw, Deep Agents, and mini-SWE-agent
+adapters also report their harness name and version. Other adapters that emit a
+versions report mark those harness facts `unsupported` with reason `no_source`. The Claude Code adapter also reports the served model of the role
+it runs: the one model that this invocation's main-thread assistant messages
+name, skipping subagent messages and Claude Code's `<synthetic>` API-error
+messages. Two models give `unavailable` with reason `not_attributed`, and none
+gives `unavailable` with reason `empty_response`. The Cline adapter reports the
+served model of the role it runs as `unavailable` with reason `not_attributed`,
+because nothing yet shows that the model its SDK names served this invocation.
+No bundled adapter reports
+MCP runtime facts yet.
+
+When the descriptor does not declare a report key, ingestion leaves the
+corresponding facts `unsupported` with reason `key_not_declared`.
+Result-extension validation runs first: if the schema rejects an emitted
+undeclared key, the run fails before ingestion and no `RunResult` is returned.
+
+If you maintain an external descriptor copy for a bundled adapter, update its
+`run_result` extension schema before upgrading the adapter implementation. Add
+`"nemo_fabric.versions.v1": {"type": "object"}` under `properties`, preserving
+existing properties and requirements, and do not add the key to `required`.
+Without a schema that accepts the report, invocation fails during
+result-extension validation.
+
+A fact the adapter has no source for has state `unsupported` with reason
+`no_source`. A declared key that the result omits gives `unavailable` with
+reason `key_omitted`, and a fact the key omits gives `unavailable` with reason
+`fact_omitted`. A malformed fact, or one that does not name source `reported`
+and collector `adapter`, gives `collection_failed` with reason
+`invalid_report`. A key larger than 64 KiB of compact JSON gives
+`collection_failed` with reason `too_large`. These ingestion outcomes do not
+change a returned run's status or error.
+
+An MCP entry has `origin` `plan` for a server the plan configures. An entry
+with `origin` `harness` describes a server the harness reports but the plan
+does not configure. It has
+the same shape, except that `endpoint` has state `not_applicable` with reason
+`not_configured`. A `plan` entry always has `transport`. An entry of any other
+origin can leave it out.
+
+`endpoint` keeps no secret. A network server's endpoint is its lowercase scheme
+and host and its port. A URL without a port gets 80 for `http` and `ws` and 443
+for `https` and `wss`, so `https://example.com` and `https://example.com:443`
+give the same endpoint. An IPv6 host keeps its brackets, in compressed lowercase
+form such as `[2001:db8::1]`. A `stdio` server's endpoint is the file name of
+its executable, such as `server.exe` for `C:\MCP\server.exe`.
+User info, paths, queries, fragments, headers, arguments, and environment values
+are never copied.
+
+An endpoint NeMo Fabric cannot reduce safely has state `collection_failed` with
+reason `endpoint_unparsed` or `executable_unparsed`. Examples are a URL with an
+`@` after the host, a bracketed host that is not an IPv6 address, and an
+executable that contains `=` or any whitespace, even in a folder name. An empty
+URL or executable has state `unavailable` with reason `not_configured`.
+
+A string value longer than 256 characters keeps its first 240 characters, then
+`~`, then the first 15 hex digits of its SHA-256. The rule applies to each
+element of a list value too. `tool_names` keeps at most 64 names in sorted
+order, and a `tool_names_truncated` marker in the `runtime` block counts the
+names the adapter or NeMo Fabric dropped.
+
+`models` keeps at most 16 roles and `mcp.servers` at most 32 servers, taken in
+sorted key order. Servers the plan configures take their places first, and
+servers only the harness reports fill the places left. An entry whose key is
+longer than 128 characters is dropped. While the whole `what_ran` is larger
+than 128 KiB of compact JSON, MCP servers are dropped from the end of the
+sorted order, harness-reported servers before plan servers, and then model
+roles. A map that lost entries has a marker next to it, `models_truncated` or
+`mcp.servers_truncated`, with the `reason` (`key_too_long`, `entry_cap`, or
+`byte_budget`) and the `dropped` count. Each map has one marker: when more than
+one rule dropped entries, `reason` names the last rule applied, in that order,
+and `dropped` counts every dropped entry. When the adapter's report drops
+servers to fit its own size limit, its `servers_truncated` marker counts only
+dropped server names absent from the full capability plan supplied at lifecycle
+start, because those entries disappear. `mcp.servers_truncated` adds that count. A plan server the report drops keeps
+its entry, and its runtime facts read `unavailable` with reason `fact_omitted`.
+`dropped` is a JSON integer. The Rust core and the Python SDK
+reject `1.0`, although a JSON Schema validator may accept it. If `what_ran` is
+still too large with no MCP server and no model role left, it holds only
+`schema`, `version`, and `what_ran_truncated` with
+reason `byte_budget` and `dropped` 1. Check for `what_ran_truncated` before you
+read a section. Dropping entries never changes the run's status or error.
+
+`what_ran` is `None` when the core that produced the result predates it. The
+Rust core and the Python SDK apply the same structural checks. A `what_ran`
+that is not an object, names another schema or version, or has a malformed
+section or fact reads as `None`, and the rest of the result is unchanged. A
+fact with both `value` and `state` is malformed. Unknown properties are
+ignored. Treat `what_ran` as evidence, not as a key for grouping runs.
+
+```python
+what_ran = result.what_ran
+if what_ran is not None and "what_ran_truncated" not in what_ran:
+    core = what_ran["fabric"]["core_version"]
+    print(core.get("value"), core["source"])
+    for role, model in what_ran["models"].items():
+        print(role, model["requested"].get("value"), model["served"].get("state"))
+```
 
 ## Events
 
@@ -1490,9 +1629,9 @@ backpressure. The consumer decides whether to wait, retry, scale out, or fail.
 - Review the examples in the GitHub repo [`examples/`](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples).
 
 
-## Opt-in run recording
+## Opt-in Run Recording
 
-Set `runtime.record.enabled` and a host-side artifact root to save local runs:
+Set `runtime.record.enabled` and a host-side artifact root to retain evidence from local runs:
 
 ```python
 from nemo_fabric import RecordConfig
@@ -1507,67 +1646,60 @@ The CLI accepts the same settings:
 nemo-fabric run --preset scripted --input "Inspect the example" --record --artifacts ./runs
 ```
 
-Recording supports the local environment provider with Python or process adapters.
-It is disabled when the record setting is omitted. Enabling it without an artifact
-root or with an unsupported execution location fails validation.
+Recording supports the local environment provider with Python or process adapters. It is disabled by default. Enabling it without an artifact root or at an unsupported execution location fails validation. Recording requires neither a benchmark framework nor NeMo Relay.
 
-Each invocation writes bounded start/end lines to
-`.fabric/<runtime_id>/<invocation_id>/run-record.jsonl`. The start line retains
-identities and configured model names. It omits prompts, output, credentials,
-exception messages and arbitrary adapter metadata. Allowlisted context identity
-keys retain string or integer values; other context values are omitted.
+### One Run Journal
 
-The sibling `run-result.json` contains the complete returned result and can
-contain sensitive output. One-shot results are finalized after runtime shutdown;
-persistent-runtime results describe the invocation before a later shutdown.
-An invocation end record never establishes the outcome of a later shutdown.
-Saved results are created exclusively and never replace an existing file or
-symlink. Recording failures add diagnostics without retrying paid work or
-replacing the execution outcome. No result file is promised when execution
-raises before returning a result.
+Each recorded request writes one journal at `<artifact-root>/.fabric/requests/<recording_id>/run.jsonl`. The recording ID identifies this journal; it is separate from the caller's request ID. Reusing a request ID does not combine separate requests into one file.
 
-The start/end record's elapsed time covers its invocation window, including start
-record I/O and core preparation. It excludes end-record writes, full-result
-persistence and one-shot runtime startup/shutdown. It is not pure model time or
-the caller's task schedule interval. Record I/O is synchronous and best effort.
-Record end lines copy the adapter exchange's before/after resource observations
-and elapsed milliseconds from `system_stats`. These endpoints exclude recording
-and result persistence. The inspector validates their runtime identity and time
-order before showing a CPU counter difference. Missing or incompatible observations
-stay unavailable; cumulative counters and endpoint memory are not interval peaks.
+JSONL means one JSON object per line. New events are appended during execution. Each record has a schema and version, recording and request identities, an append sequence, a full UTC timestamp, monotonic elapsed seconds, a source, a kind and a typed payload. Runtime and invocation IDs appear after those identities are known. Nested objects remain structured data inside each line.
 
-Each record line is limited to 64 KiB; oversized lines stop that record without
-replacing the available execution result.
+The final record retains the full returned result or a typed error when no result was returned. A one-shot request finishes after its owned runtime shutdown. An invocation on a persistent runtime finishes before any later shutdown; its final record does not establish that later outcome. Configuration resolution occurs before request recording begins.
 
-### Inspect a saved run
+The journal can contain output and other sensitive result data. Treat it with the same access controls as the returned result. Native harness artifacts and task work products remain separate and can be referenced by the result. When recording is enabled, resource samples and reductions use this same journal rather than separate `system-stats.jsonl` and `system-stats-summary.json` files. With recording disabled, resource collection keeps its existing standalone outputs.
+
+Recording appends to an exclusively created private file and never replaces an existing file or symlink. Writes are synchronous and best effort. A storage failure stops further writes and produces a diagnostic without retrying model work or replacing the execution outcome. A process crash can leave a journal with no final summary. That establishes retained evidence, not completion or zero consumption.
+
+### Runtime Diagnostics and Missing Results
+
+Recording captures runtime stderr while the recorded operation is active, including startup and owned shutdown for a one-shot run. Diagnostic timestamps record capture time, not the original emission time. On a persistent runtime, stderr can include concurrent background work and is labeled with runtime scope. It is not a transcript of every model or tool call.
+
+Each request reads at most 1 MiB of diagnostic source bytes. A `diagnostic_retention` record reports omitted bytes or a read error. These limits apply to diagnostic capture, not the returned result. The recorder does not redact stderr or the full result; either can contain sensitive data. Adapter stdout is a protocol channel and is not captured as a separate diagnostic stream.
+
+A recorded startup or invocation failure can end with `summary.data.result: null` and a typed `summary.data.error`. This retains the known error without inventing inner execution IDs, token counts or cost. When a one-shot call raises after its first journal record was saved, Python exposes the path in `FabricRuntimeError.details["run_file"]`; the CLI prints the path to stderr. An outer timeout or cancellation does not prove that inner or remote work stopped.
+
+Host-side recording supports the local environment provider. The OpenShell command bridge remains buffered and does not provide a live remote diagnostic stream through this recorder.
+
+### Resource Measurements in the Journal
+
+When `system_stats` collection is enabled, `invocation_finished.data.system_stats` keeps the existing adapter exchange duration, endpoint observations and available reductions. The final returned result keeps the same `system_stats`. If no result is returned after a measured exchange, `summary.data.system_stats` can retain independent resource evidence alongside the execution error. Resource availability never changes a missing result into a successful invocation or known model usage.
+
+When sampling is enabled, each retained reading is a `resource_sample` event. Its `data.offset_seconds` is measured from the start of the adapter exchange. The envelope's `elapsed_seconds` is measured from request registration; the two offsets have different start times. The event also contains `adapter_tree`, `cgroup` and `collection_seconds`. The sample reference points to `run.jsonl` with `metadata.record_kind: "resource_sample"` so a consumer can select those events.
+
+The inspector shows available CPU estimates and memory values in its measurement table. `--details` adds the measurement scope, sample coverage and cgroup conditions. It does not print every resource sample in the timeline. Process-tree CPU is an estimate that can include concurrent work. Endpoint memory, an invocation's sampled peak and a cgroup lifetime peak are different measurements and are not substituted for one another.
+
+### Inspect a Saved Run
+
+Use the saved journal path with the inspector:
 
 ```bash
-python -m nemo_fabric.reporting runs/.fabric/<runtime_id>/<invocation_id>/run-result.json
-python -m nemo_fabric.reporting runs/.fabric/<runtime_id>/<invocation_id>/run-result.json --details
-python -m nemo_fabric.reporting runs/.fabric/<runtime_id>/<invocation_id>/run-result.json --json
+python -m nemo_fabric.reporting "runs/.fabric/requests/<recording_id>/run.jsonl"
+python -m nemo_fabric.reporting "runs/.fabric/requests/<recording_id>/run.jsonl" --details
+python -m nemo_fabric.reporting "runs/.fabric/requests/<recording_id>/run.jsonl" --json
 ```
 
-Replace the placeholder IDs with the returned `run_result` artifact path. The
-default overview separates execution, scoped elapsed time, complete token totals,
-observed subtotals, cache breakdown and each cost amount. It names accounting
-gaps and exposes diagnostic paths. Estimates retain their pricing basis and are
-not invoices. An execution failure can retain complete usage; successful
-execution does not establish task correctness or complete accounting.
+Replace `<recording_id>` with the recorded directory name or use the returned `run_log` artifact path. The default view shows harness and model identities, execution status, start and finish times, and a two-column measurement table. Durations use seconds with three decimal places. The readable view shows the UTC date and timezone once when both times fall on the same date; stored timestamps always include the full date and UTC timezone.
 
-Use `--details` for the final resource snapshot and pricing evidence. Resource
-snapshots describe the runtime process tree, not inference GPU usage. The CPU
-counter is cumulative since host start; endpoint RSS is not a peak. Rounded
-currency and human-readable units affect text only. JSON retains exact values,
-and positive amounts never display as zero.
+Token values describe the invocation's complete counts unless marked `recorded; total unknown`. `Unavailable` is not zero. Cache-read and cache-write tokens are included in input and must not be added again. Execution failure can retain complete usage; execution success does not establish task correctness or complete accounting.
 
-The inspector accepts an explicit `run-record.jsonl` to show the invocation
-boundary when a full result is unavailable. It retains complete lines before a
-truncated tail and rejects duplicate or conflicting lines. The bounded record preserves validated normalized accounting, including complete
-and observed counts, when present in the invocation result. Legacy numeric usage
-remains unverified diagnostics. Missing evidence never becomes zero.
+Provider-reported cost and catalog estimates remain separate. An estimate is not an invoice. A partial estimate is labeled `recorded; full estimate unknown`. Text formatting does not change stored values, and a positive cost never displays as zero.
 
-A full result remains authoritative over its matching sibling record. The reader
-checks identities, skips sibling symlinks, and never opens referenced logs or
-telemetry payloads or uses them to fill missing counts. Each inspected file is
-limited to 16 MiB; larger saved results remain unchanged and can be inspected
-separately. Recording requires no benchmark framework, task labels or Relay.
+Use `--details` for a bounded execution history, relevant diagnostic messages, resource scope, pricing evidence and artifact references. Individual resource samples do not flood the timeline. CPU and memory describe the measured agent-side processes, not remote model-server resources. Endpoint memory is not a peak; a sampled peak is the highest collected reading and can miss shorter spikes. Availability depends on the evidence retained for that request.
+
+`--json` prints the inspector's structured summary to stdout. It does not create another file or copy the entire journal. The terminal record retains the returned result, while earlier records retain the execution history. The inspector does not open referenced artifacts or use logs and traces to fill missing counts.
+
+### Interrupted and Older Records
+
+The reader accepts the legacy saved-result and invocation-record formats. A valid final result remains authoritative; unknown final values are never filled from earlier events. An unfinished trailing line can be ignored. Malformed complete records, changed identities and duplicate terminal summaries are errors.
+
+The reader processes journals incrementally. It rejects any record larger than 16 MiB and any diagnostic or resource-sample record larger than 64 KiB with an explicit error. These are per-record limits, not a limit on the whole journal. The saved file is unchanged. The display history has a 1 MiB byte budget, with a 64 KiB reserve for lifecycle milestones. Shortened display fields and omitted history entries are marked; the full events remain in the journal. For a future event kind, the display retains its envelope without copying an unknown payload. These display limits do not discard the final result.

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { ClineSdkSessionFactory } from "../dist/cline-sdk.js";
+import { ClineSdkSessionFactory, selectedModelRole } from "../dist/cline-sdk.js";
 
 function input(overrides = {}) {
   return {
@@ -443,4 +443,12 @@ test("rejects unsupported MCP authentication and tool filters", async () => {
     })),
     (error) => error.code === "cline_mcp_blocklist_unsupported",
   );
+});
+
+test("the selected model role is default, or the only configured role", () => {
+  assert.equal(selectedModelRole({ models: { default: {}, judge: {} } }), "default");
+  assert.equal(selectedModelRole({ models: { primary: {} } }), "primary");
+  assert.equal(selectedModelRole({ models: { primary: {}, judge: {} } }), undefined);
+  assert.equal(selectedModelRole({ models: {} }), undefined);
+  assert.equal(selectedModelRole({}), undefined);
 });

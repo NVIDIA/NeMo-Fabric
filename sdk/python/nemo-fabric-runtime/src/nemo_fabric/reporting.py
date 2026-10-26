@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Inspect saved invocation evidence without a benchmark manifest or trace import."""
+"""Inspect saved run journals and legacy results without importing traces."""
 
 from __future__ import annotations
 
 import argparse
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import math
 from pathlib import Path
@@ -25,6 +25,22 @@ from nemo_fabric.types import (
 )
 
 MAX_RESULT_BYTES = 16 * 1024 * 1024
+MAX_HISTORY_EVENTS = 256
+MAX_HISTORY_BYTES = 1024 * 1024
+MAX_HISTORY_MILESTONE_RESERVE_BYTES = 64 * 1024
+MAX_HISTORY_FIELD_CHARS = 256
+_HISTORY_MILESTONES = frozenset(
+    {
+        "request_started",
+        "runtime_ready",
+        "invocation_started",
+        "invocation_finished",
+        "runtime_stopped",
+        "summary",
+    }
+)
+MAX_EVENT_BYTES = 64 * 1024
+MAX_HISTORY_MESSAGE_CHARS = 4096
 
 
 def _text(value: Any, field: str) -> str:
@@ -61,6 +77,24 @@ def _load(path: Path) -> dict[str, Any]:
     if not isinstance(document, dict):
         raise ValueError("saved evidence must be a JSON object")
     return document
+
+
+def _validated_system_stats(
+    value: Any, runtime_id: str | None
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Keep independently usable resource evidence bound to its runtime."""
+    if value is None:
+        return None, None
+    try:
+        stats = InvocationSystemStats.from_mapping(value).to_mapping()
+        if runtime_id is None or any(
+            observation.get("snapshot", {}).get("runtime_id", runtime_id) != runtime_id
+            for observation in (stats["before"], stats["after"])
+        ):
+            raise ValueError("system stats belong to another runtime")
+    except (FabricConfigError, TypeError, ValueError):
+        return None, "invalid_system_stats"
+    return stats, None
 
 
 def summarize_result(result: Mapping[str, Any]) -> dict[str, Any]:
@@ -126,24 +160,9 @@ def summarize_result(result: Mapping[str, Any]) -> dict[str, Any]:
         except (FabricConfigError, TypeError, ValueError):
             resource = None
             resource_error = "invalid_resource_snapshot"
-    stats = None
-    stats_error = None
-    if document.get("system_stats") is not None:
-        try:
-            stats = InvocationSystemStats.from_mapping(
-                document["system_stats"]
-            ).to_mapping()
-            if any(
-                observation.get("snapshot", {}).get(
-                    "runtime_id", identity["runtime_id"]
-                )
-                != identity["runtime_id"]
-                for observation in (stats["before"], stats["after"])
-            ):
-                raise ValueError("system stats belong to another runtime")
-        except (FabricConfigError, TypeError, ValueError):
-            stats = None
-            stats_error = "invalid_system_stats"
+    stats, stats_error = _validated_system_stats(
+        document.get("system_stats"), identity["runtime_id"]
+    )
     refs = document.get("artifacts")
     refs = refs.get("artifacts", []) if isinstance(refs, Mapping) else []
     artifacts = (
@@ -178,7 +197,7 @@ def summarize_result(result: Mapping[str, Any]) -> dict[str, Any]:
             (
                 ref.get("metadata", {}).get("boundary")
                 for ref in artifacts
-                if ref.get("kind") == "run_result"
+                if ref.get("kind") in {"run_result", "run_log"}
                 and isinstance(ref.get("metadata"), Mapping)
             ),
             None,
@@ -244,32 +263,415 @@ def _attach_invocation_interval(summary: dict[str, Any], result_path: Path) -> N
                 "elapsed_ms": record["exchange_elapsed_ms"],
                 "source": str(record_path),
             }
-        window = record["resource_window"]
-        if window is not None:
-            if (
-                summary.get("resource_snapshot") is not None
-                and window["end"] is not None
-                and window["end"] != summary["resource_snapshot"]
-            ):
-                # The returned full result remains authoritative. A conflicting
-                # bounded observation cannot supply a trustworthy delta.
-                window["cpu_counter_change_seconds"] = None
-                window["delta_reason"] = "end_snapshot_differs_from_result"
-            if summary.get("system_stats") is None:
-                summary["resource_window"] = window
     except (OSError, ValueError, UnicodeError):
         summary["record_error"] = "invalid_or_unreadable_sibling_record"
 
 
 def read_evidence(path: Path) -> dict[str, Any]:
-    """Read a full result or invocation record; never follow references."""
+    """Read a run journal or legacy result without opening referenced artifacts."""
     path = Path(path)
     if path.suffix == ".jsonl":
-        return read_invocation_record(path)
+        return _read_journal(path)
     document = _load(path)
     summary = summarize_result(document)
     summary["result_path"] = str(path)
     _attach_invocation_interval(summary, path)
+    return summary
+
+
+def _utc_time(value: Any) -> datetime:
+    text = _text(value, "time")
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError("invalid UTC timestamp") from error
+    if parsed.tzinfo is None or parsed.utcoffset().total_seconds() != 0:
+        raise ValueError("timestamps must include UTC timezone")
+    return parsed.astimezone(timezone.utc)
+
+
+def _read_journal(path: Path) -> dict[str, Any]:
+    """Read a unified run log or the original two-line invocation journal."""
+    with path.open("rb") as stream:
+        first = stream.readline(MAX_RESULT_BYTES + 1)
+    if len(first) > MAX_RESULT_BYTES:
+        raise ValueError("run record exceeds the reader's 16 MiB per-record limit")
+    try:
+        document = json.loads(
+            first, parse_constant=_invalid_constant, parse_float=_finite_float
+        )
+    except (ValueError, RecursionError) as error:
+        raise ValueError(
+            f"run log must begin with a complete JSON record: {error}"
+        ) from error
+    if (
+        isinstance(document, dict)
+        and document.get("schema") == "nemo.fabric.run_record"
+    ):
+        return read_invocation_record(path)
+    return _read_run_log(path)
+
+
+def _journal_seconds(value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        raise ValueError("elapsed seconds must be finite and nonnegative")
+    try:
+        finite = math.isfinite(value)
+    except OverflowError as error:
+        raise ValueError("elapsed seconds exceed the supported range") from error
+    if not finite:
+        raise ValueError("elapsed seconds must be finite and nonnegative")
+    return value
+
+
+def _journal_models(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("request models must be an object")
+    for role, model in value.items():
+        _text(role, "model role")
+        if not isinstance(model, dict):
+            raise ValueError("requested model must be an object")
+        _text(model.get("model"), "model")
+        _text(model.get("provider"), "provider")
+    return value
+
+
+def _journal_error(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("execution error must be an object or null")
+    for field in ("stage", "code"):
+        _text(value.get(field), "error " + field)
+    return {
+        field: value[field]
+        for field in ("stage", "code", "retryable")
+        if field in value
+    }
+
+
+def _history_projection(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Retain bounded display fields, not arbitrary event payloads."""
+    item = {key: row[key] for key in ("kind", "time", "elapsed_seconds", "source")}
+    shortened = False
+
+    def text(value: str, limit: int = MAX_HISTORY_FIELD_CHARS) -> str:
+        nonlocal shortened
+        shortened |= len(value) > limit
+        return value[:limit]
+
+    if len(item["time"]) > MAX_HISTORY_FIELD_CHARS:
+        item["time"] = _utc_time(item["time"]).isoformat().replace("+00:00", "Z")
+        shortened = True
+    kind, data = row["kind"], row["data"]
+    projected = {}
+    keys = {
+        "invocation_started": ("timeout_seconds",),
+        "invocation_finished": ("status",),
+        "runtime_stopped": ("succeeded",),
+        "diagnostic": ("level", "severity", "stream", "scope"),
+    }.get(kind, ())
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, str):
+            projected[key] = text(value)
+        elif isinstance(value, bool):
+            projected[key] = value
+        elif isinstance(value, (int, float)):
+            try:
+                projected[key] = _journal_seconds(value)
+            except ValueError:
+                shortened = True
+    if (
+        kind in {"invocation_finished", "runtime_stopped"}
+        and data.get("error") is not None
+    ):
+        error = _journal_error(data["error"])
+        projected["error"] = {key: text(error[key]) for key in ("stage", "code")}
+        if type(error.get("retryable")) is bool:
+            projected["error"]["retryable"] = error["retryable"]
+        elif "retryable" in error:
+            shortened = True
+    if kind == "diagnostic" and isinstance(data.get("message"), str):
+        projected["message"] = text(data["message"], MAX_HISTORY_MESSAGE_CHARS)
+        projected["message_truncated"] = (
+            len(data["message"]) > MAX_HISTORY_MESSAGE_CHARS
+        )
+    item["data"] = projected
+    if shortened:
+        item["projection_truncated"] = True
+    return item
+
+
+def _read_run_log(path: Path) -> dict[str, Any]:
+    """Stream journal events with bounded display history; retain terminal evidence."""
+    first = None
+    final = None
+    invocation = None
+    history = []
+    history_bytes = 0
+    history_truncated = 0
+    omitted = 0
+    truncated = False
+    identities: dict[str, str] = {}
+    previous_elapsed = 0.0
+    milestones = set()
+    diagnostics = {"omitted_bytes": 0, "read_errors": []}
+    with path.open("rb") as stream:
+        sequence = 0
+        while line := stream.readline(MAX_RESULT_BYTES + 1):
+            if len(line) > MAX_RESULT_BYTES:
+                raise ValueError(
+                    "run record exceeds the reader's 16 MiB per-record limit; the original file is unchanged"
+                )
+            if not line.endswith(b"\n"):
+                truncated = True
+                break
+            try:
+                row = json.loads(
+                    line, parse_constant=_invalid_constant, parse_float=_finite_float
+                )
+            except (ValueError, RecursionError) as error:
+                raise ValueError("invalid complete run log record") from error
+            if not isinstance(row, dict) or (row.get("schema"), row.get("version")) != (
+                "nemo.fabric.run",
+                "v1alpha1",
+            ):
+                raise ValueError("unsupported run log schema or version")
+            if final is not None:
+                raise ValueError("run log contains records after its terminal summary")
+            if type(row.get("sequence")) is not int or row["sequence"] != sequence:
+                raise ValueError(
+                    "run log sequence must be contiguous and start at zero"
+                )
+            sequence += 1
+            for field in ("recording_id", "request_id"):
+                value = _text(row.get(field), field)
+                if field in identities and identities[field] != value:
+                    raise ValueError("run log identity changed")
+                identities[field] = value
+            for field in ("runtime_id", "invocation_id"):
+                if field in row:
+                    value = _text(row[field], field)
+                    if field in identities and identities[field] != value:
+                        raise ValueError("run log identity changed")
+                    identities[field] = value
+            _utc_time(row.get("time"))
+            elapsed = _journal_seconds(row.get("elapsed_seconds"))
+            if elapsed < previous_elapsed:
+                raise ValueError(
+                    "run elapsed seconds must be finite, nonnegative and ordered"
+                )
+            previous_elapsed = elapsed
+            if len(_text(row.get("source"), "source")) > 256:
+                raise ValueError("run source exceeds 256 characters")
+            kind = _text(row.get("kind"), "kind")
+            if len(kind) > 128:
+                raise ValueError("run kind exceeds 128 characters")
+            if (
+                kind in {"diagnostic", "resource_sample"}
+                and len(line) > MAX_EVENT_BYTES
+            ):
+                raise ValueError("run event exceeds the reader's 64 KiB event limit")
+            if kind in {"runtime_ready", "invocation_started", "runtime_stopped"}:
+                if kind in milestones:
+                    raise ValueError("duplicate lifecycle milestone")
+                milestones.add(kind)
+            data = row.get("data")
+            if not isinstance(data, dict):
+                raise ValueError("run record data must be an object")
+            if first is None:
+                if kind != "request_started":
+                    raise ValueError("run log must begin with request_started")
+                override_keys = data.get("override_keys", [])
+                if not isinstance(override_keys, list) or any(
+                    not isinstance(key, str) for key in override_keys
+                ):
+                    raise ValueError("override_keys must be a list of strings")
+                _journal_models(data.get("models", {}))
+                _text(data.get("harness"), "harness")
+                if data.get("outcome_scope") not in {
+                    "invocation",
+                    "one_shot_lifecycle",
+                }:
+                    raise ValueError("invalid request outcome scope")
+                first = row
+            elif kind == "request_started":
+                raise ValueError("duplicate request_started record")
+            if kind == "runtime_ready" and data.get("runtime_id") != identities.get(
+                "runtime_id"
+            ):
+                raise ValueError("runtime_ready identity differs from envelope")
+            if kind == "invocation_finished":
+                if invocation is not None:
+                    raise ValueError("duplicate invocation_finished record")
+                invocation = row
+            elif kind == "summary":
+                final = row
+            if kind == "diagnostic_retention":
+                omitted_bytes = data.get("omitted_bytes")
+                read_error = data.get("read_error")
+                if type(omitted_bytes) is not int or omitted_bytes < 0:
+                    raise ValueError("diagnostic omitted_bytes must be nonnegative")
+                if read_error is not None and not isinstance(read_error, str):
+                    raise ValueError("diagnostic read_error must be text or null")
+                diagnostics["omitted_bytes"] += omitted_bytes
+                if read_error and len(diagnostics["read_errors"]) < 16:
+                    diagnostics["read_errors"].append(
+                        read_error[:MAX_HISTORY_MESSAGE_CHARS]
+                    )
+            if kind not in {"resource_sample", "diagnostic_retention"}:
+                item = _history_projection(row)
+                item_bytes = len(
+                    json.dumps(item, ensure_ascii=True, separators=(",", ":")).encode(
+                        "utf-8"
+                    )
+                )
+                milestone = kind in _HISTORY_MILESTONES
+                if milestone or (
+                    len(history) < MAX_HISTORY_EVENTS
+                    and history_bytes + item_bytes
+                    <= MAX_HISTORY_BYTES - MAX_HISTORY_MILESTONE_RESERVE_BYTES
+                ):
+                    history.append(item)
+                    history_bytes += item_bytes
+                    history_truncated += item.get("projection_truncated", False)
+                else:
+                    omitted += 1
+    if first is None:
+        raise ValueError("run log has no complete request_started record")
+    payload = final["data"] if final else {}
+    result = payload.get("result")
+    if result is not None:
+        if not isinstance(result, dict):
+            raise ValueError("summary result must be an object or null")
+        summary = summarize_result(result)
+        for field in ("request_id", "runtime_id", "invocation_id"):
+            if field not in identities or summary[field] != identities[field]:
+                raise ValueError("terminal result identity differs from run log")
+    elif final is None and invocation is not None:
+        evidence = invocation["data"]
+        if not all(field in identities for field in ("runtime_id", "invocation_id")):
+            raise ValueError(
+                "invocation evidence has no runtime or invocation identity"
+            )
+        if any(
+            field in evidence and evidence[field] != identities[field]
+            for field in ("request_id", "runtime_id", "invocation_id")
+        ):
+            raise ValueError("invocation evidence identity differs from run log")
+        summary = summarize_result({**evidence, **identities})
+        summary.update(
+            schema="nemo.fabric.invocation_record_summary",
+            outcome_boundary="invocation",
+            state="record_only",
+            elapsed_ms=None,
+            exchange_elapsed_ms=None,
+        )
+    else:
+        summary = {
+            "schema": "nemo.fabric.request_summary",
+            "version": "v1alpha1",
+            "request_id": identities["request_id"],
+            "status": None,
+            "state": "no_result" if final else "registered",
+            "usage": None,
+            "model_usage": None,
+            "execution_error": payload.get("error"),
+        }
+    if final is not None and result is None and invocation is not None:
+        evidence = invocation["data"]
+        if not all(field in identities for field in ("runtime_id", "invocation_id")):
+            raise ValueError(
+                "invocation evidence has no runtime or invocation identity"
+            )
+        if any(
+            field in evidence and evidence[field] != identities[field]
+            for field in ("request_id", "runtime_id", "invocation_id")
+        ):
+            raise ValueError("invocation evidence identity differs from run log")
+        retained = summarize_result({**evidence, **identities})
+        retained.update(
+            schema="nemo.fabric.invocation_record_summary",
+            outcome_boundary="invocation",
+        )
+        summary["invocation_summary"] = retained
+        for field in (
+            "usage",
+            "model_usage",
+            "system_stats",
+            "system_stats_error",
+            "resource_window",
+            "accounting_error",
+        ):
+            summary[field] = retained[field]
+    if invocation is not None or final is not None:
+        exchange = (
+            payload.get("adapter_exchange_elapsed_seconds")
+            if final is not None
+            else invocation["data"].get("adapter_exchange_elapsed_seconds")
+        )
+        if exchange is not None:
+            summary["adapter_exchange"] = {
+                "elapsed_ms": _journal_seconds(exchange) * 1000
+            }
+    if final is not None:
+        if payload.get("outcome_scope") not in {"invocation", "one_shot_lifecycle"}:
+            raise ValueError("invalid final outcome scope")
+        if payload["outcome_scope"] != first["data"]["outcome_scope"]:
+            raise ValueError("final outcome scope differs from request")
+        _utc_time(payload.get("request_started_at"))
+        _utc_time(payload.get("request_finished_at"))
+        duration = _journal_seconds(payload.get("elapsed_seconds"))
+        error = _journal_error(payload.get("error"))
+        if result is None and error is None:
+            raise ValueError("final no-result summary must contain an execution error")
+        summary.update(
+            outcome_boundary=payload["outcome_scope"],
+            started_at=payload["request_started_at"],
+            finished_at=payload["request_finished_at"],
+            request_elapsed_seconds=duration,
+        )
+        if payload.get("error") is not None:
+            summary["execution_error"] = error
+            summary["stage"] = error["stage"]
+    else:
+        summary["started_at"] = first["time"]
+    if result is None and payload.get("system_stats") is not None:
+        stats, error = _validated_system_stats(
+            payload["system_stats"], identities.get("runtime_id")
+        )
+        summary["system_stats"] = stats
+        summary["system_stats_error"] = error
+        summary["resource_window"] = (
+            _resource_window(
+                {"resource_scope": RESOURCE_SCOPE},
+                {
+                    "resource_scope": RESOURCE_SCOPE,
+                    "resources_before": stats["before"],
+                    "resources": stats["after"],
+                },
+                identities["runtime_id"],
+            )
+            if stats is not None
+            else None
+        )
+    for field in ("runtime_id", "invocation_id"):
+        if field in identities:
+            summary[field] = identities[field]
+    summary.update(
+        recording_id=identities["recording_id"],
+        harness=summary.get("harness") or first["data"].get("harness"),
+        requested_models=first["data"].get("models", {}),
+        model_override_unrecorded="models" in first["data"].get("override_keys", []),
+        history=history,
+        diagnostics=diagnostics,
+        history_projection_truncated_count=history_truncated,
+        history_omitted_count=omitted,
+        truncated_tail=truncated,
+        terminal_summary_present=final is not None,
+        evidence_path=str(path),
+    )
     return summary
 
 
@@ -369,27 +771,8 @@ def _resource_window(
     return window
 
 
-def _render_resource_window(window: Mapping[str, Any]) -> list[str]:
-    lines = []
-    if window["cpu_counter_change_seconds"] is not None:
-        lines.append(
-            f"Runtime process-tree CPU counter change: {window['cpu_counter_change_seconds']:.3f} s between snapshots (not invocation CPU)."
-        )
-    elif window["delta_reason"]:
-        lines.append(
-            "Runtime process-tree CPU counter change unavailable: "
-            + window["delta_reason"]
-            + "."
-        )
-    if window["start"] is not None and window["end"] is not None:
-        lines.append(
-            f"RSS observations: {format_bytes(window['start']['resident_memory_bytes'])} → {format_bytes(window['end']['resident_memory_bytes'])} (not a peak)."
-        )
-    return lines
-
-
 def read_invocation_record(path: Path) -> dict[str, Any]:
-    """Read bounded start/end evidence; a truncated tail never creates a result.
+    """Read legacy start/end evidence; a truncated tail never creates a result.
 
     This reports the core invocation window before one-shot shutdown. Only the
     typed model_usage projection supplies normalized accounting; legacy counters
@@ -468,6 +851,10 @@ def read_invocation_record(path: Path) -> dict[str, Any]:
         "version": "v1alpha1",
         **identity,
         "status": end["status"] if end else None,
+        "execution_error": end.get("error") if end else None,
+        "harness": rows[0].get("harness"),
+        "started_at": rows[0].get("time"),
+        "finished_at": end.get("time") if end else None,
         "model_usage": normalized,
         "usage": usage,
         "accounting_error": accounting_error,
@@ -475,7 +862,7 @@ def read_invocation_record(path: Path) -> dict[str, Any]:
         "what_ran": None,
         "elapsed_ms": end["elapsed_ms"] if end else None,
         "exchange_elapsed_ms": end.get("exchange_elapsed_ms") if end else None,
-        "resource_window": _resource_window(rows[0], end, identity["runtime_id"]),
+        "resource_window": None,
         "outcome_boundary": "invocation",
         "truncated_tail": truncated,
         "evidence_path": str(path),
@@ -485,316 +872,687 @@ def read_invocation_record(path: Path) -> dict[str, Any]:
 def render_invocation_record_summary(
     summary: Mapping[str, Any], *, details: bool = False
 ) -> str:
-    """Describe the invocation interval without assuming whole-runtime success."""
-    if summary.get("usage") is not None:
-        display = dict(summary)
+    """Render legacy invocation evidence without claiming one-shot completion."""
+    display = dict(summary)
+    if summary.get("elapsed_ms") is not None:
         display["execution_interval"] = {"elapsed_ms": summary["elapsed_ms"]}
-        if summary["exchange_elapsed_ms"] is not None:
-            display["adapter_exchange"] = {"elapsed_ms": summary["exchange_elapsed_ms"]}
-        lines = render_result_summary(display, details=details).splitlines()
-        lines[0] = "Invocation outcome before runtime shutdown: " + summary["status"]
-        lines.append(
-            "The separate full result is authoritative for the one-shot outcome."
-        )
-        if summary["truncated_tail"]:
-            lines.append(
-                "A truncated final line was ignored; complete lines were retained."
-            )
-        lines.append(
-            "Saved evidence: " + json.dumps(summary["evidence_path"], ensure_ascii=True)
-        )
-        return "\n".join(lines)
-    lines = [
-        "Invocation: "
-        + json.dumps(
-            f"{summary['runtime_id']}/{summary['invocation_id']}", ensure_ascii=True
-        ),
-        "Invocation outcome before runtime shutdown: "
-        + (summary["status"] or "unavailable"),
-    ]
-    if summary.get("provenance_error"):
-        lines.append(
-            "Saved execution facts were unreadable; status and accounting are retained."
-        )
     if summary.get("exchange_elapsed_ms") is not None:
-        lines.append(
-            f"Adapter exchange: {summary['exchange_elapsed_ms']:,} ms (excludes queue and result persistence)."
-        )
-    elif summary["elapsed_ms"] is not None:
-        lines.append(f"Core invocation interval: {summary['elapsed_ms']:,} ms")
-    else:
-        lines.append(
-            "No complete end record; elapsed time and final usage are unknown."
-        )
-    if details and summary.get("resource_window") is not None:
-        lines.extend(_render_resource_window(summary["resource_window"]))
-    if summary["truncated_tail"]:
-        lines.append(
-            "A truncated final line was ignored; complete lines were retained."
-        )
-    if summary.get("accounting_error"):
-        lines.append(
-            "Saved model accounting was invalid; execution evidence is retained."
-        )
-    lines.append("Inspect the full result for accounting and the one-shot outcome.")
-    lines.append(
-        "Saved evidence: " + json.dumps(summary["evidence_path"], ensure_ascii=True)
+        display["adapter_exchange"] = {"elapsed_ms": summary["exchange_elapsed_ms"]}
+    return render_result_summary(display, details=details) + (
+        "\nThis record covers the agent call; it does not establish the one-shot shutdown outcome."
     )
-    return "\n".join(lines)
 
 
-def _render_tokens(dimensions: Mapping[str, Any]) -> list[str]:
-    totals = ("input_tokens", "output_tokens", "total_tokens")
-    caches = ("cached_input_tokens", "cache_write_input_tokens")
+def _safe(value: Any) -> str:
+    """Escape control characters without adding JSON quotes around plain text."""
+    return json.dumps(str(value), ensure_ascii=True)[1:-1]
 
-    def coverage(names: tuple[str, ...]) -> str:
-        if all(dimensions[name]["complete_total"] is not None for name in names):
-            return "complete"
-        if any(
-            dimensions[name]["observed_sum"] is not None
-            or dimensions[name]["complete_total"] is not None
-            for name in names
-        ):
-            return "incomplete"
-        return "unavailable"
 
-    total_coverage, cache_coverage = coverage(totals), coverage(caches)
+def _rows(items: list[tuple[str, str]]) -> list[str]:
+    width = max(len(label) for label, _ in items)
+    return [f"{label:<{width}}  {value}" for label, value in items]
 
-    def count(name: str, label: str, group_coverage: str) -> str:
-        field = dimensions[name]
-        if field["complete_total"] is not None:
-            suffix = "" if group_coverage == "complete" else " (complete)"
-            return f"{label} {field['complete_total']:,}{suffix}"
-        if field["observed_sum"] is not None:
-            return f"{label} {field['observed_sum']:,} (observed, incomplete)"
-        return f"{label} unavailable"
 
+def _dimension_value(
+    field: Mapping[str, Any], *, money: bool = False, estimate: bool = False
+) -> str:
+    complete = field.get("complete_total")
+    observed = field.get("observed_sum")
+    value = complete if complete is not None else observed
+    if value is None:
+        return "Unavailable"
+    rendered = format_money(value) if money else f"{value:,}"
+    if complete is None:
+        rendered += " recorded; " + (
+            "full estimate unknown" if estimate else "total unknown"
+        )
+    return rendered
+
+
+def _time_rows(summary: Mapping[str, Any]) -> list[tuple[str, str]]:
+    start_value, end_value = summary.get("started_at"), summary.get("finished_at")
+    if not start_value:
+        return []
+    start = _utc_time(start_value)
+    end = _utc_time(end_value) if end_value else None
+    same_day = end is None or start.date() == end.date()
+    fmt = "%H:%M:%S.%f" if same_day else "%Y-%m-%d %H:%M:%S.%f"
+    rows = [("Date:", start.date().isoformat())] if same_day else []
+    rows.extend(
+        [
+            ("Timezone:", "UTC"),
+            ("Started:", start.strftime(fmt)[:-3]),
+            ("Finished:", end.strftime(fmt)[:-3] if end else "Unavailable"),
+        ]
+    )
+    return rows
+
+
+def _models(summary: Mapping[str, Any]) -> tuple[str, str]:
+    facts = summary.get("what_ran") or {}
+    roles = facts.get("models", {})
+    requested = summary.get("requested_models", {})
+    names = set(roles) | set(requested)
+    if "default" in names:
+        role = "default"
+    elif len(names) == 1:
+        role = next(iter(names))
+    elif names:
+        return f"Multiple roles ({len(names)})", "See details"
+    else:
+        return "Unavailable", "Not reported"
+    model_facts = roles.get(role, {})
+    name = model_facts.get("requested", {}).get("value")
+    served = model_facts.get("served", {}).get("value")
+    if name is None and summary.get("model_override_unrecorded"):
+        requested_text = "Unavailable (model override not retained)"
+    else:
+        name = name or requested.get(role, {}).get("model")
+        requested_text = _safe(name) if name else "Unavailable"
+    return requested_text, _safe(served) if served else "Not reported"
+
+
+def _resource_rows(summary: Mapping[str, Any]) -> list[tuple[str, str]]:
+    stats = summary.get("system_stats") or {}
+    cpu = stats.get("cpu_time_seconds_estimate")
+    after = stats.get("after", {})
+    memory = (
+        after.get("snapshot", {}).get("resident_memory_bytes")
+        if after.get("status") == "available"
+        else None
+    )
+    if not stats and summary.get("resource_snapshot") is not None:
+        memory = summary["resource_snapshot"]["resident_memory_bytes"]
+    sampled = stats.get("sampled")
+    peak = (sampled or {}).get("resident_memory_bytes") or {}
     return [
-        "Tokens: "
-        + "; ".join(
-            count(name, label, total_coverage)
-            for name, label in zip(totals, ("input", "output", "total"))
+        ("CPU time, estimated", f"{cpu:.3f} s" if cpu is not None else "Unavailable"),
+        (
+            "Memory after execution",
+            format_bytes(memory) if memory is not None else "Unavailable",
         ),
-        "Cache (included in input): "
-        + "; ".join(
-            count(name, label, cache_coverage)
-            for name, label in zip(caches, ("reads", "writes"))
+        (
+            "Peak memory, sampled",
+            format_bytes(peak["sampled_peak"])
+            if peak.get("sampled_peak") is not None
+            else "Unavailable"
+            + (" (sampling disabled)" if stats and sampled is None else ""),
         ),
-        f"Token coverage: input/output/total {total_coverage}; cache breakdown {cache_coverage}",
     ]
+
+
+def _gap_lines(summary: Mapping[str, Any]) -> list[str]:
+    explanations = set()
+    labels = {
+        "input_tokens": "input tokens",
+        "cached_input_tokens": "cache read tokens",
+        "cache_write_input_tokens": "cache write tokens",
+        "output_tokens": "output tokens",
+        "total_tokens": "total tokens",
+        "estimated_cost": "estimated cost",
+        "reported_cost": "provider-reported cost",
+    }
+    messages = {
+        "unfinished_work": "some model work was unfinished at return",
+        "scope_unverified": "the source could not establish coverage of all model work",
+        "missing_usage": "the source did not report usable usage",
+    }
+    for gap in (summary.get("model_usage") or {}).get("gaps", []):
+        dimensions = gap["dimensions"]
+        # An absent provider cost is routine and already represented by omission.
+        if dimensions == ["reported_cost"]:
+            continue
+        names = ", ".join(labels.get(name, name) for name in dimensions)
+        reason = (
+            "the applicable cache-write price was not established"
+            if gap.get("code") == "cache_write_tariff_unverified"
+            else messages.get(gap["reason"], gap["reason"].replace("_", " "))
+        )
+        if dimensions == ["estimated_cost"] and gap["reason"] != "unfinished_work":
+            reason = "the estimate could not be established from available usage and pricing evidence"
+        explanations.add(f"Accounting gap: {names}: {reason}.")
+    for key, message in (
+        (
+            "accounting_error",
+            "Saved model accounting is invalid; execution evidence is retained.",
+        ),
+        (
+            "system_stats_error",
+            "Saved resource measurements are invalid; execution and accounting are retained.",
+        ),
+        (
+            "resource_error",
+            "Saved resource snapshot is invalid; accounting is retained.",
+        ),
+        (
+            "record_error",
+            "The sibling invocation record could not be used; result accounting is retained.",
+        ),
+        (
+            "provenance_error",
+            "Saved execution facts are unreadable; measurements are retained.",
+        ),
+    ):
+        if summary.get(key):
+            explanations.add(message)
+    return sorted(explanations)
+
+
+def _history_lines(summary: Mapping[str, Any]) -> list[str]:
+    history = summary.get("history", [])
+    if not history:
+        return []
+    labels = {
+        "request_started": "Request recording started",
+        "runtime_ready": "Agent runtime ready",
+        "invocation_started": "Invocation started",
+        "invocation_finished": "Invocation finished",
+        "runtime_stopped": "Agent runtime stopped",
+        "summary": "Final summary",
+    }
+    lines = ["Execution history"]
+    day = None
+    for event in history:
+        kind, data = event["kind"], event["data"]
+        if kind == "summary":
+            continue
+        time = _utc_time(event["time"])
+        if time.date() != day:
+            day = time.date()
+            lines.extend(
+                [
+                    f"Date: {day.isoformat()} · Timezone: UTC",
+                    "Time          Elapsed (s)  Event",
+                ]
+            )
+        label = labels.get(kind, _safe(kind.replace("_", " ")))
+        if kind == "invocation_finished" and data.get("status"):
+            label += ": " + _safe(data["status"])
+        elif kind == "diagnostic":
+            label = _safe(event["source"]) + ": " + _safe(data.get("message", ""))
+            if data.get("message_truncated"):
+                label += " (message shortened; full event retained in file)"
+        if kind == "runtime_stopped" and data.get("succeeded") is False:
+            label = "Agent runtime shutdown failed"
+        if data.get("error"):
+            label += (
+                ": "
+                + _safe(data["error"]["stage"])
+                + "/"
+                + _safe(data["error"]["code"])
+            )
+        if event.get("projection_truncated"):
+            label += " (history details shortened; full event retained in file)"
+        lines.append(
+            f"{time.strftime('%H:%M:%S.%f')[:-3]}  {event['elapsed_seconds']:11.3f}  {label}"
+        )
+    if summary.get("history_omitted_count"):
+        lines.append(
+            f"Additional history entries retained in file: {summary['history_omitted_count']:,}"
+        )
+    return lines
+
+
+def _measurement_text(field: Mapping[str, Any], unit: str) -> str:
+    status = field["status"]
+    if status == "available":
+        value = field["value"]
+        if unit == "bytes":
+            return format_bytes(value)
+        if unit == "microseconds":
+            return f"{value / 1_000_000:.3f} s"
+        if unit == "cores":
+            return f"{value:g} cores"
+        return f"{value:,}"
+    if status == "unlimited":
+        return "Unlimited"
+    if status == "not_collected":
+        return "Not collected"
+    reason = field.get("reason")
+    return "Unavailable" + (" (" + _safe(reason) + ")" if reason else "")
+
+
+def _cgroup_lines(cgroup: Mapping[str, Any]) -> list[str]:
+    lines = ["Cgroup measurements (may include other workloads)"]
+    lines.extend(
+        _rows(
+            [
+                (label, _measurement_text(cgroup[key], unit))
+                for key, label, unit in (
+                    ("cpu_usage_microseconds", "CPU time", "microseconds"),
+                    (
+                        "cpu_throttled_microseconds",
+                        "CPU throttled time",
+                        "microseconds",
+                    ),
+                    ("oom_kills", "OOM kills", "count"),
+                )
+            ]
+        )
+    )
+    after = cgroup["after"]
+    if after["status"] != "available":
+        lines.append("Cgroup endpoint: " + _measurement_text(after, "count"))
+        return lines
+    snapshot = after["snapshot"]
+    lines.extend(
+        _rows(
+            [
+                (label, _safe(snapshot[key]))
+                for key, label in (
+                    ("source", "Source"),
+                    ("scope", "Scope"),
+                    ("target", "Target"),
+                )
+            ]
+        )
+    )
+    lines.extend(
+        _rows(
+            [
+                (label, _measurement_text(snapshot[key], unit))
+                for key, label, unit in (
+                    ("visible_cpu_limit_cores", "Visible CPU limit", "cores"),
+                    ("visible_memory_limit_bytes", "Visible memory limit", "bytes"),
+                    ("memory_current_bytes", "Memory after execution", "bytes"),
+                    ("memory_peak_bytes", "Lifetime peak memory", "bytes"),
+                    ("swap_current_bytes", "Swap after execution", "bytes"),
+                )
+            ]
+        )
+    )
+    lines.extend(
+        [
+            "Limits cover visible ancestors; hidden bounds and exclusive capacity are unknown.",
+            "Cgroup peak covers its lifetime or last reset, not this request.",
+        ]
+    )
+    if snapshot["pressure_stall_microseconds"]:
+        lines.append("Cumulative pressure-stall counters (not request deltas)")
+        lines.extend(
+            _rows(
+                [
+                    (
+                        _safe(name.replace("_", " ")),
+                        _measurement_text(field, "microseconds"),
+                    )
+                    for name, field in snapshot["pressure_stall_microseconds"].items()
+                ]
+            )
+        )
+    return lines
+
+
+def _details_lines(summary: Mapping[str, Any]) -> list[str]:
+    sections = []
+    history = _history_lines(summary)
+    if history:
+        sections.append(history)
+    stats = summary.get("system_stats")
+    if stats:
+        lines = ["Resource details"]
+        if "process" in stats["collected_groups"]:
+            lines.extend(
+                [
+                    "Measured processes: adapter host and its child processes",
+                    "Endpoint memory is not a peak or time average.",
+                    "Remote model inference is not measured.",
+                    "Concurrent work can contribute to CPU time; exited processes can cause undercounting.",
+                ]
+            )
+        else:
+            lines.append("Process measurements: Not collected")
+        sampled = stats.get("sampled")
+        if sampled:
+            memory = sampled.get("resident_memory_bytes")
+            lines.extend(
+                _rows(
+                    [
+                        (
+                            "Requested sample period",
+                            format_duration_ms(sampled["target_interval_ms"]),
+                        ),
+                        ("Samples retained", f"{sampled['sample_count']:,}"),
+                        ("Samples dropped", f"{sampled['dropped_samples']:,}"),
+                        (
+                            "Largest sample gap",
+                            f"{sampled['largest_gap_seconds']:.3f} s",
+                        ),
+                    ]
+                )
+            )
+            if memory:
+                mean = memory.get("time_weighted_mean")
+                lines.extend(
+                    _rows(
+                        [
+                            (
+                                "Sampled memory mean",
+                                format_bytes(mean)
+                                if mean is not None
+                                else "Unavailable",
+                            ),
+                            (
+                                "Time covered by mean",
+                                f"{memory['covered_fraction']:.1%}",
+                            ),
+                            ("Memory readings used", f"{memory['valid_samples']:,}"),
+                            (
+                                "Time included in mean",
+                                f"{memory['covered_seconds']:.3f} s",
+                            ),
+                        ]
+                    )
+                )
+            lines.append("Short memory spikes between samples can be missed.")
+            lines.append(
+                "The mean excludes missing readings and gaps longer than twice the requested sample period."
+            )
+            if sampled["truncated"]:
+                lines.append("Sampling retention was truncated.")
+            lines.extend(
+                "Sampling diagnostic: " + _safe(value)
+                for value in sampled["diagnostics"]
+            )
+        cgroup = stats.get("cgroup")
+        if cgroup:
+            lines.extend(_cgroup_lines(cgroup))
+        sections.append(lines)
+    elif summary.get("resource_snapshot") is not None:
+        snapshot = summary["resource_snapshot"]
+        sections.append(
+            [
+                "Runtime snapshot",
+                "Observed at: " + _safe(snapshot["observed_at"]),
+                "CPU counter since host start: "
+                + f"{snapshot['cpu_time_seconds']:.3f} s",
+                "Resident memory: " + format_bytes(snapshot["resident_memory_bytes"]),
+                "This snapshot does not establish invocation resource consumption.",
+            ]
+        )
+    facts = summary.get("what_ran") or {}
+    roles = facts.get("models", {})
+    configured = summary.get("requested_models", {})
+    if len(set(roles) | set(configured)) > 1:
+        lines = ["Model roles"]
+        for role in sorted(set(roles) | set(configured)):
+            facts_for_role = roles.get(role, {})
+            requested = facts_for_role.get("requested", {}).get("value")
+            if requested is None and not summary.get("model_override_unrecorded"):
+                requested = configured.get(role, {}).get("model")
+            served = facts_for_role.get("served", {}).get("value")
+            lines.append(
+                _safe(role)
+                + ": requested "
+                + (_safe(requested) if requested else "Unavailable")
+                + "; served "
+                + (_safe(served) if served else "Not reported")
+            )
+        sections.append(lines)
+    normalized = summary.get("model_usage") or {}
+    models = normalized.get("models", [])
+    if models:
+        lines = ["Per-model accounting"]
+        for model in models:
+            lines.append(
+                _safe((model.get("provider") or "unspecified") + "/" + model["model"])
+            )
+            lines.extend(
+                _rows(
+                    [
+                        (
+                            label,
+                            _dimension_value(
+                                {
+                                    "complete_total": model.get(key),
+                                    "observed_sum": model.get("observed", {}).get(key),
+                                }
+                            ),
+                        )
+                        for key, label in (
+                            ("input_tokens", "Input tokens"),
+                            ("output_tokens", "Output tokens"),
+                            ("total_tokens", "Total tokens"),
+                        )
+                    ]
+                )
+            )
+        if not normalized.get("models_exhaustive"):
+            lines.append("This model breakdown does not cover all invocation usage.")
+        sections.append(lines)
+    pricing = (summary.get("usage") or {}).get("pricing")
+    if pricing:
+        lines = [
+            "Pricing",
+            "Price source: "
+            + (
+                "Fabric packaged price table"
+                if not pricing.get("user_catalog_sha256")
+                else "Fabric and user price tables"
+            ),
+        ]
+        for key, label in (
+            ("bundled_catalog_sha256", "Packaged table fingerprint"),
+            ("user_catalog_sha256", "User table fingerprint"),
+        ):
+            if pricing.get(key):
+                lines.append(label + ": " + _safe(pricing[key]))
+        lines.extend(
+            [
+                "Input includes cache; output includes reasoning.",
+                "The estimate requires known token counts and applicable prices.",
+            ]
+        )
+        applied = list(normalized.get("cost", {}).get("applied_rates", []))
+        for model in models:
+            applied.extend(model.get("cost", {}).get("applied_rates", []))
+        seen = set()
+        for rate in applied:
+            key = json.dumps(rate, sort_keys=True)
+            if key in seen:
+                continue
+            seen.add(key)
+            lines.extend(
+                [
+                    "Rates for "
+                    + _safe(rate["provider"] + "/" + rate["model_id"])
+                    + " (USD per 1,000,000 tokens)",
+                    "  Pricing date: " + _safe(rate["pricing_as_of"]),
+                    "  Source: " + _safe(rate["pricing_source"]),
+                ]
+            )
+            for name, label in (
+                ("input", "Uncached input"),
+                ("cache_read", "Cache reads"),
+                ("cache_write", "Cache writes"),
+                ("output", "Output"),
+            ):
+                value = rate["rates"].get(name)
+                if value is not None:
+                    lines.append("  " + label + ": " + format_money(value))
+        sections.append(lines)
+    refs = []
+    for artifact in summary.get("artifacts", []):
+        if artifact.get("kind") in {"run_log", "run_record", "run_result"}:
+            continue
+        if isinstance(artifact.get("path"), str):
+            name = {
+                "stdout.txt": "Adapter output",
+                "stderr.txt": "Adapter diagnostics",
+            }.get(
+                Path(artifact["path"]).name,
+                artifact.get("name") or artifact.get("kind") or "Artifact",
+            )
+            refs.append((_safe(name), _safe(artifact["path"])))
+    for reference in summary.get("telemetry", []):
+        if isinstance(reference, Mapping) and isinstance(reference.get("uri"), str):
+            refs.append(("Trace reference", _safe(reference["uri"])))
+    if refs:
+        sections.append(["Related artifacts", *_rows(refs)])
+    return [line for section in sections for line in ["", *section]]
 
 
 def render_result_summary(summary: Mapping[str, Any], *, details: bool = False) -> str:
-    """Render a concise overview; details add resource evidence.
-
-    Token and cost completeness remain separate. JSON quantities and accounting
-    semantics are unchanged by this presentation.
-    """
-    dimensions = summary["usage"]["dimensions"]
-    lines = [f"Execution: {summary['status']}"]
-    if details:
-        lines.append(
-            "Invocation: "
-            + json.dumps(
-                f"{summary['runtime_id']}/{summary['invocation_id']}", ensure_ascii=True
-            )
+    """Render concise measurement values; details add retained history and sources."""
+    requested, served = _models(summary)
+    status = summary.get("status")
+    execution = (
+        status.capitalize()
+        if status
+        else (
+            "No result returned"
+            if summary.get("state") == "no_result"
+            else "Completion unconfirmed"
         )
-    if summary.get("harness"):
-        lines.append("Harness: " + json.dumps(summary["harness"], ensure_ascii=True))
-    if summary.get("execution_error"):
-        error = summary["execution_error"]
+    )
+    if summary.get("terminal_summary_present") is False:
+        execution = "Completion unconfirmed"
+    lines = _rows(
+        [
+            (
+                "Harness:",
+                _safe(summary["harness"]) if summary.get("harness") else "Unavailable",
+            ),
+            ("Requested model:", requested),
+            ("Served model:", served),
+            ("Execution:", execution),
+            *_time_rows(summary),
+        ]
+    )
+    error = summary.get("execution_error")
+    if isinstance(error, Mapping):
         lines.append(
             "Execution error: "
-            + json.dumps(
-                {field: error[field] for field in ("stage", "code") if field in error},
-                ensure_ascii=True,
+            + "; ".join(
+                _safe(error[key])
+                for key in ("stage", "code")
+                if error.get(key) is not None
             )
         )
-    if details and summary.get("outcome_boundary"):
-        lines.append(
-            "Outcome boundary: "
-            + json.dumps(summary["outcome_boundary"], ensure_ascii=True)
-        )
-    interval = summary.get("execution_interval")
-    if summary.get("adapter_exchange") is not None:
-        lines.append(
-            f"Elapsed (adapter exchange): {format_duration_ms(summary['adapter_exchange']['elapsed_ms'])} (excludes queue and result persistence)."
-        )
-    elif summary.get("system_stats") is not None:
-        lines.append(
-            f"Elapsed (adapter exchange): {format_duration_ms(summary['system_stats']['elapsed_seconds'] * 1000)} (excludes queue and result persistence)."
-        )
-    elif interval is not None and interval["elapsed_ms"] is not None:
-        lines.append(
-            f"Core invocation interval before shutdown: {format_duration_ms(interval['elapsed_ms'])}"
-        )
-    else:
-        lines.append("Elapsed: unavailable")
-    if details and summary.get("resource_window") is not None:
-        lines.extend(_render_resource_window(summary["resource_window"]))
-    resource = summary.get("resource_snapshot")
-    if details and resource is not None:
-        lines.append(
-            f"Runtime process-tree snapshot: CPU {resource['cpu_time_seconds']:.3f} s since host start; "
-            f"RSS {format_bytes(resource['resident_memory_bytes'])}; live processes {resource['process_count']}"
-        )
-    normalized = summary.get("model_usage")
-    models = normalized.get("models", []) if normalized is not None else []
-    if models:
-        shown = models if details else models[:3]
-        lines.append(
-            "Accounted models: "
-            + ", ".join(
-                json.dumps(
-                    f"{model.get('provider') or 'unspecified'}/{model['model']}",
-                    ensure_ascii=True,
-                )
-                for model in shown
-            )
-            + (
-                f"; {len(models) - len(shown)} more (see --details)"
-                if len(shown) < len(models)
-                else ""
-            )
-        )
-        if not normalized["models_exhaustive"]:
-            lines.append("Per-model accounting is not exhaustive.")
-    lines.extend(_render_tokens(dimensions))
-    gaps = normalized.get("gaps", []) if normalized is not None else []
-    not_reported = {
-        dimension
-        for gap in gaps
-        if gap["reason"] == "missing_usage"
-        for dimension in gap["dimensions"]
-    }
-    for dimension, label in (
-        ("reported_cost", "Provider-reported cost"),
-        ("estimated_cost", "Catalog estimate"),
+    stats = summary.get("system_stats") or {}
+    exchange = summary.get("adapter_exchange") or {}
+    execution_ms = exchange.get("elapsed_ms")
+    if execution_ms is None and "elapsed_seconds" in stats:
+        execution_ms = stats["elapsed_seconds"] * 1000
+    request_seconds = summary.get("request_elapsed_seconds")
+    measurements = [
+        (
+            "Request elapsed",
+            f"{request_seconds:.3f} s"
+            if request_seconds is not None
+            else "Unavailable",
+        ),
+        (
+            "Request execution time",
+            format_duration_ms(execution_ms)
+            if execution_ms is not None
+            else "Unavailable",
+        ),
+        *_resource_rows(summary),
+    ]
+    dimensions = (summary.get("usage") or {}).get("dimensions", {})
+    for key, label in (
+        ("input_tokens", "Input tokens"),
+        ("output_tokens", "Output tokens"),
+        ("total_tokens", "Total tokens"),
+        ("cached_input_tokens", "Cache read tokens"),
+        ("cache_write_input_tokens", "Cache write tokens"),
+        ("estimated_cost", "Estimated cost, USD"),
     ):
-        field = dimensions[dimension]
-        if field["complete_total"] is not None:
-            text = format_money(field["complete_total"]) + " (complete)"
-        elif field["observed_sum"] is not None:
-            text = format_money(field["observed_sum"]) + " (observed, incomplete)"
-        else:
-            text = "unavailable" + (
-                " (not reported)" if dimension in not_reported else ""
+        measurements.append(
+            (
+                label,
+                _dimension_value(
+                    dimensions.get(key, {}),
+                    money=key == "estimated_cost",
+                    estimate=key == "estimated_cost",
+                ),
             )
-        lines.append(f"{label}: {text}")
-    pricing = summary["usage"].get("pricing")
-    if pricing:
-        if details:
-            lines.append(
-                "Pricing basis: "
-                + json.dumps(pricing, ensure_ascii=True, sort_keys=True)
-            )
-        else:
-            catalogs = [
-                f"{label} {pricing[key].removeprefix('sha256:')[:12]}"
-                for key, label in (
-                    ("bundled_catalog_sha256", "bundled"),
-                    ("user_catalog_sha256", "user"),
-                )
-                if pricing.get(key)
-            ]
-            lines.append(
-                "Pricing basis: catalog"
-                + ("; " + "; ".join(catalogs) if catalogs else "")
-                + " (full basis in --details or --json)."
-            )
+        )
+    reported = dimensions.get("reported_cost", {})
+    if (
+        reported.get("complete_total") is not None
+        or reported.get("observed_sum") is not None
+    ):
+        measurements.append(
+            ("Provider-reported cost, USD", _dimension_value(reported, money=True))
+        )
+    lines.extend(
+        [
+            "",
+            *_rows([("Measurement", "Value"), *measurements]),
+            "",
+            "Cache tokens are included in input.",
+        ]
+    )
+    lines.extend(_gap_lines(summary))
+    diagnostics = summary.get("diagnostics") or {}
+    if diagnostics.get("omitted_bytes"):
+        lines.append(
+            f"Diagnostic capture omitted {diagnostics['omitted_bytes']:,} bytes."
+        )
+    for read_error in diagnostics.get("read_errors", []):
+        lines.append("Diagnostic capture error: " + _safe(read_error))
     if summary.get("recording_failed"):
         lines.append(
-            "Recording failed; execution and available accounting are retained. "
-            "Inspect record_write_failed events in the original result."
+            "Recording failed; execution and available accounting are retained. Inspect record_write_failed events."
         )
-    explanations: set[str] = set()
-    missing: set[str] = set()
-    for gap in gaps:
-        if gap.get("code") == "cache_write_tariff_unverified":
-            explanations.add("The applicable cache-write price was not established.")
-        elif gap["reason"] == "unfinished_work":
-            explanations.add(
-                "Some invocation-owned model work was unfinished at return."
-            )
-        elif gap["reason"] == "scope_unverified":
-            explanations.add(
-                "The source did not establish complete invocation coverage."
-            )
-        else:
-            labels = {
-                "reported_cost": "provider-reported cost",
-                "estimated_cost": "catalog estimate",
-            }
-            missing.update(
-                labels.get(dimension, dimension.replace("_", " "))
-                for dimension in gap["dimensions"]
-                if dimension not in {"reported_cost", "estimated_cost"}
-            )
-    if summary.get("accounting_error"):
-        explanations.add(
-            "Saved model accounting was invalid; execution evidence is retained."
-        )
-    if missing:
-        explanations.add("Not reported: " + ", ".join(sorted(missing)) + ".")
-    for explanation in sorted(explanations):
-        lines.append(explanation)
-    if summary.get("legacy_usage") is not None and normalized is None:
+    if summary.get("legacy_usage") is not None and summary.get("model_usage") is None:
         lines.append("Raw harness usage is retained in JSON as unverified diagnostics.")
-    if summary.get("record_error"):
+    if summary.get("truncated_tail"):
         lines.append(
-            "The sibling invocation record could not be used; result accounting is retained."
+            "An unfinished final line was ignored; earlier complete records were retained."
         )
-    if details and summary.get("system_stats") is not None:
-        stats = summary["system_stats"]
+    if summary.get("terminal_summary_present") is False:
         lines.append(
-            "System stats collected groups: "
-            + json.dumps(stats["collected_groups"], ensure_ascii=True)
+            "No final summary was saved; retained events do not establish the request outcome."
         )
-        sampled = stats.get("sampled")
-        if sampled is not None:
+    if summary.get("invocation_summary") is not None:
+        lines.append(
+            "Usage and resources describe the recorded agent call; no final result was returned."
+        )
+    if details:
+        lines.extend(_details_lines(summary))
+        interval = summary.get("execution_interval")
+        if interval is not None and interval.get("elapsed_ms") is not None:
             lines.append(
-                f"Resource samples: {sampled['sample_count']:,}; dropped {sampled['dropped_samples']:,}; truncated {str(sampled['truncated']).lower()} (sampled peaks are not guaranteed true peaks)."
+                "Core invocation interval: "
+                + format_duration_ms(interval["elapsed_ms"])
             )
-    if summary.get("system_stats_error"):
-        lines.append(
-            "Saved system stats were invalid; execution and accounting are retained."
-        )
-    if summary.get("resource_error"):
-        lines.append(
-            "The saved resource snapshot is invalid; result accounting is retained."
-        )
-    for artifact in summary.get("artifacts", []):
-        if artifact.get("kind") == "log" and isinstance(artifact.get("path"), str):
+        boundary = summary.get("outcome_boundary")
+        if boundary in {"one_shot_lifecycle", "invocation"}:
+            label = (
+                "request through runtime shutdown"
+                if boundary == "one_shot_lifecycle"
+                else "this invocation; later shutdown excluded"
+            )
+            lines.extend(["", "Outcome covers: " + label])
+        if summary.get("runtime_id") and summary.get("invocation_id"):
             lines.append(
-                "Log artifact: " + json.dumps(artifact["path"], ensure_ascii=True)
+                "Invocation: "
+                + _safe(summary["runtime_id"] + "/" + summary["invocation_id"])
             )
-    for reference in summary.get("telemetry", []):
-        if isinstance(reference, Mapping) and isinstance(reference.get("uri"), str):
-            lines.append(
-                "Telemetry reference: "
-                + json.dumps(reference["uri"], ensure_ascii=True)
-            )
-    if summary.get("result_path"):
-        lines.append(
-            "Saved result: " + json.dumps(summary["result_path"], ensure_ascii=True)
-        )
-    lines.append("Execution status is not a task verdict. Estimates are not invoices.")
+    path = summary.get("evidence_path") or summary.get("result_path")
+    if path:
+        lines.extend(["", "Run file: " + _safe(path)])
     return "\n".join(lines)
 
 
 def _render(summary: Mapping[str, Any], *, details: bool = False) -> str:
+    if summary.get("recording_id") is not None:
+        return render_result_summary(summary, details=details)
     if summary["schema"] == "nemo.fabric.invocation_record_summary":
         return render_invocation_record_summary(summary, details=details)
     return render_result_summary(summary, details=details)
 
 
 def main() -> None:
-    """Inspect a saved invocation result as a concise summary or JSON."""
+    """Inspect a saved run journal or legacy result as readable text or JSON."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("result", type=Path)
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument(
-        "--details", action="store_true", help="include resource and provenance details"
+        "--details", action="store_true", help="include resource and pricing details"
     )
     args = parser.parse_args()
     try:
