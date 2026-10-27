@@ -139,3 +139,5 @@ run during an invocation. Busy alone does not fail a check. Readiness covers
 native local server health; readiness does not promise model access, valid
 credentials, or MCP connectivity. Checks never send prompts or abort a turn.
 At most one native health request remains outstanding after a caller timeout.
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
