@@ -14,8 +14,10 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 from nemo_fabric import Fabric, FabricConfig, RunRequest
+from nemo_fabric.runtime_server.health import server_report
 
 
 async def main():
@@ -34,7 +36,9 @@ async def main():
                     "artifacts": environment["artifacts"],
                     "connection": {
                         **connection,
-                        "sandbox_id": connection.get("sandbox_id", "fixture-created-id"),
+                        "sandbox_id": connection.get(
+                            "sandbox_id", "fixture-created-id"
+                        ),
                         "sandbox_name": connection.get(
                             "sandbox_name",
                             environment["settings"].get("sandbox_name", "echo"),
@@ -43,7 +47,12 @@ async def main():
                 }
             elif operation == "runtime_command":
                 command = frame["command"]
-                if command["operation"] == "start":
+                if command["operation"] == "check":
+                    value = server_report(
+                        os.environ.get("FABRIC_TEST_SERVER_STATE", "responding"),
+                        time.monotonic(),
+                    )
+                elif command["operation"] == "start":
                     task_root = os.environ.get("FABRIC_TEST_TASK_ROOT")
                     if task_root is None:
                         task_root = str(Path(frame["environment"]["workspace"]).parent)
