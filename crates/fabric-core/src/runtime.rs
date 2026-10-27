@@ -2406,15 +2406,10 @@ fn local_host_invocation_result(
             .map(|stats| crate::system_stats::persist_summary(stats, &invocation, &fabric_home));
         match exchange {
             Ok(output) => {
-                let stderr = if recorder.is_some() {
-                    // Live capture owns publication. Only retain the bounded
-                    // diagnostic tail needed to explain a rejected response.
-                    let stderr = local_host_diagnostics(&host_guard);
-                    if let Ok(metadata) = std::fs::metadata(&host_guard.stderr_path) {
-                        host_guard.stderr_offset =
-                            usize::try_from(metadata.len()).unwrap_or(usize::MAX);
-                    }
-                    stderr
+                let stderr = if recorder.is_some_and(RunRecorder::is_writable) {
+                    // The observer publishes diagnostics. Keep only this
+                    // invocation's bounded tail for a rejected response.
+                    take_local_host_diagnostic_tail(&mut host_guard)
                 } else {
                     take_local_host_stderr(&mut host_guard)
                 };
@@ -2539,7 +2534,7 @@ fn local_host_invocation_result(
             ),
         ]),
     ));
-    if recorder.is_none() {
+    if !recorder.is_some_and(RunRecorder::is_writable) {
         let mut stdout = serde_json::to_string(&output).map_err(FabricError::SerializeJson)?;
         stdout.push('\n');
         write_artifact(
@@ -3286,6 +3281,28 @@ fn take_local_host_stderr(host: &mut LocalAdapterHost) -> String {
     let start = host.stderr_offset.min(bytes.len());
     host.stderr_offset = bytes.len();
     String::from_utf8_lossy(&bytes[start..]).into_owned()
+}
+
+fn take_local_host_diagnostic_tail(host: &mut LocalAdapterHost) -> String {
+    let Ok(mut file) = File::open(&host.stderr_path) else {
+        return String::new();
+    };
+    let Ok(metadata) = file.metadata() else {
+        return String::new();
+    };
+    let end = metadata.len();
+    let start = (host.stderr_offset as u64)
+        .min(end)
+        .max(end.saturating_sub(LOCAL_HOST_DIAGNOSTIC_LIMIT as u64));
+    host.stderr_offset = usize::try_from(end).unwrap_or(usize::MAX);
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        return String::new();
+    }
+    let mut bytes = Vec::with_capacity((end - start) as usize);
+    if file.take(end - start).read_to_end(&mut bytes).is_err() {
+        return String::new();
+    }
+    String::from_utf8_lossy(&bytes).trim().to_string()
 }
 
 fn terminate_local_host(host: &mut LocalAdapterHost) -> std::io::Result<()> {
@@ -4636,8 +4653,11 @@ for line in sys.stdin:
             sys.exit(17)
     elif operation in {"invoke", "invoke_openai_stream"}:
         invocations += 1
-        if MODE == "invoke_stderr":
+        if MODE in {"invoke_stderr", "invoke_stderr_then_invalid"}:
             print(f"diagnostic-{invocations}", file=sys.stderr, flush=True)
+        if MODE == "invoke_stderr_then_invalid" and invocations == 3:
+            response(operation, output={"status": "invalid"})
+            continue
         if MODE == "invoke_stderr_overflow":
             sys.stderr.write("x" * (1024 * 1024 + 31))
             sys.stderr.flush()
@@ -7470,8 +7490,8 @@ for line in sys.stdin:
     }
 
     #[test]
-    fn record_off_with_an_artifact_root_writes_no_record() {
-        let (root, plan) = local_host_plan("typed_result");
+    fn recording_disabled_or_failed_keeps_log_artifacts() {
+        let (root, mut plan) = local_host_plan("invoke_stderr");
         assert!(plan.config.runtime.artifacts.is_some());
 
         let result = run_plan(&plan, RunRequest::text("no record")).expect("run");
@@ -7490,6 +7510,37 @@ for line in sys.stdin:
                 .iter()
                 .all(|event| event.kind != "record_write_failed")
         );
+        for name in ["stdout", "stderr"] {
+            assert!(
+                result
+                    .artifacts
+                    .artifacts
+                    .iter()
+                    .any(|artifact| artifact.name == name)
+            );
+        }
+
+        plan.config.runtime.record = Some(crate::config::RecordConfig { enabled: true });
+        crate::record::test_hooks::FAULT
+            .with(|slot| slot.set(Some(crate::record::test_hooks::Fault::StartAppend)));
+        let failed_recording = run_plan(&plan, RunRequest::text("failed journal"));
+        crate::record::test_hooks::FAULT.with(|slot| slot.set(None));
+        let failed_recording = failed_recording.expect("execution survives journal failure");
+        assert!(
+            failed_recording
+                .events
+                .iter()
+                .any(|event| event.kind == "record_write_failed")
+        );
+        for name in ["stdout", "stderr"] {
+            assert!(
+                failed_recording
+                    .artifacts
+                    .artifacts
+                    .iter()
+                    .any(|artifact| artifact.name == name)
+            );
+        }
         let _ = fs::remove_dir_all(root);
     }
 
@@ -7700,7 +7751,7 @@ for line in sys.stdin:
 
     #[test]
     fn warm_parallel_requests_capture_only_their_serialized_host_window() {
-        let (root, plan) = record_plan("invoke_stderr");
+        let (root, plan) = record_plan("invoke_stderr_then_invalid");
         let runtime = start_runtime(&plan).unwrap();
         let results = std::thread::scope(|scope| {
             let first =
@@ -7709,8 +7760,15 @@ for line in sys.stdin:
                 scope.spawn(|| invoke_runtime(&plan, &runtime, RunRequest::text("two")).unwrap());
             [first.join().unwrap(), second.join().unwrap()]
         });
+        let invalid = invoke_runtime(&plan, &runtime, RunRequest::text("invalid"))
+            .expect_err("third response is invalid");
+        assert!(matches!(
+            invalid,
+            FabricError::AdapterLifecycleOperation { code, diagnostics, .. }
+                if code == "invalid_agent_run_result" && diagnostics == "diagnostic-3"
+        ));
         stop_runtime(&plan, &runtime).unwrap();
-        assert_eq!(record_files(&root).len(), 2);
+        assert_eq!(record_files(&root).len(), 3);
         for result in results {
             let path = &result
                 .artifacts

@@ -136,6 +136,11 @@ impl RunRecorder {
         (state.sequence > 0).then(|| state.path.clone())
     }
 
+    pub(crate) fn is_writable(&self) -> bool {
+        let state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        state.writer.is_some() && !state.closed
+    }
+
     pub(crate) fn runtime_ready(&self, runtime: &RuntimeHandle) {
         let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
         state.runtime_id = Some(runtime.runtime_id.clone());
