@@ -951,7 +951,7 @@ pub fn run_plan_with_recording_context(
     let mut result = match invoke_runtime_unpersisted(plan, &runtime, request, recorder.as_ref()) {
         Ok(result) => result,
         Err(error) => {
-            let stopped = stop_runtime(plan, &runtime);
+            let stopped = stop_runtime_inner(plan, &runtime, Some(&mut diagnostics));
             if let Some(recorder) = &recorder {
                 recorder.runtime_stopped(&stopped);
             }
@@ -967,7 +967,7 @@ pub fn run_plan_with_recording_context(
             ));
         }
     };
-    let stopped = stop_runtime(plan, &runtime);
+    let stopped = stop_runtime_inner(plan, &runtime, Some(&mut diagnostics));
     if let Some(recorder) = &recorder {
         recorder.runtime_stopped(&stopped);
     }
@@ -1469,10 +1469,28 @@ fn validate_adapter_compatibility(plan: &RunPlan) -> Result<()> {
 
 /// Stop or detach from a harness runtime.
 pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+    stop_runtime_inner(plan, runtime, None)
+}
+
+fn stop_runtime_inner(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+    diagnostics: Option<&mut Option<DiagnosticObserver>>,
+) -> Result<Vec<FabricEvent>> {
     validate_runtime_handle(plan, runtime)?;
     if uses_local_host(plan) {
         let events = if runtime.environment.provider == "openshell" {
-            OpenShellRuntimeAdapter.stop(runtime)?
+            let stopped = OpenShellRuntimeAdapter.stop(runtime);
+            if let Some(observer) = diagnostics.and_then(Option::take) {
+                observer.finish();
+            }
+            stopped?
+        } else if let Some(observer) = diagnostics {
+            stop_local_host_with_final_drain(runtime, || {
+                if let Some(observer) = observer.take() {
+                    observer.finish();
+                }
+            })?
         } else {
             LocalHostAdapter.stop(runtime)?
         };
@@ -1918,58 +1936,69 @@ impl RuntimeAdapter for LocalHostAdapter {
     }
 
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
-        local_host_processes().remove(&runtime.runtime_id);
-        let Some(host) = local_hosts().remove(&runtime.runtime_id) else {
-            return Ok(vec![local_host_stop_event(runtime, true, false)]);
-        };
-        let mut host = host.lock().unwrap_or_else(|error| error.into_inner());
-        let request =
-            AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Stop(AdapterLifecycleStop {
-                runtime_id: runtime.runtime_id.clone(),
-            }));
-        let result = exchange_lifecycle_message(
-            &mut host,
-            &runtime.runtime_id,
-            &request,
-            LOCAL_HOST_STOP_TIMEOUT,
-        );
-        let termination = terminate_local_host(&mut host);
-        let diagnostics = local_host_diagnostics(&host);
-        let removal = remove_local_host_files(&host);
-        let host_crashed = matches!(
-            &result,
-            Err(FabricError::AdapterLifecycleOperation { code, .. })
-                if code == "host_crashed"
-        );
-        if !host_crashed {
-            result?;
-        }
-        termination.map_err(|source| {
-            lifecycle_error(
-                AdapterLifecycleOperation::Stop,
-                &runtime.runtime_id,
-                "host_termination_failed",
-                format!("persistent local adapter host could not be terminated: {source}"),
-                diagnostics,
-            )
-        })?;
-        removal.map_err(|source| {
-            lifecycle_error(
-                AdapterLifecycleOperation::Stop,
-                &runtime.runtime_id,
-                "host_cleanup_failed",
-                format!("persistent local adapter host files could not be removed: {source}"),
-                "",
-            )
-        })?;
-
-        #[cfg(test)]
-        TEST_STOPPED_AGENTS
-            .lock()
-            .expect("stop tracker")
-            .push(runtime.agent_name.clone());
-        Ok(vec![local_host_stop_event(runtime, false, host_crashed)])
+        stop_local_host_with_final_drain(runtime, || {})
     }
+}
+
+fn stop_local_host_with_final_drain(
+    runtime: &RuntimeHandle,
+    final_drain: impl FnOnce(),
+) -> Result<Vec<FabricEvent>> {
+    local_host_processes().remove(&runtime.runtime_id);
+    let Some(host) = local_hosts().remove(&runtime.runtime_id) else {
+        final_drain();
+        return Ok(vec![local_host_stop_event(runtime, true, false)]);
+    };
+    let mut host = host.lock().unwrap_or_else(|error| error.into_inner());
+    let request =
+        AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Stop(AdapterLifecycleStop {
+            runtime_id: runtime.runtime_id.clone(),
+        }));
+    let result = exchange_lifecycle_message(
+        &mut host,
+        &runtime.runtime_id,
+        &request,
+        LOCAL_HOST_STOP_TIMEOUT,
+    );
+    let termination = terminate_local_host(&mut host);
+    let diagnostics = local_host_diagnostics(&host);
+    // Shutdown diagnostics are captured before the host directory is removed.
+    // The observer must release its stderr handle before cleanup on Windows.
+    final_drain();
+    let removal = remove_local_host_files(&host);
+    let host_crashed = matches!(
+        &result,
+        Err(FabricError::AdapterLifecycleOperation { code, .. })
+            if code == "host_crashed"
+    );
+    if !host_crashed {
+        result?;
+    }
+    termination.map_err(|source| {
+        lifecycle_error(
+            AdapterLifecycleOperation::Stop,
+            &runtime.runtime_id,
+            "host_termination_failed",
+            format!("persistent local adapter host could not be terminated: {source}"),
+            diagnostics,
+        )
+    })?;
+    removal.map_err(|source| {
+        lifecycle_error(
+            AdapterLifecycleOperation::Stop,
+            &runtime.runtime_id,
+            "host_cleanup_failed",
+            format!("persistent local adapter host files could not be removed: {source}"),
+            "",
+        )
+    })?;
+
+    #[cfg(test)]
+    TEST_STOPPED_AGENTS
+        .lock()
+        .expect("stop tracker")
+        .push(runtime.agent_name.clone());
+    Ok(vec![local_host_stop_event(runtime, false, host_crashed)])
 }
 
 fn start_local_runtime(
@@ -2043,6 +2072,9 @@ fn start_local_runtime_recorded(
         LOCAL_HOST_START_TIMEOUT,
     ) {
         let _ = terminate_local_host(&mut host);
+        if let Some(observer) = diagnostics.take() {
+            observer.finish();
+        }
         let _ = remove_local_host_files(&host);
         return Err(error);
     }
