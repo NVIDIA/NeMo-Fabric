@@ -79,7 +79,7 @@ unauthenticated stdio, SSE, and streamable HTTP MCP servers. It does not
 advertise streaming, telemetry, or Relay integration.
 
 Each NeMo Fabric runtime owns one local Cline core and one interactive Cline
-session. The first invocation calls `ClineCore.start()`. Later invocations call
+session. Runtime startup calls `ClineCore.start()` without a prompt. Every invocation calls
 `ClineCore.send()` with the retained session ID, and `stop()` closes the
 session, disposes the core, and removes runtime-scoped state. Independent
 NeMo Fabric runtimes do not share Cline state.
@@ -88,3 +88,21 @@ The adapter accepts no Cline-specific `harness.settings`. Unsupported
 normalized fields, unknown settings, unknown built-in tool names, authenticated
 MCP configuration, and MCP tool allowlists or blocklists fail instead of being
 ignored.
+
+## Runtime Health
+
+`Fabric.check()` supports `live`, `active`, and `ready` for the selected Cline runtime. Runtime startup initializes an interactive native session without a prompt or model request. Checks use a separate health connection and can finish while the first or any later invocation waits for a model response.
+
+- `live` verifies the owned local host still contains the same resident session and native agent identity, and the native agent has not shut down.
+- `active` also observes `SessionRuntime.canStartRun()` and the native running flag. An active run counts as busy and remains healthy.
+- `ready` also obtains a fresh `ClineCore.get()` response for that resident session and validates the native session identity and live status.
+
+These observations are qualified against `@cline/sdk@0.0.83` and `@cline/core@0.0.83`. The adapter guards the local host's resident-session map and native agent closure fields because `ClineCore.get()` can return historical rows after shutdown. An incompatible native layout returns `unsupported/capabilities_unverified`. Session replacement or closure during a probe invalidates the observation. Checks return fixed safe evidence fields and exclude native snapshots, configuration, prompts, and credentials.
+
+One caller deadline covers the health request. A timeout leaves the invocation and session running. At most one native snapshot read remains pending after a timeout; later checks never reuse an earlier response. Passing health establishes local session and request-interface availability. Model access, credential validity, and tool-server availability require separate validation.
+
+Run the native qualification test after installing the supported Cline SDK:
+
+```bash
+node --test adapters/typescript/cline/test/native-health.mjs
+```

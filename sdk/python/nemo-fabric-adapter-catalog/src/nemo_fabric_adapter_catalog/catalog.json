@@ -225,6 +225,13 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -356,7 +363,7 @@
         "name": "nemo-fabric-adapters-cline",
         "version": "0.6.0"
       },
-      "sha256": "4c695e93660eafc004482c1b1e5ac951c33dad22bdb3752791f184e02735e684",
+      "sha256": "7a5f2d99a36837819dddb8408e6b2a615875cfb0cdc822bbbde4401e0ec4670a",
       "source": "adapters/typescript/cline/cline.fabric-adapter.json"
     },
     "nvidia.fabric.codex": {

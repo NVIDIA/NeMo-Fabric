@@ -358,7 +358,8 @@ jobs:
       - name: Run deterministic Cline E2E
         run: |
           uv sync --frozen --no-default-groups --group test --no-sources-package hermes-agent
-          uv run --no-sync pytest tests/e2e/test_cline.py -k plans_diagnoses_runs_and_isolates_sessions -q
+          node --test adapters/typescript/cline/test/native-health.mjs
+          uv run --no-sync pytest tests/e2e/test_cline.py -k 'plans_diagnoses_runs_and_isolates_sessions or health_does_not_wait_for_the_first_model_request' -q
 
   qwen-e2e:
     name: Qwen Code E2E

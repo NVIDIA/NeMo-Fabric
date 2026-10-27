@@ -6,13 +6,15 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
 import type {
+  AdapterCheckResult,
+  CheckLevel,
   AgentConfig,
   AgentMcpServerConfig,
   AgentModelConfig,
   AgentUsage,
   JsonObject,
 } from "nemo-fabric-adapter-contract";
-import { LifecycleError, type AdapterStartInput } from "nemo-fabric-adapters-common";
+import { LifecycleError, unobservedHealth, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 import type { ClinePromptOutcome, ClineSessionFactory, ClineSessionHandle } from "./runtime.js";
 
@@ -45,6 +47,7 @@ interface ClineStartResult {
 interface ClineCoreInstance {
   start(input: Record<string, unknown>): Promise<ClineStartResult>;
   send(input: { sessionId: string; prompt: string }): Promise<ClineResult | undefined>;
+  get?(sessionId: string): Promise<{ sessionId: string; status: string } | undefined>;
   stop(sessionId: string): Promise<void>;
   dispose(reason?: string): Promise<void>;
 }
@@ -455,11 +458,34 @@ function normalizeResult(result: ClineResult | undefined, sessionId: string): Cl
   };
 }
 
+// Qualified against the local host in @cline/core 0.0.83. ClineCore.get can
+// return persisted history after shutdown; the resident object and native agent
+// closure gate must remain bound before and after every observation.
+interface ResidentSession {
+  sessionId: string;
+  agent: {
+    shutdownCalled: boolean;
+    running: boolean;
+    getAgentId(): string;
+    canStartRun(): boolean;
+  };
+}
+
+function residentSessions(core: ClineCoreInstance): Map<string, ResidentSession> | undefined {
+  const host = (core as unknown as { host?: { sessions?: unknown } }).host;
+  return host?.sessions instanceof Map ? host.sessions as Map<string, ResidentSession> : undefined;
+}
+
 class ClineSdkSessionHandle implements ClineSessionHandle {
   private readonly core: ClineCoreInstance;
   private readonly startInput: Record<string, unknown>;
   private sessionId?: string;
   private stopped = false;
+  private resident?: ResidentSession;
+  private agentId?: string;
+  private agent?: ResidentSession["agent"];
+  private sessions?: Map<string, ResidentSession>;
+  private probing = false;
   private readonly cleanup: () => Promise<void>;
 
   constructor(core: ClineCoreInstance, startInput: Record<string, unknown>, cleanup: () => Promise<void>) {
@@ -468,27 +494,93 @@ class ClineSdkSessionHandle implements ClineSessionHandle {
     this.cleanup = cleanup;
   }
 
+  async initialize(): Promise<void> {
+    const started = await this.core.start(this.startInput);
+    if (typeof started.sessionId !== "string" || started.sessionId.length === 0) {
+      throw new LifecycleError("cline_malformed_result", "Cline did not return a session identifier");
+    }
+    this.sessionId = started.sessionId;
+    const resident = residentSessions(this.core)?.get(started.sessionId);
+    if (resident?.sessionId === started.sessionId &&
+        typeof resident.agent?.shutdownCalled === "boolean" &&
+        typeof resident.agent.running === "boolean" &&
+        typeof resident.agent.getAgentId === "function" &&
+        typeof resident.agent.canStartRun === "function") {
+      this.resident = resident;
+      this.agent = resident.agent;
+      this.sessions = residentSessions(this.core);
+      this.agentId = resident.agent.getAgentId();
+    }
+  }
+
   async prompt(text: string): Promise<ClinePromptOutcome> {
-    if (this.stopped) {
+    if (this.stopped || this.sessionId === undefined) {
       throw new LifecycleError("cline_session_stopped", "The Cline session is already stopped");
     }
     try {
-      if (this.sessionId === undefined) {
-        const started = await this.core.start({ ...this.startInput, prompt: text });
-        if (typeof started.sessionId !== "string" || started.sessionId.length === 0) {
-          throw new LifecycleError("cline_malformed_result", "Cline did not return a session identifier");
-        }
-        this.sessionId = started.sessionId;
-        return normalizeResult(started.result, this.sessionId);
-      }
       return normalizeResult(await this.core.send({ sessionId: this.sessionId, prompt: text }), this.sessionId);
     } catch (error) {
-      if (error instanceof LifecycleError) {
-        throw error;
+      if (error instanceof LifecycleError) throw error;
+      throw new LifecycleError("cline_session_failed", sdkErrorMessage(error), { retryable: true });
+    }
+  }
+
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    const resident = this.resident;
+    const sessionId = this.sessionId;
+    const source = level === "ready" ? "fabric.adapter.readiness" : level === "active" ? "fabric.adapter.interface" : "fabric.adapter.liveness";
+    const observation = (outcome: AdapterCheckResult["outcome"], reason: AdapterCheckResult["reason_code"]): AdapterCheckResult => ({
+      outcome, reason_code: reason,
+      activity: this.stopped || resident?.agent.shutdownCalled ? "stopped" : resident?.agent.running ? "busy" : "idle",
+      source, observed_at: new Date().toISOString(),
+    } as AdapterCheckResult);
+    if (this.stopped) return observation("failed", "session_closed");
+    if (resident === undefined || sessionId === undefined || this.agentId === undefined) {
+      return { ...unobservedHealth("capabilities_unverified"), outcome: "unsupported" };
+    }
+    const unchanged = () => !this.stopped && residentSessions(this.core) === this.sessions &&
+      this.sessions?.get(sessionId) === resident && resident.agent === this.agent &&
+      resident.agent.getAgentId() === this.agentId && !resident.agent.shutdownCalled;
+    try {
+      const sessions = residentSessions(this.core);
+      const current = sessions?.get(sessionId);
+      if (
+        sessions !== this.sessions ||
+        (current !== undefined && current !== resident) ||
+        resident.agent !== this.agent ||
+        resident.agent.getAgentId() !== this.agentId
+      ) {
+        return unobservedHealth("observation_changed");
       }
-      throw new LifecycleError("cline_session_failed", sdkErrorMessage(error), {
-        retryable: true,
-      });
+      if (current === undefined || resident.agent.shutdownCalled) return observation("failed", "session_closed");
+      if (!unchanged()) return unobservedHealth("observation_changed");
+      const available = resident.agent.canStartRun();
+      if (typeof available !== "boolean" || typeof resident.agent.running !== "boolean") return unobservedHealth("probe_error");
+      // Native canStartRun is false during an active run as well as shutdown.
+      if (level !== "live" && !available && !resident.agent.running) return observation("failed", "endpoint_unavailable");
+      if (level === "ready") {
+        if (this.core.get === undefined) return { ...unobservedHealth("capabilities_unverified"), outcome: "unsupported" };
+        // Keep at most one uncancellable native read pending. A later request
+        // never consumes the previous request's reply.
+        if (this.probing) return unobservedHealth("probe_timeout");
+        this.probing = true;
+        let snapshot;
+        try {
+          snapshot = await this.core.get(sessionId);
+        } finally {
+          this.probing = false;
+        }
+        if (!unchanged()) return unobservedHealth("observation_changed");
+        if (snapshot?.sessionId !== sessionId || !["idle", "running", "pending"].includes(snapshot.status)) {
+          return observation("failed", "health_failed");
+        }
+      }
+      return unchanged() ? observation("passed", null) : unobservedHealth("observation_changed");
+    } catch {
+      try {
+        if (!unchanged()) return unobservedHealth("observation_changed");
+      } catch { return unobservedHealth("observation_changed"); }
+      return unobservedHealth("probe_error");
     }
   }
 
@@ -573,7 +665,7 @@ export class ClineSdkSessionFactory implements ClineSessionFactory {
               providerId: selected.provider,
             })
           : systemInstruction.content;
-      return new ClineSdkSessionHandle(core, {
+      const handle = new ClineSdkSessionHandle(core, {
         config: {
           providerId: selected.provider,
           modelId: selected.model,
@@ -600,6 +692,8 @@ export class ClineSdkSessionFactory implements ClineSessionFactory {
       }, async () => {
         await rm(files.root, { recursive: true, force: true });
       });
+      await handle.initialize();
+      return handle;
     } catch (error) {
       await core?.dispose("NeMo Fabric startup failed").catch(() => undefined);
       await rm(files.root, { recursive: true, force: true });
