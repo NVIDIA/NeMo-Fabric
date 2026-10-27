@@ -314,6 +314,26 @@ mod accounting_tests {
     }
 
     #[test]
+    fn detailed_reported_cost_fills_only_missing_root_cost() {
+        for (root_cost, expected) in [(None, 250_000_000), (Some(0.5), 500_000_000)] {
+            let mut usage = AgentUsage {
+                cost_usd: root_cost,
+                ..Default::default()
+            };
+            usage.extensions.insert(
+                "nemo_fabric.detailed_token_usage.v1".into(),
+                json!({"cost_usd": 0.25}),
+            );
+            usage.extensions.insert(
+                "nemo_fabric.usage_accounting.v1".into(),
+                json!({"models_exhaustive": false, "models": [], "gaps": []}),
+            );
+            let result = normalize_model_usage(&usage).unwrap().unwrap();
+            assert_eq!(result.cost.reported.amount_nano_usd, Some(expected));
+        }
+    }
+
+    #[test]
     fn exhaustive_empty_model_list_rejects_positive_tokens() {
         for observed in [false, true] {
             for field in [
@@ -489,6 +509,17 @@ mod accounting_tests {
             .remove("cost_usd");
     }
 
+    fn omit_aggregate_cost(usage: &mut AgentUsage) {
+        usage.cost_usd = None;
+        usage
+            .extensions
+            .get_mut("nemo_fabric.detailed_token_usage.v1")
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("cost_usd");
+    }
+
     #[test]
     fn request_costs_without_model_cost_cannot_certify_a_contradictory_root() {
         let mut usage = cost_with_requests(0.1, &[Some(0.2)], true);
@@ -516,7 +547,7 @@ mod accounting_tests {
                 Some((aggregate * 1e9).round() as u64)
             );
             assert_eq!(with_root.tokens.total_tokens, Some(105));
-            usage.cost_usd = None;
+            omit_aggregate_cost(&mut usage);
             let recovered = normalize_model_usage(&usage).unwrap().unwrap();
             assert!(recovered.cost.reported.amount_nano_usd.is_some());
             assert_eq!(
@@ -531,7 +562,7 @@ mod accounting_tests {
         for (requests, exhaustive) in [(vec![Some(0.04)], false), (vec![Some(0.04), None], true)] {
             let mut usage = cost_with_requests(0.1, &requests, exhaustive);
             omit_model_cost(&mut usage);
-            usage.cost_usd = None;
+            omit_aggregate_cost(&mut usage);
             let result = normalize_model_usage(&usage).unwrap().unwrap();
             assert_eq!(result.cost.reported.amount_nano_usd, None);
             assert_eq!(result.cost.reported.observed_nano_usd, Some(40_000_000));
