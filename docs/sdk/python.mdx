@@ -1254,6 +1254,10 @@ extensions still fail the adapter contract. Legacy usage without supported
 accounting remains available in `result.usage` and is not certified complete by
 `summarize_usage`.
 
+If an OpenShell task uses a newer model accounting shape than the host can read,
+the host keeps the invocation result and any raw usage, leaves `model_usage` absent,
+and records a `model_usage_unreadable` event.
+
 `cost.reported` contains only provider-reported amounts. Complete and observed
 amounts use integer nano-USD. Catalog estimates are not available;
 `cost.estimated` has no amounts and no typed pricing setting is exposed. The stable

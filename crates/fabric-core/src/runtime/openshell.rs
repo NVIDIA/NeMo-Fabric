@@ -202,6 +202,32 @@ fn command_value(
         )),
     }
 }
+
+fn decode_task_run_result(mut value: Value) -> serde_json::Result<RunResult> {
+    // The task core can be newer than this host. Keep its result and raw usage
+    // when only the optional normalized accounting has an unreadable shape.
+    let unreadable_usage = if let Value::Object(fields) = &mut value {
+        if fields.get("model_usage").is_some_and(|usage| {
+            serde_json::from_value::<Option<crate::model_usage::ModelUsage>>(usage.clone()).is_err()
+        }) {
+            fields.remove("model_usage");
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    let mut result: RunResult = serde_json::from_value(value)?;
+    if unreadable_usage {
+        result.events.push(event_with_metadata(
+            "model_usage_unreadable",
+            "task model accounting could not be read; execution outcome and any raw usage were retained",
+            BTreeMap::new(),
+        ));
+    }
+    Ok(result)
+}
 fn claim(runtime: &RuntimeHandle, stopping: bool) -> Result<Option<String>> {
     let key = resource_key(&runtime.environment)?;
     let mut bindings = BINDINGS.lock().unwrap_or_else(|error| error.into_inner());
@@ -409,7 +435,7 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                 AdapterLifecycleOperation::Invoke,
                 &runtime.runtime_id,
             )?;
-            let mut result: RunResult = serde_json::from_value(value).map_err(|_| {
+            let mut result = decode_task_run_result(value).map_err(|_| {
                 lifecycle_error(
                     AdapterLifecycleOperation::Invoke,
                     &runtime.runtime_id,
@@ -870,6 +896,68 @@ mod tests {
             result["what_ran"] = what_ran;
         }
         serde_json::from_value(result).expect("a task result decodes whatever what_ran holds")
+    }
+
+    #[test]
+    fn newer_task_model_usage_does_not_discard_the_invocation_result() {
+        let mut value = serde_json::to_value(task_result(None)).expect("task result JSON");
+        value["status"] = Value::String("failed".to_string());
+        value["output"] = serde_json::json!({"message": "task finished"});
+        value["usage"] = serde_json::json!({
+            "input_tokens": 12,
+            "metadata": {"nemo_fabric.usage_accounting.v1": {"future_evidence": true}}
+        });
+        let usage = serde_json::json!({
+            "observed": {},
+            "gaps": [{"dimensions": ["input_tokens"], "reason": "missing_usage"}],
+            "models_exhaustive": false,
+            "cost": {"reported": {}, "estimated": {}}
+        });
+        assert!(serde_json::from_value::<crate::model_usage::ModelUsage>(usage.clone()).is_ok());
+
+        for (field, unknown) in [
+            ("dimensions", "future_dimension"),
+            ("reason", "future_reason"),
+        ] {
+            let mut newer = value.clone();
+            let mut newer_usage = usage.clone();
+            newer_usage["gaps"][0][field] = if field == "dimensions" {
+                serde_json::json!([unknown])
+            } else {
+                Value::String(unknown.to_string())
+            };
+            newer["model_usage"] = newer_usage;
+            let result = decode_task_run_result(newer).expect("keep a completed task result");
+            assert_eq!(result.status, RunStatus::Failed);
+            assert_eq!(result.output["message"], "task finished");
+            assert_eq!(result.usage.as_ref().unwrap().input_tokens, Some(12));
+            assert_eq!(
+                result.usage.as_ref().unwrap().metadata["nemo_fabric.usage_accounting.v1"]["future_evidence"],
+                true
+            );
+            assert!(result.model_usage.is_none());
+            assert_eq!(
+                result
+                    .events
+                    .iter()
+                    .filter(|event| event.kind == "model_usage_unreadable")
+                    .count(),
+                1
+            );
+        }
+
+        value["model_usage"] = usage;
+        let result = decode_task_run_result(value).expect("keep readable accounting");
+        assert!(result.model_usage.is_some());
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn newer_task_model_usage_does_not_hide_other_invalid_result_fields() {
+        let mut value = serde_json::to_value(task_result(None)).expect("task result JSON");
+        value["model_usage"] = serde_json::json!({"gaps": [{"reason": "future_reason"}]});
+        value["status"] = Value::String("future_status".to_string());
+        assert!(decode_task_run_result(value).is_err());
     }
 
     fn task_what_ran() -> Value {
