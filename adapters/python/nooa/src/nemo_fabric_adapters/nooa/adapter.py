@@ -531,6 +531,7 @@ class NooaRuntime:
         self._models: dict[str, Any] = {}
         self._telemetry: RelayTelemetry | None = None
         self._model_roles: list[str] = []
+        self._package_version = provenance.package_version_fact(_PACKAGE_DISTRIBUTION)
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._target is not None:
@@ -601,7 +602,7 @@ class NooaRuntime:
 
         result = await self._invoke(request, runtime_context)
         result.extensions[provenance.VERSIONS_REPORT_KEY] = (
-            provenance.package_version_report(_PACKAGE_DISTRIBUTION, self._model_roles)
+            provenance.package_version_report(self._package_version, self._model_roles)
         )
         return result
 
