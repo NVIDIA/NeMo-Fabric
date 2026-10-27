@@ -4,6 +4,7 @@
 """The packaged descriptor accepts the collector's shared usage evidence."""
 
 import json
+import importlib.util
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
@@ -47,3 +48,41 @@ def test_deepagents_usage_declaration_matches_packaged_copy():
         ]
     )
     Draft202012Validator(schema).validate(usage.extensions)
+
+
+def test_usage_schema_generator_removes_obsolete_definitions(tmp_path, monkeypatch):
+    root = Path(__file__).resolve().parents[2]
+    source = root / "scripts/contracts/generate_usage_accounting.py"
+    spec = importlib.util.spec_from_file_location("generate_usage_accounting", source)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+
+    schema = json.loads(
+        (root / "schemas/extensions/usage-accounting.schema.json").read_text()
+    )
+    canonical = tmp_path / "schemas/extensions/usage-accounting.schema.json"
+    canonical.parent.mkdir(parents=True)
+    canonical.write_text(json.dumps(schema))
+
+    descriptor = tmp_path / "adapters/python/example/example.fabric-adapter.json"
+    descriptor.parent.mkdir(parents=True)
+    descriptor.write_text(
+        json.dumps(
+            {
+                "extension_schemas": {
+                    "usage": {
+                        "$defs": {**schema["$defs"], "Obsolete": {"type": "string"}},
+                        "properties": {module.KEY: {}, "other": {"type": "object"}},
+                    }
+                }
+            },
+            indent=2,
+        )
+    )
+
+    module.synchronize(check=False)
+    usage = json.loads(descriptor.read_text())["extension_schemas"]["usage"]
+    assert usage["$defs"] == schema["$defs"]
+    assert usage["properties"]["other"] == {"type": "object"}

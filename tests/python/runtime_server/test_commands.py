@@ -20,16 +20,16 @@ from nemo_fabric.runtime_server import cli, protocol
 
 
 @pytest.mark.parametrize(
-    "flags", [[], ["--live"], ["--active"], ["--ready"], ["--operational"]]
+    "flags", [["--live"], ["--active"], ["--ready"], ["--operational"]]
 )
-def test_removed_check_is_rejected_before_transport(monkeypatch, capsys, flags):
+def test_server_check_rejects_agent_levels_before_transport(monkeypatch, capsys, flags):
     from unittest.mock import AsyncMock
 
     mock_client = AsyncMock()
     monkeypatch.setattr(cli.transport, "client", mock_client)
     assert cli.main(["check", *flags]) == 1
     response = json.loads(capsys.readouterr().out)
-    assert response["operation"] == "unknown"
+    assert response["operation"] == "check"
     assert response["error"]["code"] == "invalid_request"
     assert response["changed"] is False
     assert response["error"]["effects"] == "none"
