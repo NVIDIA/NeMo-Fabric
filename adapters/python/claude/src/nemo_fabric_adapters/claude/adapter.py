@@ -1141,10 +1141,7 @@ class ClaudeRuntime:
                 # SDK 0.2.165 does not remove cancelled control requests. Keep
                 # at most one native request until its own bounded wait ends.
                 if self._health_task is not None:
-                    try:
-                        await asyncio.shield(self._health_task)
-                    except Exception:
-                        pass
+                    await asyncio.wait({self._health_task})
                 snapshot = observed("passed", None)
                 if snapshot["outcome"] != "passed":
                     return snapshot
@@ -1158,7 +1155,8 @@ class ClaudeRuntime:
                         task.exception()
 
                 task.add_done_callback(completed)
-                response = await asyncio.shield(task)
+                await asyncio.wait({task})
+                response = task.result()
         except Exception:
             return observed("unknown", "probe_error")
 
