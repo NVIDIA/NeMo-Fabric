@@ -27,6 +27,8 @@ const expectedByPackage = {
     "dist/acp-runner.js",
     "dist/index.d.ts",
     "dist/index.js",
+    "dist/health.d.ts",
+    "dist/health.js",
     "dist/lifecycle.d.ts",
     "dist/lifecycle.js",
     "dist/model-endpoint.d.ts",

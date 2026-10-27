@@ -165,7 +165,7 @@ def versions_report(
 
 
 def package_version_report(
-    distribution: str, model_roles: Iterable[str]
+    package_version: Mapping[str, Any], model_roles: Iterable[str]
 ) -> dict[str, Any]:
     """The report of an adapter that has a source only for its package version.
 
@@ -174,7 +174,7 @@ def package_version_report(
     """
 
     return versions_report(
-        package_version=package_version_fact(distribution),
+        package_version=package_version,
         harness_name=no_source_fact(),
         harness_version=no_source_fact(),
         served_models={role: no_source_fact() for role in model_roles},

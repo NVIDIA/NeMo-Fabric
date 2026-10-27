@@ -76,6 +76,24 @@ test("the wrapper adds the versions report and keeps the result", async () => {
   }
 });
 
+test("the wrapper preserves runtime health checks", async () => {
+  const inner = {
+    levels: [],
+    async start() {},
+    async invoke() { return {status: "succeeded", output: "done"}; },
+    async stop() {},
+    async check(level) {
+      this.levels.push(level);
+      return {outcome: "passed", checks: []};
+    },
+  };
+  const runtime = withPackageVersion(inner, new URL("../package.json", import.meta.url));
+
+  assert.equal(typeof runtime.check, "function");
+  assert.deepEqual(await runtime.check("ready"), {outcome: "passed", checks: []});
+  assert.deepEqual(inner.levels, ["ready"]);
+});
+
 test("a served-model override reaches only the role it names", () => {
   const packageVersion = {value: "1.2.3", source: "reported", collected_by: "adapter", method: "package_metadata"};
   const notAttributed = missingFact("unavailable", "not_attributed", "harness_api");

@@ -22,6 +22,7 @@ from nemo_fabric_adapter_contract.models import ArtifactRef
 from nemo_fabric_adapter_contract.models import EnvironmentHandle
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapter_contract.models import RuntimeTelemetryContext
+from nemo_fabric_adapter_contract.models import UsageAccounting
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.pydantic_support import type_adapter
 
@@ -52,6 +53,52 @@ def test_usage_rejects_invalid_cache_counter(value):
 def test_usage_rejects_invalid_cache_semantics(value):
     with pytest.raises(ContractValidationError):
         AgentUsage(input_tokens_include_cache=value)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "input_tokens",
+        "cached_input_tokens",
+        "cache_write_input_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+        "total_tokens",
+        "peak_request_input_tokens",
+    ],
+)
+def test_exhaustive_empty_models_reject_positive_observed_tokens(field):
+    with pytest.raises(ContractValidationError, match="exhaustive empty model list"):
+        UsageAccounting.from_mapping(
+            {
+                "models_exhaustive": True,
+                "models": [],
+                "gaps": [],
+                "observed": {field: 1},
+            }
+        )
+
+
+@pytest.mark.parametrize("observed", [{}, {"input_tokens": 0}, {"cost_usd": 0.25}])
+def test_exhaustive_empty_models_preserve_zero_unknown_and_cost(observed):
+    accounting = UsageAccounting.from_mapping(
+        {"models_exhaustive": True, "models": [], "gaps": [], "observed": observed}
+    )
+    assert accounting.observed is not None
+    assert accounting.observed.to_mapping() == observed
+
+
+def test_nonexhaustive_empty_models_can_observe_positive_tokens():
+    accounting = UsageAccounting.from_mapping(
+        {
+            "models_exhaustive": False,
+            "models": [],
+            "gaps": [],
+            "observed": {"input_tokens": 1},
+        }
+    )
+    assert accounting.observed is not None
+    assert accounting.observed.input_tokens == 1
 
 
 def test_agent_run_request_contains_only_southbound_request_fields():
