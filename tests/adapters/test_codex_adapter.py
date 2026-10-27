@@ -2410,3 +2410,71 @@ async def test_health_unstarted_and_unsupported():
         "unsupported",
         "unsupported_level",
     )
+
+
+async def test_health_timeout_consumes_late_native_errors_without_logging(codex_health):
+    runtime, _, thread, _ = codex_health
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+    diagnostics = []
+    release = asyncio.Event()
+    pending = None
+
+    async def delayed_error(*_args, **_kwargs):
+        await release.wait()
+        raise RuntimeError("private-native-health-detail")
+
+    thread.read.side_effect = delayed_error
+    loop.set_exception_handler(lambda _loop, context: diagnostics.append(context))
+    try:
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(0.03):
+                await runtime.check("ready")
+        pending = runtime._health_task
+        assert pending is not None and not pending.done()
+        release.set()
+        await asyncio.wait({pending})
+        await asyncio.sleep(0)
+        assert not pending.cancelled()
+        assert diagnostics == []
+        thread.read.assert_awaited_once()
+    finally:
+        release.set()
+        if pending is not None:
+            await asyncio.gather(pending, return_exceptions=True)
+        loop.set_exception_handler(previous_handler)
+
+
+@pytest.mark.parametrize("completion", ["error", "cancelled"])
+async def test_health_obtains_fresh_evidence_after_an_older_probe_fails(
+    codex_health, completion
+):
+    runtime, _, thread, _ = codex_health
+    release = asyncio.Event()
+
+    async def diagnostic(*_args, **_kwargs):
+        if thread.read.await_count == 1:
+            await release.wait()
+            if completion == "cancelled":
+                raise asyncio.CancelledError
+            raise RuntimeError("private-prior-probe-detail")
+        return thread.read.return_value
+
+    thread.read.side_effect = diagnostic
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.03):
+            await runtime.check("ready")
+    pending = runtime._health_task
+    assert pending is not None and not pending.done()
+    checking = asyncio.create_task(runtime.check("ready"))
+    try:
+        await asyncio.sleep(0)
+        assert thread.read.await_count == 1
+        assert not checking.done()
+        release.set()
+        result = await asyncio.wait_for(checking, 1)
+        assert (result["outcome"], result["reason_code"]) == ("passed", None)
+        assert thread.read.await_count == 2
+    finally:
+        release.set()
+        await asyncio.gather(pending, checking, return_exceptions=True)

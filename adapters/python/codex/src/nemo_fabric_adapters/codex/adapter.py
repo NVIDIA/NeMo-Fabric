@@ -1510,7 +1510,7 @@ class CodexRuntime:
         async with self._health_lock:
             try:
                 if self._health_task is not None and not self._health_task.done():
-                    await asyncio.shield(self._health_task)
+                    await asyncio.wait({self._health_task})
                 current = observed("unknown", "probe_error")
                 if current["reason_code"] in {"observation_changed", "agent_exited"}:
                     return current
@@ -1519,7 +1519,8 @@ class CodexRuntime:
                 task.add_done_callback(
                     lambda done: None if done.cancelled() else done.exception()
                 )
-                response = await asyncio.shield(task)
+                await asyncio.wait({task})
+                response = task.result()
             except Exception:
                 return observed("unknown", "probe_error")
         if (
