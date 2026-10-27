@@ -717,6 +717,15 @@ class UsageAccounting(ContractModel):
     models: list[AccountedModel] = _empty_list()
 
     def _validate(self) -> None:
+        if self.models_exhaustive and not self.models and self.observed is not None:
+            for dimension in UsageDimension:
+                if dimension is UsageDimension.COST_USD:
+                    continue
+                count = getattr(self.observed, dimension.value)
+                if count is not None and count > 0:
+                    raise ContractValidationError(
+                        "exhaustive empty model list conflicts with positive tokens"
+                    )
         identities = [(model.provider, model.model) for model in self.models]
         if len(set(identities)) != len(identities):
             raise ContractValidationError("duplicate model identity")

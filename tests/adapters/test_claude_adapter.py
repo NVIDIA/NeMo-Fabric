@@ -31,6 +31,7 @@ from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import SystemMessage
 from claude_agent_sdk import TextBlock
+from claude_agent_sdk import UserMessage
 from claude_agent_sdk._errors import MessageParseError
 from claude_agent_sdk._internal.message_parser import parse_message
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -2345,6 +2346,90 @@ async def test_claude_served_model_is_isolated_per_invocation(
         reported("claude-b", "harness_api"),
         served_state("unavailable", "empty_response"),
     ]
+
+
+@pytest.mark.parametrize("echoed", [False, True], ids=["terminal-only", "user-echo"])
+async def test_claude_injected_turn_does_not_end_or_bill_the_caller_turn(
+    claude_payload, monkeypatch, echoed
+):
+    init, _, injected = stream_messages("normal.jsonl")
+    injected.origin = {"kind": "task-notification"}
+    injected.total_cost_usd = 0.10
+    owned = running_total_result(0.20)
+    owned.result = "owned answer"
+    owned.origin = {"kind": "human"}
+    first: list[Message] = [init]
+    if echoed:
+        first.extend(
+            [
+                parse_message(assistant_line("claude-before")),
+                UserMessage(
+                    content="notification", origin={"kind": "task-notification"}
+                ),
+                UserMessage(content="child result", parent_tool_use_id="child-1"),
+            ]
+        )
+    first.extend([parse_message(assistant_line("claude-injected")), injected])
+    install_scripted_client(
+        monkeypatch,
+        [
+            first,
+            [parse_message(assistant_line("claude-after")), owned],
+            [running_total_result(0.25)],
+        ],
+    )
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(lifecycle_start(claude_payload))
+    try:
+        result = await runtime.invoke(*lifecycle_invocation(claude_payload))
+        following = await runtime.invoke(*lifecycle_invocation(claude_payload))
+    finally:
+        await runtime.stop()
+
+    assert result.output["response"] == "owned answer"
+    assert result.output["cost_usd"] is None
+    assert result.output["usage"] == {"input_tokens": 1, "output_tokens": 1}
+    assert [
+        event["message"]["model"]
+        for event in result.output["events"]
+        if event["type"] == "AssistantMessage"
+    ] == (["claude-before"] if echoed else []) + ["claude-after"]
+    assert result.usage is None
+    served = result.extensions[VERSIONS_REPORT_KEY]["models"]["default"]["served"]
+    expected = (
+        served_state("unavailable", "not_attributed")
+        if echoed
+        else reported("claude-after", "harness_api")
+    )
+    assert served == expected
+    assert result.extensions[VERSIONS_REPORT_KEY]["harness"]["version"] == reported(
+        "2.1.294", "harness_init_message"
+    )
+    assert following.usage is not None
+    assert following.usage.cost_usd == 0.05
+
+
+async def test_claude_injected_result_without_caller_result_fails_closed(
+    claude_payload, monkeypatch
+):
+    init, assistant, injected = stream_messages("normal.jsonl")
+    injected.origin = {"kind": "task-notification"}
+    install_scripted_client(monkeypatch, [[init, assistant, injected], []])
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(lifecycle_start(claude_payload))
+    try:
+        result = await runtime.invoke(*lifecycle_invocation(claude_payload))
+    finally:
+        await runtime.stop()
+
+    assert result.status is AgentRunStatus.FAILED
+    assert result.error.code == "claude_missing_result"
+    assert result.usage is None
+    report = result.extensions[VERSIONS_REPORT_KEY]
+    assert report["models"]["default"]["served"] == served_state(
+        "collection_failed", "no_result"
+    )
+    assert report["harness"]["version"] == reported("2.1.294", "harness_init_message")
 
 
 async def test_claude_served_model_reads_collection_failed_when_the_stream_fails(

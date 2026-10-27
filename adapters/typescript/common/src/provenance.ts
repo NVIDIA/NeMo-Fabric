@@ -122,7 +122,7 @@ export function withPackageVersion(
   servedModel?: (input: AdapterStartInput) => ServedModelFact | undefined,
 ): AdapterRuntime {
   let report: JsonObject | undefined;
-  return {
+  const wrapped: AdapterRuntime = {
     async start(input: AdapterStartInput): Promise<void> {
       report = packageVersionReport(
         packageVersionFact(packageJson),
@@ -140,4 +140,8 @@ export function withPackageVersion(
       return runtime.stop();
     },
   };
+  if (runtime.check !== undefined) {
+    wrapped.check = runtime.check.bind(runtime);
+  }
+  return wrapped;
 }

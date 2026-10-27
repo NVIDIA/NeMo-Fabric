@@ -181,6 +181,23 @@ def test_openclaw_accepts_supported_version():
     adapter._validate_openclaw_version("OpenClaw 2026.9.4 (3a9d69d)")
 
 
+def test_openclaw_runtime_keeps_its_loaded_adapter_version(monkeypatch):
+    installed_version = "1.0"
+    monkeypatch.setattr(
+        adapter.provenance.importlib.metadata,
+        "version",
+        lambda _distribution: installed_version,
+    )
+    runtime = adapter.OpenClawRuntime()
+
+    first = runtime._versions_extensions()[adapter.provenance.VERSIONS_REPORT_KEY]
+    installed_version = "2.0"
+    second = runtime._versions_extensions()[adapter.provenance.VERSIONS_REPORT_KEY]
+
+    assert first["adapter"]["package_version"]["value"] == "1.0"
+    assert second["adapter"]["package_version"] == first["adapter"]["package_version"]
+
+
 def test_openclaw_rejects_unsupported_version():
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
         adapter._validate_openclaw_version("OpenClaw 2026.9.5 (abcdef0)")

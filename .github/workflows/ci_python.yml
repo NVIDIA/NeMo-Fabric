@@ -115,6 +115,8 @@ jobs:
           npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-pi
 
       - name: Run pytest
+        env:
+          FABRIC_REQUIRE_TYPESCRIPT_REDUCER_PARITY: "1"
         run: |
           set -euo pipefail
           just --set no_uv true test-python
