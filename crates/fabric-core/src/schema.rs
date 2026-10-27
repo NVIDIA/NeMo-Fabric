@@ -26,6 +26,14 @@ use crate::{AgentRunRequest, AgentRunResult};
 pub enum SchemaName {
     /// Declared usage accounting evidence.
     UsageAccounting,
+    /// Public health request.
+    CheckRequest,
+    /// Public health report.
+    CheckReport,
+    /// Adapter health probe request.
+    AdapterCheckRequest,
+    /// Adapter health probe result.
+    AdapterCheckResult,
     /// Complete typed NeMo Fabric config schema.
     Agent,
     /// Adapter-facing projected agent config schema.
@@ -76,8 +84,12 @@ pub enum SchemaName {
 
 impl SchemaName {
     /// All public schemas in stable output order.
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 28] = [
         Self::UsageAccounting,
+        Self::CheckRequest,
+        Self::CheckReport,
+        Self::AdapterCheckRequest,
+        Self::AdapterCheckResult,
         Self::Agent,
         Self::AgentConfig,
         Self::AgentRunRequest,
@@ -107,6 +119,10 @@ impl SchemaName {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::UsageAccounting => "usage-accounting",
+            Self::CheckRequest => "check-request",
+            Self::CheckReport => "check-report",
+            Self::AdapterCheckRequest => "adapter-check-request",
+            Self::AdapterCheckResult => "adapter-check-result",
             Self::Agent => "agent",
             Self::AgentConfig => "agent-config",
             Self::AgentRunRequest => "agent-run-request",
@@ -143,7 +159,9 @@ impl SchemaName {
         let filename = self.filename();
         match self {
             Self::UsageAccounting => PathBuf::from("extensions").join(filename),
-            Self::AgentConfig
+            Self::AdapterCheckRequest
+            | Self::AdapterCheckResult
+            | Self::AgentConfig
             | Self::AgentRunRequest
             | Self::AgentRunResult
             | Self::AdapterDescriptor
@@ -160,6 +178,10 @@ impl SchemaName {
     pub fn parse(value: &str) -> Result<Self> {
         match value {
             "usage-accounting" | "usage_accounting" => Ok(Self::UsageAccounting),
+            "check-request" | "check_request" => Ok(Self::CheckRequest),
+            "check-report" | "check_report" => Ok(Self::CheckReport),
+            "adapter-check-request" | "adapter_check_request" => Ok(Self::AdapterCheckRequest),
+            "adapter-check-result" | "adapter_check_result" => Ok(Self::AdapterCheckResult),
             "agent" => Ok(Self::Agent),
             "agent-config" | "agent_config" => Ok(Self::AgentConfig),
             "agent-run-request" | "agent_run_request" => Ok(Self::AgentRunRequest),
@@ -206,6 +228,10 @@ pub fn generate_schema(schema: SchemaName) -> Result<Value> {
         SchemaName::UsageAccounting => {
             to_value(schema_for!(crate::usage_accounting::UsageAccounting))
         }
+        SchemaName::CheckRequest => to_value(schema_for!(crate::check::CheckRequest)),
+        SchemaName::CheckReport => to_value(schema_for!(crate::check::CheckReport)),
+        SchemaName::AdapterCheckRequest => to_value(schema_for!(crate::check::AdapterCheckRequest)),
+        SchemaName::AdapterCheckResult => to_value(schema_for!(crate::check::AdapterCheckResult)),
         SchemaName::Agent => to_value(schema_for!(FabricConfig)),
         SchemaName::AgentConfig => to_value(schema_for!(AgentConfig)),
         SchemaName::AgentRunRequest => to_value(schema_for!(AgentRunRequest)),
@@ -601,6 +627,31 @@ mod tests {
             schema["$defs"]["WorkflowTargetSpec"]["properties"]["settings_schema"]["type"],
             serde_json::json!(["object", "null"])
         );
+    }
+
+    #[test]
+    fn adapter_check_result_schema_enforces_outcome_evidence() {
+        let schema = generate_schema(SchemaName::AdapterCheckResult).expect("health result schema");
+        let validator = jsonschema::validator_for(&schema).expect("valid schema");
+        for outcome in ["passed", "failed", "unknown", "unsupported"] {
+            for reason in [None, Some("probe_error")] {
+                for observed_at in [None, Some("2026-10-19T12:00:00Z")] {
+                    let result = serde_json::json!({
+                        "outcome": outcome,
+                        "reason_code": reason,
+                        "activity": "unknown",
+                        "source": "fabric.adapter",
+                        "observed_at": observed_at
+                    });
+                    let expected = if outcome == "passed" {
+                        reason.is_none() && observed_at.is_some()
+                    } else {
+                        reason.is_some()
+                    };
+                    assert_eq!(validator.is_valid(&result), expected, "{result}");
+                }
+            }
+        }
     }
 
     #[test]

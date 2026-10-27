@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { serve } from "nemo-fabric-adapters-common";
+import { serve, withPackageVersion } from "nemo-fabric-adapters-common";
 
 await serve(async () => {
   const [{ StrandsAcpSessionFactory }, { StrandsAdapterRuntime }] =
     await Promise.all([import("./strands-acp.js"), import("./runtime.js")]);
-  return new StrandsAdapterRuntime(new StrandsAcpSessionFactory());
+  return withPackageVersion(new StrandsAdapterRuntime(new StrandsAcpSessionFactory()), new URL("../package.json", import.meta.url));
 });
