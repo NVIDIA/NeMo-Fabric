@@ -637,9 +637,11 @@ def build_options(
 ) -> ClaudeAgentOptions:
     settings = _settings(config)
     model = _selected_model_config(config)
-    effort: EffortLevel | None = settings.get("effort")
-    if "effort" in settings and effort not in get_args(EffortLevel):
-        raise AdapterConfigError("claude_invalid_configuration", "effort is invalid")
+    effort: EffortLevel | None = settings.get("reasoning_effort")
+    if "reasoning_effort" in settings and effort not in get_args(EffortLevel):
+        raise AdapterConfigError(
+            "claude_invalid_configuration", "reasoning_effort is invalid"
+        )
     permission_mode = settings.get("permission_mode")
     if permission_mode is not None and permission_mode not in PERMISSION_MODES:
         raise AdapterConfigError(

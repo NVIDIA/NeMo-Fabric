@@ -149,9 +149,9 @@ def test_claude_descriptor_is_narrow_and_versioned():
     )
     descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
 
-    assert descriptor["settings_schema"]["properties"]["effort"]["enum"] == list(
-        get_args(EffortLevel)
-    )
+    assert descriptor["settings_schema"]["properties"]["reasoning_effort"][
+        "enum"
+    ] == list(get_args(EffortLevel))
     assert descriptor == {
         "contract_version": "fabric.adapter/v1alpha2",
         "adapter_id": "nvidia.fabric.claude",
@@ -197,7 +197,7 @@ def test_claude_descriptor_is_narrow_and_versioned():
                     "default": [],
                     "description": "Claude settings scopes to load.",
                 },
-                "effort": {
+                "reasoning_effort": {
                     "type": "string",
                     "enum": ["low", "medium", "high", "xhigh", "max"],
                     "description": "Claude reasoning effort. Omit to preserve the harness default.",
@@ -446,7 +446,7 @@ def test_build_options_appends_to_claude_preset_system_prompt(claude_payload):
 
 @pytest.mark.parametrize("effort", ["low", "medium", "high", "xhigh", "max"])
 def test_build_options_passes_native_effort(claude_payload, effort):
-    claude_payload["config"]["harness"]["settings"]["effort"] = effort
+    claude_payload["config"]["harness"]["settings"]["reasoning_effort"] = effort
 
     assert build_options(claude_payload).effort == effort
 
@@ -459,14 +459,14 @@ def test_build_options_keeps_harness_effort_default_when_omitted(claude_payload)
 def test_build_options_rejects_effort_before_staging(
     claude_payload, monkeypatch, effort
 ):
-    claude_payload["config"]["harness"]["settings"]["effort"] = effort
+    claude_payload["config"]["harness"]["settings"]["reasoning_effort"] = effort
     stage_skills = MagicMock()
     stage_mcp = MagicMock()
     monkeypatch.setattr(adapter, "_stage_skill_plugin", stage_skills)
     monkeypatch.setattr(adapter, "_stage_mcp_config", stage_mcp)
 
     with pytest.raises(
-        adapter.AdapterConfigError, match="^effort is invalid$"
+        adapter.AdapterConfigError, match="^reasoning_effort is invalid$"
     ) as caught:
         build_options(claude_payload)
 

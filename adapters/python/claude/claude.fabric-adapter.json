@@ -43,7 +43,7 @@
         "default": [],
         "description": "Claude settings scopes to load."
       },
-      "effort": {
+      "reasoning_effort": {
         "type": "string",
         "enum": ["low", "medium", "high", "xhigh", "max"],
         "description": "Claude reasoning effort. Omit to preserve the harness default."
