@@ -173,6 +173,8 @@ def fake_sdks_fixture(monkeypatch):
     recorder["init_chat_model"] = mock_init_chat_model
     recorder["fs_backend"] = mock_fs_backend
     recorder["local_shell_backend"] = mock_local_shell_backend
+    recorder["local_shell_factory"] = adapter._local_shell_backend
+    monkeypatch.setattr(adapter, "_local_shell_backend", mock_local_shell_backend)
 
     def build_agent(**kwargs):
         recorder["create_kwargs"] = kwargs
@@ -485,6 +487,9 @@ def use_real_langgraph_fixture(fake_sdks, monkeypatch):
 def use_real_deepagents_fixture(fake_sdks, monkeypatch):
     """Drop the fake Deep Agents stubs so the real backend package resolves."""
 
+    monkeypatch.setattr(
+        adapter, "_local_shell_backend", fake_sdks["local_shell_factory"]
+    )
     for name in (
         "deepagents",
         "deepagents.backends",
@@ -1658,6 +1663,63 @@ def test_local_shell_backend_keeps_file_and_shell_path_namespaces_distinct(
 
     assert relative.exit_code == 0
     assert host_absolute.exit_code != 0
+
+
+@pytest.mark.usefixtures("use_real_deepagents")
+@pytest.mark.parametrize("nested", [False, True])
+def test_local_shell_file_tools_accept_physical_workspace_paths(
+    tmp_path, make_payload, nested
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["environment"]["workspace"] = str(workspace)
+    backend = adapter.resolve_backend(
+        RuntimeContext.from_mapping(payload["runtime_context"]),
+        str(tmp_path),
+        {"type": "local_shell"},
+    )
+    target = workspace / "nested" / "report.txt" if nested else workspace / "report.txt"
+
+    result = backend.write(str(target), "same workspace")
+
+    assert result.error is None
+    assert target.read_text() == "same workspace"
+    shell = backend.execute(
+        f'"{sys.executable}" -c "from pathlib import Path; '
+        f"assert Path('{target}').read_text() == 'same workspace'\""
+    )
+    assert shell.exit_code == 0
+    read = backend.read(str(target))
+    assert read.error is None
+    assert "same workspace" in read.file_data["content"]
+
+
+@pytest.mark.usefixtures("use_real_deepagents")
+@pytest.mark.parametrize("escape", ["traversal", "symlink"])
+def test_local_shell_workspace_alias_preserves_file_confinement(
+    tmp_path, make_payload, escape
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["environment"]["workspace"] = str(workspace)
+    backend = adapter.resolve_backend(
+        RuntimeContext.from_mapping(payload["runtime_context"]),
+        str(tmp_path),
+        {"type": "local_shell"},
+    )
+    if escape == "symlink":
+        (workspace / "link").symlink_to(outside, target_is_directory=True)
+        target = workspace / "link" / "escaped.txt"
+    else:
+        target = workspace / ".." / "outside" / "escaped.txt"
+
+    with pytest.raises(ValueError, match="traversal|outside root"):
+        backend.write(str(target), "must not escape")
+    assert not (outside / "escaped.txt").exists()
 
 
 @pytest.mark.usefixtures("use_real_deepagents")

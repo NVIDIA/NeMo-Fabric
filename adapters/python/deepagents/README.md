@@ -218,12 +218,7 @@ provides only its fallback path; configure required variables explicitly and
 use absolute executable paths when needed. The `execute` tool remains subject
 to `tools.enabled` and `tools.blocked`, like all other Deep Agents built-ins.
 
-File tools and shell commands use different absolute-path namespaces when
-`virtual_mode=True`. For file tools, `/report.txt` resolves to
-`<workspace>/report.txt`; in `execute`, the same path refers to `/report.txt` on
-the adapter host. Shell commands start in `environment.workspace`, so use
-workspace-relative paths, such as `cat report.txt`, for files surfaced by file
-tools. Do not pass a file tool's virtual absolute path directly to `execute`.
+With `local_shell`, file tools accept absolute paths inside `environment.workspace` as aliases for workspace files. For example, with workspace `/app`, both file-tool paths `/app/report.txt` and `/report.txt` refer to `/app/report.txt` on disk. Shell commands use host paths and start in the workspace, so `cat report.txt` and `cat /app/report.txt` read that file. File-tool traversal and symlink-escape checks remain enabled. Paths outside the workspace retain the existing virtual-root interpretation; they do not grant access to host files.
 
 Python middleware, `FilesystemPermission` objects, Python tool objects, and
 precompiled `runnable` subagents are not exposed through `harness.settings`.

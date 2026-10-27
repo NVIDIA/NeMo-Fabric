@@ -269,6 +269,29 @@ def build_chat_model(
     return ChatOpenAI(**_supported_kwargs(ChatOpenAI, kwargs)), model_name, base_url
 
 
+def _local_shell_backend(**kwargs: Any) -> Any:
+    from deepagents.backends import LocalShellBackend
+
+    workspace = Path(kwargs["root_dir"]).absolute()
+
+    class WorkspaceLocalShellBackend(LocalShellBackend):
+        """Accept the shell's workspace paths without weakening virtual file checks."""
+
+        def _resolve_path(self, key: str) -> Path:
+            path = Path(key)
+            if path.is_absolute():
+                for root in (workspace, self.cwd):
+                    try:
+                        relative = path.relative_to(root)
+                    except ValueError:
+                        continue
+                    # Native resolution still rejects traversal and symlink escapes.
+                    return super()._resolve_path("/" + relative.as_posix())
+            return super()._resolve_path(key)
+
+    return WorkspaceLocalShellBackend(**kwargs)
+
+
 def resolve_backend(
     runtime_context: RuntimeContext,
     base_dir: str,
@@ -290,9 +313,7 @@ def resolve_backend(
         root = Path(base_dir) / root
 
     if backend_config is not None:
-        from deepagents.backends import LocalShellBackend
-
-        return LocalShellBackend(
+        return _local_shell_backend(
             root_dir=str(root),
             virtual_mode=True,
             env=dict(runtime_context.environment.env),
