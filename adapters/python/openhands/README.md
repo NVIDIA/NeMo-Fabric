@@ -124,3 +124,11 @@ Each invocation returns only the final response and usage for that turn. `stop`
 closes the conversation and removes the adapter-owned temporary profile state.
 Create a new runtime to change the model, workspace, tools, MCP servers, or
 skills.
+
+## Runtime Health
+
+The adapter advertises `live` and `active` checks qualified against OpenHands SDK 1.50.0. `live` reads the owned `LocalConversation` native closure flags. `active` also requires the native lazy-initialization flag to confirm that the conversation's request interface has initialized. Before the first invocation initializes the conversation, `active` returns `unknown/capabilities_unverified`. Checks do not initialize the conversation.
+
+A running native `arun()` task reports `busy` and remains healthy. Native closure returns `failed/session_closed`; missing native lifecycle fields return `unknown/capabilities_unverified`. Checks use no conversation lock and do not submit messages, call a model, initialize tools or MCP, or alter conversation state. The shared host applies the caller's remaining deadline and invalidates observations when ownership changes. Health timeouts do not cancel an invocation.
+
+`ready` remains unsupported because no qualified native read-only readiness response exists. Passing `active` does not establish model access, credential validity, or tool connectivity.

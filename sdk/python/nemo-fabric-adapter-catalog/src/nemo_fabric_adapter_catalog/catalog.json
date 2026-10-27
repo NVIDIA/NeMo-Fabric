@@ -1906,6 +1906,12 @@
         "adapter_kind": "python",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -2001,7 +2007,7 @@
         "name": "nemo-fabric-adapters-openhands",
         "version": "0.6.0"
       },
-      "sha256": "062ef09ba5e82dfdf0b4374632a8b39b7ff975160b0c6f62e68d2f4ac6f0b59e",
+      "sha256": "27db3ba1954402b9983b0ef1f48f8bc77a87470598e1754aefb966a63ddd68a6",
       "source": "adapters/python/openhands/openhands.fabric-adapter.json"
     },
     "nvidia.fabric.pi": {
