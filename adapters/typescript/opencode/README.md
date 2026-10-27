@@ -121,3 +121,5 @@ returns no patch artifact.
 OpenCode supports `live`, `active`, `ready` through `Fabric.check()`. Each level calls the owned embedded SDK `sessions.get({ sessionID })` and validates the exact native session identity and absence of an archive timestamp. This read-only session response qualifies liveness, access to the initialized session interface, and narrow readiness. Adapter closure and ownership guards reject closed or replaced sessions. Native session data is discarded.
 
 Checks remain independent of an invocation. A busy invocation is healthy. Checks use the caller deadline and never cancel an invocation, stop the runtime, or repair a failure. Health does not establish valid model credentials, provider access, MCP connectivity, or successful model output. At most one native request remains outstanding. A check returns `unknown/probe_timeout` while an earlier native request remains pending; later checks do not reuse a delayed reply. Reports contain only the generic health contract fields.
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
