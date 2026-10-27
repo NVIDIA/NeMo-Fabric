@@ -282,5 +282,8 @@ test("health uses the owned ACP child while the prompt remains blocked", { timeo
   const { pid } = JSON.parse(await readFile(input.runtimeContext.environment.env.TEST_STRANDS_STATE, "utf8"));
   process.kill(pid, "SIGTERM");
   await rejection;
-  assert.equal((await runtime.check("live")).reason_code, "observation_changed");
+  await runtime.stop();
+  const stopped = await runtime.check("live");
+  assert.equal(stopped.outcome, "unknown");
+  assert.equal(stopped.reason_code, "runtime_unavailable");
 });
