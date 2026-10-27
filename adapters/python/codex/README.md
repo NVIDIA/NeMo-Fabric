@@ -93,6 +93,8 @@ Each check uses the caller's deadline. A pending native health request remains t
 
 Run the credential-free native qualification with `uv run --no-sync pytest tests/e2e/test_codex_checks.py -q`. The tests use the SDK-pinned app-server and a local mock provider before, during, and after an invocation.
 
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+
 ## Configuration
 
 Use normalized `FabricConfig` fields for portable configuration:
