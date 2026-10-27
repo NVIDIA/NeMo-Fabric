@@ -20,6 +20,8 @@ This adapter runs Hermes Agent through its Python SDK.
 The adapter qualifies Hermes' read-only diagnostic response as the MVP readiness
 check. Health checks preserve conversation state and respond during an invocation.
 
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+
 ## Install
 
 The adapter supports Python 3.11 through 3.14. The pinned upstream Hermes
