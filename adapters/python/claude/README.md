@@ -135,6 +135,9 @@ by the SDK and is not persisted as a NeMo Fabric artifact.
 The result's `usage` carries Claude Code's `input_tokens`, `output_tokens`, and
 reported `cost_usd`. Claude Code counts tokens for its main agent loop only: its
 usage leaves out Task subagent, sidechain, and auxiliary model calls.
+If Claude Code handles an injected turn during a Fabric invocation, the adapter
+waits for the caller's result. It leaves the invocation's complete token counts
+and cost unknown because it cannot prove that the totals exclude the injected work.
 
 Claude Code's `input_tokens` excludes cache reads and cache writes, so the
 adapter also returns the `nemo_fabric.detailed_token_usage.v1` usage extension,
