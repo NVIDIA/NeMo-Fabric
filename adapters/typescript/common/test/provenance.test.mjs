@@ -31,7 +31,7 @@ test("bounded text matches core's string length rule", async () => {
 });
 
 test("each TypeScript adapter reads its own package version", async () => {
-  for (const adapter of ["cline", "droid", "kilo", "kiro", "opencode", "pi", "qwen"]) {
+  for (const adapter of ["cline", "droid", "kilo", "kiro", "opencode", "pi", "qwen", "strands"]) {
     const packageJson = new URL(`../../${adapter}/package.json`, import.meta.url);
     const {version} = JSON.parse(await readFile(packageJson, "utf8"));
     assert.deepEqual(packageVersionFact(packageJson), {
@@ -74,6 +74,24 @@ test("the wrapper adds the versions report and keeps the result", async () => {
   } finally {
     // Retain this uniquely named temporary directory for test diagnostics.
   }
+});
+
+test("the wrapper preserves runtime health checks", async () => {
+  const inner = {
+    levels: [],
+    async start() {},
+    async invoke() { return {status: "succeeded", output: "done"}; },
+    async stop() {},
+    async check(level) {
+      this.levels.push(level);
+      return {outcome: "passed", checks: []};
+    },
+  };
+  const runtime = withPackageVersion(inner, new URL("../package.json", import.meta.url));
+
+  assert.equal(typeof runtime.check, "function");
+  assert.deepEqual(await runtime.check("ready"), {outcome: "passed", checks: []});
+  assert.deepEqual(inner.levels, ["ready"]);
 });
 
 test("a served-model override reaches only the role it names", () => {

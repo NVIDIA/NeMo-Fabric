@@ -10,9 +10,7 @@ from nemo_fabric import FabricConfigError, RunRequest, RuntimeStatus
 from nemo_fabric.runtime_server.protocol import ProtocolError
 
 
-@pytest.mark.parametrize(
-    "operation", ["check", "validate", "prepare", "configure", "serve"]
-)
+@pytest.mark.parametrize("operation", ["validate", "prepare", "configure", "serve"])
 async def test_non_runtime_commands_cannot_mutate_runtime(
     host, host_request, mock_fabric, operation
 ):
@@ -306,7 +304,9 @@ async def test_non_active_returned_runtime_is_owned_for_stop(
     assert response["result"] == {"runtime_id": "runtime-1"}
     assert host.runtimes["runtime-1"].runtime is mock_runtime
     assert (
-        await host.handle(host_request("stop", runtime_id=response["result"]["runtime_id"]))
+        await host.handle(
+            host_request("stop", runtime_id=response["result"]["runtime_id"])
+        )
     )["status"] == "succeeded"
     mock_runtime.stop.assert_awaited_once_with()
     assert host.runtimes["runtime-1"].runtime is None
@@ -406,14 +406,12 @@ async def test_stopped_runtime_records_are_bounded(
         mock_fabric.start_runtime.return_value = runtime
         started = await host.handle(host_request("start"))
         runtime_id = started["result"]["runtime_id"]
-        stopped = await host.handle(
-            host_request("stop", runtime_id=runtime_id)
-        )
+        stopped = await host.handle(host_request("stop", runtime_id=runtime_id))
         assert stopped["status"] == "succeeded"
 
     assert len(host.runtimes) == 128
     assert "runtime-0" not in host.runtimes
     assert "runtime-129" in host.runtimes
-    assert (
-        await host.handle(host_request("stop", runtime_id="runtime-129"))
-    )["status"] == "succeeded"
+    assert (await host.handle(host_request("stop", runtime_id="runtime-129")))[
+        "status"
+    ] == "succeeded"
