@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
+import gc
 import json
 import os
 import subprocess
 import sys
 import time
+import weakref
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -2286,6 +2288,23 @@ async def test_health_does_not_promote_invalid_evidence(codex_health, invalid):
     client.close.assert_not_awaited()
 
 
+@pytest.mark.parametrize("level", ["active", "ready"])
+async def test_health_reports_current_native_probe_cancellation(codex_health, level):
+    runtime, client, thread, _ = codex_health
+    thread.read.side_effect = asyncio.CancelledError
+
+    result = await runtime.check(level)
+
+    assert (result["outcome"], result["reason_code"], result["activity"]) == (
+        "unknown",
+        "probe_error",
+        "idle",
+    )
+    assert result["observed_at"] is not None
+    thread.read.assert_awaited_once_with(include_turns=False)
+    client.close.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     "change",
     [
@@ -2425,17 +2444,24 @@ async def test_health_timeout_consumes_late_native_errors_without_logging(codex_
         raise RuntimeError("private-native-health-detail")
 
     thread.read.side_effect = delayed_error
-    loop.set_exception_handler(lambda _loop, context: diagnostics.append(context))
+    loop.set_exception_handler(
+        lambda _loop, context: diagnostics.append(context["message"])
+    )
     try:
         with pytest.raises(TimeoutError):
             async with asyncio.timeout(0.03):
                 await runtime.check("ready")
         pending = runtime._health_task
         assert pending is not None and not pending.done()
+        pending_ref = weakref.ref(pending)
         release.set()
         await asyncio.wait({pending})
         await asyncio.sleep(0)
         assert not pending.cancelled()
+        runtime._health_task = None
+        pending = None
+        gc.collect()
+        assert pending_ref() is None
         assert diagnostics == []
         thread.read.assert_awaited_once()
     finally:

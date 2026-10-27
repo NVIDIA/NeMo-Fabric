@@ -1520,6 +1520,8 @@ class CodexRuntime:
                     lambda done: None if done.cancelled() else done.exception()
                 )
                 await asyncio.wait({task})
+                if task.cancelled():
+                    return observed("unknown", "probe_error")
                 response = task.result()
             except Exception:
                 return observed("unknown", "probe_error")
