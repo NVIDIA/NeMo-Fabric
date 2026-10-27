@@ -106,3 +106,5 @@ Run the native qualification test after installing the supported Cline SDK:
 ```bash
 node --test adapters/typescript/cline/test/native-health.mjs
 ```
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
