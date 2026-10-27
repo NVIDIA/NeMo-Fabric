@@ -10,9 +10,13 @@ import { isAbsolute, join, resolve } from "node:path";
 
 import { Agent, fetch as undiciFetch } from "undici";
 
-import type { AgentUsage } from "nemo-fabric-adapter-contract";
+import type {
+  AdapterCheckResult,
+  CheckLevel,
+  AgentUsage,
+} from "nemo-fabric-adapter-contract";
 import type { AdapterStartInput } from "nemo-fabric-adapters-common";
-import { LifecycleError } from "nemo-fabric-adapters-common";
+import { unobservedHealth, LifecycleError } from "nemo-fabric-adapters-common";
 
 import { selectMaxTurns, selectModel, selectSystemInstruction } from "./configuration.js";
 import type { KiloPromptOutcome, KiloSessionFactory, KiloSessionHandle } from "./runtime.js";
@@ -20,6 +24,7 @@ import type { KiloPromptOutcome, KiloSessionFactory, KiloSessionHandle } from ".
 interface KiloRequestOptions { throwOnError: true; signal?: AbortSignal }
 
 interface KiloClient {
+  global: { health(options: KiloRequestOptions): Promise<{data: unknown}> };
   app: {
     skills(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<{data: unknown}>;
   };
@@ -27,13 +32,14 @@ interface KiloClient {
     status(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<{data: unknown}>;
   };
   session: {
+    get(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<{data: unknown}>;
     create(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<{data: unknown}>;
     prompt(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<{data: unknown}>;
     abort(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<unknown>;
     delete(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<unknown>;
   };
 }
-interface KiloServer { url: string; close(): Promise<void> }
+interface KiloServer { url: string; isAlive(): boolean; close(): Promise<void> }
 type ClientFactory = (options: {baseUrl: string; directory: string; fetch: (request: Request) => Promise<Response>}) => KiloClient;
 type ServerFactory = (workspace: string, environment: NodeJS.ProcessEnv, executable: string) => Promise<KiloServer>;
 type SpawnFactory = typeof spawn;
@@ -326,7 +332,7 @@ export async function startKiloServer(workspace: string, environment: NodeJS.Pro
       if (match?.[1] === undefined || settled) return;
       settled = true;
       clearTimeout(timer);
-      resolveServer({url: match[1], close: () => closeChild(child)});
+      resolveServer({url: match[1], isAlive: () => child.pid !== undefined && !childExited(child), close: () => closeChild(child)});
     });
   });
 }
@@ -381,7 +387,93 @@ async function resolveKiloExecutable(): Promise<string> {
 
 class KiloSdkSessionHandle implements KiloSessionHandle {
   private stopped = false;
+  private healthPending = false;
   constructor(readonly id: string, private readonly workspace: string, private readonly model: ReturnType<typeof selectModel>, private readonly client: KiloClient, private readonly server: KiloServer, private readonly profile: string, private readonly promptTimeoutMs: number) {}
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    if (!["live", "active", "ready"].includes(level))
+      return {
+        ...unobservedHealth("unsupported_level"),
+        outcome: "unsupported",
+      };
+    if (this.stopped)
+      return {
+        ...unobservedHealth("session_closed"),
+        outcome: "failed",
+        activity: "stopped",
+      };
+    if (!this.server.isAlive())
+      return {
+        outcome: "failed",
+        reason_code: "agent_exited",
+        activity: "stopped",
+        source: "fabric.adapter.liveness",
+        observed_at: new Date().toISOString(),
+      };
+    if (level === "live")
+      return {
+        outcome: "passed",
+        reason_code: null,
+        activity: "unknown",
+        source: "fabric.adapter.liveness",
+        observed_at: new Date().toISOString(),
+      };
+    if (this.healthPending) return unobservedHealth("probe_timeout");
+    this.healthPending = true;
+    const signal = AbortSignal.timeout(3000);
+    try {
+      const options = {
+        throwOnError: true as const,
+        signal,
+      };
+      const response =
+        level === "active"
+          ? await this.client.session.get(
+              { sessionID: this.id, directory: this.workspace },
+              options,
+            )
+          : await this.client.global.health(options);
+      if (this.stopped || !this.server.isAlive())
+        return unobservedHealth("observation_changed");
+      if (!isRecord(response.data)) return unobservedHealth("probe_error");
+      if (level === "active" && response.data.id !== this.id)
+        return unobservedHealth("observation_changed");
+      if (
+        level === "ready" &&
+        (typeof response.data.healthy !== "boolean" ||
+          typeof response.data.version !== "string")
+      )
+        return unobservedHealth("probe_error");
+      if (level === "ready" && response.data.healthy !== true)
+        return {
+          outcome: "failed",
+          reason_code: "health_failed",
+          activity: "unknown",
+          source: "fabric.adapter.readiness",
+          observed_at: new Date().toISOString(),
+        };
+      return {
+        outcome: "passed",
+        reason_code: null,
+        activity: "unknown",
+        source:
+          level === "active"
+            ? "fabric.adapter.interface"
+            : "fabric.adapter.readiness",
+        observed_at: new Date().toISOString(),
+      };
+    } catch {
+      return unobservedHealth(
+        this.stopped || !this.server.isAlive()
+          ? "observation_changed"
+          : signal.aborted
+            ? "probe_timeout"
+            : "probe_error",
+      );
+    } finally {
+      this.healthPending = false;
+    }
+  }
+
   private async abortPrompt(): Promise<void> {
     try {
       await this.client.session.abort({sessionID: this.id, directory: this.workspace}, {throwOnError: true, signal: AbortSignal.timeout(STOP_TIMEOUT_MS)});

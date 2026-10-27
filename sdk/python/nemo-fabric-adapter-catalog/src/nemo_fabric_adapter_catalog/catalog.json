@@ -826,6 +826,13 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -917,7 +924,7 @@
         "name": "nemo-fabric-adapters-kilo",
         "version": "0.6.0"
       },
-      "sha256": "608aeacfa0cfa5ff7ccd28e3f66cadd53f82780bc882b8577e7e8687dfd3dd07",
+      "sha256": "a1777a88417be1f908cc065509dfda6cf966e1e0f897fcfdd13b74abc281a559",
       "source": "adapters/typescript/kilo/kilo.fabric-adapter.json"
     },
     "nvidia.fabric.kiro": {
