@@ -1980,6 +1980,11 @@ def test_descriptor_has_no_codex_binary_requirement():
         ).read_text(encoding="utf-8")
     )
 
+    assert descriptor["capabilities"]["metadata"]["health_checks"] == [
+        "live",
+        "active",
+        "ready",
+    ]
     assert descriptor["adapter_id"] == "nvidia.fabric.codex"
     assert descriptor["settings_schema"]["properties"]["reasoning_effort"]["enum"] == [
         effort.value for effort in adapter.ReasoningEffort
@@ -2133,3 +2138,275 @@ def test_native_reasoning_effort_rejected_before_startup(
     }
     prepare_relay.assert_not_called()
     assert mock_codex.instances == []
+
+
+@pytest.fixture(name="codex_health")
+async def codex_health_fixture(codex_payload, mock_codex):
+    from openai_codex.generated.v2_all import ThreadReadResponse
+
+    runtime = adapter.CodexRuntime()
+    await runtime.start(lifecycle_start_payload(codex_payload))
+    client, thread = runtime._client, runtime._thread
+    process = MagicMock(spec=subprocess.Popen)
+    process.poll.return_value = None
+    client._initialized = True
+    client._client._sync = SimpleNamespace(_proc=process)
+    thread._codex = client
+    thread.read = AsyncMock(
+        return_value=ThreadReadResponse.model_validate(
+            {
+                "thread": {
+                    "id": thread.id,
+                    "sessionId": thread.id,
+                    "cliVersion": "0.154.0",
+                    "createdAt": 1,
+                    "updatedAt": 1,
+                    "cwd": codex_payload["runtime_context"]["environment"]["workspace"],
+                    "ephemeral": False,
+                    "modelProvider": "openai",
+                    "preview": "",
+                    "source": "appServer",
+                    "status": {"type": "idle"},
+                    "turns": [],
+                }
+            }
+        )
+    )
+    try:
+        yield runtime, client, thread, process
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.parametrize("level", ["live", "active", "ready"])
+async def test_health_uses_native_evidence(codex_health, level):
+    from nemo_fabric_adapter_contract.models import AdapterCheckResult
+
+    runtime, client, thread, process = codex_health
+    result = await runtime.check(level)
+
+    AdapterCheckResult.from_mapping(result)
+    assert (result["outcome"], result["reason_code"], result["activity"]) == (
+        "passed",
+        None,
+        "idle",
+    )
+    assert (
+        result["source"]
+        == {
+            "live": "fabric.adapter.liveness",
+            "active": "fabric.adapter.interface",
+            "ready": "fabric.adapter.readiness",
+        }[level]
+    )
+    assert result["observed_at"] is not None
+    process.poll.assert_called()
+    if level == "live":
+        thread.read.assert_not_awaited()
+    else:
+        thread.read.assert_awaited_once_with(include_turns=False)
+    thread.turn.assert_not_awaited()
+    client.close.assert_not_awaited()
+
+
+@pytest.mark.parametrize("level", ["live", "active", "ready"])
+async def test_health_detects_owned_process_exit(codex_health, level):
+    runtime, _, thread, process = codex_health
+    process.poll.return_value = 1
+
+    result = await runtime.check(level)
+
+    assert (result["outcome"], result["reason_code"], result["activity"]) == (
+        "failed",
+        "agent_exited",
+        "stopped",
+    )
+    thread.read.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("status", "level", "outcome", "reason"),
+    [
+        ("notLoaded", "active", "failed", "session_closed"),
+        ("notLoaded", "ready", "failed", "session_closed"),
+        ("systemError", "active", "passed", None),
+        ("systemError", "ready", "failed", "health_failed"),
+        ("active", "ready", "passed", None),
+    ],
+)
+async def test_health_qualifies_native_thread_status(
+    codex_health, status, level, outcome, reason
+):
+    from openai_codex.generated.v2_all import ThreadStatus
+
+    runtime, _, thread, _ = codex_health
+    native = {"type": status}
+    if status == "active":
+        native["activeFlags"] = []
+    thread.read.return_value.thread.status = ThreadStatus.model_validate(native)
+
+    result = await runtime.check(level)
+
+    assert (result["outcome"], result["reason_code"]) == (outcome, reason)
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "missing_process",
+        "uninitialized",
+        "unusable",
+        "foreign_thread",
+        "wrong_id",
+        "malformed",
+        "probe_error",
+    ],
+)
+async def test_health_does_not_promote_invalid_evidence(codex_health, invalid):
+    runtime, client, thread, _ = codex_health
+    if invalid == "missing_process":
+        client._client._sync._proc = None
+    elif invalid == "uninitialized":
+        client._initialized = False
+    elif invalid == "unusable":
+        runtime._unusable = True
+    elif invalid == "foreign_thread":
+        thread._codex = object()
+    elif invalid == "wrong_id":
+        thread.read.return_value.thread.id = "other-thread"
+    elif invalid == "malformed":
+        thread.read.return_value = {"thread": {"status": {"type": "idle"}}}
+    else:
+        thread.read.side_effect = RuntimeError("credential-bearing native error")
+
+    result = await runtime.check("ready")
+
+    assert result["outcome"] != "passed"
+    assert "credential-bearing" not in json.dumps(result)
+    client.close.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "stop",
+        "client",
+        "process",
+        "thread",
+        "thread_id",
+        "unusable",
+        "initialized",
+        "thread_owner",
+        "config",
+        "runtime_id",
+    ],
+)
+async def test_health_invalidates_observation_when_ownership_changes(
+    codex_health, change
+):
+    runtime, client, thread, _ = codex_health
+    response = thread.read.return_value
+
+    async def read(**kwargs):
+        if change == "stop":
+            await runtime.stop()
+        elif change == "client":
+            runtime._client = MagicMock(spec=AsyncCodex)
+        elif change == "process":
+            client._client._sync._proc = MagicMock(spec=subprocess.Popen)
+        elif change == "thread":
+            runtime._thread = MagicMock(spec=AsyncThread)
+        elif change == "thread_id":
+            thread.id = "replacement-id"
+        elif change == "initialized":
+            client._initialized = False
+        elif change == "thread_owner":
+            thread._codex = object()
+        elif change == "config":
+            runtime._config = object()
+        elif change == "runtime_id":
+            runtime._fabric_runtime_id = "replacement-runtime"
+        else:
+            runtime._unusable = True
+        return response
+
+    thread.read.side_effect = read
+    result = await runtime.check("ready")
+
+    assert (result["outcome"], result["reason_code"]) == (
+        "unknown",
+        "observation_changed",
+    )
+    if change == "client":
+        runtime._client = client
+
+
+async def test_health_native_request_is_bounded_and_recovers_after_timeouts(
+    codex_health,
+):
+    runtime, client, thread, _ = codex_health
+    entered, release = asyncio.Event(), asyncio.Event()
+    response = thread.read.return_value
+
+    async def read(**kwargs):
+        entered.set()
+        await release.wait()
+        return response
+
+    thread.read.side_effect = read
+    try:
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(0.02):
+                await runtime.check("ready")
+        await entered.wait()
+        for _ in range(5):
+            with pytest.raises(TimeoutError):
+                async with asyncio.timeout(0.01):
+                    await runtime.check("active")
+        assert thread.read.await_count == 1
+        assert not runtime._health_task.cancelled()
+        client.close.assert_not_awaited()
+    finally:
+        release.set()
+        await asyncio.sleep(0)
+    thread.read.side_effect = None
+    assert (await runtime.check("ready"))["outcome"] == "passed"
+    assert thread.read.await_count == 2
+
+
+async def test_health_passes_during_invocation(codex_health, codex_payload):
+    runtime, _, thread, _ = codex_health
+    entered, release = asyncio.Event(), asyncio.Event()
+    handle = thread.turn.return_value
+
+    async def run():
+        entered.set()
+        await release.wait()
+        return successful_result()
+
+    handle.run.side_effect = run
+    invocation = asyncio.create_task(
+        runtime.invoke(*lifecycle_invocation(codex_payload))
+    )
+    try:
+        await entered.wait()
+        for level in ("live", "active", "ready"):
+            async with asyncio.timeout(1):
+                result = await runtime.check(level)
+            assert (result["outcome"], result["activity"]) == ("passed", "busy")
+            assert not invocation.done()
+        handle.interrupt.assert_not_awaited()
+    finally:
+        release.set()
+        await invocation
+    assert (await runtime.check("ready"))["activity"] == "idle"
+
+
+async def test_health_unstarted_and_unsupported():
+    runtime = adapter.CodexRuntime()
+    assert (await runtime.check("ready"))["reason_code"] == "runtime_unavailable"
+    result = await runtime.check("other")
+    assert (result["outcome"], result["reason_code"]) == (
+        "unsupported",
+        "unsupported_level",
+    )

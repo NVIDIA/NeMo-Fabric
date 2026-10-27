@@ -354,6 +354,15 @@
       "descriptor": {
         "adapter_id": "nvidia.fabric.codex",
         "adapter_kind": "python",
+        "capabilities": {
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          }
+        },
         "config": {
           "accepts": [
             "models",
@@ -543,7 +552,7 @@
         "name": "nemo-fabric-adapters-codex",
         "version": "0.6.0"
       },
-      "sha256": "166582997e8e2ea564875f98a0bac7500c057819033a28c7cd400607c0d36a21",
+      "sha256": "ff6cd27c4334b8000551cec2180e7f64afe3f67def4d30a5287f692b05f3d0fe",
       "source": "adapters/python/codex/codex.fabric-adapter.json"
     },
     "nvidia.fabric.droid": {

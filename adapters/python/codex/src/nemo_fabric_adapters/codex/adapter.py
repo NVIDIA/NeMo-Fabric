@@ -18,6 +18,7 @@ import sys
 import tempfile
 import time
 from dataclasses import asdict, dataclass, is_dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,7 @@ from openai_codex.generated.v2_all import (
     McpServerOauthLoginCompletedNotification,
     McpServerOauthLoginResponse,
     SkillsExtraRootsSetResponse,
+    ThreadReadResponse,
 )
 from openai_codex.types import Personality, ReasoningEffort, TurnStatus
 
@@ -1340,6 +1342,9 @@ class CodexRuntime:
         self._mcp_authentication_checked = False
         self._unusable = False
         self._usage_totals: dict[str, int] = dict.fromkeys(USAGE_FIELDS, 0)
+        self._active_invoke_task: asyncio.Task | None = None
+        self._health_task: asyncio.Task | None = None
+        self._health_lock = asyncio.Lock()
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._client is not None:
@@ -1426,7 +1431,125 @@ class CodexRuntime:
         self._thread = thread
         self._usage_totals = dict.fromkeys(USAGE_FIELDS, 0)
 
+    async def check(self, level: str) -> dict[str, Any]:
+        """Observe the owned app-server process and its current native thread status."""
+        result = {
+            "outcome": "unknown",
+            "reason_code": "probe_error",
+            "activity": "unknown",
+            "source": "fabric.adapter",
+            "observed_at": None,
+        }
+        sources = {
+            "live": "fabric.adapter.liveness",
+            "active": "fabric.adapter.interface",
+            "ready": "fabric.adapter.readiness",
+        }
+        if level not in sources:
+            return {
+                **result,
+                "outcome": "unsupported",
+                "reason_code": "unsupported_level",
+            }
+        client, thread, context = self._client, self._thread, self._context
+        config, runtime_id = self._config, self._fabric_runtime_id
+        if client is None or thread is None or context is None or config is None:
+            return {**result, "reason_code": "runtime_unavailable"}
+        native = getattr(client, "_client", None)
+        transport = getattr(native, "_sync", None)
+        process = getattr(transport, "_proc", None)
+        if process is None:
+            return result
+        thread_id, unusable = thread.id, self._unusable
+        initialized, thread_owner = client._initialized, thread._codex
+
+        def observed(outcome: str, reason: str | None) -> dict[str, Any]:
+            if (
+                self._client is not client
+                or self._thread is not thread
+                or self._context is not context
+                or self._config is not config
+                or self._fabric_runtime_id != runtime_id
+                or client._client is not native
+                or native._sync is not transport
+                or transport._proc is not process
+                or thread.id != thread_id
+                or self._unusable != unusable
+                or client._initialized != initialized
+                or thread._codex is not thread_owner
+            ):
+                return {**result, "reason_code": "observation_changed"}
+            if process.poll() is not None:
+                outcome, reason = "failed", "agent_exited"
+            return {
+                **result,
+                "outcome": outcome,
+                "reason_code": reason,
+                "activity": "stopped"
+                if reason == "agent_exited"
+                else (
+                    "busy"
+                    if self._active_invoke_task is not None
+                    and not self._active_invoke_task.done()
+                    else "idle"
+                ),
+                "source": sources[level],
+                "observed_at": datetime.now(timezone.utc)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+            }
+
+        if process.poll() is not None or level == "live":
+            return observed("passed", None)
+        if client._initialized is not True or thread._codex is not client:
+            return observed("unknown", "probe_error")
+        if unusable:
+            return observed("failed", "endpoint_unavailable")
+        # The pinned SDK waits in a worker thread without a request timeout.
+        # Retain one request across caller cancellation and discard late replies.
+        async with self._health_lock:
+            try:
+                if self._health_task is not None and not self._health_task.done():
+                    await asyncio.shield(self._health_task)
+                current = observed("unknown", "probe_error")
+                if current["reason_code"] in {"observation_changed", "agent_exited"}:
+                    return current
+                task = asyncio.create_task(thread.read(include_turns=False))
+                self._health_task = task
+                task.add_done_callback(
+                    lambda done: None if done.cancelled() else done.exception()
+                )
+                response = await asyncio.shield(task)
+            except Exception:
+                return observed("unknown", "probe_error")
+        if (
+            not isinstance(response, ThreadReadResponse)
+            or response.thread.id != thread_id
+        ):
+            return observed("unknown", "probe_error")
+        status = response.thread.status.root.type
+        if status == "notLoaded":
+            return observed("failed", "session_closed")
+        if status not in {"idle", "active", "systemError"}:
+            return observed("unknown", "probe_error")
+        if level == "ready" and status == "systemError":
+            return observed("failed", "health_failed")
+        return observed("passed", None)
+
     async def invoke(
+        self,
+        request: AgentRunRequest,
+        runtime_context: RuntimeContext,
+    ) -> AgentRunResult:
+        invocation = asyncio.current_task()
+        self._active_invoke_task = invocation
+        try:
+            return await self._invoke(request, runtime_context)
+        finally:
+            if self._active_invoke_task is invocation:
+                self._active_invoke_task = None
+
+    async def _invoke(
         self,
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
