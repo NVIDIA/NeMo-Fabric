@@ -122,3 +122,5 @@ read-only probe for prompt acceptance or native readiness. A busy invocation
 can remain live. Checks do not send prompts, validate model credentials, or
 change tool policy. At most one uncancellable native health request remains
 outstanding after a caller timeout.
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
