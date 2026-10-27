@@ -147,7 +147,10 @@ async def test_codex_native_evidence_before_prompt_and_after_process_exit(
             AdapterCheckResult.from_mapping(result)
             assert (result["outcome"], result["activity"]) == ("passed", "idle")
         after = (await thread.read()).thread
-        assert before.model_dump() == after.model_dump()
+        timestamps = {"created_at", "updated_at", "recency_at"}
+        assert before.model_dump(exclude=timestamps) == after.model_dump(
+            exclude=timestamps
+        )
         assert before.turns == []
         assert requests == []
         process = runtime._client._client._sync._proc
