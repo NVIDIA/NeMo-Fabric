@@ -23,6 +23,8 @@ The adapter qualifies LangGraph's `aget_state()` as the readiness response.
 Checkpoint tables are initialized during startup. Health checks preserve the
 thread and checkpoint contents and respond during an invocation.
 
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+
 ## Install
 
 The following table shows which components each installation provides:
