@@ -62,6 +62,7 @@ def test_invalid_observation_is_rejected(patch):
         {"software_environments": [], "extra": True},
         "x" * 70000,
     ],
+    ids=["missing", "empty", "malformed-inventory", "extra-field", "oversized-report"],
 )
 def test_receiving_optional_malformed_evidence_preserves_explicit_gap(value):
     gap = ExecutionEvidence.receive(value, "guest_sdk")
