@@ -1,10 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import asyncio
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import types
 import typing
@@ -12,6 +14,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 import requests
 
 CUR_DIR = Path(__file__).parent.resolve()
@@ -219,3 +222,36 @@ def mock_nvidia_api_key_fixture() -> str:
     nak = "test123"
     os.environ["NVIDIA_API_KEY"] = nak
     return nak
+
+
+@pytest_asyncio.fixture(name="server_sdk_bridge", loop_scope="function")
+async def server_sdk_bridge_fixture(tmp_path):
+    if sys.platform == "win32":
+        yield None, None
+        return
+    from nemo_fabric.runtime_server.state import RuntimeServer
+    from nemo_fabric.runtime_server import transport
+
+    with tempfile.TemporaryDirectory(prefix="sdk-health-", dir="/tmp") as directory:
+        socket_path = Path(directory) / "fabric.sock"
+        provider = tmp_path / "check-provider"
+        fixture = CUR_DIR / "fixtures/runtime_check_provider.py"
+        provider.write_text(f"#!{sys.executable}\n" + fixture.read_text())
+        provider.chmod(0o700)
+        log = tmp_path / "check-commands.jsonl"
+        os.environ["NEMO_FABRIC_OPEN_SHELL_PROVIDER"] = str(provider)
+        os.environ["FABRIC_HOST_SOCKET"] = str(socket_path)
+        os.environ["FABRIC_CHECK_COMMAND_LOG"] = str(log)
+        host = RuntimeServer(directory=Path(directory))
+        ready, stop = asyncio.Event(), asyncio.Event()
+        serving = asyncio.create_task(
+            transport.serve(
+                host, socket_path=socket_path, ready_event=ready, stop_event=stop
+            )
+        )
+        await asyncio.wait_for(ready.wait(), 5)
+        try:
+            yield host, log
+        finally:
+            stop.set()
+            await asyncio.wait_for(serving, 5)
