@@ -16,6 +16,7 @@ import subprocess
 from dataclasses import asdict
 from dataclasses import dataclass
 from dataclasses import is_dataclass
+from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import HookMatcher
 from claude_agent_sdk._errors import MessageParseError
+from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
 from claude_agent_sdk.types import EffortLevel
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -44,6 +46,7 @@ from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
+from nemo_fabric_adapters.common import health as health_transport
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import relay_artifacts
 from nemo_fabric_adapters.common import relay_gateway
@@ -1076,6 +1079,107 @@ class ClaudeRuntime:
         self._gateway_process: subprocess.Popen[Any] | None = None
         self._mcp_config_path: Path | None = None
         self._unusable = False
+        self._health_lock = asyncio.Lock()
+        self._health_task: asyncio.Task | None = None
+        self._active_invoke_task: asyncio.Task | None = None
+
+    async def check(self, level: str) -> dict[str, Any]:
+        """Observe the owned Claude CLI and its read-only MCP status interface."""
+        unknown = health_transport.unobserved_health
+        sources = {
+            "live": "fabric.adapter.liveness",
+            "active": "fabric.adapter.interface",
+            "ready": "fabric.adapter.readiness",
+        }
+        if level not in sources:
+            return {**unknown("unsupported_level"), "outcome": "unsupported"}
+        client, config = self._client, self._agent_config
+        transport = getattr(client, "_transport", None)
+        # The pinned SDK owns this process object for the connected CLI.
+        process = (
+            transport._process
+            if isinstance(transport, SubprocessCLITransport)
+            else None
+        )
+        if client is None or config is None or process is None:
+            return unknown("runtime_unavailable")
+
+        def observed(outcome: str, reason: str | None) -> dict[str, Any]:
+            if (
+                self._client is not client
+                or self._agent_config is not config
+                or client._transport is not transport
+                or transport._process is not process
+            ):
+                return unknown("observation_changed")
+            if process.returncode is not None:
+                outcome, reason = "failed", "agent_exited"
+            elif level != "live" and (self._unusable or not transport.is_ready()):
+                outcome, reason = "failed", "endpoint_unavailable"
+            return {
+                "outcome": outcome,
+                "reason_code": reason,
+                "activity": "stopped"
+                if reason == "agent_exited"
+                else "busy"
+                if self._active_invoke_task is not None
+                and not self._active_invoke_task.done()
+                else "idle",
+                "source": sources[level],
+                "observed_at": datetime.now(timezone.utc)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+            }
+
+        if process.returncode is not None or level == "live":
+            return observed("passed", None)
+        if self._unusable or not transport.is_ready():
+            return observed("failed", "endpoint_unavailable")
+
+        try:
+            async with self._health_lock:
+                # SDK 0.2.165 does not remove cancelled control requests. Keep
+                # at most one native request until its own bounded wait ends.
+                if self._health_task is not None:
+                    try:
+                        await asyncio.shield(self._health_task)
+                    except Exception:
+                        pass
+                snapshot = observed("passed", None)
+                if snapshot["outcome"] != "passed":
+                    return snapshot
+                task = asyncio.create_task(client.get_mcp_status())
+                self._health_task = task
+
+                def completed(task: asyncio.Task) -> None:
+                    if self._health_task is task:
+                        self._health_task = None
+                    if not task.cancelled():
+                        task.exception()
+
+                task.add_done_callback(completed)
+                response = await asyncio.shield(task)
+        except Exception:
+            return observed("unknown", "probe_error")
+
+        if not isinstance(response, dict) or not isinstance(
+            response.get("mcpServers"), list
+        ):
+            return observed("unknown", "probe_error")
+        names = set()
+        for server in response["mcpServers"]:
+            if (
+                not isinstance(server, dict)
+                or not isinstance(server.get("name"), str)
+                or not server["name"]
+                or server["name"] in names
+                or not isinstance(server.get("status"), str)
+                or server.get("status")
+                not in {"connected", "pending", "failed", "needs-auth", "disabled"}
+            ):
+                return observed("unknown", "probe_error")
+            names.add(server["name"])
+        return observed("passed", None)
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._client is not None:
@@ -1121,6 +1225,17 @@ class ClaudeRuntime:
         self._cost_total = 0.0
 
     async def invoke(
+        self,
+        request: AgentRunRequest,
+        runtime_context: RuntimeContext,
+    ) -> AgentRunResult:
+        self._active_invoke_task = asyncio.current_task()
+        try:
+            return await self._invoke(request, runtime_context)
+        finally:
+            self._active_invoke_task = None
+
+    async def _invoke(
         self,
         request: AgentRunRequest,
         runtime_context: RuntimeContext,

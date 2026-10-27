@@ -284,6 +284,17 @@ The runtime must remain on the same local host for its lifetime. A persisted
 NeMo Fabric-to-Claude correlation record is not an attach token and cannot recover a
 stopped or crashed local host.
 
+## Health Checks
+
+Runtime checks support three cumulative levels, including during an invocation:
+
+| Level | Native evidence |
+| --- | --- |
+| `live` | The owned Claude Code subprocess has not exited. |
+| `active` | The connected CLI returns a current, valid `get_mcp_status()` response. |
+| `ready` | A current, valid status response from the initialized CLI serves as a qualified equivalent of a native health response. |
+
+Active and ready use the same native status probe for this MVP. The health result describes initialized CLI responsiveness; MCP connection states remain native configuration diagnostics.
 
 ## Testing
 

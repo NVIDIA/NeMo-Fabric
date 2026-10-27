@@ -126,5 +126,8 @@
         "integration_modes": ["hooks", "gateway"]
       }
     }
+  },
+  "capabilities": {
+    "metadata": {"health_checks": ["live", "active", "ready"]}
   }
 }

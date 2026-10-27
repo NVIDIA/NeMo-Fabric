@@ -290,6 +290,7 @@ def test_claude_descriptor_is_narrow_and_versioned():
                 }
             }
         },
+        "capabilities": {"metadata": {"health_checks": ["live", "active", "ready"]}},
     }
 
 

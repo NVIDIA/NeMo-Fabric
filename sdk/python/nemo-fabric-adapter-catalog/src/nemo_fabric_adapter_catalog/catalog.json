@@ -4,6 +4,15 @@
       "descriptor": {
         "adapter_id": "nvidia.fabric.claude",
         "adapter_kind": "python",
+        "capabilities": {
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          }
+        },
         "config": {
           "accepts": [
             "models",
@@ -207,7 +216,7 @@
         "name": "nemo-fabric-adapters-claude",
         "version": "0.6.0"
       },
-      "sha256": "34e134aefba81971e1f19341f2f71418f464d01fbb2474a5133063f1d9a93a2e",
+      "sha256": "0de6bc6d0206f15c6b678c44ac9b485fe8ff0a7aee3e8e1a403dc74441f4e5aa",
       "source": "adapters/python/claude/claude.fabric-adapter.json"
     },
     "nvidia.fabric.cline": {
