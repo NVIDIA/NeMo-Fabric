@@ -476,7 +476,7 @@
       "type": "object"
     },
     "FabricFacts": {
-      "description": "NeMo Fabric core facts.",
+      "description": "NVIDIA NeMo Fabric core facts.",
       "properties": {
         "core_version": {
           "$ref": "#/$defs/Fact_for_string",
@@ -494,7 +494,7 @@
       "type": "object"
     },
     "FactSource": {
-      "description": "How NeMo Fabric learned a fact.",
+      "description": "How NVIDIA NeMo Fabric learned a fact.",
       "oneOf": [
         {
           "const": "observed",
@@ -533,7 +533,7 @@
         },
         {
           "const": "unavailable",
-          "description": "NeMo Fabric holds no value and no evidence for the other states.",
+          "description": "NVIDIA NeMo Fabric holds no value and no evidence for the other states.",
           "type": "string"
         }
       ]
@@ -780,7 +780,7 @@
         },
         "source": {
           "$ref": "#/$defs/FactSource",
-          "description": "How NeMo Fabric learned the fact."
+          "description": "How NVIDIA NeMo Fabric learned the fact."
         },
         "value": {
           "description": "The fact itself: a string, a boolean or a list of strings.",
@@ -827,7 +827,7 @@
         },
         "source": {
           "$ref": "#/$defs/FactSource",
-          "description": "How NeMo Fabric learned the fact."
+          "description": "How NVIDIA NeMo Fabric learned the fact."
         },
         "value": {
           "description": "The fact itself: a string, a boolean or a list of strings.",
@@ -871,7 +871,7 @@
         },
         "source": {
           "$ref": "#/$defs/FactSource",
-          "description": "How NeMo Fabric learned the fact."
+          "description": "How NVIDIA NeMo Fabric learned the fact."
         },
         "value": {
           "description": "The fact itself: a string, a boolean or a list of strings.",
@@ -1184,7 +1184,7 @@
         },
         "source": {
           "$ref": "#/$defs/FactSource",
-          "description": "How NeMo Fabric learned the fact."
+          "description": "How NVIDIA NeMo Fabric learned the fact."
         },
         "state": {
           "$ref": "#/$defs/FactState",
@@ -2080,7 +2080,7 @@
         },
         "fabric": {
           "$ref": "#/$defs/FabricFacts",
-          "description": "NeMo Fabric core that ran the adapter."
+          "description": "NVIDIA NeMo Fabric core that ran the adapter."
         },
         "harness": {
           "$ref": "#/$defs/HarnessFacts",
