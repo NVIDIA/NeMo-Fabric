@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +16,9 @@ import { QwenSdkSessionFactory } from "../dist/qwen-sdk.js";
 const mcpServerPath = fileURLToPath(new URL("./fixtures/mcp-server.mjs", import.meta.url));
 
 test("bundled Qwen CLI keeps context across two SDK prompts", { timeout: 45_000 }, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "fabric-qwen-memory-"));
+  const startupLog = join(workspace, "startup.jsonl");
+  const startupProbe = fileURLToPath(new URL("./fixtures/record-startup.cjs", import.meta.url));
   const requests = [];
   const server = createServer(async (request, response) => {
     const chunks = [];
@@ -33,13 +37,18 @@ test("bundled Qwen CLI keeps context across two SDK prompts", { timeout: 45_000 
   try {
     const port = server.address().port;
     session = await new QwenSdkSessionFactory().create({
-      agentName: "qwen-test", baseDir: process.cwd(),
+      agentName: "qwen-test", baseDir: workspace,
       config: {
         models: { default: { provider: "openai", model: "fabric-test-model", api_key_env: "FABRIC_QWEN_TEST_KEY", base_url: `http://127.0.0.1:${port}/v1` } },
         instructions: { system: { content: "Fabric Qwen instruction probe", mode: "replace" } },
       },
       runtimeContext: {
-        artifacts: {}, environment: { control_location: "external_control", env: { FABRIC_QWEN_TEST_KEY: "local-test-key" }, environment_id: "env-1", ownership: "caller_owned", provider: "local", workspace: process.cwd() },
+        artifacts: {}, environment: { control_location: "external_control", env: {
+          FABRIC_QWEN_TEST_KEY: "local-test-key",
+          FABRIC_QWEN_STARTUP_LOG: startupLog,
+          NODE_OPTIONS: `--max-old-space-size=512 --require=${JSON.stringify(startupProbe)}`,
+          QWEN_CODE_NO_RELAUNCH: "",
+        }, environment_id: "env-1", ownership: "caller_owned", provider: "local", workspace },
         invocation_id: "start", request_id: "start", runtime_id: "runtime-1",
       },
     });
@@ -52,10 +61,17 @@ test("bundled Qwen CLI keeps context across two SDK prompts", { timeout: 45_000 
     assert.ok(requests.length >= 2);
     assert.match(String(requests[0].messages[0].content), /Fabric Qwen instruction probe/);
     assert.match(JSON.stringify(requests.at(-1).messages), /Remember token cobalt/);
+    const startups = (await readFile(startupLog, "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(startups.length, 1, "Qwen must not relaunch with a host-sized heap");
+    const expectedHeapLimit = Number(execFileSync(process.execPath, [
+      "--max-old-space-size=512", "-p", "require('node:v8').getHeapStatistics().heap_size_limit",
+    ], { env: { ...process.env, NODE_OPTIONS: "" }, encoding: "utf8" }));
+    assert.equal(startups[0].heap_size_limit, expectedHeapLimit, "Qwen must preserve the caller's Node heap limit");
   } finally {
     await session?.close();
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 

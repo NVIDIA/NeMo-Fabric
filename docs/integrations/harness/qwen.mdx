@@ -141,6 +141,11 @@ by NeMo Fabric. The adapter also disables extensions, ambient skills, and
 ambient MCP servers. Explicit NeMo Fabric `environment.env` values and the
 selected model credential are forwarded to the child process.
 
+The adapter disables Qwen's automatic CLI relaunch, which sizes the replacement
+process's heap from host RAM. The SDK-owned child retains Node.js's default
+memory sizing for its container and any explicit `NODE_OPTIONS` heap setting
+forwarded through `environment.env`.
+
 In SDK mode, set `harness.settings.permission_mode` to control Qwen Code's
 permission policy. The default value, `default`, denies tool calls that need
 interactive approval. Use `auto` for Qwen's classifier-mediated policy. Use

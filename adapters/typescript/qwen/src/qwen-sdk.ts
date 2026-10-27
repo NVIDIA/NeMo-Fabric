@@ -264,6 +264,9 @@ export class QwenSdkSessionFactory implements QwenSessionFactory {
             QWEN_CODE_SYSTEM_SETTINGS_PATH: systemSettings,
             QWEN_USAGE_STATISTICS_ENABLED: "0",
             QWEN_TELEMETRY_ENABLED: "0",
+            // The CLI otherwise relaunches with a heap sized from host RAM,
+            // overriding Node's container-aware limit and caller NODE_OPTIONS.
+            QWEN_CODE_NO_RELAUNCH: "true",
           },
           mcpServers,
           // Only explicitly normalized servers may load; this excludes ambient
