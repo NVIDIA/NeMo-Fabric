@@ -275,7 +275,9 @@ def fake_sdks_fixture(monkeypatch):
             return False
 
         saver_cm = MagicMock()
-        saver_cm.__aenter__ = AsyncMock(return_value=MagicMock())
+        saver = MagicMock()
+        saver.setup = AsyncMock()
+        saver_cm.__aenter__ = AsyncMock(return_value=saver)
         saver_cm.__aexit__ = AsyncMock(side_effect=aexit)
         return saver_cm
 

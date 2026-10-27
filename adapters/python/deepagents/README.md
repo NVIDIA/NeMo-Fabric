@@ -9,6 +9,20 @@ Runs a [LangChain Deep Agents](https://github.com/langchain-ai/deepagents) agent
 inside NeMo Fabric's persistent Python adapter host. One started runtime retains the
 compiled graph, checkpointer, and LangGraph thread across ordered invocations.
 
+## Runtime Health
+
+`Fabric.check()` supports `live`, `active`, and `ready` for a started runtime.
+
+| Level | Evidence |
+| --- | --- |
+| `live` | A fresh read from the owned checkpoint connection. |
+| `active` | The compiled graph exposes its message input and invocation interface. |
+| `ready` | A native state read succeeds for the owned LangGraph thread. |
+
+The adapter qualifies LangGraph's `aget_state()` as the readiness response.
+Checkpoint tables are initialized during startup. Health checks preserve the
+thread and checkpoint contents and respond during an invocation.
+
 ## Install
 
 The following table shows which components each installation provides:

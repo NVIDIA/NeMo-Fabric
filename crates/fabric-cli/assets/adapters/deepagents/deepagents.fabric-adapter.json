@@ -225,5 +225,8 @@
         "outputs": ["otel", "openinference"]
       }
     }
+  },
+  "capabilities": {
+    "metadata": {"health_checks": ["live", "active", "ready"]}
   }
 }
