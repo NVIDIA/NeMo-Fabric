@@ -28,6 +28,8 @@ tested NOOA packages together:
 pip install "nemo-fabric[nooa]"
 ```
 
+The `harness` and `full` extras include the MCP Python runtime used by LiteLLM’s NVIDIA backend, including standalone BenchAgent runs.
+
 For a split adapter environment, install
 `nemo-fabric-adapters-nooa[harness]`. Use the adapter package without an extra
 when the environment already manages compatible NOOA packages. The installed
