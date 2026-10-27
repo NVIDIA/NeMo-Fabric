@@ -53,16 +53,20 @@ Pi 1.0 requires Node.js 22.19.0 or newer.
 ### Install for Consumers
 
 Install the adapter in the project that owns the NeMo Fabric configuration,
-then install the compatible Pi SDK harness version selected by that project:
+then install the supported Pi SDK package set:
 
 ```bash
 npm install nemo-fabric-adapters-pi
-npm install @earendil-works/pi-ai@^1.0.0 @earendil-works/pi-coding-agent@^1.0.0 @earendil-works/pi-mcp@^1.0.0
+npm install @earendil-works/pi-ai@1.0.3 @earendil-works/pi-coding-agent@1.0.3 @earendil-works/pi-mcp@1.0.3 @earendil-works/pi-codemode@1.0.3
 ```
 
 The adapter declares the Pi packages as optional peers. Installing the adapter
 alone does not install a harness, and starting it without compatible Pi packages
 returns `pi_harness_unavailable`.
+
+The supported SDK packages are pinned together at 1.0.3. The coding-agent
+package otherwise permits newer `pi-codemode` versions with incompatible exports;
+installing all four packages keeps fresh installs on the tested combination.
 
 ### Install for Source Development
 
