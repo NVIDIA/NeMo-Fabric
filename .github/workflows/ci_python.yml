@@ -107,12 +107,15 @@ jobs:
           cache: npm
           cache-dependency-path: adapters/typescript/package-lock.json
 
-      - name: Build Pi adapter for Python health checks
+      - name: Build Pi and Kiro adapters for Python health checks
         run: |
-          just install-typescript-pi
+          just install-typescript-contract
+          npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-pi \
+            --workspace nemo-fabric-adapters-kiro --include-workspace-root --ignore-scripts
           npm run build --prefix adapter-contract/typescript
           npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
           npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-pi
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro
 
       - name: Run pytest
         run: |
@@ -176,12 +179,15 @@ jobs:
           cache: npm
           cache-dependency-path: adapters/typescript/package-lock.json
 
-      - name: Build Pi adapter for Python health checks
+      - name: Build Pi and Kiro adapters for Python health checks
         run: |
-          just install-typescript-pi
+          just install-typescript-contract
+          npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-pi \
+            --workspace nemo-fabric-adapters-kiro --include-workspace-root --ignore-scripts
           npm run build --prefix adapter-contract/typescript
           npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
           npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-pi
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro
 
       - name: Install Relay ${{ env.RELAY_VERSION }}
         run: uv pip install --python .venv/bin/python "nemo-relay==${RELAY_VERSION}" "nemo-relay-cli-bin==${RELAY_VERSION}"
