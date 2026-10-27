@@ -96,7 +96,11 @@ async def test_kiro_sdk_health_during_blocked_acp_invocation(tmp_path):
         )
     finally:
         gate.write_text("release")
-        if invocation is not None:
-            await asyncio.wait_for(invocation, 5)
-        await runtime.stop()
-        await fabric.release_environment(environment)
+        try:
+            if invocation is not None:
+                await asyncio.wait_for(invocation, 5)
+        finally:
+            try:
+                await runtime.stop()
+            finally:
+                await fabric.release_environment(environment)
