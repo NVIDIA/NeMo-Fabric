@@ -282,3 +282,38 @@ async def test_deepagents_health_does_not_inherit_a_previous_probes_failure(
     finally:
         release.set()
         await asyncio.gather(pending, observation, return_exceptions=True)
+
+
+async def test_health_timeout_consumes_late_native_errors_without_logging(
+    deepagents_health,
+):
+    runtime, agent, _, _ = deepagents_health
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+    diagnostics = []
+    release = asyncio.Event()
+    pending = None
+
+    async def delayed_error(*_args, **_kwargs):
+        await release.wait()
+        raise RuntimeError("private-native-health-detail")
+
+    agent.aget_state.side_effect = delayed_error
+    loop.set_exception_handler(lambda _loop, context: diagnostics.append(context))
+    try:
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(0.03):
+                await runtime.check("ready")
+        pending = runtime._health_task
+        assert pending is not None and not pending.done()
+        release.set()
+        await asyncio.wait({pending})
+        await asyncio.sleep(0)
+        assert not pending.cancelled()
+        assert diagnostics == []
+        agent.aget_state.assert_awaited_once()
+    finally:
+        release.set()
+        if pending is not None:
+            await asyncio.gather(pending, return_exceptions=True)
+        loop.set_exception_handler(previous_handler)

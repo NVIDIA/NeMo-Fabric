@@ -1067,7 +1067,8 @@ class DeepAgentsRuntime:
                     lambda done: None if done.cancelled() else done.exception()
                 )
                 self._health_task = task
-                evidence = await asyncio.shield(task)
+                await asyncio.wait({task})
+                evidence = task.result()
                 self._health_task = None
             if not unchanged():
                 return {**result, "reason_code": "observation_changed"}
