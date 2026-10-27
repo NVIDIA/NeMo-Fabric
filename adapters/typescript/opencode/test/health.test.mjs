@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { OpenCodeAdapterRuntime } from "../dist/runtime.js";
+import { LifecycleError } from "nemo-fabric-adapters-common";
 
 const context = { runtime_id: "runtime", invocation_id: "invoke", request_id: "request", artifacts: {}, environment: { environment_id: "env", provider: "local", ownership: "caller_owned", control_location: "external_control", env: {} } };
 const input = { agentName: "agent", baseDir: process.cwd(), config: {}, runtimeContext: context };
@@ -92,3 +93,45 @@ test("health activity belongs to the current session generation", async () => {
     await runtime.stop();
   }
 });
+
+for (const fails of [false, true]) {
+  test(`health remains busy until artifact writing ${fails ? "fails" : "completes"}`, async (t) => {
+    let finish;
+    let entered;
+    const blocked = new Promise((resolve) => { finish = resolve; });
+    const writing = new Promise((resolve) => { entered = resolve; });
+    const native = {
+      id: "session",
+      check: async () => passed(),
+      prompt: async () => ({ text: "answer", patch: "private patch" }),
+      stop: async () => { },
+    };
+    const runtime = new OpenCodeAdapterRuntime({ create: async () => native });
+    const artifacts = [{ kind: "patch", media_type: "text/x-diff", path: "session.patch" }];
+    t.mock.method(runtime, "writePatch", async () => {
+      entered();
+      await blocked;
+      if (fails) throw new LifecycleError("opencode_artifact_write_failed", "OpenCode could not write its session diff artifact");
+      return artifacts;
+    });
+    await runtime.start(input);
+    const invocation = runtime.invoke({ input: "private prompt" }, { ...context, artifacts: { root: "/artifacts" } });
+    try {
+      await writing;
+      assert.equal((await runtime.check("live")).activity, "busy");
+      finish();
+      if (fails) {
+        await assert.rejects(invocation, (error) => error.code === "opencode_artifact_write_failed");
+      } else {
+        const result = await invocation;
+        assert.equal(result.status, "succeeded");
+        assert.deepEqual(result.artifacts, artifacts);
+      }
+      assert.equal((await runtime.check("live")).activity, "idle");
+    } finally {
+      finish();
+      await Promise.allSettled([invocation]);
+      await runtime.stop();
+    }
+  });
+}

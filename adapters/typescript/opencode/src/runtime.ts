@@ -124,37 +124,39 @@ export class OpenCodeAdapterRuntime implements AdapterRuntime {
 
     const session = this.session;
     const generation = this.generation;
-    let outcome: OpenCodePromptOutcome;
     this.activeInvocations++;
     try {
-      outcome = await session.prompt(request.input);
-    } catch (error) {
-      await this.invalidate(session);
-      if (error instanceof LifecycleError) {
-        throw error;
+      let outcome: OpenCodePromptOutcome;
+      try {
+        outcome = await session.prompt(request.input);
+      } catch (error) {
+        await this.invalidate(session);
+        if (error instanceof LifecycleError) {
+          throw error;
+        }
+        throw new LifecycleError("opencode_session_failed", "OpenCode session communication failed", { retryable: true });
       }
-      throw new LifecycleError("opencode_session_failed", "OpenCode session communication failed", { retryable: true });
+      const artifacts = outcome.patch === undefined ? undefined : await this.writePatch(outcome.patch, context);
+      if (outcome.errorMessage !== undefined) {
+        return failed("opencode_model_error", outcome.errorMessage, outcome.usage, artifacts);
+      }
+      if (outcome.text === undefined || outcome.text.length === 0) {
+        return failed(
+          "opencode_no_assistant_response",
+          "OpenCode completed without a final assistant text response",
+          outcome.usage,
+          artifacts,
+        );
+      }
+      return {
+        status: "succeeded",
+        output: { response: outcome.text },
+        ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
+        ...(artifacts === undefined ? {} : { artifacts }),
+      };
     } finally {
       if (this.generation === generation) this.activeInvocations--;
     }
-    const artifacts = outcome.patch === undefined ? undefined : await this.writePatch(outcome.patch, context);
-    if (outcome.errorMessage !== undefined) {
-      return failed("opencode_model_error", outcome.errorMessage, outcome.usage, artifacts);
-    }
-    if (outcome.text === undefined || outcome.text.length === 0) {
-      return failed(
-        "opencode_no_assistant_response",
-        "OpenCode completed without a final assistant text response",
-        outcome.usage,
-        artifacts,
-      );
-    }
-    return {
-      status: "succeeded",
-      output: { response: outcome.text },
-      ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
-      ...(artifacts === undefined ? {} : { artifacts }),
-    };
   }
 
   async stop(): Promise<void> {
