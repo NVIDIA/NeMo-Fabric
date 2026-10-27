@@ -93,12 +93,14 @@ async def test_external_platform_payload_forwards_host_snapshot_to_real_guest_pr
         logs_dir=tmp_path / "host-logs",
         fabric_adapter_id="test.fabric.hermes_shim",
         fabric_adapter_descriptor=descriptor,
-        fabric_config_base_dir=str(hermes_shim_agent_dir),
+        fabric_config_base_dir="/fixture-agent",
         fabric_discovery_paths=["adapters"],
-        fabric_workspace=str(tmp_path),
         fabric_python=sys.executable,
     )
     payload = agent._build_spec("platform dispatch")
+    # Map guest paths to the local process used by this controlled transport.
+    payload.config_base_dir = hermes_shim_agent_dir
+    payload.config.environment.workspace = str(tmp_path)
     payload.config.runtime.artifacts = tmp_path / "guest-artifacts"
     payload.logs_dir = str(tmp_path / "guest-logs")
     forwarded = payload.config.provenance.reports.to_mapping()
