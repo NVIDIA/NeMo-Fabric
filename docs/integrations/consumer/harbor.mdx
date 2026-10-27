@@ -20,6 +20,10 @@ workflows:
 
 [Run NeMo Fabric agents with Harbor](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/harbor)
 
+## Model Provider
+
+Use `fabric_model_provider=openai` for an OpenAI-compatible endpoint whose served model ID starts with another vendor prefix. For example, combine it with `model_name="nvidia/nemotron-3-ultra-550b-a55b"` and `fabric_model_base_url` to select the OpenAI protocol while preserving the exact served model ID. Without an override, the provider is inferred from the model prefix as before. The override requires a model and remains subject to the selected adapter’s model schema.
+
 ## Resource Stats
 
 For an example of collecting resource stats inside a task container, follow the [SWE-bench walkthrough](../../../examples/harbor/swebench/README.md#run-deep-agents-with-resource-stats). The [Resource Usage and Stats](../../sdk/system-stats.mdx) guide explains the configuration model, collection scope, and metric interpretation.

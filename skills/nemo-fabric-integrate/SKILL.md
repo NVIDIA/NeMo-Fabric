@@ -424,6 +424,9 @@ Link to these canonical sources instead of duplicating them:
 - Platform and evaluation-harness integration:
   [examples/harbor](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/harbor) and
   [nemo_fabric.integrations.harbor](https://github.com/NVIDIA/NeMo-Fabric/tree/main/sdk/python/nemo-fabric-runtime/src/nemo_fabric/integrations/harbor).
+  For OpenAI-compatible endpoints with vendor-prefixed served model IDs, set
+  `fabric_model_provider=openai` and retain the exact Harbor model name. Omit
+  this option to keep provider inference from the model prefix.
   Harbor constructs a typed config from explicit agent inputs and transports it
   inside a private transient run specification at the task-process boundary.
   Follow the code-review example for consumer integration code; Harbor's

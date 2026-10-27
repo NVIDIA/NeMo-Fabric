@@ -328,6 +328,41 @@ def test_harbor_generated_config_names_the_model_credential(tmp_path: Path):
     assert model.base_url == "https://integrate.api.nvidia.com/v1"
 
 
+def test_harbor_model_provider_preserves_the_served_identifier(tmp_path):
+    agent = FabricAgent(
+        logs_dir=tmp_path,
+        fabric_adapter_id="nvidia.fabric.qwen",
+        fabric_model_provider="openai",
+        fabric_model_base_url="https://nim.example.test/v1",
+        fabric_model_api_key_env="MODEL_API_KEY",
+        model_name="nvidia/nemotron-3-ultra-550b-a55b",
+    )
+    model = agent._build_spec("fix it").config.models["default"]
+    assert model.provider == "openai"
+    assert model.model == "nvidia/nemotron-3-ultra-550b-a55b"
+    assert model.base_url == "https://nim.example.test/v1"
+    assert model.api_key_env == "MODEL_API_KEY"
+
+
+@pytest.mark.parametrize("provider", ["", " ", " openai", "openai "])
+def test_harbor_rejects_invalid_model_provider(tmp_path, provider):
+    with pytest.raises(ValueError, match="fabric_model_provider must be"):
+        FabricAgent(
+            logs_dir=tmp_path,
+            fabric_adapter_id="nvidia.fabric.qwen",
+            fabric_model_provider=provider,
+        )
+
+
+def test_harbor_model_provider_requires_a_model(tmp_path):
+    with pytest.raises(ValueError, match="model_provider_name requires model_name"):
+        FabricAgent(
+            logs_dir=tmp_path,
+            fabric_adapter_id="nvidia.fabric.qwen",
+            fabric_model_provider="openai",
+        )
+
+
 def test_harbor_model_credential_without_a_model_is_rejected(tmp_path: Path):
     with pytest.raises(ValueError, match="model_api_key_env requires model_name"):
         FabricAgent(

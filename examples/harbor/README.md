@@ -109,6 +109,7 @@ container boundary:
 | `--skill` | `skills.paths` |
 | `--mcp-config` | `mcp.servers` |
 | `--ak fabric_telemetry=relay` | `telemetry.providers.relay` and `relay.observability` |
+| `--ak fabric_model_provider=<provider>` | `models.default.provider` (overrides model-prefix inference) |
 | `--ak fabric_model_base_url=<url>` | `models.default.base_url` |
 | `--ak fabric_model_api_key_env=<name>` | `models.default.api_key_env` |
 | `--ak fabric_discovery_paths='["/task/adapter.fabric-adapter.json"]'` | `discovery.local_paths` for task-local descriptors such as Pi |
