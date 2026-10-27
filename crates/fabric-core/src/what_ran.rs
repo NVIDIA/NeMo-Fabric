@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! What executed for one invocation, and how NeMo Fabric learned each fact.
+//! What executed for one invocation, and how NVIDIA NeMo Fabric learned each fact.
 //!
 //! [`WhatRan`] rides on [`RunResult`](crate::RunResult). Each fact is a
 //! [`Fact`]: a value, or a [`FactState`] with a reason, and in both cases
@@ -59,7 +59,7 @@ pub const WHAT_RAN_SCHEMA: &str = "nemo.fabric.what_ran";
 /// Contract version written into every [`WhatRan`].
 pub const WHAT_RAN_VERSION: &str = "v1alpha1";
 
-/// How NeMo Fabric learned a fact.
+/// How NVIDIA NeMo Fabric learned a fact.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FactSource {
@@ -83,7 +83,7 @@ pub enum FactState {
     /// A source exists, but it failed, timed out, returned an invalid report
     /// or never returned.
     CollectionFailed,
-    /// NeMo Fabric holds no value and no evidence for the other states.
+    /// NVIDIA NeMo Fabric holds no value and no evidence for the other states.
     Unavailable,
 }
 
@@ -93,7 +93,7 @@ const CODE_PATTERN: &str = "^[a-z0-9_.:#+/-]{1,128}$";
 /// Who collected a fact and how.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct FactOrigin {
-    /// How NeMo Fabric learned the fact.
+    /// How NVIDIA NeMo Fabric learned the fact.
     pub source: FactSource,
     /// Component that collected the fact, such as `host_core`, `task_core`
     /// or `adapter`.
@@ -257,7 +257,7 @@ pub struct WhatRan {
     /// Contract version, `v1alpha1`.
     #[schemars(extend("const" = WHAT_RAN_VERSION))]
     pub version: String,
-    /// NeMo Fabric core that ran the adapter.
+    /// NVIDIA NeMo Fabric core that ran the adapter.
     #[serde(
         default,
         deserialize_with = "present",
@@ -337,7 +337,7 @@ where
     T::deserialize(deserializer).map(Some)
 }
 
-/// NeMo Fabric core facts.
+/// NVIDIA NeMo Fabric core facts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct FabricFacts {
     /// Version of the core that ran the adapter.

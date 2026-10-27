@@ -2,7 +2,7 @@
 title: "Module what_ran"
 sidebar-title: "what_ran"
 slug: "/reference/api/rust-library-reference/nemo-fabric-core/what_ran"
-description: "What executed for one invocation, and how NeMo Fabric learned each fact."
+description: "What executed for one invocation, and how NVIDIA NeMo Fabric learned each fact."
 position: 175
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -10,7 +10,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-What executed for one invocation, and how NeMo Fabric learned each fact.
+What executed for one invocation, and how NVIDIA NeMo Fabric learned each fact.
 
 [`WhatRan`](struct-whatran.mdx) rides on [`RunResult`](../runtime/struct-runresult.mdx). Each fact is a [`Fact`](enum-fact.mdx): a value, or a [`FactState`](enum-factstate.mdx) with a reason, and in both cases the [`FactSource`](enum-factsource.mdx), the component that collected it and the method it used. A few names fixed by the run plan stay plain strings: the adapter ID, each model role's provider, the environment provider, and each MCP server's origin and transport.
 
@@ -31,7 +31,7 @@ Compatibility rules for readers:
 
 - [AdapterFacts](struct-adapterfacts.mdx): Adapter facts.
 - [EnvironmentFacts](struct-environmentfacts.mdx): Environment facts.
-- [FabricFacts](struct-fabricfacts.mdx): NeMo Fabric core facts.
+- [FabricFacts](struct-fabricfacts.mdx): NVIDIA NeMo Fabric core facts.
 - [FactOrigin](struct-factorigin.mdx): Who collected a fact and how.
 - [HarnessFacts](struct-harnessfacts.mdx): Harness facts.
 - [KnownFact](struct-knownfact.mdx): A fact with a value.
@@ -46,7 +46,7 @@ Compatibility rules for readers:
 ## Enums
 
 - [Fact](enum-fact.mdx): One fact: a `value`, or a `state` with a `reason`, never both.
-- [FactSource](enum-factsource.mdx): How NeMo Fabric learned a fact.
+- [FactSource](enum-factsource.mdx): How NVIDIA NeMo Fabric learned a fact.
 - [FactState](enum-factstate.mdx): Why a fact has no value. A collector picks the first state that matches, in declaration order.
 
 ## Constants
