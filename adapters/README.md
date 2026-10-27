@@ -237,3 +237,5 @@ Shared lifecycle, Relay gateway, hook, and payload helpers are documented in
 the [adapter utilities guide](python/common/README.md).
 
 OpenCode runtime health supports `live`, `active`, `ready`. Refer to the [OpenCode health guide](typescript/opencode/README.md#runtime-health) for the qualified evidence and limits.
+
+Qwen Code runtime health supports `live`, `active`, `ready`. Refer to the [Qwen Code health guide](typescript/qwen/README.md#runtime-health) for the qualified evidence and limits.

@@ -2279,6 +2279,13 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -2380,7 +2387,7 @@
         "name": "nemo-fabric-adapters-qwen",
         "version": "0.6.0"
       },
-      "sha256": "ffd6ed76db07ac79e04edc6cdc183729b1e569cb67015503b93aea50f951b3d2",
+      "sha256": "bb260462f2f5322f22c5e3bb6d4fdcd4e3f23845b7ad8fdeec017928cf062fb3",
       "source": "adapters/typescript/qwen/qwen.fabric-adapter.json"
     },
     "nvidia.fabric.remote-agent": {
