@@ -821,6 +821,28 @@ def test_openclaw_gateway_endpoint_rejects_nonliteral_or_remote_http(endpoint: s
     assert caught.value.code == "openclaw_invalid_service_reference"
 
 
+def test_openclaw_service_connection_without_fchmod(tmp_path: Path, monkeypatch):
+    """Older Windows Python versions can persist an attached service safely."""
+    monkeypatch.delattr(adapter.os, "fchmod", raising=False)
+    connection_path = tmp_path / "private" / "service-connection.json"
+
+    adapter._write_service_connection(
+        connection_path,
+        gateway_url="http://127.0.0.1:18789",
+        token="TEST_ONLY_GATEWAY_TOKEN",
+        agent_id="default",
+    )
+
+    assert adapter._read_service_connection(connection_path) == (
+        "http://127.0.0.1:18789",
+        "TEST_ONLY_GATEWAY_TOKEN",
+        "default",
+    )
+    assert list(connection_path.parent.iterdir()) == [connection_path]
+    if os.name == "posix":
+        assert connection_path.stat().st_mode & 0o777 == 0o600
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="Requires POSIX file modes")
 def test_openclaw_service_connection_atomically_replaces_symlink(tmp_path: Path):
     private = tmp_path / "private"

@@ -23,6 +23,15 @@ repository = "https://github.com/NVIDIA/nemo-fabric"
 [workspace.dependencies]
 nemo-fabric-core = { path = "crates/fabric-core", version = "0.6.0" }
 
+# UTC health evidence and strict RFC 3339 timestamp validation.
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+# Authenticate local health messages with the endpoint secret.
+getrandom = "0.4.3"
+hmac = "0.12.1"
+# SHA-256 supports health authentication and `what_ran` digest suffixes.
+# The version is already locked through the OpenShell provider.
+sha2 = "0.10.9"
+
 clap = { version = "4", default-features = false, features = ["derive", "std", "help", "usage", "error-context", "suggestions"] }
 # Validate adapter-owned JSON Schema in Rust while preserving precise instance paths.
 # `schemars` only generates schemas, and delegating validation to Python would cross
@@ -36,10 +45,6 @@ libc = "0.2.186"
 schemars = { version = "1", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# SHA-256 for the `what_ran` string length rule, which ends a cut value with a
-# digest prefix. Std has no SHA-256, and `sha2` 0.10 is already in the lockfile
-# through the OpenShell provider.
-sha2 = { version = "0.10.9", default-features = false }
 thiserror = "2"
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_Threading"] }
 pyo3 = "0.28.2"

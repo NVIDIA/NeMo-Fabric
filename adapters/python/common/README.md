@@ -139,6 +139,13 @@ Relay 0.10.3 includes an
 Use that release to obtain the fix on 0.10 installations. NeMo Fabric continues to
 accept the supported `>=0.9,<0.11` CLI range.
 
+## Runtime Health
+
+An optional `AdapterRuntime.check(level)` method returns native health evidence
+through the shared `AdapterCheckResult` contract. The host serves checks through
+an authenticated loopback channel and applies the remaining request deadline.
+Refer to the [SDK health transport diagram](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#runtime-health) for lifecycle and health request routing.
+
 ## Relay Request Correlation
 
 In-process Relay SDK adapters that own their Agent scope can use
