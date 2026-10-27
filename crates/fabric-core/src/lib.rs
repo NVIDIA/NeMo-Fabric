@@ -11,6 +11,7 @@ pub mod config;
 pub mod doctor;
 mod environment;
 pub mod error;
+pub mod provenance;
 pub mod resource_snapshot;
 pub mod runtime;
 pub mod schema;
@@ -50,6 +51,7 @@ pub use config::{
 };
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
 pub use error::{FabricError, Result};
+pub use provenance::{ExecutionEvidence, ProvenanceConfig};
 pub use resource_snapshot::RuntimeResourceSnapshot;
 pub use runtime::{
     AdapterInvocation, ArtifactManifest, ArtifactRef, EnvironmentHandle, EnvironmentReference,

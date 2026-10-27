@@ -41,3 +41,5 @@ runtime or bindings.
 - `docs/python-sdk-contract.md`
 - `schemas/SCHEMA.md`
 - `justfile`
+
+- Software provenance uses `FabricConfig.provenance` and optional `RunResult.execution`. Keep Rust, dependency-free Python evidence dataclasses, SDK result mappings, generated TypeScript types and the execution-evidence schema aligned. Preserve strict adapter result shapes: lifecycle evidence is carried beside the outcome. Optional report failure must not replace invocation outcomes.

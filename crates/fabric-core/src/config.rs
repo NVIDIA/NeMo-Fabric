@@ -66,6 +66,9 @@ pub struct FabricConfig {
     /// Telemetry configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<TelemetryConfig>,
+    /// Selected software evidence. Omitted defaults on; enabled=false skips all collectors.
+    #[serde(default)]
+    pub provenance: crate::provenance::ProvenanceConfig,
     /// Invocation stats: omitted means all endpoint groups, explicit null disables.
     #[serde(default = "crate::system_stats::default_system_stats")]
     pub system_stats: Option<crate::system_stats::SystemStatsConfig>,

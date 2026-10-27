@@ -2182,6 +2182,308 @@ Return a detached, JSON-compatible mapping for serialization.
 ---
 
 
+## <kbd>class</kbd> `VersionObservation`
+
+Read-only version observation with source, origin and original capture time.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `status` | `str` |
+| `value` | `str \| None` |
+| `reason` | `str \| None` |
+| `source` | `str` |
+| `origin` | `str` |
+| `observed_at` | `str` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+
+
+
+
+
+---
+
+
+## <kbd>class</kbd> `SoftwareEntry`
+
+One selected software component.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `role` | `str` |
+| `kind` | `str` |
+| `name` | `str` |
+| `version` | `VersionObservation` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `SoftwareEnvironment`
+
+Observed installation context and selected coverage.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `context_ref` | `str` |
+| `participants` | `Sequence[str]` |
+| `status` | `str` |
+| `complete` | `bool` |
+| `reason` | `str \| None` |
+| `entries` | `Sequence[SoftwareEntry]` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+
+
+
+
+
+---
+
+
+## <kbd>class</kbd> `ExecutionEvidence`
+
+Selected software evidence; malformed reports become explicit coverage gaps.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `software_environments` | `Sequence[SoftwareEnvironment]` |
+| `infrastructure` | `Mapping[str, Any] \| None` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+
+
+
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+
+
+
+
+
+---
+
+
 ## <kbd>class</kbd> `RunResult`
 
 Normalized terminal result from one NeMo Fabric invocation.
@@ -2203,6 +2505,7 @@ The model is both attribute-accessible and mapping-compatible. A harness failure
  - <b>`output`</b>:  Object-shaped adapter output as ``RunOutput``; non-object values  are preserved as-is.
  - <b>`error`</b>:  Structured failure, or ``None`` on success.
  - <b>`usage`</b>:  Normalized invocation usage, or ``None`` when unavailable.
+ - <b>`execution`</b>:  Selected software inventories and conditional owner reports,  or ``None`` in older results and when collection is disabled.
  - <b>`resource_snapshot`</b>:  Runtime resource snapshot read once after the  adapter returned this result, or ``None`` when the runtime's  resources could not be observed.
  - <b>`system_stats`</b>:  Invocation duration and endpoint observations, or None  for older results or execution backends without collection.
  - <b>`artifacts`</b>:  Normalized artifact manifest.
@@ -2230,6 +2533,7 @@ The mapping exposes the following typed fields:
 | `error` | `ErrorInfo \| None` |
 | `usage` | `RunUsage \| None` |
 | `system_stats` | `InvocationSystemStats \| None` |
+| `execution` | `ExecutionEvidence \| None` |
 | `resource_snapshot` | `RuntimeResourceSnapshot \| None` |
 | `artifacts` | `ArtifactManifest` |
 | `telemetry` | `Sequence[TelemetryRef]` |

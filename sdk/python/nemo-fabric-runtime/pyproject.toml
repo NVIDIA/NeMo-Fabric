@@ -22,6 +22,7 @@ license-files = ["LICENSE"]
 readme = "pypi.md"
 requires-python = ">=3.11"
 dependencies = [
+  "nemo-fabric-adapter-contract == 0.6.0",
   "httpx~=0.28",
   "pydantic>=2.12,<3",
   "typing-extensions>=4.12",
@@ -49,4 +50,5 @@ module-name = "nemo_fabric._native"
 features = ["pyo3/extension-module"]
 
 [tool.uv.sources]
+nemo-fabric-adapter-contract = { path = "../../../adapter-contract/python", editable = true }
 nemo-fabric-collector = { path = "../nemo-fabric-collector", editable = true }

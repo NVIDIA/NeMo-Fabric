@@ -1,0 +1,38 @@
+{
+  "software_environments": [
+    {
+      "context_ref": "env-0",
+      "participants": [
+        "adapter"
+      ],
+      "status": "available",
+      "complete": true,
+      "entries": [
+        {
+          "role": "adapter",
+          "kind": "python_distribution",
+          "name": "nemo-fabric-adapters-example",
+          "version": {
+            "status": "available",
+            "value": "0.6.0-rc.1+buildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuildbuild",
+            "source": "adapter:importlib.metadata",
+            "origin": "observed",
+            "observed_at": "2026-10-27T12:00:00.123Z"
+          }
+        },
+        {
+          "role": "harness",
+          "kind": "component",
+          "name": "example",
+          "version": {
+            "status": "unsupported",
+            "reason": "no_existing_version_report",
+            "source": "adapter:startup",
+            "origin": "observed",
+            "observed_at": "2026-10-27T12:00:00.123Z"
+          }
+        }
+      ]
+    }
+  ]
+}

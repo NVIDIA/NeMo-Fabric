@@ -111,6 +111,8 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use doctor::doctor_plan;`
 - `pub use error::FabricError;`
 - `pub use error::Result;`
+- `pub use provenance::ExecutionEvidence;`
+- `pub use provenance::ProvenanceConfig;`
 - `pub use resource_snapshot::RuntimeResourceSnapshot;`
 - `pub use runtime::AdapterInvocation;`
 - `pub use runtime::ArtifactManifest;`
@@ -183,6 +185,7 @@ Core config and runtime contract for NeMo Fabric.
 - [config](config/index.mdx): NeMo Fabric config models and loading helpers.
 - [doctor](doctor/index.mdx): Plan diagnostics for NeMo Fabric.
 - [error](error/index.mdx): Error types for NeMo Fabric core.
+- [provenance](provenance/index.mdx): Selected software evidence. Optional evidence never controls invocation success.
 - [resource_snapshot](resource-snapshot/index.mdx): Resource snapshots of a runtime's local adapter host and its descendants.
 - [runtime](runtime/index.mdx): Runtime invocation helpers.
 - [schema](schema/index.mdx): JSON Schema generation for the public NeMo Fabric contract.

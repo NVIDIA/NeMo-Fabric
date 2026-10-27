@@ -155,6 +155,13 @@ pub struct RunResult {
     /// Normalized invocation usage when reported by the adapter target.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<RunUsage>,
+    /// Selected software evidence. Absent in older results and when collection is disabled.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::provenance::deserialize_optional_report"
+    )]
+    pub execution: Option<crate::provenance::ExecutionEvidence>,
     /// Resource snapshot of the runtime, read once after the adapter returned this
     /// result. Absent when the runtime's resources could not be observed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2371,6 +2378,7 @@ fn run_local_host_invocation_with_timeout(
         output,
         error,
         usage: agent_result.usage.as_ref().map(run_usage),
+        execution: None,
         resource_snapshot,
         system_stats,
         artifacts,
@@ -4625,6 +4633,7 @@ for line in sys.stdin:
             output: Value::Null,
             error: None,
             usage: None,
+            execution: None,
             resource_snapshot: None,
             system_stats: None,
             artifacts: ArtifactManifest::default(),

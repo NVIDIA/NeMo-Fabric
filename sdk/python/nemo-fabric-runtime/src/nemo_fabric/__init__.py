@@ -18,6 +18,7 @@ from nemo_fabric.errors import ResourceObservationUnsupportedError
 from nemo_fabric.models import EnvironmentConfig
 from nemo_fabric.models import DiscoveryConfig
 from nemo_fabric.models import FabricBaseModel
+from nemo_fabric.models import ProvenanceConfig
 from nemo_fabric.models import FabricConfig
 from nemo_fabric.models import HarnessConfig
 from nemo_fabric.models import InstructionConfig
@@ -74,6 +75,10 @@ from nemo_fabric.types import Measurement
 from nemo_fabric.types import SampleSummary
 from nemo_fabric.types import InvocationSystemStats
 from nemo_fabric.types import ResourceObservation
+from nemo_fabric.types import ExecutionEvidence
+from nemo_fabric.types import SoftwareEnvironment
+from nemo_fabric.types import SoftwareEntry
+from nemo_fabric.types import VersionObservation
 from nemo_fabric.types import RunResult
 from nemo_fabric.types import RunUsage
 from nemo_fabric.types import RuntimeCapabilities
@@ -143,6 +148,11 @@ __all__ = [
     "InvocationSystemStats",
     "ResourceObservation",
     "RunResult",
+    "ProvenanceConfig",
+    "ExecutionEvidence",
+    "SoftwareEnvironment",
+    "SoftwareEntry",
+    "VersionObservation",
     "RunUsage",
     "RuntimeCapabilities",
     "RuntimeHandle",

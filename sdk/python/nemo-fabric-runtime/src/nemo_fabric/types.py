@@ -2519,6 +2519,117 @@ class InvocationSystemStats(FabricMapping):
         return data
 
 
+class VersionObservation(FabricMapping):
+    """Read-only version observation with source, origin and original capture time."""
+
+    status: str
+    value: str | None
+    reason: str | None
+    source: str
+    origin: str
+    observed_at: str
+    _fields = frozenset(
+        {"status", "value", "reason", "source", "origin", "observed_at"}
+    )
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        from nemo_fabric_adapter_contract.evidence import VersionObservation as Observation
+
+        try:
+            data = Observation.from_mapping(data).to_mapping()
+        except ValueError as error:
+            raise FabricConfigError(str(error)) from None
+        data.setdefault("value", None)
+        data.setdefault("reason", None)
+        return data
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in super().to_mapping().items()
+            if value is not None
+        }
+
+
+class SoftwareEntry(FabricMapping):
+    """One selected software component."""
+
+    role: str
+    kind: str
+    name: str
+    version: VersionObservation
+    _fields = frozenset({"role", "kind", "name", "version"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        data["version"] = VersionObservation.from_mapping(data["version"])
+        return data
+
+
+class SoftwareEnvironment(FabricMapping):
+    """Observed installation context and selected coverage."""
+
+    context_ref: str
+    participants: Sequence[str]
+    status: str
+    complete: bool
+    reason: str | None
+    entries: Sequence[SoftwareEntry]
+    _fields = frozenset(
+        {"context_ref", "participants", "status", "complete", "reason", "entries"}
+    )
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        data["entries"] = tuple(
+            SoftwareEntry.from_mapping(item) for item in data["entries"]
+        )
+        data.setdefault("reason", None)
+        return data
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in super().to_mapping().items()
+            if value is not None
+        }
+
+
+class ExecutionEvidence(FabricMapping):
+    """Selected software evidence; malformed reports become explicit coverage gaps."""
+
+    software_environments: Sequence[SoftwareEnvironment]
+    infrastructure: Mapping[str, Any] | None
+    _fields = frozenset({"software_environments", "infrastructure"})
+    _json_fields = frozenset({"infrastructure"})
+
+    @classmethod
+    def from_mapping(cls, mapping: Mapping[str, Any]) -> Self:
+        from nemo_fabric_adapter_contract.evidence import ExecutionEvidence as Report
+
+        return cls(Report.receive(mapping, "reporter").to_mapping())
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        from nemo_fabric_adapter_contract.evidence import ExecutionEvidence as Report
+
+        data = Report.receive(data, "reporter").to_mapping()
+        data["software_environments"] = tuple(
+            SoftwareEnvironment.from_mapping(item)
+            for item in data["software_environments"]
+        )
+        data.setdefault("infrastructure", None)
+        return data
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in super().to_mapping().items()
+            if value is not None
+        }
+
+
 class RunResult(FabricMapping):
     """Normalized terminal result from one NeMo Fabric invocation.
 
@@ -2539,6 +2650,8 @@ class RunResult(FabricMapping):
             are preserved as-is.
         error: Structured failure, or ``None`` on success.
         usage: Normalized invocation usage, or ``None`` when unavailable.
+        execution: Selected software inventories and conditional owner reports,
+            or ``None`` in older results and when collection is disabled.
         resource_snapshot: Runtime resource snapshot read once after the
             adapter returned this result, or ``None`` when the runtime's
             resources could not be observed.
@@ -2562,6 +2675,7 @@ class RunResult(FabricMapping):
     error: ErrorInfo | None
     usage: RunUsage | None
     system_stats: InvocationSystemStats | None
+    execution: ExecutionEvidence | None
     resource_snapshot: RuntimeResourceSnapshot | None
     artifacts: ArtifactManifest
     telemetry: Sequence[TelemetryRef]
@@ -2582,6 +2696,7 @@ class RunResult(FabricMapping):
             "usage",
             "resource_snapshot",
             "system_stats",
+            "execution",
             "artifacts",
             "telemetry",
             "events",
@@ -2612,6 +2727,11 @@ class RunResult(FabricMapping):
             None
             if data.get("system_stats") is None
             else InvocationSystemStats.from_mapping(data["system_stats"])
+        )
+        data["execution"] = (
+            None
+            if data.get("execution") is None
+            else ExecutionEvidence.from_mapping(data["execution"])
         )
         data["resource_snapshot"] = (
             None

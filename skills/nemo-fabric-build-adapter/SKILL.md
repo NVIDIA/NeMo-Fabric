@@ -305,3 +305,7 @@ Complete these checks before handing off an adapter:
 
 Do not claim automated NeMo Fabric conformance until the published conformance
 suite exists and the exact adapter release passes it.
+
+### Selected Software Reports
+
+The dependency-free `nemo_fabric_adapter_contract.evidence` module defines `ExecutionEvidence` and its inventory/observation types. These are shared report types; the closed `AgentRunResult` shape is unchanged. A caller can supply an explicit owner report through `FabricConfig.provenance.reports`. Fabric's shared lifecycle hosts also collect selected adapter software at initialization when provenance is enabled. Missing or invalid optional evidence must not fail an invocation. Preserve original capture time and full versions; report only selected components and existing owner reports, without new network or executable probes.

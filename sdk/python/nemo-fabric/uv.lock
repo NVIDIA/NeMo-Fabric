@@ -2258,6 +2258,7 @@ name = "nemo-fabric-runtime"
 source = { editable = "../nemo-fabric-runtime" }
 dependencies = [
     { name = "httpx" },
+    { name = "nemo-fabric-adapter-contract" },
     { name = "pydantic" },
     { name = "typing-extensions" },
 ]
@@ -2270,6 +2271,7 @@ streaming = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = "~=0.28" },
+    { name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" },
     { name = "nemo-fabric-collector", marker = "extra == 'streaming'", editable = "../nemo-fabric-collector" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "typing-extensions", specifier = ">=4.12" },

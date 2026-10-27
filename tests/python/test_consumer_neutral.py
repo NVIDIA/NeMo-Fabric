@@ -33,6 +33,7 @@ SDK_ROOT = ROOT_DIR / "sdk" / "python" / "nemo-fabric-runtime" / "src" / "nemo_f
 PYPROJECT = ROOT_DIR / "sdk" / "python" / "nemo-fabric-runtime" / "pyproject.toml"
 ALLOWED = set(sys.stdlib_module_names) | {
     "nemo_fabric",
+    "nemo_fabric_adapter_contract",
     "httpx",
     "pydantic",
     "typing_extensions",
@@ -42,6 +43,7 @@ OPTIONAL_LAZY_IMPORTS = {
     "client.py": {"nemo_fabric_collector"},
 }
 EXPECTED_DEPENDENCIES = [
+    "nemo-fabric-adapter-contract == 0.6.0",
     "httpx~=0.28",
     "pydantic>=2.12,<3",
     "typing-extensions>=4.12",

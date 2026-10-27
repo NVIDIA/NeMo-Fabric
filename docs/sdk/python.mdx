@@ -1521,3 +1521,11 @@ backpressure. The consumer decides whether to wait, retry, scale out, or fail.
 
 ## Next Steps
 - Review the examples in the GitHub repo [`examples/`](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples).
+
+## Selected Software Evidence
+
+`RunResult.execution` optionally contains selected software inventories and existing infrastructure software reports. Each inventory has an opaque result-local `context_ref`, `participants`, availability, coverage, and component `entries`. Component roles belong in `entries[].role`. Equal versions do not establish a shared installation. Version observations retain the full value, observer/method in `source`, `origin`, and original UTC `observed_at`; missing values carry a status and reason. An unavailable version can still be represented in a complete selected inventory.
+
+`FabricConfig.provenance` defaults to `ProvenanceConfig(enabled=True)`. Set `provenance=ProvenanceConfig(enabled=False)` (JSON: `"provenance": {"enabled": false}`) before runtime initialization to skip collector work on both sides of dispatch. `provenance.reports` accepts a typed `nemo_fabric_adapter_contract.evidence.ExecutionEvidence` snapshot from the caller or environment owner. Supply it in the existing configuration dispatch; the guest collects its own snapshot. No callback or additional network service is involved. Reports are bounded to 16 contexts, 128 total entries and 64 KiB of compact UTF-8 JSON. Over-budget or malformed optional reports become explicit incomplete evidence without changing the invocation outcome.
+
+Old saved results may omit `execution`. A receiving boundary expecting guest/adapter evidence records missing reports explicitly. Compare participants, component kind/name, full versions, topology and coverage separately; exclude capture times, random context/invocation IDs and artifact roots. Unknown values do not establish equality. This API provides observations, not a dependency inventory, reproducibility guarantee or attestation. Inputs/configuration capture is a follow-up.

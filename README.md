@@ -64,6 +64,7 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 
 - [Quickstart](docs/getting-started/quickstart.mdx): Run a first agent through the Python SDK.
 - [Invocation system stats](docs/sdk/python.mdx#invocation-system-stats): Select per-invocation metric groups, sampled peaks, and cgroup conditions; disable collection independently of sampling.
+- [Selected software evidence](docs/sdk/python.mdx#selected-software-evidence): Inspect versions in optional `RunResult.execution` and control collection before initialization.
 - [Conversation telemetry](docs/sdk/python.mdx): Use `RunRequest.relay_session_root` to group Deep Agents and mini-SWE-agent turns under one NeMo Relay session.
 - [Installation](docs/getting-started/install.mdx): Install the runtime, adapters, harness dependencies, and telemetry components, and choose a deployment scenario.
 - [Adapter catalog](sdk/python/nemo-fabric-adapter-catalog/README.md): Inspect bundled adapter metadata on a host without installing harness SDKs.
@@ -84,3 +85,4 @@ Planned areas of development include:
 - **Sandbox execution:** Support additional sandbox providers, configurable access boundaries, provider-supported sudo, and judge-code isolation.
 - **Environment bootstate:** Capture files, configuration, dependencies, and supported image snapshots for restoration and branching evaluations.
 - **System statistics:** Correlate CPU, memory, elapsed time, available GPU usage, and available token/cost metrics with Fabric execution IDs; identify unavailable measurements.
+

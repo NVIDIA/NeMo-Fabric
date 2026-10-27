@@ -428,3 +428,7 @@ Link to these canonical sources instead of duplicating them:
   inside a private transient run specification at the task-process boundary.
   Follow the code-review example for consumer integration code; Harbor's
   transport representation is an internal process-boundary contract.
+
+### Software Evidence
+
+Inspect optional `RunResult.execution` for selected software inventories. Preserve full version values, status/reasons, source, origin and original `observed_at` when forwarding. Context refs are result-local; participants describe installation users. Use `FabricConfig.provenance=ProvenanceConfig(enabled=False)` before startup to disable collectors on host and guest. Explicit owner snapshots use typed `ProvenanceConfig.reports` through existing configuration dispatch; guests never inspect the caller installation. Old results can omit execution evidence. Unknown or incomplete reports are not proof of equal environments.

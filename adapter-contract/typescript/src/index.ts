@@ -51,3 +51,5 @@ export type CheckOutcome = AdapterCheckResult["outcome"];
 export type CheckSource = AdapterCheckResult["source"];
 /** Agent activity at observation time. */
 export type RuntimeActivity = AdapterCheckResult["activity"];
+
+export type * from "./generated/execution-evidence.js";

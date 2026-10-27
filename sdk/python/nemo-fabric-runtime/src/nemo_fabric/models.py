@@ -21,6 +21,8 @@ from typing import Any
 from typing import Literal
 from typing import Self
 
+from nemo_fabric_adapter_contract.evidence import ExecutionEvidence
+
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
@@ -1118,6 +1120,29 @@ class SystemStatsConfig(FabricBaseModel):
         return value
 
 
+class ProvenanceConfig(FabricBaseModel):
+    """Default-on software collection and explicitly forwarded owner reports.
+
+    Set enabled=False to prevent collector work in the caller and guest. Reports
+    are snapshots captured by their owner at initialization, not callbacks.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = True
+    reports: ExecutionEvidence | None = None
+
+    @field_validator("reports", mode="before")
+    @classmethod
+    def _report(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        from nemo_fabric.types import ExecutionEvidence as Snapshot
+
+        if isinstance(value, (ExecutionEvidence, Snapshot)):
+            value = value.to_mapping()
+        return ExecutionEvidence.receive(value, "reporter")
+
+
 class FabricConfig(FabricBaseModel):
     """SDK-facing typed NeMo Fabric agent configuration.
 
@@ -1138,6 +1163,7 @@ class FabricConfig(FabricBaseModel):
     instructions: InstructionsConfig | None = None
     mcp: McpConfig | None = None
     skills: SkillConfig | None = None
+    provenance: ProvenanceConfig = Field(default_factory=ProvenanceConfig)
     system_stats: SystemStatsConfig | None = Field(default_factory=SystemStatsConfig)
     telemetry: TelemetryConfig | None = None
     relay: RelayConfig | None = None

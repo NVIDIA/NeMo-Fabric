@@ -165,3 +165,5 @@ release. Public existence alone cannot verify trusted publishing. If the PR
 check reports HTTP 404, ask an authorized npm maintainer to bootstrap the exact
 manifest name, then rerun the check. Do not add CI write tokens or manually
 publish supported versions.
+
+- The Python runtime uses the version-matched, dependency-free `nemo-fabric-adapter-contract` package for typed software evidence and selected metadata helpers. Keep its exact-version dependency and editable development source aligned; this introduces no harness dependency.
