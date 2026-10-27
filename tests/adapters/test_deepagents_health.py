@@ -211,3 +211,74 @@ async def test_deepagents_health_detects_closure_during_read(deepagents_health, 
         else ("unknown", "observation_changed")
     )
     assert (result["outcome"], result["reason_code"]) == expected
+
+
+async def test_deepagents_health_distinguishes_cleanup_from_completed_stop(
+    deepagents_health, monkeypatch
+):
+    runtime, _, saver, connection = deepagents_health
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def close(_checkpointer):
+        entered.set()
+        await release.wait()
+
+    close_checkpointer = AsyncMock(side_effect=close)
+    monkeypatch.setattr(
+        "nemo_fabric_adapters.deepagents.adapter.close_checkpointer",
+        close_checkpointer,
+    )
+    stopping = asyncio.create_task(runtime.stop())
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        during = await runtime.check("live")
+        assert (during["outcome"], during["reason_code"]) == (
+            "unknown",
+            "observation_changed",
+        )
+        release.set()
+        await stopping
+        after = await runtime.check("live")
+        assert (after["outcome"], after["reason_code"]) == (
+            "unknown",
+            "runtime_unavailable",
+        )
+        close_checkpointer.assert_awaited_once_with(saver)
+        connection.execute_fetchall.assert_not_called()
+    finally:
+        release.set()
+        await asyncio.gather(stopping, return_exceptions=True)
+
+
+@pytest.mark.parametrize("completion", ["error", "cancelled"])
+async def test_deepagents_health_does_not_inherit_a_previous_probes_failure(
+    deepagents_health, completion
+):
+    runtime, agent, _, connection = deepagents_health
+    release = asyncio.Event()
+
+    async def blocked(_config):
+        await release.wait()
+        raise RuntimeError("private-native-detail")
+
+    agent.aget_state.side_effect = blocked
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.03):
+            await runtime.check("ready")
+    pending = runtime._health_task
+    assert pending is not None and not pending.done()
+    observation = asyncio.create_task(runtime.check("live"))
+    try:
+        await asyncio.sleep(0)
+        assert not observation.done()
+        if completion == "cancelled":
+            pending.cancel()
+        else:
+            release.set()
+        result = await asyncio.wait_for(observation, 1)
+        assert (result["outcome"], result["reason_code"]) == ("passed", None)
+        connection.execute_fetchall.assert_awaited_once_with("SELECT 1")
+        agent.aget_state.assert_awaited_once()
+    finally:
+        release.set()
+        await asyncio.gather(pending, observation, return_exceptions=True)

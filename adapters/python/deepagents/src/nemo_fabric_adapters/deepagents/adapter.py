@@ -1060,7 +1060,7 @@ class DeepAgentsRuntime:
             async with self._health_lock:
                 pending = self._health_task
                 if pending is not None and not pending.done():
-                    await asyncio.shield(pending)
+                    await asyncio.wait({pending})
                 # Keep one native read in flight when a caller's deadline expires.
                 task = asyncio.create_task(probe())
                 task.add_done_callback(
@@ -1122,6 +1122,7 @@ class DeepAgentsRuntime:
         self._started = False
         if checkpointer is not None:
             await close_checkpointer(checkpointer)
+        self._stopping = False
 
 
 def _apply_callbacks(
