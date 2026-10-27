@@ -31,7 +31,7 @@ test("bounded text matches core's string length rule", async () => {
 });
 
 test("each TypeScript adapter reads its own package version", async () => {
-  for (const adapter of ["cline", "droid", "kilo", "kiro", "opencode", "pi", "qwen"]) {
+  for (const adapter of ["cline", "droid", "kilo", "kiro", "opencode", "pi", "qwen", "strands"]) {
     const packageJson = new URL(`../../${adapter}/package.json`, import.meta.url);
     const {version} = JSON.parse(await readFile(packageJson, "utf8"));
     assert.deepEqual(packageVersionFact(packageJson), {

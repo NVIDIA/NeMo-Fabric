@@ -1384,10 +1384,7 @@ carry `source`, `collected_by`, and `method`:
 An adapter reports its facts through the result keys `nemo_fabric.versions.v1`
 (package version, harness name and version, and served models) and
 `nemo_fabric.mcp.v1` (MCP `runtime` blocks) when its descriptor declares them.
-Bundled adapters other than Strands report their package version. Strands
-declares the versions report key but does not emit a report. Its adapter package
-version, harness facts and served-model facts have state `unavailable` with
-reason `key_omitted`.
+Bundled adapters report their package version.
 
 The Claude Code, Codex, Hermes Agent, OpenClaw, Deep Agents, and mini-SWE-agent
 adapters also report their harness name and version. Other adapters that emit a
