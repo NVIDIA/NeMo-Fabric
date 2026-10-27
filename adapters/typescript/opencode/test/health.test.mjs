@@ -57,3 +57,38 @@ test("health sanitizes native errors without closing the session", async () => {
   assert.equal((await runtime.invoke({ input: "still usable" }, context)).status, "succeeded");
   await runtime.stop();
 });
+
+test("health activity belongs to the current session generation", async () => {
+  const finishes = new Map();
+  const native = {
+    id: "session",
+    check: async () => passed(),
+    prompt: async (text) => {
+      await new Promise((resolve) => finishes.set(text, resolve));
+      return { text: "answer" };
+    },
+    stop: async () => {},
+  };
+  const runtime = new OpenCodeAdapterRuntime({ create: async () => native });
+  await runtime.start(input);
+  const oldInvocation = runtime.invoke({ input: "old" }, context);
+  let newInvocation;
+  try {
+    assert.equal((await runtime.check("live")).activity, "busy");
+    await runtime.stop();
+    await runtime.start(input);
+    assert.equal((await runtime.check("live")).activity, "idle");
+    newInvocation = runtime.invoke({ input: "new" }, context);
+    assert.equal((await runtime.check("live")).activity, "busy");
+    finishes.get("old")();
+    assert.equal((await oldInvocation).status, "succeeded");
+    assert.equal((await runtime.check("live")).activity, "busy");
+    finishes.get("new")();
+    assert.equal((await newInvocation).status, "succeeded");
+    assert.equal((await runtime.check("live")).activity, "idle");
+  } finally {
+    for (const finish of finishes.values()) finish();
+    await Promise.allSettled([oldInvocation, newInvocation]);
+    await runtime.stop();
+  }
+});

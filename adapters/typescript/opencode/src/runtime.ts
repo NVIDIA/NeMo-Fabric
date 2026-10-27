@@ -65,6 +65,7 @@ export class OpenCodeAdapterRuntime implements AdapterRuntime {
     }
     this.session = await this.factory.create(input);
     this.generation++;
+    this.activeInvocations = 0;
     this.artifactCount = 0;
   }
 
@@ -122,6 +123,7 @@ export class OpenCodeAdapterRuntime implements AdapterRuntime {
     }
 
     const session = this.session;
+    const generation = this.generation;
     let outcome: OpenCodePromptOutcome;
     this.activeInvocations++;
     try {
@@ -133,7 +135,7 @@ export class OpenCodeAdapterRuntime implements AdapterRuntime {
       }
       throw new LifecycleError("opencode_session_failed", "OpenCode session communication failed", { retryable: true });
     } finally {
-      this.activeInvocations--;
+      if (this.generation === generation) this.activeInvocations--;
     }
     const artifacts = outcome.patch === undefined ? undefined : await this.writePatch(outcome.patch, context);
     if (outcome.errorMessage !== undefined) {
@@ -157,6 +159,7 @@ export class OpenCodeAdapterRuntime implements AdapterRuntime {
 
   async stop(): Promise<void> {
     this.generation++;
+    this.activeInvocations = 0;
     const session = this.session;
     this.session = undefined;
     if (session !== undefined) {
