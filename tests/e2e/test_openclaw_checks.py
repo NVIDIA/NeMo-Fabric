@@ -62,7 +62,7 @@ async def native_gateway_fixture(unused_tcp_port):
             {
                 "ok": state["startup"],
                 "status": "started" if state["startup"] else "starting",
-                "version": "2026.9.4",
+                "version": "2026.9.34",
             },
             status_code=200 if state["startup"] else 503,
         )

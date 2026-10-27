@@ -38,13 +38,14 @@ def _tool_call(adapter: str) -> dict[str, object]:
         return {"name": "ping", "arguments": {}}
 
     tool_name = "mcp__logging__ping"
-    if adapter == "hermes" and Version(distribution_version("hermes-agent")) >= Version(
-        "0.20"
-    ):
-        return {
-            "name": "tool_call",
-            "arguments": {"name": tool_name, "arguments": {}},
-        }
+    if adapter == "hermes":
+        hermes_version = Version(distribution_version("hermes-agent"))
+        # The supported source release reports 0.0.0 in its package metadata.
+        if hermes_version == Version("0") or hermes_version >= Version("0.20"):
+            return {
+                "name": "tool_call",
+                "arguments": {"name": tool_name, "arguments": {}},
+            }
     return {"name": tool_name, "arguments": {}}
 
 
