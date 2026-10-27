@@ -127,6 +127,9 @@ export class PiAdapterRuntime implements AdapterRuntime {
     }
     this.turnCount = outcome.turnCount;
     if (outcome.promptFailed) {
+      if (outcome.shutdownRequested) {
+        this.unusable = true;
+      }
       return withRelayOutput(
         failed("pi_prompt_failed", outcome.errorMessage || "The Pi prompt failed"),
         relay,
