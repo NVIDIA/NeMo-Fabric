@@ -664,6 +664,11 @@ where
 {
     validate_profile(&environment, "fabric_owned")?;
     let connection = OpenShellConnection::from_map(&environment.connection)?;
+    let capture = environment
+        .metadata
+        .get("fabric.provenance.enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
     let settings = OpenShellSettings::from_map(environment.settings)?;
     let policy_attached = settings.policy.is_some();
     let client = bounded_gateway_call(
@@ -678,6 +683,14 @@ where
         client.health(),
     )
     .await?;
+    let version_observed_at = capture
+        .then(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|d| u64::try_from(d.as_millis()).ok())
+        })
+        .flatten();
     if health.status != GatewayStatus::Healthy {
         return Err(ProviderError::contract(
             "gateway_unhealthy",
@@ -794,20 +807,23 @@ where
         "exec_timeout_seconds".to_string(),
         json!(settings.exec_timeout_seconds),
     );
-    Ok(json!({
-        "workspace": environment.workspace,
-        "artifacts": environment.artifacts,
-        "connection": provider_connection,
-        "metadata": {
-            "openshell.gateway_version": health.version,
-            "openshell.sandbox_id": ready.id,
-            "openshell.sandbox_name": ready.name,
-            "openshell.sandbox_phase": ready.phase.as_str(),
-            "openshell.sandbox_resource_version": ready.resource_version,
-            "openshell.runtime_image": settings.image,
-            "openshell.policy_attached": policy_attached,
-        },
-    }))
+    Ok(gateway_capture(
+        json!({
+            "workspace": environment.workspace,
+            "artifacts": environment.artifacts,
+            "connection": provider_connection,
+            "metadata": {
+                "openshell.gateway_version": health.version,
+                "openshell.sandbox_id": ready.id,
+                "openshell.sandbox_name": ready.name,
+                "openshell.sandbox_phase": ready.phase.as_str(),
+                "openshell.sandbox_resource_version": ready.resource_version,
+                "openshell.runtime_image": settings.image,
+                "openshell.policy_attached": policy_attached,
+            },
+        }),
+        version_observed_at,
+    ))
 }
 
 async fn attach_environment<F>(
@@ -828,11 +844,24 @@ where
     }
     let resource = OpenShellResourceReference::from_map(reference.resource)?;
     let connection = OpenShellConnection::from_map(&environment.connection)?;
+    let capture = environment
+        .metadata
+        .get("fabric.provenance.enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
     let settings = OpenShellSettings::from_map(environment.settings)?;
     let call_timeout = Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS);
     let client =
         bounded_gateway_call("connect", call_timeout, factory.connect(&connection)).await?;
     let health = bounded_gateway_call("health", call_timeout, client.health()).await?;
+    let version_observed_at = capture
+        .then(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|d| u64::try_from(d.as_millis()).ok())
+        })
+        .flatten();
     if health.status != GatewayStatus::Healthy {
         return Err(ProviderError::contract(
             "gateway_unhealthy",
@@ -891,21 +920,24 @@ where
         "exec_timeout_seconds".to_string(),
         json!(settings.exec_timeout_seconds),
     );
-    Ok(json!({
-        "workspace": environment.workspace,
-        "artifacts": environment.artifacts,
-        "connection": provider_connection,
-        "metadata": {
-            "openshell.gateway_version": health.version,
-            "openshell.sandbox_id": sandbox.id,
-            "openshell.sandbox_name": sandbox.name,
-            "openshell.sandbox_phase": sandbox.phase.as_str(),
-            "openshell.sandbox_resource_version": sandbox.resource_version,
-            "openshell.runtime_image": settings.image,
-            "openshell.policy_attached": sandbox.policy.is_some(),
-            "fabric.environment_binding": environment_id,
-        },
-    }))
+    Ok(gateway_capture(
+        json!({
+            "workspace": environment.workspace,
+            "artifacts": environment.artifacts,
+            "connection": provider_connection,
+            "metadata": {
+                "openshell.gateway_version": health.version,
+                "openshell.sandbox_id": sandbox.id,
+                "openshell.sandbox_name": sandbox.name,
+                "openshell.sandbox_phase": sandbox.phase.as_str(),
+                "openshell.sandbox_resource_version": sandbox.resource_version,
+                "openshell.runtime_image": settings.image,
+                "openshell.policy_attached": sandbox.policy.is_some(),
+                "fabric.environment_binding": environment_id,
+            },
+        }),
+        version_observed_at,
+    ))
 }
 
 async fn cleanup_created_sandbox(
@@ -1386,6 +1418,8 @@ struct CollectedArtifact {
 
 #[derive(Debug, Deserialize)]
 struct EnvironmentPlan {
+    #[serde(default)]
+    metadata: Map<String, Value>,
     provider: String,
     control_location: String,
     ownership: String,
@@ -2594,6 +2628,7 @@ mod tests {
             execution: None,
         };
         let environment = EnvironmentPlan {
+            metadata: Map::new(),
             provider: "openshell".to_string(),
             control_location: "in_env_control".to_string(),
             ownership: "fabric_owned".to_string(),
@@ -2625,6 +2660,11 @@ mod tests {
         assert_eq!(output["artifacts"], "/sandbox/artifacts");
         assert_eq!(output["connection"]["sandbox_id"], "sandbox-id-1");
         assert_eq!(output["connection"]["sandbox_name"], "fabric-sandbox-1");
+        assert!(
+            output["metadata"]["openshell.gateway_version_observed_at_millis"]
+                .as_u64()
+                .is_some()
+        );
         assert_eq!(output["metadata"]["openshell.sandbox_phase"], "ready");
         assert_eq!(output["metadata"]["openshell.sandbox_resource_version"], 1);
         assert_eq!(output["metadata"]["openshell.policy_attached"], true);
@@ -2636,6 +2676,39 @@ mod tests {
                 "create:fabric-demo:environment-1",
                 "wait_ready:fabric-demo:fabric-sandbox-1",
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn disabled_provenance_does_not_add_gateway_observation_work() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let factory = MockFactory {
+            calls: Arc::clone(&calls),
+            ready_id: "sandbox-id-1",
+            deletion: None,
+            execution: None,
+        };
+        let mut environment = environment_plan_fixture();
+        environment
+            .metadata
+            .insert("fabric.provenance.enabled".into(), json!(false));
+        let output = prepare_environment("environment-disabled", environment, &factory)
+            .await
+            .unwrap();
+        assert!(
+            output["metadata"]
+                .get("openshell.gateway_version_observed_at_millis")
+                .is_none()
+        );
+        // The same required lifecycle calls still execute; provenance adds none.
+        assert_eq!(
+            calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|call| call.as_str() == "health")
+                .count(),
+            1
         );
     }
 
@@ -2785,6 +2858,7 @@ mod tests {
             execution: None,
         };
         let environment = EnvironmentPlan {
+            metadata: Map::new(),
             provider: "openshell".to_string(),
             control_location: "in_env_control".to_string(),
             ownership: "fabric_owned".to_string(),
@@ -3327,6 +3401,7 @@ mod tests {
 
     fn environment_plan_fixture() -> EnvironmentPlan {
         EnvironmentPlan {
+            metadata: Map::new(),
             provider: "openshell".to_string(),
             control_location: "in_env_control".to_string(),
             ownership: "fabric_owned".to_string(),
@@ -3394,4 +3469,11 @@ mod tests {
             ),
         }
     }
+}
+
+fn gateway_capture(mut report: Value, observed_at: Option<u64>) -> Value {
+    if let Some(observed_at) = observed_at {
+        report["metadata"]["openshell.gateway_version_observed_at_millis"] = json!(observed_at);
+    }
+    report
 }

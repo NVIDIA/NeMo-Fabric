@@ -371,11 +371,14 @@ async def test_uncertain_outcomes_are_not_replayed_after_reattachment(
         ]
         assert operations.count("start") == (1 if fault == "start" else 2)
         assert operations.count("invoke") == (1 if fault == "invoke" else 0)
-        assert operations.count("stop") == {
-            "start": 0,
-            "invoke": 1,
-            "stop": 2,
-        }[fault]
+        assert (
+            operations.count("stop")
+            == {
+                "start": 0,
+                "invoke": 1,
+                "stop": 2,
+            }[fault]
+        )
     finally:
         if runtime is not None:
             try:
@@ -387,3 +390,148 @@ async def test_uncertain_outcomes_are_not_replayed_after_reattachment(
         except FabricRuntimeError:
             # An unresolved operation deliberately retains the environment binding.
             pass
+
+
+@pytest.mark.parametrize("ownership", ["caller_owned", "fabric_owned"])
+async def test_software_reports_keep_host_guest_and_provider_capture_times(
+    remote_config, tmp_path, monkeypatch, ownership
+):
+    captured = 1793102400123
+    monkeypatch.setenv(
+        "FABRIC_TEST_PROVIDER_SOFTWARE",
+        json.dumps(
+            {
+                "openshell.gateway_version": "0.0.0-rc.7+full-build",
+                "openshell.gateway_version_observed_at_millis": captured,
+            }
+        ),
+    )
+    fabric = Fabric()
+    remote_config.environment.ownership = ownership
+    if ownership == "fabric_owned":
+        remote_config.environment.connection.pop("sandbox_id")
+        remote_config.environment.settings.update(
+            image="fixture.invalid/fabric@sha256:" + "a" * 64,
+            command=["fabric-agent-ctl", "serve"],
+        )
+        environment = await fabric.prepare_environment(remote_config)
+    else:
+        environment = await fabric.attach_environment(
+            remote_config,
+            EnvironmentReference.from_mapping(
+                {
+                    "provider": "openshell",
+                    "resource": {
+                        "sandbox_name": "echo",
+                        "sandbox_id": remote_config.environment.connection[
+                            "sandbox_id"
+                        ],
+                    },
+                }
+            ),
+        )
+    try:
+        async with await fabric.start_runtime_in(remote_config, environment) as runtime:
+            first = await runtime.invoke(input="first software observation")
+            second = await runtime.invoke(input="second software observation")
+        assert first.execution.to_mapping() == second.execution.to_mapping()
+        environments = first.execution.software_environments
+        participants = {p for env in environments for p in env.participants}
+        assert {
+            "caller_sdk",
+            "caller_core",
+            "guest_sdk",
+            "guest_core",
+            "adapter",
+        } <= participants
+        sandbox = first.execution.infrastructure["sandbox"]
+        assert sandbox["service_version"]["value"] == "0.0.0-rc.7+full-build"
+        assert sandbox["service_version"]["observed_at"] == "2026-10-27T12:00:00.123Z"
+        assert "container" not in first.execution.infrastructure
+        served = set(sandbox["context_refs"])
+        assert not any(
+            "caller_sdk" in env.participants and env.context_ref in served
+            for env in environments
+        )
+        assert all(
+            env.context_ref in served
+            for env in environments
+            if "guest_sdk" in env.participants
+        )
+        assert first.status == second.status == "succeeded"
+    finally:
+        await fabric.release_environment(environment)
+
+
+@pytest.mark.parametrize(
+    "fault", ["FABRIC_TEST_DROP_EXECUTION", "FABRIC_TEST_MALFORM_EXECUTION"]
+)
+async def test_old_or_malformed_guest_report_preserves_outcome_and_host_snapshot(
+    remote_config, monkeypatch, fault
+):
+    monkeypatch.setenv(fault, "1")
+    fabric = Fabric()
+    environment = await fabric.attach_environment(
+        remote_config,
+        EnvironmentReference.from_mapping(
+            {
+                "provider": "openshell",
+                "resource": {
+                    "sandbox_name": "echo",
+                    "sandbox_id": remote_config.environment.connection["sandbox_id"],
+                },
+            }
+        ),
+    )
+    try:
+        async with await fabric.start_runtime_in(remote_config, environment) as runtime:
+            result = await runtime.invoke(input="still succeeds")
+        assert result.status == "succeeded"
+        assert any(
+            "caller_sdk" in env.participants and env.entries
+            for env in result.execution.software_environments
+        )
+        missing = [
+            env
+            for env in result.execution.software_environments
+            if "guest_sdk" in env.participants
+        ]
+        assert missing and not all(env.complete for env in missing)
+    finally:
+        await fabric.release_environment(environment)
+
+
+async def test_disabled_provenance_crosses_the_real_guest_sdk_dispatch(
+    remote_config, tmp_path
+):
+    remote_config.provenance.enabled = False
+    fabric = Fabric()
+    environment = await fabric.attach_environment(
+        remote_config,
+        EnvironmentReference.from_mapping(
+            {
+                "provider": "openshell",
+                "resource": {
+                    "sandbox_name": "echo",
+                    "sandbox_id": remote_config.environment.connection["sandbox_id"],
+                },
+            }
+        ),
+    )
+    try:
+        async with await fabric.start_runtime_in(remote_config, environment) as runtime:
+            result = await runtime.invoke(input="disabled in host and guest")
+        assert result.status == "succeeded"
+        assert result.execution is None
+        frames = [
+            json.loads(line)["frame"]
+            for line in (tmp_path / "provider.jsonl").read_text().splitlines()
+        ]
+        start = next(
+            frame
+            for frame in frames
+            if frame.get("command", {}).get("operation") == "start"
+        )
+        assert start["command"]["config"]["provenance"]["enabled"] is False
+    finally:
+        await fabric.release_environment(environment)

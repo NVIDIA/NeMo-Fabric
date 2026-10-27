@@ -770,6 +770,8 @@ enum AdapterServiceContext {
         reference: ServiceReference,
     },
     Connect {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        execution: Option<crate::ExecutionEvidence>,
         service_id: String,
         connection_path: PathBuf,
     },
@@ -874,6 +876,7 @@ struct RelayRuntimeConfig {
 }
 
 struct LocalAdapterHost {
+    service_execution: Option<crate::ExecutionEvidence>,
     execution: Option<crate::ExecutionEvidence>,
     adapter_execution: Option<crate::ExecutionEvidence>,
     child: Child,
@@ -892,6 +895,7 @@ struct LocalAdapterHost {
 }
 
 struct LocalServiceRecord {
+    software_report: Option<crate::ExecutionEvidence>,
     host: LocalAdapterHost,
     runtime: RuntimeHandle,
     handle: ServiceHandle,
@@ -1036,8 +1040,25 @@ pub fn start_runtime_with_service(
     let runtime = start_local_runtime(
         plan,
         environment,
-        Some((service.service_id.clone(), record.connection_path.clone())),
+        Some((
+            service.service_id.clone(),
+            record.connection_path.clone(),
+            if plan.config.provenance.enabled {
+                record.software_report.clone()
+            } else {
+                None
+            },
+        )),
     )?;
+    if plan.config.provenance.enabled {
+        let host = { local_hosts().get(&runtime.runtime_id).cloned() };
+        if let Some(host) = host {
+            let host = host.lock().unwrap_or_else(|error| error.into_inner());
+            if let Some(report) = host.adapter_execution.as_ref().and_then(service_evidence) {
+                record.software_report = Some(report);
+            }
+        }
+    }
     record.active_runtime_ids.insert(runtime.runtime_id.clone());
     Ok(runtime)
 }
@@ -1149,6 +1170,14 @@ fn start_service(
             local_host_diagnostics(&host),
         )
     })?;
+    let software_report = if plan.config.provenance.enabled {
+        host.adapter_execution
+            .as_ref()
+            .and_then(service_evidence)
+            .or_else(|| service_metadata_evidence(&info))
+    } else {
+        None
+    };
     let service_binding = service_binding(&service_id, plan, ownership, &info)?;
     let handle = ServiceHandle {
         service_id: service_id.clone(),
@@ -1175,6 +1204,7 @@ fn start_service(
     local_services().insert(
         service_id,
         Arc::new(Mutex::new(LocalServiceRecord {
+            software_report,
             host,
             runtime,
             handle: handle.clone(),
@@ -1645,7 +1675,7 @@ fn service_binding(
     info: &AdapterServiceInfo,
 ) -> Result<String> {
     let mut binding_plan = plan.clone();
-    binding_plan.config.provenance.reports = None;
+    binding_plan.config.provenance = Default::default();
     stable_hash(
         "fabric-service-binding",
         &ServiceBindingMaterial {
@@ -1848,10 +1878,12 @@ impl RuntimeAdapter for LocalHostAdapter {
 fn start_local_runtime(
     plan: &RunPlan,
     environment: EnvironmentHandle,
-    service: Option<(String, PathBuf)>,
+    service: Option<(String, PathBuf, Option<crate::ExecutionEvidence>)>,
 ) -> Result<RuntimeHandle> {
     validate_local_host(plan, &environment)?;
-    let service_id = service.as_ref().map(|(service_id, _)| service_id.clone());
+    let service_id = service
+        .as_ref()
+        .map(|(service_id, _, _)| service_id.clone());
     let runtime_id = new_id("runtime");
     let runtime_binding = runtime_binding(&runtime_id, service_id.as_ref(), plan, &environment)?;
     let runtime = RuntimeHandle {
@@ -1872,9 +1904,11 @@ fn start_local_runtime(
     let mut artifacts = artifact_manifest(plan)?;
     let fabric_home = prepare_fabric_home(&artifacts, &runtime, &start_invocation)?;
     let relay_config = prepare_relay_runtime_config(plan, &runtime, &fabric_home, &mut artifacts)?;
+    let service_execution = service.as_ref().and_then(|(_, _, report)| report.clone());
     let service_context =
         service.map(
-            |(service_id, connection_path)| AdapterServiceContext::Connect {
+            |(service_id, connection_path, execution)| AdapterServiceContext::Connect {
+                execution,
                 service_id,
                 connection_path,
             },
@@ -1911,6 +1945,7 @@ fn start_local_runtime(
             return Err(error);
         }
     };
+    host.service_execution = service_execution;
     if let Err(error) = exchange_lifecycle_message(
         &mut host,
         &runtime.runtime_id,
@@ -2195,7 +2230,22 @@ fn run_local_host_invocation_with_timeout(
                         if let (Some(report), Some(adapter)) =
                             (&mut execution, &host_guard.adapter_execution)
                         {
-                            report.append(adapter.clone());
+                            let mut adapter = adapter.clone();
+                            if let Some(retained) = &host_guard.service_execution {
+                                let service =
+                                    service_evidence(&adapter).unwrap_or_else(|| retained.clone());
+                                adapter
+                                    .software_environments
+                                    .retain(|env| !env.participants.iter().any(|p| p == "service"));
+                                report.append(adapter);
+                                report.append(service);
+                            } else {
+                                report.append(adapter);
+                            }
+                        } else if let (Some(report), Some(service)) =
+                            (&mut execution, &host_guard.service_execution)
+                        {
+                            report.append(service.clone());
                         }
                         execution
                     },
@@ -2718,6 +2768,7 @@ fn spawn_local_host(
         });
     }
     Ok(LocalAdapterHost {
+        service_execution: None,
         execution: crate::provenance::core_snapshot(&plan.config.provenance),
         adapter_execution: None,
         child,
@@ -2913,10 +2964,18 @@ fn exchange_lifecycle_message(
         && operation != AdapterLifecycleOperation::Stop
         && (response.execution.is_some() || host.adapter_execution.is_none())
     {
-        host.adapter_execution = Some(crate::ExecutionEvidence::receive(
-            response.execution,
-            "adapter",
-        ));
+        let mut report = crate::ExecutionEvidence::receive(response.execution, "adapter");
+        if !report
+            .software_environments
+            .iter()
+            .any(|env| env.participants.iter().any(|p| p == "adapter"))
+        {
+            report.append(crate::ExecutionEvidence::gap(
+                "adapter",
+                "expected_adapter_report_missing",
+            ));
+        }
+        host.adapter_execution = Some(report);
     }
     match response.outcome {
         AdapterLifecycleOutcome::Succeeded { output } => Ok(output),
@@ -6557,6 +6616,26 @@ for line in sys.stdin:
     }
 
     #[test]
+    fn runtime_binding_excludes_observations_but_binds_initial_collection_control() {
+        let (root, plan) = local_host_plan("ok");
+        let environment = prepare_environment(&plan).unwrap();
+        let original = runtime_binding("test-runtime", None, &plan, &environment).unwrap();
+        let mut changed = plan.clone();
+        changed.config.provenance.reports =
+            Some(crate::ExecutionEvidence::gap("application", "test"));
+        assert_eq!(
+            runtime_binding("test-runtime", None, &changed, &environment).unwrap(),
+            original
+        );
+        changed.config.provenance.enabled = false;
+        assert_ne!(
+            runtime_binding("test-runtime", None, &changed, &environment).unwrap(),
+            original
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn explicit_binding_starts_in_the_prepared_local_environment() {
         let (root, plan) = local_host_plan("success");
         let environment = prepare_environment(&plan).expect("prepare local environment");
@@ -6669,4 +6748,51 @@ for line in sys.stdin:
         ));
         let _ = fs::remove_dir_all(root);
     }
+}
+
+fn service_evidence(report: &crate::ExecutionEvidence) -> Option<crate::ExecutionEvidence> {
+    let mut environments: Vec<_> = report
+        .software_environments
+        .iter()
+        .filter(|env| env.participants.iter().any(|p| p == "service"))
+        .cloned()
+        .collect();
+    if environments.is_empty() {
+        return None;
+    }
+    for (index, env) in environments.iter_mut().enumerate() {
+        env.context_ref = format!("env-{index}");
+    }
+    Some(crate::ExecutionEvidence {
+        software_environments: environments,
+        infrastructure: None,
+    })
+}
+
+fn service_metadata_evidence(info: &AdapterServiceInfo) -> Option<crate::ExecutionEvidence> {
+    use crate::provenance::*;
+    let value = info.metadata.get("openclaw_version")?.as_str()?.to_string();
+    Some(ExecutionEvidence {
+        software_environments: vec![SoftwareEnvironment {
+            context_ref: "env-0".into(),
+            participants: vec!["service".into()],
+            status: InventoryStatus::Available,
+            complete: true,
+            reason: None,
+            entries: vec![SoftwareEntry {
+                role: "harness".into(),
+                kind: "component".into(),
+                name: "openclaw".into(),
+                version: VersionObservation {
+                    status: EvidenceStatus::Available,
+                    value: Some(value),
+                    source: "core:service_start_report".into(),
+                    origin: EvidenceOrigin::Reported,
+                    observed_at: crate::time::rfc3339_millis(SystemTime::now()),
+                    reason: None,
+                },
+            }],
+        }],
+        infrastructure: None,
+    })
 }

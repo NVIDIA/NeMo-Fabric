@@ -7,11 +7,16 @@ import sys
 from collections.abc import Mapping
 from typing import Any
 
-from nemo_fabric_adapter_contract.evidence import ExecutionEvidence, SoftwareEntry
+from nemo_fabric_adapter_contract.evidence import (
+    ExecutionEvidence,
+    SoftwareEntry,
+    SoftwareEnvironment,
+)
 from nemo_fabric_adapter_contract.metadata import (
     collect_selected,
     observation,
     observed_at,
+    combine,
 )
 
 
@@ -90,6 +95,9 @@ def collect_runtime(runtime, payload) -> ExecutionEvidence | None:
                     ),
                 )
             )
+        forwarded = (payload.get("service") or {}).get("execution")
+        if forwarded is not None:
+            report = combine(report, ExecutionEvidence.receive(forwarded, "service"))
         return ExecutionEvidence.receive(report.to_mapping(), "adapter")
     except Exception:
         return ExecutionEvidence.gap("adapter", "collection_failed")
@@ -114,6 +122,7 @@ def record_version(
     role: str = "harness",
     kind: str = "executable",
     origin: str = "reported",
+    participant: str = "adapter",
 ):
     """Forward an existing startup observation. This never initiates a probe."""
     sink = _passive.get()
@@ -124,7 +133,7 @@ def record_version(
         or len(sink) >= 8
     ):
         return
-    key = (role, kind, name)
+    key = (participant, role, kind, name)
     if key not in sink:
         try:
             sink[key] = SoftwareEntry(
@@ -141,23 +150,40 @@ def refresh_passive(report: dict) -> dict:
     """Attach already captured values without refreshing their capture times."""
     try:
         decoded = ExecutionEvidence.from_mapping(report)
-        env = decoded.software_environments[0]
-        if env.status != "available":
-            return report
-        for key, entry in (_passive.get() or {}).items():
-            entries = env.entries
+        for (participant, role, kind, name), entry in (_passive.get() or {}).items():
+            env = next(
+                (
+                    env
+                    for env in decoded.software_environments
+                    if participant in env.participants
+                ),
+                None,
+            )
+            if env is None:
+                env = SoftwareEnvironment(
+                    context_ref=f"env-{len(decoded.software_environments)}",
+                    participants=[participant],
+                    status="available",
+                    complete=True,
+                    entries=[],
+                )
+                decoded.software_environments.append(env)
+            if env.status != "available":
+                continue
             replacement = next(
                 (
                     i
-                    for i, old in enumerate(entries)
-                    if (old.role, old.kind, old.name) == key
+                    for i, old in enumerate(env.entries)
+                    if (old.role, old.kind, old.name) == (role, kind, name)
                 ),
                 None,
             )
             if replacement is None:
-                entries.append(entry)
-            else:
-                entries[replacement] = entry
+                env.entries.append(entry)
+            elif env.entries[replacement].version.value != entry.version.value:
+                # An existing source observed a changed version. Equal values
+                # retain the shared service's original capture time.
+                env.entries[replacement] = entry
         return ExecutionEvidence.receive(decoded.to_mapping(), "adapter").to_mapping()
     except Exception:
         return ExecutionEvidence.gap(

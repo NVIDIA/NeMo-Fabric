@@ -561,3 +561,61 @@ async def test_owned_runtime_checks_through_sdk_and_sandbox_command_bridge(
         await runtime.stop()
         await fabric.release_environment(environment)
     assert stopped_path.read_text() == "stopped"
+
+
+async def test_shared_service_software_retains_original_capture_across_runtimes(
+    gateway_service, native_gateway
+):
+    fabric, service, config = gateway_service
+    native_gateway[-1].set()
+    async with await fabric.start_runtime(
+        config, service=service, base_dir=ROOT
+    ) as first_runtime:
+        first = await first_runtime.invoke(input="first shared-service observation")
+    # A separate SDK instance must not make optional snapshot times invalidate
+    # the original service binding, or refresh the service's retained report.
+    async with await Fabric().start_runtime(
+        config, service=service, base_dir=ROOT
+    ) as second_runtime:
+        second = await second_runtime.invoke(input="second shared-service observation")
+    assert first.status == second.status == "succeeded"
+    assert first.runtime_id != second.runtime_id
+    assert native_gateway[2].count("/startupz") == 4
+    assert native_gateway[2].count("/v1/models") == 2
+
+    def service_entries(result):
+        return [
+            entry.to_mapping()
+            for env in result.execution.software_environments
+            if "service" in env.participants
+            for entry in env.entries
+        ]
+
+    one, two = service_entries(first), service_entries(second)
+    assert len(one) == len(two) == 1
+    assert one == two
+    assert one[0]["version"]["value"] == service.handle.metadata["openclaw_version"]
+    assert one[0]["version"]["source"] == "service:startupz"
+    assert one[0]["version"]["origin"] == "reported"
+    assert not any(
+        entry.role == "interpreter"
+        for env in second.execution.software_environments
+        if "service" in env.participants
+        for entry in env.entries
+    )
+
+
+async def test_disabled_runtime_can_use_an_existing_service_without_software_collection(
+    gateway_service, native_gateway
+):
+    fabric, service, config = gateway_service
+    native_gateway[-1].set()
+    disabled = config.model_copy(deep=True)
+    disabled.provenance.enabled = False
+    async with await fabric.start_runtime(
+        disabled, service=service, base_dir=ROOT
+    ) as runtime:
+        result = await runtime.invoke(input="metadata disabled for this runtime")
+    assert result.status == "succeeded"
+    assert result.execution is None
+    assert service.handle.metadata["openclaw_version"] == "2026.9.4"

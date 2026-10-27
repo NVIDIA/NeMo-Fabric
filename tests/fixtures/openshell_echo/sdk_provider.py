@@ -22,6 +22,7 @@ from nemo_fabric.runtime_server.health import server_report
 
 async def main():
     fabric = Fabric()
+    fabric._execution_participant = "guest_sdk"
     runtime = None
     fault_injected = False
     try:
@@ -45,6 +46,8 @@ async def main():
                         ),
                     },
                 }
+                if software := os.environ.get("FABRIC_TEST_PROVIDER_SOFTWARE"):
+                    output["metadata"] = json.loads(software)
             elif operation == "runtime_command":
                 command = frame["command"]
                 if command["operation"] == "check":
@@ -70,6 +73,10 @@ async def main():
                 else:
                     await runtime.stop()
                     value = None
+                if command["operation"] == "invoke" and os.environ.get("FABRIC_TEST_DROP_EXECUTION"):
+                    value.pop("execution", None)
+                if command["operation"] == "invoke" and os.environ.get("FABRIC_TEST_MALFORM_EXECUTION"):
+                    value["execution"] = "malformed optional evidence"
                 fault = os.environ.get("FABRIC_TEST_PROVIDER_FAULT")
                 if not fault_injected and (
                     (fault == "start" and command["operation"] == "start")

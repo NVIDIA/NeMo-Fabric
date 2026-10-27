@@ -161,9 +161,14 @@ impl EnvironmentProvider for OpenShellEnvironmentProvider {
         validate_open_shell_profile(environment, EnvironmentOwnership::FabricOwned)?;
 
         let environment_id = new_id("environment");
+        let mut dispatched = environment.clone();
+        dispatched.metadata.insert(
+            "fabric.provenance.enabled".into(),
+            serde_json::json!(plan.config.provenance.enabled),
+        );
         let prepared: PreparedEnvironment = self.request(ProviderOperation::Prepare {
             environment_id: &environment_id,
-            environment,
+            environment: &dispatched,
         })?;
         let workspace =
             prepared
@@ -207,9 +212,14 @@ impl EnvironmentProvider for OpenShellEnvironmentProvider {
         validate_open_shell_profile(environment, EnvironmentOwnership::CallerOwned)?;
 
         let environment_id = new_id("environment");
+        let mut dispatched = environment.clone();
+        dispatched.metadata.insert(
+            "fabric.provenance.enabled".into(),
+            serde_json::json!(plan.config.provenance.enabled),
+        );
         let prepared: PreparedEnvironment = self.request(ProviderOperation::Attach {
             environment_id: &environment_id,
-            environment,
+            environment: &dispatched,
             reference,
         })?;
         let workspace =

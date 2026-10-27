@@ -366,3 +366,5 @@ output after the Gateway and channel stop at the end of that interval.
 For Harbor, use managed mode so the Gateway and agent tools share the task
 workspace, as shown in the
 [calculator example](../../../examples/harbor/calculator/README.md#4-openclaw).
+
+Software evidence forwards the version returned by existing startup/service checks; it adds no request. Shared-service runtimes retain the service's original capture time when the reported version is unchanged. The reported service version describes OpenClaw only; it does not establish a complete remote installation inventory. Set `FabricConfig.provenance.enabled=false` before initialization to skip provenance collection.
