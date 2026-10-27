@@ -47,6 +47,7 @@
     }
   },
   "capabilities": {
+    "metadata": {"health_checks": ["live"]},
     "streaming": false,
     "cancellation": false,
     "updates": false,

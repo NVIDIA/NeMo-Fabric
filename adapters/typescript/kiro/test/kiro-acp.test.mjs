@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { chmod, copyFile, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import test from "node:test";
@@ -32,6 +32,8 @@ for (const fixtureType of process.platform === "win32" ? ["executable"] : ["shel
       PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
       TEST_NODE_EXECUTABLE: process.execPath,
       TEST_ACP_FIXTURE: fixture,
+      TEST_PROMPT_DELAY_MS: "100",
+      TEST_PROMPT_STARTED: join(bin, "prompt-started"),
     };
     const session = await new KiroAcpSessionFactory().create({
       agentName: "kiro-test",
@@ -56,7 +58,19 @@ for (const fixtureType of process.platform === "win32" ? ["executable"] : ["shel
       },
     });
     try {
-      const first = await session.prompt("one");
+      assert.equal((await session.check("live")).outcome, "passed");
+      assert.equal((await session.check("active")).outcome, "unsupported");
+      assert.equal((await session.check("ready")).outcome, "unsupported");
+      const firstPending = session.prompt("one");
+      const deadline = Date.now() + 2000;
+      while (true) {
+        try { await readFile(environment.TEST_PROMPT_STARTED); break; } catch (error) { if (error.code !== "ENOENT") throw error; }
+        assert.ok(Date.now() < deadline);
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 5));
+      }
+      assert.equal((await session.check("live")).outcome, "passed");
+      const first = await firstPending;
+      assert.equal((await session.check("live")).outcome, "passed");
       const second = await session.prompt("permission");
       assert.equal(first.text, "one:1:plan:model-b:high:mcp=0:permission=none:ready=false");
       assert.equal(second.text, "permission:2:plan:model-b:high:mcp=0:permission=allow:ready=false");
@@ -96,6 +110,7 @@ for (const fixtureType of process.platform === "win32" ? ["executable"] : ["shel
       }
     } finally {
       await session.stop();
+      assert.equal((await session.check("live")).reason_code, "session_closed");
     }
   });
 }

@@ -890,6 +890,11 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -991,7 +996,7 @@
         "name": "nemo-fabric-adapters-kiro",
         "version": "0.6.0"
       },
-      "sha256": "bd84a149c0114be483b129da5937b3e540816d1c8fe9708663e5cb46417362aa",
+      "sha256": "e7393a07550505f23a3396128a29f5b078492ce7f1580f6f3b79d5872e4587a2",
       "source": "adapters/typescript/kiro/kiro.fabric-adapter.json"
     },
     "nvidia.fabric.langchain.deepagents": {

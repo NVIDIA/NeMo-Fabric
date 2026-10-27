@@ -62,3 +62,12 @@ by this initial adapter.
 
 See the [Kiro integration guide](../../../docs/integrations/harness/kiro.mdx)
 for a complete configuration example.
+
+## Runtime health
+
+`Fabric.check()` supports `live`. The adapter observes the selected ACP child
+process identifier, exit status, and signal status through the shared process
+runner. A retained session identifier is insufficient. A busy process remains
+live, and a stopped or exited process fails the liveness observation.
+
+`active` and `ready` are unsupported. Checks do not send prompts, change session settings, or cancel invocations.
