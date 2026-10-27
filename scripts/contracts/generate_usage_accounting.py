@@ -32,7 +32,9 @@ def synchronize(*, check: bool) -> None:
         usage = extensions.get("usage", {})
         if KEY not in usage.get("properties", {}):
             continue
-        usage.setdefault("$defs", {}).update(definitions)
+        # This generator owns the accounting definitions at the usage-schema root.
+        # Replace them so a removed canonical definition cannot survive in a descriptor.
+        usage["$defs"] = definitions
         usage["properties"][KEY] = schema
         # Replace just this object; retain unrelated descriptor formatting.
         start = original.index('"extension_schemas":') + len('"extension_schemas":')

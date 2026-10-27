@@ -894,6 +894,7 @@ class InvocationMessages:
 
     items: list[Message] = field(default_factory=list)
     failure: str | None = None
+    skipped_injected_result: bool = False
 
 
 def served_model_fact(messages: InvocationMessages | None) -> dict[str, Any]:
@@ -1345,6 +1346,7 @@ class ClaudeRuntime:
                         usage_owner.observe(message)
                         if isinstance(message, ResultMessage):
                             if injected_turn(message):
+                                collected.skipped_injected_result = True
                                 if not was_injected:
                                     # Keep runtime facts when rolling back an ambiguous prefix.
                                     messages[:] = [
@@ -1381,7 +1383,11 @@ class ClaudeRuntime:
             if result is None or not _result_failed(result):
                 raise
             LOGGER.exception("Claude SDK stream raised after a failed terminal result")
-            output = self._normalize_invocation(messages, result)
+            output = self._normalize_invocation(
+                messages,
+                result,
+                skipped_injected_result=collected.skipped_injected_result,
+            )
         else:
             if result is None:
                 self._unusable = True
@@ -1390,7 +1396,11 @@ class ClaudeRuntime:
                     "claude_missing_result", "Claude returned no terminal result"
                 )
             else:
-                output = self._normalize_invocation(messages, result)
+                output = self._normalize_invocation(
+                    messages,
+                    result,
+                    skipped_injected_result=collected.skipped_injected_result,
+                )
         finally:
             usage_owner.finish()
         return output
@@ -1399,10 +1409,16 @@ class ClaudeRuntime:
         self,
         messages: list[Message],
         result: ResultMessage,
+        *,
+        skipped_injected_result: bool = False,
     ) -> dict[str, Any]:
         try:
             output = normalize_result(messages, result)
-            output["cost_usd"] = self._invocation_cost(messages, result)
+            output["cost_usd"] = self._invocation_cost(
+                messages,
+                result,
+                skipped_injected_result=skipped_injected_result,
+            )
             if not output["failed"]:
                 invalid_session = _validate_result_session(
                     self._claude_session_id, result
@@ -1420,6 +1436,8 @@ class ClaudeRuntime:
         self,
         messages: list[Message],
         result: ResultMessage,
+        *,
+        skipped_injected_result: bool = False,
     ) -> float | None:
         """Convert Claude Code's running cost total into this invocation's cost.
 
@@ -1455,7 +1473,13 @@ class ClaudeRuntime:
         reset = any(
             isinstance(message, ConversationResetMessage) for message in messages
         )
-        if total is None or previous is None or reset or total < previous:
+        if (
+            skipped_injected_result
+            or total is None
+            or previous is None
+            or reset
+            or total < previous
+        ):
             return None
         # Drop float subtraction noise such as 0.19999999999999998. A tenth of a
         # nanodollar is far below the price of a single token.

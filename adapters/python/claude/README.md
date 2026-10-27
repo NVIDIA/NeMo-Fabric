@@ -158,6 +158,8 @@ Accounting freezes when the invocation returns. Late child messages and injected
 background turns never move usage into a later invocation. The adapter skips an
 injected turn's result and continues waiting for the result of its own query.
 
+An injected turn makes that invocation's CLI cost estimate unavailable because the cumulative total can include injected work. The caller's terminal total can establish the baseline for the next invocation.
+
 Claude Code's `total_cost_usd` is a CLI estimate, not provider-reported cost.
 `usage.cost_usd` stays unknown. The existing `output.cost_usd` diagnostic keeps a
 per-invocation CLI estimate when a cumulative baseline is valid. A crash invalidates
