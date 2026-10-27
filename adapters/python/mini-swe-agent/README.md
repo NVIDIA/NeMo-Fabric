@@ -23,7 +23,7 @@ environment:
 | `pip install nemo-fabric-adapters-mini-swe-agent` | No | Yes | No | No |
 
 The `harness` and `full` extras install the latest compatible mini-SWE-agent
-2.x release and constrain LiteLLM below 1.106. LiteLLM 1.106.4 and 1.106.5 import MCP types unavailable in MCP 1.x during ordinary tool dispatch. The tested 1.105.6 dispatch works without an MCP runtime. This constraint does not enable MCP tools in the adapter.
+2.x release and constrain LiteLLM below 1.106. LiteLLM 1.106.4 and 1.106.5 import MCP types unavailable in MCP 1.x during ordinary tool dispatch. The tested 1.105.6 dispatch works without an MCP runtime. This constraint does not enable MCP tools in the adapter. For provider `nvidia`, the adapter adds LiteLLM’s `nvidia_nim/` dispatch prefix while preserving the configured served model ID, including its vendor prefix.
 
 ## Configuration
 

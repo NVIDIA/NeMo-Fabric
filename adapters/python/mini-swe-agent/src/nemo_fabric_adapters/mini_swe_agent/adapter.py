@@ -100,10 +100,14 @@ class MiniSweAgentRuntime:
             model_kwargs["top_p"] = model.top_p
         if model.max_tokens is not None:
             model_kwargs["max_tokens"] = model.max_tokens
+        model_name = model.model
+        if model.provider == "nvidia" and not model_name.startswith("nvidia_nim/"):
+            # LiteLLM's dispatch prefix is separate from the NIM served model ID.
+            model_name = f"nvidia_nim/{model_name}"
+        elif "/" not in model_name:
+            model_name = f"{model.provider}/{model_name}"
         self._model = LitellmModel(
-            model_name=(
-                model.model if "/" in model.model else f"{model.provider}/{model.model}"
-            ),
+            model_name=model_name,
             model_kwargs=model_kwargs,
         )
         self._environment = LocalEnvironment(

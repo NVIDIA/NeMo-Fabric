@@ -308,7 +308,7 @@ async def test_mini_swe_agent_maps_config_and_returns_normalized_output(
     await runtime.start(start)
 
     mock_mini["model_factory"].assert_called_once_with(
-        model_name="nvidia/test-model",
+        model_name="nvidia_nim/nvidia/test-model",
         model_kwargs={
             "api_key": "test-key",
             "api_base": "https://example.test/v1",
@@ -630,3 +630,27 @@ def test_mini_swe_agent_module_entrypoint_exits_cleanly():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "nvidia/nemotron-3-ultra-550b-a55b",
+        "nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b",
+    ],
+)
+async def test_nvidia_dispatch_preserves_the_served_model_id(
+    mock_mini, mini_payload, monkeypatch, model_name
+):
+    from litellm import get_llm_provider
+
+    monkeypatch.setenv("TEST_MINI_API_KEY", "test-key")
+    mini_payload["config"]["models"]["default"]["model"] = model_name
+    runtime = adapter.MiniSweAgentRuntime()
+    await runtime.start(
+        {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
+    )
+    dispatched = mock_mini["model_factory"].call_args.kwargs["model_name"]
+    model, provider, _, _ = get_llm_provider(dispatched)
+    assert provider == "nvidia_nim"
+    assert model == "nvidia/nemotron-3-ultra-550b-a55b"
