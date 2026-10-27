@@ -77,10 +77,13 @@ The resolved Codex descriptor accepts the following Codex-specific
 | `approval_mode` | One of `auto_review` or `deny_all` | `auto_review` |
 | `developer_instructions` | Nonempty string | No default |
 | `personality` | One of `none`, `friendly`, or `pragmatic` | No default |
-| `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh` | No default |
+| `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra` | No default |
 | `service_tier` | Nonempty string | No default |
 | `output_schema` | JSON Schema object for the final assistant message | No default |
 | `config_overrides` | Object that maps nonempty dotted Codex configuration keys to JSON-compatible values | `{}` |
+
+`ultra` uses Codex's model-specific effort selection. Codex resolves it to a
+supported provider effort; models without effort metadata fall back to `medium`.
 
 Planning rejects unknown keys, empty dotted-key segments, invalid types, and
 invalid enum values before the Codex runtime starts. Schema defaults document
