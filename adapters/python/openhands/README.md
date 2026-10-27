@@ -132,3 +132,5 @@ The adapter advertises `live` and `active` checks qualified against OpenHands SD
 A running native `arun()` task reports `busy` and remains healthy. Native closure returns `failed/session_closed`; missing native lifecycle fields return `unknown/capabilities_unverified`. Checks use no conversation lock and do not submit messages, call a model, initialize tools or MCP, or alter conversation state. The shared host applies the caller's remaining deadline and invalidates observations when ownership changes. Health timeouts do not cancel an invocation.
 
 `ready` remains unsupported because no qualified native read-only readiness response exists. Passing `active` does not establish model access, credential validity, or tool connectivity.
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
