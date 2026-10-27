@@ -1742,13 +1742,12 @@
               "type": "object"
             },
             "read_timeout_seconds": {
-              "default": 600,
-              "description": "Timeout between response bytes from the local OpenClaw Gateway.",
+              "description": "Timeout between response bytes from the local OpenClaw Gateway. When unset, the invocation timeout bounds the response.",
               "exclusiveMinimum": 0,
               "type": "number"
             },
             "shutdown_timeout_seconds": {
-              "default": 10,
+              "default": 5,
               "description": "Maximum graceful Gateway shutdown time before forced termination.",
               "exclusiveMinimum": 0,
               "type": "number"
@@ -1768,7 +1767,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.6.0"
       },
-      "sha256": "4ec9c777897ed39b5d2ef477f713a451d5f9194df266879cb5dd90b930d6cc0a",
+      "sha256": "b2a9ef847226bc5858024776b50fb87c6d57cd4332accc6583aacb5d348a17f5",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {

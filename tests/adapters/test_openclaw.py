@@ -1139,8 +1139,16 @@ async def test_openclaw_invocation_deadline_bounds_the_gateway_request(
     runtime._port = 12345
     runtime._process = mock_process
 
+    request_started = asyncio.Event()
+    request_cancelled = asyncio.Event()
+
     async def wait_for_gateway(*_args, **_kwargs):
-        await asyncio.Event().wait()
+        request_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            request_cancelled.set()
+            raise
 
     monkeypatch.setattr(
         adapter, "_invoke_gateway", AsyncMock(side_effect=wait_for_gateway)
@@ -1150,6 +1158,8 @@ async def test_openclaw_invocation_deadline_bounds_the_gateway_request(
         runtime.invoke(AgentRunRequest(input="Hello."), context), timeout=5
     )
 
+    assert request_started.is_set()
+    assert request_cancelled.is_set()
     assert result.status == adapter.contract.AgentRunStatus.FAILED
     assert result.error is not None
     assert result.error.code == "timeout"
