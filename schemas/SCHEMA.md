@@ -31,6 +31,8 @@ schemas/
 └── adapter-contract/          # Southbound adapter-facing contract
     ├── adapter-descriptor.schema.json
     ├── adapter-target-descriptor.schema.json
+    ├── adapter-check-request.schema.json
+    ├── adapter-check-result.schema.json
     ├── agent-config.schema.json
     ├── agent-run-request.schema.json
     ├── agent-run-result.schema.json
@@ -70,6 +72,7 @@ these related representations do not drift.
 
 ## Adapter Contract
 
+- `adapter-contract/adapter-check-request` and `adapter-check-result`: a health-probe request and its observation. These closed objects preserve required null fields and use fixed reason codes and evidence-source identifiers.
 - `adapter-contract/adapter-descriptor`: adapter identity, runner,
   requirements, accepted normalized fields, schemas, telemetry support, and
   runtime capability claims.
@@ -122,6 +125,7 @@ descriptor schema.
 
 ### Runtime Lifecycle
 
+- `sdk/check-request` and `check-report`: server, runtime, or registered service target selection, the shared deadline, and ordered health evidence. Runtime and service checks default to `live`. Service requests require `service_id`, and service reports include that ID with null runtime evidence. The `service_id` field is omitted from server and runtime reports. All health reports use `fabric.check/v1alpha1`.
 - `sdk/environment-handle`: prepared execution environment context.
 - `sdk/environment-reference`: provider-specific identity of an existing caller-owned environment.
 - `sdk/runtime-handle`: active harness runtime identity and opaque adapter binding.
@@ -136,7 +140,7 @@ descriptor schema.
 - `sdk/runtime-resource-snapshot`: timestamped memory, process count, and CPU
   time of a runtime's local adapter host and its descendants.
 
-`model_usage` separates independently nullable complete token counts, available observations, dimension-specific gaps and provider-reported cost. Observations are not guaranteed lower bounds. Results freeze at invocation return; late usage never transfers to a later invocation. Typed access requires an updated SDK; closed validators must use the updated result schema. The [Python SDK guide](../docs/sdk/python.mdx) documents the result and coverage-aware summary helper.
+`model_usage` separates independently nullable complete token counts, available observations, dimension-specific gaps, provider-reported cost, and catalog-estimated cost. Observations are not guaranteed lower bounds. Results freeze at invocation return; late usage never transfers to a later invocation. Typed access requires an updated SDK; closed validators must use the updated result schema. The [Python SDK guide](../docs/sdk/python.mdx) documents the result and coverage-aware summary helper.
 
 ### Deferred Core Objects
 

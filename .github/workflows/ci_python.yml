@@ -108,11 +108,19 @@ jobs:
         run: |
           uv sync --no-default-groups --group adapter-tests --group collector --group test --extra claude --extra codex --extra deepagents --extra mini-swe-agent --extra openclaw --extra openhands --extra remote-agent ${{ (matrix.python-version == '3.12' || matrix.python-version == '3.13') && '--extra nooa' || '' }} ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} --extra relay
 
-      - name: Build TypeScript contract for reducer parity
-        if: matrix.platform == 'linux-amd64' && matrix.python-version == '3.12'
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: adapters/typescript/package-lock.json
+
+      - name: Build Pi adapter for Python health checks
         run: |
-          just install-typescript-contract
+          just install-typescript-pi
           npm run build --prefix adapter-contract/typescript
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-pi
 
       - name: Run pytest
         env:
@@ -170,6 +178,20 @@ jobs:
       - name: Build SDK with native extension
         run: |
           uv sync --no-default-groups --group adapter-tests --group collector --group test --extra claude --extra codex --extra deepagents --extra mini-swe-agent --extra openclaw --extra openhands --extra remote-agent --extra nooa --extra harbor --extra relay
+
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: adapters/typescript/package-lock.json
+
+      - name: Build Pi adapter for Python health checks
+        run: |
+          just install-typescript-pi
+          npm run build --prefix adapter-contract/typescript
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-pi
 
       - name: Install Relay ${{ env.RELAY_VERSION }}
         run: uv pip install --python .venv/bin/python "nemo-relay==${RELAY_VERSION}" "nemo-relay-cli-bin==${RELAY_VERSION}"

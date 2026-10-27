@@ -22,7 +22,7 @@ use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use sha2::{Digest, Sha256};
 
 /// The only catalog format version NeMo Fabric reads.
@@ -39,11 +39,15 @@ const NANO_USD_PER_USD: f64 = 1e9;
 /// The catalog NeMo Fabric ships.
 const BUNDLED_CATALOG_JSON: &str = include_str!("../data/model-pricing.json");
 
-static BUNDLED_CATALOG: LazyLock<BundledCatalog> = LazyLock::new(|| BundledCatalog {
+static BUNDLED_CATALOG: LazyLock<BundledCatalog> = LazyLock::new(|| {
     // A unit test checks that the shipped file is valid, so `None` only
     // guards against a build that skipped the tests.
-    catalog: PricingCatalog::from_json(BUNDLED_CATALOG_JSON.as_bytes()).ok(),
-    sha256: sha256_fingerprint(BUNDLED_CATALOG_JSON.as_bytes()),
+    let catalog = PricingCatalog::from_json(BUNDLED_CATALOG_JSON.as_bytes()).ok();
+    let sha256 = catalog
+        .as_ref()
+        .and_then(|catalog| catalog_fingerprint(catalog).ok())
+        .unwrap_or_default();
+    BundledCatalog { catalog, sha256 }
 });
 
 struct BundledCatalog {
@@ -194,11 +198,11 @@ pub enum CacheReadAccounting {
 
 /// A price catalog the caller supplied, read and validated when the run plan
 /// is resolved.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct UserPriceCatalog {
     /// Absolute path the catalog was read from.
     pub path: PathBuf,
-    /// `sha256:` followed by the lowercase hexadecimal SHA-256 of the file.
+    /// SHA-256 of the validated catalog serialized as JSON by NeMo Fabric.
     pub sha256: String,
     /// The validated catalog.
     pub catalog: PricingCatalog,
@@ -210,6 +214,9 @@ pub enum PricingCatalogError {
     /// The catalog is not JSON of the catalog format.
     #[error("invalid model pricing catalog JSON: {0}")]
     Json(#[from] serde_json::Error),
+    /// The claimed catalog fingerprint does not match the validated entries.
+    #[error("model pricing catalog fingerprint does not match its entries")]
+    FingerprintMismatch,
     /// The catalog format version is not 1.
     #[error("unsupported model pricing catalog version {version}")]
     UnsupportedVersion {
@@ -243,14 +250,48 @@ pub enum PricingCatalogError {
 }
 
 impl UserPriceCatalog {
-    /// Validate bytes and retain their exact catalog fingerprint.
+    /// Validate bytes and retain a fingerprint of their pricing content.
     pub fn from_bytes(path: PathBuf, bytes: &[u8]) -> Result<Self, PricingCatalogError> {
+        let catalog = PricingCatalog::from_json(bytes)?;
         Ok(Self {
             path,
-            sha256: sha256_fingerprint(bytes),
-            catalog: PricingCatalog::from_json(bytes)?,
+            sha256: catalog_fingerprint(&catalog)?,
+            catalog,
         })
     }
+
+    pub(crate) fn validate_integrity(&self) -> Result<(), PricingCatalogError> {
+        self.catalog.validate()?;
+        if self.sha256 != catalog_fingerprint(&self.catalog)? {
+            return Err(PricingCatalogError::FingerprintMismatch);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UserPriceCatalogWire {
+    path: PathBuf,
+    sha256: String,
+    catalog: PricingCatalog,
+}
+
+impl<'de> Deserialize<'de> for UserPriceCatalog {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = UserPriceCatalogWire::deserialize(deserializer)?;
+        let catalog = Self {
+            path: wire.path,
+            sha256: wire.sha256,
+            catalog: wire.catalog,
+        };
+        catalog.validate_integrity().map_err(D::Error::custom)?;
+        Ok(catalog)
+    }
+}
+
+fn catalog_fingerprint(catalog: &PricingCatalog) -> Result<String, PricingCatalogError> {
+    Ok(sha256_fingerprint(&serde_json::to_vec(catalog)?))
 }
 
 impl PricingCatalog {
@@ -745,7 +786,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_fingerprint_is_the_sha256_of_the_file_bytes() {
+    fn catalog_fingerprint_identifies_validated_pricing_content() {
         assert_eq!(
             sha256_fingerprint(b"abc"),
             "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
@@ -753,9 +794,46 @@ mod tests {
         let fingerprint = PriceCatalogs::with_user_catalog(None).bundled_sha256();
         assert_eq!(
             fingerprint,
-            sha256_fingerprint(BUNDLED_CATALOG_JSON.as_bytes())
+            catalog_fingerprint(
+                &PricingCatalog::from_json(BUNDLED_CATALOG_JSON.as_bytes()).unwrap()
+            )
+            .unwrap()
         );
         assert_eq!(fingerprint.len(), "sha256:".len() + 64);
+        let compact = serde_json::to_vec(
+            &PricingCatalog::from_json(BUNDLED_CATALOG_JSON.as_bytes()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            fingerprint,
+            UserPriceCatalog::from_bytes("prices.json".into(), &compact)
+                .unwrap()
+                .sha256
+        );
+    }
+
+    #[test]
+    fn deserialized_user_catalog_rejects_changed_rates_and_fingerprint() {
+        let catalog =
+            UserPriceCatalog::from_bytes("prices.json".into(), BUNDLED_CATALOG_JSON.as_bytes())
+                .unwrap();
+        let mut changed = catalog.clone();
+        changed.catalog.version = 2;
+        assert!(changed.validate_integrity().is_err());
+        changed = catalog.clone();
+        changed.sha256 = "sha256:unverified".into();
+        assert!(changed.validate_integrity().is_err());
+        let mut serialized = serde_json::to_value(&catalog).unwrap();
+        serialized["sha256"] = serde_json::json!("sha256:unverified");
+        assert!(serde_json::from_value::<UserPriceCatalog>(serialized).is_err());
+
+        let mut serialized = serde_json::to_value(&catalog).unwrap();
+        serialized["catalog"]["entries"][0]["rates"]["input_per_million"] = serde_json::json!(4.0);
+        assert!(serde_json::from_value::<UserPriceCatalog>(serialized).is_err());
+
+        let mut serialized = serde_json::to_value(&catalog).unwrap();
+        serialized["catalog"]["version"] = serde_json::json!(2);
+        assert!(serde_json::from_value::<UserPriceCatalog>(serialized).is_err());
     }
 
     // Lookup, mirroring NeMo Relay's model pricing tests.

@@ -14,6 +14,7 @@ from nemo_fabric.types import TokenCost
 from nemo_fabric.types import CostAmount
 from nemo_fabric.types import UsageGap
 from nemo_fabric.client import Fabric
+from nemo_fabric.check import CheckReport, CheckRequest
 from nemo_fabric.capabilities import AdapterCapabilityProfile
 from nemo_fabric.capabilities import inspect_adapter
 from nemo_fabric.errors import FabricCapabilityError
@@ -103,6 +104,8 @@ __all__ = [
     "TokenCost",
     "CostAmount",
     "UsageGap",
+    "CheckReport",
+    "CheckRequest",
     "AdapterCapabilityProfile",
     "AdapterInfo",
     "ArtifactManifest",

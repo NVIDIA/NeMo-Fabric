@@ -3374,7 +3374,7 @@
           "type": "string"
         },
         "sha256": {
-          "description": "`sha256:` followed by the lowercase hexadecimal SHA-256 of the file.",
+          "description": "SHA-256 of the validated catalog serialized as JSON by NeMo Fabric.",
           "type": "string"
         }
       },

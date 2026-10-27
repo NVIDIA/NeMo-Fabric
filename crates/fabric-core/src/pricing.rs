@@ -375,7 +375,9 @@ pub(crate) fn apply_pricing_with_evidence(
     evidence: Option<&crate::usage_accounting::UsageAccounting>,
 ) {
     let prices = PriceCatalogs::with_user_catalog(user);
-    if !prices.bundled_is_valid() {
+    if !prices.bundled_is_valid()
+        || user.is_some_and(|catalog| catalog.validate_integrity().is_err())
+    {
         usage.token_cost.estimated = estimate(
             Err("price_catalog_invalid"),
             MeasurementSource::FabricPriceCatalog,
