@@ -31,3 +31,34 @@ def with_snapshot(config: FabricConfig, snapshot: ExecutionEvidence) -> FabricCo
         snapshot if report is None else combine(report, snapshot)
     )
     return updated
+
+
+def _restore_dispatch_evidence(
+    document: dict, forwarded: ExecutionEvidence | None, *, enabled: bool
+) -> dict:
+    """Receiving boundary for an explicit caller-to-guest configuration dispatch.
+
+    Only execution evidence changes. The original terminal result and all other
+    fields remain intact, including when an old intermediary dropped evidence.
+    """
+    if not enabled:
+        document.pop("execution", None)
+        return document
+    guest = ExecutionEvidence.receive(document.get("execution"), "guest_sdk")
+    if not any("guest_sdk" in env.participants for env in guest.software_environments):
+        guest = combine(
+            guest,
+            ExecutionEvidence.gap("guest_sdk", "expected_guest_sdk_report_missing"),
+        )
+    if forwarded is not None:
+        prefix = forwarded.to_mapping()["software_environments"]
+        received = guest.to_mapping()
+        retained = received["software_environments"][: len(prefix)] == prefix and (
+            forwarded.infrastructure is None
+            or received.get("infrastructure")
+            == forwarded.to_mapping().get("infrastructure")
+        )
+        if not retained:
+            guest = combine(forwarded, guest)
+    document["execution"] = guest.to_mapping()
+    return document

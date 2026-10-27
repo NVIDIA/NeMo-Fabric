@@ -111,3 +111,9 @@ or turn and timeout limits. Specify those choices in the benchmark recipe throug
 `fabric_runtime_timeout_seconds`. Omitted values use the adapter's normal
 behavior. The example commands include the sandbox and permission settings
 needed by their tasks.
+
+### Software Evidence
+
+Harbor initializes one explicit host report with its application/integration, SDK, compiled core and executing interpreter observations. `FabricConfig.provenance.reports` carries that snapshot in the existing runner payload. The guest collects its own inventory; it never inspects the Harbor host. Receiving an old or malformed guest report preserves the invocation outcome and adds an explicit coverage gap while retaining the caller report.
+
+`fabric_provenance` uses the SDK's `ProvenanceConfig` shape and defaults on. Disable new provenance work in both the host and guest with `-a 'fabric_provenance={"enabled":false}'`. The switch must be supplied before the Harbor agent initializes. Existing stats, telemetry, results and artifact handling continue to use their current controls. See the [software evidence examples](../../../../../../../examples/provenance/README.md) for reproducible local transport tests and their live-dependency limits.

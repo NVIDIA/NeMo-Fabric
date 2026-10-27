@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import logging
 import shlex
 import uuid
 import warnings
@@ -40,6 +41,7 @@ from nemo_fabric import RelayObservabilityConfig
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
 from nemo_fabric import RuntimeConfig
+from nemo_fabric import ProvenanceConfig
 from nemo_fabric import SystemStatsConfig
 from nemo_fabric import ToolsConfig
 from nemo_fabric.integrations.harbor.models import FabricRunPayload
@@ -171,6 +173,10 @@ else:
         )
         fabric_telemetry: Literal["none", "relay"] = Field(
             default="none", description="Enable Relay-backed ATIF and ATOF telemetry."
+        )
+        fabric_provenance: ProvenanceConfig = Field(
+            default_factory=ProvenanceConfig,
+            description="Default-on software evidence; enabled=false skips host and guest collectors.",
         )
         fabric_system_stats: SystemStatsConfig | None = Field(
             default_factory=SystemStatsConfig,
@@ -357,6 +363,11 @@ else:
                 **kwargs,
             )
             options = self.options
+            self._host_execution = (
+                _harbor_execution_report()
+                if options.fabric_provenance.enabled
+                else None
+            )
             self.fabric_adapter_id = options.fabric_adapter_id
             self.fabric_config_base_dir = options.fabric_config_base_dir
             self.fabric_config_bundle = options.fabric_config_bundle
@@ -526,7 +537,29 @@ else:
                     diagnostic = FabricRunnerFailure.model_validate(document)
                 else:
                     diagnostic = None
-                normalized = None if diagnostic else RunResult.from_mapping(document)
+                if diagnostic is None and isinstance(document, dict):
+                    from nemo_fabric.provenance import _restore_dispatch_evidence
+
+                    original_execution = document.get("execution")
+                    document = _restore_dispatch_evidence(
+                        document,
+                        spec.config.provenance.reports,
+                        enabled=spec.config.provenance.enabled,
+                    )
+                    normalized = RunResult.from_mapping(document)
+                    if document.get("execution") != original_execution:
+                        try:
+                            host_result_path.write_text(
+                                json.dumps(document, indent=2), encoding="utf-8"
+                            )
+                        except OSError:
+                            logging.getLogger(__name__).warning(
+                                "Could not persist optional software evidence in the existing Harbor result artifact"
+                            )
+                else:
+                    normalized = (
+                        None if diagnostic else RunResult.from_mapping(document)
+                    )
             except (ValueError, TypeError, FabricConfigError):
                 ensure_success("NeMo Fabric run failed", result)
                 raise
@@ -592,6 +625,16 @@ else:
                     *self.fabric_discovery_paths,
                 ),
             )
+            config.provenance = self.options.fabric_provenance.model_copy(deep=True)
+            if self._host_execution is not None:
+                from nemo_fabric_adapter_contract.metadata import combine
+
+                existing = config.provenance.reports
+                config.provenance.reports = (
+                    self._host_execution
+                    if existing is None
+                    else combine(existing, self._host_execution)
+                )
             stats = self.options.fabric_system_stats
             config.system_stats = (
                 stats.model_copy(deep=True) if stats is not None else None
@@ -1080,3 +1123,53 @@ def populate_context_from_telemetry_summary(context: AgentContext, path: Path) -
     fabric = context.metadata.setdefault("fabric", {})
     if isinstance(fabric, dict):
         fabric["telemetry_validation"] = summary
+
+
+def _harbor_execution_report():
+    """Explicit platform-owner report, captured once per Harbor agent instance."""
+    from nemo_fabric_adapter_contract.evidence import ExecutionEvidence, SoftwareEntry
+    from nemo_fabric_adapter_contract.metadata import (
+        collect_selected,
+        observation,
+        observed_at,
+    )
+
+    report = collect_selected(
+        "caller_sdk",
+        [
+            ("fabric_sdk", "nemo-fabric-runtime", "nemo_fabric.client"),
+            (
+                "contract",
+                "nemo-fabric-adapter-contract",
+                "nemo_fabric_adapter_contract.models",
+            ),
+            ("integration", "harbor", "harbor"),
+        ],
+    )
+    # These components are observed by this same initializing process/resolver.
+    # No version/path equality inference joins another installation.
+    environment = report.software_environments[0]
+    environment.participants.append("application")
+    if environment.status == "available":
+        try:
+            from nemo_fabric.client import _native
+
+            version = _native.version() if _native is not None else None
+            if not isinstance(version, str):
+                version = None
+        except Exception:
+            version = None
+        environment.entries.append(
+            SoftwareEntry(
+                role="fabric_core",
+                kind="component",
+                name="nemo-fabric-core",
+                version=observation(
+                    version,
+                    "caller_sdk:native.version",
+                    observed_at(),
+                    reason="native_core_version_unavailable",
+                ),
+            )
+        )
+    return ExecutionEvidence.receive(report.to_mapping(), "caller_sdk")

@@ -750,6 +750,7 @@ def test_harbor_023_options_schema_and_preflight():
         "fabric_runtime_timeout_seconds",
         "fabric_system_instruction",
         "fabric_system_stats",
+        "fabric_provenance",
         "fabric_telemetry",
         "fabric_timeout_sec",
         "fabric_venv_path",

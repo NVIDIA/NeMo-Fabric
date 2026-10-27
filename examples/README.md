@@ -87,3 +87,7 @@ Start with the shared setup and execution model in the
 ## Native System Stats
 
 [`system_stats`](system_stats/README.md) demonstrates a real temporary worker-memory spike, native sampled peak/mean/range, retained per-invocation artifacts, and Linux cgroup constraints without a model endpoint or Relay collector.
+
+## Software Evidence
+
+[Selected software evidence](provenance/README.md) reproduces six execution paths, separate venvs, disabled collection and stable version comparison with explicit coverage limits.

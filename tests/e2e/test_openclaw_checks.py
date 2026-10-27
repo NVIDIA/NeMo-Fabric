@@ -580,6 +580,11 @@ async def test_shared_service_software_retains_original_capture_across_runtimes(
         second = await second_runtime.invoke(input="second shared-service observation")
     assert first.status == second.status == "succeeded"
     assert first.runtime_id != second.runtime_id
+    from _utils.provenance_capture import capture_result
+
+    capture_result("shared-service-1", first)
+    capture_result("shared-service-2", second)
+    capture_result("shared-service-handle", service.handle)
     assert native_gateway[2].count("/startupz") == 4
     assert native_gateway[2].count("/v1/models") == 2
 

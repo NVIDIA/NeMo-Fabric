@@ -126,6 +126,11 @@ async def test_runtime_reuses_initialization_snapshots_across_invocations(
     assert first.status == second.status == "succeeded"
     assert first.invocation_id != second.invocation_id
     assert first.execution.to_mapping() == second.execution.to_mapping()
+    from _utils.provenance_capture import capture_result, version_view
+
+    capture_result("direct-sdk-1", first)
+    capture_result("direct-sdk-2", second)
+    assert version_view(first) == version_view(second)
     participants = {
         p for env in first.execution.software_environments for p in env.participants
     }
@@ -197,3 +202,6 @@ async def test_disable_skips_host_and_adapter_metadata_work(
     assert result.status == "succeeded"
     assert result.execution is None
     assert not marker.exists()
+    from _utils.provenance_capture import capture_result
+
+    capture_result("disabled-direct-sdk", result)

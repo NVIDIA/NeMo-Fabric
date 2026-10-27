@@ -435,6 +435,10 @@ async def test_software_reports_keep_host_guest_and_provider_capture_times(
             first = await runtime.invoke(input="first software observation")
             second = await runtime.invoke(input="second software observation")
         assert first.execution.to_mapping() == second.execution.to_mapping()
+        from _utils.provenance_capture import capture_result
+
+        capture_result("sandbox-" + ownership + "-1", first)
+        capture_result("sandbox-" + ownership + "-2", second)
         environments = first.execution.software_environments
         participants = {p for env in environments for p in env.participants}
         assert {
@@ -497,6 +501,9 @@ async def test_old_or_malformed_guest_report_preserves_outcome_and_host_snapshot
             if "guest_sdk" in env.participants
         ]
         assert missing and not all(env.complete for env in missing)
+        from _utils.provenance_capture import capture_result
+
+        capture_result("sandbox-" + fault.lower(), result)
     finally:
         await fabric.release_environment(environment)
 
@@ -533,5 +540,8 @@ async def test_disabled_provenance_crosses_the_real_guest_sdk_dispatch(
             if frame.get("command", {}).get("operation") == "start"
         )
         assert start["command"]["config"]["provenance"]["enabled"] is False
+        from _utils.provenance_capture import capture_result
+
+        capture_result("disabled-sandbox", result)
     finally:
         await fabric.release_environment(environment)
