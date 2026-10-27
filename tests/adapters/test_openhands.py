@@ -549,6 +549,8 @@ async def test_send_message_failure_returns_failed_result(
     assert result.status is AgentRunStatus.FAILED
     assert result.error is not None
     assert result.error.code == "openhands_invocation_failed"
+    assert result.error.message == "OpenHands could not complete the invocation."
+    assert result.error.retryable is False
     conversation.arun.assert_not_awaited()
 
 
@@ -579,6 +581,8 @@ async def test_invocation_failure_reports_the_underlying_sdk_error(
         assert result.status is AgentRunStatus.FAILED
         assert result.error is not None
         assert result.error.code == "openhands_invocation_failed"
+        assert result.error.message == "OpenHands could not complete the invocation."
+        assert result.error.retryable is False
         assert result.error.extensions == {"sdk_error": sdk_error}
     finally:
         await runtime.stop()
