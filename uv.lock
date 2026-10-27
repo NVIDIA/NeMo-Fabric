@@ -2444,7 +2444,8 @@ dependencies = [
 [package.optional-dependencies]
 harness = [
     { name = "fsspec" },
-    { name = "mcp" },
+    { name = "litellm", version = "1.89.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "litellm", version = "1.100.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "mini-swe-agent" },
 ]
 relay = [
@@ -2455,8 +2456,8 @@ relay = [
 requires-dist = [
     { name = "fsspec", marker = "extra == 'full'", specifier = ">=2026.6.0" },
     { name = "fsspec", marker = "extra == 'harness'", specifier = ">=2026.6.0" },
-    { name = "mcp", marker = "extra == 'full'", specifier = ">=1.26,<2" },
-    { name = "mcp", marker = "extra == 'harness'", specifier = ">=1.26,<2" },
+    { name = "litellm", marker = "extra == 'full'", specifier = "<1.106" },
+    { name = "litellm", marker = "extra == 'harness'", specifier = "<1.106" },
     { name = "mini-swe-agent", marker = "extra == 'full'", specifier = ">=2.0,<3" },
     { name = "mini-swe-agent", marker = "extra == 'harness'", specifier = ">=2.0,<3" },
     { name = "nemo-fabric-adapter-contract", editable = "adapter-contract/python" },
@@ -2478,7 +2479,7 @@ dependencies = [
 [package.optional-dependencies]
 full = [
     { name = "fsspec" },
-    { name = "mcp" },
+    { name = "litellm", version = "1.100.1", source = { registry = "https://pypi.org/simple" } },
     { name = "nemo-relay" },
     { name = "nooa" },
     { name = "nooa-bench" },
@@ -2486,7 +2487,7 @@ full = [
 ]
 harness = [
     { name = "fsspec" },
-    { name = "mcp" },
+    { name = "litellm", version = "1.100.1", source = { registry = "https://pypi.org/simple" } },
     { name = "nooa" },
     { name = "nooa-bench" },
     { name = "nooa-cli" },
@@ -2496,8 +2497,8 @@ harness = [
 requires-dist = [
     { name = "fsspec", marker = "extra == 'full'", specifier = ">=2026.6.0" },
     { name = "fsspec", marker = "extra == 'harness'", specifier = ">=2026.6.0" },
-    { name = "mcp", marker = "extra == 'full'", specifier = ">=1.26,<2" },
-    { name = "mcp", marker = "extra == 'harness'", specifier = ">=1.26,<2" },
+    { name = "litellm", marker = "extra == 'full'", specifier = "<1.106" },
+    { name = "litellm", marker = "extra == 'harness'", specifier = "<1.106" },
     { name = "nemo-fabric-adapter-contract", editable = "adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/python/common" },
     { name = "nemo-relay", marker = "extra == 'full'", specifier = ">=0.11,<0.12" },

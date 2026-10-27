@@ -168,6 +168,7 @@ def test_harbor_example_uses_published_nooa_packages():
         "nooa>=0.0.10,<0.0.11",
         "nooa-cli>=0.0.10,<0.0.11",
         "nooa-bench>=0.0.10,<0.0.11",
+        "litellm<1.106",
     }
     assert set(adapter_project["optional-dependencies"]["full"]) == {
         *adapter_project["optional-dependencies"]["harness"],
@@ -210,6 +211,6 @@ def test_harbor_example_uses_published_nooa_packages():
         calculator_dockerfile
     )
     assert (
-        '&& uv pip install --python /opt/nemo-fabric-venv/bin/python \\\n'
+        "&& uv pip install --python /opt/nemo-fabric-venv/bin/python \\\n"
         '        "nemo-fabric-adapters-nooa[full]"'
     ) in swebench_dockerfile

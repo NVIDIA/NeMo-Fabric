@@ -28,7 +28,7 @@ tested NOOA packages together:
 pip install "nemo-fabric[nooa]"
 ```
 
-The `harness` and `full` extras include the MCP Python runtime used by LiteLLM’s NVIDIA backend, including standalone BenchAgent runs.
+The `harness` and `full` extras constrain LiteLLM below 1.106 for NOOA and standalone BenchAgent runs. LiteLLM 1.106.4 and 1.106.5 import MCP types unavailable in MCP 1.x during ordinary tool dispatch. The tested 1.105.6 dispatch works without an MCP runtime.
 
 For a split adapter environment, install
 `nemo-fabric-adapters-nooa[harness]`. Use the adapter package without an extra

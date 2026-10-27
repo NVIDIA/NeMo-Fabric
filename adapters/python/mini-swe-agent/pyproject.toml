@@ -33,7 +33,8 @@ dependencies = [
 harness = [
   "fsspec>=2026.6.0",
   "mini-swe-agent>=2.0,<3",
-  "mcp>=1.26,<2",
+  # LiteLLM 1.106 tool dispatch imports MCP types unavailable in MCP 1.x.
+  "litellm<1.106",
 ]
 relay = [
   "nemo-relay>=0.11,<0.12",
@@ -41,7 +42,8 @@ relay = [
 full = [
   "fsspec>=2026.6.0",
   "mini-swe-agent>=2.0,<3",
-  "mcp>=1.26,<2",
+  # LiteLLM 1.106 tool dispatch imports MCP types unavailable in MCP 1.x.
+  "litellm<1.106",
   "nemo-relay>=0.11,<0.12",
 ]
 
