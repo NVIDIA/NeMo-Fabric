@@ -31,7 +31,8 @@
   "engines": {"node": ">=22.19.0"},
   "dependencies": {
     "nemo-fabric-adapter-contract": "0.6.0",
-    "nemo-fabric-adapters-common": "0.6.0"
+    "nemo-fabric-adapters-common": "0.6.0",
+    "undici": "8.12.3"
   },
   "peerDependencies": {
     "@kilocode/cli": "7.7.12",

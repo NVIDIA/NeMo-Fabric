@@ -12,6 +12,8 @@ SPDX-License-Identifier: Apache-2.0
 | Command | Operation |
 | --- | --- |
 | `serve` | Start the foreground runtime server; no agent selection |
+| `check [--timeout-seconds SECONDS]` | Check runtime server responsiveness |
+| `check --agent NAME --runtime-id ID [--live \| --active \| --ready]` | Check the selected runtime through `Fabric.check()` |
 | `start --agent NAME --config FILE` | `Fabric.start_runtime(config, base_dir=...)` |
 | `invoke --agent NAME --runtime-id ID --input FILE` | `Runtime.invoke(input=...)` |
 | `invoke --agent NAME --runtime-id ID --request FILE` | `Runtime.invoke(request=RunRequest(...))` |
@@ -26,6 +28,7 @@ fabric-agent-ctl serve
 Wait for `/sandbox/fabric.sock` with a caller-owned deadline, then issue commands through separate sandbox exec calls:
 
 ```sh
+fabric-agent-ctl check
 fabric-agent-ctl start --agent researcher --config /sandbox/config.json
 fabric-agent-ctl invoke --agent researcher --runtime-id RUNTIME_ID --input /sandbox/input.json
 fabric-agent-ctl stop --agent researcher --runtime-id RUNTIME_ID
@@ -35,7 +38,15 @@ The response envelope separates command diagnostics from the public SDK payload 
 
 Use `--request FILE` to forward a complete public `RunRequest`, including `request_id`, `relay_session_root`, `context`, `overrides`, and supported extensions. For example, a request file can contain `{"input": "Review calculator.py", "request_id": "review-1", "context": {"review_tag": "cedar-4827"}}`. `--input FILE` is a mutually exclusive convenience for any JSON-compatible SDK input: an object, array, string, number, boolean, or null. Null follows the SDK's normalization to an empty input string. Agent input fields named `stream` or `streaming` remain ordinary input data; this command calls `Runtime.invoke()`, never a streaming method.
 
-There are no health commands, generation tokens, fingerprints, state snapshots, or additional SDK lifecycle APIs. Caller-side preflight uses existing `Fabric.plan()` and `Fabric.doctor()`. `Fabric.start_runtime()` validates configuration against installed descriptors before native runtime startup. A configuration rejection before startup does not create a runtime.
+`check` reports server responsiveness. Add both `--agent` and `--runtime-id` to check one runtime. Runtime checks default to `live`; the mutually exclusive `--active` and `--ready` flags include preceding levels. Checks can run during invocations, and busy agents can pass.
+
+Each completed check preserves an immutable `fabric.check/v1alpha1` report in `result`. Server reports use `scope: "server"`, with null runtime fields and one server observation. Runtime reports identify the exact runtime and requested level and include ordered agent observations. `changed` is always false. Passed health exits 0; failed, unknown, and unsupported health exit 1. Check diagnostics have `effects: "none"`. Missing or invalid responses produce fixed transport errors with `result: null`.
+
+`fabric.check/v1alpha1` identifies the shared health request and report format so readers can reject formats they do not support. The identifier stays the same across SDK releases while the health format remains compatible. `fabric-agent-ctl` ships with `nemo-fabric-runtime`; the executable and all subcommands follow the SDK package release.
+
+Report timing covers the client call, including connection, response decoding, and validation. `completed_at` records client completion; each `observed_at` records when the server collected the evidence. Successful checks, confirmed failures, and timeouts use the same timing interval.
+
+Checks use one three-second deadline across routing, gateway calls, command transport, all requested levels, and response validation. Use `--timeout-seconds SECONDS` to select another positive, finite budget. A timeout returns `unknown/probe_timeout` for the requested scope. `Fabric.check()` maps OpenShell requests to these named commands; runtime checks then call the local SDK inside the sandbox. Stop or replacement invalidates in-flight evidence.
 
 ## Runtime Ownership
 
@@ -57,7 +68,7 @@ Ordinary SDK stop does not establish that all harness descendants exited. A succ
 
 ## Transport And Failure Behavior
 
-Completed commands except serve write exactly one newline-terminated JSON response to stdout. Logs use stderr. A completed SDK call exits 0; command or transport failure or unsupported behavior exits 1. A completed invoke can return a failed `RunResult` with partial or null output and artifacts, just as the SDK does. Inspect `result.status` and `result.error` for the invocation outcome; command diagnostics remain in the envelope's separate `error` field. Requests are bounded to 512 KiB and responses to 4 MiB, including framing. Calls have a 320-second transport deadline; incomplete input has a ten-second deadline. The caller also bounds OpenShell execution and startup polling.
+Completed commands except serve write exactly one newline-terminated JSON response to stdout. Logs use stderr. A completed SDK call exits 0; command or transport failure or unsupported behavior exits 1. A completed invoke can return a failed `RunResult` with partial or null output and artifacts, just as the SDK does. Inspect `result.status` and `result.error` for the invocation outcome; command diagnostics remain in the envelope's separate `error` field. Requests are bounded to 512 KiB and responses to 4 MiB, including framing. Lifecycle and invocation calls have a 320-second transport deadline; checks default to three seconds, and incomplete input has a ten-second deadline. The caller also bounds OpenShell execution and startup polling.
 
 A timeout or missing, malformed, truncated, or oversized response leaves dispatched effects unknown. Errors use fixed diagnostics with `effects: none`, `applied`, or `unknown`. Routine errors exclude prompts, configuration values, and raw exceptions. Invocation results preserve normalized SDK results, including failed results with null output, and may contain user data. Calls are never replayed after an uncertain outcome.
 
@@ -75,6 +86,6 @@ The bridge requires Unix sockets and `fcntl`; Windows imports remain safe and co
 
 ## Local Qualification And Migration
 
-Follow the [OpenShell Code Review instructions](../../../../../../examples/code_review_agent/README.md#openshell-code-review) to build the image and create a sandbox. The image contains the current SDK, runtime server, adapter, and harness, and advertises `fabric-agent-ctl`, interface version 2, and `start/invoke/stop/serve`. The server implementation is `nemo_fabric.runtime_server.state.RuntimeServer`. Rebuild older images and create fresh sandboxes after changes to this unreleased command interface.
+Follow the [OpenShell Code Review instructions](../../../../../../examples/code_review_agent/README.md#openshell-code-review) to build the image and create a sandbox. The image contains the current SDK, runtime server, adapter, and harness, and advertises `fabric-agent-ctl`, interface version 2, and `start/invoke/stop/serve/check`. The server implementation is `nemo_fabric.runtime_server.state.RuntimeServer`. Rebuild the image and create fresh sandboxes after updating the command interface.
 
 The example starts the server, waits for its socket, starts a runtime, invokes twice, and stops through separate exec calls. The older NemoClaw client using `validate/prepare/configure` requires migration. Version 1 requests fail explicitly. Direct SDK lifecycle and streaming APIs retain their existing behavior.

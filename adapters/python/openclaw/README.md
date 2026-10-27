@@ -86,6 +86,79 @@ OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gate
 
 Relay telemetry and native OpenTelemetry are not supported.
 
+## Gateway Health
+
+Use `Fabric.check()` with a prepared or attached service handle to observe the Gateway before starting any NeMo Fabric runtimes. Gateway checks use the local SDK and the selected Gateway.
+
+| Level | Native observation |
+|---|---|
+| `live` | `GET /healthz` returns the expected liveness response. |
+| `active` | Authenticated `GET /v1/models` returns a valid model inventory. |
+| `ready` | `GET /readyz` reports native Gateway readiness, including configured channel health. |
+
+Requesting `ready` evaluates `live`, `active`, and `ready` in order under one deadline, stopping at the first nonpassing result. A configured channel failure can fail Gateway readiness while the first two levels pass. Native readiness follows OpenClaw's channel policies and can use cached observations.
+
+Check an owned Gateway with the following code, or pass the handle returned by `attach_service()`:
+
+```python
+from nemo_fabric import CheckRequest, Fabric
+
+fabric = Fabric()
+async with await fabric.prepare_service(config, base_dir=base_dir) as service:
+    report = await fabric.check(
+        service=service.handle,
+        request=CheckRequest(
+            scope="service", service_id=service.service_id, level="ready"
+        ),
+    )
+    print(report.outcome)
+```
+
+Checks can run while connected runtimes are invoking. Timeouts return `unknown/probe_timeout`. Release during a check returns `unknown/observation_changed`; checks after release return `unknown/service_unavailable`.
+
+## Runtime Health
+
+Use a Gateway service check before starting runtimes or to monitor a shared
+Gateway that serves several runtimes. Use a runtime check after starting a
+runtime to verify the selected agent and Chat Completions endpoint. A Gateway
+can pass `active` while a runtime fails `active`: for example, the Gateway
+returns a valid model inventory that no longer includes the runtime's selected
+agent. Both `ready` checks include configured channel health.
+
+Use runtime-scoped `Fabric.check()` to check the agent selected by a NeMo Fabric runtime. These checks support owned Gateways and runtimes connected to a prepared or attached service. The SDK uses the same request for local and OpenShell environments; OpenShell forwards the request through `fabric-agent-ctl check`.
+
+| Level | Native evidence |
+|---|---|
+| `live` | `GET /healthz` returns the liveness response. An owned Gateway process is running. |
+| `active` | `GET /startupz` confirms startup; authenticated `GET /v1/models` includes `openclaw/<agent_id>`; `GET /v1/chat/completions` returns the native `405` response with `Allow: POST`. |
+| `ready` | `GET /readyz` returns HTTP 200 with `ready: true`, including configured channel health. |
+
+The `GET /v1/chat/completions` check confirms that the Chat Completions endpoint is enabled. The model inventory can remain available through the Responses API when Chat Completions is disabled. Malformed native responses return `unknown/probe_error`; a missing selected agent or disabled request endpoint returns `failed/endpoint_unavailable`. An interface disabled after an invocation failure cannot pass `active`.
+
+Check a runtime with the following code:
+
+```python
+from nemo_fabric import CheckRequest, Fabric
+
+fabric = Fabric()
+environment = await fabric.prepare_environment(config, base_dir=base_dir)
+try:
+    async with await fabric.start_runtime_in(
+        config, environment, base_dir=base_dir
+    ) as runtime:
+        report = await fabric.check(
+            environment=environment,
+            request=CheckRequest(
+                scope="runtime", runtime_id=runtime.runtime_id, level="ready"
+            ),
+        )
+        print(report.outcome)
+finally:
+    await fabric.release_environment(environment)
+```
+
+Levels run in order under one deadline and stop at the first nonpassing result. A busy runtime can pass; a timeout returns `unknown/probe_timeout`. Reported runtime activity covers NeMo Fabric invocations. Stop or ownership changes invalidate observations.
+
 ## Use a NeMo Fabric-Owned Service
 
 `prepare_service()` maps the normalized `FabricConfig` to `openclaw.json`,
