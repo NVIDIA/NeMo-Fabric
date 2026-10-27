@@ -151,3 +151,5 @@ For installation, configuration, and operational guidance, refer to the
 Qwen Code supports `live`, `active`, `ready` through `Fabric.check()`. Each level sends Qwen SDK `Query.supportedCommands()` to the owned initialized CLI query. The native read-only control response confirms liveness, request-interface access, and the narrow readiness equivalent. `Query.isClosed()` and adapter ownership guards reject closed or replaced sessions. The commands are validated and discarded.
 
 Checks remain independent of an invocation. A busy invocation is healthy. Checks use the caller deadline and never cancel an invocation, stop the runtime, or repair a failure. Health does not establish valid model credentials, provider access, MCP connectivity, or successful model output. At most one native request remains outstanding. A check returns `unknown/probe_timeout` while an earlier native request remains pending; later checks do not reuse a delayed reply. Reports contain only the generic health contract fields.
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
