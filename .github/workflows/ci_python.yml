@@ -124,7 +124,7 @@ jobs:
 
       - name: Run pytest
         env:
-          FABRIC_REQUIRE_TYPESCRIPT_REDUCER_PARITY: ${{ matrix.platform == 'linux-amd64' && matrix.python-version == '3.12' && '1' || '0' }}
+          FABRIC_REQUIRE_TYPESCRIPT_REDUCER_PARITY: "1"
         run: |
           set -euo pipefail
           just --set no_uv true test-python
