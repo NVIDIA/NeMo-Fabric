@@ -1777,6 +1777,13 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -1897,7 +1904,7 @@
         "name": "nemo-fabric-adapters-opencode",
         "version": "0.6.0"
       },
-      "sha256": "86175ea45671c92601bf1a132fc0fe91f3de82f19ce8bf4249e9993125c32641",
+      "sha256": "805000dba39244d6e33cacfd228660f73ba0c2854aa7d8813cef8479eea67b20",
       "source": "adapters/typescript/opencode/opencode.fabric-adapter.json"
     },
     "nvidia.fabric.openhands": {

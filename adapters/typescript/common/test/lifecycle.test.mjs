@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -267,4 +267,28 @@ test("attempts cleanup when input ends without stop", async () => {
     [start("runtime-1")],
   );
   assert.equal(stopped, true);
+});
+
+test("health endpoint survives adapter startup environment isolation", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "fabric-health-environment-"));
+  const previousHome = process.env.FABRIC_HOME;
+  process.env.FABRIC_HOME = directory;
+  t.after(async () => {
+    if (previousHome === undefined) delete process.env.FABRIC_HOME;
+    else process.env.FABRIC_HOME = previousHome;
+    await rm(directory, { recursive: true, force: true });
+  });
+  let inspected = false;
+  await exchange(() => ({
+    async start() { delete process.env.FABRIC_HOME; },
+    async invoke() {
+      const endpoint = JSON.parse(await readFile(join(directory, "health.endpoint.json"), "utf8"));
+      assert.equal(endpoint.runtime_id, "runtime-1");
+      inspected = true;
+      return { status: "succeeded", output: null };
+    },
+    async check() { return { outcome: "passed", reason_code: null, source: "fabric.adapter.liveness", observed_at: new Date().toISOString(), activity: "idle" }; },
+    async stop() { },
+  }), [start("runtime-1"), invoke("runtime-1", "inspect", "invoke-1")]);
+  assert.equal(inspected, true);
 });
