@@ -15,11 +15,15 @@ per-invocation iteration limit into OpenHands.
 Install the tested OpenHands SDK and tools, then install the adapter:
 
 ```bash
-pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0"
+pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0" \
+  "litellm==1.100.1" "mcp==1.28.1"
 pip install nemo-fabric-adapters-openhands
 ```
 
-The 1.50.0 package pair is validated with NVIDIA NIM.
+The OpenHands SDK and tools 1.50.0 pair is validated with NVIDIA NIM. OpenHands
+SDK 1.50.0 requires FastMCP 3.x, whose client requires MCP 1.x. Pin LiteLLM and
+MCP together in OpenShell task images: newer LiteLLM releases can require MCP
+2.x, which is incompatible with this FastMCP client.
 
 The adapter package supports Python 3.11 or later, while OpenHands requires
 Python 3.12 or later. The adapter package does not install OpenHands.
@@ -30,7 +34,8 @@ processes:
 
 ```bash
 uv sync --group adapter-tests
-uv pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0"
+uv pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0" \
+  "litellm==1.100.1" "mcp==1.28.1"
 export ADAPTER_PYTHON="$PWD/.venv/bin/python"
 ```
 
