@@ -296,6 +296,8 @@ Runtime checks support three cumulative levels, including during an invocation:
 
 Active and ready use the same native status probe for this MVP. The health result describes initialized CLI responsiveness; MCP connection states remain native configuration diagnostics.
 
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+
 ## Testing
 
 The default suite uses deterministic mock Claude Code and NeMo Relay CLIs and

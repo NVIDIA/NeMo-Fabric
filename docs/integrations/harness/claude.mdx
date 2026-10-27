@@ -182,3 +182,9 @@ NeMo Fabric's `relay` extra installs only the Relay Python library and does not
 install the CLI. NeMo Fabric owns sidecar supervision, Claude configuration,
 and upstream selection. Relay owns the gateway transport and semantic
 observability pipeline.
+
+## Runtime Health
+
+`Fabric.check()` supports `live`, `active`, and `ready`. Liveness observes the owned CLI process. Active and ready require a fresh, valid `get_mcp_status()` response; reported MCP connection failures do not themselves fail readiness.
+
+Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
