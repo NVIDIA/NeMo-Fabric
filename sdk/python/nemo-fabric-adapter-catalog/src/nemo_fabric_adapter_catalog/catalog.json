@@ -2567,6 +2567,11 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -2747,7 +2752,7 @@
         "name": "nemo-fabric-adapters-strands",
         "version": "0.6.0"
       },
-      "sha256": "09cbfc363b9f89f9e66b39dceea2c70f58c6bce5de8f51ecd1071c64413719ce",
+      "sha256": "37982ca315b241b03fce3edb1d49d2f1663e3224ebcf89824d3a976055ccd949",
       "source": "adapters/typescript/strands/strands.fabric-adapter.json"
     }
   },

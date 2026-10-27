@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type {
+  AdapterCheckResult,
+  CheckLevel,
   AgentRunRequest,
   AgentRunResult,
   AgentUsage,
@@ -9,6 +11,7 @@ import type {
   RuntimeContext,
 } from "nemo-fabric-adapter-contract";
 import {
+  unobservedHealth,
   LifecycleError,
   type AdapterRuntime,
   type AdapterStartInput,
@@ -47,6 +50,8 @@ function failed(
 
 export class StrandsAdapterRuntime implements AdapterRuntime {
   private readonly factory: StrandsSessionFactory;
+  private generation = 0;
+  private activeInvocations = 0;
   private session?: StrandsSessionHandle;
   private invalidated = false;
   private invocations = 0;
@@ -65,6 +70,7 @@ export class StrandsAdapterRuntime implements AdapterRuntime {
     }
     this.maxInvocations = selectSettings(input.config).maxInvocations;
     this.session = await this.factory.create(input);
+    this.generation++;
     this.invalidated = false;
     this.invocations = 0;
   }
@@ -76,6 +82,21 @@ export class StrandsAdapterRuntime implements AdapterRuntime {
     } catch {
       // Preserve the invocation failure that made the session unusable.
     }
+  }
+
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    const session = this.session;
+    const generation = this.generation;
+    if (session === undefined) return unobservedHealth("runtime_unavailable");
+    if (this.invalidated) return unobservedHealth("observation_changed");
+    let result: AdapterCheckResult;
+    try {
+      result = await session.check(level);
+    } catch {
+      result = unobservedHealth("probe_error");
+    }
+    if (this.session !== session || this.generation !== generation) return unobservedHealth("observation_changed");
+    return result.outcome === "passed" ? { ...result, activity: this.activeInvocations > 0 ? "busy" : "idle" } : result;
   }
 
   async invoke(
@@ -128,6 +149,7 @@ export class StrandsAdapterRuntime implements AdapterRuntime {
     }
     this.invocations++;
     let outcome: StrandsPromptOutcome;
+    this.activeInvocations++;
     try {
       outcome = await session.prompt(request.input, timeoutMs);
     } catch (error) {
@@ -137,6 +159,8 @@ export class StrandsAdapterRuntime implements AdapterRuntime {
         "strands_session_failed",
         "Strands ACP session communication failed",
       );
+    } finally {
+      this.activeInvocations--;
     }
     const extensions = resultExtensions(session, outcome);
     if (outcome.stopReason === "cancelled") {
@@ -177,6 +201,7 @@ export class StrandsAdapterRuntime implements AdapterRuntime {
   }
 
   async stop(): Promise<void> {
+    this.generation++;
     const session = this.session;
     if (session !== undefined) {
       this.invalidated = true;

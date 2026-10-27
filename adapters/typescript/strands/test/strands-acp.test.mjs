@@ -264,3 +264,23 @@ test("retains a timed-out runtime session until process cleanup succeeds", { ski
   await runtime.stop();
   assert.equal(kill.mock.callCount(), attempts);
 });
+
+test("health uses the owned ACP child while the prompt remains blocked", { timeout: 10_000 }, async (t) => {
+  const input = await fixture(t);
+  const runtime = new StrandsAdapterRuntime(new StrandsAcpSessionFactory());
+  await runtime.start(input);
+  t.after(() => runtime.stop());
+  assert.equal((await runtime.check("live")).outcome, "passed");
+  assert.equal((await runtime.check("active")).outcome, "unsupported");
+  assert.equal((await runtime.check("ready")).outcome, "unsupported");
+  const invocation = runtime.invoke({ input: "hang" }, input.runtimeContext);
+  const rejection = assert.rejects(invocation);
+  await delay(20);
+  const result = await runtime.check("live");
+  assert.equal(result.outcome, "passed");
+  assert.equal(result.activity, "busy");
+  const { pid } = JSON.parse(await readFile(input.runtimeContext.environment.env.TEST_STRANDS_STATE, "utf8"));
+  process.kill(pid, "SIGTERM");
+  await rejection;
+  assert.equal((await runtime.check("live")).reason_code, "observation_changed");
+});

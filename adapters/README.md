@@ -241,3 +241,5 @@ the [adapter utilities guide](python/common/README.md).
 OpenCode runtime health supports `live`, `active`, `ready`. Refer to the [OpenCode health guide](typescript/opencode/README.md#runtime-health) for the qualified evidence and limits.
 
 Qwen Code runtime health supports `live`, `active`, `ready`. Refer to the [Qwen Code health guide](typescript/qwen/README.md#runtime-health) for the qualified evidence and limits.
+
+Strands runtime health supports `live`. Refer to the [Strands health guide](typescript/strands/README.md#runtime-health) for the qualified evidence and limits.

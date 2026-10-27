@@ -61,6 +61,7 @@ def test_strands_plans_models_instructions_and_mcp(strands_config):
     descriptor = plan.adapter_descriptor["descriptor"]
     assert descriptor == {**json.loads(DESCRIPTOR.read_text()), "telemetry": {}}
     assert descriptor["capabilities"] == {
+        "metadata": {"health_checks": ["live"]},
         "streaming": False,
         "cancellation": False,
         "updates": False,

@@ -12,7 +12,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 
-import type { AgentUsage } from "nemo-fabric-adapter-contract";
+import type { AdapterCheckResult, CheckLevel, AgentUsage } from "nemo-fabric-adapter-contract";
 import {
   AcpRunnerError,
   LifecycleError,
@@ -38,6 +38,7 @@ export interface StrandsPromptOutcome {
 
 export interface StrandsSessionHandle {
   readonly id: string;
+  check(level: CheckLevel): Promise<AdapterCheckResult>;
   prompt(text: string, timeoutMs?: number): Promise<StrandsPromptOutcome>;
   stop(): Promise<void>;
 }
@@ -190,6 +191,14 @@ class StrandsAcpSession implements StrandsSessionHandle {
     private readonly home: string,
   ) {
     this.id = session.sessionId;
+  }
+
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    if (level !== "live") return { outcome: "unsupported", reason_code: "unsupported_level", source: "fabric.adapter", observed_at: null, activity: "unknown" };
+    const alive = this.session.observeProcess().alive;
+    return alive
+      ? { outcome: "passed", reason_code: null, source: "fabric.adapter.liveness", observed_at: new Date().toISOString(), activity: "idle" }
+      : { outcome: "failed", reason_code: "agent_exited", source: "fabric.adapter.liveness", observed_at: new Date().toISOString(), activity: "stopped" };
   }
 
   async prompt(

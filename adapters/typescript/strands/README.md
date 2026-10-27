@@ -144,3 +144,9 @@ uv run pytest tests/e2e/test_strands.py
 ```
 
 The [code-review example](../../../examples/code_review_agent/README.md) includes `--variant strands` for a runnable application.
+
+## Runtime Health
+
+Strands supports `live` through `Fabric.check()`. `live` reads the owned ACP child process exit and signal state. The pinned Strands CLI has no qualified read-only session health request, so `active` and `ready` return `unsupported`. A retained Fabric handle does not establish liveness.
+
+Checks remain independent of an invocation. A busy invocation is healthy. Checks use the caller deadline and never cancel an invocation, stop the runtime, or repair a failure. Health does not establish valid model credentials, provider access, MCP connectivity, or successful model output. Reports contain only the generic health contract fields.
