@@ -10,4 +10,4 @@ await serve(async () => {
     import("./runtime.js"),
   ]);
   return new KiroAdapterRuntime(new KiroAcpSessionFactory());
-});
+}, { software: { packageJson: new URL("../package.json", import.meta.url), harness: "kiro", packages: [{"role": "framework", "name": "@agentclientprotocol/sdk"}] } });

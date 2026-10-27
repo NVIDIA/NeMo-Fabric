@@ -247,3 +247,5 @@ OpenCode runtime health supports `live`, `active`, `ready`. Refer to the [OpenCo
 Qwen Code runtime health supports `live`, `active`, `ready`. Refer to the [Qwen Code health guide](typescript/qwen/README.md#runtime-health) for the qualified evidence and limits.
 
 Strands runtime health supports `live`. Refer to the [Strands health guide](typescript/strands/README.md#runtime-health) for the qualified evidence and limits.
+
+Selected software evidence is collected by the shared lifecycle hosts at initialization. Python adapters own a narrow `PROVENANCE_PACKAGES` selection; TypeScript CLIs supply their own package resolution context. Existing startup reports can supplement the inventory without new probes. `FabricConfig.provenance.enabled=false` disables this work in both SDK and adapter hosts. See [software evidence](../docs/sdk/python.mdx#selected-software-evidence).

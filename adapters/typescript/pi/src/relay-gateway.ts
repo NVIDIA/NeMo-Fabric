@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+
+import { recordSoftwareVersion } from "nemo-fabric-adapters-common";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { constants } from "node:fs";
 import { access, mkdir, open, realpath, stat } from "node:fs/promises";
@@ -127,6 +129,7 @@ export async function relayCliContract(
       `unsupported NeMo Relay CLI version ${version.join(".")}; NeMo Fabric Pi requires >=0.9.0,<0.12.0`,
     );
   }
+  recordSoftwareVersion("nemo-relay", match[0], "adapter:relay_startup_version", "relay", "observed");
   return { version };
 }
 

@@ -29,3 +29,7 @@ export {
   type AcpSessionReadinessNotification,
 } from "./acp-runner.js";
 export { unobservedHealth } from "./health.js";
+
+export type { SoftwareSelection } from "./provenance.js";
+
+export { recordSoftwareVersion } from "./provenance.js";

@@ -106,6 +106,9 @@ def relay_cli_contract(executable: Path) -> RelayCliContract:
             f"{'.'.join(str(value) for value in version)}; "
             "NeMo Fabric requires >=0.9.0,<0.12.0"
         )
+    from nemo_fabric_adapters.common.provenance import record_version
+
+    record_version("nemo-relay", match.group(0), "adapter:relay_startup_version", role="relay", origin="observed")
     return RelayCliContract(version=version)
 
 

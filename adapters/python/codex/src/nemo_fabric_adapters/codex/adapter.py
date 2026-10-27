@@ -1729,5 +1729,14 @@ def main() -> None:
     lifecycle.serve(CodexRuntime, config_loader=AgentConfig.from_mapping)
 
 
+
+# Selected software reported by the shared lifecycle host; no dependency scan.
+PROVENANCE_PACKAGES = (
+    ("adapter", "nemo-fabric-adapters-codex", "nemo_fabric_adapters.codex.adapter"),
+)
+PROVENANCE_HARNESS = "codex"
+
+PROVENANCE_PACKAGES += (("framework", "openai-codex", "openai_codex"),)
+
 if __name__ == "__main__":
     main()

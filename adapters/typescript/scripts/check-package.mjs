@@ -29,6 +29,8 @@ const expectedByPackage = {
     "dist/index.js",
     "dist/health.d.ts",
     "dist/health.js",
+    "dist/provenance.d.ts",
+    "dist/provenance.js",
     "dist/lifecycle.d.ts",
     "dist/lifecycle.js",
     "dist/model-endpoint.d.ts",

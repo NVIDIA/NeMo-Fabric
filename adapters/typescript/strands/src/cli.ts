@@ -8,4 +8,4 @@ await serve(async () => {
   const [{ StrandsAcpSessionFactory }, { StrandsAdapterRuntime }] =
     await Promise.all([import("./strands-acp.js"), import("./runtime.js")]);
   return new StrandsAdapterRuntime(new StrandsAcpSessionFactory());
-});
+}, { software: { packageJson: new URL("../package.json", import.meta.url), harness: "strands", packages: [{"role": "framework", "name": "@agentclientprotocol/sdk"}] } });

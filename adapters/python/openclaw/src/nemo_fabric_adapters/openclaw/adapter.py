@@ -1738,5 +1738,16 @@ def main() -> None:
     lifecycle.serve(OpenClawRuntime, config_loader=contract.AgentConfig.from_mapping)
 
 
+
+# Selected software reported by the shared lifecycle host; no dependency scan.
+PROVENANCE_PACKAGES = (
+    (
+        "adapter",
+        "nemo-fabric-adapters-openclaw",
+        "nemo_fabric_adapters.openclaw.adapter",
+    ),
+)
+PROVENANCE_HARNESS = "openclaw"
+
 if __name__ == "__main__":
     main()

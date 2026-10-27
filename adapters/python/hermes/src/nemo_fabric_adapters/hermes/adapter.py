@@ -714,5 +714,12 @@ def filter_supported_call_kwargs(func: Any, **kwargs: Any) -> dict[str, Any]:
     return {key: value for key, value in kwargs.items() if key in supported}
 
 
+
+# Selected software reported by the shared lifecycle host; no dependency scan.
+PROVENANCE_PACKAGES = (
+    ("adapter", "nemo-fabric-adapters-hermes", "nemo_fabric_adapters.hermes.adapter"),
+)
+PROVENANCE_HARNESS = "hermes"
+
 if __name__ == "__main__":
     main()

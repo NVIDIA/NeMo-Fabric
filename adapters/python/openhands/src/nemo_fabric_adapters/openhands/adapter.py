@@ -562,5 +562,16 @@ def main() -> None:
     lifecycle.serve(OpenHandsRuntime, config_loader=contract.AgentConfig.from_mapping)
 
 
+
+# Selected software reported by the shared lifecycle host; no dependency scan.
+PROVENANCE_PACKAGES = (
+    (
+        "adapter",
+        "nemo-fabric-adapters-openhands",
+        "nemo_fabric_adapters.openhands.adapter",
+    ),
+    ("harness", "openhands-sdk", "openhands.sdk"),
+)
+
 if __name__ == "__main__":
     main()

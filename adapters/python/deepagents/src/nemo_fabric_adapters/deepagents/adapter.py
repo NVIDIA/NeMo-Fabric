@@ -1496,5 +1496,18 @@ def _supported_kwargs(callable_obj: Any, kwargs: dict[str, Any]) -> dict[str, An
     return {key: value for key, value in kwargs.items() if key in supported}
 
 
+
+# Selected software reported by the shared lifecycle host; no dependency scan.
+PROVENANCE_PACKAGES = (
+    (
+        "adapter",
+        "nemo-fabric-adapters-deepagents",
+        "nemo_fabric_adapters.deepagents.adapter",
+    ),
+    ("harness", "deepagents", "deepagents"),
+    ("framework", "langgraph", "langgraph.graph"),
+    ("framework", "langchain-core", "langchain_core"),
+)
+
 if __name__ == "__main__":
     main()

@@ -392,6 +392,136 @@ mod tests {
     }
 }
 
+impl ExecutionEvidence {
+    /// Join distinct source contexts, preserving observations and rebasing local refs.
+    pub fn append(&mut self, report: Self) {
+        let mut report = if report.valid() {
+            report
+        } else {
+            Self::gap("reporter", "report_invalid_or_over_budget")
+        };
+        let mut refs = std::collections::BTreeMap::new();
+        for env in &mut report.software_environments {
+            let next = format!("env-{}", self.software_environments.len());
+            refs.insert(env.context_ref.clone(), next.clone());
+            env.context_ref = next;
+            self.software_environments.push(env.clone());
+        }
+        if let Some(mut infrastructure) = report.infrastructure {
+            if let Some(sandbox) = &mut infrastructure.sandbox {
+                for key in &mut sandbox.context_refs {
+                    *key = refs[key].clone();
+                }
+            }
+            if let Some(container) = &mut infrastructure.container {
+                for key in &mut container.context_refs {
+                    *key = refs[key].clone();
+                }
+            }
+            let existing = self.infrastructure.get_or_insert_with(Default::default);
+            if (existing.sandbox.is_some() && infrastructure.sandbox.is_some())
+                || (existing.container.is_some() && infrastructure.container.is_some())
+            {
+                *self = Self::gap("reporter", "conflicting_infrastructure_reports");
+                return;
+            }
+            if infrastructure.sandbox.is_some() {
+                existing.sandbox = infrastructure.sandbox;
+            }
+            if infrastructure.container.is_some() {
+                existing.container = infrastructure.container;
+            }
+        }
+        if self.software_environments.len() > MAX_ENVIRONMENTS {
+            self.software_environments.truncate(MAX_ENVIRONMENTS - 1);
+            let mut gap = Self::gap("additional_contexts", "report_context_limit")
+                .software_environments
+                .remove(0);
+            gap.context_ref = format!("env-{}", MAX_ENVIRONMENTS - 1);
+            self.software_environments.push(gap);
+        }
+        while self
+            .software_environments
+            .iter()
+            .map(|env| env.entries.len())
+            .sum::<usize>()
+            > MAX_ENTRIES
+            || serde_json::to_vec(self).is_ok_and(|bytes| bytes.len() > MAX_REPORT_BYTES)
+        {
+            let Some(env) = self.software_environments.last_mut() else {
+                break;
+            };
+            if env.entries.pop().is_some() {
+                env.complete = false;
+                env.reason = Some("report_truncated_by_entry_or_byte_limit".into());
+            } else if self.software_environments.len() > 1 {
+                self.software_environments.pop();
+                let env = self.software_environments.last_mut().unwrap();
+                env.complete = false;
+                env.reason = Some("additional_contexts_over_budget".into());
+            } else {
+                *self = Self::gap("reporter", "combined_report_over_budget");
+                return;
+            }
+        }
+        let refs: std::collections::BTreeSet<_> = self
+            .software_environments
+            .iter()
+            .map(|e| e.context_ref.as_str())
+            .collect();
+        if let Some(infrastructure) = &mut self.infrastructure {
+            // Never keep a dangling join after dropping an over-budget context.
+            if infrastructure
+                .sandbox
+                .as_ref()
+                .is_some_and(|s| s.context_refs.iter().any(|r| !refs.contains(r.as_str())))
+            {
+                infrastructure.sandbox = None;
+            }
+            if infrastructure
+                .container
+                .as_ref()
+                .is_some_and(|s| s.context_refs.iter().any(|r| !refs.contains(r.as_str())))
+            {
+                infrastructure.container = None;
+            }
+        }
+    }
+}
+
+/// Capture the executing compiled core once at runtime initialization.
+/// No package discovery, executable command or dependency walk is performed.
+pub(crate) fn core_snapshot(config: &ProvenanceConfig) -> Option<ExecutionEvidence> {
+    if !config.enabled {
+        return None;
+    }
+    let mut report = config.reports.clone().unwrap_or_default();
+    report.append(ExecutionEvidence {
+        software_environments: vec![SoftwareEnvironment {
+            context_ref: "env-0".into(),
+            participants: vec!["core".into()],
+            status: InventoryStatus::Available,
+            reason: None,
+            complete: true,
+            entries: vec![SoftwareEntry {
+                role: "fabric_core".into(),
+                kind: "component".into(),
+                name: "nemo-fabric-core".into(),
+                version: VersionObservation {
+                    status: EvidenceStatus::Available,
+                    value: Some(crate::version().into()),
+                    source: "core:version".into(),
+                    origin: EvidenceOrigin::Observed,
+                    observed_at: crate::time::rfc3339_millis(std::time::SystemTime::now()),
+                    reason: None,
+                },
+            }],
+        }],
+        infrastructure: None,
+    });
+    Some(report)
+}
+
 fn utc_timestamp_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
     schemars::json_schema!({"type": "string", "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$"})
 }

@@ -237,3 +237,5 @@ Relay promotes the keys onto the invocation's root Agent span; child spans
 share that span's trace. Refer to "Event Metadata Promotion" in the
 [NeMo Relay OpenTelemetry documentation](https://github.com/NVIDIA/NeMo-Relay/blob/0.9.3/docs/configure-plugins/observability/opentelemetry.mdx)
 for prefix syntax and collision rules.
+
+The lifecycle host carries optional typed software evidence beside its outcome, leaving `AgentRunResult` unchanged. It collects selected metadata after successful startup and reuses that snapshot across invocations. The start payload's `provenance.enabled=false` skips collectors and passive version capture. Missing reports from older hosts remain explicit gaps at the core receiver. Metadata helpers adapt selected code from NVIDIA/NeMo-Fabric#458 at `2bfd53321fa8d541d42abc195be5e9dd9db4350f`; the current report model, bounds and timestamps are independent of that PR's versioned extension envelope.

@@ -596,7 +596,9 @@ def test_lifecycle_host_reuses_one_runtime_and_one_event_loop():
         "stop",
     ]
     assert all(item["outcome"]["status"] == "succeeded" for item in responses)
-    assert all(set(item) == {"operation", "outcome"} for item in responses)
+    assert all(set(item) == {"operation", "outcome", "execution"} for item in responses[:3])
+    assert set(responses[3]) == {"operation", "outcome"}
+    assert responses[0]["execution"] == responses[1]["execution"] == responses[2]["execution"]
     assert responses[1]["outcome"]["output"] == {
         "status": "succeeded",
         "output": {"count": 1, "input": "first"},

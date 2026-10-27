@@ -1341,6 +1341,12 @@ class ClaudeRuntime:
             async with deadline:
                 await client.query(prompt)
                 async for message in client.receive_response():
+                    if getattr(message, "subtype", None) == "init":
+                        data = getattr(message, "data", {})
+                        if isinstance(data, dict) and isinstance(data.get("claude_code_version"), str):
+                            from nemo_fabric_adapters.common.provenance import record_version
+
+                            record_version("claude", data["claude_code_version"], "harness:claude_init")
                     if isinstance(message, ResultMessage):
                         result = message
                     else:
@@ -1491,6 +1497,14 @@ def main() -> None:
 
     lifecycle.serve(ClaudeRuntime, config_loader=AgentConfig.from_mapping)
 
+
+
+# Selected software reported by the shared lifecycle host; no dependency scan.
+PROVENANCE_HARNESS = "claude"
+PROVENANCE_PACKAGES = (
+    ("adapter", "nemo-fabric-adapters-claude", "nemo_fabric_adapters.claude.adapter"),
+    ("harness", "claude-agent-sdk", "claude_agent_sdk"),
+)
 
 if __name__ == "__main__":
     main()

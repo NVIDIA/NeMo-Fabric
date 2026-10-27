@@ -407,11 +407,13 @@ class _HostState:
     generation: int = 0
     stopping: bool = False
     health: health_transport._HealthServer | None = None
+    execution: dict[str, Any] | None = None
 
     def clear(self) -> None:
         self.runtime = None
         self.runtime_id = None
         self.failed = False
+        self.execution = None
 
 
 def _error(
@@ -579,12 +581,19 @@ async def _handle_start(
             ) from error
         payload = {**payload, "config": config}
 
+    from nemo_fabric_adapters.common.provenance import enable_capture
+
+    enable_capture(payload.get("provenance", {}).get("enabled", True) is not False)
     candidate = runtime_factory()
     try:
         output = await _adapter_call("start", lambda: candidate.start(payload))
         state.runtime = candidate
         state.runtime_id = message_runtime_id
         state.failed = False
+        from nemo_fabric_adapters.common.provenance import collect_runtime
+
+        report = collect_runtime(candidate, payload)
+        state.execution = None if report is None else report.to_mapping()
         check = getattr(candidate, "check", None)
         directory = os.environ.get("FABRIC_HOME")
         if directory is not None and callable(check):
@@ -815,6 +824,15 @@ async def _serve(
                     message_runtime_id,
                     config_loader,
                 )
+                if state.execution is not None and operation in {
+                    "start",
+                    "invoke",
+                    "invoke_openai_stream",
+                }:
+                    from nemo_fabric_adapters.common.provenance import refresh_passive
+
+                    state.execution = refresh_passive(state.execution)
+                    response["execution"] = state.execution
                 should_stop = operation == "stop"
             except LifecycleError as error:
                 if (

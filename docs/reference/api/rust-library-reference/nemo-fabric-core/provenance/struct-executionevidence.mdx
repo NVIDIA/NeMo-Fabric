@@ -47,6 +47,16 @@ Decode optional untrusted evidence without replacing the original outcome. Recei
 
 Explicit incomplete evidence at an implemented receiving boundary.
 
+### `impl ExecutionEvidence`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"struct-executionevidence.mdx\">ExecutionEvidence</a>"}} /></pre>
+
+#### `append`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn append(&amp;mut self, report: Self)"}} /></pre>
+
+Join distinct source contexts, preserving observations and rebasing local refs.
+
 ## Trait Implementations
 
 ### `impl Clone for ExecutionEvidence`

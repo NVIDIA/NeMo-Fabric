@@ -747,6 +747,7 @@ impl AdapterLifecycleOperation {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct AdapterLifecycleStart {
+    provenance: crate::ProvenanceConfig,
     agent_name: String,
     base_dir: PathBuf,
     config: AgentConfig,
@@ -840,6 +841,8 @@ enum AdapterLifecycleOutcome {
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 struct AdapterLifecycleResponse {
+    #[serde(default)]
+    execution: Option<Value>,
     operation: AdapterLifecycleOperation,
     outcome: AdapterLifecycleOutcome,
 }
@@ -871,6 +874,8 @@ struct RelayRuntimeConfig {
 }
 
 struct LocalAdapterHost {
+    execution: Option<crate::ExecutionEvidence>,
+    adapter_execution: Option<crate::ExecutionEvidence>,
     child: Child,
     #[cfg(windows)]
     job: Option<std::os::windows::io::OwnedHandle>,
@@ -1608,13 +1613,15 @@ fn runtime_binding(
     plan: &RunPlan,
     environment: &EnvironmentHandle,
 ) -> Result<String> {
+    let mut binding_plan = plan.clone();
+    binding_plan.config.provenance.reports = None;
     stable_hash(
         "fabric-runtime-binding",
         &RuntimeBindingMaterial {
             runtime_id,
             service_id,
             environment_id: &environment.environment_id,
-            plan,
+            plan: &binding_plan,
             environment: runtime_environment_binding(environment),
         },
     )
@@ -1637,11 +1644,13 @@ fn service_binding(
     ownership: ServiceOwnership,
     info: &AdapterServiceInfo,
 ) -> Result<String> {
+    let mut binding_plan = plan.clone();
+    binding_plan.config.provenance.reports = None;
     stable_hash(
         "fabric-service-binding",
         &ServiceBindingMaterial {
             service_id,
-            plan,
+            plan: &binding_plan,
             ownership,
             adapter_id: &info.adapter_id,
             service_type: &info.service_type,
@@ -2181,6 +2190,15 @@ fn run_local_host_invocation_with_timeout(
                     output,
                     resource_snapshot,
                     system_stats,
+                    {
+                        let mut execution = host_guard.execution.clone();
+                        if let (Some(report), Some(adapter)) =
+                            (&mut execution, &host_guard.adapter_execution)
+                        {
+                            report.append(adapter.clone());
+                        }
+                        execution
+                    },
                     stats_summary,
                     stderr,
                     host_guard.command.clone(),
@@ -2206,6 +2224,7 @@ fn run_local_host_invocation_with_timeout(
         adapter_output,
         resource_snapshot,
         system_stats,
+        execution,
         stats_summary,
         stderr,
         host_command,
@@ -2378,7 +2397,7 @@ fn run_local_host_invocation_with_timeout(
         output,
         error,
         usage: agent_result.usage.as_ref().map(run_usage),
-        execution: None,
+        execution,
         resource_snapshot,
         system_stats,
         artifacts,
@@ -2699,6 +2718,8 @@ fn spawn_local_host(
         });
     }
     Ok(LocalAdapterHost {
+        execution: crate::provenance::core_snapshot(&plan.config.provenance),
+        adapter_execution: None,
         child,
         #[cfg(windows)]
         job,
@@ -2887,6 +2908,14 @@ fn exchange_lifecycle_message(
             ),
             local_host_diagnostics(host),
         ));
+    }
+    if host.execution.is_some() && operation != AdapterLifecycleOperation::Stop {
+        if response.execution.is_some() || host.adapter_execution.is_none() {
+            host.adapter_execution = Some(crate::ExecutionEvidence::receive(
+                response.execution,
+                "adapter",
+            ));
+        }
     }
     match response.outcome {
         AdapterLifecycleOutcome::Succeeded { output } => Ok(output),
@@ -3253,6 +3282,10 @@ fn adapter_lifecycle_start(
 ) -> Result<AdapterLifecycleStart> {
     let config = adapter_lifecycle_config(plan);
     Ok(AdapterLifecycleStart {
+        provenance: crate::ProvenanceConfig {
+            enabled: plan.config.provenance.enabled,
+            reports: None,
+        },
         agent_name: plan.agent_name.clone(),
         base_dir: absolute_path(plan.base_dir.clone())?,
         config,

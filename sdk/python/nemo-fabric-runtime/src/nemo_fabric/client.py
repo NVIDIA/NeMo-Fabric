@@ -12,6 +12,7 @@ import logging
 import math
 import os
 import time
+from threading import Lock
 from collections.abc import Mapping
 from contextlib import AsyncExitStack
 from concurrent.futures import ThreadPoolExecutor
@@ -77,6 +78,10 @@ class Fabric:
     ``attach_environment()``, then ``start_runtime_in()`` and
     ``release_environment()`` separately.
 
+    Software capture is deferred until enabled initialization so configuration
+    can disable all lookups. A new Fabric instance refreshes the SDK snapshot.
+    Embedded guest servers label their own SDK observations ``guest_sdk``.
+
     ``Fabric`` uses the native Rust extension. SDK calls raise
     ``FabricNativeUnavailableError`` when the native extension is not
     installed.
@@ -86,7 +91,21 @@ class Fabric:
     """
 
     def __init__(self) -> None:
-        pass
+        self._execution_participant = "caller_sdk"
+        self._software_snapshot = None
+        self._software_snapshot_lock = Lock()
+
+    def _with_provenance(self, config: FabricConfig) -> FabricConfig:
+        if not isinstance(config, FabricConfig):
+            _config_json(config)
+        if not config.provenance.enabled:
+            return config
+        from nemo_fabric.provenance import sdk_snapshot, with_snapshot
+
+        with self._software_snapshot_lock:
+            if self._software_snapshot is None:
+                self._software_snapshot = sdk_snapshot(self._execution_participant)
+        return with_snapshot(config, self._software_snapshot)
 
     async def check(
         self,
@@ -319,7 +338,9 @@ class Fabric:
                 normalized result can be returned.
         """
 
-        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
+        plan = await _call_blocking(
+            lambda: self.plan(self._with_provenance(config), base_dir=base_dir)
+        )
         if expected_descriptor_sha256 is not None:
             _verify_adapter_descriptor(plan, expected_descriptor_sha256)
         request_payload = _run_request_payload(
@@ -425,7 +446,9 @@ class Fabric:
             FabricRuntimeError: If environment preparation fails.
         """
 
-        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
+        plan = await _call_blocking(
+            lambda: self.plan(self._with_provenance(config), base_dir=base_dir)
+        )
         native = self._require_native_module("prepare_environment")
         prepared: str | None = None
 
@@ -509,7 +532,9 @@ class Fabric:
         """
 
         reference_json = _environment_reference_json(reference)
-        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
+        plan = await _call_blocking(
+            lambda: self.plan(self._with_provenance(config), base_dir=base_dir)
+        )
         native = self._require_native_module("attach_environment")
         try:
             raw = await _call_blocking(
@@ -740,7 +765,9 @@ class Fabric:
 
         try:
             plan = await _call_blocking(
-                lambda: self.plan(runtime_config, base_dir=base_dir)
+                lambda: self.plan(
+                    self._with_provenance(runtime_config), base_dir=base_dir
+                )
             )
             if expected_descriptor_sha256 is not None:
                 _verify_adapter_descriptor(plan, expected_descriptor_sha256)
@@ -828,7 +855,9 @@ class Fabric:
             FabricRuntimeError: If service startup fails.
         """
 
-        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
+        plan = await _call_blocking(
+            lambda: self.plan(self._with_provenance(config), base_dir=base_dir)
+        )
         native = self._require_native_module("prepare_service")
         started_service: dict[str, Any] | None = None
 
@@ -884,7 +913,9 @@ class Fabric:
 
         if not isinstance(reference, ServiceReference):
             raise FabricConfigError("reference must be a ServiceReference")
-        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
+        plan = await _call_blocking(
+            lambda: self.plan(self._with_provenance(config), base_dir=base_dir)
+        )
         native = self._require_native_module("attach_service")
         attached_service: dict[str, Any] | None = None
 

@@ -9,4 +9,4 @@ await serve(async () => {
     import("./kilo-sdk.js"), import("./runtime.js"),
   ]);
   return new KiloAdapterRuntime(new KiloSdkSessionFactory());
-});
+}, { software: { packageJson: new URL("../package.json", import.meta.url), harness: "kilo", packages: [{"role": "framework", "name": "@agentclientprotocol/sdk"}] } });
