@@ -71,3 +71,5 @@ runner. A retained session identifier is insufficient. A busy process remains
 live, and a stopped or exited process fails the liveness observation.
 
 `active` and `ready` are unsupported. Checks do not send prompts, change session settings, or cancel invocations.
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
