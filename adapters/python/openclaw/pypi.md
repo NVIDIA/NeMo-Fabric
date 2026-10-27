@@ -27,4 +27,4 @@ When upgrading a caller-owned Gateway from OpenClaw 2026.9.4, stop the Gateway a
 
 Before upgrading, check the backup result and manifest for the active config, its include files, and every configured agent directory. For paths marked `covered`, confirm that the archive contains the data under a parent directory. Fix missing required paths and rerun the backup. Continue with the upgrade after confirming that all required data is backed up.
 
-Run `openclaw doctor --fix` with the 2026.9.34 executable and the same path settings, then restart the Gateway. The older session database requires this migration. Keep the verified backup for rollback. Managed NeMo Fabric runtimes start with fresh temporary state.
+Run `openclaw doctor --fix` with the 2026.9.34 executable and the same path settings. The command imports legacy `sessions.json` files and JSONL session data into each agent's SQLite database. Restart the Gateway after the command succeeds. Keep the verified backup for rollback. Managed NeMo Fabric runtimes start with fresh temporary state.
