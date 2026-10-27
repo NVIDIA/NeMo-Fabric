@@ -20,7 +20,6 @@ const allowedPackages = {
     "node_modules/@factory/droid-sdk/node_modules/zod": "3.25.76",
     "node_modules/@qwen-code/sdk/node_modules/zod": "3.25.76",
     "node_modules/gitlab-ai-provider/node_modules/zod": "3.25.76",
-    "node_modules/zod": "4.1.8",
   },
 };
 for (const name of ["core", "plugin", "plugin-browser", "sdk", "server", "simulation"]) {

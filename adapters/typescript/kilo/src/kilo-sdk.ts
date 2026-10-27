@@ -8,6 +8,8 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { isAbsolute, join, resolve } from "node:path";
 
+import { Agent, fetch as undiciFetch } from "undici";
+
 import type { AgentUsage } from "nemo-fabric-adapter-contract";
 import type { AdapterStartInput } from "nemo-fabric-adapters-common";
 import { LifecycleError } from "nemo-fabric-adapters-common";
@@ -19,10 +21,10 @@ interface KiloRequestOptions { throwOnError: true; signal?: AbortSignal }
 
 interface KiloClient {
   app: {
-    skills(parameters: Record<string, unknown>, options: {throwOnError: true}): Promise<{data: unknown}>;
+    skills(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<{data: unknown}>;
   };
   mcp: {
-    status(parameters: Record<string, unknown>, options: {throwOnError: true}): Promise<{data: unknown}>;
+    status(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<{data: unknown}>;
   };
   session: {
     create(parameters: Record<string, unknown>, options: KiloRequestOptions): Promise<{data: unknown}>;
@@ -32,7 +34,7 @@ interface KiloClient {
   };
 }
 interface KiloServer { url: string; close(): Promise<void> }
-type ClientFactory = (options: {baseUrl: string; directory: string}) => KiloClient;
+type ClientFactory = (options: {baseUrl: string; directory: string; fetch: (request: Request) => Promise<Response>}) => KiloClient;
 type ServerFactory = (workspace: string, environment: NodeJS.ProcessEnv, executable: string) => Promise<KiloServer>;
 type SpawnFactory = typeof spawn;
 type PortFactory = () => Promise<number>;
@@ -40,6 +42,8 @@ type PortFactory = () => Promise<number>;
 const START_TIMEOUT_MS = 30_000;
 const STOP_TIMEOUT_MS = 5_000;
 const PROMPT_TIMEOUT_MS = 30 * 60_000;
+// A prompt answers only when its turn ends, so each request's signal bounds it instead of Node's 300 s fetch timeouts.
+const KILO_DISPATCHER = new Agent({headersTimeout: 0, bodyTimeout: 0});
 const ENVIRONMENT_VARIABLE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/gu;
 const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
 const INHERITED_ENVIRONMENT_NAMES = new Set([
@@ -78,6 +82,7 @@ async function skillPaths(input: AdapterStartInput): Promise<string[]> {
   return paths;
 }
 
+/** Map normalized tool policy to non-interactive Kilo permissions, with blocked tools taking precedence. */
 function toolPermission(input: AdapterStartInput): Record<string, unknown> {
   if (input.config.tools?.definitions !== undefined) {
     throw new LifecycleError("kilo_tool_definitions_unsupported", "Kilo Code does not support normalized tool definitions through this adapter");
@@ -107,6 +112,8 @@ function toolPermission(input: AdapterStartInput): Record<string, unknown> {
     }
   } else {
     permission.read = protectedRead;
+    // Kilo Code asks before shell commands outside its read-only allowlist, and nothing answers in a headless run.
+    permission.bash = "allow";
   }
   for (const name of blocked) permission[name] = "deny";
   return permission;
@@ -188,11 +195,12 @@ function buildConfig(input: AdapterStartInput, skills: string[]): {content: stri
   };
 }
 
+/** Verify configured skills loaded, bounding the status request by the startup timeout. */
 async function verifySkills(client: KiloClient, workspace: string, configured: string[]): Promise<void> {
   if (configured.length === 0) return;
   let data: unknown;
   try {
-    data = (await client.app.skills({directory: workspace}, {throwOnError: true})).data;
+    data = (await client.app.skills({directory: workspace}, {throwOnError: true, signal: AbortSignal.timeout(START_TIMEOUT_MS)})).data;
   } catch {
     throw new LifecycleError("kilo_skill_status_unavailable", "Kilo Code could not determine configured skill status");
   }
@@ -202,11 +210,12 @@ async function verifySkills(client: KiloClient, workspace: string, configured: s
   }
 }
 
+/** Verify configured MCP servers connected within the status request's startup timeout. */
 async function verifyMcp(client: KiloClient, workspace: string, configured: string[]): Promise<void> {
   if (configured.length === 0) return;
   let data: unknown;
   try {
-    data = (await client.mcp.status({directory: workspace}, {throwOnError: true})).data;
+    data = (await client.mcp.status({directory: workspace}, {throwOnError: true, signal: AbortSignal.timeout(START_TIMEOUT_MS)})).data;
   } catch {
     throw new LifecycleError("kilo_mcp_status_unavailable", "Kilo Code could not determine configured MCP server status");
   }
@@ -338,6 +347,19 @@ export function extractPromptOutcome(data: unknown): KiloPromptOutcome {
   return { ...(text.length === 0 ? {} : {text}), ...(info.error === undefined ? {} : {error: true}), ...(Object.keys(usage).length === 0 ? {} : {usage}) };
 }
 
+/** Forward SDK requests without transport response timeouts, retaining the caller's abort signal. */
+export async function kiloFetch(request: Request): Promise<Response> {
+  const response = await undiciFetch(request.url, {
+    method: request.method,
+    headers: [...request.headers],
+    body: request.body,
+    duplex: "half",
+    signal: request.signal,
+    dispatcher: KILO_DISPATCHER,
+  });
+  return response as unknown as Response;
+}
+
 async function loadClientFactory(): Promise<ClientFactory> {
   try {
     const sdk = await import("@kilocode/sdk/v2");
@@ -404,6 +426,7 @@ class KiloSdkSessionHandle implements KiloSessionHandle {
 
 export class KiloSdkSessionFactory implements KiloSessionFactory {
   constructor(private readonly clientLoader: () => Promise<ClientFactory> = loadClientFactory, private readonly serverFactory: ServerFactory = startKiloServer, private readonly promptTimeoutMs: number = PROMPT_TIMEOUT_MS) {}
+  /** Start an isolated server and session, with cancellation deadlines on startup requests. */
   async create(input: AdapterStartInput): Promise<KiloSessionHandle> {
     const model = selectModel(input.config);
     const workspace = await workspacePath(input);
@@ -417,9 +440,9 @@ export class KiloSdkSessionFactory implements KiloSessionFactory {
       const clientFactory = await this.clientLoader();
       const executable = this.serverFactory === startKiloServer ? await resolveKiloExecutable() : "kilo";
       server = await this.serverFactory(workspace, childEnvironment(input, profile, configured.content, model.apiKeyEnv, configured.credential), executable);
-      const client = clientFactory({baseUrl: server.url, directory: workspace});
+      const client = clientFactory({baseUrl: server.url, directory: workspace, fetch: kiloFetch});
       await verifySkills(client, workspace, skills);
-      const created = await client.session.create({directory: workspace, agent: "build", model: {providerID: model.provider, id: model.model}}, {throwOnError: true});
+      const created = await client.session.create({directory: workspace, agent: "build", model: {providerID: model.provider, id: model.model}}, {throwOnError: true, signal: AbortSignal.timeout(START_TIMEOUT_MS)});
       if (!isRecord(created.data) || typeof created.data.id !== "string") throw new Error("missing session id");
       await verifyMcp(client, workspace, mcpNames);
       return new KiloSdkSessionHandle(created.data.id, workspace, model, client, server, profile, this.promptTimeoutMs);

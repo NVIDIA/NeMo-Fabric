@@ -26,6 +26,25 @@ packages reports a stable harness-unavailable error.
 OpenCode 2.0.23 does not support npm's `install-strategy=nested`. The documented
 command requires npm's default hoisted layout.
 
+OpenCode 2.0.23 pins Zod 4.1.8. The NeMo Fabric source workspace overrides
+compatible Zod 4 dependencies to 4.6.7 while preserving the GitLab provider's
+Zod 3 requirement and its dependencies' original peer ranges. For a
+published-adapter installation, apply the `@opencode/core`, `@opencode/plugin`,
+`fast-uri`, and `debug` overrides from the
+[workspace manifest](https://github.com/NVIDIA/NeMo-Fabric/blob/8a5549a72241dd7c3066233275266ba32011fd07/adapters/typescript/package.json)
+to the consuming project's root `package.json`, use Zod 4.6.7 as its root
+Zod peer, and refresh the lockfile. npm does not inherit overrides from
+installed dependency packages. Verify the resulting tree with `npm ls --all`
+and confirm that `npm ls fast-uri debug` resolves to `fast-uri@3.1.9` and
+`debug@4.4.3`.
+
+This update fixes early rejection for size-constrained Zod 4 collections.
+Unbounded collections still require input-size and collection-size limits.
+The transitive GitLab provider also retains Zod 3, which has no compatible
+patched release. Do not force Zod 4 into dependencies that require Zod 3.
+Track the remaining exposure and upstream fixes in
+[issue #485](https://github.com/NVIDIA/NeMo-Fabric/issues/485).
+
 ## Supported Configuration
 
 The adapter supports the following configuration:

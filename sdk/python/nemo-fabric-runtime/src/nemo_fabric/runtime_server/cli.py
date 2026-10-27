@@ -82,12 +82,17 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
         flag = arguments[index]
         if flag in flags:
             raise ProtocolError()
+        if flag in ("--live", "--active", "--ready"):
+            flags[flag] = True
+            index += 1
+            continue
         if flag in (
             "--agent",
             "--runtime-id",
             "--config",
             "--input",
             "--request",
+            "--timeout-seconds",
         ):
             if index + 1 == len(arguments) or arguments[index + 1].startswith("--"):
                 raise ProtocolError()
@@ -103,6 +108,15 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
     if operation in CONFIG_OPERATIONS:
         required.add("--config")
     allowed = required.copy()
+    if operation == "check":
+        allowed.add("--timeout-seconds")
+        if flags.keys() & {"--agent", "--runtime-id"}:
+            required.update({"--agent", "--runtime-id"})
+            allowed.update(required)
+            levels = flags.keys() & {"--live", "--active", "--ready"}
+            if len(levels) > 1:
+                raise ProtocolError()
+            allowed.update(levels)
     if operation == "invoke":
         payload_flags = flags.keys() & {"--input", "--request"}
         if len(payload_flags) != 1:
@@ -114,6 +128,13 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
         "interface_version": INTERFACE_VERSION,
         "operation": operation,
     }
+    if operation == "check" and "--runtime-id" in flags:
+        request["level"] = next(iter(levels))[2:] if levels else "live"
+    if "--timeout-seconds" in flags:
+        try:
+            request["timeout_seconds"] = float(flags["--timeout-seconds"])
+        except ValueError as error:
+            raise ProtocolError() from error
     for flag in (
         "--agent",
         "--runtime-id",
@@ -148,7 +169,8 @@ def main(arguments: list[str] | None = None) -> int:
             print(
                 str(error)
                 if isinstance(error, ProtocolError)
-                and error.code in (
+                and error.code
+                in (
                     "platform_unsupported",
                     "cleanup_unconfirmed",
                     "runtime_busy",

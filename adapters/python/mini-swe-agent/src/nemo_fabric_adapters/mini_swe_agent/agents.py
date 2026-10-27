@@ -257,10 +257,11 @@ class RelayRetainingDefaultAgent(RetainingDefaultAgent):
         *,
         metadata: dict[str, Any],
     ) -> None:
+        from nemo_relay import ToolExecutionResult
         from nemo_relay import tools
 
         try:
-            tools.call_end(handle, output, metadata=metadata)
+            tools.call_end(handle, ToolExecutionResult(output), metadata=metadata)
         except Exception as error:
             self._record_relay_error(error)
 

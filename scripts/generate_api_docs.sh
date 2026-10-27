@@ -26,6 +26,7 @@ PYTHONPATH="sdk/python/nemo-fabric-runtime/src" lazydocs \
   "nemo_fabric.reporting" \
   "nemo_fabric.client" \
   "nemo_fabric.capabilities" \
+  "nemo_fabric.check" \
   "nemo_fabric.runtime" \
   "nemo_fabric.service" \
   "nemo_fabric.streaming" \
@@ -95,6 +96,11 @@ add_frontmatter \
   "Adapter Capability Inspection" \
   "Inspect standalone adapter metadata and verify host/task descriptor correspondence." \
   "/reference/api/python-library-reference/capabilities"
+add_frontmatter \
+  "$out/nemo_fabric.check.md" \
+  "Runtime Health" \
+  "Observe bounded server and agent health without changing runtime state." \
+  "/reference/api/python-library-reference/check"
 add_frontmatter \
   "$out/nemo_fabric.runtime.md" \
   "Runtime" \
