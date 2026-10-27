@@ -340,6 +340,7 @@ pub(crate) fn reported_usage(usage: &AgentUsage) -> Result<ReportedUsage, Accoun
                 .collect(),
         ))
         .map_err(|error| AccountingError(error.to_string()))?;
+        result.cost_usd = result.cost_usd.or(detail.cost_usd);
         if detail.input_tokens.is_some()
             || detail.cached_input_tokens.is_some()
             || detail.cache_write_input_tokens.is_some()
