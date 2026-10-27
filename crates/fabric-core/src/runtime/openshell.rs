@@ -31,6 +31,7 @@ enum State {
 struct Binding {
     state: State,
     runtime_id: Option<String>,
+    agent: Option<String>,
 }
 const START_KEY: &str = "\0starting";
 const UNKNOWN_START_KEY: &str = "\0unknown-start";
@@ -60,6 +61,24 @@ fn invalid_environment(field: &str) -> FabricError {
         field: format!("environment.{field}"),
         reason: "a verified OpenShell binding is required".to_string(),
     }
+}
+
+pub(super) fn check_agent(
+    environment: &EnvironmentHandle,
+    runtime_id: &str,
+) -> Result<Option<String>> {
+    let key = resource_key(environment)?;
+    let bindings = BINDINGS.lock().unwrap_or_else(|error| error.into_inner());
+    let Some(bindings) = bindings.get(&key) else {
+        return Ok(None);
+    };
+    if bindings.contains_key(RELEASE_KEY) {
+        return Ok(None);
+    }
+    Ok(bindings
+        .get(runtime_id)
+        .filter(|binding| matches!(binding.state, State::Active | State::Invoking))
+        .and_then(|binding| binding.agent.clone()))
 }
 fn invoke_seconds(plan: &RunPlan) -> Result<u64> {
     let seconds = plan.config.runtime.timeout_seconds.unwrap_or(240.0);
@@ -168,6 +187,7 @@ fn set_state(key: &str, runtime_id: &str, state: State) {
             Binding {
                 state,
                 runtime_id: Some(runtime_id.to_string()),
+                agent: None,
             },
         );
 }
@@ -180,6 +200,7 @@ fn set_start_state(key: &str, state: State) {
         Binding {
             state,
             runtime_id: None,
+            agent: None,
         },
     );
 }
@@ -291,6 +312,7 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                 Binding {
                     state: State::Starting,
                     runtime_id: None,
+                    agent: None,
                 },
             );
         }
@@ -377,6 +399,7 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                 Binding {
                     state: State::Active,
                     runtime_id: Some(runtime.runtime_id.clone()),
+                    agent: Some(runtime.agent_name.clone()),
                 },
             );
         }
@@ -547,6 +570,7 @@ pub(super) fn release(environment: &EnvironmentHandle) -> Result<()> {
             Binding {
                 state: State::Releasing,
                 runtime_id: None,
+                agent: None,
             },
         );
         previous
@@ -565,6 +589,7 @@ pub(super) fn release(environment: &EnvironmentHandle) -> Result<()> {
                 Binding {
                     state: State::Unknown,
                     runtime_id: None,
+                    agent: None,
                 },
             )]),
         );
