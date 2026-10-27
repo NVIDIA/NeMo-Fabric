@@ -447,7 +447,7 @@ install-hermes-agent:
         --editable "$hermes_checkout[mcp]" pytest pytest-asyncio pyyaml
 
 test-hermes: install-hermes-agent
-    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py tests/adapters/test_hermes_config_builder.py tests/adapters/test_hermes_streaming.py tests/e2e/test_hermes_e2e.py -q
+    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py tests/adapters/test_hermes_config_builder.py tests/adapters/test_hermes_streaming.py tests/adapters/test_hermes_health.py tests/e2e/test_hermes_e2e.py tests/e2e/test_hermes_checks.py -q
 
 # Build the TypeScript contract and adapter packages using their locked dependencies.
 build-typescript: install-typescript

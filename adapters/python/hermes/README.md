@@ -7,6 +7,19 @@ SPDX-License-Identifier: Apache-2.0
 
 This adapter runs Hermes Agent through its Python SDK.
 
+## Runtime Health
+
+`Fabric.check()` supports `live`, `active`, and `ready` for a started runtime.
+
+| Level | Evidence |
+| --- | --- |
+| `live` | The owned native session matches the runtime, remains open, and answers diagnostics. |
+| `active` | The initialized `run_conversation()` interface remains available and answers diagnostics. |
+| `ready` | A fresh `get_activity_summary()` response passes validation after the earlier checks. |
+
+The adapter qualifies Hermes' read-only diagnostic response as the MVP readiness
+check. Health checks preserve conversation state and respond during an invocation.
+
 ## Install
 
 The adapter supports Python 3.11 through 3.14. The pinned upstream Hermes

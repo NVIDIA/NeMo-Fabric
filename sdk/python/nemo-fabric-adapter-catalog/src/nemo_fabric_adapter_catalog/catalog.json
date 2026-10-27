@@ -703,6 +703,15 @@
       "descriptor": {
         "adapter_id": "nvidia.fabric.hermes",
         "adapter_kind": "python",
+        "capabilities": {
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          }
+        },
         "config": {
           "accepts": [
             "models",
@@ -817,7 +826,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.6.0"
       },
-      "sha256": "e482a89dda834dc5bfdbcb7f6041ad5e457a73918d74d8a8215f0171b8947465",
+      "sha256": "6539b80cd3dbc76f2db58640bb957dcbe5f9e45421a2d7f9a45785325f354f38",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {
