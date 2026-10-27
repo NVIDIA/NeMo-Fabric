@@ -61,12 +61,13 @@ def sdk_example_environment(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("ownership", ["caller_owned", "fabric_owned"])
+@pytest.mark.parametrize("server_state", ["responding", "stopping"])
 @pytest.mark.skipif(
     sys.platform == "win32",
     reason="The task runtime fixture uses POSIX sandbox paths and subprocesses.",
 )
 async def test_sdk_example_runs_task_agent_and_collects_receipt(
-    ownership, sdk_example_environment, tmp_path, monkeypatch
+    ownership, server_state, sdk_example_environment, tmp_path, monkeypatch
 ):
     task, workspace, task_artifacts, provider_log = sdk_example_environment
     sandbox_name = f"sdk-{ownership}"
@@ -82,6 +83,25 @@ async def test_sdk_example_runs_task_agent_and_collects_receipt(
     )
     sandbox_state = tmp_path / f"{ownership}-sandbox.json"
     monkeypatch.setenv("OPENSHELL_FABRIC_SANDBOX_STATE_FILE", str(sandbox_state))
+    monkeypatch.setenv("FABRIC_TEST_SERVER_STATE", server_state)
+
+    if server_state == "stopping":
+        with pytest.raises(RuntimeError, match="Fabric runtime server is not healthy"):
+            await run_demo(
+                args,
+                task_workspace=str(workspace),
+                task_artifacts=str(task_artifacts),
+                task_discovery_path=str(task),
+            )
+        records = [json.loads(line) for line in provider_log.read_text().splitlines()]
+        assert [
+            record["frame"]["command"]["operation"]
+            for record in records
+            if record["frame"]["operation"] == "runtime_command"
+        ] == ["check"]
+        assert records[-1]["frame"]["operation"] == "release"
+        assert not Path(args.results_file).exists()
+        return
 
     summary = await run_demo(
         args,
@@ -90,6 +110,9 @@ async def test_sdk_example_runs_task_agent_and_collects_receipt(
         task_discovery_path=str(task),
     )
 
+    assert summary["server_check"]["scope"] == "server"
+    assert summary["server_check"]["outcome"] == "passed"
+    assert summary["server_check"]["runtime_id"] is None
     assert summary["first"]["request_id"] == "openshell-echo-first"
     assert summary["second"]["request_id"] == "openshell-echo-second"
     assert summary["first"]["output"] == {
@@ -109,15 +132,22 @@ async def test_sdk_example_runs_task_agent_and_collects_receipt(
     lifecycle_operation = "attach" if ownership == "caller_owned" else "prepare"
     assert records[0]["frame"]["operation"] == lifecycle_operation
     runtime_commands = [
-        record for record in records if record["frame"]["operation"] == "runtime_command"
+        record
+        for record in records
+        if record["frame"]["operation"] == "runtime_command"
     ]
     assert [record["frame"]["command"]["operation"] for record in runtime_commands] == [
+        "check",
         "start",
         "invoke",
         "invoke",
         "stop",
     ]
-    first_request = runtime_commands[1]["frame"]["command"]["request"]
+    assert set(runtime_commands[0]["frame"]["command"]) == {
+        "operation",
+        "timeout_seconds",
+    }
+    first_request = runtime_commands[2]["frame"]["command"]["request"]
     assert first_request["request_id"] == "openshell-echo-first"
     assert first_request["context"] == {"turn": 1}
     assert runtime_commands[-1]["frame"]["command"]["operation"] == "stop"

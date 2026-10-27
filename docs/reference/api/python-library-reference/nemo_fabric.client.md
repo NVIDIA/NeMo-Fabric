@@ -14,6 +14,7 @@ Native Python client for resolving and running NVIDIA NeMo Fabric agents.
 
 ---
 
+
 ## <kbd>class</kbd> `Fabric`
 
 Primary Python entrypoint for NeMo Fabric.
@@ -23,6 +24,7 @@ Every config-dependent lifecycle method accepts a complete, typed ``FabricConfig
 ``Fabric`` uses the native Rust extension. SDK calls raise ``FabricNativeUnavailableError`` when the native extension is not installed.
 
 See the Getting Started overview for runnable single-invocation, typed-config, and multi-turn examples.
+
 
 ### <kbd>method</kbd> `__init__`
 
@@ -38,6 +40,7 @@ def __init__() -> None
 
 
 ---
+
 
 ### <kbd>method</kbd> `attach_environment`
 
@@ -77,6 +80,7 @@ Attachment does not create the provider resource and does not grant Fabric delet
 
 ---
 
+
 ### <kbd>method</kbd> `attach_service`
 
 ```python
@@ -115,6 +119,46 @@ The adapter validates the reference against the normalized configuration and wri
 
 ---
 
+
+### <kbd>method</kbd> `check`
+
+```python
+async def check(
+    *,
+    request: CheckRequest,
+    environment: EnvironmentHandle | None = None,
+    service: ServiceHandle | None = None,
+) -> CheckReport
+```
+
+Check server, runtime, or service health.
+
+OpenShell checks execute ``fabric-agent-ctl check`` inside the selected sandbox. Runtime checks then use the local SDK and an independent adapter health channel. Local server checks return unsupported. The request's single deadline covers routing, all levels, and decoding. Timeouts return ``unknown`` with reason ``probe_timeout``. Service checks use the selected process-local ``ServiceHandle``.
+
+
+
+**Args:**
+
+ - <b>`environment`</b>:  Prepared or attached environment for server or runtime scope.
+ - <b>`service`</b>:  Prepared or attached service handle for service scope.
+ - <b>`request`</b>:  Typed scope, runtime or service target, highest level, and timeout.
+
+
+
+**Returns:**
+ An immutable ``CheckReport`` with ordered health observations.
+
+
+
+**Raises:**
+
+ - <b>`FabricConfigError`</b>:  If arguments or returned evidence are invalid.
+ - <b>`FabricNativeUnavailableError`</b>:  If the native extension is missing.
+ - <b>`FabricRuntimeError`</b>:  If transport fails before a report can be formed.
+
+---
+
+
 ### <kbd>method</kbd> `doctor`
 
 ```python
@@ -150,6 +194,7 @@ Doctor checks the resolved adapter, capability mappings, and declared environmen
 
 ---
 
+
 ### <kbd>method</kbd> `plan`
 
 ```python
@@ -184,6 +229,7 @@ Planning resolves the selected adapter and reports optional runtime capabilities
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
 
 ---
+
 
 ### <kbd>method</kbd> `prepare_environment`
 
@@ -221,6 +267,7 @@ The returned local handle is independent of any runtime session. The caller owns
 
 ---
 
+
 ### <kbd>method</kbd> `prepare_service`
 
 ```python
@@ -257,6 +304,7 @@ The selected adapter maps the normalized configuration into its service configur
 
 ---
 
+
 ### <kbd>method</kbd> `release_environment`
 
 ```python
@@ -282,6 +330,7 @@ Local and externally owned environments detach without deletion. Provider-manage
  - <b>`FabricRuntimeError`</b>:  If release or detach fails.
 
 ---
+
 
 ### <kbd>method</kbd> `run`
 
@@ -324,6 +373,7 @@ Execute one complete start, invoke, and stop lifecycle.
  - <b>`FabricRuntimeError`</b>:  If the native runtime lifecycle fails before a  normalized result can be returned.
 
 ---
+
 
 ### <kbd>method</kbd> `start_runtime`
 
@@ -372,6 +422,7 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
  - <b>`FabricRuntimeError`</b>:  If runtime startup fails.
 
 ---
+
 
 ### <kbd>method</kbd> `start_runtime_in`
 

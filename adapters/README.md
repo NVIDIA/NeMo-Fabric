@@ -219,14 +219,19 @@ Agent Trajectory Interchange Format (ATIF).
 | [Strands](typescript/strands/README.md) | Strands CLI ACP child process and session | Not supported | Ordered text prompts retain one bounded conversation | Terminates the child process and removes temporary CLI state | Not implemented |
 | [Remote Agent](python/remote-agent/README.md) | `httpx.AsyncClient` and user/assistant transcript | Remote Relay publishes to a shared ATOF collector | Registers the request ID, maps it into body metadata, sends one HTTP request, and retains the completed transcript | Closes the HTTP client | Implemented over HTTP(S) |
 
-Telemetry output names use the descriptor contract values. Claude, Codex,
-Hermes Agent, mini-SWE-agent, and Pi can emit NeMo Relay ATIF, OpenTelemetry, and
+Telemetry output names use the descriptor contract values. Claude, Codex, Hermes Agent, mini-SWE-agent, and Pi can emit NeMo Relay ATIF, OpenTelemetry, and
 OpenInference output. Deep Agents supports the same Relay outputs plus native
 OpenTelemetry and OpenInference; Codex also supports native OpenTelemetry. The
 Remote Agent adapter maps the request ID into the remote API body. The
 independently instrumented service publishes correlated ATOF to the collector
 base URL shared by its Relay configuration and `FabricConfig`. The collector can
 serve multiple runtimes when each request ID is unique.
+
+Local Pi runtimes also support `Fabric.check()` at the `live`, `active`, and
+`ready` levels. These observations can run during an invocation and inspect
+native session and local setup state. Refer to the [Pi health contract](typescript/pi/README.md#runtime-health).
+
+Prepared and attached OpenClaw Gateways support service-scoped `Fabric.check()` calls before any runtime exists. OpenClaw runtimes also support `live`, `active`, and `ready`; runtime `active` verifies startup, selected-agent registration, and the enabled Chat Completions interface. Both scopes use native `/readyz`, including configured channels. Refer to the [Gateway health contract](python/openclaw/README.md#gateway-health) and [runtime health contract](python/openclaw/README.md#runtime-health).
 
 Shared lifecycle, Relay gateway, hook, and payload helpers are documented in
 the [adapter utilities guide](python/common/README.md).

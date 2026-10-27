@@ -5,11 +5,16 @@ import assert from "node:assert/strict";
 import {EventEmitter} from "node:events";
 import test from "node:test";
 import {mkdtemp, mkdir, rm, writeFile} from "node:fs/promises";
+import {createServer} from "node:http";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {PassThrough} from "node:stream";
+import {setImmediate as nextTurn} from "node:timers/promises";
 
-import {classifySpawnError, closeChild, extractPromptOutcome, KiloSdkSessionFactory, startKiloServer} from "../dist/kilo-sdk.js";
+import {createKiloClient} from "@kilocode/sdk/v2";
+import undiciTimers from "undici/lib/util/timers.js";
+
+import {classifySpawnError, closeChild, extractPromptOutcome, kiloFetch, KiloSdkSessionFactory, startKiloServer} from "../dist/kilo-sdk.js";
 
 test("extracts Kilo Code text, usage, and cost", () => {
   assert.deepEqual(extractPromptOutcome({
@@ -92,20 +97,22 @@ test("projects normalized configuration into an isolated Kilo Code server", asyn
   await mkdir(skill);
   await writeFile(join(skill, "SKILL.md"), "# Review\n", "utf8");
   let serverEnvironment;
+  let clientOptions;
+  const startupSignals = [];
   let createParameters;
   let deleteParameters;
   let deleteSignal;
   const client = {
-    app: {skills: async () => ({data: [{name: "review", location: join(skill, "SKILL.md"), content: "# Review"}]})},
-    mcp: {status: async () => ({data: {local: {status: "connected"}}})},
+    app: {skills: async (_parameters, options) => { startupSignals.push(options.signal); return {data: [{name: "review", location: join(skill, "SKILL.md"), content: "# Review"}]}; }},
+    mcp: {status: async (_parameters, options) => { startupSignals.push(options.signal); return {data: {local: {status: "connected"}}}; }},
     session: {
-      create: async (parameters) => { createParameters = parameters; return {data: {id: "session-1"}}; },
+      create: async (parameters, options) => { createParameters = parameters; startupSignals.push(options.signal); return {data: {id: "session-1"}}; },
       prompt: async () => ({data: {info: {}, parts: [{type: "text", text: "done"}]}}),
       delete: async (parameters, options) => { deleteParameters = parameters; deleteSignal = options.signal; },
     },
   };
   const factory = new KiloSdkSessionFactory(
-    async () => () => client,
+    async () => (options) => { clientOptions = options; return client; },
     async (_workspace, environment) => { serverEnvironment = environment; return {url: "http://127.0.0.1:4123", close: async () => {}}; },
   );
   try {
@@ -128,6 +135,9 @@ test("projects normalized configuration into an isolated Kilo Code server", asyn
     assert.deepEqual(projected.agent, {build: {model: "nvidia/nemotron", prompt: "Review carefully.", steps: 9, temperature: 0.1, top_p: 0.8}});
     assert.deepEqual(projected.skills.paths, [skill]);
     assert.deepEqual(projected.mcp.local, {type: "local", command: ["mcp-server", "--stdio"], environment: {MODE: "test"}});
+    assert.equal(clientOptions.fetch, kiloFetch);
+    assert.equal(startupSignals.length, 3);
+    assert.ok(startupSignals.every((signal) => signal instanceof AbortSignal));
     assert.equal(serverEnvironment.KILO_DISABLE_PROJECT_CONFIG, "1");
     assert.equal(serverEnvironment.MODEL_KEY, "secret");
     assert.equal(serverEnvironment.NVIDIA_API_KEY, undefined);
@@ -187,6 +197,7 @@ test("denies interactive permissions when normalized tools are omitted", async (
       external_directory: "deny",
       doom_loop: "deny",
       read: {"*": "allow", "*.env": "deny", "*.env.*": "deny", "*.env.example": "allow"},
+      bash: "allow",
     });
     assert.deepEqual(projected.agent, {build: {model: "nvidia/nemotron"}});
     await handle.stop();
@@ -250,3 +261,104 @@ test("aborts the Kilo session when a prompt reaches its deadline", async () => {
     await rm(workspace, {recursive: true, force: true});
   }
 });
+
+test("sends Kilo Code requests and their abort signal through the adapter fetch", async () => {
+  const server = createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      if (request.url === "/wait") return;
+      response.writeHead(200, {"content-type": "application/json"});
+      response.end(JSON.stringify({method: request.method, type: request.headers["content-type"], body}));
+    });
+  });
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const response = await kiloFetch(new Request(`${url}/session`, {method: "POST", headers: {"content-type": "application/json"}, body: "{\"id\":1}"}));
+    assert.deepEqual(await response.json(), {method: "POST", type: "application/json", body: "{\"id\":1}"});
+    const controller = new AbortController();
+    const waiting = kiloFetch(new Request(`${url}/wait`, {method: "POST", body: "{}", signal: controller.signal}));
+    setTimeout(() => controller.abort(), 50);
+    await assert.rejects(waiting, {name: "AbortError"});
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+for (const phase of ["headers", "body"]) {
+  for (const expire of [false, true]) {
+    test(`real SDK prompt with delayed ${phase} ${expire ? "aborts at the adapter deadline" : "survives the transport deadline"}`, {timeout: 10_000}, async () => {
+      const workspace = await mkdtemp(join(tmpdir(), "kilo-adapter-http-test-"));
+      let ready;
+      const requestReady = new Promise((resolveReady) => { ready = resolveReady; });
+      let closed;
+      const requestClosed = new Promise((resolveClosed) => { closed = resolveClosed; });
+      let aborted;
+      const sessionAborted = new Promise((resolveAborted) => { aborted = resolveAborted; });
+      let pendingResponse;
+      const server = createServer((request, response) => {
+        request.resume();
+        request.on("end", () => {
+          response.setHeader("content-type", "application/json");
+          if (request.url.startsWith("/session/session-1/message")) {
+            pendingResponse = response;
+            response.on("close", closed);
+            if (phase === "body") response.write('{"info":{},"parts":');
+            else ready();
+            return;
+          }
+          if (request.url.startsWith("/session/session-1/abort")) aborted();
+          response.end(JSON.stringify({id: "session-1"}));
+        });
+      });
+      let handle;
+      try {
+        await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+        const url = `http://127.0.0.1:${server.address().port}`;
+        const factory = new KiloSdkSessionFactory(
+          async () => (options) => createKiloClient({...options, fetch: async (request) => {
+            const response = await options.fetch(request);
+            if (phase === "body" && request.url.includes("/message")) ready();
+            return response;
+          }}),
+          async () => ({url, close: async () => {}}),
+          expire ? 500 : 5_000,
+        );
+        handle = await factory.create({
+          agentName: "reviewer",
+          baseDir: workspace,
+          config: {models: {default: {provider: "nvidia", model: "nemotron", api_key_env: "MODEL_KEY"}}},
+          runtimeContext: {runtime_id: "r", invocation_id: "i", request_id: "q", artifacts: {}, environment: {environment_id: "e", provider: "local", ownership: "caller_owned", control_location: "external_control", workspace, env: {MODEL_KEY: "test"}}},
+        });
+        const prompting = handle.prompt("wait for the result");
+        if (expire) {
+          const rejected = assert.rejects(prompting, (error) => error.code === "kilo_prompt_timeout");
+          await requestReady;
+          await rejected;
+          await Promise.all([sessionAborted, requestClosed]);
+        } else {
+          // Attach a rejection handler before advancing the transport clock.
+          const outcome = prompting.then((value) => ({value}), (error) => ({error}));
+          await requestReady;
+          await nextTurn();
+          // Undici's pinned version exposes this clock for tests. Advance its
+          // 300 s parser deadlines without waiting five minutes or advancing
+          // the adapter's independent prompt deadline.
+          undiciTimers.tick();
+          undiciTimers.tick(301_000);
+          await nextTurn();
+          const parts = [{type: "text", text: "done"}];
+          pendingResponse.end(phase === "body" ? `${JSON.stringify(parts)}}` : JSON.stringify({info: {}, parts}));
+          assert.deepEqual(await outcome, {value: {text: "done"}});
+        }
+      } finally {
+        await handle?.stop();
+        server.closeAllConnections();
+        await new Promise((resolveClose) => server.close(resolveClose));
+        await rm(workspace, {recursive: true, force: true});
+      }
+    });
+  }
+}

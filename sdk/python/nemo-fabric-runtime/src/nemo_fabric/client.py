@@ -11,11 +11,14 @@ import json
 import logging
 import math
 import os
+import time
 from collections.abc import Mapping
 from contextlib import AsyncExitStack
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from nemo_fabric._collector_client import _AtofCollectorClient
+from nemo_fabric.check import CheckReport, CheckRequest, _timeout_report
 from nemo_fabric.capabilities import _verify_adapter_descriptor
 from nemo_fabric.errors import (
     FabricConfigError,
@@ -57,6 +60,8 @@ except ImportError:
 
 
 _COLLECTOR_CONTROL_TIMEOUT_MARGIN_SECONDS = 1.0
+# Dedicated workers run health requests during invocations.
+_CHECK_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="fabric-health")
 logger = logging.getLogger(__name__)
 
 
@@ -82,6 +87,120 @@ class Fabric:
 
     def __init__(self) -> None:
         pass
+
+    async def check(
+        self,
+        *,
+        request: CheckRequest,
+        environment: EnvironmentHandle | None = None,
+        service: ServiceHandle | None = None,
+    ) -> CheckReport:
+        """Check server, runtime, or service health.
+
+        OpenShell checks execute ``fabric-agent-ctl check`` inside the selected
+        sandbox. Runtime checks then use the local SDK and an independent
+        adapter health channel. Local server checks return unsupported.
+        The request's single deadline covers routing, all levels, and decoding.
+        Timeouts return ``unknown`` with reason ``probe_timeout``.
+        Service checks use the selected process-local ``ServiceHandle``.
+
+        Args:
+            environment: Prepared or attached environment for server or runtime scope.
+            service: Prepared or attached service handle for service scope.
+            request: Typed scope, runtime or service target, highest level, and timeout.
+
+        Returns:
+            An immutable ``CheckReport`` with ordered health observations.
+
+        Raises:
+            FabricConfigError: If arguments or returned evidence are invalid.
+            FabricNativeUnavailableError: If the native extension is missing.
+            FabricRuntimeError: If transport fails before a report can be formed.
+        """
+        started = time.monotonic()
+        if not isinstance(request, CheckRequest):
+            raise FabricConfigError("request must be a CheckRequest")
+        if request.scope == "service":
+            if environment is not None or not isinstance(service, ServiceHandle):
+                raise FabricConfigError(
+                    "service checks require a ServiceHandle and no environment"
+                )
+            if service.service_id != request.service_id:
+                raise FabricConfigError(
+                    "service handle does not match the requested service ID"
+                )
+            target_json = json.dumps(service.to_mapping())
+        else:
+            if service is not None:
+                raise FabricConfigError(
+                    "server and runtime checks cannot select a service"
+                )
+            target_json = _environment_json(environment)
+        native = self._require_native_module("check")
+        remaining = request.timeout_seconds - (time.monotonic() - started)
+        if remaining <= 0:
+            return _timeout_report(request, started)
+
+        def probe() -> str | None:
+            budget = request.timeout_seconds - (time.monotonic() - started)
+            if budget <= 0:
+                return None
+            payload = request.to_mapping()
+            payload["timeout_seconds"] = budget
+            check = (
+                native.check_service
+                if request.scope == "service"
+                else native.check_environment
+            )
+            return check(target_json, json.dumps(payload, allow_nan=False))
+
+        try:
+            raw = await asyncio.wait_for(
+                asyncio.get_running_loop().run_in_executor(_CHECK_EXECUTOR, probe),
+                remaining,
+            )
+        except TimeoutError:
+            return _timeout_report(request, started)
+        except Exception:
+            raise FabricRuntimeError(
+                "The health transport failed.", stage="check"
+            ) from None
+        if raw is None:
+            return _timeout_report(request, started)
+        try:
+
+            def unique(pairs):
+                value = {}
+                for key, item in pairs:
+                    if key in value:
+                        raise ValueError("duplicate check field")
+                    value[key] = item
+                return value
+
+            decoded = json.loads(raw, object_pairs_hook=unique)
+            report = CheckReport.from_mapping(decoded)
+        except (ValueError, TypeError):
+            raise FabricConfigError("The check report is invalid.") from None
+        if (
+            report.scope,
+            report.runtime_id,
+            report.service_id,
+            report.requested_level,
+        ) != (
+            request.scope,
+            request.runtime_id,
+            request.service_id,
+            request.level,
+        ):
+            raise FabricConfigError(
+                "The check report does not match the requested target."
+            )
+        if time.monotonic() - started >= request.timeout_seconds:
+            return _timeout_report(request, started)
+        report._complete(started)
+        if report.elapsed_ms >= request.timeout_seconds * 1000:
+            return _timeout_report(request, started)
+        return report
 
     def plan(
         self,

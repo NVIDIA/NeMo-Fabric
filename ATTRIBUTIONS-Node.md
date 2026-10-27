@@ -28463,7 +28463,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 For more information, please refer to <http://unlicense.org>
 ```
 
-## fast-uri - 3.1.8
+## fast-uri - 3.1.9
 
 **Repository URL**: https://github.com/fastify/fast-uri
 **License Type(s)**: BSD-3-Clause
@@ -38262,7 +38262,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## zod - 4.1.8
+## zod - 4.6.6
 
 **Repository URL**: https://github.com/colinhacks/zod
 **License Type(s)**: MIT
@@ -38293,7 +38293,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## zod - 4.6.6
+## zod - 4.6.7
 
 **Repository URL**: https://github.com/colinhacks/zod
 **License Type(s)**: MIT

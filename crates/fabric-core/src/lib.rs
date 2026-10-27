@@ -6,6 +6,7 @@
 pub mod adapter_contract;
 pub mod agent_config;
 pub mod agent_execution;
+pub mod check;
 pub mod config;
 pub mod doctor;
 mod endpoint;
@@ -31,6 +32,12 @@ pub use adapter_contract::{ADAPTER_CONTRACT_VERSION, AdapterExtensionPoint};
 pub use agent_execution::{
     AgentArtifact, AgentRunError, AgentRunRequest, AgentRunResult, AgentRunResultValidationError,
     AgentRunStatus, AgentUsage,
+};
+pub use check::{
+    AdapterCheckRequest, AdapterCheckResult, CheckLevel, CheckObservation, CheckOutcome,
+    CheckReason, CheckReport, CheckRequest, CheckRuntimeState, CheckScope, CheckSource, CheckStage,
+    CheckVersion, RuntimeActivity, RuntimeObservation, ServerObservation, ServerState,
+    check_environment, check_service,
 };
 pub use config::{
     AdapterConfigField, AdapterConfigSupport, AdapterDescriptor, AdapterInspection, AdapterKind,
