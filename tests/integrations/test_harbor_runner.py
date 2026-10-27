@@ -747,6 +747,7 @@ def test_harbor_023_options_schema_and_preflight():
         "fabric_max_turns",
         "fabric_model_api_key_env",
         "fabric_model_base_url",
+        "fabric_model_provider",
         "fabric_package",
         "fabric_python",
         "fabric_runtime_timeout_seconds",
