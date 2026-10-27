@@ -1930,6 +1930,18 @@
           ]
         },
         "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "run_error": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "sdk_error": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
         "model_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -2001,7 +2013,7 @@
         "name": "nemo-fabric-adapters-openhands",
         "version": "0.6.0"
       },
-      "sha256": "062ef09ba5e82dfdf0b4374632a8b39b7ff975160b0c6f62e68d2f4ac6f0b59e",
+      "sha256": "2625d8af8e8f6ab2a27ec8e6234caa64362d6ad4f235e607fda803914e10afb6",
       "source": "adapters/python/openhands/openhands.fabric-adapter.json"
     },
     "nvidia.fabric.pi": {

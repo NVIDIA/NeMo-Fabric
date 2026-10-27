@@ -214,6 +214,9 @@ def test_descriptor_declares_only_initial_openhands_surface():
         }
     }
     assert descriptor["settings_schema"]["additionalProperties"] is False
+    assert descriptor["extension_schemas"]["run_error"]["properties"] == {
+        "sdk_error": {"type": "string"}
+    }
     assert "telemetry" not in descriptor
 
 
@@ -547,6 +550,26 @@ async def test_send_message_failure_returns_failed_result(
     assert result.error is not None
     assert result.error.code == "openhands_invocation_failed"
     conversation.arun.assert_not_awaited()
+
+
+async def test_invocation_failure_reports_the_underlying_sdk_error(
+    openhands_payload: dict,
+    mock_openhands: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    runtime = adapter.OpenHandsRuntime()
+    await runtime.start(_start_payload(openhands_payload))
+    error = RuntimeError("Conversation run failed")
+    error.__cause__ = ConnectionError("model endpoint unavailable")
+    mock_openhands["conversation"].arun.side_effect = error
+
+    result = await runtime.invoke(*_invocation(openhands_payload, "fail"))
+
+    assert result.status is AgentRunStatus.FAILED
+    assert result.error is not None
+    assert result.error.code == "openhands_invocation_failed"
+    assert result.error.extensions == {"sdk_error": "ConnectionError"}
 
 
 async def test_invoke_rejects_a_different_runtime(

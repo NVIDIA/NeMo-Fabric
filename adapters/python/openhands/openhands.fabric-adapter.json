@@ -38,6 +38,16 @@
     },
     "additionalProperties": false
   },
+  "extension_schemas": {
+    "run_error": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "sdk_error": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
   "requirements": {},
   "config": {
     "accepts": [
