@@ -88,6 +88,9 @@ test("native process, selected session query, and health response use distinct e
     assert.ok(Number.isFinite(Date.parse(result.observed_at)));
     assert.equal(JSON.stringify(result).includes("PRIVATE"), false);
   }
+  const unsupported = await handle.check("startup");
+  assert.equal(unsupported.outcome, "unsupported");
+  assert.equal(unsupported.reason_code, "unsupported_level");
   assert.equal(state.calls[0][0], "get");
   assert.deepEqual(state.calls[0][1], {
     sessionID: "session-1",
