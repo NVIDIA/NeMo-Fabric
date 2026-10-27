@@ -59,7 +59,12 @@ def runtime_factory_fixture():
                 "harness": "test",
                 "adapter_kind": "local_process",
                 "adapter_id": "test.host",
-                "environment": {},
+                "environment": {
+                    "environment_id": "runtime-server-test",
+                    "provider": "local",
+                    "control_location": "external_control",
+                    "ownership": "caller_owned",
+                },
             }
         )
         runtime.stop = AsyncMock()

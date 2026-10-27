@@ -21,6 +21,112 @@ if sys.platform == "win32":
 from nemo_fabric import Fabric, FabricConfig
 
 
+@pytest.mark.parametrize("busy", [False, True])
+async def test_server_check_command_process_is_independent_of_agents(
+    blocking_adapter_config, tmp_path, busy
+):
+    with tempfile.TemporaryDirectory(prefix="fh-check-", dir="/tmp") as directory:
+        root = Path(directory)
+        for name in ("adapter.py", "blocking.fabric-adapter.json"):
+            shutil.copyfile(tmp_path / name, root / name)
+        socket = root / "fabric.sock"
+        environment = {**os.environ, "FABRIC_HOST_SOCKET": str(socket)}
+        command = [str(Path(sys.prefix) / "bin" / "fabric-agent-ctl")]
+        config_path = root / "config.json"
+        config_path.write_text(json.dumps(blocking_adapter_config.to_mapping()))
+        retained = root / "retained"
+        retained.write_text("KEEP")
+
+        async def call(*arguments, expected_exit=0):
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                *arguments,
+                env=environment,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), 10)
+            assert process.returncode == expected_exit, (stdout, stderr)
+            assert len(stdout.splitlines()) == 1
+            assert stdout.endswith(b"\n")
+            return json.loads(stdout)
+
+        host = await asyncio.create_subprocess_exec(
+            *command,
+            "serve",
+            env=environment,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        invocation = None
+        try:
+            async with asyncio.timeout(10):
+                while not socket.exists():
+                    assert host.returncode is None
+                    await asyncio.sleep(0.02)
+            if busy:
+                started = await call(
+                    "start", "--agent", "blocking", "--config", str(config_path)
+                )
+                runtime_id = started["result"]["runtime_id"]
+                input_path = root / "input.json"
+                input_path.write_text('{"message":"PRIVATE"}')
+                invocation = await asyncio.create_subprocess_exec(
+                    *command,
+                    "invoke",
+                    "--agent",
+                    "blocking",
+                    "--runtime-id",
+                    runtime_id,
+                    "--input",
+                    str(input_path),
+                    env=environment,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                async with asyncio.timeout(5):
+                    while not (root / "entered").exists():
+                        await asyncio.sleep(0.01)
+            first = await call("check")
+            second = await call("check", "--timeout-seconds", "1")
+            for response in (first, second):
+                assert response["operation"] == "check"
+                assert response["changed"] is False
+                assert response["result"]["outcome"] == "passed"
+                assert response["result"]["server"] == {"state": "responding"}
+                assert response["result"]["runtime"] is None
+                assert "PRIVATE" not in json.dumps(response)
+            assert second["result"]["completed_at"] > first["result"]["completed_at"]
+            assert retained.read_text() == "KEEP"
+            if busy:
+                assert invocation.returncode is None
+                (root / "release").write_text("release")
+                stdout, stderr = await asyncio.wait_for(invocation.communicate(), 5)
+                assert invocation.returncode == 0, stderr
+                assert json.loads(stdout)["result"]["output"] == {
+                    "response": "released"
+                }
+                await call("stop", "--agent", "blocking", "--runtime-id", runtime_id)
+            else:
+                assert not (root / "adapter.pid").exists()
+            host.terminate()
+            stdout, stderr = await asyncio.wait_for(host.communicate(), 6)
+            assert host.returncode == 0, stderr
+            assert stdout == b""
+            assert socket.with_suffix(".unclean").exists() is busy
+            missing = await call("check", expected_exit=1)
+            assert missing["error"]["code"] == "host_unavailable"
+            assert missing["error"]["effects"] == "none"
+        finally:
+            (root / "release").write_text("release")
+            if invocation is not None and invocation.returncode is None:
+                await asyncio.wait_for(invocation.communicate(), 5)
+            if host.returncode is None:
+                host.terminate()
+                await asyncio.wait_for(host.communicate(), 6)
+
+
 async def test_command_process_lifecycle_and_signal_cleanup(
     blocking_adapter_config, tmp_path
 ):
