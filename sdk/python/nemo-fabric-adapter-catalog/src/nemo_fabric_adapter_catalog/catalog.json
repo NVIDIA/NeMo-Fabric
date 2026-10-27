@@ -539,6 +539,11 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -660,7 +665,7 @@
         "name": "nemo-fabric-adapters-droid",
         "version": "0.6.0"
       },
-      "sha256": "6d1b3e67bf4d7b803c292057a27aa6c1c272f1160118cf0bb349ee273b067f14",
+      "sha256": "0c44210e0ba4e58a173b6ed1e38ecb4d518d84a4dd5c68449a7155463c591c73",
       "source": "adapters/typescript/droid/droid.fabric-adapter.json"
     },
     "nvidia.fabric.hermes": {

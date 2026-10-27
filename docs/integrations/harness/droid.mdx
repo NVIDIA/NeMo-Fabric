@@ -208,3 +208,15 @@ turn count.
 The initial adapter does not support NeMo Relay telemetry, native NeMo Fabric
 streaming, Relay-backed streaming, custom model endpoints, or adapter-specific
 `harness.settings`.
+
+## Runtime health
+
+`Fabric.check()` supports `live`. The adapter sends a fresh native
+`DroidSession.listTools()` request. A successful SDK response establishes that
+the selected Droid subprocess responds; a retained SDK handle is insufficient.
+A failed request returns unknown health and does not close the session.
+
+`active` and `ready` are unsupported. A busy invocation
+can remain live. Checks do not send prompts, validate model credentials, or
+change tool policy. At most one uncancellable native health request remains
+outstanding after a caller timeout.

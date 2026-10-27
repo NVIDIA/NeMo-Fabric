@@ -109,3 +109,16 @@ Droid custom endpoints are configured outside a session in Droid settings. It
 also does not advertise streaming, telemetry, or Relay integration. Unsupported
 normalized fields, MCP authentication and per-server tool filters, unknown
 settings, and unknown built-in tool IDs fail instead of being ignored.
+
+## Runtime health
+
+`Fabric.check()` supports `live`. The adapter sends a fresh native
+`DroidSession.listTools()` request. A successful SDK response establishes that
+the selected Droid subprocess responds; a retained SDK handle is insufficient.
+A failed request returns unknown health and does not close the session.
+
+`active` and `ready` are unsupported. The pinned SDK does not expose a qualified
+read-only probe for prompt acceptance or native readiness. A busy invocation
+can remain live. Checks do not send prompts, validate model credentials, or
+change tool policy. At most one uncancellable native health request remains
+outstanding after a caller timeout.
