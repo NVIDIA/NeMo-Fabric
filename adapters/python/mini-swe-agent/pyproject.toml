@@ -33,6 +33,7 @@ dependencies = [
 harness = [
   "fsspec>=2026.6.0",
   "mini-swe-agent>=2.0,<3",
+  "mcp>=1.26,<2",
 ]
 relay = [
   "nemo-relay>=0.11,<0.12",
@@ -40,6 +41,7 @@ relay = [
 full = [
   "fsspec>=2026.6.0",
   "mini-swe-agent>=2.0,<3",
+  "mcp>=1.26,<2",
   "nemo-relay>=0.11,<0.12",
 ]
 

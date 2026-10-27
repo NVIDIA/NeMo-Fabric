@@ -2444,6 +2444,7 @@ dependencies = [
 [package.optional-dependencies]
 harness = [
     { name = "fsspec" },
+    { name = "mcp" },
     { name = "mini-swe-agent" },
 ]
 relay = [
@@ -2454,6 +2455,8 @@ relay = [
 requires-dist = [
     { name = "fsspec", marker = "extra == 'full'", specifier = ">=2026.6.0" },
     { name = "fsspec", marker = "extra == 'harness'", specifier = ">=2026.6.0" },
+    { name = "mcp", marker = "extra == 'full'", specifier = ">=1.26,<2" },
+    { name = "mcp", marker = "extra == 'harness'", specifier = ">=1.26,<2" },
     { name = "mini-swe-agent", marker = "extra == 'full'", specifier = ">=2.0,<3" },
     { name = "mini-swe-agent", marker = "extra == 'harness'", specifier = ">=2.0,<3" },
     { name = "nemo-fabric-adapter-contract", editable = "adapter-contract/python" },

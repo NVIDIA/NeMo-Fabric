@@ -23,7 +23,7 @@ environment:
 | `pip install nemo-fabric-adapters-mini-swe-agent` | No | Yes | No | No |
 
 The `harness` and `full` extras install the latest compatible mini-SWE-agent
-2.x release.
+2.x release and the MCP Python runtime required by LiteLLM’s NVIDIA backend. This dependency does not enable MCP tools in the adapter.
 
 ## Configuration
 
