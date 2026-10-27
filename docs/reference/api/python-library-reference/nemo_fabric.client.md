@@ -120,6 +120,45 @@ The adapter validates the reference against the normalized configuration and wri
 ---
 
 
+### <kbd>method</kbd> `check`
+
+```python
+async def check(
+    *,
+    request: CheckRequest,
+    environment: EnvironmentHandle | None = None,
+    service: ServiceHandle | None = None,
+) -> CheckReport
+```
+
+Check server, runtime, or service health.
+
+OpenShell checks execute ``fabric-agent-ctl check`` inside the selected sandbox. Runtime checks then use the local SDK and an independent adapter health channel. Local server checks return unsupported. The request's single deadline covers routing, all levels, and decoding. Timeouts return ``unknown`` with reason ``probe_timeout``. Service checks use the selected process-local ``ServiceHandle``.
+
+
+
+**Args:**
+
+ - <b>`environment`</b>:  Prepared or attached environment for server or runtime scope.
+ - <b>`service`</b>:  Prepared or attached service handle for service scope.
+ - <b>`request`</b>:  Typed scope, runtime or service target, highest level, and timeout.
+
+
+
+**Returns:**
+ An immutable ``CheckReport`` with ordered health observations.
+
+
+
+**Raises:**
+
+ - <b>`FabricConfigError`</b>:  If arguments or returned evidence are invalid.
+ - <b>`FabricNativeUnavailableError`</b>:  If the native extension is missing.
+ - <b>`FabricRuntimeError`</b>:  If transport fails before a report can be formed.
+
+---
+
+
 ### <kbd>method</kbd> `doctor`
 
 ```python
@@ -400,7 +439,7 @@ async def start_runtime_in(
 
 Start one stateful runtime in an explicitly prepared or attached environment.
 
-Starting or stopping the runtime does not release ``environment``. Runtime and reuse limits depend on the provider. Release the environment separately after stopping the runtime and collecting results. Runtime startup is currently implemented for local environments.
+Starting or stopping the runtime does not release ``environment``. Runtime and reuse limits depend on the provider. Release the environment separately after stopping the runtime and collecting results. Runtime startup is supported by local environments and the OpenShell command bridge. OpenShell invocation is buffered and supports multiple runtime IDs per sandbox.
 
 
 
