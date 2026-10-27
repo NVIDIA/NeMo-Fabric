@@ -181,6 +181,23 @@ def test_openclaw_accepts_supported_version():
     adapter._validate_openclaw_version("OpenClaw 2026.9.4 (3a9d69d)")
 
 
+def test_openclaw_runtime_keeps_its_loaded_adapter_version(monkeypatch):
+    installed_version = "1.0"
+    monkeypatch.setattr(
+        adapter.provenance.importlib.metadata,
+        "version",
+        lambda _distribution: installed_version,
+    )
+    runtime = adapter.OpenClawRuntime()
+
+    first = runtime._versions_extensions()[adapter.provenance.VERSIONS_REPORT_KEY]
+    installed_version = "2.0"
+    second = runtime._versions_extensions()[adapter.provenance.VERSIONS_REPORT_KEY]
+
+    assert first["adapter"]["package_version"]["value"] == "1.0"
+    assert second["adapter"]["package_version"] == first["adapter"]["package_version"]
+
+
 def test_openclaw_rejects_unsupported_version():
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
         adapter._validate_openclaw_version("OpenClaw 2026.9.5 (abcdef0)")
@@ -840,6 +857,28 @@ def test_openclaw_gateway_endpoint_rejects_nonliteral_or_remote_http(endpoint: s
         adapter._gateway_endpoint(endpoint)
 
     assert caught.value.code == "openclaw_invalid_service_reference"
+
+
+def test_openclaw_service_connection_without_fchmod(tmp_path: Path, monkeypatch):
+    """Older Windows Python versions can persist an attached service safely."""
+    monkeypatch.delattr(adapter.os, "fchmod", raising=False)
+    connection_path = tmp_path / "private" / "service-connection.json"
+
+    adapter._write_service_connection(
+        connection_path,
+        gateway_url="http://127.0.0.1:18789",
+        token="TEST_ONLY_GATEWAY_TOKEN",
+        agent_id="default",
+    )
+
+    assert adapter._read_service_connection(connection_path) == (
+        "http://127.0.0.1:18789",
+        "TEST_ONLY_GATEWAY_TOKEN",
+        "default",
+    )
+    assert list(connection_path.parent.iterdir()) == [connection_path]
+    if os.name == "posix":
+        assert connection_path.stat().st_mode & 0o777 == 0o600
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Requires POSIX file modes")

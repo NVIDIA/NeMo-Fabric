@@ -32,6 +32,8 @@ const banner = `// SPDX-FileCopyrightText: Copyright (c) ${currentYear}, NVIDIA 
 // Do not edit it directly; run \`npm run generate\` instead.`;
 
 const schemaSpecs = [
+  { name: "adapter-check-request", output: "adapter-check-request.ts" },
+  { name: "adapter-check-result", output: "adapter-check-result.ts" },
   {
     name: "adapter-descriptor",
     output: "adapter-descriptor.ts",

@@ -520,6 +520,7 @@
   },
   "capabilities": {
     "service": true,
+    "metadata": {"service_health_checks": ["live", "active", "ready"], "health_checks": ["live", "active", "ready"]},
     "streaming": false,
     "updates": false,
     "cancellation": false
