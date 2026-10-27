@@ -1687,7 +1687,7 @@ def test_local_shell_file_tools_accept_physical_workspace_paths(
     assert target.read_text() == "same workspace"
     shell = backend.execute(
         f'"{sys.executable}" -c "from pathlib import Path; '
-        f"assert Path('{target}').read_text() == 'same workspace'\""
+        f"assert Path('{target.as_posix()}').read_text() == 'same workspace'\""
     )
     assert shell.exit_code == 0
     read = backend.read(str(target))
