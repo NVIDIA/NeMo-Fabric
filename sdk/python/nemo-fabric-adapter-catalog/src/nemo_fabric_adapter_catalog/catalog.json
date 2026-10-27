@@ -2014,6 +2014,18 @@
         "adapter_kind": "python",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ],
+            "service_health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": true,
           "streaming": false,
           "updates": false
@@ -2204,7 +2216,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.6.0"
       },
-      "sha256": "eef2a0677ed569f2433a47886fd86bf05febb7e5ffa2d67b08b2ab2f14f206e0",
+      "sha256": "033cbf81ff21a90d0c71bda4e7e3ef4d42e4cfac47e825b0bfba61a2be395511",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {
@@ -2470,6 +2482,13 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -2686,7 +2705,7 @@
         "name": "nemo-fabric-adapters-pi",
         "version": "0.6.0"
       },
-      "sha256": "413cb592ffe6d4724dfa0e4cd35ad8be1474acde8cd0cf33ce8073d666db0a9a",
+      "sha256": "746db0be382fc0b62a4b02eac3c1a297a6c2cde9dfdf21f91f646bdb9db7ae5e",
       "source": "adapters/typescript/pi/pi.fabric-adapter.json"
     },
     "nvidia.fabric.qwen": {

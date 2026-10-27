@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from nemo_fabric import (
+    CheckRequest,
     DiscoveryConfig,
     EnvironmentConfig,
     EnvironmentReference,
@@ -141,6 +142,12 @@ async def run_demo(
             environment = await fabric.prepare_environment(config)
             _record_fabric_owned_sandbox(args, environment)
 
+        server_check = await fabric.check(
+            environment=environment, request=CheckRequest(scope="server")
+        )
+        if server_check.outcome != "passed":
+            raise RuntimeError("Fabric runtime server is not healthy")
+
         runtime = await fabric.start_runtime_in(config, environment)
         first = await runtime.invoke(
             request=RunRequest(
@@ -169,6 +176,7 @@ async def run_demo(
             raise RuntimeError("second invocation did not return the echo receipt")
         summary = {
             "ownership": args.ownership,
+            "server_check": server_check.to_mapping(),
             "runtime_id": runtime.runtime_id,
             "first": first.to_mapping(),
             "second": second.to_mapping(),
@@ -190,7 +198,9 @@ async def run_demo(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ownership", choices=("caller_owned", "fabric_owned"), required=True)
+    parser.add_argument(
+        "--ownership", choices=("caller_owned", "fabric_owned"), required=True
+    )
     parser.add_argument("--gateway", required=True)
     parser.add_argument("--image", required=True)
     parser.add_argument("--policy-file", required=True)

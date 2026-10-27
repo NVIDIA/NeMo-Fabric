@@ -299,7 +299,7 @@ OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 ```
 
-## aiohttp (3.14.3)
+## aiohttp (3.14.5)
 
 ### Licenses
 License: `Apache-2.0 AND MIT`
@@ -3139,7 +3139,7 @@ Copyright (c) 2019, Omer Katz
  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## filelock (3.29.4)
+## filelock (4.2.4)
 
 ### Licenses
 License: `MIT`
@@ -12893,7 +12893,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 The above BSD License Applies to all code, even that also covered by Apache 2.0.
 ```
 
-## python-discovery (1.4.4)
+## python-discovery (1.6.4)
 
 ### Licenses
 License: `MIT`
@@ -16118,14 +16118,14 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## virtualenv (21.6.0)
+## virtualenv (21.14.13)
 
 ### Licenses
 License: `MIT`
 
   - `LICENSE`:
 ```
-Copyright (c) 2020-202x The virtualenv developers
+Copyright (c) 2020-present The virtualenv developers
 
 Permission is hereby granted, free of charge, to any person obtaining
 a copy of this software and associated documentation files (the
@@ -16310,7 +16310,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## yarl (1.24.2)
+## yarl (1.25.1)
 
 ### Licenses
 License: `Apache-2.0`

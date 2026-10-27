@@ -5,8 +5,14 @@ import json
 import subprocess
 import sys
 
+import pytest
 
-def test_windows_import_without_fcntl_and_deliberate_unsupported_command():
+
+@pytest.mark.parametrize(
+    "arguments",
+    [["stop", "--agent", "review", "--runtime-id", "runtime-1"], ["check"]],
+)
+def test_windows_import_without_fcntl_and_deliberate_unsupported_command(arguments):
     code = """
 import builtins, sys
 from nemo_fabric import Fabric
@@ -19,10 +25,13 @@ def import_module(name, *args, **kwargs):
 builtins.__import__ = import_module
 from nemo_fabric.runtime_server import cli
 assert cli.main(["serve"]) == 1
-raise SystemExit(cli.main(["stop", "--agent", "review", "--runtime-id", "runtime-1"]))
+raise SystemExit(cli.main(sys.argv[1:]))
 """
     result = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, timeout=10
+        [sys.executable, "-c", code, *arguments],
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     assert result.returncode == 1
     assert len(result.stdout.splitlines()) == 1, result.stderr
