@@ -20,6 +20,7 @@ def hermes_health_fixture():
             "session_id",
             "get_activity_summary",
             "run_conversation",
+            "close",
             "_memory_provider_shutdown",
         ]
     )
@@ -97,14 +98,51 @@ async def test_hermes_health_requires_owned_session(hermes_health, field):
     agent.get_activity_summary.assert_not_called()
 
 
-async def test_hermes_health_requires_matching_native_session(hermes_health):
+@pytest.mark.parametrize("level", ["live", "active", "ready"])
+async def test_hermes_health_reports_unavailable_after_stop(hermes_health, level):
     runtime, agent = hermes_health
-    agent.session_id = "another-runtime"
-    result = await runtime.check("ready")
+    await runtime.stop()
+
+    result = await runtime.check(level)
+
     assert (result["outcome"], result["reason_code"]) == (
         "unknown",
-        "observation_changed",
+        "runtime_unavailable",
     )
+    assert result["observed_at"] is None
+    agent.close.assert_called_once_with()
+    agent.get_activity_summary.assert_not_called()
+
+
+@pytest.mark.parametrize("level", ["live", "active", "ready"])
+@pytest.mark.parametrize("rotation", ["before", "during"])
+async def test_hermes_health_allows_native_session_rotation(
+    hermes_health, level, rotation
+):
+    runtime, agent = hermes_health
+    runtime_id = runtime._runtime_id
+
+    def rotate():
+        agent.session_id = "compressed-child-session"
+        return agent.get_activity_summary.return_value
+
+    if rotation == "before":
+        rotate()
+    else:
+        agent.get_activity_summary.side_effect = rotate
+
+    result = await runtime.check(level)
+
+    assert (result["outcome"], result["reason_code"], result["activity"]) == (
+        "passed",
+        None,
+        "idle",
+    )
+    assert result["observed_at"] is not None
+    assert agent.session_id == "compressed-child-session"
+    assert runtime._runtime_id == runtime_id
+    agent.get_activity_summary.assert_called_once_with()
+    agent.run_conversation.assert_not_called()
 
 
 async def test_hermes_active_requires_invocation_interface(hermes_health):

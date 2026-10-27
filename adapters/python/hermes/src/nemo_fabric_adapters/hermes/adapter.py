@@ -500,8 +500,6 @@ class HermesRuntime:
                 "outcome": "unsupported",
                 "reason_code": "unsupported_level",
             }
-        if self._stopping:
-            return {**result, "reason_code": "observation_changed"}
         agent, config, model = self._agent, self._agent_config, self._model_config
         runtime_id, database = self._runtime_id, self._session_db
         if (
@@ -513,6 +511,8 @@ class HermesRuntime:
             or not runtime_id
         ):
             return {**result, "reason_code": "runtime_unavailable"}
+        if self._stopping:
+            return {**result, "reason_code": "observation_changed"}
 
         def unchanged() -> bool:
             return (
@@ -523,7 +523,6 @@ class HermesRuntime:
                 and self._model_config is model
                 and self._session_db is database
                 and self._runtime_id == runtime_id
-                and agent.session_id == runtime_id
             )
 
         def observed(outcome: str, reason: str | None) -> dict[str, Any]:
