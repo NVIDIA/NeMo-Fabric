@@ -4,6 +4,8 @@
 """Health evidence from the selected compiled graph and checkpoint connection."""
 
 import asyncio
+import gc
+import weakref
 from unittest.mock import AsyncMock, MagicMock
 
 import aiosqlite
@@ -293,27 +295,39 @@ async def test_health_timeout_consumes_late_native_errors_without_logging(
     diagnostics = []
     release = asyncio.Event()
     pending = None
+    pending_ref = None
 
     async def delayed_error(*_args, **_kwargs):
         await release.wait()
         raise RuntimeError("private-native-health-detail")
 
     agent.aget_state.side_effect = delayed_error
-    loop.set_exception_handler(lambda _loop, context: diagnostics.append(context))
+    loop.set_exception_handler(
+        lambda _loop, context: diagnostics.append(context["message"])
+    )
     try:
         with pytest.raises(TimeoutError):
             async with asyncio.timeout(0.03):
                 await runtime.check("ready")
         pending = runtime._health_task
         assert pending is not None and not pending.done()
+        pending_ref = weakref.ref(pending)
         release.set()
         await asyncio.wait({pending})
         await asyncio.sleep(0)
         assert not pending.cancelled()
+        runtime._health_task = None
+        pending = None
+        gc.collect()
+        assert pending_ref() is None
         assert diagnostics == []
         agent.aget_state.assert_awaited_once()
     finally:
         release.set()
         if pending is not None:
             await asyncio.gather(pending, return_exceptions=True)
+        if pending_ref is not None:
+            task = pending_ref()
+            if task is not None:
+                await asyncio.gather(task, return_exceptions=True)
         loop.set_exception_handler(previous_handler)
