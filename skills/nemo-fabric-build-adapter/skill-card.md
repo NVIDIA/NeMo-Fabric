@@ -38,8 +38,8 @@ Mitigation: Review and scan skill before deployment. <br>
 **Other Properties Related to Output:** [None] <br>
 
 ## Evaluation Agents Used: <br>
-- Claude Code (`aws/anthropic/bedrock-claude-opus-4-8`) <br>
-- Codex (`openai/openai/gpt-5.5`) <br>
+- Claude Code (`aws/anthropic/bedrock-claude-opus-5-5`) <br>
+- Codex (`openai/openai/gpt-6.1-sol`) <br>
 
 
 
@@ -68,15 +68,15 @@ Underlying evaluation signals used in this run: <br>
 ## Evaluation Results: <br>
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | Not available | 78.3% — baseline ran, but no comparable score was available; uplift unavailable |
-| Security | Not available | 57.1% → 85.7% (+28.6 points) |
-| Correctness | Not available | 71.4% → 82.9% (+11.5 points) |
-| Discoverability | Not available | 82.0% — baseline ran, but no comparable score was available; uplift unavailable |
-| Effectiveness | Not available | 52.1% → 70.2% (+18.1 points) |
-| Efficiency | Not available | 70.6% — baseline ran, but no comparable score was available; uplift unavailable |
+| Overall | 77.4% — baseline ran, but no comparable score was available; uplift unavailable | 70.7% — baseline ran, but no comparable score was available; uplift unavailable |
+| Security | 85.7% → 71.4% (-14.3 points) | 92.9% → 71.4% (-21.5 points) |
+| Correctness | 42.9% → 91.4% (+48.5 points) | 42.9% → 88.6% (+45.7 points) |
+| Discoverability | 92.0% — baseline ran, but no comparable score was available; uplift unavailable | 86.0% — baseline ran, but no comparable score was available; uplift unavailable |
+| Effectiveness | 23.2% → 52.7% (+29.5 points) | 24.3% → 45.6% (+21.3 points) |
+| Efficiency | 79.4% — baseline ran, but no comparable score was available; uplift unavailable | 61.7% — baseline ran, but no comparable score was available; uplift unavailable |
 
 ## Skill Version(s): <br>
-ac263cc (source: git SHA, committed 2026-10-08) <br>
+e5381ab3 (source: git SHA, committed 2026-10-27) <br>
 
 ## Ethical Considerations: <br>
 NVIDIA believes Trustworthy AI is a shared responsibility and we have established policies and practices to enable development for a wide array of AI applications. When downloaded or used in accordance with our terms of service, developers should work with their internal team to ensure this skill meets requirements for the relevant industry and use case and addresses unforeseen product misuse. <br>
