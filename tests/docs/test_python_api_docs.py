@@ -42,6 +42,7 @@ MODULE_SLUGS = {
     "nemo_fabric.comparisons": "/reference/api/python-library-reference/comparisons",
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
     "nemo_fabric.capabilities": "/reference/api/python-library-reference/capabilities",
+    "nemo_fabric.check": "/reference/api/python-library-reference/check",
     "nemo_fabric.runtime": "/reference/api/python-library-reference/runtime",
     "nemo_fabric.service": "/reference/api/python-library-reference/service",
     "nemo_fabric.streaming": "/reference/api/python-library-reference/streaming",

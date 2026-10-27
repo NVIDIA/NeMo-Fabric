@@ -43,6 +43,13 @@ use crate::what_ran::WhatRan;
 mod openshell;
 use openshell::OpenShellRuntimeAdapter;
 
+pub(crate) fn remote_check_agent(
+    environment: &EnvironmentHandle,
+    runtime_id: &str,
+) -> Result<Option<String>> {
+    openshell::check_agent(environment, runtime_id)
+}
+
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
 const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";
@@ -951,7 +958,7 @@ pub fn run_plan_with_recording_context(
     let mut result = match invoke_runtime_unpersisted(plan, &runtime, request, recorder.as_ref()) {
         Ok(result) => result,
         Err(error) => {
-            let stopped = stop_runtime(plan, &runtime);
+            let stopped = stop_runtime_inner(plan, &runtime, Some(&mut diagnostics));
             if let Some(recorder) = &recorder {
                 recorder.runtime_stopped(&stopped);
             }
@@ -967,7 +974,7 @@ pub fn run_plan_with_recording_context(
             ));
         }
     };
-    let stopped = stop_runtime(plan, &runtime);
+    let stopped = stop_runtime_inner(plan, &runtime, Some(&mut diagnostics));
     if let Some(recorder) = &recorder {
         recorder.runtime_stopped(&stopped);
     }
@@ -1052,6 +1059,7 @@ pub fn attach_environment(
 ///
 /// Caller-owned resources detach without deletion; local files remain in place.
 pub fn release_environment(environment: &EnvironmentHandle) -> Result<()> {
+    crate::check::invalidate_environment(environment);
     if environment.provider == "openshell" {
         return openshell::release(environment);
     }
@@ -1133,6 +1141,7 @@ pub fn release_service(plan: &RunPlan, service: &ServiceHandle) -> Result<Vec<Fa
             runtime_ids: service_record.active_runtime_ids.iter().cloned().collect(),
         });
     }
+    crate::check::invalidate_service(&service_record.handle);
     service_record.state = LocalServiceState::Releasing;
     if let Err(error) = stop_service_host(&mut service_record) {
         service_record.state = LocalServiceState::ReleaseFailed;
@@ -1233,6 +1242,19 @@ fn start_service(
         connection: info.connection,
         metadata: info.metadata,
     };
+    let levels = plan
+        .capabilities
+        .metadata
+        .get("service_health_checks")
+        .and_then(Value::as_array)
+        .map(|levels| {
+            levels
+                .iter()
+                .filter_map(|level| serde_json::from_value(level.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    crate::check::register_service(&handle, &runtime, levels);
     local_services().insert(
         service_id,
         Arc::new(Mutex::new(LocalServiceRecord {
@@ -1469,10 +1491,29 @@ fn validate_adapter_compatibility(plan: &RunPlan) -> Result<()> {
 
 /// Stop or detach from a harness runtime.
 pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+    stop_runtime_inner(plan, runtime, None)
+}
+
+fn stop_runtime_inner(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+    diagnostics: Option<&mut Option<DiagnosticObserver>>,
+) -> Result<Vec<FabricEvent>> {
     validate_runtime_handle(plan, runtime)?;
+    crate::check::invalidate_runtime(runtime);
     if uses_local_host(plan) {
         let events = if runtime.environment.provider == "openshell" {
-            OpenShellRuntimeAdapter.stop(runtime)?
+            let stopped = OpenShellRuntimeAdapter.stop(runtime);
+            if let Some(observer) = diagnostics.and_then(Option::take) {
+                observer.finish();
+            }
+            stopped?
+        } else if let Some(observer) = diagnostics {
+            stop_local_host_with_final_drain(runtime, || {
+                if let Some(observer) = observer.take() {
+                    observer.finish();
+                }
+            })?
         } else {
             LocalHostAdapter.stop(runtime)?
         };
@@ -1918,58 +1959,69 @@ impl RuntimeAdapter for LocalHostAdapter {
     }
 
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
-        local_host_processes().remove(&runtime.runtime_id);
-        let Some(host) = local_hosts().remove(&runtime.runtime_id) else {
-            return Ok(vec![local_host_stop_event(runtime, true, false)]);
-        };
-        let mut host = host.lock().unwrap_or_else(|error| error.into_inner());
-        let request =
-            AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Stop(AdapterLifecycleStop {
-                runtime_id: runtime.runtime_id.clone(),
-            }));
-        let result = exchange_lifecycle_message(
-            &mut host,
-            &runtime.runtime_id,
-            &request,
-            LOCAL_HOST_STOP_TIMEOUT,
-        );
-        let termination = terminate_local_host(&mut host);
-        let diagnostics = local_host_diagnostics(&host);
-        let removal = remove_local_host_files(&host);
-        let host_crashed = matches!(
-            &result,
-            Err(FabricError::AdapterLifecycleOperation { code, .. })
-                if code == "host_crashed"
-        );
-        if !host_crashed {
-            result?;
-        }
-        termination.map_err(|source| {
-            lifecycle_error(
-                AdapterLifecycleOperation::Stop,
-                &runtime.runtime_id,
-                "host_termination_failed",
-                format!("persistent local adapter host could not be terminated: {source}"),
-                diagnostics,
-            )
-        })?;
-        removal.map_err(|source| {
-            lifecycle_error(
-                AdapterLifecycleOperation::Stop,
-                &runtime.runtime_id,
-                "host_cleanup_failed",
-                format!("persistent local adapter host files could not be removed: {source}"),
-                "",
-            )
-        })?;
-
-        #[cfg(test)]
-        TEST_STOPPED_AGENTS
-            .lock()
-            .expect("stop tracker")
-            .push(runtime.agent_name.clone());
-        Ok(vec![local_host_stop_event(runtime, false, host_crashed)])
+        stop_local_host_with_final_drain(runtime, || {})
     }
+}
+
+fn stop_local_host_with_final_drain(
+    runtime: &RuntimeHandle,
+    final_drain: impl FnOnce(),
+) -> Result<Vec<FabricEvent>> {
+    local_host_processes().remove(&runtime.runtime_id);
+    let Some(host) = local_hosts().remove(&runtime.runtime_id) else {
+        final_drain();
+        return Ok(vec![local_host_stop_event(runtime, true, false)]);
+    };
+    let mut host = host.lock().unwrap_or_else(|error| error.into_inner());
+    let request =
+        AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Stop(AdapterLifecycleStop {
+            runtime_id: runtime.runtime_id.clone(),
+        }));
+    let result = exchange_lifecycle_message(
+        &mut host,
+        &runtime.runtime_id,
+        &request,
+        LOCAL_HOST_STOP_TIMEOUT,
+    );
+    let termination = terminate_local_host(&mut host);
+    let diagnostics = local_host_diagnostics(&host);
+    // Shutdown diagnostics are captured before the host directory is removed.
+    // The observer must release its stderr handle before cleanup on Windows.
+    final_drain();
+    let removal = remove_local_host_files(&host);
+    let host_crashed = matches!(
+        &result,
+        Err(FabricError::AdapterLifecycleOperation { code, .. })
+            if code == "host_crashed"
+    );
+    if !host_crashed {
+        result?;
+    }
+    termination.map_err(|source| {
+        lifecycle_error(
+            AdapterLifecycleOperation::Stop,
+            &runtime.runtime_id,
+            "host_termination_failed",
+            format!("persistent local adapter host could not be terminated: {source}"),
+            diagnostics,
+        )
+    })?;
+    removal.map_err(|source| {
+        lifecycle_error(
+            AdapterLifecycleOperation::Stop,
+            &runtime.runtime_id,
+            "host_cleanup_failed",
+            format!("persistent local adapter host files could not be removed: {source}"),
+            "",
+        )
+    })?;
+
+    #[cfg(test)]
+    TEST_STOPPED_AGENTS
+        .lock()
+        .expect("stop tracker")
+        .push(runtime.agent_name.clone());
+    Ok(vec![local_host_stop_event(runtime, false, host_crashed)])
 }
 
 fn start_local_runtime(
@@ -2027,7 +2079,27 @@ fn start_local_runtime_recorded(
     let environment_env = start.runtime_context.environment.env.clone();
     let request = AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Start(Box::new(start)));
     let started_at = SystemTime::now();
-    let mut host = spawn_local_host(plan, &runtime, artifacts, relay_config, environment_env)?;
+    let levels = plan
+        .capabilities
+        .metadata
+        .get("health_checks")
+        .and_then(Value::as_array)
+        .map(|levels| {
+            levels
+                .iter()
+                .filter_map(|level| serde_json::from_value(level.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    crate::check::register(&runtime, levels);
+    let mut host = match spawn_local_host(plan, &runtime, artifacts, relay_config, environment_env)
+    {
+        Ok(host) => host,
+        Err(error) => {
+            crate::check::invalidate_runtime(&runtime);
+            return Err(error);
+        }
+    };
     if let Some(recorder) = recorder {
         recorder.set_runtime(&runtime);
         *diagnostics = Some(DiagnosticObserver::start(
@@ -2042,7 +2114,11 @@ fn start_local_runtime_recorded(
         &request,
         LOCAL_HOST_START_TIMEOUT,
     ) {
+        crate::check::invalidate_runtime(&runtime);
         let _ = terminate_local_host(&mut host);
+        if let Some(observer) = diagnostics.take() {
+            observer.finish();
+        }
         let _ = remove_local_host_files(&host);
         return Err(error);
     }
@@ -2393,15 +2469,10 @@ fn local_host_invocation_result(
             .map(|stats| crate::system_stats::persist_summary(stats, &invocation, &fabric_home));
         match exchange {
             Ok(output) => {
-                let stderr = if recorder.is_some() {
-                    // Live capture owns publication. Only retain the bounded
-                    // diagnostic tail needed to explain a rejected response.
-                    let stderr = local_host_diagnostics(&host_guard);
-                    if let Ok(metadata) = std::fs::metadata(&host_guard.stderr_path) {
-                        host_guard.stderr_offset =
-                            usize::try_from(metadata.len()).unwrap_or(usize::MAX);
-                    }
-                    stderr
+                let stderr = if recorder.is_some_and(RunRecorder::is_writable) {
+                    // The observer publishes diagnostics. Keep only this
+                    // invocation's bounded tail for a rejected response.
+                    take_local_host_diagnostic_tail(&mut host_guard)
                 } else {
                     take_local_host_stderr(&mut host_guard)
                 };
@@ -2526,7 +2597,7 @@ fn local_host_invocation_result(
             ),
         ]),
     ));
-    if recorder.is_none() {
+    if !recorder.is_some_and(RunRecorder::is_writable) {
         let mut stdout = serde_json::to_string(&output).map_err(FabricError::SerializeJson)?;
         stdout.push('\n');
         write_artifact(
@@ -2831,7 +2902,7 @@ fn local_services()
         .unwrap_or_else(|error| error.into_inner())
 }
 
-fn local_host_directory(id: &str) -> PathBuf {
+pub(crate) fn local_host_directory(id: &str) -> PathBuf {
     std::env::temp_dir()
         .join("nemo-fabric")
         .join("hosts")
@@ -3273,6 +3344,28 @@ fn take_local_host_stderr(host: &mut LocalAdapterHost) -> String {
     let start = host.stderr_offset.min(bytes.len());
     host.stderr_offset = bytes.len();
     String::from_utf8_lossy(&bytes[start..]).into_owned()
+}
+
+fn take_local_host_diagnostic_tail(host: &mut LocalAdapterHost) -> String {
+    let Ok(mut file) = File::open(&host.stderr_path) else {
+        return String::new();
+    };
+    let Ok(metadata) = file.metadata() else {
+        return String::new();
+    };
+    let end = metadata.len();
+    let start = (host.stderr_offset as u64)
+        .min(end)
+        .max(end.saturating_sub(LOCAL_HOST_DIAGNOSTIC_LIMIT as u64));
+    host.stderr_offset = usize::try_from(end).unwrap_or(usize::MAX);
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        return String::new();
+    }
+    let mut bytes = Vec::with_capacity((end - start) as usize);
+    if file.take(end - start).read_to_end(&mut bytes).is_err() {
+        return String::new();
+    }
+    String::from_utf8_lossy(&bytes).trim().to_string()
 }
 
 fn terminate_local_host(host: &mut LocalAdapterHost) -> std::io::Result<()> {
@@ -4629,8 +4722,11 @@ for line in sys.stdin:
             sys.exit(17)
     elif operation in {"invoke", "invoke_openai_stream"}:
         invocations += 1
-        if MODE == "invoke_stderr":
+        if MODE in {"invoke_stderr", "invoke_stderr_then_invalid"}:
             print(f"diagnostic-{invocations}", file=sys.stderr, flush=True)
+        if MODE == "invoke_stderr_then_invalid" and invocations == 3:
+            response(operation, output={"status": "invalid"})
+            continue
         if MODE == "invoke_stderr_overflow":
             sys.stderr.write("x" * (1024 * 1024 + 31))
             sys.stderr.flush()
@@ -7496,8 +7592,8 @@ for line in sys.stdin:
     }
 
     #[test]
-    fn record_off_with_an_artifact_root_writes_no_record() {
-        let (root, plan) = local_host_plan("typed_result");
+    fn recording_disabled_or_failed_keeps_log_artifacts() {
+        let (root, mut plan) = local_host_plan("invoke_stderr");
         assert!(plan.config.runtime.artifacts.is_some());
 
         let result = run_plan(&plan, RunRequest::text("no record")).expect("run");
@@ -7516,6 +7612,37 @@ for line in sys.stdin:
                 .iter()
                 .all(|event| event.kind != "record_write_failed")
         );
+        for name in ["stdout", "stderr"] {
+            assert!(
+                result
+                    .artifacts
+                    .artifacts
+                    .iter()
+                    .any(|artifact| artifact.name == name)
+            );
+        }
+
+        plan.config.runtime.record = Some(crate::config::RecordConfig { enabled: true });
+        crate::record::test_hooks::FAULT
+            .with(|slot| slot.set(Some(crate::record::test_hooks::Fault::StartAppend)));
+        let failed_recording = run_plan(&plan, RunRequest::text("failed journal"));
+        crate::record::test_hooks::FAULT.with(|slot| slot.set(None));
+        let failed_recording = failed_recording.expect("execution survives journal failure");
+        assert!(
+            failed_recording
+                .events
+                .iter()
+                .any(|event| event.kind == "record_write_failed")
+        );
+        for name in ["stdout", "stderr"] {
+            assert!(
+                failed_recording
+                    .artifacts
+                    .artifacts
+                    .iter()
+                    .any(|artifact| artifact.name == name)
+            );
+        }
         let _ = fs::remove_dir_all(root);
     }
 
@@ -7808,7 +7935,7 @@ for line in sys.stdin:
 
     #[test]
     fn warm_parallel_requests_capture_only_their_serialized_host_window() {
-        let (root, plan) = record_plan("invoke_stderr");
+        let (root, plan) = record_plan("invoke_stderr_then_invalid");
         let runtime = start_runtime(&plan).unwrap();
         let results = std::thread::scope(|scope| {
             let first =
@@ -7817,8 +7944,15 @@ for line in sys.stdin:
                 scope.spawn(|| invoke_runtime(&plan, &runtime, RunRequest::text("two")).unwrap());
             [first.join().unwrap(), second.join().unwrap()]
         });
+        let invalid = invoke_runtime(&plan, &runtime, RunRequest::text("invalid"))
+            .expect_err("third response is invalid");
+        assert!(matches!(
+            invalid,
+            FabricError::AdapterLifecycleOperation { code, diagnostics, .. }
+                if code == "invalid_agent_run_result" && diagnostics == "diagnostic-3"
+        ));
         stop_runtime(&plan, &runtime).unwrap();
-        assert_eq!(record_files(&root).len(), 2);
+        assert_eq!(record_files(&root).len(), 3);
         for result in results {
             let path = &result
                 .artifacts

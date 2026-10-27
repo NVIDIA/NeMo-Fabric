@@ -227,7 +227,8 @@ async def test_blocking_probe_recovers_when_its_thread_cannot_start(monkeypatch)
 
 def test_package_version_report_marks_harness_and_served_models_no_source():
     report = provenance.package_version_report(
-        "nemo-fabric-adapters-common", ["judge", "default"]
+        provenance.package_version_fact("nemo-fabric-adapters-common"),
+        ["judge", "default"],
     )
 
     no_source = missing("unsupported", "no_source", "adapter_report")
