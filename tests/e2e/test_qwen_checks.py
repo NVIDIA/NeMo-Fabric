@@ -25,6 +25,11 @@ from nemo_fabric import (
 
 ROOT = Path(__file__).resolve().parents[2]
 
+pytestmark = pytest.mark.skipif(
+    not (ROOT / "adapters/typescript/qwen/dist/cli.js").is_file(),
+    reason="Build the Qwen TypeScript adapter before its health E2E test",
+)
+
 
 async def test_qwen_sdk_health_during_native_invocation(blocking_model, tmp_path):
     if shutil.which("node") is None:

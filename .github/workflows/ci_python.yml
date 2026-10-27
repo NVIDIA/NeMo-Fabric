@@ -386,7 +386,7 @@ jobs:
       - name: Run deterministic Qwen E2E
         run: |
           uv sync --frozen --no-default-groups --group test --no-sources-package hermes-agent
-          uv run --no-sync pytest tests/e2e/test_qwen.py -q
+          uv run --no-sync pytest tests/e2e/test_qwen.py tests/e2e/test_qwen_checks.py -q
 
   build-wheels:
     name: Build wheels (${{ matrix.platform }})
