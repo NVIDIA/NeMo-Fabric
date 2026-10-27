@@ -40,6 +40,13 @@ use crate::system_stats::{CgroupStats, InvocationSystemStats, StatsSession, Syst
 mod openshell;
 use openshell::OpenShellRuntimeAdapter;
 
+pub(crate) fn remote_check_agent(
+    environment: &EnvironmentHandle,
+    runtime_id: &str,
+) -> Result<Option<String>> {
+    openshell::check_agent(environment, runtime_id)
+}
+
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
 const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";
@@ -960,6 +967,7 @@ pub fn attach_environment(
 ///
 /// Caller-owned resources detach without deletion; local files remain in place.
 pub fn release_environment(environment: &EnvironmentHandle) -> Result<()> {
+    crate::check::invalidate_environment(environment);
     if environment.provider == "openshell" {
         return openshell::release(environment);
     }
@@ -1041,6 +1049,7 @@ pub fn release_service(plan: &RunPlan, service: &ServiceHandle) -> Result<Vec<Fa
             runtime_ids: service_record.active_runtime_ids.iter().cloned().collect(),
         });
     }
+    crate::check::invalidate_service(&service_record.handle);
     service_record.state = LocalServiceState::Releasing;
     if let Err(error) = stop_service_host(&mut service_record) {
         service_record.state = LocalServiceState::ReleaseFailed;
@@ -1141,6 +1150,19 @@ fn start_service(
         connection: info.connection,
         metadata: info.metadata,
     };
+    let levels = plan
+        .capabilities
+        .metadata
+        .get("service_health_checks")
+        .and_then(Value::as_array)
+        .map(|levels| {
+            levels
+                .iter()
+                .filter_map(|level| serde_json::from_value(level.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    crate::check::register_service(&handle, &runtime, levels);
     local_services().insert(
         service_id,
         Arc::new(Mutex::new(LocalServiceRecord {
@@ -1322,6 +1344,7 @@ fn validate_adapter_compatibility(plan: &RunPlan) -> Result<()> {
 /// Stop or detach from a harness runtime.
 pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
     validate_runtime_handle(plan, runtime)?;
+    crate::check::invalidate_runtime(runtime);
     if uses_local_host(plan) {
         let events = if runtime.environment.provider == "openshell" {
             OpenShellRuntimeAdapter.stop(runtime)?
@@ -1854,13 +1877,34 @@ fn start_local_runtime(
     let environment_env = start.runtime_context.environment.env.clone();
     let request = AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Start(Box::new(start)));
     let started_at = SystemTime::now();
-    let mut host = spawn_local_host(plan, &runtime, artifacts, relay_config, environment_env)?;
+    let levels = plan
+        .capabilities
+        .metadata
+        .get("health_checks")
+        .and_then(Value::as_array)
+        .map(|levels| {
+            levels
+                .iter()
+                .filter_map(|level| serde_json::from_value(level.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    crate::check::register(&runtime, levels);
+    let mut host = match spawn_local_host(plan, &runtime, artifacts, relay_config, environment_env)
+    {
+        Ok(host) => host,
+        Err(error) => {
+            crate::check::invalidate_runtime(&runtime);
+            return Err(error);
+        }
+    };
     if let Err(error) = exchange_lifecycle_message(
         &mut host,
         &runtime.runtime_id,
         &request,
         LOCAL_HOST_START_TIMEOUT,
     ) {
+        crate::check::invalidate_runtime(&runtime);
         let _ = terminate_local_host(&mut host);
         let _ = remove_local_host_files(&host);
         return Err(error);
@@ -2542,7 +2586,7 @@ fn local_services()
         .unwrap_or_else(|error| error.into_inner())
 }
 
-fn local_host_directory(id: &str) -> PathBuf {
+pub(crate) fn local_host_directory(id: &str) -> PathBuf {
     std::env::temp_dir()
         .join("nemo-fabric")
         .join("hosts")

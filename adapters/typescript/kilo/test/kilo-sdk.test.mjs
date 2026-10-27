@@ -619,6 +619,7 @@ test("denies interactive permissions when normalized tools are omitted", async (
       external_directory: "deny",
       doom_loop: "deny",
       read: {"*": "allow", "*.env": "deny", "*.env.*": "deny", "*.env.example": "allow"},
+      bash: "allow",
     });
     assert.deepEqual(projected.agent, {build: {model: "nvidia/nemotron"}});
     await handle.stop();

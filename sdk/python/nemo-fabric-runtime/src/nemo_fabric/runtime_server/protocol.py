@@ -4,9 +4,11 @@
 """Versioned local requests and safe command responses."""
 
 import json
+import sys
 from typing import Any
 
 from nemo_fabric import FabricConfigError, RunResult, RuntimeHandle
+from nemo_fabric.runtime_server.health import validate_check_response
 
 INTERFACE_VERSION = 2
 REQUEST_LIMIT = 512 * 1024
@@ -15,7 +17,7 @@ CALL_SECONDS = 320.0
 READ_SECONDS = 10.0
 SHUTDOWN_SECONDS = 4.0
 SOCKET_PATH = "/sandbox/fabric.sock"
-OPERATIONS = ("start", "invoke", "stop", "serve")
+OPERATIONS = ("start", "invoke", "stop", "serve", "check")
 CONFIG_OPERATIONS = ("start",)
 LIFECYCLE_OPERATIONS = ("start", "stop")
 
@@ -44,6 +46,18 @@ MESSAGES = {
     "request_too_large": "The request exceeds the transport limit.",
     "response_too_large": "The response exceeds the transport limit; the outcome is unknown.",
     "invalid_input": "Input must contain one bounded UTF-8 JSON value.",
+    "server_stopping": "The Fabric runtime server is stopping.",
+    "probe_timeout": "The Fabric runtime server check exceeded its deadline.",
+    "probe_error": "The health probe could not provide valid evidence.",
+    "observation_changed": "Runtime ownership changed during the health check.",
+    "unsupported_adapter": "This adapter does not implement health checks.",
+    "unsupported_level": "The requested health level is unsupported.",
+    "unsupported_scope": "The requested health scope is unsupported.",
+    "capabilities_unverified": "The health capability could not be verified.",
+    "agent_exited": "The agent process has exited.",
+    "session_closed": "The native session has closed.",
+    "endpoint_unavailable": "The native request interface is unavailable.",
+    "health_failed": "Required agent setup did not pass the health check.",
 }
 
 
@@ -112,7 +126,25 @@ def validate_request(request: Any) -> str:
         if len(payload_fields) != 1:
             raise ProtocolError()
         required.update(payload_fields)
-    if not required <= request.keys() or not request.keys() <= required:
+    allowed = required.copy()
+    if operation == "check":
+        allowed.add("timeout_seconds")
+        if request.keys() & {"agent", "runtime_id"}:
+            required.update({"agent", "runtime_id"})
+            allowed.update(required)
+            allowed.add("level")
+            if "level" in request and request["level"] not in (
+                "live",
+                "active",
+                "ready",
+            ):
+                raise ProtocolError()
+        if "timeout_seconds" in request and (
+            type(request["timeout_seconds"]) not in (int, float)
+            or not 0 < request["timeout_seconds"] <= sys.float_info.max
+        ):
+            raise ProtocolError()
+    if not required <= request.keys() or not request.keys() <= allowed:
         raise ProtocolError()
     for field in ("agent", "runtime_id"):
         if field in request and (
@@ -193,9 +225,9 @@ def encode_response(response: dict[str, Any]) -> bytes:
     return _encode(
         envelope(
             response["operation"],
-            changed=None,
+            changed=False if response["operation"] == "check" else None,
             error=ProtocolError("response_too_large", "transport"),
-            effects="unknown",
+            effects="none" if response["operation"] == "check" else "unknown",
         )
     )
 
@@ -226,16 +258,20 @@ def validate_response(response: dict[str, Any], operation: str) -> None:
                 "start",
                 "stop",
                 "invoke",
+                "check",
                 "transport",
             )
             or error["effects"] not in ("none", "applied", "unknown")
         ):
             raise invalid
         error["message"] = MESSAGES[error["code"]]
-        return
+        if operation != "check":
+            return
     result = response["result"]
     try:
-        if operation == "invoke":
+        if operation == "check":
+            validate_check_response(response)
+        elif operation == "invoke":
             RunResult.from_mapping(result)
             if response["changed"] is not None:
                 raise invalid

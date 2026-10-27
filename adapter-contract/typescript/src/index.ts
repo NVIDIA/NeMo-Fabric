@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { AdapterDescriptor } from "./generated/adapter-descriptor.js";
+import type { AdapterCheckRequest } from "./generated/adapter-check-request.js";
+import type { AdapterCheckResult } from "./generated/adapter-check-result.js";
 import type { AgentInstructionConfig } from "./generated/agent-config.js";
 import type { AgentRunResult } from "./generated/agent-run-result.js";
 import type { EnvironmentHandle } from "./generated/runtime-context.js";
@@ -42,3 +44,13 @@ export type AgentRunStatus = AgentRunResult["status"];
 export { ADAPTER_CONTRACT_VERSION };
 export { USAGE_ACCOUNTING_KEY, usageFromObservations } from "./usage.js";
 export type { UsageObservation } from "./usage.js";
+export type { AdapterCheckRequest } from "./generated/adapter-check-request.js";
+export type { AdapterCheckResult, CheckReason } from "./generated/adapter-check-result.js";
+/** Highest requested agent-health level. */
+export type CheckLevel = AdapterCheckRequest["level"];
+/** Outcome of a single native health observation. */
+export type CheckOutcome = AdapterCheckResult["outcome"];
+/** Fixed evidence-source identifier. */
+export type CheckSource = AdapterCheckResult["source"];
+/** Agent activity at observation time. */
+export type RuntimeActivity = AdapterCheckResult["activity"];
