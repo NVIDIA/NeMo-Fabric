@@ -19,6 +19,7 @@ for (const mode of ["normal", "retry", "lost-events", "failed", "memory-enabled"
     const history = [];
     let events;
     let promptCount = 0;
+    let deletedSessions = 0;
     const send = value => { if (events && !events.writableEnded) events.write(`data: ${JSON.stringify(value)}\n\n`); };
     const server = createServer(async (request, response) => {
       const url = new URL(request.url, "http://localhost");
@@ -58,8 +59,10 @@ for (const mode of ["normal", "retry", "lost-events", "failed", "memory-enabled"
         }
         if (mode === "failed") response.statusCode = 500;
         response.end(JSON.stringify(history.at(-1)));
-      } else if (request.method === "DELETE" && url.pathname === "/session/session-wire") response.end("true");
-      else { response.statusCode = 404; response.end("{}"); }
+      } else if (request.method === "DELETE" && url.pathname === "/session/session-wire") {
+        deletedSessions += 1;
+        response.end("true");
+      } else { response.statusCode = 404; response.end("{}"); }
     });
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
     const url = `http://127.0.0.1:${server.address().port}`;
@@ -89,6 +92,11 @@ for (const mode of ["normal", "retry", "lost-events", "failed", "memory-enabled"
           input_tokens: 26, output_tokens: 46, total_tokens: 72, cached_input_tokens: 4, cache_write_input_tokens: 2, reasoning_tokens: 6,
         });
         assert.equal(result.usage.extensions[evidenceKey].gaps.length === 0, mode === "normal");
+        if (mode === "failed") {
+          assert.equal(result.error.code, "kilo_session_failed");
+          assert.equal(deletedSessions, 1);
+          await assert.rejects(runtime.invoke({ input: "after failure" }, {}), error => error.code === "kilo_not_started");
+        }
       }
     } finally {
       await runtime?.stop();
