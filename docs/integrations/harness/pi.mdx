@@ -8,6 +8,23 @@ SPDX-License-Identifier: Apache-2.0 */}
 Use the NVIDIA NeMo Fabric `nvidia.fabric.pi` adapter to run tasks with the Pi
 SDK in a persistent Node.js process.
 
+## Invocation Usage
+
+Each invocation reads only new entries from Pi's raw session ledger, including
+retained failed attempts, compaction and branch summaries, nested tool usage,
+and auxiliary usage records. Automatic cache warming is disabled so background
+refresh calls cannot escape the invocation boundary. Session history and previous invocations are not
+counted again. Input totals include cache reads and cache writes; output totals
+already include reasoning tokens. Available breakdowns are returned through
+`nemo_fabric.detailed_token_usage.v1`.
+
+Missing or inconsistent usage leaves the complete counters unknown. Pi 1.0.3
+initializes unreported provider usage to zero, so an all-zero record also remains
+unknown. A failed or retried summary can omit attempt usage from the ledger;
+complete counters remain unknown in that case. Nonzero records can retain real
+zero input, output, or cache dimensions. Configured-rate SDK cost estimates are
+not published as provider-reported `cost_usd`.
+
 ## Install the Adapter
 
 Pi requires Node.js 22.19.0 or newer.

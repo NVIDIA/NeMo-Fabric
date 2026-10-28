@@ -2529,6 +2529,48 @@
               "pi_turn_started"
             ],
             "type": "object"
+          },
+          "usage": {
+            "additionalProperties": false,
+            "properties": {
+              "nemo_fabric.detailed_token_usage.v1": {
+                "additionalProperties": false,
+                "properties": {
+                  "cache_write_input_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "cached_input_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "input_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "input_tokens_include_cache": {
+                    "type": "boolean"
+                  },
+                  "output_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "output_tokens_include_reasoning": {
+                    "type": "boolean"
+                  },
+                  "reasoning_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "total_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
           }
         },
         "model_schema": {
@@ -2647,7 +2689,7 @@
         "name": "nemo-fabric-adapters-pi",
         "version": "0.6.0"
       },
-      "sha256": "cae10ac33988f37ef1fc81f26a3850701ef210a2701622feb9741fccf134872f",
+      "sha256": "2c171e2520f7add91df4542a278800df4734febb301a098571d317a3d9a24124",
       "source": "adapters/typescript/pi/pi.fabric-adapter.json"
     },
     "nvidia.fabric.qwen": {

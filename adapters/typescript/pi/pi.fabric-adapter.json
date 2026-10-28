@@ -113,6 +113,48 @@
       },
       "additionalProperties": false
     },
+    "usage": {
+      "type": "object",
+      "properties": {
+        "nemo_fabric.detailed_token_usage.v1": {
+          "type": "object",
+          "properties": {
+            "input_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "output_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cached_input_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cache_write_input_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reasoning_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "input_tokens_include_cache": {
+              "type": "boolean"
+            },
+            "output_tokens_include_reasoning": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "run_result": {
       "type": "object",
       "properties": {

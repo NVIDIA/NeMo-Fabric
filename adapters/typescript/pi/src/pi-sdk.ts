@@ -28,6 +28,7 @@ import {
   type PiRelayControllerFactory,
   type PiRelayRuntime,
 } from "./relay.js";
+import { invocationUsage } from "./usage.js";
 import type { PiPromptOutcome, PiSessionFactory, PiSessionHandle } from "./runtime.js";
 
 // ProviderConfigInput isn't re-exported from pi's public entrypoint; derive it from
@@ -942,12 +943,19 @@ class PiSdkSessionHandle implements PiSessionHandle {
   }
 
   async prompt(text: string): Promise<PiPromptOutcome> {
+    const before = this.session.sessionManager.getEntries().map((entry) => entry.id);
+    let accountingComplete = true;
     let accepted = false;
     let turnStarted = false;
     let finalAssistant:
       | { role: "assistant"; content: unknown; stopReason: string; errorMessage?: string }
       | undefined;
     const unsubscribe = this.session.subscribe((event) => {
+      if (event.type === "summarization_retry_scheduled" ||
+          (event.type === "compaction_end" && (event.aborted || event.errorMessage !== undefined))) {
+        // Failed summary attempts do not survive in Pi's usage ledger.
+        accountingComplete = false;
+      }
       if (event.type === "turn_start") {
         turnStarted = true;
       }
@@ -967,6 +975,7 @@ class PiSdkSessionHandle implements PiSessionHandle {
       unsubscribe();
     }
     return {
+      usage: accountingComplete ? invocationUsage(before, this.session.sessionManager.getEntries()) : undefined,
       accepted,
       turnStarted,
       turnCount: this.cumulativeTurnCount,
@@ -1060,7 +1069,9 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       throw new LifecycleError("pi_credential_missing", `Credential environment variable ${apiKeyEnv} is not set`);
     }
 
-    const settings = pi.SettingsManager.inMemory({}, { projectTrusted: false });
+    // Cache warming can finish outside the prompt and omit aborted refresh usage.
+    // Keep all adapter-owned model work inside the invocation ledger boundary.
+    const settings = pi.SettingsManager.inMemory({ cacheWarming: "off" }, { projectTrusted: false });
     const extensionPaths = await resolveExtensionPaths(workspace, harnessSettings(input.config).extensions);
     const skillPaths = await resolveSkillPaths(input.baseDir, input.config.skills?.paths ?? []);
     const customTools = await resolveCustomTools(workspace, input.config.tools?.definitions ?? {});

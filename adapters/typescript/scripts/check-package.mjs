@@ -72,6 +72,8 @@ const expectedByPackage = {
     "dist/node-version.js",
     "dist/pi-sdk.d.ts",
     "dist/pi-sdk.js",
+    "dist/usage.d.ts",
+    "dist/usage.js",
     "dist/relay-config.d.ts",
     "dist/relay-config.js",
     "dist/relay-gateway.d.ts",
