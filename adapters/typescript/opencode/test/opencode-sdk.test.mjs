@@ -1896,14 +1896,19 @@ test("OpenCode validates native closure when a health request rejects", async ()
   assert.equal((await handle.check("ready")).reason_code, "session_closed");
 });
 
-async function accountingHandle({ entries = [{ type: "document", info: {} }], initialTitle, delayedTitle = false, postPromptEvent } = {}) {
+async function accountingHandle({ entries = [{ type: "document", info: {} }], initialTitle, delayedTitle = false, postPromptEvent, priorContinuationInput } = {}) {
   const hooks = new Map();
   const queued = [];
   const readers = [];
   let stopped = false;
   let title = initialTitle;
-  let submitted = false;
+  let submitted = 0;
   let finishTitle;
+  const completeTitle = async () => {
+    const finish = finishTitle;
+    finishTitle = undefined;
+    await finish?.();
+  };
   let rootIdle;
   const idle = new Promise(resolve => { rootIdle = resolve; });
   const push = event => {
@@ -1948,20 +1953,21 @@ async function accountingHandle({ entries = [{ type: "document", info: {} }], in
       context: async () => {
         if (!submitted) return [];
         if (postPromptEvent !== undefined) { push(postPromptEvent); await Promise.resolve(); }
-        return [{ id: "answer", type: "assistant", content: [{ type: "text", text: "done" }], finish: "stop" }];
+        return [{ id: `answer-${submitted}`, type: "assistant", content: [{ type: "text", text: "done" }], finish: "stop" }];
       },
       prompt: async () => {
-        submitted = true;
+        submitted++;
         if (title === undefined) {
           const finish = await call("title", 10, 2);
           finishTitle = async () => { await finish(); title = "Generated title"; push({ type: "session.renamed", data: { sessionID: "owned", title } }); };
         }
+        if (submitted > 1 && priorContinuationInput !== undefined) await (await call("primary", priorContinuationInput, 9))();
         await (await call("primary", 120, 30))();
       },
       wait: async () => {
         push({ type: "session.execution.succeeded", data: { sessionID: "owned" } });
         rootIdle();
-        if (!delayedTitle) await finishTitle?.();
+        if (!delayedTitle) await completeTitle();
       },
       diff: async () => [],
       remove: async () => {},
@@ -1973,7 +1979,7 @@ async function accountingHandle({ entries = [{ type: "document", info: {} }], in
     return client;
   } } }));
   const handle = await factory.create(startInput());
-  return { handle, idle, finishTitle: () => finishTitle(), fail, push };
+  return { handle, idle, finishTitle: completeTitle, fail, push };
 }
 
 test("waits for automatic title completion before returning complete invocation counts", async () => {
@@ -2080,5 +2086,21 @@ test("invalidates completeness when configuration changes during the final histo
     assert.equal(outcome.text, "done");
     assert.equal(outcome.usage.input_tokens, undefined);
     assert.ok(outcome.usage.extensions["nvidia.fabric.opencode.usage_evidence.v1"].gaps.includes("scope_unverified"));
+  } finally { await fixture.handle.stop(); }
+});
+
+test("leaves later root observations unknown when an opaque plugin can resume earlier work", async () => {
+  const fixture = await accountingHandle({
+    entries: [{ type: "document", info: { plugins: ["opaque-plugin"] } }],
+    priorContinuationInput: 900,
+  });
+  try {
+    const first = await fixture.handle.prompt("first", Date.now() + 1000);
+    assert.equal(first.text, "done");
+    assert.equal(first.usage.extensions["nvidia.fabric.opencode.usage_evidence.v1"].observed.input_tokens, 130);
+    const second = await fixture.handle.prompt("second", Date.now() + 1000);
+    assert.equal(second.text, "done");
+    assert.equal(second.usage.input_tokens, undefined);
+    assert.deepEqual(second.usage.extensions["nvidia.fabric.opencode.usage_evidence.v1"].observed, {});
   } finally { await fixture.handle.stop(); }
 });
