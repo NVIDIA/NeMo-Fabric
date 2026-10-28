@@ -107,7 +107,7 @@ for (const fails of [false, true]) {
       stop: async () => { },
     };
     const runtime = new OpenCodeAdapterRuntime({ create: async () => native });
-    const artifacts = [{ kind: "patch", media_type: "text/x-diff", path: "session.patch" }];
+    const artifacts = [{ kind: "patch", media_type: "text/x-diff", name: "opencode-diff-1", path: "session.patch" }];
     t.mock.method(runtime, "writePatch", async () => {
       entered();
       await blocked;
