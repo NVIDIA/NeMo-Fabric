@@ -265,6 +265,8 @@ and elapsed milliseconds. An unavailable runtime returns
 `unknown/runtime_unavailable`. Adapters without health support return
 `unsupported/unsupported_adapter`.
 
+Cline `live` checks verify native session residency, identity, and closure. `active` checks also inspect request-interface state. `ready` checks additionally call `ClineCore.get()` to read a fresh native session snapshot. Cline checks can run during the first invocation and do not require model access. Refer to the [Cline health contract](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/typescript/cline/README.md#runtime-health).
+
 Codex checks its owned app-server process and a fresh loaded-thread response; native `idle` or `active` status is the readiness equivalent. Pi checks native session liveness, initialization and request-interface guards, and required model, tool, and MCP connection state. OpenClaw checks Gateway liveness, completed startup, selected-agent registration, the enabled Chat Completions endpoint, and native readiness including configured channels. Deep Agents checks its owned checkpoint connection, compiled message interface, and native state for the selected LangGraph thread. Hermes checks its owned native session, initialized invocation interface, and a fresh `get_activity_summary()` diagnostic response. Runtime activity covers NeMo Fabric invocations. Refer to the [OpenClaw runtime health guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/python/openclaw/README.md#runtime-health).
 
 A local `CheckRequest(scope="server")` returns `unsupported/unsupported_scope`. For OpenShell environments,

@@ -128,9 +128,7 @@ supported and fail during planning or startup.
 
 ## Understand Runtime Behavior
 
-Each NeMo Fabric runtime creates an isolated local `ClineCore`. The first
-invocation starts one interactive Cline session, later invocations send prompts
-to the same session ID, and runtime shutdown stops the session and disposes the
+Each NeMo Fabric runtime creates an isolated local `ClineCore` and starts one interactive Cline session without a prompt. Every invocation sends a prompt to the same session ID, and runtime shutdown stops the session and disposes the
 core. Callers do not replay conversation history. Independent NeMo Fabric
 runtimes use separate Cline state directories and sessions.
 
@@ -140,3 +138,11 @@ reason, iteration count, and selected model when available.
 
 The initial adapter does not support NeMo Relay telemetry, native streaming,
 Relay-backed streaming, or adapter-specific `harness.settings`.
+
+## Check Runtime Health
+
+Startup creates an idle native session. Cline runtime checks support `live`, `active`, and `ready` before the first invocation, during a model request, and between turns. `live` verifies native residency, identity, and closure state. `active` also observes the initialized native request interface; busy sessions remain healthy. `ready` also reads a fresh native session snapshot through `ClineCore.get()`. A stored session-history row cannot establish health.
+
+Checks do not invoke a model or change session state. A timeout leaves the invocation running. These checks qualify local Cline SDK 0.0.83 state, including guarded native residency fields. Refer to the [runtime health guide](../../sdk/python.mdx#runtime-health) and the [Cline adapter qualification](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/typescript/cline/README.md#runtime-health).
+
+Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
