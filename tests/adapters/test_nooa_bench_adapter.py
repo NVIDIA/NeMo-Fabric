@@ -215,6 +215,10 @@ def test_bench_descriptor_is_a_closed_harness_adapter(tmp_path: Path):
     assert plan["adapter"]["adapter_kind"] == "python"
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="NOOA BenchAgent storage requires the Unix-only fcntl module",
+)
 @pytest.mark.usefixtures("nemo_relay")
 async def test_bench_runtime_with_real_relay(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

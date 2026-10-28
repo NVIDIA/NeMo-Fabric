@@ -35,6 +35,8 @@ wheel provides both adapter descriptors and the supported CodingAgent and ARC
 target descriptors; no source-path or explicit discovery configuration is
 required.
 
+NOOA BenchAgent requires a Unix-like environment because its storage imports Python's `fcntl` module. Native Windows execution is unsupported.
+
 ## Configure Relay
 
 Relay is optional. Install the adapter, tested NOOA packages, and compatible
