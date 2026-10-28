@@ -70,6 +70,35 @@ def test_old_result_decodes_and_optional_evidence_round_trips():
     assert not broken.execution.software_environments[0].complete
 
 
+def test_busy_collector_does_not_permanently_replace_the_sdk_snapshot(monkeypatch):
+    from unittest.mock import MagicMock
+    from nemo_fabric import Fabric
+    from nemo_fabric_adapter_contract.evidence import ExecutionEvidence
+    import nemo_fabric.provenance as module
+
+    available = ExecutionEvidence.from_mapping(
+        json.loads(
+            (Path(__file__).parents[1] / "fixtures/provenance/report.json").read_text()
+        )
+    )
+    available.software_environments[0].participants = ["caller_sdk"]
+    mock_snapshot = MagicMock(
+        side_effect=[ExecutionEvidence.gap("caller_sdk", "collector_busy"), available]
+    )
+    monkeypatch.setattr(module, "sdk_snapshot", mock_snapshot)
+    config = FabricConfig.from_mapping(
+        {"metadata": {"name": "busy"}, "harness": {"adapter_id": "test.adapter"}}
+    )
+    fabric = Fabric()
+    first = fabric._with_provenance(config)
+    assert first.provenance.reports.software_environments[0].reason == "collector_busy"
+    second = fabric._with_provenance(config)
+    third = fabric._with_provenance(config)
+    assert second.provenance.reports.to_mapping() == available.to_mapping()
+    assert third.provenance.reports.to_mapping() == available.to_mapping()
+    assert mock_snapshot.call_count == 2
+
+
 async def test_runtime_reuses_initialization_snapshots_across_invocations(
     hermes_shim_agent_dir, tmp_path, monkeypatch
 ):

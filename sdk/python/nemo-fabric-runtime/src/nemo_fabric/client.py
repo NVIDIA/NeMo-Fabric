@@ -103,9 +103,18 @@ class Fabric:
         from nemo_fabric.provenance import sdk_snapshot, with_snapshot
 
         with self._software_snapshot_lock:
-            if self._software_snapshot is None:
-                self._software_snapshot = sdk_snapshot(self._execution_participant)
-        return with_snapshot(config, self._software_snapshot)
+            snapshot = self._software_snapshot
+            if snapshot is None:
+                snapshot = sdk_snapshot(self._execution_participant)
+                # Another SDK instance may temporarily own the process-wide
+                # collector. Retry initialization later instead of caching
+                # that transient gap for this instance's entire lifetime.
+                if not any(
+                    env.reason == "collector_busy"
+                    for env in snapshot.software_environments
+                ):
+                    self._software_snapshot = snapshot
+        return with_snapshot(config, snapshot)
 
     async def check(
         self,
