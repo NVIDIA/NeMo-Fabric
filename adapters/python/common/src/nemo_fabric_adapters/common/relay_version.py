@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-RELAY_MINIMUM_VERSION = (0, 9, 0)
-RELAY_MAXIMUM_VERSION = (0, 11, 0)
+RELAY_MINIMUM_VERSION = (0, 11, 0)
+RELAY_MAXIMUM_VERSION = (0, 12, 0)
 
 
 def is_supported_relay_version(version: tuple[int, int, int]) -> bool:

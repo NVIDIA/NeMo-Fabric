@@ -17,7 +17,6 @@ CLAUDE_EXPECTED_EVENTS = (
     "PreToolUse",
     "PostToolUse",
     "PostToolUseFailure",
-    "PermissionRequest",
     "SubagentStart",
     "SubagentStop",
     "Notification",
@@ -31,7 +30,6 @@ CODEX_EXPECTED_EVENTS = (
     "UserPromptSubmit",
     "PreToolUse",
     "PostToolUse",
-    "PermissionRequest",
     "SubagentStart",
     "SubagentStop",
     "Stop",
@@ -62,8 +60,8 @@ def test_render_relay_hooks_matches_relay_agent_contract(agent, expected_events)
             "hooks": [
                 {
                     "type": "command",
-                    "command": f"{quoted_executable} hook-forward {agent}",
-                    "timeout": 30,
+                    "command": f"{quoted_executable} hook-forward {agent} --fail-open",
+                    "timeout": 45,
                 }
             ]
         }
@@ -74,7 +72,6 @@ def test_render_relay_hooks_matches_relay_agent_contract(agent, expected_events)
     assert expected_matchers == {
         "PreToolUse",
         "PostToolUse",
-        "PermissionRequest",
     } | ({"PostToolUseFailure"} if agent == "claude" else set())
 
 
@@ -102,4 +99,15 @@ def test_render_relay_hooks_uses_windows_agent_command_format(
     hooks = relay_hooks.render_relay_hooks(agent, executable)["hooks"]
 
     command = hooks["SessionStart"][0]["hooks"][0]["command"]
-    assert command == f"{expected_executable} hook-forward {agent}"
+    assert command == f"{expected_executable} hook-forward {agent} --fail-open"
+
+
+@pytest.mark.parametrize("agent", ["claude", "codex"])
+def test_render_relay_hooks_enforces_tool_checks_with_delivery_timeout_margin(agent):
+    hooks = relay_hooks.render_relay_hooks(agent, Path("nemo-relay"))["hooks"]
+
+    for event, groups in hooks.items():
+        command = groups[0]["hooks"][0]
+        policy = "--fail-closed" if event == "PreToolUse" else "--fail-open"
+        assert command["command"].endswith(f"hook-forward {agent} {policy}")
+        assert command["timeout"] > 30

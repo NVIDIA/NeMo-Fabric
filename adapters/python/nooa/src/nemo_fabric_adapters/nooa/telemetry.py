@@ -75,7 +75,7 @@ def _relay_version() -> tuple[int, int, int]:
         raise RuntimeError("the installed nemo-relay version is not a stable release")
     version = tuple(int(part) for part in match.groups())
     if not is_supported_relay_version(version):
-        raise RuntimeError("nemo-relay must satisfy >=0.9,<0.11")
+        raise RuntimeError("nemo-relay must satisfy >=0.11,<0.12")
     return version
 
 

@@ -98,6 +98,8 @@ test(
     });
     const collectorUrl = await listen(collector);
     const previousConfigPath = process.env.FABRIC_RELAY_CONFIG_PATH;
+    const previousRelayCommand = process.env.NEMO_RELAY_PI_COMMAND;
+    const ambientRelayCommand = join(root, "unused-relay-command");
     let runtime;
     try {
       await mkdir(workspace);
@@ -146,6 +148,7 @@ test(
         "utf8",
       );
       process.env.FABRIC_RELAY_CONFIG_PATH = runtimeConfigPath;
+      process.env.NEMO_RELAY_PI_COMMAND = ambientRelayCommand;
       const runtimeContext = {
         artifacts: {},
         environment: {
@@ -211,6 +214,7 @@ test(
 
       await runtime.stop();
       runtime = undefined;
+      assert.equal(process.env.NEMO_RELAY_PI_COMMAND, ambientRelayCommand);
 
       const atifDirectory = join(root, "atif", "relay-smoke");
       const atifFiles = await readdir(atifDirectory);
@@ -226,6 +230,11 @@ test(
       assert.match(atof, /session_shutdown/u);
     } finally {
       await runtime?.stop().catch(() => undefined);
+      if (previousRelayCommand === undefined) {
+        delete process.env.NEMO_RELAY_PI_COMMAND;
+      } else {
+        process.env.NEMO_RELAY_PI_COMMAND = previousRelayCommand;
+      }
       if (previousConfigPath === undefined) {
         delete process.env.FABRIC_RELAY_CONFIG_PATH;
       } else {

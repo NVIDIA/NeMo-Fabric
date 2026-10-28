@@ -134,10 +134,9 @@ healthy fails when the budget expires and is stopped.
 The adapters retain its log for diagnosis. Local Python hosts separately enforce
 a 90-second adapter startup limit.
 
-Relay 0.10.3 includes an
-[upstream startup-memory fix](https://github.com/NVIDIA/NeMo-Relay/pull/1375).
-Use that release to obtain the fix on 0.10 installations. NeMo Fabric continues to
-accept the supported `>=0.9,<0.11` CLI range.
+Relay 0.11 includes the
+[upstream startup-memory fix](https://github.com/NVIDIA/NeMo-Relay/pull/1375)
+introduced in Relay 0.10.3. NeMo Fabric supports the `>=0.11,<0.12` CLI range.
 
 ## Runtime Health
 

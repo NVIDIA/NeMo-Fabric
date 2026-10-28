@@ -27,10 +27,11 @@ import {
 } from "./relay-gateway.js";
 
 const RELAY_INSTALL_COMMAND =
-  'Install "nemo-relay-cli-bin>=0.9.0,<0.11.0" and ensure nemo-relay is on PATH';
+  'Install "nemo-relay-cli-bin>=0.11.0,<0.12.0" and ensure nemo-relay is on PATH';
 const RELAY_EXTENSION_REMEDIATION =
-  "set harness.settings.relay_extension_path to the NeMo Relay 0.9 or 0.10 Pi extension file or package directory";
+  "set harness.settings.relay_extension_path to the NeMo Relay 0.11 Pi extension file or package directory";
 const RELAY_ENV_NAMES = [
+  "NEMO_RELAY_PI_COMMAND",
   "NEMO_RELAY_PI_GATEWAY_URL",
   "NEMO_RELAY_PI_OPENAI_UPSTREAM",
   "NEMO_RELAY_PI_ANTHROPIC_UPSTREAM",
@@ -120,6 +121,7 @@ function reserveRelayEnvironment(): () => void {
 
 function setRelayEnvironment(
   gatewayUrl: string,
+  executable: string,
   model: PiRelayModel,
   releaseReservation: () => void,
 ): () => void {
@@ -128,6 +130,7 @@ function setRelayEnvironment(
     previous.set(name, process.env[name]);
     delete process.env[name];
   }
+  process.env.NEMO_RELAY_PI_COMMAND = executable;
   process.env.NEMO_RELAY_PI_GATEWAY_URL = gatewayUrl;
   if (model.api === "openai-completions" || model.api === "openai-responses") {
     process.env.NEMO_RELAY_PI_OPENAI_UPSTREAM = model.baseUrl;
@@ -312,7 +315,7 @@ export class PiRelayFactory implements PiRelayControllerFactory {
           metadata: relayErrorMetadata(error, { gateway_log_path: launch.logPath }),
         });
       }
-      restoreEnvironment = setRelayEnvironment(launch.url, model, releaseEnvironment);
+      restoreEnvironment = setRelayEnvironment(launch.url, executable, model, releaseEnvironment);
       const runtime = new PiRelayRuntime({
         extensionPath,
         pluginConfig,

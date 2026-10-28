@@ -41,15 +41,7 @@ provides. None of these expressions installs Hermes Agent:
 | `pip install "nemo-fabric-adapters-hermes[relay]"` | No | Yes | No | Yes |
 | `pip install nemo-fabric-adapters-hermes` | No | Yes | No | No |
 
-Released Hermes Agent v2026.9.24 requires Relay 0.8.x. NeMo Fabric tests Relay
-telemetry with the merged, unreleased upstream Hermes revision on Python 3.14.
-Install the adapter's `relay` or `full` extra only with a Hermes checkout that
-supports Relay 0.9 or 0.10; those extras conflict with the published Hermes
-release. The adapter extras support `nemo-relay>=0.9,<0.11`. The pinned upstream
-Hermes revision narrows that range to `nemo-relay>=0.10,<0.11` on supported
-Python 3.14 platforms.
-The adapter rejects an incompatible Hermes or Relay installation at startup
-when Relay telemetry is enabled.
+Hermes Agent v0.22.5 and the pinned upstream Hermes revision require `nemo-relay>=0.10,<0.11` on supported Python 3.14 platforms. The adapter's `relay` and `full` extras use the same range. Keep Hermes in a separate Python environment when the Fabric application uses Relay 0.11 for other adapters. The adapter checks the Hermes integration and Relay version at startup when telemetry is enabled.
 
 Create its isolated development environment:
 
@@ -63,7 +55,7 @@ matching NeMo Fabric release versions. Refer to the
 [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
 Relay telemetry and `Runtime.invoke_stream()` require the merged Hermes revision
-above until an upstream release supports Relay 0.9 or 0.10. Ordinary `Runtime.invoke()`
+above. Ordinary `Runtime.invoke()`
 also works with released Hermes in a separate environment.
 
 ## What It Maps

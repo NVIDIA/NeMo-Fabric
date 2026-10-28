@@ -85,8 +85,8 @@ class MockChild extends EventEmitter {
   }
 }
 
-test("accepts only stable NeMo Relay 0.9 and 0.10 CLI versions", async () => {
-  for (const version of ["0.9.0", "0.9.4", "0.10.0", "0.10.7", "0.10.0+build.4"]) {
+test("accepts only stable NeMo Relay 0.11 CLI versions", async () => {
+  for (const version of ["0.11.0", "0.11.7", "0.11.0+build.4"]) {
     const contract = await relayCliContract("nemo-relay", async () => ({
       stdout: `nemo-relay ${version}\n`,
       exitCode: 0,
@@ -94,13 +94,13 @@ test("accepts only stable NeMo Relay 0.9 and 0.10 CLI versions", async () => {
     const [, minor, patch] = version.split("+")[0].split(".").map(Number);
     assert.deepEqual(contract.version, [0, minor, patch]);
   }
-  for (const version of ["0.8.9", "0.11.0", "1.0.0", "0.9.0-rc.1", "0.10.0-rc.1"]) {
+  for (const version of ["0.8.9", "0.9.4", "0.10.0", "0.12.0", "1.0.0", "0.11.0-rc.3"]) {
     await assert.rejects(
       relayCliContract("nemo-relay", async () => ({
         stdout: `nemo-relay ${version}\n`,
         exitCode: 0,
       })),
-      />=0\.9\.0,<0\.11\.0/,
+      />=0\.11\.0,<0\.12\.0/,
     );
   }
   await assert.rejects(
@@ -1036,7 +1036,7 @@ test("reserves process-wide Relay state before asynchronous setup can interleave
   }
 });
 
-test("keeps non-Relay startup inert and allows one Relay runtime per process", async () => {
+async function checkRelayCommandOwnership(ambientCommand) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-runtime-")));
   const extensionPath = join(root, "relay-extension.js");
   await writeFile(extensionPath, "export default function () {}\n", "utf8");
@@ -1045,11 +1045,19 @@ test("keeps non-Relay startup inert and allows one Relay runtime per process", a
     openai: process.env.NEMO_RELAY_PI_OPENAI_UPSTREAM,
     anthropic: process.env.NEMO_RELAY_PI_ANTHROPIC_UPSTREAM,
     relayCommand: process.env.FABRIC_NEMO_RELAY_COMMAND,
+    extensionCommand: process.env.NEMO_RELAY_PI_COMMAND,
     testRelayCommand: process.env.FABRIC_TEST_NEMO_RELAY_COMMAND,
   };
+  if (ambientCommand === undefined) {
+    delete process.env.NEMO_RELAY_PI_COMMAND;
+  } else {
+    process.env.NEMO_RELAY_PI_COMMAND = ambientCommand;
+  }
+  const resolvedCommand = join(root, "Relay tools", "nemo-relay");
+  const runtimes = [];
   process.env.NEMO_RELAY_PI_GATEWAY_URL = "http://ambient.invalid";
   process.env.NEMO_RELAY_PI_ANTHROPIC_UPSTREAM = "https://ambient.invalid";
-  process.env.FABRIC_NEMO_RELAY_COMMAND = "/opt/relay-0.10/bin/nemo-relay";
+  process.env.FABRIC_NEMO_RELAY_COMMAND = "/opt/relay-0.11/bin/nemo-relay";
   process.env.FABRIC_TEST_NEMO_RELAY_COMMAND = "/opt/test/bin/nemo-relay";
   try {
     const unexpected = () => {
@@ -1064,6 +1072,7 @@ test("keeps non-Relay startup inert and allows one Relay runtime per process", a
       undefined,
     );
     assert.equal(process.env.NEMO_RELAY_PI_GATEWAY_URL, "http://ambient.invalid");
+    assert.equal(process.env.NEMO_RELAY_PI_COMMAND, ambientCommand);
 
     const mockChild = new MockChild();
     let startAttempts = 0;
@@ -1071,10 +1080,11 @@ test("keeps non-Relay startup inert and allows one Relay runtime per process", a
     const factory = new PiRelayFactory({
       async resolveCommand(baseDir, command) {
         assert.equal(baseDir, root);
-        assert.equal(command, "/opt/relay-0.10/bin/nemo-relay");
-        return "/opt/bin/nemo-relay";
+        assert.equal(command, "/opt/relay-0.11/bin/nemo-relay");
+        return resolvedCommand;
       },
-      async checkContract() {
+      async checkContract(executable) {
+        assert.equal(executable, resolvedCommand);
         return { version: [0, 10, 0] };
       },
       async loadPluginConfig() {
@@ -1089,7 +1099,8 @@ test("keeps non-Relay startup inert and allows one Relay runtime per process", a
       async findPort() {
         return 41001;
       },
-      async startGateway() {
+      async startGateway(launch) {
+        assert.equal(launch.executable, resolvedCommand);
         startAttempts += 1;
         return mockChild;
       },
@@ -1107,7 +1118,9 @@ test("keeps non-Relay startup inert and allows one Relay runtime per process", a
       baseUrl: "https://api.openai.com/v1",
     };
     const runtime = await factory.start(input, model);
+    runtimes.push(runtime);
     assert.equal(process.env.NEMO_RELAY_PI_GATEWAY_URL, "http://127.0.0.1:41001");
+    assert.equal(process.env.NEMO_RELAY_PI_COMMAND, resolvedCommand);
     assert.equal(process.env.NEMO_RELAY_PI_OPENAI_UPSTREAM, "https://api.openai.com/v1");
     assert.equal(process.env.NEMO_RELAY_PI_ANTHROPIC_UPSTREAM, undefined);
     await assert.rejects(
@@ -1123,38 +1136,56 @@ test("keeps non-Relay startup inert and allows one Relay runtime per process", a
     );
     assert.equal(stopAttempts, 1);
     assert.equal(process.env.NEMO_RELAY_PI_GATEWAY_URL, "http://127.0.0.1:41001");
+    assert.equal(process.env.NEMO_RELAY_PI_COMMAND, resolvedCommand);
     await runtime.stop();
     await runtime.stop();
     assert.equal(stopAttempts, 2);
     assert.equal(process.env.NEMO_RELAY_PI_GATEWAY_URL, "http://ambient.invalid");
+    assert.equal(process.env.NEMO_RELAY_PI_COMMAND, ambientCommand);
     assert.equal(process.env.NEMO_RELAY_PI_OPENAI_UPSTREAM, undefined);
     assert.equal(process.env.NEMO_RELAY_PI_ANTHROPIC_UPSTREAM, "https://ambient.invalid");
 
     const restarted = await factory.start(input, model);
+    runtimes.push(restarted);
     assert.equal(startAttempts, 2);
     await restarted.stop();
     assert.equal(stopAttempts, 3);
     assert.equal(process.env.NEMO_RELAY_PI_GATEWAY_URL, "http://ambient.invalid");
+    assert.equal(process.env.NEMO_RELAY_PI_COMMAND, ambientCommand);
   } finally {
-    for (const [name, value] of [
-      ["NEMO_RELAY_PI_GATEWAY_URL", previous.gateway],
-      ["NEMO_RELAY_PI_OPENAI_UPSTREAM", previous.openai],
-      ["NEMO_RELAY_PI_ANTHROPIC_UPSTREAM", previous.anthropic],
-      ["FABRIC_NEMO_RELAY_COMMAND", previous.relayCommand],
-      ["FABRIC_TEST_NEMO_RELAY_COMMAND", previous.testRelayCommand],
-    ]) {
-      if (value === undefined) {
-        delete process.env[name];
-      } else {
-        process.env[name] = value;
+    try {
+      for (const runtime of runtimes.reverse()) {
+        await runtime.stop().catch(() => runtime.stop());
       }
+    } finally {
+      for (const [name, value] of [
+        ["NEMO_RELAY_PI_GATEWAY_URL", previous.gateway],
+        ["NEMO_RELAY_PI_OPENAI_UPSTREAM", previous.openai],
+        ["NEMO_RELAY_PI_ANTHROPIC_UPSTREAM", previous.anthropic],
+        ["FABRIC_NEMO_RELAY_COMMAND", previous.relayCommand],
+        ["NEMO_RELAY_PI_COMMAND", previous.extensionCommand],
+        ["FABRIC_TEST_NEMO_RELAY_COMMAND", previous.testRelayCommand],
+      ]) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+      await rm(root, { recursive: true, force: true });
     }
-    await rm(root, { recursive: true, force: true });
   }
-});
+}
+
+for (const ambientCommand of [undefined, "/ambient/bin/nemo-relay"]) {
+  test(`keeps Relay command ownership and cleanup with ${ambientCommand === undefined ? "no" : "an"} ambient command`, async () => {
+    await checkRelayCommandOwnership(ambientCommand);
+  });
+}
 
 test("maps Relay setup failures to stable Pi adapter errors", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-errors-")));
+  const previousCommand = process.env.NEMO_RELAY_PI_COMMAND;
   const extensionPath = join(root, "relay-extension.js");
   await writeFile(extensionPath, "export default function () {}\n", "utf8");
   try {
@@ -1175,7 +1206,7 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
       }).start(input, model),
       (error) =>
         error.code === "pi_relay_unavailable" &&
-        error.message.includes('Install "nemo-relay-cli-bin>=0.9.0,<0.11.0"') &&
+        error.message.includes('Install "nemo-relay-cli-bin>=0.11.0,<0.12.0"') &&
         error.metadata.relay_error === "missing",
     );
     await assert.rejects(
@@ -1261,6 +1292,7 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
         error.metadata.gateway_log_path.endsWith("gateway.log") &&
         error.metadata.relay_error === "cannot bind",
     );
+    assert.equal(process.env.NEMO_RELAY_PI_COMMAND, previousCommand);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

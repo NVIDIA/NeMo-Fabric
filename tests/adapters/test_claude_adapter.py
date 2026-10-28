@@ -549,8 +549,7 @@ async def test_claude_invoke_passes_remaining_budget_to_query(
     after = loop.time()
     invocation_deadline = remaining_timeout.call_args.args[0]
     expected_timeout = (
-        claude_payload["runtime_context"]["deadline_millis"] / 1000
-        - time.time()
+        claude_payload["runtime_context"]["deadline_millis"] / 1000 - time.time()
     )
     assert (
         before + expected_timeout - 0.1
@@ -709,7 +708,6 @@ def test_prepare_claude_relay_writes_gateway_config_and_complete_hook_plugin(
         "PreToolUse",
         "PostToolUse",
         "PostToolUseFailure",
-        "PermissionRequest",
         "SubagentStart",
         "SubagentStop",
         "Notification",
@@ -726,12 +724,12 @@ def test_prepare_claude_relay_writes_gateway_config_and_complete_hook_plugin(
         "hooks": [
             {
                 "type": "command",
-                "command": f"{executable_arg} hook-forward claude",
-                "timeout": 30,
+                "command": f"{executable_arg} hook-forward claude --fail-open",
+                "timeout": 45,
             }
         ]
     }
-    assert hooks["PermissionRequest"][0]["matcher"] == "*"
+    assert "PermissionRequest" not in hooks
 
 
 def test_prepare_claude_relay_rejects_v2_observability_config(

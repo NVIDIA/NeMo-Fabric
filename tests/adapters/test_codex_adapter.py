@@ -1635,8 +1635,8 @@ def test_relay_uses_gateway_and_request_scoped_sdk_config(
         executable_arg = subprocess.list2cmdline([executable_arg.replace("\\", "/")])
     assert config["hooks"]["SessionStart"][0]["hooks"][0] == {
         "type": "command",
-        "command": f"{executable_arg} hook-forward codex",
-        "timeout": 30,
+        "command": f"{executable_arg} hook-forward codex --fail-open",
+        "timeout": 45,
     }
     assert output["relay_runtime"] == {
         "enabled": True,

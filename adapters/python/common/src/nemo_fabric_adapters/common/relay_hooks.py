@@ -22,7 +22,6 @@ RELAY_HOOK_EVENTS: dict[RelayHookAgent, tuple[str, ...]] = {
         "PreToolUse",
         "PostToolUse",
         "PostToolUseFailure",
-        "PermissionRequest",
         "SubagentStart",
         "SubagentStop",
         "Notification",
@@ -36,7 +35,6 @@ RELAY_HOOK_EVENTS: dict[RelayHookAgent, tuple[str, ...]] = {
         "UserPromptSubmit",
         "PreToolUse",
         "PostToolUse",
-        "PermissionRequest",
         "SubagentStart",
         "SubagentStop",
         "Stop",
@@ -50,14 +48,12 @@ RELAY_TOOL_HOOK_EVENTS: dict[RelayHookAgent, frozenset[str]] = {
             "PreToolUse",
             "PostToolUse",
             "PostToolUseFailure",
-            "PermissionRequest",
         }
     ),
     "codex": frozenset(
         {
             "PreToolUse",
             "PostToolUse",
-            "PermissionRequest",
         }
     ),
 }
@@ -84,12 +80,14 @@ def render_relay_hooks(
     command = f"{executable_arg} hook-forward {agent}"
     hooks: dict[str, list[dict[str, Any]]] = {}
     for event in RELAY_HOOK_EVENTS[agent]:
+        # Tool checks block on delivery failure; lifecycle telemetry can continue.
+        failure_policy = "--fail-closed" if event == "PreToolUse" else "--fail-open"
         group: dict[str, Any] = {
             "hooks": [
                 {
                     "type": "command",
-                    "command": command,
-                    "timeout": 30,
+                    "command": f"{command} {failure_policy}",
+                    "timeout": 45,
                 }
             ]
         }

@@ -31,7 +31,7 @@ The adapter supports:
 - Explicit local `.ts` or `.js` extension files contained by the NeMo Fabric
   workspace
 - Slash commands registered by those explicit extensions
-- NeMo Relay 0.9 or 0.10 telemetry through a runtime-owned gateway and an explicitly
+- NeMo Relay 0.11 telemetry through a runtime-owned gateway and an explicitly
   configured Relay Pi extension
 - Live model-turn ATOF records for successful Relay redirects through the
   default embedded NeMo Fabric collector. Startup `model_redirect` marks remain
@@ -79,29 +79,25 @@ To install and build all maintained TypeScript workspaces instead, run:
 just build-typescript
 ```
 
-The full build installs its own dependencies, so you do not need to run
-`just install-typescript-pi` first.
+The full build installs the required dependencies.
 
 ### Install NeMo Relay
 
-Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.11.0` on `PATH`. Install it
-separately from the npm adapter:
+Relay-enabled Pi runs require `nemo-relay>=0.11.0,<0.12.0`. Install the command-line tool:
 
 ```bash
-pip install "nemo-relay-cli-bin>=0.9.0,<0.11.0"
+pip install "nemo-relay-cli-bin>=0.11.0,<0.12.0"
 ```
 
-To select a specific Relay executable instead of relying on `PATH`, set
-`FABRIC_NEMO_RELAY_COMMAND` to its absolute path:
+The adapter finds `nemo-relay` on `PATH` by default. To select a specific executable, set `FABRIC_NEMO_RELAY_COMMAND` to its absolute path:
 
 ```bash
 FABRIC_NEMO_RELAY_COMMAND="/absolute/path/to/nemo-relay" uv run python your_app.py
 ```
 
-The adapter does not bundle the Relay Pi extension. Obtain the
-[`crates/cli/assets/pi-extension`](https://github.com/NVIDIA/NeMo-Relay/tree/0.10.0/crates/cli/assets/pi-extension)
-directory from the Relay release that matches the CLI and configure its path as described in the
-next section.
+The adapter uses the selected executable to start the Relay gateway and send Pi hook events. When the runtime stops, the adapter restores the extension's previous command setting.
+
+Use the [Pi extension](https://github.com/NVIDIA/NeMo-Relay/tree/0.11.0/crates/cli/assets/pi-extension) from the same Relay release as the command-line tool. Configure the extension path as shown in the next section.
 
 ## Configure the Adapter
 

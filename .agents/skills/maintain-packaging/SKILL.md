@@ -71,6 +71,7 @@ commitment.
   `nemo-fabric-collector` distribution. The metapackage `streaming` extra must
   delegate to the version-matched runtime extra. Do not expose a separate
   metapackage `collector` extra.
+- Relay integrations use `>=0.11,<0.12` for the Python binding and CLI. Hermes keeps `>=0.10,<0.11` to match the pinned upstream harness. Keep Hermes in its separate Python 3.14 environment; preserve the independent Hermes compatibility check when updating the shared Relay range.
 - Keep leaf adapters adapter-only by default. Every leaf provides `full`, and
   every package-installable harness provides `harness`. The Hermes adapter omits
   `harness` because users install Hermes Agent separately from source. Provide
