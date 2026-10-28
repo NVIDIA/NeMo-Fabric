@@ -80,10 +80,10 @@
             },
             "gaps": {
               "type": "array",
-              "items": {"enum": ["scope_unverified", "missing_usage", "zero_unverified", "cache_relationship_unverified"]},
-              "minItems": 1,
+              "items": {"enum": ["scope_unverified", "missing_usage", "zero_unverified", "cache_relationship_unverified", "cache_breakdown_unreported", "cache_write_unreported"]},
               "uniqueItems": true
-            }
+            },
+            "complete_source": {"enum": ["nvidia_openai_compatible_http"]}
           },
           "required": ["observed", "gaps"],
           "additionalProperties": false

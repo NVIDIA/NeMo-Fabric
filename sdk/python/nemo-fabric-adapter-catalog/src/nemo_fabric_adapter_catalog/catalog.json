@@ -304,16 +304,22 @@
               "nvidia.fabric.cline.usage_evidence.v1": {
                 "additionalProperties": false,
                 "properties": {
+                  "complete_source": {
+                    "enum": [
+                      "nvidia_openai_compatible_http"
+                    ]
+                  },
                   "gaps": {
                     "items": {
                       "enum": [
                         "scope_unverified",
                         "missing_usage",
                         "zero_unverified",
-                        "cache_relationship_unverified"
+                        "cache_relationship_unverified",
+                        "cache_breakdown_unreported",
+                        "cache_write_unreported"
                       ]
                     },
-                    "minItems": 1,
                     "type": "array",
                     "uniqueItems": true
                   },
@@ -403,7 +409,7 @@
         "name": "nemo-fabric-adapters-cline",
         "version": "0.6.0"
       },
-      "sha256": "6719842a087b68e7939f5dfea9f502ce1c70b1b4e6177d006780073b3ea4c99a",
+      "sha256": "66ff12840fc8a005278a94b88f3ca54760d8f18ea7f04e7bc939e5a3f838605a",
       "source": "adapters/typescript/cline/cline.fabric-adapter.json"
     },
     "nvidia.fabric.codex": {

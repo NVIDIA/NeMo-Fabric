@@ -17,6 +17,7 @@ import type {
 import { LifecycleError, unobservedHealth, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 import type { ClinePromptOutcome, ClineSessionFactory, ClineSessionHandle } from "./runtime.js";
+import { RawUsageCollector } from "./raw-usage.js";
 
 const CLINE_HARNESS_INSTALL_COMMAND = "npm install @cline/sdk@0.0.83";
 const CLINE_PLUGIN_NAME = "nvidia.fabric.cline";
@@ -487,11 +488,13 @@ class ClineSdkSessionHandle implements ClineSessionHandle {
   private sessions?: Map<string, ResidentSession>;
   private probing = false;
   private readonly cleanup: () => Promise<void>;
+  private readonly rawUsage?: RawUsageCollector;
 
-  constructor(core: ClineCoreInstance, startInput: Record<string, unknown>, cleanup: () => Promise<void>) {
+  constructor(core: ClineCoreInstance, startInput: Record<string, unknown>, cleanup: () => Promise<void>, rawUsage?: RawUsageCollector) {
     this.core = core;
     this.startInput = startInput;
     this.cleanup = cleanup;
+    this.rawUsage = rawUsage;
   }
 
   async initialize(): Promise<void> {
@@ -518,7 +521,41 @@ class ClineSdkSessionHandle implements ClineSessionHandle {
       throw new LifecycleError("cline_session_stopped", "The Cline session is already stopped");
     }
     try {
-      return normalizeResult(await this.core.send({ sessionId: this.sessionId, prompt: text }), this.sessionId);
+      const capture = this.rawUsage?.begin();
+      let result: ClineResult | undefined;
+      try {
+        result = await this.core.send({ sessionId: this.sessionId, prompt: text });
+      } catch (error) {
+        if (capture !== undefined) this.rawUsage?.end(capture);
+        throw error;
+      }
+      const completeUsage = capture === undefined ? undefined : this.rawUsage?.end(capture);
+      const outcome = normalizeResult(result, this.sessionId);
+      const sdkUsage = result?.usage;
+      const sdkAgrees = completeUsage !== undefined &&
+        (sdkUsage?.inputTokens === undefined || sdkUsage.inputTokens === 0 || sdkUsage.inputTokens === completeUsage.input_tokens) &&
+        (sdkUsage?.outputTokens === undefined || sdkUsage.outputTokens === 0 || sdkUsage.outputTokens === completeUsage.output_tokens) &&
+        (sdkUsage?.cacheReadTokens === undefined || sdkUsage.cacheReadTokens === 0 ||
+          completeUsage.cached_input_tokens === undefined || sdkUsage.cacheReadTokens === completeUsage.cached_input_tokens);
+      if (outcome.status === "completed" && completeUsage !== undefined && sdkAgrees) {
+        const gaps = [
+          ...(completeUsage.cached_input_tokens === undefined ? ["cache_breakdown_unreported"] : []),
+          ...((sdkUsage?.cacheWriteTokens ?? 0) > 0 ? ["cache_write_unreported"] : []),
+        ];
+        outcome.usage = {
+          ...outcome.usage,
+          ...completeUsage,
+          extensions: {
+            ...outcome.usage?.extensions,
+            [CLINE_USAGE_EVIDENCE]: {
+              ...(outcome.usage?.extensions?.[CLINE_USAGE_EVIDENCE] as JsonObject | undefined),
+              gaps,
+              complete_source: "nvidia_openai_compatible_http",
+            },
+          },
+        };
+      }
+      return outcome;
     } catch (error) {
       if (error instanceof LifecycleError) throw error;
       throw new LifecycleError("cline_session_failed", sdkErrorMessage(error), { retryable: true });
@@ -646,6 +683,9 @@ export class ClineSdkSessionFactory implements ClineSessionFactory {
     }
     const workspace = await resolveWorkspace(input);
     const files = await prepareRuntimeFiles(input);
+    const rawUsage = selected.provider === "nvidia" && typeof selected.base_url === "string" && selected.base_url.length > 0
+      ? new RawUsageCollector(selected.base_url)
+      : undefined;
     let core: ClineCoreInstance | undefined;
     try {
       const sdk = await this.loader();
@@ -657,6 +697,7 @@ export class ClineSdkSessionFactory implements ClineSessionFactory {
         clientName: "nemo-fabric",
         backendMode: "local",
         toolPolicies: policies,
+        ...(rawUsage === undefined ? {} : { fetch: rawUsage.fetch }),
       }));
       const systemPrompt =
         systemInstruction === undefined || systemInstruction === null
@@ -691,7 +732,7 @@ export class ClineSdkSessionFactory implements ClineSessionFactory {
         localRuntime: { configExtensions: [] },
       }, async () => {
         await rm(files.root, { recursive: true, force: true });
-      });
+      }, rawUsage);
       await handle.initialize();
       return handle;
     } catch (error) {

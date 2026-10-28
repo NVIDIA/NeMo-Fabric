@@ -353,6 +353,53 @@ test("normalizes Cline usage and result metadata", async () => {
   await handle.stop();
 });
 
+test("uses complete raw NVIDIA stream usage across model attempts", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (_resource, init) => {
+    requests.push(JSON.parse(init.body));
+    const body = [
+      'data: {"choices":[{"finish_reason":"stop"}]}\n\n',
+      'data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":1}}}\n\n',
+      'data: [DONE]\n\n',
+    ];
+    return new Response(new ReadableStream({ start(controller) {
+      for (const chunk of body) controller.enqueue(new TextEncoder().encode(chunk));
+      controller.close();
+    } }), { status: 200, headers: { "content-type": "text/event-stream" } });
+  };
+  const sdk = fakeSdk({ results: [{ finishReason: "completed", text: "done", usage: { inputTokens: 14, outputTokens: 6 } }] });
+  const module = await sdk.loader();
+  sdk.loader = async () => ({ ...module, ClineCore: { async create(options) {
+    const core = await module.ClineCore.create(options);
+    return { ...core, async send(value) {
+      for (let i = 0; i < 2; i++) {
+        const response = await options.fetch("https://example.test/v1/chat/completions", {
+          method: "POST", body: JSON.stringify({ stream: true, stream_options: { include_usage: true } }),
+        });
+        await response.text();
+      }
+      return core.send(value);
+    } };
+  } } });
+  const configured = input();
+  configured.config.models.default.provider = "nvidia";
+  let handle;
+  try {
+    handle = await new ClineSdkSessionFactory(sdk.loader).create(configured);
+    const result = await handle.prompt("one");
+    assert.deepEqual([result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens], [14, 6, 20]);
+    assert.equal(result.usage.cached_input_tokens, 4);
+    assert.equal(result.usage.input_tokens_include_cache, true);
+    assert.deepEqual(result.usage.extensions[usageKey].gaps, []);
+    assert.equal(result.usage.extensions[usageKey].complete_source, "nvidia_openai_compatible_http");
+    assert.equal(requests.length, 2);
+  } finally {
+    await handle?.stop();
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("stages NeMo Fabric skills and MCP servers as one runtime-scoped native Cline plugin", async () => {
   const root = await mkdtemp(join(tmpdir(), "fabric-cline-native-config-"));
   const skill = join(root, "skills", "review-code");

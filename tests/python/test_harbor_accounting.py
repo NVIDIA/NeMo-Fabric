@@ -57,6 +57,43 @@ def test_normalized_usage_reaches_harbor_without_telemetry(result_path):
     assert context.metadata["fabric"]["usage"]["input_tokens"] == 20
 
 
+def test_cline_reported_usage_reaches_harbor_with_evidence(result_path):
+    from harbor.models.agent.context import AgentContext
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_result,
+    )
+
+    evidence = {
+        "observed": {"input_tokens": 20},
+        "gaps": ["cache_breakdown_unreported"],
+        "complete_source": "nvidia_openai_compatible_http",
+    }
+    document = json.loads(result_path.read_text())
+    document["adapter_id"] = "nvidia.fabric.cline"
+    document["adapter_kind"] = "typescript"
+    document["usage"] = {
+        "input_tokens": 20,
+        "input_tokens_include_cache": True,
+        "output_tokens": 0,
+        "total_tokens": 20,
+        "extensions": {"nvidia.fabric.cline.usage_evidence.v1": evidence},
+    }
+    result_path.write_text(json.dumps(document))
+    context = AgentContext()
+
+    populate_context_from_result(context, result_path)
+
+    assert (context.n_input_tokens, context.n_output_tokens) == (20, 0)
+    assert context.n_cache_tokens is None
+    assert context.cost_usd is None
+    assert (
+        context.metadata["fabric"]["usage"]["extensions"][
+            "nvidia.fabric.cline.usage_evidence.v1"
+        ]
+        == evidence
+    )
+
+
 @pytest.mark.parametrize("status", ["succeeded", "failed", "cancelled"])
 @pytest.mark.parametrize(
     ("usage", "expected_input", "expected_cache"),

@@ -142,10 +142,20 @@ async def test_cline_plans_diagnoses_runs_and_isolates_sessions(api_server, tmp_
     assert first.metadata["adapter"]["finish_reason"] == "completed"
     assert second.metadata["adapter"]["finish_reason"] == "completed"
     assert isolated.metadata["adapter"]["finish_reason"] == "completed"
+    for result in (first, second, isolated):
+        assert result.usage.input_tokens == 0
+        assert result.usage.output_tokens == 0
+        assert result.usage.total_tokens == 0
+        assert result.usage.input_tokens_include_cache is True
+        evidence = result.usage.metadata["nvidia.fabric.cline.usage_evidence.v1"]
+        assert evidence["complete_source"] == "nvidia_openai_compatible_http"
 
     captured = requests.get(f"{api_server}/_requests", timeout=5).json()
     assert len(captured) == 3
     assert all(payload["model"] == NVIDIA_MODEL for payload in captured)
+    assert all(
+        payload["stream_options"] == {"include_usage": True} for payload in captured
+    )
 
 
 async def test_cline_live_provider_retains_context(tmp_path):
