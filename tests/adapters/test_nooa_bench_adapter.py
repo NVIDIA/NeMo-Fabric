@@ -247,6 +247,10 @@ def test_bench_usage_keeps_only_positive_observed_dimensions(
     assert bench_adapter._usage(tokens).to_mapping() == expected
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Pinned NOOA SDK imports POSIX-only fcntl during initialization",
+)
 def test_pinned_nooa_metrics_bridge_preserves_inclusive_prompt_tokens_and_resets_tasks():
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
     from litellm.types.utils import ModelResponse
