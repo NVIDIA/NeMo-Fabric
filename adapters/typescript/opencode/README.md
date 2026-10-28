@@ -126,10 +126,14 @@ Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) fo
 
 ## Token Usage
 
+When coverage cannot be proved, the evidence may include `scope_reasons` with bounded reason codes such as `background_shell`, `title_completion_unconfirmed`, or `observer_lost`. These diagnostics contain no native error messages, shell commands, or credentials and do not make partial counters complete.
+
 With OpenCode 2.0.23, NeMo Fabric collects provider usage for OpenCode-managed Chat Completions requests it can attribute to an invocation. Input includes cached tokens. Output includes reasoning tokens. Do not add either breakdown again. Calls made directly by shell commands or external tools are outside this scope.
 
 The adapter proves request ownership and waits for root and automatic title work. It reports each standard token count only when every owned request supplies a valid value for that field. Attributable foreground child work is included. Harbor receives these same inclusive counts. Standard total and cache counts are available only when every request reports those fields. Provider-reported cost stays unknown; OpenCode's locally calculated cost is not a provider-reported amount.
 
 Collected observations are also preserved in `RunResult.usage.metadata["nvidia.fabric.opencode.usage_evidence.v1"]`. An empty `gaps` list means the input and output counts cover the proven scope. Observed cache and reasoning sums can still be partial if a request omits that breakdown. `scope_unverified` means ownership or completion could not be established. `missing_usage` marks missing or invalid counts, and `unfinished_work` marks requests that did not finish. Missing counts stay absent; reported zero stays zero. Partial sums can cover different sets of requests and must not be treated as complete totals.
+
+When coverage cannot be proved, the evidence may include `scope_reasons` with bounded reason codes such as `background_shell`, `title_completion_unconfirmed`, or `observer_lost`. These diagnostics contain no native error messages, shell commands, or credentials and do not make partial counters complete.
 
 Background shell or child work, an unresolved title, manual session changes, an interrupted event subscription, warming, or custom OpenCode plugins can prevent proof. The adapter retains attributable observations and leaves standard totals unknown. If earlier work can resume during a later invocation, that later invocation also leaves usage unknown. Unsupported model response protocols leave token counts unknown.

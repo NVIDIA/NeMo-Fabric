@@ -600,3 +600,95 @@ test("denies interactive OpenCode operations instead of waiting for a reply", as
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+for (const background of [false, true])
+  test(`reports native shell accounting for background=${background}`, async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "fabric-opencode-shell-probe-"),
+    );
+    let primaries = 0;
+    const endpoint = createServer(async (req, res) => {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const payload = JSON.parse(Buffer.concat(chunks).toString());
+      const title = payload.messages.some(
+        (m) =>
+          m.role === "system" &&
+          typeof m.content === "string" &&
+          m.content.includes("title generator"),
+      );
+      const usage = {
+        prompt_tokens: 10,
+        completion_tokens: 2,
+        total_tokens: 12,
+      };
+      const body = title
+        ? openAiStream("Shell probe", usage)
+        : ++primaries === 1
+          ? openAiToolCall("shell", {
+              command: background ? "sleep 1" : "printf done",
+              background,
+            }).replace(
+              "data: [DONE]",
+              `data: ${JSON.stringify({ choices: [], usage })}\n\ndata: [DONE]`,
+            )
+          : openAiStream("done", usage);
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(body);
+    });
+    const url = await listen(endpoint);
+    try {
+      const result = await exchange(
+        workspace,
+        [
+          {
+            operation: "start",
+            payload: {
+              agent_name: "shell-probe",
+              base_dir: workspace,
+              config: {
+                models: {
+                  default: {
+                    provider: "test",
+                    model: "test",
+                    api_key_env: "TEST_API_KEY",
+                    base_url: `${url}/v1`,
+                  },
+                },
+              },
+              runtime_context: context(workspace, "start"),
+            },
+          },
+          {
+            operation: "invoke",
+            payload: {
+              request: { input: "Run shell then reply done." },
+              runtime_context: {
+                ...context(workspace, "probe"),
+                deadline_millis: Date.now() + 30000,
+              },
+            },
+          },
+          { operation: "stop", payload: { runtime_id: "runtime-1" } },
+        ],
+        {},
+        45000,
+      );
+      assert.equal(primaries, 2);
+      const usage = result.responses[1].outcome.output.usage;
+      assert.deepEqual(
+        usage.extensions["nvidia.fabric.opencode.usage_evidence.v1"],
+        {
+          observed: { input_tokens: 30, output_tokens: 6, total_tokens: 36 },
+          gaps: background ? ["scope_unverified"] : [],
+          ...(background ? { scope_reasons: ["background_shell"] } : {}),
+        },
+      );
+      assert.equal(usage.input_tokens, background ? undefined : 30);
+      assert.equal(usage.output_tokens, background ? undefined : 6);
+      assert.equal(result.exitCode, 0, result.stderr);
+    } finally {
+      await close(endpoint);
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });

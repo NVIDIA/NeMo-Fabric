@@ -8,6 +8,26 @@ type Plugin = NonNullable<CreateOptions["plugins"]>[number];
 type Counter = "input_tokens" | "output_tokens" | "total_tokens" | "cached_input_tokens" | "reasoning_tokens";
 type Counts = Partial<Record<Counter, number>>;
 type Gap = "scope_unverified" | "missing_usage" | "unfinished_work";
+export type ScopeReason =
+  | "observer_unavailable"
+  | "observer_lost"
+  | "configuration_changed"
+  | "prepare_scope_read_failed"
+  | "unsupported_configuration"
+  | "root_execution_unconfirmed"
+  | "title_completion_unconfirmed"
+  | "final_scope_read_failed"
+  | "child_ancestry_unverified"
+  | "child_ownership_changed"
+  | "manual_session_change"
+  | "tool_result_unavailable"
+  | "background_shell"
+  | "background_subagent"
+  | "unsupported_protocol"
+  | "auxiliary_generation"
+  | "unsupported_request_kind"
+  | "prompt_failed"
+  | "unfinished_work";
 interface HookEvents {
   prompt: { sessionID: string };
   "http.request": { sessionID: string; kind: string; request: Request };
@@ -55,6 +75,7 @@ export class OpenCodeInvocationUsage {
   readonly calls: Call[] = [];
   readonly children = new Set<string>();
   readonly tools = new Map<string, number>();
+  readonly scopeReasons = new Set<ScopeReason>();
   uncertain = false;
   closed = false;
   private frozen?: AgentUsage;
@@ -83,7 +104,7 @@ export class OpenCodeInvocationUsage {
     if (complete.input_tokens !== undefined) complete.input_tokens_include_cache = true;
     if (this.calls.length === 0 || overflow || this.calls.some((call) => call.missing)) gaps.add("missing_usage");
     if (this.unfinished()) gaps.add("unfinished_work");
-    this.frozen = { ...complete, extensions: { [KEY]: { observed, gaps: [...gaps] } } };
+    this.frozen = { ...complete, extensions: { [KEY]: { observed, gaps: [...gaps], ...(this.scopeReasons.size === 0 ? {} : { scope_reasons: [...this.scopeReasons] }) } } };
     return this.frozen;
   }
 }
@@ -204,6 +225,7 @@ export class OpenCodeUsageCollector {
   private active?: OpenCodeInvocationUsage;
   private titleOwner?: OpenCodeInvocationUsage;
   private continuationUncertain = false;
+  private readonly continuationReasons = new Set<ScopeReason>();
   private readonly requests = new WeakMap<Request, Call>();
   private readonly sessions = new Map<string, OpenCodeInvocationUsage>();
 
@@ -215,17 +237,22 @@ export class OpenCodeUsageCollector {
     this.active = this.continuationUncertain ? undefined : usage;
     if (!this.continuationUncertain) this.titleOwner = usage;
     usage.uncertain = this.continuationUncertain;
+    for (const reason of this.continuationReasons) usage.scopeReasons.add(reason);
     return usage;
   }
 
-  markUncertain(): void {
+  markUncertain(reason?: ScopeReason): void {
     this.continuationUncertain = true;
+    if (reason !== undefined) {
+      this.continuationReasons.add(reason);
+      this.active?.scopeReasons.add(reason);
+    }
     if (this.active !== undefined) this.active.uncertain = true;
   }
 
   end(usage: OpenCodeInvocationUsage, scopeProven = false): AgentUsage {
     if (usage.closed) return usage.finish(scopeProven);
-    if (usage.unfinished()) this.markUncertain();
+    if (usage.unfinished()) this.markUncertain("unfinished_work");
     if (this.active === usage) this.active = undefined;
     return usage.finish(scopeProven);
   }
@@ -245,7 +272,7 @@ export class OpenCodeUsageCollector {
               const visited = new Set<string>();
               let sessionID: string | undefined = event.sessionID;
               while (sessionID !== undefined) {
-                if (visited.has(sessionID)) { this.markUncertain(); return; }
+                if (visited.has(sessionID)) { this.markUncertain("child_ancestry_unverified"); return; }
                 visited.add(sessionID);
                 const session = await context.session.get({ sessionID });
                 sessionID = session.parentID;
@@ -254,7 +281,8 @@ export class OpenCodeUsageCollector {
                 const previous = this.sessions.get(event.sessionID);
                 if (previous !== undefined && previous !== owner && previous.unfinished()) {
                   owner.uncertain = true;
-                  this.markUncertain();
+                  owner.scopeReasons.add("child_ownership_changed");
+                  this.markUncertain("child_ownership_changed");
                   return;
                 }
                 this.sessions.set(event.sessionID, owner);
@@ -262,7 +290,7 @@ export class OpenCodeUsageCollector {
                 return;
               }
             } catch {
-              this.markUncertain();
+              this.markUncertain("child_ancestry_unverified");
             }
           }),
           context.tool.hook("execute.before", (event) => {
@@ -272,7 +300,8 @@ export class OpenCodeUsageCollector {
             owner.tools.set(key, (owner.tools.get(key) ?? 0) + 1);
             if (event.tool === "opencode_session_rename" || event.tool === "opencode_session_move") {
               owner.uncertain = true;
-              this.markUncertain();
+              owner.scopeReasons.add("manual_session_change");
+              this.markUncertain("manual_session_change");
             }
           }),
           context.tool.hook("execute.after", (event) => {
@@ -284,23 +313,25 @@ export class OpenCodeUsageCollector {
             else owner.tools.set(key, pending - 1);
             if (event.tool !== "shell" && event.tool !== "subagent") return;
             const output = event.result?.output;
-            if (event.status !== "completed" || !record(output)) { owner.uncertain = true; return; }
+            if (event.status !== "completed" || !record(output)) { owner.uncertain = true; owner.scopeReasons.add("tool_result_unavailable"); return; }
             if (output.status === "running") {
               owner.uncertain = true;
-              this.markUncertain();
+              const reason = event.tool === "shell" ? "background_shell" : "background_subagent";
+              owner.scopeReasons.add(reason);
+              this.markUncertain(reason);
             } else if (event.tool === "subagent" && output.status === "completed" && typeof output.sessionID === "string") {
               owner.children.delete(output.sessionID);
             }
           }),
           context.session.hook("experimental.ws.handshake", (event) => {
             const owner = this.owner(event.sessionID);
-            if (owner !== undefined) owner.uncertain = true;
+            if (owner !== undefined) { owner.uncertain = true; owner.scopeReasons.add("unsupported_protocol"); }
           }),
           context.session.hook("http.request", (event) => {
             const owner = event.sessionID === this.root && event.kind === "title" ? this.titleOwner : this.owner(event.sessionID);
             if (owner === undefined) return;
-            if (event.kind === "generate") { owner.uncertain = true; this.markUncertain(); return; }
-            if (event.kind !== "primary" && event.kind !== "compaction" && event.kind !== "title") owner.uncertain = true;
+            if (event.kind === "generate") { owner.uncertain = true; owner.scopeReasons.add("auxiliary_generation"); this.markUncertain("auxiliary_generation"); return; }
+            if (event.kind !== "primary" && event.kind !== "compaction" && event.kind !== "title") { owner.uncertain = true; owner.scopeReasons.add("unsupported_request_kind"); }
             const call: Call = { counts: {}, settled: false, missing: true, invalid: false };
             owner.calls.push(call);
             this.requests.set(event.request, call);

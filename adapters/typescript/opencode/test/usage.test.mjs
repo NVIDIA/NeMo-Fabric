@@ -172,7 +172,7 @@ test("retains observations when another physical attempt fails or remains unfini
   start();
   assert.deepEqual(collector.end(invocation).extensions[KEY], {
     observed: { input_tokens: 12, output_tokens: 3 },
-    gaps: ["scope_unverified", "missing_usage", "unfinished_work"],
+    gaps: ["scope_unverified", "missing_usage", "unfinished_work"], scope_reasons: ["unfinished_work"],
   });
 });
 
@@ -206,7 +206,7 @@ test("marks truncated streams and preserves observations before the interruption
   const invocation = collector.begin("root");
   await (await respond(start(), stream(frame({ prompt_tokens: 12, completion_tokens: 3 })))).text();
   assert.deepEqual(collector.end(invocation).extensions[KEY], {
-    observed: { input_tokens: 12, output_tokens: 3 }, gaps: ["scope_unverified", "unfinished_work"],
+    observed: { input_tokens: 12, output_tokens: 3 }, gaps: ["scope_unverified", "unfinished_work"], scope_reasons: ["unfinished_work"],
   });
 });
 
@@ -236,7 +236,7 @@ test("retains usage but marks an errored stream unfinished after a finish frame"
   const response = await respond(start(), new Response(body, { headers: { "content-type": "text/event-stream" } }));
   await assert.rejects(response.text(), /connection reset/);
   assert.deepEqual(collector.end(invocation).extensions[KEY], {
-    observed: { input_tokens: 12, output_tokens: 3 }, gaps: ["scope_unverified", "unfinished_work"],
+    observed: { input_tokens: 12, output_tokens: 3 }, gaps: ["scope_unverified", "unfinished_work"], scope_reasons: ["unfinished_work"],
   });
 });
 
@@ -269,7 +269,7 @@ test("does not complete an earlier usage snapshot when cancelled after a finish 
   await reader.read();
   await reader.cancel();
   assert.deepEqual(collector.end(invocation).extensions[KEY], {
-    observed: { input_tokens: 12, output_tokens: 3 }, gaps: ["scope_unverified", "unfinished_work"],
+    observed: { input_tokens: 12, output_tokens: 3 }, gaps: ["scope_unverified", "unfinished_work"], scope_reasons: ["unfinished_work"],
   });
 });
 

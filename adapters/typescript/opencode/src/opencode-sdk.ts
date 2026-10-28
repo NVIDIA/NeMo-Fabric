@@ -18,7 +18,7 @@ import { ModelEndpointProxy } from "./model-endpoint-proxy.js";
 import type { OpenCodePromptOutcome, OpenCodeSessionFactory, OpenCodeSessionHandle } from "./runtime.js";
 import { OpenCodePromptFailure } from "./runtime.js";
 import { OpenCodeUsageCollector } from "./usage.js";
-import type { OpenCodeInvocationUsage } from "./usage.js";
+import type { OpenCodeInvocationUsage, ScopeReason } from "./usage.js";
 
 type OpenCodeClient = Awaited<ReturnType<(typeof import("@opencode/sdk"))["OpenCode"]["create"]>>;
 type OpenCodeEmbedOptions = { overrides?: unknown[] };
@@ -736,6 +736,7 @@ class OpenCodeAccountingBoundary {
   private connected = false;
   private watching = false;
   private uncertain = false;
+  private prepareFailure: ScopeReason = "observer_unavailable";
   private renames = 0;
   private terminals = 0;
 
@@ -755,9 +756,9 @@ class OpenCodeAccountingBoundary {
     for (const waiter of this.waiters) waiter();
   }
 
-  private invalidate(): void {
+  private invalidate(reason: ScopeReason): void {
     this.uncertain = true;
-    this.collector.markUncertain();
+    this.collector.markUncertain(reason);
     this.changed();
   }
 
@@ -765,7 +766,7 @@ class OpenCodeAccountingBoundary {
     try {
       for await (const event of this.client.events.subscribe({ signal: this.controller.signal })) {
         if (event.type === "server.connected") this.connected = true;
-        if (this.watching && (event.type === "config.updated" || event.type === "wellknown.updated")) this.invalidate();
+        if (this.watching && (event.type === "config.updated" || event.type === "wellknown.updated")) this.invalidate("configuration_changed");
         if (isRecord(event.data) && event.data.sessionID === this.id) {
           if (event.type === "session.renamed") this.renames++;
           if (event.type === "session.execution.succeeded" || event.type === "session.execution.failed" || event.type === "session.execution.interrupted") this.terminals++;
@@ -776,7 +777,7 @@ class OpenCodeAccountingBoundary {
       // Losing the lifecycle stream loses the title completion proof.
     } finally {
       this.running = false;
-      if (!this.controller.signal.aborted) this.invalidate();
+      if (!this.controller.signal.aborted) this.invalidate("observer_lost");
       this.changed();
     }
   }
@@ -835,10 +836,17 @@ class OpenCodeAccountingBoundary {
 
   async prepare(deadlineMillis?: number | null): Promise<AccountingScope | undefined> {
     const limit = this.limit(deadlineMillis);
-    if (!await this.waitFor(() => this.connected, limit)) return undefined;
+    if (!await this.waitFor(() => this.connected, limit)) {
+      this.prepareFailure = "observer_unavailable";
+      return undefined;
+    }
     this.watching = true;
     const scope = await this.readScope(limit);
-    if (scope === undefined || !this.running || this.uncertain) return undefined;
+    if (scope === undefined) {
+      this.prepareFailure = "prepare_scope_read_failed";
+      return undefined;
+    }
+    if (!this.running || this.uncertain) return undefined;
     const supported = this.supported(scope.entries);
     return {
       renames: this.renames,
@@ -851,21 +859,22 @@ class OpenCodeAccountingBoundary {
 
   async finish(scope: AccountingScope | undefined, deadlineMillis?: number | null): Promise<boolean> {
     if (scope === undefined) {
-      this.invalidate();
+      this.invalidate(this.prepareFailure);
       return false;
     }
     if (!scope.supported) {
-      this.invalidate();
+      this.invalidate("unsupported_configuration");
       return false;
     }
     const limit = this.limit(deadlineMillis);
     const settled = await this.waitFor(() => this.terminals > scope.terminals && (!scope.needsTitle || this.renames > scope.renames), limit);
     if (!settled) {
-      this.invalidate();
+      this.invalidate(this.terminals <= scope.terminals ? "root_execution_unconfirmed" : "title_completion_unconfirmed");
       return false;
     }
     const current = await this.readScope(limit);
-    if (current === undefined || !this.supported(current.entries)) this.invalidate();
+    if (current === undefined) this.invalidate("final_scope_read_failed");
+    else if (!this.supported(current.entries)) this.invalidate("unsupported_configuration");
     return current !== undefined && this.supported(current.entries) && this.running && !this.uncertain;
   }
 
@@ -946,7 +955,7 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
       }
     } catch {
       if (evidence !== undefined) {
-        this.usageCollector.markUncertain();
+        this.usageCollector.markUncertain("prompt_failed");
         throw new OpenCodePromptFailure(this.usageCollector.end(evidence));
       }
       throw new LifecycleError("opencode_session_failed", "OpenCode session communication failed", {

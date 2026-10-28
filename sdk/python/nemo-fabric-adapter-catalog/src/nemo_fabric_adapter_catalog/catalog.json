@@ -2039,6 +2039,34 @@
                       }
                     },
                     "type": "object"
+                  },
+                  "scope_reasons": {
+                    "description": "Bounded reasons invocation ownership or completion could not be proved; contains no native messages, commands, or credentials.",
+                    "items": {
+                      "enum": [
+                        "observer_unavailable",
+                        "observer_lost",
+                        "configuration_changed",
+                        "prepare_scope_read_failed",
+                        "unsupported_configuration",
+                        "root_execution_unconfirmed",
+                        "title_completion_unconfirmed",
+                        "final_scope_read_failed",
+                        "child_ancestry_unverified",
+                        "child_ownership_changed",
+                        "manual_session_change",
+                        "tool_result_unavailable",
+                        "background_shell",
+                        "background_subagent",
+                        "unsupported_protocol",
+                        "auxiliary_generation",
+                        "unsupported_request_kind",
+                        "prompt_failed",
+                        "unfinished_work"
+                      ]
+                    },
+                    "type": "array",
+                    "uniqueItems": true
                   }
                 },
                 "required": [
@@ -2155,7 +2183,7 @@
         "name": "nemo-fabric-adapters-opencode",
         "version": "0.6.0"
       },
-      "sha256": "60280abac5d2373384d4c1b30029d95da57ae22de5b3ec41599d5faffce3d75d",
+      "sha256": "8cb126e7d382bb58fc3447166a7d5f858ae2af14118aa1533bf7ae6f4c206495",
       "source": "adapters/typescript/opencode/opencode.fabric-adapter.json"
     },
     "nvidia.fabric.openhands": {

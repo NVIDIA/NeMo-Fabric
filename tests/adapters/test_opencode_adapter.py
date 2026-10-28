@@ -54,7 +54,11 @@ def config(
                 max_tokens=max_tokens,
             )
         },
-        instructions=(InstructionsConfig(system=system_instruction) if system_instruction else None),
+        instructions=(
+            InstructionsConfig(system=system_instruction)
+            if system_instruction
+            else None
+        ),
         skills=SkillConfig(paths=skill_paths) if skill_paths else None,
         mcp=McpConfig(servers={"test": mcp_server}) if mcp_server else None,
     )
@@ -76,6 +80,15 @@ def test_opencode_descriptor_declares_the_minimum_supported_surface():
         }
     }
     validator.validate(evidence)
+    evidence["nvidia.fabric.opencode.usage_evidence.v1"]["scope_reasons"] = [
+        "background_shell"
+    ]
+    validator.validate(evidence)
+    evidence["nvidia.fabric.opencode.usage_evidence.v1"]["scope_reasons"] = [
+        "PRIVATE native error"
+    ]
+    assert not validator.is_valid(evidence)
+    del evidence["nvidia.fabric.opencode.usage_evidence.v1"]["scope_reasons"]
     evidence["nvidia.fabric.opencode.usage_evidence.v1"]["gaps"] = []
     validator.validate(evidence)
     evidence["nvidia.fabric.opencode.usage_evidence.v1"]["observed"][
@@ -177,7 +190,9 @@ def test_opencode_descriptor_declares_the_minimum_supported_surface():
 def test_opencode_descriptor_plans_and_projects_the_selected_model():
     plan = Fabric().plan(config(), base_dir=ROOT)
 
-    assert plan.adapter_descriptor["descriptor"]["adapter_id"] == "nvidia.fabric.opencode"
+    assert (
+        plan.adapter_descriptor["descriptor"]["adapter_id"] == "nvidia.fabric.opencode"
+    )
     assert plan.agent_config == {
         "models": {
             "default": {
@@ -202,7 +217,9 @@ def test_opencode_model_schema_requires_a_portable_credential_name():
 def test_opencode_descriptor_plans_an_openai_compatible_model_endpoint():
     plan = Fabric().plan(config(base_url="https://example.test/v1"), base_dir=ROOT)
 
-    assert plan.agent_config["models"]["default"]["base_url"] == "https://example.test/v1"
+    assert (
+        plan.agent_config["models"]["default"]["base_url"] == "https://example.test/v1"
+    )
 
 
 def test_opencode_descriptor_projects_sampling_for_an_openai_compatible_model_endpoint():
@@ -236,7 +253,11 @@ def test_opencode_descriptor_rejects_unsupported_max_tokens():
 
 def test_opencode_descriptor_projects_replace_system_instruction():
     plan = Fabric().plan(
-        config(system_instruction=InstructionConfig(content="Fabric system instruction", mode="replace")),
+        config(
+            system_instruction=InstructionConfig(
+                content="Fabric system instruction", mode="replace"
+            )
+        ),
         base_dir=ROOT,
     )
 
@@ -248,7 +269,11 @@ def test_opencode_descriptor_projects_replace_system_instruction():
 def test_opencode_descriptor_rejects_append_system_instruction():
     with pytest.raises(FabricConfigError, match="append"):
         Fabric().plan(
-            config(system_instruction=InstructionConfig(content="Append this", mode="append")),
+            config(
+                system_instruction=InstructionConfig(
+                    content="Append this", mode="append"
+                )
+            ),
             base_dir=ROOT,
         )
 
@@ -317,7 +342,9 @@ async def test_opencode_descriptor_doctor_requires_bun(
 
     assert report.status in {"pass", "warn"}
     assert any(
-        check.name == "requirement.binary" and "bun" in check.message and check.status == "pass"
+        check.name == "requirement.binary"
+        and "bun" in check.message
+        and check.status == "pass"
         for check in report.checks
     )
 
@@ -332,6 +359,8 @@ async def test_opencode_descriptor_doctor_reports_a_missing_bun(
 
     assert report.status == "fail"
     assert any(
-        check.name == "requirement.binary" and "bun" in check.message and check.status == "fail"
+        check.name == "requirement.binary"
+        and "bun" in check.message
+        and check.status == "fail"
         for check in report.checks
     )
