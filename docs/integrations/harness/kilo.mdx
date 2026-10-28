@@ -118,7 +118,7 @@ filters are unsupported.
 ### Runtime Behavior
 
 The adapter accepts plain-text input and returns the terminal assistant text in
-`output.response`. Usage and cost are included when Kilo Code reports them.
+`output.response`. See [Model Usage](#model-usage) for token counts and cost.
 Ordered invocations reuse one warm session and its conversation history. A
 prompt has a 30-minute deadline; on timeout the adapter asks Kilo Code to abort
 the prompt and reports `kilo_prompt_timeout`.
