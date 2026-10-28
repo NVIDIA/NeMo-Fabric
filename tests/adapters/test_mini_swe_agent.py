@@ -267,6 +267,7 @@ def test_mini_swe_agent_descriptor_is_narrow_and_versioned():
             "models.temperature",
             "models.top_p",
             "models.max_tokens",
+            "models.settings",
             "instructions.system",
             "runtime.max_turns",
         ],
@@ -308,6 +309,7 @@ async def test_mini_swe_agent_maps_config_and_returns_normalized_output(
     await runtime.start(start)
 
     mock_mini["model_factory"].assert_called_once_with(
+        cost_tracking="default",
         model_name="nvidia_nim/nvidia/test-model",
         model_kwargs={
             "api_key": "test-key",
@@ -654,3 +656,160 @@ async def test_nvidia_dispatch_preserves_the_served_model_id(
     model, provider, _, _ = get_llm_provider(dispatched)
     assert provider == "nvidia_nim"
     assert model == "nvidia/nemotron-3-ultra-550b-a55b"
+
+
+@pytest.mark.parametrize("policy", [None, "default", "disabled"])
+async def test_cost_policy_is_explicit_and_controls_native_budget(
+    mock_mini, mini_payload, policy
+):
+    import os
+
+    os.environ["MSWEA_COST_TRACKING"] = "ignore_errors"
+    if policy is not None:
+        mini_payload["config"]["models"]["default"]["settings"] = {
+            "cost_tracking": policy
+        }
+    runtime = adapter.MiniSweAgentRuntime()
+    await runtime.start(
+        {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
+    )
+
+    assert mock_mini["model_factory"].call_args.kwargs["cost_tracking"] == (
+        "ignore_errors" if policy == "disabled" else "default"
+    )
+    assert runtime._agent.config.cost_limit == (0 if policy == "disabled" else 3)
+    result = await runtime.invoke(*invocation(mini_payload))
+    if policy == "disabled":
+        assert result.output["usage"] == {
+            "api_calls": 1,
+            "cost_tracking": "disabled",
+            "cost_status": "unavailable",
+        }
+    else:
+        assert result.output["usage"] == {"api_calls": 1}
+
+
+@pytest.mark.parametrize("runtime_config", [None, {}])
+async def test_unpriced_model_requires_finite_turn_budget(mini_payload, runtime_config):
+    mini_payload["config"]["models"]["default"]["settings"] = {
+        "cost_tracking": "disabled"
+    }
+    mini_payload["config"]["runtime"] = runtime_config
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await adapter.MiniSweAgentRuntime().start(
+            {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
+        )
+    assert caught.value.code == "mini_swe_agent_unbounded_unpriced_model"
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"cost_tracking": "ignore_errors"},
+        {"cost_tracking": "disabled", "cost_limit": 2},
+    ],
+)
+async def test_cost_policy_rejects_unknown_settings_or_conflicting_cap(
+    mini_payload, settings
+):
+    mini_payload["config"]["models"]["default"]["settings"] = settings
+    with pytest.raises(adapter.lifecycle.LifecycleError):
+        await adapter.MiniSweAgentRuntime().start(
+            {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
+        )
+
+
+@pytest.mark.parametrize("policy", ["default", "disabled"])
+async def test_real_sdk_unpriced_response_requires_opt_in(
+    mini_payload, monkeypatch, policy
+):
+    from litellm import ModelResponse
+    from minisweagent.models.litellm_model import LitellmModel
+    from nemo_fabric_adapters.mini_swe_agent.agents import _relay_response
+
+    mini_payload["config"]["models"]["default"]["settings"] = {"cost_tracking": policy}
+    response = ModelResponse(
+        model="nvidia_nim/nvidia/test-model",
+        choices=[
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "Working.",
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {
+                                "name": "bash",
+                                "arguments": '{"command":"submit"}',
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+        usage={"prompt_tokens": 8, "completion_tokens": 4, "total_tokens": 12},
+    )
+    completion = MagicMock(return_value=response)
+    monkeypatch.setattr("litellm.completion", completion)
+    monkeypatch.setattr(
+        "litellm.cost_calculator.completion_cost",
+        MagicMock(side_effect=ValueError("model has no registered price")),
+    )
+    environment = MagicMock()
+    environment.execute.side_effect = Submitted(
+        {
+            "role": "exit",
+            "content": "done",
+            "extra": {"exit_status": "Submitted", "submission": "done"},
+        }
+    )
+    monkeypatch.setattr(
+        "minisweagent.environments.local.LocalEnvironment",
+        MagicMock(return_value=environment),
+    )
+    runtime = adapter.MiniSweAgentRuntime()
+    await runtime.start(
+        {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
+    )
+    assert isinstance(runtime._model, LitellmModel)
+    if policy == "default":
+        with pytest.raises(RuntimeError, match="Error calculating cost"):
+            await runtime.invoke(*invocation(mini_payload))
+        environment.execute.assert_not_called()
+    else:
+        result = await runtime.invoke(*invocation(mini_payload))
+        assert result.status.value == "succeeded"
+        assert result.output["usage"]["cost_status"] == "unavailable"
+        message = next(m for m in runtime._agent.messages if m["role"] == "assistant")
+        assert message["extra"]["cost"] == 0  # SDK sentinel, not a measured cost.
+        relayed = _relay_response(message, include_cost=False)
+        assert relayed["usage"] == response.model_dump()["usage"]
+        assert "cost" not in relayed["usage"]
+    completion.assert_called_once()
+
+
+async def test_unpriced_relay_preserves_tokens_without_synthetic_cost(
+    mock_mini, mini_payload, mock_relay
+):
+    mini_payload["config"]["models"]["default"]["settings"] = {
+        "cost_tracking": "disabled"
+    }
+    mini_payload["runtime_context"]["telemetry"] = {
+        "relay_enabled": True,
+        "metadata": {"telemetry_providers": ["relay"]},
+    }
+    mock_mini["model"].config.cost_tracking = "ignore_errors"
+    runtime = adapter.MiniSweAgentRuntime()
+    await runtime.start(
+        {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
+    )
+    result = await runtime.invoke(*invocation(mini_payload))
+    assert result.status == "succeeded"
+    assert result.output["usage"]["cost_status"] == "unavailable"
+    assert mock_relay["llm_ends"][0][1]["usage"] == {
+        "prompt_tokens": 8,
+        "completion_tokens": 4,
+        "total_tokens": 12,
+    }

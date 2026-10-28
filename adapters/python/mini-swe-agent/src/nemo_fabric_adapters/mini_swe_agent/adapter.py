@@ -46,6 +46,7 @@ class MiniSweAgentRuntime:
         self._relay_plugin = self._relay_scope = self._relay_scope_type = None
         self._relay_plugin_config: dict[str, Any] | None = None
         self._telemetry_quarantine: str | None = None
+        self._cost_tracking = "default"
 
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
@@ -89,6 +90,27 @@ class MiniSweAgentRuntime:
             agent_type = RelayRetainingDefaultAgent
 
         model = _selected_model(config)
+        if model.settings.keys() - {"cost_tracking"}:
+            raise lifecycle.LifecycleError(
+                "mini_swe_agent_unsupported_model_settings",
+                "mini-SWE-agent supports only the cost_tracking model setting",
+            )
+        self._cost_tracking = model.settings.get("cost_tracking", "default")
+        if self._cost_tracking not in ("default", "disabled"):
+            raise lifecycle.LifecycleError(
+                "mini_swe_agent_invalid_cost_tracking",
+                "models settings.cost_tracking must be 'default' or 'disabled'",
+            )
+        if self._cost_tracking == "disabled" and (
+            config.runtime is None
+            or config.runtime.max_turns is None
+            or config.runtime.max_turns <= 0
+        ):
+            raise lifecycle.LifecycleError(
+                "mini_swe_agent_unbounded_unpriced_model",
+                "Disabling cost tracking requires a positive runtime.max_turns; "
+                "mini-SWE-agent cannot enforce a monetary budget without pricing",
+            )
         model_kwargs: dict[str, Any] = {}
         if model.api_key_env and (api_key := os.environ.get(model.api_key_env)):
             model_kwargs["api_key"] = api_key
@@ -109,12 +131,18 @@ class MiniSweAgentRuntime:
         self._model = LitellmModel(
             model_name=model_name,
             model_kwargs=model_kwargs,
+            # Pin the default instead of inheriting MSWEA_COST_TRACKING.
+            cost_tracking=(
+                "ignore_errors" if self._cost_tracking == "disabled" else "default"
+            ),
         )
         self._environment = LocalEnvironment(
             **(config.harness.settings if config.harness else {})
         )
         self._system_instruction = instruction.content if instruction else ""
         agent_kwargs: dict[str, Any] = {}
+        if self._cost_tracking == "disabled":
+            agent_kwargs["cost_limit"] = 0
         if self._relay_enabled:
             agent_kwargs["relay_model_name"] = self._model.config.model_name
         self._agent = agent_type(
@@ -145,6 +173,8 @@ class MiniSweAgentRuntime:
             "output": result.get("submission", ""),
             "usage": {"api_calls": self._agent.n_calls},
         }
+        if self._cost_tracking == "disabled":
+            output["usage"].update(cost_tracking="disabled", cost_status="unavailable")
         if self._relay_enabled:
             output["telemetry"] = {
                 "enabled": True,

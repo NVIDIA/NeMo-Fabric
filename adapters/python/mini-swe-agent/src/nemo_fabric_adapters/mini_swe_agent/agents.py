@@ -187,7 +187,9 @@ class RelayRetainingDefaultAgent(RetainingDefaultAgent):
         metadata: dict[str, Any] = {"status": "succeeded"}
         try:
             message = super().query()
-            response = _relay_response(message)
+            response = _relay_response(
+                message, include_cost=self.model.config.cost_tracking != "ignore_errors"
+            )
             return message
         except Exception as error:
             response = _relay_exception_response(error)
@@ -266,7 +268,7 @@ class RelayRetainingDefaultAgent(RetainingDefaultAgent):
             self._record_relay_error(error)
 
 
-def _relay_response(message: dict[str, Any]) -> Any:
+def _relay_response(message: dict[str, Any], *, include_cost: bool = True) -> Any:
     extra = message.get("extra", {})
     response = extra.get("response")
     if not isinstance(response, dict):
@@ -274,7 +276,7 @@ def _relay_response(message: dict[str, Any]) -> Any:
 
     response = deepcopy(response)
     cost = extra.get("cost")
-    if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+    if include_cost and isinstance(cost, (int, float)) and not isinstance(cost, bool):
         usage = response.setdefault("usage", {})
         if isinstance(usage, dict):
             usage.setdefault("cost", float(cost))

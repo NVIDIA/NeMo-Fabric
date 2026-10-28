@@ -18,7 +18,14 @@
       "base_url": {"type": "string", "minLength": 1},
       "settings": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "cost_tracking": {
+            "type": "string",
+            "enum": ["default", "disabled"],
+            "default": "default",
+            "description": "Use strict SDK pricing, or explicitly disable monetary budgeting for unpriced models. Disabled requires a positive runtime.max_turns; cost remains unavailable."
+          }
+        },
         "additionalProperties": false
       }
     },
@@ -46,6 +53,7 @@
       "models.temperature",
       "models.top_p",
       "models.max_tokens",
+      "models.settings",
       "instructions.system",
       "runtime.max_turns"
     ],

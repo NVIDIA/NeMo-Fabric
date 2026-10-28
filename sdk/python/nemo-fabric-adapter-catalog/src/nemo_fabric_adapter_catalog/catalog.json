@@ -1567,6 +1567,7 @@
             "models.temperature",
             "models.top_p",
             "models.max_tokens",
+            "models.settings",
             "instructions.system",
             "runtime.max_turns"
           ],
@@ -1601,7 +1602,17 @@
             },
             "settings": {
               "additionalProperties": false,
-              "properties": {},
+              "properties": {
+                "cost_tracking": {
+                  "default": "default",
+                  "description": "Use strict SDK pricing, or explicitly disable monetary budgeting for unpriced models. Disabled requires a positive runtime.max_turns; cost remains unavailable.",
+                  "enum": [
+                    "default",
+                    "disabled"
+                  ],
+                  "type": "string"
+                }
+              },
               "type": "object"
             },
             "temperature": {
@@ -1653,7 +1664,7 @@
         "name": "nemo-fabric-adapters-mini-swe-agent",
         "version": "0.6.0"
       },
-      "sha256": "40ee9364117fd6d4d1fe4e9a822ecd7b9022a5f0f8053d8b550d065e3726df37",
+      "sha256": "0376c8157a33047343919603e1e1ec53df25f177fa4486b2f79dc40417ccba11",
       "source": "adapters/python/mini-swe-agent/mini-swe-agent.fabric-adapter.json"
     },
     "nvidia.fabric.nooa": {
