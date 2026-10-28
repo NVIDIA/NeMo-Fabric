@@ -164,7 +164,7 @@ while clearing unrelated parent-process secrets.
 
 ## Relay Integration
 
-Relay requires a NeMo Relay CLI in the `>=0.11,<0.12` range on `PATH`. The
+Relay requires a NeMo Relay CLI in the `>=0.9,<0.12` range on `PATH`. The
 Codex adapter does not provide a separate `relay` extra; its `harness` and
 `full` extras install the compatible CLI through `nemo-relay-cli-bin`. The root
 `nemo-fabric[relay]` extra installs only the Relay Python package.

@@ -144,16 +144,20 @@ jobs:
           uv pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0"
           uv run --no-sync pytest tests/adapters/test_openhands.py -k test_invoke_condenses_history_and_counts_summary_usage -q
 
-  relay-0-11:
-    name: Relay 0.11.0 (Python 3.12, linux-amd64)
-    # Keep the first supported 0.11 release covered as locks advance to patches.
+  relay-cli:
+    name: Relay CLI ${{ matrix.relay-cli-version }} (Python 3.12, linux-amd64)
+    # Cover supported CLI releases while keeping the Python SDK on its locked version.
+    strategy:
+      fail-fast: false
+      matrix:
+        relay-cli-version: ["0.9.0", "0.10.0", "0.11.0"]
     if: ${{ (inputs.ref_type || github.ref_type) != 'tag' && !inputs.skip_tests }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
     env:
-      RELAY_VERSION: 0.11.0
+      RELAY_CLI_VERSION: ${{ matrix.relay-cli-version }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -204,8 +208,8 @@ jobs:
           npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-pi
           npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro
 
-      - name: Install Relay ${{ env.RELAY_VERSION }}
-        run: uv pip install --python .venv/bin/python "nemo-relay==${RELAY_VERSION}" "nemo-relay-cli-bin==${RELAY_VERSION}"
+      - name: Install Relay CLI ${{ env.RELAY_CLI_VERSION }}
+        run: uv pip install --python .venv/bin/python "nemo-relay-cli-bin==${RELAY_CLI_VERSION}"
 
       - name: Run pytest
         run: |
@@ -412,8 +416,8 @@ jobs:
 
   build-wheels:
     name: Build wheels (${{ matrix.platform }})
-    needs: [test, relay-0-11, hermes]
-    if: ${{ always() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.relay-0-11.result == 'success' || needs.relay-0-11.result == 'skipped') && (needs.hermes.result == 'success' || needs.hermes.result == 'skipped') }}
+    needs: [test, relay-cli, hermes]
+    if: ${{ always() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.relay-cli.result == 'success' || needs.relay-cli.result == 'skipped') && (needs.hermes.result == 'success' || needs.hermes.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:

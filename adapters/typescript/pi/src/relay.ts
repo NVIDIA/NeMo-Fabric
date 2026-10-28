@@ -29,9 +29,9 @@ import {
 import { relayHttpModelConfig } from "./relay-http.js";
 
 const RELAY_INSTALL_COMMAND =
-  'Install "nemo-relay-cli-bin>=0.11.0,<0.12.0" and ensure nemo-relay is on PATH';
+  'Install "nemo-relay-cli-bin>=0.9.0,<0.12.0" and ensure nemo-relay is on PATH';
 const RELAY_EXTENSION_REMEDIATION =
-  "set harness.settings.relay_extension_path to the NeMo Relay 0.11 Pi extension file or package directory";
+  "set harness.settings.relay_extension_path to the Pi extension file or package directory from the installed NeMo Relay CLI release";
 const RELAY_ENV_NAMES = [
   "NEMO_RELAY_PI_COMMAND",
   "NEMO_RELAY_PI_GATEWAY_URL",

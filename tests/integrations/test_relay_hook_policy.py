@@ -27,7 +27,9 @@ def test_generated_hook_delivery_failure_policy(
     executable = shutil.which("nemo-relay")
     if executable is None:
         pytest.skip("NeMo Relay CLI is not installed")
-    relay_cli_contract(Path(executable))
+    contract = relay_cli_contract(Path(executable))
+    if event == "PreToolUse" and contract.version < (0, 11, 0):
+        expected_status = 1
     # Reserve an unused loopback port, then close it so delivery fails promptly.
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))

@@ -45,10 +45,10 @@ The full build installs the required dependencies.
 
 ### Install NeMo Relay
 
-Relay-enabled Pi runs require `nemo-relay>=0.11.0,<0.12.0`. Install the command-line tool:
+Relay-enabled Pi runs require a NeMo Relay CLI in the `>=0.9.0,<0.12.0` range. Install the command-line tool:
 
 ```bash
-pip install "nemo-relay-cli-bin>=0.11.0,<0.12.0"
+pip install "nemo-relay-cli-bin>=0.9.0,<0.12.0"
 ```
 
 The adapter finds `nemo-relay` on `PATH` by default. To select a specific executable, set `FABRIC_NEMO_RELAY_COMMAND` to its absolute path:
@@ -240,7 +240,7 @@ adapter process, so concurrent NeMo Fabric runtimes remain isolated. Direct
 embedders must likewise place concurrent Relay-enabled Pi runtimes in separate
 processes.
 
-The Relay 0.11 Pi extension emits `turn_end` and closes the per-turn
+The matching Relay Pi extension emits `turn_end` and closes the per-turn
 scope, but its local ATIF trajectory remains attached to Pi's session-level
 agent scope. Relay therefore finalizes that trajectory only after the Pi session
 closes. It is not included in the invocation's `relay_artifacts`. The adapter

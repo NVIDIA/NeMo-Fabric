@@ -111,7 +111,7 @@ async def main() -> None:
     parser.add_argument(
         "--pi-relay-extension-path",
         metavar="PATH",
-        help="Path to the NeMo Relay 0.11 Pi extension file or package directory.",
+        help="Path to the Pi extension file or package directory from the installed NeMo Relay CLI release.",
     )
     skill_group = parser.add_mutually_exclusive_group()
     skill_group.add_argument(

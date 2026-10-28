@@ -2320,8 +2320,8 @@ requires-dist = [
     { name = "claude-agent-sdk", marker = "extra == 'harness'", specifier = "==0.2.165" },
     { name = "nemo-fabric-adapter-contract", editable = "adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/python/common" },
-    { name = "nemo-relay-cli-bin", marker = "extra == 'full'", specifier = ">=0.11,<0.12" },
-    { name = "nemo-relay-cli-bin", marker = "extra == 'harness'", specifier = ">=0.11,<0.12" },
+    { name = "nemo-relay-cli-bin", marker = "extra == 'full'", specifier = ">=0.9,<0.12" },
+    { name = "nemo-relay-cli-bin", marker = "extra == 'harness'", specifier = ">=0.9,<0.12" },
     { name = "tomli-w", specifier = "~=1.2" },
 ]
 provides-extras = ["harness", "full"]
@@ -2346,8 +2346,8 @@ harness = [
 requires-dist = [
     { name = "nemo-fabric-adapter-contract", editable = "adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/python/common" },
-    { name = "nemo-relay-cli-bin", marker = "extra == 'full'", specifier = ">=0.11,<0.12" },
-    { name = "nemo-relay-cli-bin", marker = "extra == 'harness'", specifier = ">=0.11,<0.12" },
+    { name = "nemo-relay-cli-bin", marker = "extra == 'full'", specifier = ">=0.9,<0.12" },
+    { name = "nemo-relay-cli-bin", marker = "extra == 'harness'", specifier = ">=0.9,<0.12" },
     { name = "openai-codex", marker = "extra == 'full'", specifier = "==0.154.0" },
     { name = "openai-codex", marker = "extra == 'harness'", specifier = "==0.154.0" },
     { name = "tomli-w", specifier = "~=1.2" },

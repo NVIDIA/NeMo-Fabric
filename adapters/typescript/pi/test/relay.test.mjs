@@ -85,8 +85,8 @@ class MockChild extends EventEmitter {
   }
 }
 
-test("accepts only stable NeMo Relay 0.11 CLI versions", async () => {
-  for (const version of ["0.11.0", "0.11.7", "0.11.0+build.4"]) {
+test("accepts only stable NeMo Relay 0.9 through 0.11 CLI versions", async () => {
+  for (const version of ["0.9.0", "0.9.4", "0.10.0", "0.11.0", "0.11.7", "0.11.0+build.4"]) {
     const contract = await relayCliContract("nemo-relay", async () => ({
       stdout: `nemo-relay ${version}\n`,
       exitCode: 0,
@@ -94,13 +94,13 @@ test("accepts only stable NeMo Relay 0.11 CLI versions", async () => {
     const [, minor, patch] = version.split("+")[0].split(".").map(Number);
     assert.deepEqual(contract.version, [0, minor, patch]);
   }
-  for (const version of ["0.8.9", "0.9.4", "0.10.0", "0.12.0", "1.0.0", "0.11.0-rc.3"]) {
+  for (const version of ["0.8.9", "0.9.0-alpha.1", "0.10.0-rc.1", "0.12.0", "1.0.0", "0.11.0-rc.3"]) {
     await assert.rejects(
       relayCliContract("nemo-relay", async () => ({
         stdout: `nemo-relay ${version}\n`,
         exitCode: 0,
       })),
-      />=0\.11\.0,<0\.12\.0/,
+      />=0\.9\.0,<0\.12\.0/,
     );
   }
   await assert.rejects(
@@ -1206,7 +1206,7 @@ test("maps Relay setup failures to stable Pi adapter errors", async () => {
       }).start(input, model),
       (error) =>
         error.code === "pi_relay_unavailable" &&
-        error.message.includes('Install "nemo-relay-cli-bin>=0.11.0,<0.12.0"') &&
+        error.message.includes('Install "nemo-relay-cli-bin>=0.9.0,<0.12.0"') &&
         error.metadata.relay_error === "missing",
     );
     await assert.rejects(

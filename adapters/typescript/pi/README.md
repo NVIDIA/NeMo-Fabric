@@ -31,7 +31,7 @@ The adapter supports:
 - Explicit local `.ts` or `.js` extension files contained by the NeMo Fabric
   workspace
 - Slash commands registered by those explicit extensions
-- NeMo Relay 0.11 telemetry through a runtime-owned gateway and an explicitly
+- NeMo Relay 0.9–0.11 telemetry through a runtime-owned gateway and an explicitly
   configured Relay Pi extension
 - Live model-turn ATOF records for successful Relay redirects through the
   default embedded NeMo Fabric collector. Startup `model_redirect` marks remain
@@ -83,10 +83,10 @@ The full build installs the required dependencies.
 
 ### Install NeMo Relay
 
-Relay-enabled Pi runs require `nemo-relay>=0.11.0,<0.12.0`. Install the command-line tool:
+Relay-enabled Pi runs require a NeMo Relay CLI in the `>=0.9.0,<0.12.0` range. Install the command-line tool:
 
 ```bash
-pip install "nemo-relay-cli-bin>=0.11.0,<0.12.0"
+pip install "nemo-relay-cli-bin>=0.9.0,<0.12.0"
 ```
 
 The adapter finds `nemo-relay` on `PATH` by default. To select a specific executable, set `FABRIC_NEMO_RELAY_COMMAND` to its absolute path:

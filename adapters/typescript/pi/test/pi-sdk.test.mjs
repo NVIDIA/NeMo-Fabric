@@ -899,7 +899,7 @@ test("reports an adapter-injected Relay extension load failure separately", asyn
       }),
       (error) =>
         error.code === "pi_relay_extension_load_failed" &&
-        error.message.includes("NeMo Relay 0.11 release") &&
+        error.message.includes("installed NeMo Relay CLI release") &&
         error.metadata.relay_error.length > 0,
     );
     assert.equal(relayStopped, true);

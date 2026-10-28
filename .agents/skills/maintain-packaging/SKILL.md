@@ -71,7 +71,7 @@ commitment.
   `nemo-fabric-collector` distribution. The metapackage `streaming` extra must
   delegate to the version-matched runtime extra. Do not expose a separate
   metapackage `collector` extra.
-- Relay integrations use `>=0.11,<0.12` for the Python binding and CLI. Hermes keeps `>=0.10,<0.11` to match the pinned upstream harness. Keep Hermes in its separate Python 3.14 environment; preserve the independent Hermes compatibility check when updating the shared Relay range.
+- Relay integrations use `>=0.11,<0.12` for the Python binding and `>=0.9,<0.12` for the CLI. Hermes keeps `>=0.10,<0.11` to match the pinned upstream harness. Keep Hermes in its separate Python 3.14 environment; preserve the independent Hermes compatibility check when updating the shared Relay range.
 - Keep credential-free HTTP model host support aligned across the Claude, Codex, and Pi descriptors and Relay config writers. Exact host trust uses `harness.settings.insecure_http_model_hosts`; an explicit empty list clears inherited trust. Regenerate embedded descriptors and the adapter catalog when settings change.
 - Keep leaf adapters adapter-only by default. Every leaf provides `full`, and
   every package-installable harness provides `harness`. The Hermes adapter omits

@@ -274,7 +274,7 @@ Fabric 0.6 uses these Relay versions:
 
 | Integration | Relay version | Installation |
 | --- | --- | --- |
-| Claude, Codex, Pi | `>=0.11,<0.12` | CLI and matching Pi extension where required |
+| Claude, Codex, Pi | `>=0.9,<0.12` | CLI and matching Pi extension where required |
 | Deep Agents, mini-SWE-agent, NOOA, NOOA Bench | `>=0.11,<0.12` | Python package |
 | Hermes Agent | `>=0.10,<0.11` | Python package in a separate Hermes environment |
 | Remote Agent | Service-owned | Match the remote service's supported Relay version |
@@ -313,11 +313,11 @@ NeMo Fabric uses runtime-owned Relay configuration. Remove or relocate a user `p
 
 #### Upgrade to Relay 0.11
 
-Use the same 0.11 release for the Relay Python package, CLI, and Pi extension. Keep Hermes on Relay 0.10 in its separate environment. Restart existing runtimes after the upgrade so each gateway and extension uses the selected release.
+The Relay Python package requires 0.11. Claude, Codex, and Pi support stable CLI releases from 0.9 through 0.11. The Pi extension must match the selected CLI release. The `insecure_http_model_hosts` setting requires CLI 0.11. Keep Hermes on Relay 0.10 in its separate environment. Restart existing runtimes after the upgrade so each gateway and extension uses the selected release.
 
 Relay gateways require HTTPS for remote model endpoints by default, including private network and Kubernetes Service addresses. Plain HTTP remains available for loopback endpoints. To trust a credential-free remote HTTP model endpoint, set `harness.settings.insecure_http_model_hosts` to its exact hostname or IP address. Prompts and responses travel unencrypted, and Relay strips credential headers before forwarding. Relay 0.11 also requires HTTPS for remote telemetry collectors. Use HTTPS when model requests or telemetry contain credentials or sensitive content.
 
-Fabric generates a `PreToolUse` check for Claude and Codex. If Relay cannot check the tool call, the hook blocks the operation with exit code 2. Lifecycle hooks allow execution to continue when telemetry delivery fails. Guardrail denials return exit code 2 under both policies. The harness hook timeout is 45 seconds, which leaves a margin around Relay's 30-second delivery timeout.
+Fabric generates a `PreToolUse` check for Claude and Codex. With Relay 0.11, a delivery failure blocks the operation with exit code 2. Relay 0.9 and 0.10 return exit code 1 for delivery failures; harness handling follows the harness policy for that status. Lifecycle hooks allow execution to continue when telemetry delivery fails. Guardrail denials return exit code 2 under both policies. The harness hook timeout is 45 seconds, which leaves a margin around Relay's 30-second delivery timeout.
 
 #### Migrate Relay Observability Configurations to Version 4
 
@@ -348,10 +348,10 @@ removed `RelayOtlpConfig` model with `RelayOpenTelemetryConfig` and one or more
 
 Claude and Codex harness extras install their compatible CLI binary without
 the Relay Python package. Pi requires a separate CLI installation alongside
-the npm adapter. Install the `>=0.11,<0.12` range:
+the npm adapter. Install the `>=0.9,<0.12` range:
 
 ```bash
-pip install "nemo-relay-cli-bin>=0.11,<0.12"
+pip install "nemo-relay-cli-bin>=0.9,<0.12"
 ```
 
 If `cargo-binstall` is available, install the pinned CLI with Cargo:
@@ -361,7 +361,7 @@ cargo binstall nemo-relay-cli --version 0.11.0
 ```
 
 After installation, run `nemo-relay --version` and confirm the version is in
-the `>=0.11,<0.12` range. When Relay is enabled with
+the `>=0.9,<0.12` range. When Relay is enabled with
 `FabricConfig.enable_relay(...)`, the Claude, Codex, and Pi adapters start and
 supervise the CLI gateway automatically.
 
