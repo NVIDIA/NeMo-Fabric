@@ -49,6 +49,7 @@ HEALTH_CHECK_FAILURE_THRESHOLD = 3
 OPENCLAW_CHAT_MODEL = "openclaw/default"
 OPENCLAW_SERVICE_TYPE = "openclaw_gateway"
 OPENCLAW_ADAPTER_ID = "nvidia.fabric.openclaw"
+OPENCLAW_USAGE_EVIDENCE = "nvidia.fabric.openclaw.usage_evidence.v1"
 SUPPORTED_OPENCLAW_VERSIONS = frozenset({"2026.9.34"})
 MAX_PORT_ATTEMPTS = 20
 MAX_DERIVED_PORT_OFFSET = 110
@@ -104,6 +105,8 @@ def _validate_attach_config(config: contract.AgentConfig) -> None:
         unsupported.append("models.base_url")
     if model.api_key_env is not None:
         unsupported.append("models.api_key_env")
+    if "supports_usage_in_streaming" in model.settings:
+        unsupported.append("models.settings.supports_usage_in_streaming")
     if config.tools is not None:
         unsupported.append("tools")
     if config.mcp is not None and config.mcp.servers:
@@ -461,6 +464,15 @@ def _openclaw_config(
 ) -> dict[str, Any]:
     model = _selected_model(config)
     model_id = _model_id(model)
+    streaming_usage = model.settings.get("supports_usage_in_streaming")
+    if "supports_usage_in_streaming" in model.settings and (
+        type(streaming_usage) is not bool or model.base_url is None
+    ):
+        raise lifecycle.LifecycleError(
+            "openclaw_invalid_configuration",
+            "OpenClaw supports_usage_in_streaming must be a boolean and requires models.base_url",
+            metadata={"field": "models.settings.supports_usage_in_streaming"},
+        )
     model_ref = f"{model.provider}/{model_id}"
     params = {
         key: value
@@ -533,6 +545,10 @@ def _openclaw_config(
         )
         if model.max_tokens is not None:
             provider["models"][0]["maxTokens"] = model.max_tokens
+        if streaming_usage is not None:
+            provider["models"][0]["compat"] = {
+                "supportsUsageInStreaming": streaming_usage
+            }
     if model.api_key_env is not None:
         provider["apiKey"] = {
             "source": "env",
@@ -565,8 +581,8 @@ async def _invoke_gateway(
     max_tokens: int | None,
     user: str,
     agent_id: str = "default",
-) -> tuple[str, contract.AgentUsage | None]:
-    return await openai_chat.invoke(
+) -> tuple[str, contract.AgentUsage]:
+    text, usage = await openai_chat.invoke(
         client,
         url,
         model=f"openclaw/{agent_id}",
@@ -575,6 +591,36 @@ async def _invoke_gateway(
         top_p=top_p,
         max_tokens=max_tokens,
         user=user,
+    )
+    return text, _gateway_usage_evidence(usage)
+
+
+def _gateway_usage_evidence(
+    usage: contract.AgentUsage | None,
+) -> contract.AgentUsage:
+    # OpenClaw 2026.9.4's public endpoint falls back from aggregate usage to
+    # the last model call, and synthesizes zero counters when both are missing.
+    # The response does not identify which source it used.
+    observed = (
+        {
+            key: value
+            for key, value in {
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "total_tokens": usage.total_tokens,
+            }.items()
+            if value is not None
+        }
+        if usage is not None
+        else {}
+    )
+    gaps = ["scope_unverified"]
+    if not observed:
+        gaps.append("missing_usage")
+    elif not any(observed.values()):
+        gaps.append("zero_unverified")
+    return contract.AgentUsage(
+        extensions={OPENCLAW_USAGE_EVIDENCE: {"observed": observed, "gaps": gaps}}
     )
 
 

@@ -1895,6 +1895,56 @@
           ]
         },
         "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "usage": {
+            "additionalProperties": false,
+            "properties": {
+              "nvidia.fabric.openclaw.usage_evidence.v1": {
+                "additionalProperties": false,
+                "properties": {
+                  "gaps": {
+                    "items": {
+                      "enum": [
+                        "scope_unverified",
+                        "missing_usage",
+                        "zero_unverified"
+                      ]
+                    },
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "observed": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "input_tokens": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "output_tokens": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "total_tokens": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "observed",
+                  "gaps"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "nvidia.fabric.openclaw.usage_evidence.v1"
+            ],
+            "type": "object"
+          }
+        },
         "model_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -1921,7 +1971,12 @@
             },
             "settings": {
               "additionalProperties": false,
-              "properties": {},
+              "properties": {
+                "supports_usage_in_streaming": {
+                  "description": "Whether the configured custom OpenAI-compatible endpoint supports stream_options.include_usage. Requires base_url; omitted values retain OpenClaw capability detection.",
+                  "type": "boolean"
+                }
+              },
               "type": "object"
             },
             "temperature": {
@@ -2050,7 +2105,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.6.0"
       },
-      "sha256": "b2a9ef847226bc5858024776b50fb87c6d57cd4332accc6583aacb5d348a17f5",
+      "sha256": "bc95c4dfeee7638a490df68073543d8632b1eb7d9957c4874d72dd8522e99c56",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {

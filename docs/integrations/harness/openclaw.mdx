@@ -89,6 +89,21 @@ MCP configuration. Normalized MCP authentication is not supported. For a
 custom OpenAI-compatible endpoint, set the model's `base_url` and, when needed,
 `api_key_env`.
 
+For an endpoint that supports `stream_options.include_usage`, set
+`models.<role>.settings.supports_usage_in_streaming` to `true`. This maps to
+OpenClaw's native `compat.supportsUsageInStreaming` and requires `base_url`.
+Use `false` for an endpoint that rejects streaming usage, or omit the setting
+to retain OpenClaw's endpoint capability detection. Attached services own
+their model configuration and do not accept this setting.
+
+OpenClaw 2026.9.4's Gateway does not distinguish aggregate usage from its
+last-call fallback, and converts missing usage to zero counters. NeMo Fabric
+leaves standard complete counters unknown and preserves the Gateway's counts
+in `usage.extensions["nvidia.fabric.openclaw.usage_evidence.v1"].observed`.
+The evidence includes `scope_unverified` in `gaps`, plus `missing_usage` or
+`zero_unverified` when applicable. Reported counts do not establish complete
+coverage of retries, compaction, child agents, or background work.
+
 For a NeMo Fabric-owned service, `harness.settings.channel_config` accepts
 OpenClaw-native `channels` and `bindings`. This supports multiple accounts for
 Telegram and other OpenClaw channels without a NeMo Fabric-specific channel schema.

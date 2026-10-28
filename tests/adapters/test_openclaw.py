@@ -430,7 +430,11 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     request = json.loads(request_capture.read_text(encoding="utf-8"))
     assert result.status == "succeeded"
     assert result.output == {"response": "OpenClaw response"}
-    assert result.usage.total_tokens == 5
+    assert result.usage.total_tokens is None
+    assert result.usage.extensions[adapter.OPENCLAW_USAGE_EVIDENCE] == {
+        "observed": {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
+        "gaps": ["scope_unverified"],
+    }
     assert request == {
         "model": "openclaw/default",
         "messages": [
@@ -1848,3 +1852,113 @@ def test_openclaw_descriptor_and_module_entrypoint(repo_root: Path):
     assert descriptor["capabilities"]["streaming"] is False
     assert "telemetry" not in descriptor
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("supports_usage", [True, False, None])
+def test_openclaw_config_maps_streaming_usage_capability(
+    tmp_path: Path, supports_usage: bool | None
+):
+    config = _config(Path("openclaw"))
+    if supports_usage is not None:
+        config.models["default"].settings["supports_usage_in_streaming"] = (
+            supports_usage
+        )
+    generated = adapter._openclaw_config(
+        config, _context(tmp_path), base_dir=tmp_path, port=20000, token_env="TOKEN"
+    )
+    model = generated["models"]["providers"]["test"]["models"][0]
+    if supports_usage is None:
+        assert "compat" not in model
+    else:
+        assert model["compat"] == {"supportsUsageInStreaming": supports_usage}
+
+
+@pytest.mark.parametrize("value", [None, "true", 1])
+def test_openclaw_config_rejects_invalid_streaming_usage_capability(
+    tmp_path: Path, value
+):
+    config = _config(Path("openclaw"))
+    config.models["default"].settings["supports_usage_in_streaming"] = value
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        adapter._openclaw_config(
+            config, _context(tmp_path), base_dir=tmp_path, port=20000, token_env="TOKEN"
+        )
+    assert caught.value.code == "openclaw_invalid_configuration"
+
+
+def test_openclaw_streaming_usage_capability_requires_custom_endpoint(tmp_path: Path):
+    config = _config(Path("openclaw"))
+    config.models["default"].base_url = None
+    config.models["default"].settings["supports_usage_in_streaming"] = True
+    with pytest.raises(adapter.lifecycle.LifecycleError):
+        adapter._openclaw_config(
+            config, _context(tmp_path), base_dir=tmp_path, port=20000, token_env="TOKEN"
+        )
+
+
+@pytest.mark.parametrize(
+    ("counters", "observed", "gaps"),
+    [
+        (None, {}, ["scope_unverified", "missing_usage"]),
+        ({}, {}, ["scope_unverified", "missing_usage"]),
+        (
+            {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+            {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+            ["scope_unverified", "zero_unverified"],
+        ),
+        (
+            {"input_tokens": 42, "output_tokens": 8, "total_tokens": 50},
+            {"input_tokens": 42, "output_tokens": 8, "total_tokens": 50},
+            ["scope_unverified"],
+        ),
+    ],
+)
+def test_openclaw_gateway_usage_remains_observational(counters, observed, gaps):
+    from nemo_fabric_adapter_contract.models import AgentUsage
+
+    usage = adapter._gateway_usage_evidence(
+        AgentUsage(**counters) if counters is not None else None
+    )
+    assert usage.input_tokens is None
+    assert usage.output_tokens is None
+    assert usage.total_tokens is None
+    assert usage.cost_usd is None
+    assert usage.extensions == {
+        adapter.OPENCLAW_USAGE_EVIDENCE: {"observed": observed, "gaps": gaps}
+    }
+
+
+async def test_openclaw_gateway_stream_keeps_usage_observational():
+    import httpx
+
+    chunks = [
+        {"choices": [{"delta": {"content": "done"}}]},
+        {
+            "choices": [],
+            "usage": {"prompt_tokens": 42, "completion_tokens": 8, "total_tokens": 50},
+        },
+    ]
+    body = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks)
+    body += "data: [DONE]\n\n"
+    response = httpx.Response(
+        200, text=body, headers={"content-type": "text/event-stream"}
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: response)
+    ) as client:
+        text, usage = await adapter._invoke_gateway(
+            client,
+            "http://gateway.example.test/v1/chat/completions",
+            messages=[{"role": "user", "content": "finish"}],
+            temperature=None,
+            top_p=None,
+            max_tokens=None,
+            user="runtime-test",
+        )
+    assert text == "done"
+    assert usage.input_tokens is None
+    assert usage.output_tokens is None
+    assert usage.extensions[adapter.OPENCLAW_USAGE_EVIDENCE] == {
+        "observed": {"input_tokens": 42, "output_tokens": 8, "total_tokens": 50},
+        "gaps": ["scope_unverified"],
+    }

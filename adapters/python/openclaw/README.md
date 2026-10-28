@@ -78,6 +78,24 @@ adapter generates an OpenClaw custom provider using the
 `openai-completions` API adapter. Set `api_key_env` when that provider requires
 an API key.
 
+If that endpoint supports `stream_options.include_usage`, set
+`models.<role>.settings.supports_usage_in_streaming` to `true`. This maps to
+the model's native `compat.supportsUsageInStreaming` setting; it requests
+usage from the model endpoint, separately from the Gateway's trailing usage
+chunk. Set it to `false` for endpoints that reject streaming usage, or omit
+it to retain OpenClaw's endpoint capability detection. This setting requires
+`base_url` and is unavailable when attaching to a deployment-owned service.
+
+OpenClaw 2026.9.4's Chat Completions Gateway can return aggregate usage or
+fall back to the last model call, and synthesizes zero counters when usage
+is missing. The response does not identify which source it used. The adapter
+therefore leaves standard complete usage counters unknown and preserves the
+reported counters under
+`usage.extensions["nvidia.fabric.openclaw.usage_evidence.v1"].observed`, with
+`scope_unverified` in `gaps`. Missing usage adds `missing_usage`; all-zero
+observations add `zero_unverified`. These observations do not establish
+complete accounting for retries, compaction, child agents, or background work.
+
 ### Harness Settings
 
 Only OpenClaw's default `openclaw` agent runtime is supported.
