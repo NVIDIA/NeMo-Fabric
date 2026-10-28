@@ -426,13 +426,16 @@ class OpenHandsRuntime:
         try:
             conversation.send_message(common_utils.normalize_user_input(request.input))
             await conversation.arun()
-        except Exception:
+        except Exception as error:
+            # ConversationRunError chains the SDK or provider error that ended the run.
+            cause = error.__cause__ or error
             return contract.AgentRunResult(
                 status=contract.AgentRunStatus.FAILED,
                 output=None,
                 error=contract.AgentRunError(
                     code="openhands_invocation_failed",
                     message="OpenHands could not complete the invocation.",
+                    extensions={"sdk_error": type(cause).__name__},
                 ),
                 usage=_usage(self._llm_instance, baseline),
             )
