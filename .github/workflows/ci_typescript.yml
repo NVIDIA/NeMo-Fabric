@@ -127,3 +127,15 @@ jobs:
           node --test
           --test-name-pattern='runs Relay and the shipped Pi extension over'
           adapters/typescript/pi/test/relay-smoke.test.mjs
+
+      - name: Test released Relay Pi smoke over trusted remote HTTP
+        if: matrix.node-version == '22.19.0'
+        env:
+          FABRIC_TEST_NEMO_RELAY_COMMAND: ${{ runner.temp }}/nemo-relay-bin/nemo-relay
+        run: |
+          FABRIC_TEST_HTTP_MODEL_HOST="$(hostname -I | awk '{print $1}')"
+          test -n "$FABRIC_TEST_HTTP_MODEL_HOST"
+          export FABRIC_TEST_HTTP_MODEL_HOST
+          node --test \
+            --test-name-pattern='runs Relay and the shipped Pi extension over' \
+            adapters/typescript/pi/test/relay-smoke.test.mjs

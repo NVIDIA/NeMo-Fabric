@@ -12,7 +12,7 @@ variables plus values explicitly configured in `environment.env` or named by
 `environment.env_names`.
 
 The adapter package's `harness` and `full` extras pin
-`claude-agent-sdk==0.2.165`. Use the same version for an environment-managed
+`claude-agent-sdk==0.2.166`. Use the same version for an environment-managed
 SDK. The SDK owns and selects its compatible Claude Code runtime.
 
 ## Install the Adapter
@@ -176,6 +176,8 @@ Anthropic upstream, and reuses the gateway across ordered invocations.
 gateway is scoped to that single invocation. Claude still resolves its credential
 through the selected mode, and NeMo Fabric does not write authentication values
 to Relay configuration or artifacts.
+
+Claude `PreToolUse` hooks set `onFailure: "block"` to block tool calls when the Relay hook fails to start, crashes, or times out. This requires Claude Code 2.1.295 or later. The pinned `claude-agent-sdk==0.2.166` bundles Claude Code 2.1.299.
 
 NeMo Fabric supports the external NeMo Relay CLI in the `>=0.9,<0.12` range.
 NeMo Fabric's `relay` extra installs only the Relay Python library and does not

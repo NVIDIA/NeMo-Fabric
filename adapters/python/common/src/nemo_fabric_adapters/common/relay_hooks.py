@@ -80,7 +80,7 @@ def render_relay_hooks(
     command = f"{executable_arg} hook-forward {agent}"
     hooks: dict[str, list[dict[str, Any]]] = {}
     for event in RELAY_HOOK_EVENTS[agent]:
-        # Tool checks block on delivery failure; lifecycle telemetry can continue.
+        # Relay reports tool-check delivery failures; the host handles process failures.
         failure_policy = "--fail-closed" if event == "PreToolUse" else "--fail-open"
         group: dict[str, Any] = {
             "hooks": [
@@ -91,6 +91,8 @@ def render_relay_hooks(
                 }
             ]
         }
+        if agent == "claude" and event == "PreToolUse":
+            group["hooks"][0]["onFailure"] = "block"
         if event in RELAY_TOOL_HOOK_EVENTS[agent]:
             group["matcher"] = "*"
         hooks[event] = [group]

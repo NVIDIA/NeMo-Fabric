@@ -54,6 +54,15 @@ def test_relay_http_hosts_preserve_absence_and_explicit_revocation():
         ["[2001:db8::1]"],
         ["fe80::1%eth0"],
         ["2001:db8::g"],
+        ["user@model.test"],
+        ["model.test?x=1"],
+        ["model.test#frag"],
+        ["-model.test"],
+        ["model..test"],
+        ["a" * 64 + ".test"],
+        [".".join(["a" * 63] * 4)],
+        ["1.2.3.4.5"],
+        ["256.1.1.1"],
     ],
 )
 def test_relay_http_hosts_reject_invalid_trust(hosts):

@@ -111,3 +111,7 @@ def test_render_relay_hooks_enforces_tool_checks_with_delivery_timeout_margin(ag
         policy = "--fail-closed" if event == "PreToolUse" else "--fail-open"
         assert command["command"].endswith(f"hook-forward {agent} {policy}")
         assert command["timeout"] > 30
+        if agent == "claude" and event == "PreToolUse":
+            assert command["onFailure"] == "block"
+        else:
+            assert "onFailure" not in command

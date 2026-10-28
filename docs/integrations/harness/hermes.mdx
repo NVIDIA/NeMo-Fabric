@@ -31,7 +31,7 @@ NeMo Fabric, install only the bare adapter in the Hermes Agent environment:
 python -m pip install nemo-fabric-adapters-hermes
 ```
 
-The adapter's `relay` and `full` extras install `nemo-relay>=0.10,<0.11`. Install Hermes Agent separately in the same environment. Keep that environment separate from applications that use Relay 0.11 for other Fabric adapters. The adapter reports a compatibility error at startup if Relay telemetry is enabled with an unsupported Hermes or Relay installation.
+The adapter's `relay` and `full` extras install `nemo-relay>=0.10,<0.11`. Install Hermes Agent separately in the same environment. Keep that environment separate from applications that use Relay 0.11 for other NeMo Fabric adapters. The adapter reports a compatibility error at startup if Relay telemetry is enabled with an unsupported Hermes or Relay installation.
 
 For Relay telemetry or streaming in local NeMo Fabric development, run the
 following command from the repository root. The recipe checks out the merged,

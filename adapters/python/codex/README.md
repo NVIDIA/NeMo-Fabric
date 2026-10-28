@@ -169,6 +169,8 @@ Codex adapter does not provide a separate `relay` extra; its `harness` and
 `full` extras install the compatible CLI through `nemo-relay-cli-bin`. The root
 `nemo-fabric[relay]` extra installs only the Relay Python package.
 
+Codex 0.154.0 can continue a tool call when a Relay hook fails to start, crashes, or times out. Relay 0.11 returns the blocking exit code 2 for delivery failures when the hook process completes. Relay 0.9 and 0.10 return exit code 1 for delivery failures, which Codex treats as a hook error and can continue past.
+
 Enable Relay with `FabricConfig.enable_relay(...)`. The adapter starts the
 installed `nemo-relay` CLI as a supervised sidecar; do not start the gateway
 separately. The 30-second readiness wait starts after gateway launch and covers

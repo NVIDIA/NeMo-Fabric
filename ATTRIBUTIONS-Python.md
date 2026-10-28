@@ -1651,7 +1651,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## claude-agent-sdk (0.2.165)
+## claude-agent-sdk (0.2.166)
 
 ### Licenses
 License: `MIT`

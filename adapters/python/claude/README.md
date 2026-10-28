@@ -9,7 +9,7 @@ The `nvidia.fabric.claude` adapter uses the official Claude Agent SDK for
 Python behind NeMo Fabric's normalized invocation contract. The SDK is an
 implementation detail; consumers select the Claude harness by adapter ID.
 
-The `harness` extra pins `claude-agent-sdk==0.2.165`; use the same version for an
+The `harness` extra pins `claude-agent-sdk==0.2.166`; use the same version for an
 environment-managed SDK. The SDK supplies a compatible Claude Code runtime.
 
 ## Install
@@ -159,6 +159,8 @@ Relay requires a NeMo Relay CLI in the `>=0.9,<0.12` range on `PATH`. The
 Claude adapter does not provide a separate `relay` extra; its `harness` and
 `full` extras install the compatible CLI through `nemo-relay-cli-bin`. The root
 `nemo-fabric[relay]` extra installs only the Relay Python package.
+
+Claude `PreToolUse` hooks set `onFailure: "block"` to block tool calls when the Relay hook fails to start, crashes, or times out. This requires Claude Code 2.1.295 or later. The pinned `claude-agent-sdk==0.2.166` bundles Claude Code 2.1.299.
 
 Enable Relay through the normalized NeMo Fabric configuration:
 

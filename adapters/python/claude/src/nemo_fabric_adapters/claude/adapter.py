@@ -1149,7 +1149,7 @@ class ClaudeRuntime:
 
         try:
             async with self._health_lock:
-                # SDK 0.2.165 does not remove cancelled control requests. Keep
+                # SDK 0.2.166 does not remove cancelled control requests. Keep
                 # at most one native request until its own bounded wait ends.
                 if self._health_task is not None:
                     await asyncio.wait({self._health_task})
