@@ -6612,7 +6612,7 @@ for line in sys.stdin:
     fn adapter_service_evidence_preserves_infrastructure_references() {
         let mut adapter = crate::ExecutionEvidence::gap("adapter", "fixture");
         adapter.append(crate::ExecutionEvidence::gap("service", "fixture"));
-        adapter.software_environments[1].status = crate::InventoryStatus::Available;
+        adapter.software_environments[1].status = crate::provenance::InventoryStatus::Available;
         adapter.software_environments[1].complete = true;
         adapter.software_environments[1].reason = None;
         let observation = serde_json::json!({
@@ -6835,7 +6835,7 @@ fn append_adapter_evidence(
     retained_service: Option<&crate::ExecutionEvidence>,
 ) {
     let has_service_inventory = adapter.software_environments.iter().any(|env| {
-        env.status == crate::InventoryStatus::Available
+        env.status == crate::provenance::InventoryStatus::Available
             && env
                 .participants
                 .iter()
