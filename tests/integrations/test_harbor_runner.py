@@ -302,9 +302,7 @@ def test_claude_calculator_run_uses_current_adapter_contract():
     assert '-e "/opt/nemo-fabric/sdk/python/nemo-fabric[' in dockerfile
     assert "nemo-fabric[claude,openclaw]" in dockerfile
     assert "node:24.22.1-bookworm-slim" in dockerfile
-    assert (
-        "npm install --global openclaw@2026.9.34 --allow-scripts=openclaw" in dockerfile
-    )
+    assert "npm install --global openclaw" not in dockerfile
     assert "@openai/codex" not in dockerfile
 
 
@@ -368,6 +366,10 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert "--model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" in calculator
     assert "--model anthropic/claude-sonnet-4-5" in calculator
     assert "fabric_adapter_id=nvidia.fabric.openclaw" in calculator
+    assert (
+        "--ak 'fabric_install_command=npm install --global openclaw@2026.9.34 --allow-scripts=openclaw'"
+        in calculator
+    )
     assert "fabric_adapter_id=nvidia.fabric.pi" in calculator
     pi_command = calculator.split("## 4. Pi", 1)[1].split("## 5. Codex", 1)[0]
     assert "fabric_max_turns" not in pi_command

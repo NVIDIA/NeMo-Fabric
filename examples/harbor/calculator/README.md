@@ -78,8 +78,7 @@ Expected Harbor summary: one trial, zero exceptions, and mean reward `1.000`.
 
 ## 2. OpenClaw
 
-The task image installs Node.js, OpenClaw, and the OpenClaw adapter. This run
-uses the NVIDIA API through OpenClaw's OpenAI-compatible provider.
+The task image includes Node.js and the OpenClaw adapter. To try OpenClaw, the following command explicitly installs OpenClaw 2026.9.34 inside each task container during agent setup with `fabric_install_command`. The shared image does not include the OpenClaw harness. This run requires npm registry access from the task container and uses the NVIDIA API through OpenClaw's OpenAI-compatible provider.
 
 ```bash
 : "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running OpenClaw}"
@@ -89,6 +88,7 @@ uv run --extra harbor harbor run \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning \
   --ak fabric_adapter_id=nvidia.fabric.openclaw \
+  --ak 'fabric_install_command=npm install --global openclaw@2026.9.34 --allow-scripts=openclaw' \
   --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
   --ak fabric_model_base_url=https://integrate.api.nvidia.com/v1 \
