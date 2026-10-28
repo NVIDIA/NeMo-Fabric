@@ -301,15 +301,55 @@
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
             "properties": {
-              "cache_read_tokens": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "cache_write_tokens": {
-                "minimum": 0,
-                "type": "integer"
+              "nvidia.fabric.cline.usage_evidence.v1": {
+                "additionalProperties": false,
+                "properties": {
+                  "gaps": {
+                    "items": {
+                      "enum": [
+                        "scope_unverified",
+                        "missing_usage",
+                        "zero_unverified",
+                        "cache_relationship_unverified"
+                      ]
+                    },
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "observed": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cache_write_input_tokens": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "cached_input_tokens": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "input_tokens": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "output_tokens": {
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "observed",
+                  "gaps"
+                ],
+                "type": "object"
               }
             },
+            "required": [
+              "nvidia.fabric.cline.usage_evidence.v1"
+            ],
             "type": "object"
           }
         },
@@ -363,7 +403,7 @@
         "name": "nemo-fabric-adapters-cline",
         "version": "0.6.0"
       },
-      "sha256": "7a5f2d99a36837819dddb8408e6b2a615875cfb0cdc822bbbde4401e0ec4670a",
+      "sha256": "6719842a087b68e7939f5dfea9f502ce1c70b1b4e6177d006780073b3ea4c99a",
       "source": "adapters/typescript/cline/cline.fabric-adapter.json"
     },
     "nvidia.fabric.codex": {

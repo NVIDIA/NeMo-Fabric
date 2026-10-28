@@ -9,6 +9,11 @@ import test from "node:test";
 
 import { ClineSdkSessionFactory } from "../dist/cline-sdk.js";
 
+const usageKey = "nvidia.fabric.cline.usage_evidence.v1";
+const observedUsage = (observed, gaps = ["scope_unverified"]) => ({
+  extensions: { [usageKey]: { observed, gaps } },
+});
+
 function input(overrides = {}) {
   return {
     agentName: "cline-test",
@@ -135,8 +140,8 @@ test("maps model, endpoint, credential, system instruction, and built-in tool po
     { sessionId: "cline-session-1", prompt: "one" },
     { sessionId: "cline-session-1", prompt: "two" },
   ]);
-  assert.deepEqual(first.usage, { input_tokens: 2, output_tokens: 3, total_tokens: 5, cost_usd: 0.5 });
-  assert.deepEqual(second.usage, { input_tokens: 4, output_tokens: 1, total_tokens: 5 });
+  assert.deepEqual(first.usage, observedUsage({ input_tokens: 2, output_tokens: 3 }));
+  assert.deepEqual(second.usage, observedUsage({ input_tokens: 4, output_tokens: 1 }));
   await handle.stop();
 });
 
@@ -293,20 +298,21 @@ test("maps Cline terminal finish reasons", async () => {
   assert.deepEqual(await handle.prompt("one"), {
     status: "aborted",
     text: "stopped",
-    usage: { input_tokens: 1, output_tokens: 0, total_tokens: 1 },
+    usage: observedUsage({ input_tokens: 1 }, ["scope_unverified", "zero_unverified"]),
     extensions: { session_id: "cline-session-1", finish_reason: "aborted" },
   });
   assert.deepEqual(await handle.prompt("two"), {
     status: "failed",
     text: "provider failed",
     errorMessage: "provider failed",
-    usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 },
+    usage: observedUsage({ input_tokens: 2, output_tokens: 1 }),
     extensions: { session_id: "cline-session-1", finish_reason: "error" },
   });
   assert.deepEqual(await handle.prompt("three"), {
     status: "failed",
     text: "iteration limit reached",
     errorMessage: "iteration limit reached",
+    usage: observedUsage({}, ["scope_unverified", "missing_usage"]),
     extensions: { session_id: "cline-session-1", finish_reason: "max_iterations" },
   });
   await handle.stop();
@@ -331,13 +337,12 @@ test("normalizes Cline usage and result metadata", async () => {
   assert.deepEqual(await handle.prompt("one"), {
     status: "completed",
     text: "done",
-    usage: {
+    usage: observedUsage({
       input_tokens: 7,
       output_tokens: 3,
-      total_tokens: 10,
-      cost_usd: 0.25,
-      extensions: { cache_read_tokens: 4, cache_write_tokens: 1 },
-    },
+      cached_input_tokens: 4,
+      cache_write_input_tokens: 1,
+    }, ["scope_unverified", "cache_relationship_unverified"]),
     extensions: {
       session_id: "cline-session-1",
       finish_reason: "completed",

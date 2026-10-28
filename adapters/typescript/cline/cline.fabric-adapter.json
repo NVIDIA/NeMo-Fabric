@@ -65,9 +65,31 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "cache_read_tokens": {"type": "integer", "minimum": 0},
-        "cache_write_tokens": {"type": "integer", "minimum": 0}
+        "nvidia.fabric.cline.usage_evidence.v1": {
+          "type": "object",
+          "properties": {
+            "observed": {
+              "type": "object",
+              "properties": {
+                "input_tokens": {"type": "integer", "minimum": 1},
+                "output_tokens": {"type": "integer", "minimum": 1},
+                "cached_input_tokens": {"type": "integer", "minimum": 1},
+                "cache_write_input_tokens": {"type": "integer", "minimum": 1}
+              },
+              "additionalProperties": false
+            },
+            "gaps": {
+              "type": "array",
+              "items": {"enum": ["scope_unverified", "missing_usage", "zero_unverified", "cache_relationship_unverified"]},
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          },
+          "required": ["observed", "gaps"],
+          "additionalProperties": false
+        }
       },
+      "required": ["nvidia.fabric.cline.usage_evidence.v1"],
       "additionalProperties": false
     }
   },

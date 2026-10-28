@@ -20,6 +20,7 @@ import type { ClinePromptOutcome, ClineSessionFactory, ClineSessionHandle } from
 
 const CLINE_HARNESS_INSTALL_COMMAND = "npm install @cline/sdk@0.0.83";
 const CLINE_PLUGIN_NAME = "nvidia.fabric.cline";
+const CLINE_USAGE_EVIDENCE = "nvidia.fabric.cline.usage_evidence.v1";
 const AGENT_PLUGIN_MANIFEST_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
 const AGENT_PLUGIN_MCP_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
 
@@ -371,9 +372,9 @@ async function validateRuntimePlugin(
   }
 }
 
-function normalizeUsage(usage: ClineUsage | undefined): AgentUsage | undefined {
+function normalizeUsage(usage: ClineUsage | undefined): AgentUsage {
   if (usage === undefined) {
-    return undefined;
+    return { extensions: { [CLINE_USAGE_EVIDENCE]: { observed: {}, gaps: ["scope_unverified", "missing_usage"] } } };
   }
   if (typeof usage !== "object" || usage === null) {
     throw new LifecycleError("cline_malformed_result", "Cline returned malformed usage metadata");
@@ -386,21 +387,20 @@ function normalizeUsage(usage: ClineUsage | undefined): AgentUsage | undefined {
   if (usage.totalCost !== undefined && (!Number.isFinite(usage.totalCost) || usage.totalCost < 0)) {
     throw new LifecycleError("cline_malformed_result", "Cline returned malformed usage metadata");
   }
-  const input = usage.inputTokens;
-  const output = usage.outputTokens;
-  if (input !== undefined && output !== undefined && !Number.isSafeInteger(input + output)) {
-    throw new LifecycleError("cline_malformed_result", "Cline returned malformed usage metadata");
-  }
-  const extensions: JsonObject = {
-    ...(usage.cacheReadTokens === undefined ? {} : { cache_read_tokens: usage.cacheReadTokens }),
-    ...(usage.cacheWriteTokens === undefined ? {} : { cache_write_tokens: usage.cacheWriteTokens }),
+  const observed: JsonObject = {
+    ...((usage.inputTokens ?? 0) > 0 ? { input_tokens: usage.inputTokens } : {}),
+    ...((usage.outputTokens ?? 0) > 0 ? { output_tokens: usage.outputTokens } : {}),
+    ...(usage.cacheReadTokens !== undefined && usage.cacheReadTokens > 0 ? { cached_input_tokens: usage.cacheReadTokens } : {}),
+    ...(usage.cacheWriteTokens !== undefined && usage.cacheWriteTokens > 0 ? { cache_write_input_tokens: usage.cacheWriteTokens } : {}),
   };
+  const gaps = ["scope_unverified"];
+  if (usage.inputTokens === undefined || usage.outputTokens === undefined) gaps.push("missing_usage");
+  if (usage.inputTokens === 0 || usage.outputTokens === 0 || usage.cacheReadTokens === 0 || usage.cacheWriteTokens === 0) {
+    gaps.push("zero_unverified");
+  }
+  if ((usage.cacheReadTokens ?? 0) > 0 || (usage.cacheWriteTokens ?? 0) > 0) gaps.push("cache_relationship_unverified");
   return {
-    ...(input === undefined ? {} : { input_tokens: input }),
-    ...(output === undefined ? {} : { output_tokens: output }),
-    ...(input === undefined || output === undefined ? {} : { total_tokens: input + output }),
-    ...(usage.totalCost === undefined ? {} : { cost_usd: usage.totalCost }),
-    ...(Object.keys(extensions).length === 0 ? {} : { extensions }),
+    extensions: { [CLINE_USAGE_EVIDENCE]: { observed, gaps } },
   };
 }
 
@@ -448,7 +448,7 @@ function normalizeResult(result: ClineResult | undefined, sessionId: string): Cl
     status,
     text: result.text,
     ...(status === "failed" && result.text.length > 0 ? { errorMessage: result.text } : {}),
-    ...(usage === undefined ? {} : { usage }),
+    usage,
     extensions: {
       session_id: sessionId,
       finish_reason: finishReason,
