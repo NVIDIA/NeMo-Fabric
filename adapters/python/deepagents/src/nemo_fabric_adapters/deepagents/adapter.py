@@ -277,6 +277,12 @@ def _local_shell_backend(**kwargs: Any) -> Any:
     class WorkspaceLocalShellBackend(LocalShellBackend):
         """Accept the shell's workspace paths without weakening virtual file checks."""
 
+        def _to_virtual_path(self, path: Path) -> str:
+            # Listings and searches must return paths the resolver reads back
+            # unambiguously, even if a nested path repeats the workspace prefix.
+            virtual = super()._to_virtual_path(path)
+            return str(self.cwd / virtual.lstrip("/"))
+
         def _resolve_path(self, key: str) -> Path:
             path = Path(key)
             if path.is_absolute():

@@ -1667,8 +1667,41 @@ def test_local_shell_backend_keeps_file_and_shell_path_namespaces_distinct(
 
 @pytest.mark.usefixtures("use_real_deepagents")
 @pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("filename", ["report.txt", "report ' $ `.txt"])
 def test_local_shell_file_tools_accept_physical_workspace_paths(
-    tmp_path, make_payload, nested
+    tmp_path, make_payload, nested, filename
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target = workspace / "nested" / filename if nested else workspace / filename
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["environment"]["workspace"] = str(workspace)
+    payload["runtime_context"]["environment"]["env"] = {
+        "FABRIC_TEST_TARGET": str(target)
+    }
+    backend = adapter.resolve_backend(
+        RuntimeContext.from_mapping(payload["runtime_context"]),
+        str(tmp_path),
+        {"type": "local_shell"},
+    )
+    result = backend.write(str(target), "same workspace")
+
+    assert result.error is None
+    assert target.read_text() == "same workspace"
+    shell = backend.execute(
+        f'"{sys.executable}" -c "import os; from pathlib import Path; '
+        "assert Path(os.environ['FABRIC_TEST_TARGET']).read_text() == 'same workspace'\""
+    )
+    assert shell.exit_code == 0
+    read = backend.read(str(target))
+    assert read.error is None
+    assert "same workspace" in read.file_data["content"]
+
+
+@pytest.mark.usefixtures("use_real_deepagents")
+@pytest.mark.parametrize("operation", ["ls", "glob", "grep"])
+def test_local_shell_listed_paths_round_trip_with_workspace_prefix(
+    tmp_path, make_payload, operation
 ):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -1679,20 +1712,35 @@ def test_local_shell_file_tools_accept_physical_workspace_paths(
         str(tmp_path),
         {"type": "local_shell"},
     )
-    target = workspace / "nested" / "report.txt" if nested else workspace / "report.txt"
+    outer = workspace / "report.txt"
+    outer.write_text("outer file")
+    # On POSIX, the native virtual path of this file equals the outer file's
+    # physical path. On Windows this also checks canonical output paths.
+    nested = workspace / Path(*backend.cwd.parts[1:]) / "report.txt"
+    nested.parent.mkdir(parents=True)
+    nested.write_text("nested file")
 
-    result = backend.write(str(target), "same workspace")
+    if operation == "ls":
+        result = backend.ls(str(nested.parent))
+        entries = result.entries
+    elif operation == "glob":
+        result = backend.glob("*.txt", path=str(nested.parent))
+        entries = result.matches
+    else:
+        result = backend.grep("nested file", path=str(nested.parent))
+        entries = result.matches
 
     assert result.error is None
-    assert target.read_text() == "same workspace"
-    shell = backend.execute(
-        f'"{sys.executable}" -c "from pathlib import Path; '
-        f"assert Path('{target.as_posix()}').read_text() == 'same workspace'\""
-    )
-    assert shell.exit_code == 0
-    read = backend.read(str(target))
+    assert len(entries) == 1
+    listed_path = entries[0]["path"]
+    read = backend.read(listed_path)
     assert read.error is None
-    assert "same workspace" in read.file_data["content"]
+    assert "nested file" in read.file_data["content"]
+    assert Path(listed_path) == nested.resolve()
+    edit = backend.edit(listed_path, "nested file", "edited nested file")
+    assert edit.error is None
+    assert nested.read_text() == "edited nested file"
+    assert outer.read_text() == "outer file"
 
 
 @pytest.mark.usefixtures("use_real_deepagents")

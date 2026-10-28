@@ -192,7 +192,21 @@ provides only its fallback path. Configure the required variables explicitly and
 use absolute executable paths when needed. The `execute` tool remains subject
 to `tools.enabled` and `tools.blocked`, like all other Deep Agents built-ins.
 
-With `local_shell`, file tools accept absolute paths inside `environment.workspace` as aliases for workspace files. For example, with workspace `/app`, both file-tool paths `/app/report.txt` and `/report.txt` refer to `/app/report.txt` on disk. Shell commands use host paths and start in the workspace, so `cat report.txt` and `cat /app/report.txt` read that file. File-tool traversal and symlink-escape checks remain enabled. Paths outside the workspace retain the existing virtual-root interpretation; they do not grant access to host files.
+With `local_shell`, file tools accept absolute paths inside
+`environment.workspace` as aliases for workspace files. For example, with
+workspace `/app`, both file-tool paths `/app/report.txt` and `/report.txt` refer
+to `/app/report.txt` on disk. Shell commands use host paths and start in the
+workspace, so `cat report.txt` and `cat /app/report.txt` read that file.
+
+Listings and searches return canonical physical paths inside the workspace.
+These paths identify the same file in subsequent reads and edits, even when a
+nested directory repeats the workspace prefix. For example, `/app/app/report.txt`
+remains distinct from `/app/report.txt`; the relative file-tool path
+`app/report.txt` also identifies the nested file.
+
+File-tool traversal and symlink-escape checks remain enabled. Paths outside the
+workspace retain the existing virtual-root interpretation; they do not grant
+access to host files.
 
 `subagents` accepts declarative synchronous subagents and Agent Protocol
 asynchronous subagents. A declarative subagent requires `name`, `description`,
