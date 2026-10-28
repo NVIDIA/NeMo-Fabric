@@ -151,6 +151,7 @@ async def test_harbor_fabric_agent_runs_nooa_bench_adapter(
     }
     assert result["usage"] == {
         "input_tokens": 12,
+        "input_tokens_include_cache": True,
         "output_tokens": 4,
         "total_tokens": 16,
         "metadata": {},
@@ -162,3 +163,5 @@ async def test_harbor_fabric_agent_runs_nooa_bench_adapter(
     assert context.metadata["fabric"]["adapter_id"] == (
         "nvidia.fabric.nooa.bench-agent"
     )
+    assert context.n_input_tokens == 12
+    assert context.n_output_tokens == 4
