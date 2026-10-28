@@ -113,3 +113,72 @@ assert result.execution.to_mapping() == report.to_mapping()
 assert not any(name.startswith("nemo_fabric_adapter_contract") for name in sys.modules)
 """
     subprocess.run([sys.executable, "-c", script], check=True)
+
+
+def test_sdk_evidence_accepts_mapping_snapshots():
+    from collections import UserDict
+    from nemo_fabric import ExecutionEvidence
+
+    wire = {
+        "software_environments": [
+            {
+                "context_ref": "env-0",
+                "participants": ["adapter"],
+                "status": "available",
+                "complete": True,
+                "entries": [],
+            }
+        ]
+    }
+    snapshot = ExecutionEvidence.from_mapping(wire)
+    assert ExecutionEvidence.from_mapping(snapshot).to_mapping() == wire
+    assert ExecutionEvidence.from_mapping(UserDict(wire)).to_mapping() == wire
+
+
+@pytest.mark.parametrize(
+    "model,wire",
+    [
+        ("SoftwareEntry", {}),
+        (
+            "SoftwareEntry",
+            {"role": "", "kind": "package", "name": "example", "version": {}},
+        ),
+        ("SoftwareEnvironment", {}),
+        (
+            "SoftwareEnvironment",
+            {
+                "context_ref": "env-0",
+                "participants": [],
+                "status": "available",
+                "complete": True,
+                "entries": [],
+            },
+        ),
+        (
+            "SoftwareEnvironment",
+            {
+                "context_ref": "env-0",
+                "participants": ["adapter"],
+                "status": "unavailable",
+                "complete": True,
+                "entries": [],
+            },
+        ),
+        (
+            "SoftwareEnvironment",
+            {
+                "context_ref": "env-0",
+                "participants": ["adapter"],
+                "status": "available",
+                "complete": False,
+                "entries": [],
+            },
+        ),
+    ],
+)
+def test_sdk_evidence_models_enforce_shared_invariants(model, wire):
+    import nemo_fabric
+    from nemo_fabric import FabricConfigError
+
+    with pytest.raises(FabricConfigError):
+        getattr(nemo_fabric, model).from_mapping(wire)

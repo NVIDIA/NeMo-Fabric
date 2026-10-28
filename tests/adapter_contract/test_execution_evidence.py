@@ -170,3 +170,15 @@ def test_adapter_evidence_and_validation_reexports_preserve_type_identity():
     report = evidence.ExecutionEvidence.from_mapping(json.loads(FIXTURE.read_text()))
     assert isinstance(report, ExecutionEvidence)
     assert isinstance(report, LegacyModel)
+
+
+def test_receive_typed_report_revalidates_wire_budget():
+    report = ExecutionEvidence.from_mapping(json.loads(FIXTURE.read_text()))
+    assert (
+        ExecutionEvidence.receive(report, "adapter").to_mapping() == report.to_mapping()
+    )
+    report.software_environments[0].entries[0].version.value = "x" * 70000
+    assert (
+        ExecutionEvidence.receive(report, "adapter").software_environments[0].reason
+        == "report_over_budget"
+    )

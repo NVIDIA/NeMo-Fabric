@@ -53,7 +53,7 @@ shapes; do not reconstruct the contract from examples.
 
 The language bindings preserve this boundary:
 
-- Python adapters use `nemo-fabric-adapter-contract` for dependency-free
+- Python adapters use `nemo-fabric-adapter-contract` for standard-library
   dataclasses and optional Pydantic models.
 - TypeScript adapters use `nemo-fabric-adapter-contract` for the descriptor,
   configuration, runtime-context, request, and result types, matching the

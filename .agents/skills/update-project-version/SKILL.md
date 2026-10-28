@@ -125,6 +125,8 @@ If editing the helper code, keep these contracts aligned:
 - `sdk/python/nemo-fabric/uv.lock`
 - `sdk/python/nemo-fabric-runtime/pyproject.toml`
 - `sdk/python/nemo-fabric-runtime/uv.lock`
+- `sdk/python/nemo-fabric-evidence/pyproject.toml`
+- `sdk/python/nemo-fabric-evidence/uv.lock`
 - `adapter-contract/python/pyproject.toml`
 - `adapter-contract/python/uv.lock`
 - `adapters/python/*/pyproject.toml`

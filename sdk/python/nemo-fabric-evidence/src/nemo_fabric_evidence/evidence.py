@@ -199,6 +199,8 @@ class ExecutionEvidence(ContractModel):
         if value is None:
             return cls.gap(participant, "report_missing")
         try:
+            if isinstance(value, cls):
+                value = value.to_mapping()
             # Check size before constructing nested typed values.
             if (
                 len(

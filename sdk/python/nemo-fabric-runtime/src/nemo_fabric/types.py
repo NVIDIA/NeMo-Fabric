@@ -2575,6 +2575,12 @@ class SoftwareEntry(FabricMapping):
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        from nemo_fabric_evidence.evidence import SoftwareEntry as Entry
+
+        try:
+            data = Entry.from_mapping(data).to_mapping()
+        except ValueError as error:
+            raise FabricConfigError(str(error)) from None
         data["version"] = VersionObservation.from_mapping(data["version"])
         return data
 
@@ -2594,6 +2600,12 @@ class SoftwareEnvironment(FabricMapping):
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        from nemo_fabric_evidence.evidence import SoftwareEnvironment as Environment
+
+        try:
+            data = Environment.from_mapping(data).to_mapping()
+        except ValueError as error:
+            raise FabricConfigError(str(error)) from None
         data["entries"] = tuple(
             SoftwareEntry.from_mapping(item) for item in data["entries"]
         )
@@ -2620,6 +2632,12 @@ class ExecutionEvidence(FabricMapping):
     def from_mapping(cls, mapping: Mapping[str, Any]) -> Self:
         from nemo_fabric_evidence.evidence import ExecutionEvidence as Report
 
+        try:
+            mapping = _mapping(mapping, cls.__name__)
+        except FabricConfigError:
+            return cls(
+                Report.gap("reporter", "report_invalid_or_over_budget").to_mapping()
+            )
         return cls(Report.receive(mapping, "reporter").to_mapping())
 
     @classmethod
