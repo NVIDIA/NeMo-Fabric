@@ -78,6 +78,41 @@ async def test_bridge_rejects_unsuccessful_result_and_preserves_evidence(
     assert context.metadata["fabric"]["runtime_id"] == "runtime-test"
 
 
+@pytest.mark.parametrize("failure", ["write", "replace"])
+async def test_optional_evidence_write_failure_preserves_downloaded_result(
+    bridge, monkeypatch, failure
+):
+    from pathlib import Path
+    from harbor.models.agent.context import AgentContext
+
+    agent, environment, document = bridge
+    original_write, original_replace = Path.write_text, Path.replace
+    injected = []
+
+    def write(path, content, *args, **kwargs):
+        if failure == "write" and path.parent.name.startswith(".fabric-result-"):
+            original_write(path, "partial write", *args, **kwargs)
+            injected.append(failure)
+            raise OSError("injected write failure")
+        return original_write(path, content, *args, **kwargs)
+
+    def replace(path, target):
+        if failure == "replace" and path.parent.name.startswith(".fabric-result-"):
+            injected.append(failure)
+            raise OSError("injected replace failure")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "write_text", write)
+    monkeypatch.setattr(Path, "replace", replace)
+    context = AgentContext()
+    await agent.run("test", environment, context)
+    assert injected == [failure]
+    assert json.loads(agent._result_path.read_text()) == document
+    assert not list(agent.logs_dir.glob(".fabric-result-*"))
+    agent.populate_context_post_run(context)
+    assert context.metadata["fabric"]["status"] == "succeeded"
+
+
 async def test_cancellation_takes_precedence_over_error_classification(bridge):
     from harbor.models.agent.context import AgentContext
 

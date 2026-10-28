@@ -61,7 +61,12 @@ async def test_direct_and_separate_venv_contexts_are_not_joined_by_equal_version
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await process.communicate()
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60)
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
     assert process.returncode == 0, (stdout + stderr).decode()
     os.environ["ADAPTER_PYTHON"] = str(python)
     result = await Fabric().run(
@@ -117,7 +122,12 @@ async def test_external_platform_payload_forwards_host_snapshot_to_real_guest_pr
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await command.communicate()
+    try:
+        stdout, stderr = await asyncio.wait_for(command.communicate(), timeout=60)
+    finally:
+        if command.returncode is None:
+            command.kill()
+            await command.wait()
     assert command.returncode == 0, (stdout + stderr).decode()
     result = RunResult.from_mapping(json.loads(output.read_text()))
     assert result.status == "succeeded"
@@ -319,6 +329,50 @@ def test_receiving_platform_boundary_restores_host_when_an_older_intermediary_dr
     )
     assert not restored["execution"]["software_environments"][-1]["complete"]
     capture_result("legacy-platform-receive-fixture", restored)
+
+
+@pytest.mark.parametrize("case", ["disabled", "retained", "conflicting_infrastructure"])
+def test_dispatch_restoration_controls_and_infrastructure(case):
+    from nemo_fabric.provenance import _restore_dispatch_evidence
+    from nemo_fabric_adapter_contract.metadata import combine
+
+    owner = json.loads((ROOT / "tests/fixtures/provenance/report.json").read_text())
+    owner["software_environments"][0]["participants"] = ["application", "caller_sdk"]
+    observation = owner["software_environments"][0]["entries"][0]["version"]
+    owner["infrastructure"] = {
+        "container": {
+            "context_refs": ["env-0"],
+            "engine": {**observation, "value": "fixture-engine"},
+            "engine_version": {**observation, "value": "1.0+owner"},
+        }
+    }
+    forwarded = ExecutionEvidence.from_mapping(owner)
+    guest = combine(
+        forwarded, ExecutionEvidence.gap("guest_sdk", "fixture")
+    ).to_mapping()
+    if case == "conflicting_infrastructure":
+        guest["infrastructure"]["container"]["engine_version"]["value"] = "2.0+guest"
+    original = {
+        "status": "failed",
+        "output": {"partial": True},
+        "error": {"code": "original"},
+    }
+    restored = _restore_dispatch_evidence(
+        {**copy.deepcopy(original), "execution": copy.deepcopy(guest)},
+        forwarded,
+        enabled=case != "disabled",
+    )
+    assert {key: restored[key] for key in original} == original
+    if case == "disabled":
+        assert "execution" not in restored
+    elif case == "retained":
+        assert restored["execution"] == guest
+        assert len(restored["execution"]["software_environments"]) == 2
+    else:
+        assert (
+            restored["execution"]["software_environments"][0]["reason"]
+            == "conflicting_infrastructure_reports"
+        )
 
 
 async def test_explicit_engine_owner_report_is_forwarded_without_a_probe(

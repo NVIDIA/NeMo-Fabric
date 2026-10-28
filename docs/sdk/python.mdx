@@ -1550,6 +1550,6 @@ OpenClaw service startup reports retain their original source and capture time w
 
 ### Calling Application Reports
 
-Calling applications and environment owners supply typed `ProvenanceConfig.reports` snapshots through the configuration already sent to Fabric. Capture them at application initialization and preserve their original `source`, `origin`, availability and `observed_at`. A guest never inspects its caller. Harbor implements this seam with `fabric_provenance`, whose shape matches the SDK control; `-a 'fabric_provenance={"enabled":false}'` disables collection before host initialization and propagates to the guest.
+Calling applications and environment owners supply typed `ProvenanceConfig.reports` snapshots through the configuration already sent to NeMo Fabric. Capture them at application initialization and preserve their original `source`, `origin`, availability and `observed_at`. A guest never inspects its caller. Harbor implements this seam with `fabric_provenance`, whose shape matches the SDK control; `--ak 'fabric_provenance={"enabled":false}'` disables collection before host initialization and propagates to the guest.
 
 The [software evidence example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/provenance) provides six execution-path checks, separate-venv runs, saved RunResults and private comparison fixtures. Its local provider/service fixtures are labeled separately from live deployments. Safe configuration capture is the P0 follow-up and is outside this software-version contract.

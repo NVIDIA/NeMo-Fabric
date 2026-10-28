@@ -14,6 +14,7 @@ import warnings
 from collections.abc import Mapping
 from pathlib import Path
 from pathlib import PurePosixPath
+from tempfile import TemporaryDirectory
 from typing import Any
 from typing import Literal
 from typing import NoReturn
@@ -549,9 +550,14 @@ else:
                     normalized = RunResult.from_mapping(document)
                     if document.get("execution") != original_execution:
                         try:
-                            host_result_path.write_text(
-                                json.dumps(document, indent=2), encoding="utf-8"
-                            )
+                            with TemporaryDirectory(
+                                dir=host_result_path.parent, prefix=".fabric-result-"
+                            ) as temporary:
+                                updated = Path(temporary) / host_result_path.name
+                                updated.write_text(
+                                    json.dumps(document, indent=2), encoding="utf-8"
+                                )
+                                updated.replace(host_result_path)
                         except OSError:
                             logging.getLogger(__name__).warning(
                                 "Could not persist optional software evidence in the existing Harbor result artifact"
