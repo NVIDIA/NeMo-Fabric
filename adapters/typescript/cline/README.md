@@ -98,7 +98,7 @@ Cline fills some unavailable counts with zero and does not prove that hidden
 retries are included. Every returned Cline result has a `scope_unverified` gap,
 even when Cline returns positive counts. The adapter therefore leaves complete
 token totals and provider-reported cost unknown. Harbor retains the observations
-in Fabric result metadata, while its complete token counters stay unknown.
+in NeMo Fabric result metadata, while its complete token counters stay unknown.
 
 The adapter accepts no Cline-specific `harness.settings`. Unsupported
 normalized fields, unknown settings, unknown built-in tool names, authenticated

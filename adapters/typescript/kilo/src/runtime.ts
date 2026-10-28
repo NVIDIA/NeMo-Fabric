@@ -16,8 +16,15 @@ import {
   type AdapterStartInput,
 } from "nemo-fabric-adapters-common";
 
-export interface KiloPromptOutcome { text?: string; error?: boolean; usage?: AgentUsage }
-export interface KiloSessionHandle { id: string; check(level: CheckLevel): Promise<AdapterCheckResult>; prompt(text: string): Promise<KiloPromptOutcome>; stop(): Promise<void> }
+/** Failed communication retains its usage snapshot while the session is retired. */
+export class KiloPromptError extends LifecycleError {
+  constructor(error: LifecycleError, readonly usage: AgentUsage) {
+    super(error.code, error.message, { retryable: error.retryable });
+  }
+}
+
+export interface KiloPromptOutcome { text?: string; error?: boolean; usage?: AgentUsage; messageId?: string }
+export interface KiloSessionHandle { id: string; check(level: CheckLevel): Promise<AdapterCheckResult>; prompt(text: string, deadlineMillis?: number): Promise<KiloPromptOutcome>; stop(): Promise<void> }
 export interface KiloSessionFactory { create(input: AdapterStartInput): Promise<KiloSessionHandle> }
 
 function failed(code: string, message: string, usage?: AgentUsage): AgentRunResult {
@@ -38,18 +45,19 @@ export class KiloAdapterRuntime implements AdapterRuntime {
     this.generation += 1;
   }
 
-  async invoke(request: AgentRunRequest, _context: RuntimeContext): Promise<AgentRunResult> {
+  async invoke(request: AgentRunRequest, context: RuntimeContext): Promise<AgentRunResult> {
     if (this.session === undefined) throw new LifecycleError("kilo_not_started", "Kilo Code adapter runtime is not started");
     if (typeof request.input !== "string") return failed("kilo_unsupported_input", "The Kilo Code adapter accepts only plain-text input");
     const session = this.session;
     let outcome: KiloPromptOutcome;
     this.invoking = true;
     try {
-      outcome = await session.prompt(request.input);
+      outcome = await session.prompt(request.input, context.deadline_millis ?? undefined);
     } catch (error) {
       this.generation += 1;
       this.session = undefined;
       try { await session.stop(); } catch { /* Preserve the prompt failure. */ }
+      if (error instanceof KiloPromptError) return failed(error.code, error.message, error.usage);
       if (error instanceof LifecycleError) throw error;
       throw new LifecycleError("kilo_session_failed", "Kilo Code session communication failed", {retryable: true});
     } finally {
