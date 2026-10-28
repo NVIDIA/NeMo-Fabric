@@ -232,3 +232,9 @@ Relay produces a chain root with LLM and tool children, decoded request and
 response values, and token usage. This is the recommended mode for reviewing an
 agent turn in Phoenix. Use native Codex OpenTelemetry only when the raw
 app-server trace is the required diagnostic surface.
+
+## Runtime Health
+
+`Fabric.check()` supports `live`, `active`, and `ready`. Liveness observes the owned app-server process. Active reads the selected loaded thread; ready requires a fresh thread status of `idle` or `active`.
+
+Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
