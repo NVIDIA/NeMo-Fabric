@@ -950,6 +950,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
         instructions: Optional portable agent instructions.
         mcp: Optional MCP configuration.
         skills: Optional skill configuration.
+        provenance: Optional software evidence configuration.
         telemetry: Optional telemetry configuration.
         relay: Optional Relay integration configuration.
         tools: Optional harness-neutral tool configuration.
@@ -970,6 +971,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
             "mcp",
             "skills",
             "system_stats",
+            "provenance",
             "telemetry",
             "relay",
             "tools",
@@ -994,6 +996,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
         telemetry: Mapping[str, Any] | None = None,
         relay: Mapping[str, Any] | None = None,
         system_stats: Mapping[str, Any] | None = _DEFAULT_SYSTEM_STATS,
+        provenance: Mapping[str, Any] | None = None,
         tools: Mapping[str, Any] | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
@@ -1037,12 +1040,17 @@ class _FabricConfigSnapshot(_ConfigMapping):
             if telemetry is None
             else _coerce(_TelemetryConfig, telemetry, "telemetry")
         )
-        from nemo_fabric.models import SystemStatsConfig
+        from nemo_fabric.models import ProvenanceConfig, SystemStatsConfig
 
         stats_value = (
             None
             if system_stats is None
             else SystemStatsConfig.from_mapping(system_stats).to_mapping()
+        )
+        provenance_value = (
+            None
+            if provenance is None
+            else ProvenanceConfig.from_mapping(provenance).to_mapping()
         )
         relay_value = None if relay is None else _mapping(relay, "relay")
         tools_value = None if tools is None else _coerce(_ToolsConfig, tools, "tools")
@@ -1062,6 +1070,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
             ("mcp", mcp_value),
             ("skills", skills_value),
             ("system_stats", stats_value),
+            ("provenance", provenance_value),
             ("telemetry", telemetry_value),
             ("relay", relay_value),
             ("tools", tools_value),
@@ -1099,6 +1108,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
             mcp=data.get("mcp"),
             skills=data.get("skills"),
             system_stats=data.get("system_stats", _DEFAULT_SYSTEM_STATS),
+            provenance=data.get("provenance"),
             telemetry=data.get("telemetry"),
             relay=data.get("relay"),
             tools=data.get("tools"),
@@ -2534,7 +2544,9 @@ class VersionObservation(FabricMapping):
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        from nemo_fabric_adapter_contract.evidence import VersionObservation as Observation
+        from nemo_fabric_adapter_contract.evidence import (
+            VersionObservation as Observation,
+        )
 
         try:
             data = Observation.from_mapping(data).to_mapping()

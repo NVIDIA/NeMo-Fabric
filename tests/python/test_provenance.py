@@ -23,6 +23,23 @@ def test_disabled_provenance_survives_config_and_native_plan_round_trip():
     assert config.to_mapping()["provenance"]["enabled"] is False
     plan = Fabric().plan(config, base_dir=Path(__file__).parents[2])
     assert plan.to_mapping()["config"]["provenance"]["enabled"] is False
+    assert "provenance" not in plan.config.extra_fields
+
+
+def test_plan_snapshot_normalizes_declared_provenance_settings():
+    from nemo_fabric.types import _FabricConfigSnapshot
+
+    snapshot = _FabricConfigSnapshot.from_mapping(
+        {
+            "metadata": {"name": "evidence"},
+            "harness": {"adapter_id": "nvidia.fabric.codex"},
+            "provenance": {},
+            "future_extension": {"enabled": True},
+        }
+    )
+    assert snapshot.provenance == {"enabled": True}
+    assert snapshot.extra_fields == {"future_extension": {"enabled": True}}
+    assert snapshot.to_mapping()["provenance"] == {"enabled": True}
 
 
 def test_old_result_decodes_and_optional_evidence_round_trips():
