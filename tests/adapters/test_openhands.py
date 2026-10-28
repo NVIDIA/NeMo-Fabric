@@ -551,6 +551,7 @@ async def test_send_message_failure_returns_failed_result(
     assert result.error.code == "openhands_invocation_failed"
     assert result.error.message == "OpenHands could not complete the invocation."
     assert result.error.retryable is False
+    assert result.error.extensions == {"sdk_error": "RuntimeError"}
     conversation.arun.assert_not_awaited()
 
 
