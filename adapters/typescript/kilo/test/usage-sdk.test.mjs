@@ -40,6 +40,13 @@ for (const mode of ["normal", "retry", "lost-events", "failed", "memory-enabled"
       } else if (request.method === "POST" && url.pathname === "/session/session-wire/message") {
         const user = `u${++promptCount}`;
         history.push({ info: { id: user, role: "user", sessionID: "session-wire" }, parts: [{ type: "text", text: "fixture" }] });
+        if (mode === "normal" && promptCount === 2) {
+          // A delayed record from the first prompt must not affect the second invocation's usage or coverage.
+          const tokens = { input: 100, output: 200, total: 360, reasoning: 30, cache: { read: 20, write: 10 } };
+          const info = { id: "u1-late", role: "assistant", sessionID: "session-wire", parentID: "u1", time: { created: 3, completed: 4 }, tokens };
+          history.push({ info, parts: [{ id: "u1-late-step", type: "step-finish", tokens }] });
+          send({ type: "message.updated", properties: { info: structuredClone(info) } });
+        }
         for (const index of [1, 2]) {
           const info = { id: `${user}-a${index}`, role: "assistant", sessionID: "session-wire", parentID: user, time: { created: index } };
           send({ type: "message.updated", properties: { info: structuredClone(info) } });
