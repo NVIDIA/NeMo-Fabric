@@ -134,6 +134,19 @@ adapter returns the per-invocation difference. Create a new runtime to change
 the selected model, workspace, system instructions, skills, MCP servers, tool
 policy, or permission mode.
 
+Input totals include cached tokens, and output totals include reasoning tokens
+under the adapter's fixed OpenAI authentication path. Cache counters are
+reported separately as a breakdown and are not added again. Missing or invalid
+counters, cumulative-counter resets, and all-zero usage observations remain
+unknown rather than being converted to zero. A valid snapshot establishes a
+baseline for later invocation deltas.
+
+These are the pinned SDK's provider-reported observations, not independently
+verified billing totals. The SDK normalizes missing provider usage to zero and
+can omit usage from failed requests. An all-zero observation cannot distinguish
+missing data from real zero consumption, and partial omissions inside a
+nonzero summary cannot be detected through the public result.
+
 The adapter gives the child process isolated temporary Qwen home and runtime
 directories. It disables Qwen Code's optional product-usage analytics and
 telemetry. This does not affect model-provider metering or token usage reported

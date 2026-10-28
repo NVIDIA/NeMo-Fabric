@@ -19,6 +19,16 @@ import type { QwenSession, QwenSessionFactory, QwenTurn } from "./runtime.js";
 const STREAM_CLOSE_TIMEOUT_MS = 10;
 const MCP_FAILURE_MARKER = "Warning: MCP server(s) failed to start:";
 
+type UsageSnapshot = { input: number | null; output: number | null; total: number | null; cached: number | null };
+
+function tokenCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function tokenDelta(current: number | null, previous: number | null): number | null {
+  return current !== null && previous !== null && current >= previous ? current - previous : null;
+}
+
 class QwenDiagnostics {
   private markerPrefix = "";
   private mcpUnavailable = false;
@@ -90,7 +100,7 @@ class PromptQueue implements AsyncIterable<SDKUserMessage> {
 export class QwenSdkSession implements QwenSession {
   private closed = false;
   private healthObservation?: Promise<boolean>;
-  private previousUsage = { input: 0, output: 0, total: 0 };
+  private previousUsage: UsageSnapshot = { input: 0, output: 0, total: 0, cached: 0 };
 
   constructor(
     private readonly query: Query,
@@ -102,17 +112,39 @@ export class QwenSdkSession implements QwenSession {
   private turnUsage(result: SDKResultMessage): AgentUsage {
     // SDK result usage is cumulative for the live query. Fabric usage belongs
     // to one invocation, so report the delta since the previous result.
-    const current = {
-      input: result.usage.input_tokens,
-      output: result.usage.output_tokens,
-      total: result.usage.total_tokens ?? result.usage.input_tokens + result.usage.output_tokens,
+    const current: UsageSnapshot = {
+      input: tokenCount(result.usage?.input_tokens),
+      output: tokenCount(result.usage?.output_tokens),
+      total: tokenCount(result.usage?.total_tokens),
+      cached: tokenCount(result.usage?.cache_read_input_tokens),
     };
     const previous = this.previousUsage;
+    // The CLI synthesizes zero metrics when the provider omits usage. Its
+    // public result cannot distinguish that case from real zero consumption.
+    if ((current.input ?? 0) === 0 && (current.output ?? 0) === 0 && (current.total ?? 0) === 0) {
+      current.input = current.output = current.total = current.cached = null;
+    }
     this.previousUsage = current;
+    const reset = (["input", "output", "total"] as const).some(key => {
+      const now = current[key];
+      const before = previous[key];
+      return now !== null && before !== null && now < before;
+    });
+    const input = reset ? null : tokenDelta(current.input, previous.input);
+    const output = reset ? null : tokenDelta(current.output, previous.output);
+    const total = reset || input === null || output === null ? null : tokenDelta(current.total, previous.total);
+    // Missing usage after an earlier turn also leaves cumulative metrics
+    // unchanged. Do not misreport that invocation as free model work.
+    const unchanged = input === 0 && output === 0 && (total ?? 0) === 0;
     return {
-      input_tokens: Math.max(0, current.input - previous.input),
-      output_tokens: Math.max(0, current.output - previous.output),
-      total_tokens: Math.max(0, current.total - previous.total),
+      input_tokens: unchanged ? null : input,
+      output_tokens: unchanged ? null : output,
+      total_tokens: unchanged ? null : total,
+      cached_input_tokens: reset || unchanged ? null : tokenDelta(current.cached, previous.cached),
+      // This adapter fixes authType to OpenAI. The pinned CLI's OpenAI
+      // converters retain prompt_tokens inclusive of cache and completion_tokens
+      // inclusive of reasoning; adding either breakdown would count it twice.
+      input_tokens_include_cache: true,
     };
   }
 
