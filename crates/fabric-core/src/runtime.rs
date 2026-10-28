@@ -6612,6 +6612,9 @@ for line in sys.stdin:
     fn adapter_service_evidence_preserves_infrastructure_references() {
         let mut adapter = crate::ExecutionEvidence::gap("adapter", "fixture");
         adapter.append(crate::ExecutionEvidence::gap("service", "fixture"));
+        adapter.software_environments[1].status = crate::InventoryStatus::Available;
+        adapter.software_environments[1].complete = true;
+        adapter.software_environments[1].reason = None;
         let observation = serde_json::json!({
             "status": "available", "value": "fixture-engine",
             "source": "owner:existing_report", "origin": "reported",
@@ -6656,6 +6659,39 @@ for line in sys.stdin:
         assert_eq!(report.software_environments.len(), 3);
         assert_eq!(report.software_environments[2].participants, ["service"]);
         assert_eq!(retained.software_environments[0].context_ref, "env-0");
+    }
+
+    #[test]
+    fn adapter_service_gap_does_not_hide_a_retained_observation() {
+        let mut adapter = crate::ExecutionEvidence::gap("adapter", "fixture");
+        adapter.append(crate::ExecutionEvidence::gap("service", "report_missing"));
+        let retained: crate::ExecutionEvidence = serde_json::from_value(serde_json::json!({
+            "software_environments": [{
+                "context_ref": "original-service", "participants": ["service"],
+                "status": "available", "complete": true,
+                "entries": [{"role": "harness", "kind": "component", "name": "openclaw",
+                    "version": {"status": "available", "value": "2026.9.4",
+                        "source": "service:startupz", "origin": "reported",
+                        "observed_at": "2026-10-27T12:00:00Z"}}]
+            }]
+        }))
+        .unwrap();
+        let mut report = crate::ExecutionEvidence::gap("core", "fixture");
+        append_adapter_evidence(&mut report, &adapter, Some(&retained));
+        assert!(report.valid());
+        assert_eq!(report.software_environments.len(), 4);
+        assert_eq!(
+            report.software_environments[2].reason.as_deref(),
+            Some("report_missing")
+        );
+        assert_eq!(
+            report.software_environments[3].entries,
+            retained.software_environments[0].entries
+        );
+        assert_eq!(
+            retained.software_environments[0].context_ref,
+            "original-service"
+        );
     }
 
     #[test]
@@ -6798,15 +6834,17 @@ fn append_adapter_evidence(
     adapter: &crate::ExecutionEvidence,
     retained_service: Option<&crate::ExecutionEvidence>,
 ) {
-    let includes_service = adapter.software_environments.iter().any(|env| {
-        env.participants
-            .iter()
-            .any(|participant| participant == "service")
+    let has_service_inventory = adapter.software_environments.iter().any(|env| {
+        env.status == crate::InventoryStatus::Available
+            && env
+                .participants
+                .iter()
+                .any(|participant| participant == "service")
     });
     // Keep current reports intact: infrastructure can reference a service
     // context, and append remaps those references together with its inventory.
     report.append(adapter.clone());
-    if !includes_service {
+    if !has_service_inventory {
         if let Some(service) = retained_service {
             report.append(service.clone());
         }
