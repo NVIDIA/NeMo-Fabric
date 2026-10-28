@@ -48,6 +48,36 @@ test("raw NVIDIA input stays inclusive when cache detail is absent", async () =>
   });
 });
 
+test("buffered small events do not invalidate complete usage", async () => {
+  const raw = `${'data: {"choices":[]}\n\n'.repeat(4000)}${sse({
+    prompt_tokens: 7, completion_tokens: 3, total_tokens: 10,
+  })}`;
+  await withResponse(new Response(new ReadableStream({ start(controller) {
+    controller.enqueue(new TextEncoder().encode(raw));
+    controller.close();
+  } }), { headers: { "content-type": "text/event-stream" } }), async () => {
+    const collector = new RawUsageCollector("https://example.test/v1");
+    const turn = collector.begin();
+    assert.equal(await (await collector.fetch(endpoint, request)).text(), raw);
+    assert.deepEqual(collector.end(turn), {
+      input_tokens: 7, input_tokens_include_cache: true, output_tokens: 3, total_tokens: 10,
+    });
+  });
+});
+
+test("truncated raw stream keeps usage unknown and forwards received bytes", async () => {
+  const chunks = [finished, 'data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}\n\n'];
+  await withResponse(new Response(new ReadableStream({ start(controller) {
+    for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
+    controller.close();
+  } }), { headers: { "content-type": "text/event-stream" } }), async () => {
+    const collector = new RawUsageCollector("https://example.test/v1");
+    const turn = collector.begin();
+    assert.equal(await (await collector.fetch(endpoint, request)).text(), chunks.join(""));
+    assert.equal(collector.end(turn), undefined);
+  });
+});
+
 test("raw NVIDIA usage remains unknown for failed attempts, missing usage, and invalid accounting", async (t) => {
   const cases = [
     { name: "failed retry", status: 503, body: "provider unavailable", contentType: "text/plain" },

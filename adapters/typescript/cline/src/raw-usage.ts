@@ -89,7 +89,6 @@ function observeStream(body: ReadableStream<Uint8Array>, attempt: Attempt): Read
 
   function feed(text: string): void {
     pending += text;
-    if (pending.length > MAX_EVENT_CHARS) { invalid = true; pending = ""; data = []; return; }
     let newline = pending.indexOf("\n");
     while (newline !== -1) {
       const line = pending.slice(0, newline).replace(/\r$/, "");
@@ -101,14 +100,12 @@ function observeStream(body: ReadableStream<Uint8Array>, attempt: Attempt): Read
       }
       newline = pending.indexOf("\n");
     }
+    if (pending.length > MAX_EVENT_CHARS) { invalid = true; pending = ""; data = []; }
   }
 
   return body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
-      if (!invalid) {
-        if (chunk.byteLength > MAX_EVENT_CHARS) invalid = true;
-        else feed(decoder.decode(chunk, { stream: true }));
-      }
+      if (!invalid) feed(decoder.decode(chunk, { stream: true }));
       controller.enqueue(chunk);
     },
     flush() {

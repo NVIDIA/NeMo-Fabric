@@ -43,6 +43,8 @@ const expectedByPackage = {
     "dist/cli.js",
     "dist/cline-sdk.d.ts",
     "dist/cline-sdk.js",
+    "dist/raw-usage.d.ts",
+    "dist/raw-usage.js",
     "dist/runtime.d.ts",
     "dist/runtime.js",
     "package.json",
