@@ -132,8 +132,25 @@ Each NeMo Fabric runtime creates an isolated local `ClineCore` and starts one in
 core. Callers do not replay conversation history. Independent NeMo Fabric
 runtimes use separate Cline state directories and sessions.
 
-Successful results include normalized response text and usage when Cline
-reports it. Adapter-owned result metadata includes the Cline session ID, finish
+Successful results include the response text. Results from a Cline model send
+keep positive input, output, and cache counts as observations in
+`RunResult.usage.metadata["nvidia.fabric.cline.usage_evidence.v1"]`. The `gaps` list
+identifies missing or unverified usage. Cline can fill unavailable counts with
+zero, so a zero in the Cline SDK result does not prove that the provider
+reported zero.
+
+When the selected provider is `nvidia` and `base_url` is set, the adapter captures
+model requests through Cline's configured HTTP hook during each send. It sets
+input, output, and total token counts only when every captured request returns
+valid terminal usage that does not conflict with nonzero SDK counts. A zero
+reported by the provider stays zero. The OpenAI-compatible input count includes
+cache reads, and its output count includes reasoning tokens. The adapter reports
+cache reads only when the provider supplies that count. Failed requests,
+missing usage, and unexpected request paths leave complete counts unknown.
+Other Cline providers return observations with unverified coverage.
+Provider-reported cost remains unknown. Harbor uses complete counts when present
+and keeps observations in NeMo Fabric result metadata.
+Adapter-owned result metadata also includes the Cline session ID, finish
 reason, iteration count, and selected model when available.
 
 The initial adapter does not support NeMo Relay telemetry, native streaming,
