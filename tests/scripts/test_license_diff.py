@@ -22,6 +22,52 @@ def _entry(package: str, version: str, license_name: str) -> LicenseInventoryEnt
     return LicenseInventoryEntry(package=package, version=version, license=license_name)
 
 
+@pytest.mark.parametrize("root_version", [None, "12.3.0", "12.2.0"])
+def test_python_image_package_is_attributed_and_inventoried(
+    tmp_path: Path, root_version
+):
+    collector = license_diff.attributions_lockfile_md
+    manifest = tmp_path / "scripts" / "licensing" / "python-image-packages.toml"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('[[package]]\nname = "pillow"\nversion = "12.3.0"\n')
+    root_packages = (
+        {"pillow": {"name": "Pillow", "version": root_version}} if root_version else {}
+    )
+
+    def render(pkg):
+        return collector.RenderedPythonPackage(
+            name=pkg["name"],
+            version=pkg["version"],
+            license_name="MIT-CMU",
+            license_texts=[("LICENSE", "notice")],
+        )
+
+    with (
+        patch.object(collector, "ROOT", tmp_path),
+        patch.object(
+            collector, "_lockfile_registry_packages", return_value=root_packages
+        ),
+        patch.object(collector, "_lockfile_only_python_package", side_effect=render),
+    ):
+        collector.cmd_python()
+        inventory = collector._python_license_inventory()
+
+    text = (tmp_path / "ATTRIBUTIONS-Python.md").read_text().lower()
+    assert text.count("## pillow (12.3.0)") == 1
+    assert text.count("license: `mit-cmu`") == (2 if root_version == "12.2.0" else 1)
+    assert sum(row["version"] == "12.3.0" for row in inventory) == 1
+    assert all(row["license"] == "MIT-CMU" for row in inventory)
+
+
+def test_python_inventory_supports_refs_without_image_manifest(tmp_path: Path):
+    collector = license_diff.attributions_lockfile_md
+    with (
+        patch.object(collector, "ROOT", tmp_path),
+        patch.object(collector, "_lockfile_registry_packages", return_value={}),
+    ):
+        assert collector._python_license_inventory() == []
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [

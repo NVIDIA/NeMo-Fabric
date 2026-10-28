@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Attribution evidence for selected image-only Python dependencies absent from
+# the root uv.lock. This file does not install packages or constrain image builds.
+# It is not a complete image inventory. Keep artifact URLs and SHA-256 hashes
+# from the referenced upstream lockfile; the generator verifies the downloads.
+
+[[package]]
+name = "pillow"
+version = "12.3.0"
+# Required by Hermes for image processing in the OpenShell code-review image.
+# Source: examples/code_review_agent/Dockerfile.openshell-hermes-sdk (PR #410).
+# Evidence: https://github.com/NousResearch/hermes-agent/blob/a62979dc3601c9eae455bff5b35ba8f9bed0df30/uv.lock
+# The Dockerfile installs Hermes editable and does not consume its uv.lock;
+# this records the reviewed version, not a verified final-image inventory.
+sdist = { url = "https://files.pythonhosted.org/packages/1c/3d/bb7fca845737cf9d7dbde16ed1843984665ff2e0a518f5db43e77ec540b9/pillow-12.3.0.tar.gz", hash = "sha256:3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce" }

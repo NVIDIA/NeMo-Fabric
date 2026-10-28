@@ -97,6 +97,11 @@ commitment.
   package entries and their `license` fields. The adapter-contract package must
   keep an empty production dependency graph; build-only dependencies still
   require permissive, recorded license evidence.
+- Selected image-only Python dependencies absent from the root `uv.lock` can
+  be recorded in `scripts/licensing/python-image-packages.toml` with their
+  upstream evidence and hash-pinned artifacts. This attribution input neither
+  installs packages nor represents a complete image inventory; both Python
+  attribution generation and license diffs include it.
 - Regenerate the attribution files with the named pre-commit hooks instead of
   editing generated output:
 
