@@ -33,6 +33,7 @@ def collect_runtime(runtime, payload) -> ExecutionEvidence | None:
                 "nemo-fabric-adapter-contract",
                 "nemo_fabric_adapter_contract.models",
             ),
+            ("contract", "nemo-fabric-evidence", "nemo_fabric_evidence.evidence"),
             (
                 "shared_library",
                 "nemo-fabric-adapters-common",

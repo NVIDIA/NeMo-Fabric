@@ -36,6 +36,8 @@ objects for compatibility. Adapter configuration and lifecycle types remain in
 `nemo-fabric-adapter-contract`.
 
 The [Rust-generated JSON Schemas](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas)
-remain the wire-contract authority. This package contains Python bindings; it
-does not collect metadata, load adapters, start processes, or implement a
+remain the wire-contract authority. This package contains Python bindings and bounded metadata primitives. It does
+not choose packages to inspect, load adapters, start processes, or implement a
 transport.
+
+Shared bounded metadata helpers live in `nemo_fabric_evidence.metadata`. They accept explicit package selections; SDK and adapter callers own those selections and snapshot caching. They do not scan an environment or start an adapter.

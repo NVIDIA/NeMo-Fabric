@@ -98,6 +98,12 @@ def reject_adapter_contract(fullname, path=None, target=None):
 sys.meta_path.insert(0, SimpleNamespace(find_spec=reject_adapter_contract))
 from nemo_fabric import ExecutionEvidence, ProvenanceConfig, RunResult
 from nemo_fabric_evidence.evidence import ExecutionEvidence as SharedReport
+from nemo_fabric.provenance import sdk_snapshot
+
+installation = sdk_snapshot("caller_sdk")
+entries = installation.software_environments[0].entries
+assert any(entry.name == "nemo-fabric-evidence" for entry in entries)
+assert not any(entry.name == "nemo-fabric-adapter-contract" for entry in entries)
 
 report = SharedReport.gap("caller_sdk", "no_existing_report")
 assert isinstance(ProvenanceConfig(reports=report).reports, SharedReport)

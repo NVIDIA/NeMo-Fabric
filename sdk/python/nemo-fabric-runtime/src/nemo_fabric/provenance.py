@@ -3,8 +3,8 @@
 
 """SDK-owned initialization snapshots forwarded through normal configuration."""
 
-from nemo_fabric_adapter_contract.evidence import ExecutionEvidence
-from nemo_fabric_adapter_contract.metadata import collect_selected, combine
+from nemo_fabric_evidence.evidence import ExecutionEvidence
+from nemo_fabric_evidence.metadata import collect_selected, combine
 from nemo_fabric.models import FabricConfig
 
 
@@ -16,8 +16,8 @@ def sdk_snapshot(participant: str) -> ExecutionEvidence:
             ("fabric_sdk", "nemo-fabric-runtime", "nemo_fabric.client"),
             (
                 "contract",
-                "nemo-fabric-adapter-contract",
-                "nemo_fabric_adapter_contract.models",
+                "nemo-fabric-evidence",
+                "nemo_fabric_evidence.evidence",
             ),
         ],
     )

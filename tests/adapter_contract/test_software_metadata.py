@@ -9,7 +9,7 @@ import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from nemo_fabric_adapter_contract import metadata
+from nemo_fabric_evidence import metadata
 
 
 def test_loaded_module_ownership_and_full_version_are_preserved(monkeypatch, tmp_path):
