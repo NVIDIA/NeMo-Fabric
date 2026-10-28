@@ -58,6 +58,8 @@ async def codex_model_fixture(unused_tcp_port):
             log_config=None,
             access_log=False,
             lifespan="off",
+            # Bound lingering connections and tasks before the fixture deadline.
+            timeout_graceful_shutdown=1,
         )
     )
     serving = asyncio.create_task(server.serve())

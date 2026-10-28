@@ -110,8 +110,31 @@ def test_render_relay_hooks_enforces_tool_checks_with_delivery_timeout_margin(ag
         command = groups[0]["hooks"][0]
         policy = "--fail-closed" if event == "PreToolUse" else "--fail-open"
         assert command["command"].endswith(f"hook-forward {agent} {policy}")
-        assert command["timeout"] > 30
+        assert command["timeout"] > 35
+        assert ("relay_tool_check.py" in command["command"]) == (
+            agent == "codex" and event == "PreToolUse"
+        )
         if agent == "claude" and event == "PreToolUse":
             assert command["onFailure"] == "block"
         else:
             assert "onFailure" not in command
+
+
+def test_codex_tool_wrapper_quotes_windows_python_and_relay_paths(monkeypatch):
+    monkeypatch.setattr(relay_hooks, "platform", "win32")
+    monkeypatch.setattr(
+        relay_hooks.sys, "executable", r"C:\Program Files\Python\python.exe"
+    )
+    monkeypatch.setattr(
+        relay_hooks,
+        "RELAY_TOOL_CHECK_PATH",
+        Path(r"C:\Program Files\Fabric\relay_tool_check.py"),
+    )
+    hooks = relay_hooks.render_relay_hooks(
+        "codex", Path(r"C:\Relay tools\nemo-relay.exe")
+    )["hooks"]
+
+    assert hooks["PreToolUse"][0]["hooks"][0]["command"] == (
+        '"C:/Program Files/Python/python.exe" -I "C:/Program Files/Fabric/relay_tool_check.py" '
+        '"C:/Relay tools/nemo-relay.exe" hook-forward codex --fail-closed'
+    )

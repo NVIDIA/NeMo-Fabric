@@ -169,7 +169,7 @@ Codex adapter does not provide a separate `relay` extra; its `harness` and
 `full` extras install the compatible CLI through `nemo-relay-cli-bin`. The root
 `nemo-fabric[relay]` extra installs only the Relay Python package.
 
-Codex 0.154.0 can continue a tool call when a Relay hook fails to start, crashes, or times out. Relay 0.10.1 and later return the blocking exit code 2 for delivery failures when the hook process completes. Relay 0.9.x and 0.10.0 return exit code 1 for delivery failures, which Codex treats as a hook error and can continue past.
+NeMo Fabric wraps Codex `PreToolUse` checks so Relay launch errors, timeouts, and nonzero exits return exit code 2 with a blocking reason. This includes the exit code 1 used by Relay 0.9.x and 0.10.0. The wrapper allows 35 seconds for Relay, within the harness timeout of 45 seconds. Codex 0.154.0 can still continue if the wrapper itself fails to start or reaches the harness timeout.
 
 Enable Relay with `FabricConfig.enable_relay(...)`. The adapter starts the
 installed `nemo-relay` CLI as a supervised sidecar; do not start the gateway

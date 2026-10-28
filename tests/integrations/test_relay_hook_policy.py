@@ -78,7 +78,7 @@ def test_generated_hook_delivery_failure_policy(
     tmp_path, relay_cli, agent, event, expected_status
 ):
     executable, contract = relay_cli
-    if event == "PreToolUse" and contract.version < (0, 10, 1):
+    if agent == "claude" and event == "PreToolUse" and contract.version < (0, 10, 1):
         expected_status = 1
     # A bound socket without a listener rejects connections and reserves the port.
     with socket.socket() as listener:
@@ -89,6 +89,8 @@ def test_generated_hook_delivery_failure_policy(
         )
 
     assert completed.returncode == expected_status
+    if agent == "codex" and event == "PreToolUse" and expected_status == 2:
+        assert completed.stderr.strip(), "Codex requires a nonempty blocking reason"
 
 
 @pytest.mark.parametrize("agent", ["claude", "codex"])
