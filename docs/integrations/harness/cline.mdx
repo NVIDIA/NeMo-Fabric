@@ -141,12 +141,8 @@ Relay-backed streaming, or adapter-specific `harness.settings`.
 
 ## Check Runtime Health
 
-Cline runtime checks support `live`, `active`, and `ready` before the first invocation, during a model request, and between turns. `live` verifies native residency, identity, and closure state. `active` also observes the initialized native request interface; busy sessions remain healthy. `ready` also reads a fresh native session snapshot. A stored session-history row cannot establish health.
+Startup creates an idle native session. Cline runtime checks support `live`, `active`, and `ready` before the first invocation, during a model request, and between turns. `live` verifies native residency, identity, and closure state. `active` also observes the initialized native request interface; busy sessions remain healthy. `ready` also reads a fresh native session snapshot through `ClineCore.get()`. A stored session-history row cannot establish health.
 
 Checks do not invoke a model or change session state. A timeout leaves the invocation running. These checks qualify local Cline SDK 0.0.83 state, including guarded native residency fields. Refer to the [runtime health guide](../../sdk/python.mdx#runtime-health) and the [Cline adapter qualification](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/typescript/cline/README.md#runtime-health).
-
-## Runtime Health
-
-`Fabric.check()` supports `live`, `active`, and `ready`. Startup creates an idle native session. The adapter checks resident session and agent identity, native request availability, and a fresh `ClineCore.get()` response for the selected session.
 
 Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.

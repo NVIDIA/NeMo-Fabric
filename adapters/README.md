@@ -227,6 +227,8 @@ independently instrumented service publishes correlated ATOF to the collector
 base URL shared by its Relay configuration and `FabricConfig`. The collector can
 serve multiple runtimes when each request ID is unique.
 
+Refer to the [SDK health-check support table](../docs/sdk/health-checks.mdx#native-evidence-by-adapter) for supported levels, native evidence, and adapters without runtime health support.
+
 Local Cline runtimes support `Fabric.check()` at the `live`, `active`, and `ready` levels before and during the first invocation. Checks verify native session residency and closure, request-interface state, and a fresh session snapshot. Refer to the [Cline health contract](typescript/cline/README.md#runtime-health).
 
 Local Pi runtimes also support `Fabric.check()` at the `live`, `active`, and

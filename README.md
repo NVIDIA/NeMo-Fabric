@@ -69,7 +69,7 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 - [Adapter catalog](sdk/python/nemo-fabric-adapter-catalog/README.md): Inspect bundled adapter metadata on a host without installing harness SDKs.
 - [Host admission](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host): Validate requested capabilities and reject host/task descriptor drift before execution.
 - [NeMo Fabric runtime server](sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md): Manage runtimes and check server responsiveness inside one sandbox through `fabric-agent-ctl` and one private local socket. Unconfirmed cleanup retains sandbox ownership and blocks replacement servers.
-- [Health checks](docs/sdk/python.mdx#runtime-health): Use `Fabric.check()` for OpenShell runtime-server checks, Cline, Pi, OpenClaw, and OpenHands runtime checks, and prepared or attached OpenClaw Gateway service checks. OpenShell server and runtime requests map to `fabric-agent-ctl check`; service checks use the local SDK.
+- [Health checks](docs/sdk/health-checks.mdx): Use `Fabric.check()` for OpenShell runtime-server checks, agent runtime checks, and prepared or attached OpenClaw Gateway service checks. Refer to the [adapter support table](docs/sdk/health-checks.mdx#native-evidence-by-adapter) for supported levels and native evidence. OpenShell server and runtime requests map to `fabric-agent-ctl check`; service checks use the local SDK.
 - [Documentation overview](docs/about-nemo-fabric/overview.mdx): Understand the execution model and choose an interface.
 - [Adapter reference](adapters/README.md): Compare adapter configuration, runtime, and observability support.
 - [Contribution guide](CONTRIBUTING.md): Build, test, and contribute to the project.
