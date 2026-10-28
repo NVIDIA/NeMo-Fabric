@@ -24,7 +24,9 @@ import {
   startRelayGateway,
   stopRelayGateway,
   type RelayGatewayLaunch,
+  type RelayCliContract,
 } from "./relay-gateway.js";
+import { relayHttpModelConfig } from "./relay-http.js";
 
 const RELAY_INSTALL_COMMAND =
   'Install "nemo-relay-cli-bin>=0.11.0,<0.12.0" and ensure nemo-relay is on PATH';
@@ -260,8 +262,9 @@ export class PiRelayFactory implements PiRelayControllerFactory {
           { metadata: relayErrorMetadata(error) },
         );
       }
+      let contract: RelayCliContract;
       try {
-        await this.dependencies.checkContract(executable);
+        contract = await this.dependencies.checkContract(executable);
       } catch (error) {
         throw new LifecycleError(
           "pi_relay_incompatible",
@@ -270,13 +273,17 @@ export class PiRelayFactory implements PiRelayControllerFactory {
         );
       }
 
+      const gatewayConfig = relayHttpModelConfig(input.config.harness?.settings ?? {}, contract);
       let pluginConfig: RelayPluginConfig;
       let atifMatchers: RelayAtifMatcher[];
       let configPath: string;
       let pluginConfigPath: string;
       try {
         pluginConfig = await this.dependencies.loadPluginConfig(input);
-        ({ configPath, pluginConfigPath } = await this.dependencies.writeConfigs(pluginConfig));
+        ({ configPath, pluginConfigPath } = await this.dependencies.writeConfigs(
+          pluginConfig,
+          gatewayConfig,
+        ));
         atifMatchers = await prepareRelayAtifMatchers(pluginConfig);
       } catch (error) {
         throw new LifecycleError(

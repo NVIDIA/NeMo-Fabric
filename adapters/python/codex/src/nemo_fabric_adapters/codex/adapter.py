@@ -57,6 +57,10 @@ from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 import nemo_fabric_adapters.common.relay_gateway as relay_gateway
+from nemo_fabric_adapters.common.relay_http import (
+    RelayHttpModelError,
+    relay_http_model_config,
+)
 import nemo_fabric_adapters.common.relay_hooks as relay_hooks
 import nemo_fabric_adapters.common.relay_artifacts as relay_artifacts
 import nemo_fabric_adapters.common.utils as common_utils
@@ -792,7 +796,8 @@ def prepare_codex_relay(
         ) from error
 
     try:
-        relay_gateway.relay_cli_contract(executable)
+        contract = relay_gateway.relay_cli_contract(executable)
+        http_config = relay_http_model_config(_settings(config), contract)
         plugin_config = common_utils.load_relay_plugin_config(
             {
                 "agent_name": agent_name,
@@ -803,9 +808,13 @@ def prepare_codex_relay(
         )
         config_path, plugin_config_path = common_utils.write_relay_configs(
             # Codex execution remains SDK-owned; Relay runs only as a gateway.
-            relay_config={},
+            relay_config=http_config,
             plugin_config=plugin_config,
         )
+    except RelayHttpModelError as error:
+        raise AdapterRelayError(
+            "codex_relay_invalid_http_model_hosts", str(error)
+        ) from error
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
         raise AdapterRelayError(
             "codex_relay_configuration_failed",

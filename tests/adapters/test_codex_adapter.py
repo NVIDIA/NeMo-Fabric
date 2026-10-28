@@ -2504,3 +2504,78 @@ async def test_health_obtains_fresh_evidence_after_an_older_probe_fails(
     finally:
         release.set()
         await asyncio.gather(pending, checking, return_exceptions=True)
+
+
+@pytest.mark.parametrize("hosts", [["MODEL.TEST."], []])
+def test_codex_relay_propagates_explicit_http_model_hosts(
+    codex_payload, monkeypatch, tmp_path, hosts
+):
+    import tomllib
+
+    codex_payload["config"]["harness"]["settings"]["insecure_http_model_hosts"] = hosts
+    codex_payload["runtime_context"]["telemetry"] = {
+        "relay_enabled": True,
+        "metadata": {"telemetry_providers": ["relay"]},
+    }
+    intent = tmp_path / "relay.json"
+    intent.write_text(
+        json.dumps({"relay": {"config": {"version": 1, "components": []}}})
+    )
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(intent)
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "resolve_relay_command",
+        MagicMock(return_value=tmp_path / "nemo-relay"),
+    )
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "relay_cli_contract",
+        MagicMock(
+            return_value=adapter.relay_gateway.RelayCliContract(version=(0, 11, 0))
+        ),
+    )
+    config, context, base_dir = runtime_input(codex_payload)
+    relay = adapter.prepare_codex_relay(
+        codex_payload["agent_name"], config, context, base_dir
+    )
+    with relay.gateway.config_path.open("rb") as stream:
+        gateway_config = tomllib.load(stream)
+    assert gateway_config == {
+        "upstream": {"insecure_http_model_hosts": (["model.test"] if hosts else [])}
+    }
+
+
+@pytest.mark.parametrize(
+    ("hosts", "version", "message"),
+    [
+        (["model.test:80"], (0, 11, 0), "insecure_http_model_hosts"),
+        (["model.test"], (0, 10, 4), ">=0.11.0"),
+        ([], (0, 10, 4), ">=0.11.0"),
+    ],
+)
+def test_codex_relay_reports_invalid_or_unsupported_http_model_hosts(
+    codex_payload, monkeypatch, tmp_path, hosts, version, message
+):
+    codex_payload["config"]["harness"]["settings"]["insecure_http_model_hosts"] = hosts
+    codex_payload["runtime_context"]["telemetry"] = {"relay_enabled": True}
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "resolve_relay_command",
+        MagicMock(return_value=tmp_path / "nemo-relay"),
+    )
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "relay_cli_contract",
+        MagicMock(return_value=adapter.relay_gateway.RelayCliContract(version=version)),
+    )
+    write_configs = MagicMock()
+    monkeypatch.setattr(adapter.common_utils, "write_relay_configs", write_configs)
+    config, context, base_dir = runtime_input(codex_payload)
+    with pytest.raises(adapter.AdapterRelayError, match=message) as caught:
+        adapter.prepare_codex_relay(
+            codex_payload["agent_name"], config, context, base_dir
+        )
+
+    assert caught.value.code == "codex_relay_invalid_http_model_hosts"
+    assert isinstance(caught.value.__cause__, adapter.RelayHttpModelError)
+    write_configs.assert_not_called()

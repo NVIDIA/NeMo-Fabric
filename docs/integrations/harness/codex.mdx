@@ -238,3 +238,21 @@ app-server trace is the required diagnostic surface.
 `Fabric.check()` supports `live`, `active`, and `ready`. Liveness observes the owned app-server process. Active reads the selected loaded thread; ready requires a fresh thread status of `idle` or `active`.
 
 Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+
+## Private HTTP model gateways with Relay
+
+Relay-enabled runs can set `harness.settings.insecure_http_model_hosts` to an
+explicit list of hostnames or IP addresses, for example
+`["inference.internal", "10.0.0.10"]`. This requires NeMo Relay CLI 0.11.x.
+Entries have no scheme, port, path, or wildcard; matching ignores DNS case and a
+trailing dot and permits any port or path on the listed host. An explicit empty
+list clears inherited HTTP trust. Omitting the setting preserves existing Relay
+configuration behavior. System Relay configuration takes precedence and can
+enforce an empty list.
+
+Use this for unauthenticated inference gateways. Relay strips authorization,
+API-key, cookie, and other credential headers before remote HTTP forwarding,
+including credentials provided to the harness, and rejects conflicting upstream
+authorization configuration. Prompts and responses travel unencrypted. HTTPS
+remains the default, and MCP policy is unchanged. This option applies to
+Relay-enabled Codex, Claude, and Pi runs.

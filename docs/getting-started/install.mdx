@@ -315,7 +315,7 @@ NeMo Fabric uses runtime-owned Relay configuration. Remove or relocate a user `p
 
 Use the same 0.11 release for the Relay Python package, CLI, and Pi extension. Keep Hermes on Relay 0.10 in its separate environment. Restart existing runtimes after the upgrade so each gateway and extension uses the selected release.
 
-Relay gateways require HTTPS for remote model endpoints, including private network and Kubernetes Service addresses. Plain HTTP remains available for loopback endpoints. Relay 0.11 also requires HTTPS for remote telemetry collectors. Use HTTPS when model requests or telemetry contain credentials or sensitive content.
+Relay gateways require HTTPS for remote model endpoints by default, including private network and Kubernetes Service addresses. Plain HTTP remains available for loopback endpoints. To trust a credential-free remote HTTP model endpoint, set `harness.settings.insecure_http_model_hosts` to its exact hostname or IP address. Prompts and responses travel unencrypted, and Relay strips credential headers before forwarding. Relay 0.11 also requires HTTPS for remote telemetry collectors. Use HTTPS when model requests or telemetry contain credentials or sensitive content.
 
 Fabric generates a `PreToolUse` check for Claude and Codex. If Relay cannot check the tool call, the hook blocks the operation with exit code 2. Lifecycle hooks allow execution to continue when telemetry delivery fails. Guardrail denials return exit code 2 under both policies. The harness hook timeout is 45 seconds, which leaves a margin around Relay's 30-second delivery timeout.
 

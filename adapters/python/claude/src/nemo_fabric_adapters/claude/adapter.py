@@ -50,6 +50,10 @@ from nemo_fabric_adapters.common import health as health_transport
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import relay_artifacts
 from nemo_fabric_adapters.common import relay_gateway
+from nemo_fabric_adapters.common.relay_http import (
+    RelayHttpModelError,
+    relay_http_model_config,
+)
 from nemo_fabric_adapters.common import relay_hooks
 from nemo_fabric_adapters.common import utils as common_utils
 
@@ -520,6 +524,8 @@ def prepare_claude_relay(
     model: AgentModelConfig,
     runtime_context: RuntimeContext,
     base_dir: str,
+    *,
+    settings: dict[str, Any] | None = None,
 ) -> ClaudeRelaySettings | None:
     """Generate Relay gateway and Claude hook configuration."""
 
@@ -538,7 +544,8 @@ def prepare_claude_relay(
         ) from error
 
     try:
-        relay_gateway.relay_cli_contract(executable)
+        contract = relay_gateway.relay_cli_contract(executable)
+        http_config = relay_http_model_config(settings or {}, contract)
         plugin_config = common_utils.load_relay_plugin_config(
             {
                 "agent_name": agent_name,
@@ -548,9 +555,13 @@ def prepare_claude_relay(
             }
         )
         config_path, plugin_config_path = common_utils.write_relay_configs(
-            relay_config={"agents": {"claude": {"command": "claude"}}},
+            relay_config={"agents": {"claude": {"command": "claude"}}, **http_config},
             plugin_config=plugin_config,
         )
+    except RelayHttpModelError as error:
+        raise AdapterRelayError(
+            "claude_relay_invalid_http_model_hosts", str(error)
+        ) from error
     except (
         OSError,
         RuntimeError,
@@ -1192,7 +1203,11 @@ class ClaudeRuntime:
             model = _selected_model_config(agent_config)
             fabric_runtime_id = runtime_context.runtime_id
             relay = prepare_claude_relay(
-                common_utils.agent_name(payload), model, runtime_context, base_dir
+                common_utils.agent_name(payload),
+                model,
+                runtime_context,
+                base_dir,
+                settings=_settings(agent_config),
             )
             self._relay = relay
             self._gateway_process = _start_relay_gateway(
@@ -1403,7 +1418,9 @@ class ClaudeRuntime:
         ):
             total = None
         self._cost_total = total
-        reset = any(isinstance(message, ConversationResetMessage) for message in messages)
+        reset = any(
+            isinstance(message, ConversationResetMessage) for message in messages
+        )
         if total is None or previous is None or reset or total < previous:
             return None
         # Drop float subtraction noise such as 0.19999999999999998. A tenth of a

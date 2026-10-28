@@ -145,6 +145,25 @@
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
+            "insecure_http_model_hosts": {
+              "description": "Hosts trusted for credential-free HTTP model forwarding through NeMo Relay >=0.11.0; no schemes, ports, paths, wildcards, brackets, or zone identifiers.",
+              "items": {
+                "anyOf": [
+                  {
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$"
+                  },
+                  {
+                    "format": "ipv6",
+                    "pattern": "^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"
+                  }
+                ],
+                "maxLength": 253,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
             "max_budget_usd": {
               "description": "Maximum amount in US dollars that Claude may spend during one invocation.",
               "exclusiveMinimum": 0,
@@ -216,7 +235,7 @@
         "name": "nemo-fabric-adapters-claude",
         "version": "0.6.0"
       },
-      "sha256": "0de6bc6d0206f15c6b678c44ac9b485fe8ff0a7aee3e8e1a403dc74441f4e5aa",
+      "sha256": "303693778c2f6255a8a13f74c8abf2980a998149c93c47a1063913422c9671c8",
       "source": "adapters/python/claude/claude.fabric-adapter.json"
     },
     "nvidia.fabric.cline": {
@@ -542,6 +561,25 @@
               "minLength": 1,
               "type": "string"
             },
+            "insecure_http_model_hosts": {
+              "description": "Hosts trusted for credential-free HTTP model forwarding through NeMo Relay >=0.11.0; no schemes, ports, paths, wildcards, brackets, or zone identifiers.",
+              "items": {
+                "anyOf": [
+                  {
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$"
+                  },
+                  {
+                    "format": "ipv6",
+                    "pattern": "^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"
+                  }
+                ],
+                "maxLength": 253,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
             "output_schema": {
               "description": "JSON Schema that constrains the final assistant message for each turn.",
               "type": "object"
@@ -614,7 +652,7 @@
         "name": "nemo-fabric-adapters-codex",
         "version": "0.6.0"
       },
-      "sha256": "ff6cd27c4334b8000551cec2180e7f64afe3f67def4d30a5287f692b05f3d0fe",
+      "sha256": "823aa2423aad2b524ffc47aaf88de71a56e2aaf5e7c1837768a7b5c829d0411c",
       "source": "adapters/python/codex/codex.fabric-adapter.json"
     },
     "nvidia.fabric.droid": {
@@ -2533,6 +2571,25 @@
               "type": "array",
               "uniqueItems": true
             },
+            "insecure_http_model_hosts": {
+              "description": "Hosts trusted for credential-free HTTP model forwarding through NeMo Relay >=0.11.0; no schemes, ports, paths, wildcards, brackets, or zone identifiers.",
+              "items": {
+                "anyOf": [
+                  {
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$"
+                  },
+                  {
+                    "format": "ipv6",
+                    "pattern": "^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"
+                  }
+                ],
+                "maxLength": 253,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
             "relay_extension_path": {
               "description": "Absolute path or environment.workspace-relative path to the NeMo Relay 0.11 Pi extension",
               "minLength": 1,
@@ -2580,7 +2637,7 @@
         "name": "nemo-fabric-adapters-pi",
         "version": "0.6.0"
       },
-      "sha256": "f64ac81991a90a88be31f80e923304374d819616e68b6076d285b890908399bf",
+      "sha256": "c29aea60e7a88e23fa8d46f1f8c273b1cba3f4b8fb0edfa1857935aaf1fec870",
       "source": "adapters/typescript/pi/pi.fabric-adapter.json"
     },
     "nvidia.fabric.qwen": {

@@ -1083,7 +1083,10 @@ export class PiSdkSessionFactory implements PiSessionFactory {
     const existing = modelRuntime.getModel(selected.provider, selected.model);
     const catalogEntry = buildCatalogModel(selected, existing);
     try {
-      modelRuntime.registerProvider(selected.provider, { models: [catalogEntry] });
+      // Keep the endpoint at provider scope so Relay can redirect it without a
+      // per-model baseUrl taking precedence over the extension's provider override.
+      const { baseUrl, ...modelDefinition } = catalogEntry;
+      modelRuntime.registerProvider(selected.provider, { baseUrl, models: [modelDefinition] });
     } catch (error) {
       const cause = error instanceof Error ? error.message : String(error);
       // Pi throws here with a 'no "api" specified' message when it can't resolve the model's

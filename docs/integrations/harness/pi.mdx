@@ -240,7 +240,7 @@ adapter process, so concurrent NeMo Fabric runtimes remain isolated. Direct
 embedders must likewise place concurrent Relay-enabled Pi runtimes in separate
 processes.
 
-The Relay 0.11 Pi extension emits `turn_end` and close the per-turn
+The Relay 0.11 Pi extension emits `turn_end` and closes the per-turn
 scope, but its local ATIF trajectory remains attached to Pi's session-level
 agent scope. Relay therefore finalizes that trajectory only after the Pi session
 closes. It is not included in the invocation's `relay_artifacts`. The adapter
@@ -356,3 +356,16 @@ resources remain disabled. The Relay extension does not add those resources.
 
 The Relay Pi hook route is available only on the loopback gateway and does not
 authenticate hook posts. Treat the loopback port as a local trust boundary.
+
+
+## Credential-free HTTP model gateways
+
+For Relay-enabled runs, set `harness.settings.insecure_http_model_hosts` to the exact bare DNS hostnames or IP addresses of trusted inference gateways. This requires NeMo Relay CLI 0.11.x.
+
+```python
+config.harness.settings["insecure_http_model_hosts"] = ["inference.internal", "10.0.0.10"]
+```
+
+Entries have no scheme, port, path, wildcard, brackets, or IPv6 zone identifier. DNS matching ignores case and a trailing dot. Each listed host may use custom ports and paths. NeMo Fabric writes explicit `[]` to revoke inherited trust and preserves omission when the setting is absent. System Relay configuration has higher priority and can enforce an empty list.
+
+Relay strips authorization, API-key, cookie, custom credential headers, and middleware-added credentials before forwarding remote HTTP model requests, including model credentials supplied to Pi. Configured upstream authentication conflicts with HTTP. Prompts and responses remain unencrypted. HTTPS is the default; this opt-in does not authorize MCP or observability endpoints, caller-selected destinations, or remote HTTP WebSockets.

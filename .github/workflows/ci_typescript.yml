@@ -125,5 +125,5 @@ jobs:
           FABRIC_TEST_NEMO_RELAY_COMMAND: ${{ runner.temp }}/nemo-relay-bin/nemo-relay
         run: >-
           node --test
-          --test-name-pattern='runs the released Relay CLI and shipped Pi extension end to end'
+          --test-name-pattern='runs Relay and the shipped Pi extension over'
           adapters/typescript/pi/test/relay-smoke.test.mjs
