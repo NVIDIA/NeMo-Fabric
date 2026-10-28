@@ -12,6 +12,8 @@ import asyncio
 import copy
 import json
 import os
+import shutil
+import subprocess
 import sys
 import venv
 from pathlib import Path
@@ -43,21 +45,51 @@ def provenance_config_fixture(hermes_shim_agent_dir, tmp_path):
     )
 
 
+@pytest.fixture(name="provenance_wheels")
+def provenance_wheels_fixture(tmp_path):
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("uv is required for the separate-venv installation test")
+    pytest.importorskip("setuptools", minversion="77")
+    directory = tmp_path / "wheels"
+    directory.mkdir()
+    for project in ("adapter-contract/python", "adapters/python/common"):
+        built = subprocess.run(
+            [
+                uv,
+                "build",
+                "--wheel",
+                "--no-build-isolation",
+                "--offline",
+                "--python",
+                sys.executable,
+                "--out-dir",
+                str(directory),
+                str(ROOT / project),
+            ],
+            capture_output=True,
+            timeout=60,
+        )
+        assert built.returncode == 0, (built.stdout + built.stderr).decode()
+    return uv, sorted(directory.glob("*.whl"))
+
+
 async def test_direct_and_separate_venv_contexts_are_not_joined_by_equal_versions(
-    provenance_config, hermes_shim_agent_dir, tmp_path
+    provenance_config, hermes_shim_agent_dir, tmp_path, provenance_wheels
 ):
+    uv, wheels = provenance_wheels
     guest = tmp_path / "adapter-venv"
     venv.EnvBuilder(with_pip=False).create(guest)
     python = guest / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
     process = await asyncio.create_subprocess_exec(
-        "uv",
+        uv,
         "pip",
         "install",
         "--python",
         str(python),
         "--no-deps",
-        str(ROOT / "adapter-contract/python"),
-        str(ROOT / "adapters/python/common"),
+        "--no-index",
+        *(str(wheel) for wheel in wheels),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
