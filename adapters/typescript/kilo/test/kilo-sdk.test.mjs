@@ -16,11 +16,11 @@ import undiciTimers from "undici/lib/util/timers.js";
 
 import {classifySpawnError, closeChild, extractPromptOutcome, kiloFetch, KiloSdkSessionFactory, startKiloServer} from "../dist/kilo-sdk.js";
 
-test("extracts Kilo Code text, usage, and cost", () => {
+test("extracts Kilo Code terminal text without treating final-message counters as invocation usage", () => {
   assert.deepEqual(extractPromptOutcome({
     info: {tokens: {input: 4, output: 6, total: 10}, cost: 0.05},
     parts: [{type: "text", text: "hello"}, {type: "tool", name: "read"}, {type: "text", text: " world"}],
-  }), {text: "hello world", usage: {input_tokens: 4, output_tokens: 6, total_tokens: 10, cost_usd: 0.05}});
+  }), { text: "hello world" });
 });
 
 test("marks upstream assistant errors without exposing their content", () => {
@@ -141,7 +141,7 @@ test("projects normalized configuration into an isolated Kilo Code server", asyn
     assert.equal(serverEnvironment.KILO_DISABLE_PROJECT_CONFIG, "1");
     assert.equal(serverEnvironment.MODEL_KEY, "secret");
     assert.equal(serverEnvironment.NVIDIA_API_KEY, undefined);
-    assert.deepEqual(createParameters, {directory: workspace, agent: "build", model: {providerID: "nvidia", id: "nemotron"}});
+    assert.deepEqual(createParameters, { directory: workspace, title: "NeMo Fabric", agent: "build", model: { providerID: "nvidia", id: "nemotron" } });
     await handle.stop();
     assert.deepEqual(deleteParameters, {sessionID: "session-1", directory: workspace});
     assert.ok(deleteSignal instanceof AbortSignal);
@@ -302,7 +302,11 @@ for (const phase of ["headers", "body"]) {
         request.resume();
         request.on("end", () => {
           response.setHeader("content-type", "application/json");
-          if (request.url.startsWith("/session/session-1/message")) {
+          if (request.method === "GET" && request.url.startsWith("/session/session-1/message")) {
+            response.end("[]");
+            return;
+          }
+          if (request.method === "POST" && request.url.startsWith("/session/session-1/message")) {
             pendingResponse = response;
             response.on("close", closed);
             if (phase === "body") response.write('{"info":{},"parts":');
@@ -320,7 +324,7 @@ for (const phase of ["headers", "body"]) {
         const factory = new KiloSdkSessionFactory(
           async () => (options) => createKiloClient({...options, fetch: async (request) => {
             const response = await options.fetch(request);
-            if (phase === "body" && request.url.includes("/message")) ready();
+            if (phase === "body" && request.method === "POST" && request.url.includes("/message")) ready();
             return response;
           }}),
           async () => ({url, close: async () => {}}),
@@ -351,7 +355,10 @@ for (const phase of ["headers", "body"]) {
           await nextTurn();
           const parts = [{type: "text", text: "done"}];
           pendingResponse.end(phase === "body" ? `${JSON.stringify(parts)}}` : JSON.stringify({info: {}, parts}));
-          assert.deepEqual(await outcome, {value: {text: "done"}});
+          const result = await outcome;
+          assert.equal(result.error, undefined);
+          assert.equal(result.value.text, "done");
+          assert.equal(result.value.usage.input_tokens, undefined);
         }
       } finally {
         await handle?.stop();
