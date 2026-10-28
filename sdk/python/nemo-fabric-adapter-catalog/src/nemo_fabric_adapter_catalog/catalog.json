@@ -1567,7 +1567,6 @@
             "models.temperature",
             "models.top_p",
             "models.max_tokens",
-            "models.settings",
             "instructions.system",
             "runtime.max_turns"
           ],
@@ -1664,7 +1663,7 @@
         "name": "nemo-fabric-adapters-mini-swe-agent",
         "version": "0.6.0"
       },
-      "sha256": "0376c8157a33047343919603e1e1ec53df25f177fa4486b2f79dc40417ccba11",
+      "sha256": "2480f84f77fdbc681ddd83ebedf3b30cbb766273f7104ad54408e54307f121db",
       "source": "adapters/python/mini-swe-agent/mini-swe-agent.fabric-adapter.json"
     },
     "nvidia.fabric.nooa": {

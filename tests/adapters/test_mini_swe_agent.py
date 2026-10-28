@@ -267,7 +267,6 @@ def test_mini_swe_agent_descriptor_is_narrow_and_versioned():
             "models.temperature",
             "models.top_p",
             "models.max_tokens",
-            "models.settings",
             "instructions.system",
             "runtime.max_turns",
         ],

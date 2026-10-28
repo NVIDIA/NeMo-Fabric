@@ -20,6 +20,17 @@ Relay artifacts.
 
 Use `fabric_model_provider=openai` for an OpenAI-compatible endpoint whose served model ID starts with another vendor prefix. For example, combine it with `model_name="nvidia/nemotron-3-ultra-550b-a55b"` and `fabric_model_base_url` to select the OpenAI protocol while preserving the exact served model ID. Without an override, the provider is inferred from the model prefix as before. The override requires a model and remains subject to the selected adapter’s model schema.
 
+## Model Settings
+
+Pass adapter-declared model settings with `fabric_model_settings`, for example
+`--ak 'fabric_model_settings={"cost_tracking":"disabled"}'` for an explicitly
+unpriced Mini-SWE model. Pair that policy with a positive `fabric_max_turns`.
+The bridge copies these settings into `models.default.settings`; the selected
+adapter's model schema and runtime validation still apply. This option requires
+a model. Keep credentials in managed environment variables, outside model
+settings. This option applies to the SDK bridge; native Harbor owns a separate
+implementation.
+
 ## Credential Transport
 
 Use `fabric_model_api_key_env` to name the model credential variable. The name

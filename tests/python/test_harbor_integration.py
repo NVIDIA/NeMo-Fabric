@@ -344,6 +344,29 @@ def test_harbor_model_provider_preserves_the_served_identifier(tmp_path):
     assert model.api_key_env == "MODEL_API_KEY"
 
 
+def test_harbor_transports_adapter_model_settings(tmp_path):
+    agent = FabricAgent(
+        logs_dir=tmp_path,
+        fabric_adapter_id="nvidia.fabric.mini-swe-agent",
+        fabric_model_settings={"cost_tracking": "disabled"},
+        fabric_max_turns=20,
+        model_name="nvidia/nemotron-3-ultra-550b-a55b",
+    )
+    config = agent._build_spec("fix it").config
+    assert config.models["default"].settings == {"cost_tracking": "disabled"}
+    assert config.runtime.max_turns == 20
+    assert config.harness.settings == {}
+
+
+def test_harbor_model_settings_require_a_model(tmp_path):
+    with pytest.raises(ValueError, match="model_settings requires model_name"):
+        FabricAgent(
+            logs_dir=tmp_path,
+            fabric_adapter_id="nvidia.fabric.mini-swe-agent",
+            fabric_model_settings={"cost_tracking": "disabled"},
+        )._build_spec("fix it")
+
+
 @pytest.mark.parametrize("provider", ["", " ", " openai", "openai "])
 def test_harbor_rejects_invalid_model_provider(tmp_path, provider):
     with pytest.raises(ValueError, match="fabric_model_provider must be"):

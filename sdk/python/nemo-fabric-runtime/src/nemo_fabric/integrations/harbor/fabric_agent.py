@@ -148,6 +148,10 @@ else:
             default=None,
             description="Fabric provider independent of the served model identifier.",
         )
+        fabric_model_settings: dict[str, Any] | None = Field(
+            default=None,
+            description="Adapter-declared settings for the default model.",
+        )
         fabric_model_base_url: str | None = Field(
             default=None,
             description="Model provider base URL; requires a Harbor model.",
@@ -344,6 +348,7 @@ else:
             *args: Any,
             fabric_model_api_key_env: str | None = None,
             fabric_model_provider: str | None = None,
+            fabric_model_settings: dict[str, Any] | None = None,
             fabric_discovery_paths: list[str] | None = None,
             fabric_adapter_descriptor: Path | None = None,
             **kwargs: Any,
@@ -361,6 +366,7 @@ else:
                 fabric_workspace=fabric_workspace,
                 fabric_harness_settings=fabric_harness_settings,
                 fabric_model_provider=fabric_model_provider,
+                fabric_model_settings=fabric_model_settings,
                 fabric_model_base_url=fabric_model_base_url,
                 fabric_model_api_key_env=fabric_model_api_key_env,
                 fabric_system_instruction=fabric_system_instruction,
@@ -393,6 +399,7 @@ else:
             self.fabric_workspace = options.fabric_workspace
             self.fabric_harness_settings = dict(options.fabric_harness_settings or {})
             self.fabric_model_provider = options.fabric_model_provider
+            self.fabric_model_settings = options.fabric_model_settings
             self.fabric_model_base_url = options.fabric_model_base_url
             self.fabric_model_api_key_env = options.fabric_model_api_key_env
             self.fabric_system_instruction = options.fabric_system_instruction
@@ -629,6 +636,7 @@ else:
                 workspace=self.fabric_workspace,
                 harness_settings=self.fabric_harness_settings,
                 model_provider_name=self.fabric_model_provider,
+                model_settings=self.fabric_model_settings,
                 model_base_url=self.fabric_model_base_url,
                 model_api_key_env=self.fabric_model_api_key_env,
                 system_instruction=self.fabric_system_instruction,
@@ -738,6 +746,7 @@ def build_harbor_config(
     workspace: str,
     harness_settings: dict[str, Any] | None = None,
     model_provider_name: str | None = None,
+    model_settings: dict[str, Any] | None = None,
     model_base_url: str | None = None,
     model_api_key_env: str | None = None,
     system_instruction: str | None = None,
@@ -808,9 +817,12 @@ def build_harbor_config(
             model=model_name,
             base_url=model_base_url,
             api_key_env=model_api_key_env,
+            settings=dict(model_settings or {}),
         )
     elif model_provider_name is not None:
         raise ValueError("model_provider_name requires model_name")
+    elif model_settings is not None:
+        raise ValueError("model_settings requires model_name")
     elif model_base_url is not None:
         raise ValueError("model_base_url requires model_name")
     elif model_api_key_env is not None:
