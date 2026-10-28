@@ -165,6 +165,7 @@ def bench_dependencies_fixture(monkeypatch: pytest.MonkeyPatch):
         "agents": mock_agents,
         "bench_agent": mock_bench_agent,
         "get_llm_client": mock_get_llm_client,
+        "get_task_tokens": mock_get_task_tokens,
         "initial_shell": mock_initial_shells[0],
         "initial_shells": mock_initial_shells,
         "model": mock_model,
@@ -213,6 +214,74 @@ def test_bench_descriptor_is_a_closed_harness_adapter(tmp_path: Path):
 
     assert plan["adapter"]["adapter_id"] == descriptor["adapter_id"]
     assert plan["adapter"]["adapter_kind"] == "python"
+
+
+@pytest.mark.parametrize(
+    "tokens",
+    [
+        None,
+        {},
+        {"n_input_tokens": 0, "n_output_tokens": 0},
+        {"n_input_tokens": True, "n_output_tokens": 2},
+        {"n_input_tokens": -1, "n_output_tokens": 2},
+        {"n_input_tokens": 4, "n_output_tokens": None},
+    ],
+)
+def test_bench_usage_does_not_promote_missing_or_default_zero(tokens: Any):
+    assert bench_adapter._usage(tokens) is None
+
+
+@pytest.mark.parametrize(
+    ("tokens", "expected"),
+    [
+        (
+            {"n_input_tokens": 8, "n_output_tokens": 0},
+            {"input_tokens": 8, "input_tokens_include_cache": True},
+        ),
+        ({"n_input_tokens": 0, "n_output_tokens": 3}, {"output_tokens": 3}),
+    ],
+)
+def test_bench_usage_keeps_only_positive_observed_dimensions(
+    tokens: Any, expected: Any
+):
+    assert bench_adapter._usage(tokens).to_mapping() == expected
+
+
+def test_pinned_nooa_metrics_bridge_preserves_inclusive_prompt_tokens_and_resets_tasks():
+    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+    from litellm.types.utils import ModelResponse
+    from nooa.runtime.actor import _make_llm_metrics_bridge
+    from nooa.runtime.token_usage import get_task_tokens
+    from nooa.runtime.token_usage import start_task_tokens
+    from nooa.unifiedllm.unifiedllm import _extract_reasoning_and_usage
+
+    bridge = _make_llm_metrics_bridge(MagicMock())
+    start_task_tokens()
+    assert bench_adapter._usage(get_task_tokens()) is None
+    response = ModelResponse(
+        usage={
+            "prompt_tokens": 100,
+            "completion_tokens": 20,
+            "total_tokens": 120,
+            "prompt_tokens_details": {"cached_tokens": 30},
+            "completion_tokens_details": {"reasoning_tokens": 5},
+        }
+    )
+    _, usage = _extract_reasoning_and_usage(response)
+    bridge("token_usage", usage)
+    result = bench_adapter._usage(get_task_tokens())
+    assert result.to_mapping() == {
+        "input_tokens": 100,
+        "output_tokens": 20,
+        "total_tokens": 120,
+        "input_tokens_include_cache": True,
+    }
+    assert result.cached_input_tokens is None
+    assert result.cost_usd is None
+    start_task_tokens()
+    assert bench_adapter._usage(get_task_tokens()) is None
+    bridge("token_usage", {"completion_tokens": 5})
+    assert bench_adapter._usage(get_task_tokens()).to_mapping() == {"output_tokens": 5}
 
 
 @pytest.mark.skipif(
@@ -369,6 +438,7 @@ async def test_bench_runtime_maps_task_result_usage_and_cleanup(
     assert result.usage is not None
     assert result.usage.to_mapping() == {
         "input_tokens": 12,
+        "input_tokens_include_cache": True,
         "output_tokens": 4,
         "total_tokens": 16,
     }
@@ -425,6 +495,7 @@ async def test_bench_runtime_isolates_agents_between_invocations(
     ):
         shell.close.assert_awaited_once_with()
     assert first.status is second.status is AgentRunStatus.SUCCEEDED
+    assert bench_dependencies["start_task_tokens"].call_count == 2
     bench_dependencies["model"].aclose.assert_awaited_once_with()
 
 
@@ -451,7 +522,28 @@ async def test_bench_runtime_returns_safe_failure(
     assert result.status is AgentRunStatus.FAILED
     assert result.error is not None
     assert result.error.code == "nooa_bench_task_failed"
+    assert result.usage.input_tokens == 12
+    assert result.usage.input_tokens_include_cache is True
     assert "secret-token-value" not in json.dumps(result.to_mapping())
+
+
+async def test_bench_runtime_exception_keeps_observed_usage(
+    tmp_path: Path,
+    bench_dependencies: dict[str, MagicMock],
+):
+    os.environ["OPENAI_API_KEY"] = "test-key"
+    bench_dependencies["agent"]._run_evaluation.side_effect = RuntimeError("private")
+    runtime = bench_adapter.BenchRuntime()
+    await runtime.start(_start_payload(tmp_path))
+    result = await runtime.invoke(
+        AgentRunRequest.from_mapping({"input": "task"}), _runtime_context()
+    )
+    await runtime.stop()
+    assert result.status is AgentRunStatus.FAILED
+    assert result.usage.input_tokens == 12
+    assert result.usage.output_tokens == 4
+    assert result.usage.cost_usd is None
+    assert "private" not in json.dumps(result.to_mapping())
 
 
 def test_bench_persistent_host_runs_start_invoke_stop(tmp_path: Path):
@@ -505,7 +597,9 @@ def test_bench_persistent_host_runs_start_invoke_stop(tmp_path: Path):
     ]
     environment = os.environ.copy()
     environment["OPENAI_API_KEY"] = "fixture-key"
-    environment["PYTHONPATH"] = str(fixture_source)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        (str(fixture_source), str(NOOA_ROOT / "src"))
+    )
 
     completed = subprocess.run(
         [sys.executable, "-m", "nemo_fabric_adapters.nooa.bench_adapter"],
@@ -528,6 +622,7 @@ def test_bench_persistent_host_runs_start_invoke_stop(tmp_path: Path):
     assert invocation["output"]["response"] == "test -f bench-agent-result.txt"
     assert invocation["usage"] == {
         "input_tokens": 12,
+        "input_tokens_include_cache": True,
         "output_tokens": 4,
         "total_tokens": 16,
     }

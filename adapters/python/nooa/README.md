@@ -17,7 +17,9 @@ The shared `nvidia.fabric.nooa` adapter owns the common NOOA queue dispatcher.
 It also maps normalized skill paths and whole MCP servers into compatible
 registered targets.
 The dedicated `nvidia.fabric.nooa.bench-agent` adapter maps the benchmark-native
-`BenchAgent` task contract directly into a NeMo Fabric invocation.
+`BenchAgent` task contract directly into a NeMo Fabric invocation. Its
+[observed token usage](docs/bench-agent.md#observed-token-usage) preserves the
+SDK's inclusive input convention and documents missing-request limitations.
 
 ## Install
 
