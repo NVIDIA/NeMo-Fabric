@@ -2006,7 +2006,6 @@
                         "unfinished_work"
                       ]
                     },
-                    "minItems": 1,
                     "type": "array",
                     "uniqueItems": true
                   },
@@ -2156,7 +2155,7 @@
         "name": "nemo-fabric-adapters-opencode",
         "version": "0.6.0"
       },
-      "sha256": "6094db2a3be9d36728ec3fbc24541b9bde144758dbb6ca50f00059f2197dbd38",
+      "sha256": "60280abac5d2373384d4c1b30029d95da57ae22de5b3ec41599d5faffce3d75d",
       "source": "adapters/typescript/opencode/opencode.fabric-adapter.json"
     },
     "nvidia.fabric.openhands": {

@@ -104,17 +104,48 @@ def test_normalized_usage_reaches_harbor_without_telemetry(result_path):
             None,
         ),
         ({"metadata": {"estimated_cost_usd": 0.25}}, None, None),
-        (
+        pytest.param(
+            {
+                "input_tokens": 127,
+                "cached_input_tokens": 22,
+                "input_tokens_include_cache": True,
+                "output_tokens": 33,
+                "total_tokens": 160,
+                "metadata": {
+                    "nvidia.fabric.opencode.usage_evidence.v1": {
+                        "observed": {
+                            "input_tokens": 127,
+                            "output_tokens": 33,
+                            "total_tokens": 160,
+                            "cached_input_tokens": 22,
+                            "reasoning_tokens": 6,
+                        },
+                        "gaps": [],
+                    }
+                },
+            },
+            127,
+            22,
+            id="opencode-complete-inclusive",
+        ),
+        pytest.param(
             {
                 "metadata": {
                     "nvidia.fabric.opencode.usage_evidence.v1": {
-                        "observed": {"input_tokens": 120, "output_tokens": 30},
-                        "gaps": ["scope_unverified"],
+                        "observed": {
+                            "input_tokens": 127,
+                            "output_tokens": 33,
+                            "total_tokens": 160,
+                            "cached_input_tokens": 22,
+                            "reasoning_tokens": 6,
+                        },
+                        "gaps": ["unfinished_work"],
                     }
                 }
             },
             None,
             None,
+            id="opencode-partial-observations",
         ),
     ],
 )

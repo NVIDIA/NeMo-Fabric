@@ -1895,3 +1895,190 @@ test("OpenCode validates native closure when a health request rejects", async ()
   assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
   assert.equal((await handle.check("ready")).reason_code, "session_closed");
 });
+
+async function accountingHandle({ entries = [{ type: "document", info: {} }], initialTitle, delayedTitle = false, postPromptEvent } = {}) {
+  const hooks = new Map();
+  const queued = [];
+  const readers = [];
+  let stopped = false;
+  let title = initialTitle;
+  let submitted = false;
+  let finishTitle;
+  let rootIdle;
+  const idle = new Promise(resolve => { rootIdle = resolve; });
+  const push = event => {
+    const reader = readers.shift();
+    if (reader !== undefined) reader.resolve({ value: event, done: false });
+    else queued.push(event);
+  };
+  const fail = () => {
+    stopped = true;
+    for (const reader of readers.splice(0)) reader.reject(new Error("event stream lost"));
+  };
+  const call = async (kind, input, output) => {
+    const request = new Request("https://provider.test/v1/chat/completions");
+    await hooks.get("http.request")?.({ sessionID: "owned", kind, request });
+    return async () => {
+      const event = { sessionID: "owned", kind, request, response: new Response(JSON.stringify({ choices: [{ finish_reason: "stop" }], usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output } }), { headers: { "content-type": "application/json" } }) };
+      await hooks.get("http.response")?.(event);
+      await event.response.text();
+    };
+  };
+  const client = {
+    config: { get: async () => entries },
+    events: {
+      subscribe: ({ signal }) => ({
+        async *[Symbol.asyncIterator]() {
+          const abort = () => { stopped = true; for (const reader of readers.splice(0)) reader.resolve({ done: true }); };
+          signal.addEventListener("abort", abort, { once: true });
+          try {
+            yield { type: "server.connected" };
+            while (!stopped) {
+              const next = queued.length > 0 ? { value: queued.shift(), done: false } : await new Promise((resolve, reject) => readers.push({ resolve, reject }));
+              if (next.done) return;
+              yield next.value;
+            }
+          } finally { signal.removeEventListener("abort", abort); }
+        },
+      }),
+    },
+    sessions: {
+      create: async () => ({ id: "owned" }),
+      get: async () => ({ id: "owned", title, time: { created: 0 } }),
+      context: async () => {
+        if (!submitted) return [];
+        if (postPromptEvent !== undefined) { push(postPromptEvent); await Promise.resolve(); }
+        return [{ id: "answer", type: "assistant", content: [{ type: "text", text: "done" }], finish: "stop" }];
+      },
+      prompt: async () => {
+        submitted = true;
+        if (title === undefined) {
+          const finish = await call("title", 10, 2);
+          finishTitle = async () => { await finish(); title = "Generated title"; push({ type: "session.renamed", data: { sessionID: "owned", title } }); };
+        }
+        await (await call("primary", 120, 30))();
+      },
+      wait: async () => {
+        push({ type: "session.execution.succeeded", data: { sessionID: "owned" } });
+        rootIdle();
+        if (!delayedTitle) await finishTitle?.();
+      },
+      diff: async () => [],
+      remove: async () => {},
+    },
+    close: async () => {},
+  };
+  const factory = new OpenCodeSdkSessionFactory(async () => ({ OpenCode: { create: async options => {
+    await options.plugins[0].setup({ session: { get: client.sessions.get, hook: async (name, callback) => { hooks.set(name, callback); return { dispose: async () => {} }; } }, tool: { hook: async (name, callback) => { hooks.set(name, callback); return { dispose: async () => {} }; } } });
+    return client;
+  } } }));
+  const handle = await factory.create(startInput());
+  return { handle, idle, finishTitle: () => finishTitle(), fail, push };
+}
+
+test("waits for automatic title completion before returning complete invocation counts", async () => {
+  const fixture = await accountingHandle({ delayedTitle: true });
+  try {
+    let settled = false;
+    const result = fixture.handle.prompt("hello", Date.now() + 1000).then(value => { settled = true; return value; });
+    await fixture.idle;
+    await Promise.resolve();
+    assert.equal(settled, false);
+    await fixture.finishTitle();
+    const outcome = await result;
+    assert.equal(outcome.text, "done");
+    assert.equal(outcome.usage.input_tokens, 130);
+    assert.equal(outcome.usage.output_tokens, 32);
+    assert.equal(outcome.usage.total_tokens, 162);
+  } finally { await fixture.handle.stop(); }
+});
+
+test("reports complete warm invocation counts without another title event", async () => {
+  const fixture = await accountingHandle({ initialTitle: "Existing title" });
+  try {
+    const outcome = await fixture.handle.prompt("hello", Date.now() + 1000);
+    assert.equal(outcome.usage.input_tokens, 120);
+    assert.equal(outcome.usage.output_tokens, 30);
+  } finally { await fixture.handle.stop(); }
+});
+
+test("keeps successful output and partial counts when the accounting deadline has expired", async () => {
+  const fixture = await accountingHandle({ delayedTitle: true });
+  try {
+    const outcome = await fixture.handle.prompt("hello", Date.now() - 1);
+    assert.equal(outcome.text, "done");
+    assert.equal(outcome.usage.input_tokens, undefined);
+    assert.equal(outcome.usage.extensions["nvidia.fabric.opencode.usage_evidence.v1"].observed.input_tokens, 120);
+  } finally { await fixture.handle.stop(); }
+});
+
+test("leaves complete counts unknown for additional configuration, warming, or plugins", async () => {
+  for (const entries of [
+    [{ type: "document", info: {} }, { type: "document", info: {} }],
+    [{ type: "document", info: { warming: true } }],
+    [{ type: "document", info: { plugins: ["custom-plugin"] } }],
+  ]) {
+    const fixture = await accountingHandle({ entries });
+    try {
+      const outcome = await fixture.handle.prompt("hello", Date.now() + 1000);
+      assert.equal(outcome.text, "done");
+      assert.equal(outcome.usage.input_tokens, undefined);
+    } finally { await fixture.handle.stop(); }
+  }
+});
+
+test("returns successful output with unknown completeness when the live observer fails", async () => {
+  const fixture = await accountingHandle({ delayedTitle: true });
+  try {
+    const pending = fixture.handle.prompt("hello", Date.now() + 1000);
+    await fixture.idle;
+    fixture.fail();
+    const outcome = await pending;
+    assert.equal(outcome.text, "done");
+    assert.equal(outcome.usage.input_tokens, undefined);
+  } finally { await fixture.handle.stop(); }
+});
+
+test("keeps complete counts unknown when title completion exceeds the invocation deadline", async () => {
+  const fixture = await accountingHandle({ delayedTitle: true });
+  try {
+    const pending = fixture.handle.prompt("hello", Date.now() + 30);
+    await fixture.idle;
+    const outcome = await pending;
+    assert.equal(outcome.text, "done");
+    assert.equal(outcome.usage.input_tokens, undefined);
+    assert.ok(outcome.usage.extensions["nvidia.fabric.opencode.usage_evidence.v1"].gaps.includes("scope_unverified"));
+  } finally { await fixture.handle.stop(); }
+});
+
+test("keeps complete counts unknown when configuration changes during the invocation", async () => {
+  const fixture = await accountingHandle({ delayedTitle: true });
+  try {
+    const pending = fixture.handle.prompt("hello", Date.now() + 1000);
+    await fixture.idle;
+    fixture.push({ type: "config.updated", data: {} });
+    await fixture.finishTitle();
+    const outcome = await pending;
+    assert.equal(outcome.text, "done");
+    assert.equal(outcome.usage.input_tokens, undefined);
+  } finally { await fixture.handle.stop(); }
+});
+
+test("supports a bounded accounting wait when the caller omits a deadline", async () => {
+  const fixture = await accountingHandle();
+  try {
+    const outcome = await fixture.handle.prompt("hello");
+    assert.equal(outcome.usage.input_tokens, 130);
+    assert.equal(outcome.usage.output_tokens, 32);
+  } finally { await fixture.handle.stop(); }
+});
+
+test("invalidates completeness when configuration changes during the final history read", async () => {
+  const fixture = await accountingHandle({ postPromptEvent: { type: "config.updated", data: {} } });
+  try {
+    const outcome = await fixture.handle.prompt("hello", Date.now() + 1000);
+    assert.equal(outcome.text, "done");
+    assert.equal(outcome.usage.input_tokens, undefined);
+    assert.ok(outcome.usage.extensions["nvidia.fabric.opencode.usage_evidence.v1"].gaps.includes("scope_unverified"));
+  } finally { await fixture.handle.stop(); }
+});

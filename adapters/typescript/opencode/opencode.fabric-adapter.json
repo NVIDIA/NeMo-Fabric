@@ -83,7 +83,6 @@
             "gaps": {
               "type": "array",
               "items": {"enum": ["scope_unverified", "missing_usage", "unfinished_work"]},
-              "minItems": 1,
               "uniqueItems": true
             }
           },

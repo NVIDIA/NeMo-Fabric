@@ -10,12 +10,12 @@ const request = () => new Request("https://model.example/v1/chat/completions", {
 const frame = (usage) => `data: ${JSON.stringify({ choices: [], usage })}\n\n`;
 const stream = (data) => new Response(data, { headers: { "content-type": "text/event-stream" } });
 
-async function fixture() {
+async function fixture(parents = { child: "root" }) {
   const collector = new OpenCodeUsageCollector();
   const hooks = new Map();
   const hook = async (name, callback) => { hooks.set(name, callback); return { async dispose() {} }; };
   await collector.plugin().setup({ session: {
-    async get() { return { parentID: "root" }; },
+    async get({ sessionID }) { return { parentID: parents[sessionID] }; },
     hook,
   }, tool: { hook } });
   const start = (req = request(), kind = "primary", sessionID = "root") => {
@@ -186,16 +186,16 @@ test("freezes returned evidence and keeps late responses out of the next invocat
   await (await respond(earlier, stream(frame({ prompt_tokens: 900, completion_tokens: 90 }) + "data: [DONE]\n\n"))).text();
   await (await respond(start(), stream(frame({ prompt_tokens: 20, completion_tokens: 2 }) + "data: [DONE]\n\n"))).text();
   assert.deepEqual(snapshot, saved);
-  assert.deepEqual(collector.end(second).extensions[KEY].observed, { input_tokens: 20, output_tokens: 2 });
+  assert.deepEqual(collector.end(second).extensions[KEY].observed, {});
 });
 
-test("excludes title and child requests and suppresses ambiguous later root continuations", async () => {
+test("retains title and unfinished child observations without transferring later continuations", async () => {
   const { collector, hooks, start, respond } = await fixture();
   const first = collector.begin("root");
   await (await respond(start(undefined, "title"), stream(frame({ prompt_tokens: 500, completion_tokens: 50 }) + "data: [DONE]\n\n"))).text();
   await hooks.get("prompt")({ sessionID: "child" });
   await (await respond(start(undefined, "primary", "child"), stream(frame({ prompt_tokens: 600, completion_tokens: 60 }) + "data: [DONE]\n\n"))).text();
-  assert.deepEqual(collector.end(first).extensions[KEY].observed, {});
+  assert.deepEqual(collector.end(first).extensions[KEY].observed, { input_tokens: 1100, output_tokens: 110 });
   const second = collector.begin("root");
   await (await respond(start(), stream(frame({ prompt_tokens: 700, completion_tokens: 70 }) + "data: [DONE]\n\n"))).text();
   assert.deepEqual(collector.end(second).extensions[KEY].observed, {});
@@ -240,20 +240,46 @@ test("retains usage but marks an errored stream unfinished after a finish frame"
   });
 });
 
-test("distinguishes early cancellation from discarding a terminal stream tail", async () => {
+test("keeps cancellation after a finish reason incomplete until the raw stream ends", async () => {
   for (const terminal of [false, true]) {
     const { collector, start, respond } = await fixture();
     const invocation = collector.begin("root");
     const data = `data: ${JSON.stringify({
       choices: terminal ? [{ finish_reason: "stop" }] : [],
       usage: { prompt_tokens: 12, completion_tokens: 3 },
-    })}\n\n`;
+    })}\n\n${terminal ? "data: [DONE]\n\n" : ""}`;
     const reader = (await respond(start(), stream(data))).body.getReader();
     await reader.read();
     await reader.cancel();
     assert.deepEqual(collector.end(invocation).extensions[KEY].gaps,
       terminal ? ["scope_unverified"] : ["scope_unverified", "unfinished_work"]);
   }
+});
+
+test("does not complete an earlier usage snapshot when cancelled after a finish reason", async () => {
+  const { collector, start, respond } = await fixture();
+  const invocation = collector.begin("root");
+  const body = new ReadableStream({ start(controller) {
+    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({
+      choices: [{ finish_reason: "stop" }], usage: { prompt_tokens: 12, completion_tokens: 3 },
+    })}\n\n`));
+  } });
+  const response = await respond(start(), new Response(body, { headers: { "content-type": "text/event-stream" } }));
+  const reader = response.body.getReader();
+  await reader.read();
+  await reader.cancel();
+  assert.deepEqual(collector.end(invocation).extensions[KEY], {
+    observed: { input_tokens: 12, output_tokens: 3 }, gaps: ["scope_unverified", "unfinished_work"],
+  });
+});
+
+test("ignores usage frames after the provider stream ends", async () => {
+  const { collector, start, respond } = await fixture();
+  const invocation = collector.begin("root");
+  const data = frame({ prompt_tokens: 12, completion_tokens: 3 }) + "data: [DONE]\n\n" +
+    frame({ prompt_tokens: 900, completion_tokens: 90 });
+  assert.equal(await (await respond(start(), stream(data))).text(), data);
+  assert.deepEqual(collector.end(invocation).extensions[KEY].observed, { input_tokens: 12, output_tokens: 3 });
 });
 
 test("excludes later root work after a background shell while preserving ordinary warm prompts", async () => {
@@ -269,4 +295,154 @@ test("excludes later root work after a background shell while preserving ordinar
       suppressLater ? {} : { input_tokens: 999, output_tokens: 99 });
     assert.deepEqual(snapshot.extensions[KEY].observed, { input_tokens: 12, output_tokens: 3 });
   }
+});
+
+test("promotes root primary, compaction and title counts after the scope is proven", async () => {
+  const { collector, start, respond } = await fixture();
+  const invocation = collector.begin("root");
+  for (const kind of ["primary", "compaction", "title"]) {
+    await (await respond(start(undefined, kind), stream(frame({
+      prompt_tokens: 12, completion_tokens: 3, total_tokens: 15,
+      prompt_tokens_details: { cached_tokens: 2 }, completion_tokens_details: { reasoning_tokens: 1 },
+    }) + "data: [DONE]\n\n"))).text();
+  }
+  assert.deepEqual(collector.end(invocation, true), {
+    input_tokens: 36, output_tokens: 9, total_tokens: 45,
+    cached_input_tokens: 6, input_tokens_include_cache: true,
+    extensions: { [KEY]: { observed: {
+      input_tokens: 36, output_tokens: 9, total_tokens: 45, cached_input_tokens: 6, reasoning_tokens: 3,
+    }, gaps: [] } },
+  });
+});
+
+test("includes foreground child usage and safely reuses that child in a warm invocation", async () => {
+  const { collector, hooks, start, respond } = await fixture();
+  for (const value of [12, 20]) {
+    const invocation = collector.begin("root");
+    hooks.get("execute.before")({ sessionID: "root", tool: "subagent", id: "child-tool" });
+    await hooks.get("prompt")({ sessionID: "child" });
+    await (await respond(start(undefined, "primary", "child"), stream(frame({
+      prompt_tokens: value, completion_tokens: 3, total_tokens: value + 3,
+    }) + "data: [DONE]\n\n"))).text();
+    hooks.get("execute.after")({ sessionID: "root", tool: "subagent", id: "child-tool", status: "completed",
+      result: { output: { sessionID: "child", status: "completed" } } });
+    const usage = collector.end(invocation, true);
+    assert.equal(usage.input_tokens, value);
+    assert.equal(usage.output_tokens, 3);
+    assert.deepEqual(usage.extensions[KEY].gaps, []);
+  }
+});
+
+test("keeps foreground-child counts partial when that child leaves background work", async () => {
+  const { collector, hooks, start, respond } = await fixture();
+  const invocation = collector.begin("root");
+  await hooks.get("prompt")({ sessionID: "child" });
+  await (await respond(start(undefined, "primary", "child"), stream(frame({ prompt_tokens: 12, completion_tokens: 3 }) + "data: [DONE]\n\n"))).text();
+  hooks.get("execute.after")({ sessionID: "child", tool: "shell", status: "completed", result: { output: { status: "running" } } });
+  hooks.get("execute.after")({ sessionID: "root", tool: "subagent", status: "completed", result: { output: { sessionID: "child", status: "completed" } } });
+  const snapshot = collector.end(invocation, true);
+  assert.equal(snapshot.input_tokens, undefined);
+  assert.deepEqual(snapshot.extensions[KEY].observed, { input_tokens: 12, output_tokens: 3 });
+  const next = collector.begin("root");
+  await (await respond(start(undefined, "primary", "child"), stream(frame({ prompt_tokens: 99, completion_tokens: 9 }) + "data: [DONE]\n\n"))).text();
+  await (await respond(start(), stream(frame({ prompt_tokens: 999, completion_tokens: 99 }) + "data: [DONE]\n\n"))).text();
+  assert.deepEqual(collector.end(next, true).extensions[KEY].observed, {});
+  assert.deepEqual(snapshot.extensions[KEY].observed, { input_tokens: 12, output_tokens: 3 });
+});
+
+test("promotes only metrics reported by every physical attempt", async () => {
+  const { collector, start, respond } = await fixture();
+  const invocation = collector.begin("root");
+  for (const usage of [{ prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 }, { prompt_tokens: 0 }]) {
+    await (await respond(start(), stream(frame(usage) + "data: [DONE]\n\n"))).text();
+  }
+  const usage = collector.end(invocation, true);
+  assert.equal(usage.input_tokens, 12);
+  assert.equal(usage.output_tokens, undefined);
+  assert.equal(usage.total_tokens, undefined);
+  assert.equal(usage.cached_input_tokens, undefined);
+  assert.equal(usage.cost_usd, undefined);
+  assert.deepEqual(usage.extensions[KEY], {
+    observed: { input_tokens: 12, output_tokens: 3, total_tokens: 15 }, gaps: ["missing_usage"],
+  });
+});
+
+test("does not promote a successful retry when an earlier attempt lacks usage", async () => {
+  const { collector, start, respond } = await fixture();
+  const invocation = collector.begin("root");
+  await respond(start(), new Response("retry", { status: 503 }));
+  await (await respond(start(), stream(frame({ prompt_tokens: 12, completion_tokens: 3 }) + "data: [DONE]\n\n"))).text();
+  const usage = collector.end(invocation, true);
+  assert.equal(usage.input_tokens, undefined);
+  assert.equal(usage.output_tokens, undefined);
+  assert.deepEqual(usage.extensions[KEY].gaps, ["missing_usage"]);
+});
+
+test("keeps ambiguous auxiliary generations out of current and later observations", async () => {
+  const { collector, start, respond } = await fixture();
+  const invocation = collector.begin("root");
+  await (await respond(start(), stream(frame({ prompt_tokens: 12, completion_tokens: 3 }) + "data: [DONE]\n\n"))).text();
+  await (await respond(start(undefined, "generate"), stream(frame({ prompt_tokens: 900, completion_tokens: 90 }) + "data: [DONE]\n\n"))).text();
+  const usage = collector.end(invocation, true);
+  assert.equal(usage.input_tokens, undefined);
+  assert.deepEqual(usage.extensions[KEY].observed, { input_tokens: 12, output_tokens: 3 });
+  const next = collector.begin("root");
+  await (await respond(start(), stream(frame({ prompt_tokens: 99, completion_tokens: 9 }) + "data: [DONE]\n\n"))).text();
+  assert.deepEqual(collector.end(next, true).extensions[KEY].observed, {});
+});
+
+test("does not promote unsupported protocols or an ambiguous manual title boundary", async () => {
+  for (const boundary of ["websocket", "opencode_session_rename", "opencode_session_move", "unsupported-http"]) {
+    const { collector, hooks, start, respond } = await fixture();
+    const invocation = collector.begin("root");
+    await (await respond(start(), stream(frame({ prompt_tokens: 12, completion_tokens: 3 }) + "data: [DONE]\n\n"))).text();
+    if (boundary === "websocket") hooks.get("experimental.ws.handshake")({ sessionID: "root" });
+    else if (boundary === "unsupported-http") await respond(start(new Request("https://model.example/v1/responses")), new Response("{}"));
+    else {
+      hooks.get("execute.before")({ sessionID: "root", tool: boundary });
+      hooks.get("execute.after")({ sessionID: "root", tool: boundary, status: "completed" });
+    }
+    assert.equal(collector.end(invocation, true).input_tokens, undefined, boundary);
+  }
+});
+
+test("accepts the final usage snapshot at clean EOF after a finish reason", async () => {
+  const { collector, start, respond } = await fixture();
+  const invocation = collector.begin("root");
+  const data = `data: ${JSON.stringify({ choices: [{ finish_reason: "stop" }], usage: { prompt_tokens: 12, completion_tokens: 3 } })}\n\n` +
+    frame({ prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 });
+  await (await respond(start(), stream(data))).text();
+  const usage = collector.end(invocation, true);
+  assert.equal(usage.input_tokens, 20);
+  assert.equal(usage.output_tokens, 5);
+  assert.equal(usage.total_tokens, 25);
+});
+
+test("ignores oversized data after DONE without losing valid accounting", async () => {
+  const { collector, start, respond } = await fixture();
+  const invocation = collector.begin("root");
+  const data = frame({ prompt_tokens: 12, completion_tokens: 3 }) + "data: [DONE]\n\n" + "x".repeat(1 << 21);
+  await (await respond(start(), stream(data))).text();
+  const usage = collector.end(invocation, true);
+  assert.equal(usage.input_tokens, 12);
+  assert.deepEqual(usage.extensions[KEY].gaps, []);
+});
+
+test("keeps a late title with its original invocation after an uncertain boundary", async () => {
+  const { collector, start, respond } = await fixture();
+  const first = collector.begin("root");
+  collector.markUncertain();
+  const snapshot = collector.end(first);
+  const next = collector.begin("root");
+  await (await respond(start(undefined, "title"), stream(frame({ prompt_tokens: 90, completion_tokens: 9 }) + "data: [DONE]\n\n"))).text();
+  assert.deepEqual(collector.end(next, true).extensions[KEY].observed, {});
+  assert.deepEqual(snapshot.extensions[KEY].observed, {});
+});
+
+test("rejects cyclic child ancestry without attributing its requests", async () => {
+  const { collector, hooks, start, respond } = await fixture({ child: "child" });
+  const invocation = collector.begin("root");
+  await hooks.get("prompt")({ sessionID: "child" });
+  await (await respond(start(undefined, "primary", "child"), stream(frame({ prompt_tokens: 90, completion_tokens: 9 }) + "data: [DONE]\n\n"))).text();
+  assert.deepEqual(collector.end(invocation, true).extensions[KEY].observed, {});
 });

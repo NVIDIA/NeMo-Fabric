@@ -170,7 +170,7 @@ OpenCode host and one OpenCode session for the NeMo Fabric runtime. Ordered
 plain-text invocations reuse that session and its conversation history. A
 successful result has `output.response`. `stop` removes the OpenCode session and closes the embedded host.
 
-For OpenAI-compatible Chat Completions responses, the result retains observed token counts under `usage.metadata["nvidia.fabric.opencode.usage_evidence.v1"]`. These counts include cache and reasoning where reported, but do not cover title generation, auxiliary generation, or OpenCode's built-in child sessions. After child work or a background shell task starts, later invocations leave observations unavailable because that work can resume the root session. Complete invocation totals and provider-reported cost remain unknown, including in Harbor. See the [adapter's token usage limits](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/typescript/opencode#token-usage) before using these observations in comparisons.
+For OpenAI-compatible Chat Completions responses, the adapter reports standard input and output counts when it proves ownership and completion of OpenCode-managed model work, including automatic title generation and attributable foreground children. Input includes cache reads, and output includes reasoning; do not add these breakdowns again. Harbor receives the same counts. Ambiguous runs retain partial observations and coverage gaps under `usage.metadata["nvidia.fabric.opencode.usage_evidence.v1"]`, with standard totals left unknown. Provider-reported cost stays unknown. Refer to the [adapter's token usage limits](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/typescript/opencode#token-usage) before using these counts in comparisons.
 
 ```mermaid
 flowchart LR

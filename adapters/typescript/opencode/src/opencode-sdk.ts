@@ -64,6 +64,7 @@ const MCP_CONNECTION_POLL_INTERVAL_MS = 50;
 const SKILL_DISCOVERY_TIMEOUT_MS = 5_000;
 const SKILL_DISCOVERY_POLL_INTERVAL_MS = 50;
 const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
+const ACCOUNTING_WAIT_LIMIT_MS = 2_000;
 
 function loopbackHostname(hostname: string): boolean {
   return hostname === "localhost" || hostname === "::1" || hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/u.test(hostname);
@@ -720,6 +721,161 @@ function leaseEnvironment(input: AdapterStartInput, credentialName: string): Env
   return { release: () => replaceEnvironment(original) };
 }
 
+interface AccountingScope {
+  renames: number;
+  terminals: number;
+  needsTitle: boolean;
+  supported: boolean;
+}
+
+/** Join the SDK's independent title worker without changing its behavior. */
+class OpenCodeAccountingBoundary {
+  private readonly controller = new AbortController();
+  private readonly waiters = new Set<() => void>();
+  private running = false;
+  private connected = false;
+  private watching = false;
+  private uncertain = false;
+  private renames = 0;
+  private terminals = 0;
+
+  constructor(
+    private readonly id: string,
+    private readonly client: OpenCodeClient,
+    private readonly workspace: string,
+    private readonly collector: OpenCodeUsageCollector,
+  ) {
+    // Older injected clients still return useful partial evidence.
+    if (typeof client.events?.subscribe !== "function" || typeof client.config?.get !== "function" || typeof client.sessions.get !== "function") return;
+    this.running = true;
+    void this.observe();
+  }
+
+  private changed(): void {
+    for (const waiter of this.waiters) waiter();
+  }
+
+  private invalidate(): void {
+    this.uncertain = true;
+    this.collector.markUncertain();
+    this.changed();
+  }
+
+  private async observe(): Promise<void> {
+    try {
+      for await (const event of this.client.events.subscribe({ signal: this.controller.signal })) {
+        if (event.type === "server.connected") this.connected = true;
+        if (this.watching && (event.type === "config.updated" || event.type === "wellknown.updated")) this.invalidate();
+        if (isRecord(event.data) && event.data.sessionID === this.id) {
+          if (event.type === "session.renamed") this.renames++;
+          if (event.type === "session.execution.succeeded" || event.type === "session.execution.failed" || event.type === "session.execution.interrupted") this.terminals++;
+        }
+        this.changed();
+      }
+    } catch {
+      // Losing the lifecycle stream loses the title completion proof.
+    } finally {
+      this.running = false;
+      if (!this.controller.signal.aborted) this.invalidate();
+      this.changed();
+    }
+  }
+
+  private limit(deadlineMillis?: number | null): number {
+    const limit = Date.now() + ACCOUNTING_WAIT_LIMIT_MS;
+    return typeof deadlineMillis === "number" && Number.isFinite(deadlineMillis) ? Math.min(deadlineMillis, limit) : limit;
+  }
+
+  private async waitFor(predicate: () => boolean, deadline: number): Promise<boolean> {
+    if (predicate()) return true;
+    if (!this.running || this.uncertain || deadline <= Date.now()) return false;
+    return new Promise(resolve => {
+      const finish = (result: boolean): void => {
+        clearTimeout(timer);
+        this.waiters.delete(check);
+        resolve(result);
+      };
+      const check = (): void => {
+        if (!this.running || this.uncertain) finish(false);
+        else if (predicate()) finish(true);
+      };
+      const timer = setTimeout(() => finish(false), Math.max(0, deadline - Date.now()));
+      this.waiters.add(check);
+      check();
+    });
+  }
+
+  private async readScope(deadline: number): Promise<{ entries: unknown; title: unknown } | undefined> {
+    if (deadline <= Date.now()) return undefined;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = Promise.all([
+        this.client.config.get({ location: { directory: this.workspace } }, { signal: controller.signal }),
+        this.client.sessions.get({ sessionID: this.id }, { signal: controller.signal }),
+      ]).then(([entries, session]) => session.id === this.id ? { entries, title: session.title } : undefined).catch(() => undefined);
+      return await Promise.race([result, new Promise<undefined>(resolve => {
+        timer = setTimeout(() => resolve(undefined), Math.max(0, deadline - Date.now()));
+      })]);
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+    }
+  }
+
+  private supported(entries: unknown): boolean {
+    // Remote WellKnown documents still load when project/global discovery is off.
+    // Additional configuration can install unjoined model work or custom plugins.
+    if (!Array.isArray(entries) || entries.length !== 1) return false;
+    const entry: unknown = entries[0];
+    if (!isRecord(entry) || entry.type !== "document" || !isRecord(entry.info)) return false;
+    const { warming, plugins } = entry.info;
+    return (warming === undefined || warming === false) && (plugins === undefined || Array.isArray(plugins) && plugins.length === 0);
+  }
+
+  async prepare(deadlineMillis?: number | null): Promise<AccountingScope | undefined> {
+    const limit = this.limit(deadlineMillis);
+    if (!await this.waitFor(() => this.connected, limit)) return undefined;
+    this.watching = true;
+    const scope = await this.readScope(limit);
+    if (scope === undefined || !this.running || this.uncertain) return undefined;
+    const supported = this.supported(scope.entries);
+    return {
+      renames: this.renames,
+      terminals: this.terminals,
+      supported,
+      // This conservative check also covers the SDK's legacy timestamped fallback.
+      needsTitle: typeof scope.title !== "string" || scope.title.length === 0 || scope.title.startsWith("New session -"),
+    };
+  }
+
+  async finish(scope: AccountingScope | undefined, deadlineMillis?: number | null): Promise<boolean> {
+    if (scope === undefined) {
+      this.invalidate();
+      return false;
+    }
+    if (!scope.supported) {
+      this.invalidate();
+      return false;
+    }
+    const limit = this.limit(deadlineMillis);
+    const settled = await this.waitFor(() => this.terminals > scope.terminals && (!scope.needsTitle || this.renames > scope.renames), limit);
+    if (!settled) {
+      this.invalidate();
+      return false;
+    }
+    const current = await this.readScope(limit);
+    if (current === undefined || !this.supported(current.entries)) this.invalidate();
+    return current !== undefined && this.supported(current.entries) && this.running && !this.uncertain;
+  }
+
+  close(): void {
+    this.controller.abort();
+    this.running = false;
+    this.changed();
+  }
+}
+
 class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
   private healthObservation?: Promise<boolean>;
   readonly id: string;
@@ -728,6 +884,7 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
   private readonly endpointProxy?: EndpointProxy;
   private readonly skillsRoot?: string;
   private readonly usageCollector: OpenCodeUsageCollector;
+  private readonly accountingBoundary: OpenCodeAccountingBoundary;
   private stopped = false;
 
   constructor(
@@ -737,6 +894,7 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
     endpointProxy?: EndpointProxy,
     skillsRoot?: string,
     usageCollector = new OpenCodeUsageCollector(),
+    workspace = "",
   ) {
     this.id = id;
     this.client = client;
@@ -744,6 +902,7 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
     this.endpointProxy = endpointProxy;
     this.skillsRoot = skillsRoot;
     this.usageCollector = usageCollector;
+    this.accountingBoundary = new OpenCodeAccountingBoundary(id, client, workspace, usageCollector);
   }
 
   async check(level: CheckLevel): Promise<AdapterCheckResult> {
@@ -765,18 +924,20 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
     }
   }
 
-  async prompt(text: string): Promise<OpenCodePromptOutcome> {
+  async prompt(text: string, deadlineMillis?: number | null): Promise<OpenCodePromptOutcome> {
     let promptMayHaveBeenSubmitted = false;
     let evidence: OpenCodeInvocationUsage | undefined;
     try {
       const historyBeforePrompt = await this.client.sessions.context({ sessionID: this.id });
       const existingMessageIds = messageIds(historyBeforePrompt);
       evidence = this.usageCollector.begin(this.id);
+      const scope = await this.accountingBoundary.prepare(deadlineMillis);
       promptMayHaveBeenSubmitted = true;
       await this.client.sessions.prompt({ sessionID: this.id, text });
       await this.client.sessions.wait({ sessionID: this.id });
       const historyAfterPrompt = await this.client.sessions.context({ sessionID: this.id });
-      const outcome = extractOpenCodePromptOutcome(historyAfterPrompt, existingMessageIds, this.usageCollector.end(evidence));
+      const scopeProven = await this.accountingBoundary.finish(scope, deadlineMillis);
+      const outcome = extractOpenCodePromptOutcome(historyAfterPrompt, existingMessageIds, this.usageCollector.end(evidence, scopeProven));
       try {
         const sessionPatch = patch(await this.client.sessions.diff({ sessionID: this.id }));
         return { ...outcome, ...(sessionPatch === undefined ? {} : { patch: sessionPatch }) };
@@ -784,7 +945,10 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
         return outcome;
       }
     } catch {
-      if (evidence !== undefined) throw new OpenCodePromptFailure(this.usageCollector.end(evidence));
+      if (evidence !== undefined) {
+        this.usageCollector.markUncertain();
+        throw new OpenCodePromptFailure(this.usageCollector.end(evidence));
+      }
       throw new LifecycleError("opencode_session_failed", "OpenCode session communication failed", {
         retryable: !promptMayHaveBeenSubmitted,
       });
@@ -796,6 +960,7 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
       return;
     }
     this.stopped = true;
+    this.accountingBoundary.close();
     try {
       await this.client.sessions.remove({ sessionID: this.id });
     } finally {
@@ -882,7 +1047,7 @@ export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
       });
       sessionId = session.id;
       await waitForMcpConnections(client, workspace, Object.keys(mcpServers));
-      return new OpenCodeSdkSessionHandle(session.id, client, environment, endpointProxy, runtimeSkills.root, usageCollector);
+      return new OpenCodeSdkSessionHandle(session.id, client, environment, endpointProxy, runtimeSkills.root, usageCollector, workspace);
     } catch (error) {
       if (client !== undefined) {
         if (sessionId !== undefined) {

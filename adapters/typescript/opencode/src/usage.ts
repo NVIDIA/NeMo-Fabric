@@ -12,6 +12,14 @@ interface HookEvents {
   prompt: { sessionID: string };
   "http.request": { sessionID: string; kind: string; request: Request };
   "http.response": { sessionID: string; request: Request; response: Response };
+  "experimental.ws.handshake": { sessionID: string };
+}
+interface ToolEvent {
+  sessionID: string;
+  tool: string;
+  id?: string;
+  status?: string;
+  result?: { output?: unknown };
 }
 interface PluginContext {
   session: {
@@ -21,18 +29,14 @@ interface PluginContext {
     }>;
   };
   tool: {
-    hook(name: "execute.after", callback: (event: {
-      sessionID: string;
-      tool: string;
-      status: string;
-      result?: { output?: unknown };
-    }) => void): Promise<{ dispose(): Promise<void> }>;
+    hook(name: "execute.before" | "execute.after", callback: (event: ToolEvent) => void): Promise<{ dispose(): Promise<void> }>;
   };
 }
 interface Call {
   counts: Counts;
   settled: boolean;
   missing: boolean;
+  invalid: boolean;
 }
 const KEY = "nvidia.fabric.opencode.usage_evidence.v1";
 const MAX_EVENT_CHARACTERS = 1 << 20;
@@ -46,24 +50,40 @@ function count(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
-/** Root HTTP observations cannot establish title and child-work completeness. */
+/** Freeze request-owned evidence only after the caller proves its scope. */
 export class OpenCodeInvocationUsage {
   readonly calls: Call[] = [];
+  readonly children = new Set<string>();
+  readonly tools = new Map<string, number>();
+  uncertain = false;
+  closed = false;
   private frozen?: AgentUsage;
 
-  finish(): AgentUsage {
+  unfinished(): boolean {
+    return this.children.size > 0 || this.tools.size > 0 || this.calls.some((call) => !call.settled);
+  }
+
+  finish(scopeProven = false): AgentUsage {
     if (this.frozen !== undefined) return this.frozen;
+    this.closed = true;
     const observed: Counts = {};
-    const gaps = new Set<Gap>(["scope_unverified"]);
+    const complete: AgentUsage = {};
+    const gaps = new Set<Gap>();
+    if (!scopeProven || this.uncertain) gaps.add("scope_unverified");
+    let overflow = false;
     for (const field of counters) {
       const values = this.calls.flatMap((call) => call.counts[field] === undefined ? [] : [call.counts[field]!]);
       if (values.length === 0) continue;
       const sum = values.reduce((total, value) => total + value, 0);
-      if (Number.isSafeInteger(sum)) observed[field] = sum;
+      if (!Number.isSafeInteger(sum)) { overflow = true; continue; }
+      observed[field] = sum;
+      if (field !== "reasoning_tokens" && scopeProven && !this.uncertain && !this.unfinished() &&
+          this.calls.every((call) => !call.invalid && call.counts[field] !== undefined)) complete[field] = sum;
     }
-    if (this.calls.length === 0 || this.calls.some((call) => call.missing)) gaps.add("missing_usage");
-    if (this.calls.some((call) => !call.settled)) gaps.add("unfinished_work");
-    this.frozen = { extensions: { [KEY]: { observed, gaps: [...gaps] } } };
+    if (complete.input_tokens !== undefined) complete.input_tokens_include_cache = true;
+    if (this.calls.length === 0 || overflow || this.calls.some((call) => call.missing)) gaps.add("missing_usage");
+    if (this.unfinished()) gaps.add("unfinished_work");
+    this.frozen = { ...complete, extensions: { [KEY]: { observed, gaps: [...gaps] } } };
     return this.frozen;
   }
 }
@@ -81,16 +101,17 @@ function observeResponse(call: Call, response: Response): Response {
   let overflow = false;
   let parseLoss = false;
   let terminal = false;
+  let finished = false;
   let discardLineFeed = false;
   const report = (data: string): void => {
+    if (terminal) return;
     if (data === "\n" || data.trim() === ": keepalive") return;
     if (data.trim() === "[DONE]") { terminal = true; call.settled = true; return; }
     let value: unknown;
     try { value = JSON.parse(data); } catch { parseLoss = true; return; }
     if (!record(value)) return;
     if (Array.isArray(value.choices) && value.choices.some((choice) => record(choice) && typeof choice.finish_reason === "string")) {
-      terminal = true;
-      call.settled = true;
+      finished = true;
     }
     if (!record(value.usage)) return;
     const raw = value.usage;
@@ -111,6 +132,7 @@ function observeResponse(call: Call, response: Response): Response {
     call.missing = count(raw.prompt_tokens) === undefined || count(raw.completion_tokens) === undefined;
   };
   const feed = (chunk: string): void => {
+    if (terminal) return;
     if (streaming && discardLineFeed && chunk.length > 0) {
       discardLineFeed = false;
       if (chunk.startsWith("\n")) chunk = chunk.slice(1);
@@ -121,7 +143,7 @@ function observeResponse(call: Call, response: Response): Response {
       return;
     }
     let newline: number;
-    while ((newline = buffer.search(/[\r\n]/u)) !== -1) {
+    while (!terminal && (newline = buffer.search(/[\r\n]/u)) !== -1) {
       const line = buffer.slice(0, newline);
       const carriageReturn = buffer[newline] === "\r";
       buffer = buffer.slice(newline + 1);
@@ -139,7 +161,8 @@ function observeResponse(call: Call, response: Response): Response {
         if (event.length > MAX_EVENT_CHARACTERS) { event = ""; overflow = true; parseLoss = true; }
       }
     }
-    if (buffer.length > MAX_EVENT_CHARACTERS) { buffer = ""; overflow = true; parseLoss = true; }
+    if (terminal) buffer = "";
+    else if (buffer.length > MAX_EVENT_CHARACTERS) { buffer = ""; overflow = true; parseLoss = true; }
   };
   const reader = response.body.getReader();
   const body = new ReadableStream<Uint8Array>({
@@ -151,7 +174,8 @@ function observeResponse(call: Call, response: Response): Response {
           if (streaming) feed("\n\n");
           else if (!overflow) report(buffer);
           call.missing ||= parseLoss;
-          call.settled = !streaming || terminal;
+          call.invalid ||= parseLoss;
+          call.settled = !streaming || terminal || finished;
           controller.close();
         } else {
           feed(decoder.decode(next.value, { stream: true }));
@@ -160,13 +184,15 @@ function observeResponse(call: Call, response: Response): Response {
       } catch (error) {
         call.settled = false;
         call.missing ||= parseLoss;
+        call.invalid ||= parseLoss;
         controller.error(error);
       }
     },
     async cancel(reason) {
-      // The SDK cancels the unused stream tail after a terminal model frame.
+      // OpenCode discards the unused tail after [DONE], not after finish_reason.
       call.settled = terminal;
       call.missing ||= parseLoss;
+      call.invalid ||= parseLoss;
       await reader.cancel(reason);
     },
   }, { highWaterMark: 0 });
@@ -176,8 +202,10 @@ function observeResponse(call: Call, response: Response): Response {
 export class OpenCodeUsageCollector {
   private root?: string;
   private active?: OpenCodeInvocationUsage;
+  private titleOwner?: OpenCodeInvocationUsage;
   private continuationUncertain = false;
   private readonly requests = new WeakMap<Request, Call>();
+  private readonly sessions = new Map<string, OpenCodeInvocationUsage>();
 
   begin(root: string): OpenCodeInvocationUsage {
     this.root = root;
@@ -185,12 +213,25 @@ export class OpenCodeUsageCollector {
     // Earlier child or background shell work can wake the root during a later prompt.
     // Without an invocation ID in that wakeup, its root requests are ambiguous.
     this.active = this.continuationUncertain ? undefined : usage;
+    if (!this.continuationUncertain) this.titleOwner = usage;
+    usage.uncertain = this.continuationUncertain;
     return usage;
   }
 
-  end(usage: OpenCodeInvocationUsage): AgentUsage {
+  markUncertain(): void {
+    this.continuationUncertain = true;
+    if (this.active !== undefined) this.active.uncertain = true;
+  }
+
+  end(usage: OpenCodeInvocationUsage, scopeProven = false): AgentUsage {
+    if (usage.closed) return usage.finish(scopeProven);
+    if (usage.unfinished()) this.markUncertain();
     if (this.active === usage) this.active = undefined;
-    return usage.finish();
+    return usage.finish(scopeProven);
+  }
+
+  private owner(sessionID: string): OpenCodeInvocationUsage | undefined {
+    return sessionID === this.root ? this.active : this.sessions.get(sessionID);
   }
 
   plugin(): Plugin {
@@ -201,23 +242,66 @@ export class OpenCodeUsageCollector {
           context.session.hook("prompt", async (event) => {
             if (event.sessionID === this.root) return;
             try {
-              const session = await context.session.get({ sessionID: event.sessionID });
-              if (session.parentID !== undefined) this.continuationUncertain = true;
+              const visited = new Set<string>();
+              let sessionID: string | undefined = event.sessionID;
+              while (sessionID !== undefined) {
+                if (visited.has(sessionID)) { this.markUncertain(); return; }
+                visited.add(sessionID);
+                const session = await context.session.get({ sessionID });
+                sessionID = session.parentID;
+                const owner = sessionID === undefined ? undefined : this.owner(sessionID);
+                if (owner === undefined) continue;
+                const previous = this.sessions.get(event.sessionID);
+                if (previous !== undefined && previous !== owner && previous.unfinished()) {
+                  owner.uncertain = true;
+                  this.markUncertain();
+                  return;
+                }
+                this.sessions.set(event.sessionID, owner);
+                owner.children.add(event.sessionID);
+                return;
+              }
             } catch {
-              // A failed ownership lookup must not make later root usage look attributable.
-              this.continuationUncertain = true;
+              this.markUncertain();
+            }
+          }),
+          context.tool.hook("execute.before", (event) => {
+            const owner = this.owner(event.sessionID);
+            if (owner === undefined) return;
+            const key = `${event.sessionID}:${event.tool}:${event.id ?? ""}`;
+            owner.tools.set(key, (owner.tools.get(key) ?? 0) + 1);
+            if (event.tool === "opencode_session_rename" || event.tool === "opencode_session_move") {
+              owner.uncertain = true;
+              this.markUncertain();
             }
           }),
           context.tool.hook("execute.after", (event) => {
-            if (event.sessionID !== this.root || event.tool !== "shell" || event.status !== "completed") return;
+            const owner = this.owner(event.sessionID);
+            if (owner === undefined) return;
+            const key = `${event.sessionID}:${event.tool}:${event.id ?? ""}`;
+            const pending = owner.tools.get(key) ?? 0;
+            if (pending <= 1) owner.tools.delete(key);
+            else owner.tools.set(key, pending - 1);
+            if (event.tool !== "shell" && event.tool !== "subagent") return;
             const output = event.result?.output;
-            if (record(output) && output.status === "running") this.continuationUncertain = true;
+            if (event.status !== "completed" || !record(output)) { owner.uncertain = true; return; }
+            if (output.status === "running") {
+              owner.uncertain = true;
+              this.markUncertain();
+            } else if (event.tool === "subagent" && output.status === "completed" && typeof output.sessionID === "string") {
+              owner.children.delete(output.sessionID);
+            }
+          }),
+          context.session.hook("experimental.ws.handshake", (event) => {
+            const owner = this.owner(event.sessionID);
+            if (owner !== undefined) owner.uncertain = true;
           }),
           context.session.hook("http.request", (event) => {
-            if (event.sessionID !== this.root || (event.kind !== "primary" && event.kind !== "compaction")) return;
-            const owner = this.active;
+            const owner = event.sessionID === this.root && event.kind === "title" ? this.titleOwner : this.owner(event.sessionID);
             if (owner === undefined) return;
-            const call: Call = { counts: {}, settled: false, missing: true };
+            if (event.kind === "generate") { owner.uncertain = true; this.markUncertain(); return; }
+            if (event.kind !== "primary" && event.kind !== "compaction" && event.kind !== "title") owner.uncertain = true;
+            const call: Call = { counts: {}, settled: false, missing: true, invalid: false };
             owner.calls.push(call);
             this.requests.set(event.request, call);
           }),
@@ -226,6 +310,7 @@ export class OpenCodeUsageCollector {
             if (call === undefined) return;
             if (!new URL(event.request.url).pathname.replace(/\/$/u, "").endsWith("/chat/completions")) {
               call.settled = true;
+              call.invalid = true;
               return;
             }
             event.response = observeResponse(call, event.response);

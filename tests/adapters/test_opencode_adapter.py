@@ -76,6 +76,8 @@ def test_opencode_descriptor_declares_the_minimum_supported_surface():
         }
     }
     validator.validate(evidence)
+    evidence["nvidia.fabric.opencode.usage_evidence.v1"]["gaps"] = []
+    validator.validate(evidence)
     evidence["nvidia.fabric.opencode.usage_evidence.v1"]["observed"][
         "input_tokens"
     ] = -1
