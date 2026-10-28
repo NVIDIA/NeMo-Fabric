@@ -319,7 +319,9 @@ def _mcp_servers(api: OpenHandsApi, config: contract.AgentConfig) -> dict[str, A
 def _usage(api_llm: Any, baseline: Any) -> contract.AgentUsage | None:
     metrics = api_llm.metrics.diff(baseline)
     tokens = metrics.accumulated_token_usage
-    if tokens is None:
+    # Metrics initializes an all-zero accumulator even before the first response.
+    # Only per-call records establish that the SDK observed token usage.
+    if tokens is None or not metrics.token_usages:
         return None
     input_tokens = int(tokens.prompt_tokens)
     output_tokens = int(tokens.completion_tokens)
@@ -327,7 +329,11 @@ def _usage(api_llm: Any, baseline: Any) -> contract.AgentUsage | None:
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=input_tokens + output_tokens,
-        cost_usd=float(metrics.accumulated_cost),
+        # The SDK omits cost records when pricing fails. Its zero-initialized
+        # accumulated cost alone cannot distinguish missing pricing from free.
+        cost_usd=float(metrics.accumulated_cost)
+        if metrics.costs and len(metrics.costs) == len(metrics.response_latencies)
+        else None,
     )
 
 

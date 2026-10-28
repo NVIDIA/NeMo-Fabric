@@ -124,6 +124,12 @@ closes the conversation and removes the adapter-owned temporary profile state.
 Create a new runtime to change the model, workspace, tools, MCP servers, or
 skills.
 
+The adapter requires invocation-local SDK token records before reporting usage.
+Missing records leave counters unknown, including requests that fail before
+the SDK observes usage. Recorded tokens remain available after a later failure.
+Cost remains unknown unless the SDK records a cost for every returned response;
+its zero-initialized accumulator does not establish a free request.
+
 ## Run the Code Review Example
 
 Set `NVIDIA_API_KEY`. For a source checkout, also point NeMo Fabric at the Python

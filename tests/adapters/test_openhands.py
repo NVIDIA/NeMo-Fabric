@@ -100,6 +100,9 @@ def mock_openhands_fixture(monkeypatch: pytest.MonkeyPatch) -> dict:
     metrics_delta = SimpleNamespace(
         accumulated_token_usage=usage,
         accumulated_cost=0.25,
+        token_usages=[usage],
+        costs=[SimpleNamespace(cost=0.25)],
+        response_latencies=[SimpleNamespace(response_id="response-test")],
     )
     metrics = MagicMock()
     metrics.deep_copy.return_value = object()
@@ -490,8 +493,10 @@ async def test_start_prefixes_an_unqualified_model_with_its_provider(
     "model_name",
     ["nvidia/test-model", "nvidia_nim/nvidia/test-model"],
 )
+@pytest.mark.parametrize("with_tools", [False, True])
 def test_nvidia_custom_endpoint_preserves_served_model_id(
     model_name: str,
+    with_tools: bool,
     monkeypatch: pytest.MonkeyPatch,
 ):
     pytest.importorskip("openhands.sdk")
@@ -501,6 +506,7 @@ def test_nvidia_custom_endpoint_preserves_served_model_id(
     from litellm.caching.caching import InMemoryCache
     from openhands.sdk.llm import Message
     from openhands.sdk.llm import TextContent
+    from openhands.sdk.tool import FinishTool
 
     requests = []
 
@@ -547,11 +553,17 @@ def test_nvidia_custom_endpoint_preserves_served_model_id(
         monkeypatch.setattr(litellm, "client_session", client)
         llm = adapter._llm(adapter._load_openhands_api(), model)
         llm.num_retries = 0
-        llm.completion([Message(role="user", content=[TextContent(text="finish")])])
+        llm.completion(
+            [Message(role="user", content=[TextContent(text="finish")])],
+            tools=FinishTool.create() if with_tools else None,
+        )
 
     assert len(requests) == 1
     assert str(requests[0].url) == "http://nim.example.test/v1/chat/completions"
-    assert json.loads(requests[0].content)["model"] == "nvidia/test-model"
+    payload = json.loads(requests[0].content)
+    assert payload["model"] == "nvidia/test-model"
+    if with_tools:
+        assert payload["tools"][0]["function"]["name"] == "finish"
     assert llm.metrics.accumulated_token_usage.prompt_tokens == 11
     assert llm.metrics.accumulated_token_usage.completion_tokens == 5
 
@@ -659,6 +671,9 @@ async def test_invocation_failure_reports_the_underlying_sdk_error(
         assert result.error.message == "OpenHands could not complete the invocation."
         assert result.error.retryable is False
         assert result.error.extensions == {"sdk_error": sdk_error}
+        assert result.usage.input_tokens == 11
+        assert result.usage.output_tokens == 5
+        assert result.usage.cost_usd == 0.25
     finally:
         await runtime.stop()
 
@@ -962,3 +977,66 @@ async def test_health_discards_observation_when_native_read_changes_ownership(ra
         None,
     )
     assert "private" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("response_without_usage", [False, True])
+def test_native_metrics_defaults_do_not_establish_zero_usage(response_without_usage):
+    pytest.importorskip("openhands.sdk")
+    from openhands.sdk.llm.utils.metrics import Metrics
+
+    metrics = Metrics(model_name="test-model")
+    baseline = metrics.deep_copy()
+    if response_without_usage:
+        metrics.add_response_latency(0.1, "response-test")
+    assert adapter._usage(SimpleNamespace(metrics=metrics), baseline) is None
+
+
+@pytest.mark.parametrize("tokens", [(11, 5), (0, 0)])
+@pytest.mark.parametrize("cost", [None, 0.0, 0.25])
+def test_native_metrics_preserve_recorded_usage_and_only_recorded_cost(tokens, cost):
+    pytest.importorskip("openhands.sdk")
+    from openhands.sdk.llm.utils.metrics import Metrics
+
+    metrics = Metrics(model_name="test-model")
+    baseline = metrics.deep_copy()
+    metrics.add_response_latency(0.1, "response-test")
+    metrics.add_token_usage(
+        prompt_tokens=tokens[0],
+        completion_tokens=tokens[1],
+        cache_read_tokens=0,
+        cache_write_tokens=0,
+        context_window=0,
+        response_id="response-test",
+    )
+    if cost is not None:
+        metrics.add_cost(cost)
+    usage = adapter._usage(SimpleNamespace(metrics=metrics), baseline)
+    assert usage.input_tokens == tokens[0]
+    assert usage.output_tokens == tokens[1]
+    assert usage.total_tokens == sum(tokens)
+    assert usage.cost_usd == cost
+    # An unchanged warm conversation supplies no new per-call evidence.
+    assert adapter._usage(SimpleNamespace(metrics=metrics), metrics.deep_copy()) is None
+
+
+def test_native_metrics_do_not_report_partially_priced_cost():
+    pytest.importorskip("openhands.sdk")
+    from openhands.sdk.llm.utils.metrics import Metrics
+
+    metrics = Metrics(model_name="test-model")
+    baseline = metrics.deep_copy()
+    for response_id in ["first", "second"]:
+        metrics.add_response_latency(0.1, response_id)
+        metrics.add_token_usage(
+            prompt_tokens=11,
+            completion_tokens=5,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+            context_window=0,
+            response_id=response_id,
+        )
+    metrics.add_cost(0.25)
+    usage = adapter._usage(SimpleNamespace(metrics=metrics), baseline)
+    assert usage.input_tokens == 22
+    assert usage.output_tokens == 10
+    assert usage.cost_usd is None

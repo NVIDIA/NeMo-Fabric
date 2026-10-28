@@ -135,6 +135,13 @@ closes the conversation and removes the adapter-owned temporary profile state.
 Create a new runtime to change the model, workspace, tools, MCP servers, or
 skills.
 
+Usage requires invocation-local SDK token records. If a request fails before
+the SDK records usage, or a response contains no usage, the adapter leaves
+token counters unknown instead of reporting the SDK's zero-initialized
+accumulator. Recorded tokens remain available after a later invocation failure.
+Cost is unknown unless the SDK records a cost for every returned response;
+an unmapped model's default accumulated cost does not establish a free request.
+
 ## Runtime Health
 
 The adapter advertises `live` and `active` checks qualified against OpenHands SDK 1.50.0. `live` reads the owned `LocalConversation` native closure flags. `active` also requires the native lazy-initialization flag to confirm that the conversation's request interface has initialized. Before the first invocation initializes the conversation, `active` returns `unknown/capabilities_unverified`. Checks do not initialize the conversation.
