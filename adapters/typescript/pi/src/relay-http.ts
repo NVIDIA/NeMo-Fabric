@@ -2,12 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { isIP } from "node:net";
-import { LifecycleError } from "nemo-fabric-adapters-common";
+import { LifecycleError, modelEndpointAllowed } from "nemo-fabric-adapters-common";
 import type { JsonObject } from "nemo-fabric-adapter-contract";
 import type { RelayCliContract } from "./relay-gateway.js";
 
 const HOSTNAME =
   /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.?$/;
+
+export function validateRelayModelEndpoint(model: { api: string; baseUrl: string }): void {
+  // Relay's Pi extension leaves other API families on their original endpoint.
+  // Those requests bypass the gateway's HTTP credential stripping and host policy.
+  const proxied = ["openai-completions", "openai-responses", "anthropic-messages"];
+  if (!proxied.includes(model.api) && !modelEndpointAllowed(model.baseUrl, [])) {
+    throw new LifecycleError(
+      "pi_relay_unsupported_http_model_api",
+      "This Pi model API requires HTTPS or loopback HTTP when Relay is enabled; remote HTTP requires openai-completions, openai-responses, or anthropic-messages",
+    );
+  }
+}
 
 export function relayHttpModelConfig(settings: JsonObject, contract: RelayCliContract): JsonObject {
   const key = "insecure_http_model_hosts";

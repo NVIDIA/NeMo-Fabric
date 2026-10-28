@@ -26,7 +26,7 @@ import {
   type RelayGatewayLaunch,
   type RelayCliContract,
 } from "./relay-gateway.js";
-import { relayHttpModelConfig } from "./relay-http.js";
+import { relayHttpModelConfig, validateRelayModelEndpoint } from "./relay-http.js";
 
 const RELAY_INSTALL_COMMAND =
   'Install "nemo-relay-cli-bin>=0.9.0,<0.12.0" and ensure nemo-relay is on PATH';
@@ -242,6 +242,7 @@ export class PiRelayFactory implements PiRelayControllerFactory {
       return undefined;
     }
 
+    validateRelayModelEndpoint(model);
     const releaseEnvironment = reserveRelayEnvironment();
     let restoreEnvironment: (() => void) | undefined;
     let started = false;

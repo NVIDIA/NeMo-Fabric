@@ -6,12 +6,47 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { relayHttpModelConfig } from "../dist/relay-http.js";
+import { relayHttpModelConfig, validateRelayModelEndpoint } from "../dist/relay-http.js";
 import { PiRelayFactory } from "../dist/relay.js";
 import { writeRelayConfigs } from "../dist/relay-config.js";
 
 const current = { version: [0, 11, 0] };
 const old = { version: [0, 10, 4] };
+
+test("requires HTTPS or loopback for model APIs that bypass Relay's proxy", () => {
+  for (const api of [
+    "mistral-conversations", "azure-openai-responses", "openai-codex-responses",
+    "bedrock-converse-stream", "google-generative-ai", "google-vertex", "pi-messages",
+    "constructor", "__proto__", "future-api",
+  ]) {
+    for (const baseUrl of [
+      "http://model.test/v1", "http://10.0.0.10/v1", "http://[2001:db8::1]/v1",
+      "http://localhost.example.test/v1", "http://127.0.0.1.example.test/v1",
+      "http://user:synthetic-password@model.test/v1?key=synthetic-key",
+    ]) {
+      assert.throws(() => validateRelayModelEndpoint({ api, baseUrl }), (error) => {
+        assert.equal(error.code, "pi_relay_unsupported_http_model_api");
+        assert.doesNotMatch(JSON.stringify(error), /synthetic-|model\.test/);
+        return true;
+      });
+    }
+    for (const baseUrl of [
+      "https://model.test/v1", "http://localhost/v1", "http://127.0.0.1/v1",
+      "http://127.20.30.40/v1", "http://[::1]/v1",
+    ]) {
+      assert.doesNotThrow(() => validateRelayModelEndpoint({ api, baseUrl }));
+    }
+  }
+  for (const api of ["openai-completions", "openai-responses", "anthropic-messages"]) {
+    assert.doesNotThrow(() => validateRelayModelEndpoint({ api, baseUrl: "http://model.test/v1" }));
+  }
+});
+
+test("Relay-disabled runs preserve unsupported HTTP model behavior", async () => {
+  assert.equal(await new PiRelayFactory().start({
+    runtimeContext: { telemetry: { relay_enabled: false } },
+  }, { api: "mistral-conversations", baseUrl: "http://model.test/v1" }), undefined);
+});
 
 test("preserves omitted trust, explicit denial, and normalized exact hosts", () => {
   assert.deepEqual(relayHttpModelConfig({}, old), {});

@@ -1090,6 +1090,50 @@ function makeRuntimeContext(workspace) {
   };
 }
 
+test("rejects unsupported remote HTTP APIs before the model endpoint receives credentials", { skip: !supportsPi }, async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-http-reject-")));
+  let requests = 0;
+  const endpoint = createServer((_request, response) => {
+    requests += 1;
+    response.writeHead(500).end();
+  });
+  try {
+    const endpointUrl = await listen(endpoint);
+    // The wildcard destination is outside the loopback exception.
+    const host = "0.0.0.0";
+    for (const hosts of [undefined, [], [host]]) {
+      const settings = hosts === undefined ? {} : { insecure_http_model_hosts: hosts };
+      const runtime = new PiAdapterRuntime(new PiSdkSessionFactory());
+      try {
+        await assert.rejects(runtime.start({
+          agentName: "pi-unsupported-http",
+          baseDir: workspace,
+          config: {
+            harness: { settings },
+            models: {
+              default: {
+                provider: "http-regression",
+                model: "mistral-http-regression",
+                api_key_env: "TEST_API_KEY",
+                base_url: `${endpointUrl.replace("127.0.0.1", host)}/v1`,
+                extensions: { ...GATEWAY_EXTENSIONS, api: "mistral-conversations" },
+              },
+            },
+            tools: { enabled: [] },
+          },
+          runtimeContext: makeRuntimeContext(workspace),
+        }), { code: "pi_relay_unsupported_http_model_api" });
+        assert.equal(requests, 0);
+      } finally {
+        await runtime.stop();
+      }
+    }
+  } finally {
+    await close(endpoint);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 function captureModelFactory(capture) {
   return new PiSdkSessionFactory({
     async start(input, model) {

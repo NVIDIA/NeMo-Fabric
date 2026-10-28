@@ -362,6 +362,8 @@ authenticate hook posts. Treat the loopback port as a local trust boundary.
 
 For Relay-enabled runs, set `harness.settings.insecure_http_model_hosts` to the exact bare DNS hostnames or IP addresses of trusted inference gateways. This requires NeMo Relay CLI 0.11.x.
 
+Remote HTTP model endpoints require `openai-completions`, `openai-responses`, or `anthropic-messages`. Other Pi model APIs, including `mistral-conversations`, require HTTPS or loopback HTTP because their requests bypass Relay's gateway. Fabric rejects unsupported remote HTTP APIs before session startup, including hosts listed in `insecure_http_model_hosts`.
+
 ```python
 config.harness.settings["insecure_http_model_hosts"] = ["inference.internal", "10.0.0.10"]
 ```
