@@ -8,6 +8,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { extractOpenCodePromptOutcome, loadOpenCodeSdk, OpenCodeSdkSessionFactory } from "../dist/opencode-sdk.js";
+import { OpenCodePromptFailure } from "../dist/runtime.js";
 
 const unavailableUsage = { extensions: { "nvidia.fabric.opencode.usage_evidence.v1": {
   observed: {}, gaps: ["scope_unverified", "missing_usage"],
@@ -1693,10 +1694,13 @@ test("does not mark a failure after prompt submission as retryable", async () =>
   const handle = await factory.create(startInput());
   await assert.rejects(
     handle.prompt("edit a file"),
-    (error) =>
-      error.code === "opencode_session_failed" &&
-      error.message === "OpenCode session communication failed" &&
-      error.retryable === false,
+    (error) => {
+      assert.ok(error instanceof OpenCodePromptFailure);
+      assert.deepEqual(error.usage, unavailableUsage);
+      return error.code === "opencode_session_failed" &&
+        error.message === "OpenCode session communication failed" &&
+        error.retryable === false;
+    },
   );
   await handle.stop();
 });

@@ -114,6 +114,56 @@ test("recognizes a mixed-case SSE media type with parameters", async () => {
   });
 });
 
+test("bounds oversized SSE events and preserves later usage and response bytes", async () => {
+  const usage = { prompt_tokens: 900, completion_tokens: 90 };
+  const oversizedLine = `data: ${JSON.stringify({ padding: "x".repeat(1 << 20), usage })}\n\n`;
+  const oversizedEvent = `data: ${" ".repeat(1 << 19)}\ndata: ${" ".repeat(1 << 19)}\n${frame(usage)}`;
+  for (const oversized of [oversizedLine, oversizedEvent]) {
+    for (const recover of [false, true]) {
+      const { collector, start, respond } = await fixture();
+      const invocation = collector.begin("root");
+      const data = oversized + (recover ? frame({ prompt_tokens: 12, completion_tokens: 3 }) : "") + "data: [DONE]\n\n";
+      const bytes = new TextEncoder().encode(data);
+      let offset = 0;
+      const body = new ReadableStream({ pull(controller) {
+        if (offset === bytes.length) controller.close();
+        else {
+          const end = Math.min(offset + 65536, bytes.length);
+          controller.enqueue(bytes.subarray(offset, end));
+          offset = end;
+        }
+      } });
+      const response = await respond(start(), new Response(body, { headers: { "content-type": "text/event-stream" } }));
+      assert.deepEqual(new Uint8Array(await response.arrayBuffer()), bytes);
+      assert.deepEqual(collector.end(invocation).extensions[KEY], {
+        observed: recover ? { input_tokens: 12, output_tokens: 3 } : {},
+        gaps: ["scope_unverified", "missing_usage"],
+      });
+    }
+  }
+});
+
+test("omits usage from an oversized JSON body without changing its bytes", async () => {
+  const { collector, start, respond } = await fixture();
+  const invocation = collector.begin("root");
+  const data = JSON.stringify({ padding: "x".repeat(1 << 20), usage: { prompt_tokens: 12, completion_tokens: 3 } });
+  const response = await respond(start(), new Response(data, { headers: { "content-type": "application/json" } }));
+  assert.equal(await response.text(), data);
+  assert.deepEqual(collector.end(invocation).extensions[KEY], {
+    observed: {}, gaps: ["scope_unverified", "missing_usage"],
+  });
+});
+
+test("collects root-session compaction usage", async () => {
+  const { collector, start, respond } = await fixture();
+  const invocation = collector.begin("root");
+  const data = frame({ prompt_tokens: 12, completion_tokens: 3 }) + "data: [DONE]\n\n";
+  await (await respond(start(undefined, "compaction"), stream(data))).text();
+  assert.deepEqual(collector.end(invocation).extensions[KEY], {
+    observed: { input_tokens: 12, output_tokens: 3 }, gaps: ["scope_unverified"],
+  });
+});
+
 test("retains observations when another physical attempt fails or remains unfinished", async () => {
   const { collector, start, respond } = await fixture();
   const invocation = collector.begin("root");
