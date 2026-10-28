@@ -1044,7 +1044,14 @@ class OpenClawRuntime:
         version = _validate_openclaw_version(version_output)
         from nemo_fabric_adapters.common.provenance import record_version
 
-        record_version("openclaw", version, "adapter:openclaw_startup_version", participant="service", origin="observed", kind="component")
+        record_version(
+            "openclaw",
+            version,
+            "adapter:openclaw_startup_version",
+            participant="service",
+            origin="observed",
+            kind="component",
+        )
 
         port = _select_port(settings)
 
@@ -1247,7 +1254,13 @@ class OpenClawRuntime:
             validated = _validate_openclaw_version(f"OpenClaw {version}")
             from nemo_fabric_adapters.common.provenance import record_version
 
-            record_version("openclaw", version, "service:startupz", participant="service", kind="component")
+            record_version(
+                "openclaw",
+                validated,
+                "service:startupz",
+                participant="service",
+                kind="component",
+            )
             return validated
         except lifecycle.LifecycleError:
             raise
@@ -1743,7 +1756,6 @@ class OpenClawRuntime:
 
 def main() -> None:
     lifecycle.serve(OpenClawRuntime, config_loader=contract.AgentConfig.from_mapping)
-
 
 
 # Selected software reported by the shared lifecycle host; no dependency scan.

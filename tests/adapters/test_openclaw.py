@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
+import httpx
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
 from nemo_fabric.errors import FabricConfigError
@@ -180,6 +181,29 @@ def test_openclaw_rejects_invalid_port_range(settings: dict[str, object]):
 
     assert caught.value.code == "openclaw_invalid_configuration"
     assert caught.value.metadata == {"field": "harness.settings.port_range"}
+
+
+@pytest.mark.parametrize("raw", ["2026.9.4 extra", "2026.9.4\nuntrusted suffix"])
+async def test_gateway_records_the_same_version_it_validates(monkeypatch, raw):
+    from nemo_fabric_adapters.common import provenance
+
+    mock_record = MagicMock()
+    monkeypatch.setattr(provenance, "record_version", mock_record)
+
+    def respond(request):
+        data = (
+            {"data": [{"id": "openclaw/default"}]}
+            if request.url.path == "/v1/models"
+            else {"version": raw}
+        )
+        return httpx.Response(200, json=data)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        validated = await adapter.OpenClawRuntime()._probe_gateway(
+            client, "http://gateway.test", "default"
+        )
+    assert validated == "2026.9.4"
+    assert mock_record.call_args.args[1] == validated
 
 
 def test_openclaw_accepts_supported_version():

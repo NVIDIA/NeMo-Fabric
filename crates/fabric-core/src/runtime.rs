@@ -2230,18 +2230,11 @@ fn run_local_host_invocation_with_timeout(
                         if let (Some(report), Some(adapter)) =
                             (&mut execution, &host_guard.adapter_execution)
                         {
-                            let mut adapter = adapter.clone();
-                            if let Some(retained) = &host_guard.service_execution {
-                                let service =
-                                    service_evidence(&adapter).unwrap_or_else(|| retained.clone());
-                                adapter
-                                    .software_environments
-                                    .retain(|env| !env.participants.iter().any(|p| p == "service"));
-                                report.append(adapter);
-                                report.append(service);
-                            } else {
-                                report.append(adapter);
-                            }
+                            append_adapter_evidence(
+                                report,
+                                adapter,
+                                host_guard.service_execution.as_ref(),
+                            );
                         } else if let (Some(report), Some(service)) =
                             (&mut execution, &host_guard.service_execution)
                         {
@@ -6616,6 +6609,56 @@ for line in sys.stdin:
     }
 
     #[test]
+    fn adapter_service_evidence_preserves_infrastructure_references() {
+        let mut adapter = crate::ExecutionEvidence::gap("adapter", "fixture");
+        adapter.append(crate::ExecutionEvidence::gap("service", "fixture"));
+        let observation = serde_json::json!({
+            "status": "available", "value": "fixture-engine",
+            "source": "owner:existing_report", "origin": "reported",
+            "observed_at": "2026-10-27T12:00:00Z"
+        });
+        adapter.infrastructure = Some(
+            serde_json::from_value(serde_json::json!({
+                "container": {
+                    "context_refs": [adapter.software_environments[1].context_ref],
+                    "engine": observation, "engine_version": observation
+                }
+            }))
+            .unwrap(),
+        );
+        assert!(adapter.valid());
+        let retained = service_evidence(&adapter).unwrap();
+        let mut report = crate::ExecutionEvidence::gap("core", "fixture");
+        append_adapter_evidence(&mut report, &adapter, Some(&retained));
+        assert!(report.valid());
+        assert_eq!(report.software_environments.len(), 3);
+        assert_eq!(report.software_environments[2].participants, ["service"]);
+        assert_eq!(
+            report
+                .infrastructure
+                .as_ref()
+                .unwrap()
+                .container
+                .as_ref()
+                .unwrap()
+                .context_refs,
+            [report.software_environments[2].context_ref.clone()]
+        );
+    }
+
+    #[test]
+    fn adapter_without_service_evidence_uses_the_retained_snapshot() {
+        let adapter = crate::ExecutionEvidence::gap("adapter", "fixture");
+        let retained = crate::ExecutionEvidence::gap("service", "fixture");
+        let mut report = crate::ExecutionEvidence::gap("core", "fixture");
+        append_adapter_evidence(&mut report, &adapter, Some(&retained));
+        assert!(report.valid());
+        assert_eq!(report.software_environments.len(), 3);
+        assert_eq!(report.software_environments[2].participants, ["service"]);
+        assert_eq!(retained.software_environments[0].context_ref, "env-0");
+    }
+
+    #[test]
     fn runtime_binding_excludes_observations_but_binds_initial_collection_control() {
         let (root, plan) = local_host_plan("ok");
         let environment = prepare_environment(&plan).unwrap();
@@ -6747,6 +6790,26 @@ for line in sys.stdin:
             } if provider == "docker"
         ));
         let _ = fs::remove_dir_all(root);
+    }
+}
+
+fn append_adapter_evidence(
+    report: &mut crate::ExecutionEvidence,
+    adapter: &crate::ExecutionEvidence,
+    retained_service: Option<&crate::ExecutionEvidence>,
+) {
+    let includes_service = adapter.software_environments.iter().any(|env| {
+        env.participants
+            .iter()
+            .any(|participant| participant == "service")
+    });
+    // Keep current reports intact: infrastructure can reference a service
+    // context, and append remaps those references together with its inventory.
+    report.append(adapter.clone());
+    if !includes_service {
+        if let Some(service) = retained_service {
+            report.append(service.clone());
+        }
     }
 }
 
