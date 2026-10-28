@@ -58,9 +58,23 @@ def _skill_tool_call(selected_skill, workdir):
 
 
 @pytest.mark.usefixtures("requires_harbor")
-@pytest.mark.parametrize("tool_round_trip", [False, True])
+@pytest.mark.parametrize(
+    ("tool_round_trip", "effort", "wire_effort"),
+    [
+        (False, None, None),
+        (True, "max", "max"),
+        # Codex resolves ultra to medium when the model has no effort metadata.
+        (True, "ultra", "medium"),
+    ],
+)
 async def test_native_usage_round_trips_to_harbor_without_relay(
-    api_server, tmp_path, monkeypatch, tool_round_trip, default_skill
+    api_server,
+    tmp_path,
+    monkeypatch,
+    tool_round_trip,
+    effort,
+    wire_effort,
+    default_skill,
 ):
     from _utils import mock_api_server
     from examples.code_review_agent import codex_config
@@ -73,6 +87,8 @@ async def test_native_usage_round_trips_to_harbor_without_relay(
     original_response = mock_api_server._responses_response
 
     def counted_response(payload, output):
+        if tool_round_trip:
+            assert payload["reasoning"]["effort"] == wire_effort
         response = original_response(payload, output)
         response["usage"] = {
             "input_tokens": 20,
@@ -85,6 +101,7 @@ async def test_native_usage_round_trips_to_harbor_without_relay(
 
     monkeypatch.setattr(mock_api_server, "_responses_response", counted_response)
     config = codex_config()
+    del config.harness.settings["reasoning_effort"]
     config.models["default"].provider = "fabric-test"
     config.models["default"].model = "fabric-echo"
     config.models["default"].api_key_env = "FABRIC_TEST_API_KEY"
@@ -94,6 +111,7 @@ async def test_native_usage_round_trips_to_harbor_without_relay(
     config.environment.env["FABRIC_TEST_API_KEY"] = "test"
     config.runtime.artifacts = tmp_path / "artifacts"
     if tool_round_trip:
+        config.harness.settings["reasoning_effort"] = effort
         response = requests.post(
             f"{api_server}/_scenario",
             json={"tool_call": _skill_tool_call(default_skill, tmp_path)},

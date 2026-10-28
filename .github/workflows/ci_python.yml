@@ -107,17 +107,36 @@ jobs:
           cache: npm
           cache-dependency-path: adapters/typescript/package-lock.json
 
-      - name: Build Pi adapter for Python health checks
+      - name: Build Pi and Kiro adapters for Python health checks
         run: |
-          just install-typescript-pi
+          just install-typescript-contract
+          npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-pi \
+            --workspace nemo-fabric-adapters-kiro --include-workspace-root --ignore-scripts
           npm run build --prefix adapter-contract/typescript
           npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
           npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-pi
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro
 
       - name: Run pytest
         run: |
           set -euo pipefail
           just --set no_uv true test-python
+
+      - name: Test Kiro health with the pinned native CLI
+        if: matrix.platform == 'linux-amd64' && matrix.python-version == '3.12'
+        env:
+          RUN_FABRIC_KIRO_NATIVE_HEALTH: '1'
+        run: |
+          set -euo pipefail
+          kiro_root="$RUNNER_TEMP/fabric-kiro-native"
+          mkdir -p "$kiro_root"
+          curl --fail --location --retry 3 \
+            https://prod.download.cli.kiro.dev/stable/2.34.2/kirocli-x86_64-linux.tar.xz \
+            --output "$kiro_root/kiro.tar.xz"
+          echo "960175e0fb905379014b0fecd9a5021549917e514cdb10ce53e6024c6cc39e4f  $kiro_root/kiro.tar.xz" | sha256sum --check
+          tar --extract --file "$kiro_root/kiro.tar.xz" --directory "$kiro_root"
+          export PATH="$kiro_root/kirocli/bin:$PATH"
+          uv run --no-sync pytest tests/e2e/test_kiro_native_health.py -q
 
       - name: Test OpenHands condensation with the SDK
         if: matrix.platform == 'linux-amd64' && matrix.python-version == '3.12'
@@ -176,12 +195,15 @@ jobs:
           cache: npm
           cache-dependency-path: adapters/typescript/package-lock.json
 
-      - name: Build Pi adapter for Python health checks
+      - name: Build Pi and Kiro adapters for Python health checks
         run: |
-          just install-typescript-pi
+          just install-typescript-contract
+          npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-pi \
+            --workspace nemo-fabric-adapters-kiro --include-workspace-root --ignore-scripts
           npm run build --prefix adapter-contract/typescript
           npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
           npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-pi
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro
 
       - name: Install Relay ${{ env.RELAY_VERSION }}
         run: uv pip install --python .venv/bin/python "nemo-relay==${RELAY_VERSION}" "nemo-relay-cli-bin==${RELAY_VERSION}"
@@ -336,7 +358,8 @@ jobs:
       - name: Run deterministic Cline E2E
         run: |
           uv sync --frozen --no-default-groups --group test --no-sources-package hermes-agent
-          uv run --no-sync pytest tests/e2e/test_cline.py -k plans_diagnoses_runs_and_isolates_sessions -q
+          node --test adapters/typescript/cline/test/native-health.mjs
+          uv run --no-sync pytest tests/e2e/test_cline.py -k 'plans_diagnoses_runs_and_isolates_sessions or health_does_not_wait_for_the_first_model_request' -q
 
   qwen-e2e:
     name: Qwen Code E2E
@@ -386,7 +409,7 @@ jobs:
       - name: Run deterministic Qwen E2E
         run: |
           uv sync --frozen --no-default-groups --group test --no-sources-package hermes-agent
-          uv run --no-sync pytest tests/e2e/test_qwen.py -q
+          uv run --no-sync pytest tests/e2e/test_qwen.py tests/e2e/test_qwen_checks.py -q
 
   build-wheels:
     name: Build wheels (${{ matrix.platform }})

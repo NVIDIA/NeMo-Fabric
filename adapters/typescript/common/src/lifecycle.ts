@@ -270,6 +270,7 @@ async function dispatch(
   }
 
   if (request.operation === "start") {
+    const directory = process.env.FABRIC_HOME;
     if (state.runtime !== undefined) {
       throw new LifecycleError("lifecycle_already_started", "Lifecycle host already owns a runtime");
     }
@@ -287,7 +288,6 @@ async function dispatch(
     state.runtime = candidate;
     state.runtimeId = messageRuntimeId;
     state.failed = false;
-    const directory = process.env.FABRIC_HOME;
     if (directory !== undefined && candidate.check !== undefined) {
       try {
         state.health = await serveHealth(messageRuntimeId, directory, async (level) => {

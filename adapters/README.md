@@ -210,7 +210,7 @@ Agent Trajectory Interchange Format (ATIF).
 | [NOOA](python/nooa/README.md) | InteractiveAgent queue dispatcher or BenchAgent task state | Adapter-owned Relay middleware and generated Relay configuration | InteractiveAgent dispatches queued requests; BenchAgent evaluates one task | Closes agent resources and Relay state | Not implemented |
 | [OpenClaw](python/openclaw/README.md) | OpenClaw Gateway session selected by Fabric runtime ID | Not supported | Sends a terminal Chat Completions request to the isolated loopback Gateway | Terminates the Gateway process tree and removes its temporary config and state | Adapter-owned loopback service |
 | [OpenHands](python/openhands/README.md) | OpenHands `Conversation` and event history | Not supported | Sends one message and runs the existing conversation to its next terminal state | Closes the conversation | Not implemented |
-| [Cline](typescript/cline/README.md) | Local `ClineCore` and interactive Cline session | Not supported | Starts on the first prompt, then calls `send()` with the retained session ID | Stops the session, disposes the core, and removes runtime-scoped plugin and data directories | Not implemented |
+| [Cline](typescript/cline/README.md) | Local `ClineCore` and interactive Cline session | Not supported | Initializes without a prompt at runtime startup, then calls `send()` with the retained session ID | Stops the session, disposes the core, and removes runtime-scoped plugin and data directories | Not implemented |
 | [Factory Droid](typescript/droid/README.md) | TypeScript SDK `DroidSession` | Not supported | Calls `stream()` for each ordered prompt on the retained session | Closes the session and its caller-installed CLI subprocess | Not implemented |
 | [OpenCode](typescript/opencode/README.md) | Embedded OpenCode host and session | Not supported | Reuses the session and calls `prompt()`, `wait()`, and `context()` for ordered text input | Removes the session and closes the host | Not implemented |
 | [Pi](typescript/pi/README.md) | In-memory Pi `AgentSession` | Runtime-owned Relay 0.9 or 0.10 CLI gateway and explicit Pi extension | Reuses the session and calls `prompt()` for ordered text input; with `streaming=True`, routes per-invocation model-turn ATOF for successful redirects through the embedded collector; startup `model_redirect` marks remain in configured Relay ATOF artifacts and are not included in `invoke_stream()`; `relay_artifacts` does not include local ATIF | Aborts work, emits extension shutdown so local ATIF finalizes on disk, disposes the session, and then stops the gateway | Not implemented |
@@ -227,11 +227,23 @@ independently instrumented service publishes correlated ATOF to the collector
 base URL shared by its Relay configuration and `FabricConfig`. The collector can
 serve multiple runtimes when each request ID is unique.
 
+Refer to the [SDK health-check support table](../docs/sdk/health-checks.mdx#native-evidence-by-adapter) for supported levels, native evidence, and adapters without runtime health support.
+
+Local Cline runtimes support `Fabric.check()` at the `live`, `active`, and `ready` levels before and during the first invocation. Checks verify native session residency and closure, request-interface state, and a fresh session snapshot. Refer to the [Cline health contract](typescript/cline/README.md#runtime-health).
+
 Local Pi runtimes also support `Fabric.check()` at the `live`, `active`, and
 `ready` levels. These observations can run during an invocation and inspect
 native session and local setup state. Refer to the [Pi health contract](typescript/pi/README.md#runtime-health).
+
+OpenHands runtimes support `live` and `active` through native conversation lifecycle fields. Before native lazy initialization completes during the first invocation, `active` returns `unknown/capabilities_unverified`; `ready` remains unsupported. Refer to the [OpenHands health contract](python/openhands/README.md#runtime-health).
 
 Prepared and attached OpenClaw Gateways support service-scoped `Fabric.check()` calls before any runtime exists. OpenClaw runtimes also support `live`, `active`, and `ready`; runtime `active` verifies startup, selected-agent registration, and the enabled Chat Completions interface. Both scopes use native `/readyz`, including configured channels. Refer to the [Gateway health contract](python/openclaw/README.md#gateway-health) and [runtime health contract](python/openclaw/README.md#runtime-health).
 
 Shared lifecycle, Relay gateway, hook, and payload helpers are documented in
 the [adapter utilities guide](python/common/README.md).
+
+OpenCode runtime health supports `live`, `active`, `ready`. Refer to the [OpenCode health guide](typescript/opencode/README.md#runtime-health) for the qualified evidence and limits.
+
+Qwen Code runtime health supports `live`, `active`, `ready`. Refer to the [Qwen Code health guide](typescript/qwen/README.md#runtime-health) for the qualified evidence and limits.
+
+Strands runtime health supports `live`. Refer to the [Strands health guide](typescript/strands/README.md#runtime-health) for the qualified evidence and limits.

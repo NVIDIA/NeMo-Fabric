@@ -275,7 +275,9 @@ def fake_sdks_fixture(monkeypatch):
             return False
 
         saver_cm = MagicMock()
-        saver_cm.__aenter__ = AsyncMock(return_value=MagicMock())
+        saver = MagicMock()
+        saver.setup = AsyncMock()
+        saver_cm.__aenter__ = AsyncMock(return_value=saver)
         saver_cm.__aexit__ = AsyncMock(side_effect=aexit)
         return saver_cm
 
@@ -2525,6 +2527,53 @@ async def test_openai_provider_defaults_to_openai_key(
     assert output["failed"] is False, output["error"]
     assert output["base_url"] is None
     assert "base_url" not in fake_sdks["chat_openai"].call_args.kwargs
+
+
+@pytest.mark.parametrize(
+    "effort", ["none", "minimal", "low", "medium", "high", "xhigh"]
+)
+async def test_openai_compatible_model_receives_reasoning_effort(
+    tmp_path, make_payload, fake_sdks, effort
+):
+    payload = make_payload(tmp_path)
+    payload["config"]["harness"]["settings"]["reasoning_effort"] = effort
+
+    output = await invoke_once(payload)
+
+    assert output["failed"] is False, output["error"]
+    assert fake_sdks["chat_openai"].call_args.kwargs["reasoning_effort"] == effort
+
+
+@pytest.mark.parametrize("effort", ["invalid", "", None, True, 1, [], {}])
+async def test_invalid_reasoning_effort_fails_before_model_creation(
+    tmp_path, make_payload, fake_sdks, effort
+):
+    payload = make_payload(tmp_path)
+    payload["config"]["harness"]["settings"]["reasoning_effort"] = effort
+
+    with pytest.raises(adapter.AdapterConfigError, match="reasoning_effort"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
+
+    fake_sdks["chat_openai"].assert_not_called()
+    fake_sdks["init_chat_model"].assert_not_called()
+
+
+async def test_generic_provider_rejects_reasoning_effort(
+    tmp_path, make_payload, fake_sdks
+):
+    os.environ["ANTHROPIC_API_KEY"] = "sk-test"
+    payload = make_payload(tmp_path)
+    payload["config"]["models"]["default"] = {
+        "provider": "anthropic",
+        "model": "claude-test",
+        "api_key_env": "ANTHROPIC_API_KEY",
+    }
+    payload["config"]["harness"]["settings"]["reasoning_effort"] = "low"
+
+    with pytest.raises(adapter.AdapterConfigError, match="OpenAI-compatible"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
+
+    fake_sdks["init_chat_model"].assert_not_called()
 
 
 async def test_openai_compatible_model_receives_normalized_sampling(

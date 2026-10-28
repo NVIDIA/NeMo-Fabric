@@ -1,10 +1,15 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { AgentUsage } from "nemo-fabric-adapter-contract";
+import type {
+  AdapterCheckResult,
+  CheckLevel,
+  AgentUsage,
+} from "nemo-fabric-adapter-contract";
 import {
   AcpRunnerError,
   LifecycleError,
+  unobservedHealth,
   startAcpSession,
   type AcpPromptResult,
   type AcpSession,
@@ -21,6 +26,7 @@ export interface KiroPromptOutcome {
 
 export interface KiroSessionHandle {
   readonly id: string;
+  check(level: CheckLevel): Promise<AdapterCheckResult>;
   prompt(text: string, timeoutMs?: number): Promise<KiroPromptOutcome>;
   stop(): Promise<void>;
 }
@@ -137,6 +143,7 @@ function normalizeUsage(current: AcpUsage, previous: AcpUsage | undefined): Agen
 }
 
 class KiroAcpSession implements KiroSessionHandle {
+  private stopped = false;
   readonly id: string;
   private readonly session: AcpSession;
   private previousUsage?: AcpPromptResult["usage"];
@@ -145,6 +152,37 @@ class KiroAcpSession implements KiroSessionHandle {
   constructor(session: AcpSession) {
     this.session = session;
     this.id = session.sessionId;
+  }
+
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    if (this.stopped)
+      return {
+        ...unobservedHealth("session_closed"),
+        outcome: "failed",
+        activity: "stopped",
+      };
+    if (level !== "live")
+      return {
+        ...unobservedHealth("unsupported_level"),
+        outcome: "unsupported",
+      };
+    const { alive } = this.session.observeProcess();
+    const observed_at = new Date().toISOString();
+    return alive
+      ? {
+          outcome: "passed",
+          reason_code: null,
+          activity: "unknown",
+          source: "fabric.adapter.liveness",
+          observed_at,
+        }
+      : {
+          outcome: "failed",
+          reason_code: "agent_exited",
+          activity: "stopped",
+          source: "fabric.adapter.liveness",
+          observed_at,
+        };
   }
 
   async prompt(text: string, timeoutMs?: number): Promise<KiroPromptOutcome> {
@@ -182,6 +220,7 @@ class KiroAcpSession implements KiroSessionHandle {
   }
 
   async stop(): Promise<void> {
+    this.stopped = true;
     await this.session.stop();
   }
 }

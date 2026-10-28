@@ -144,6 +144,7 @@ def test_opencode_descriptor_declares_the_minimum_supported_surface():
             "additionalProperties": False,
         },
         "capabilities": {
+            "metadata": {"health_checks": ["live", "active", "ready"]},
             "streaming": False,
             "cancellation": False,
             "updates": False,

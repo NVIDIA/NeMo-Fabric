@@ -66,6 +66,7 @@
     "system_instruction_modes": ["replace", "append"]
   },
   "capabilities": {
+    "metadata": {"health_checks": ["live", "active"]},
     "service": false,
     "streaming": false,
     "updates": false,

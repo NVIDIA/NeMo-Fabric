@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import importlib.util
+from datetime import datetime
+from datetime import timezone
 import os
 import tempfile
 from pathlib import Path
@@ -333,6 +335,7 @@ class OpenHandsRuntime:
         self._conversation: Any = None
         self._profile_store_temp: tempfile.TemporaryDirectory[str] | None = None
         self._runtime_id: str | None = None
+        self._generation = 0
 
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
@@ -396,6 +399,7 @@ class OpenHandsRuntime:
         self._conversation = conversation
         self._profile_store_temp = profile_store_temp
         self._runtime_id = context.runtime_id
+        self._generation += 1
 
     async def invoke(
         self,
@@ -466,7 +470,81 @@ class OpenHandsRuntime:
             usage=usage,
         )
 
+    async def check(self, level: str) -> dict[str, Any]:
+        """Read LocalConversation lifecycle fields without its invocation lock.
+
+        OpenHands 1.50.0 owns the closure flags and lazy initialization flag.
+        Missing or changed native fields leave the observation unverified.
+        The native run task establishes activity; a busy session stays healthy.
+        No model, tool, plugin, or MCP operation runs on this path.
+        """
+        result: dict[str, Any] = {
+            "outcome": "unknown",
+            "reason_code": "capabilities_unverified",
+            "activity": "unknown",
+            "source": "fabric.adapter",
+            "observed_at": None,
+        }
+        if level not in {"live", "active"}:
+            return {
+                **result,
+                "outcome": "unsupported",
+                "reason_code": "unsupported_level",
+            }
+        conversation, runtime_id = self._conversation, self._runtime_id
+        generation = self._generation
+        if conversation is None or runtime_id is None:
+            return {**result, "reason_code": "runtime_unavailable"}
+        # These scalar fields belong to the native local session. Reading state
+        # or acquiring its state lock could wait for a running model request.
+        try:
+            closing = conversation._cleanup_initiated
+            closed = conversation._cleanup_complete
+            initialized = conversation._agent_ready
+            task = conversation._arun_task
+            if all(type(value) is bool for value in (closing, closed, initialized)):
+                activity = "busy" if task is not None and not task.done() else "idle"
+                # Native close can run on another thread while fields are read.
+                closing = closing or conversation._cleanup_initiated
+                closed = closed or conversation._cleanup_complete
+                if closing or closed:
+                    outcome, reason, activity = "failed", "session_closed", "stopped"
+                elif level == "active" and not initialized:
+                    outcome, reason = "unknown", "capabilities_unverified"
+                else:
+                    outcome, reason = "passed", None
+                if outcome != "unknown":
+                    result = {
+                        "outcome": outcome,
+                        "reason_code": reason,
+                        "activity": activity,
+                        "source": "fabric.adapter.liveness"
+                        if level == "live"
+                        else "fabric.adapter.interface",
+                        "observed_at": datetime.now(timezone.utc)
+                        .isoformat(timespec="milliseconds")
+                        .replace("+00:00", "Z"),
+                    }
+        except AttributeError:
+            pass
+        except Exception:
+            result = {**result, "reason_code": "probe_error"}
+        if (
+            self._conversation is not conversation
+            or self._runtime_id != runtime_id
+            or self._generation != generation
+        ):
+            return {
+                "outcome": "unknown",
+                "reason_code": "observation_changed",
+                "activity": "unknown",
+                "source": "fabric.adapter",
+                "observed_at": None,
+            }
+        return result
+
     async def stop(self) -> None:
+        self._generation += 1
         conversation, self._conversation = self._conversation, None
         profile_store_temp, self._profile_store_temp = self._profile_store_temp, None
         self._api = None

@@ -9,6 +9,22 @@ Runs a [LangChain Deep Agents](https://github.com/langchain-ai/deepagents) agent
 inside NeMo Fabric's persistent Python adapter host. One started runtime retains the
 compiled graph, checkpointer, and LangGraph thread across ordered invocations.
 
+## Runtime Health
+
+`Fabric.check()` supports `live`, `active`, and `ready` for a started runtime.
+
+| Level | Evidence |
+| --- | --- |
+| `live` | A fresh read from the owned checkpoint connection. |
+| `active` | The compiled graph exposes its message input and invocation interface. |
+| `ready` | A native state read succeeds for the owned LangGraph thread. |
+
+The adapter qualifies LangGraph's `aget_state()` as the readiness response.
+Checkpoint tables are initialized during startup. Health checks preserve the
+thread and checkpoint contents and respond during an invocation.
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+
 ## Install
 
 The following table shows which components each installation provides:
@@ -98,6 +114,14 @@ NeMo Fabric maps the following into the harness:
   descriptor schema rejects unknown settings and fields before runtime start.
 
 ### Harness Settings
+
+Set `harness.settings.reasoning_effort` to `none`, `minimal`, `low`, `medium`,
+`high`, or `xhigh` to pass a reasoning effort to `ChatOpenAI`. For example,
+`settings={"reasoning_effort": "none"}` disables reasoning on endpoints that
+support that value. This setting requires an OpenAI-compatible provider, and
+the endpoint must support the selected value. Omit the setting to preserve the
+model default. Subagents inherit the setting when they inherit the main model;
+a subagent with its own `model` override uses that model's defaults.
 
 Use `harness.settings.deepagents` for Deep Agents-native controls that do not
 have a normalized NeMo Fabric field:

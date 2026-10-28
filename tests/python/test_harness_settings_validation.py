@@ -64,6 +64,7 @@ _config = partial(
                 "setting_sources": ["user", "project", "local"],
                 "max_budget_usd": 1.5,
                 "max_buffer_size": 33554432,
+                "reasoning_effort": "max",
                 "permission_mode": "dontAsk",
             },
             id="claude",
@@ -75,7 +76,7 @@ _config = partial(
                 "approval_mode": "deny_all",
                 "developer_instructions": "Review the implementation.",
                 "personality": "pragmatic",
-                "reasoning_effort": "high",
+                "reasoning_effort": "ultra",
                 "service_tier": "priority",
                 "output_schema": {
                     "type": "object",
@@ -91,6 +92,7 @@ _config = partial(
         pytest.param(
             "nvidia.fabric.langchain.deepagents",
             {
+                "reasoning_effort": "none",
                 "deepagents": {
                     "backend": {"type": "local_shell"},
                     "interrupt_on": {
@@ -122,7 +124,7 @@ _config = partial(
                             "headers": {"X-Test": "value"},
                         },
                     ],
-                }
+                },
             },
             id="deepagents",
         ),
@@ -361,6 +363,24 @@ def test_openclaw_rejects_relay(tmp_path: Path):
         ),
         pytest.param(
             "nvidia.fabric.claude",
+            {"reasoning_effort": "ultra"},
+            "harness.settings.reasoning_effort",
+            id="claude-effort-value",
+        ),
+        pytest.param(
+            "nvidia.fabric.claude",
+            {"reasoning_effort": True},
+            "harness.settings.reasoning_effort",
+            id="claude-effort-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.claude",
+            {"effort": "max"},
+            "harness.settings.effort",
+            id="claude-legacy-effort-key",
+        ),
+        pytest.param(
+            "nvidia.fabric.claude",
             {"permission_mode": False},
             "harness.settings.permission_mode",
             id="claude-permission-mode-type",
@@ -406,6 +426,12 @@ def test_openclaw_rejects_relay(tmp_path: Path):
             {"reasoning_effort": False},
             "harness.settings.reasoning_effort",
             id="codex-reasoning-effort",
+        ),
+        pytest.param(
+            "nvidia.fabric.codex",
+            {"reasoning_effort": "unknown"},
+            "harness.settings.reasoning_effort",
+            id="codex-reasoning-effort-value",
         ),
         pytest.param(
             "nvidia.fabric.codex",
@@ -537,6 +563,18 @@ def test_invalid_settings_report_resolved_descriptor_and_path(
     assert adapter_id in message
     assert str(ADAPTER_DESCRIPTORS[adapter_id].resolve()) in message
     assert settings_path in message
+
+
+@pytest.mark.parametrize("effort", ["invalid", "", None, True, 1, [], {}])
+def test_deepagents_rejects_invalid_reasoning_effort(tmp_path, effort):
+    with pytest.raises(FabricConfigError, match="harness.settings.reasoning_effort"):
+        Fabric().plan(
+            _config(
+                {"reasoning_effort": effort},
+                adapter_id="nvidia.fabric.langchain.deepagents",
+            ),
+            base_dir=tmp_path,
+        )
 
 
 def test_unknown_adapter_fails_before_settings_validation(tmp_path: Path):

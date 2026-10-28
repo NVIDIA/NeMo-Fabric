@@ -1818,3 +1818,70 @@ test("restores the environment lease when startup cleanup also fails", async () 
     }
   }
 });
+
+test("health bounds native session reads and rejects malformed session identity", async () => {
+  let finish;
+  let reads = 0;
+  const response = new Promise(resolve => { finish = resolve; });
+  const factory = new OpenCodeSdkSessionFactory(async () => ({ OpenCode: { create: async () => ({ sessions: { create: async () => ({ id: "owned" }), get: () => { reads++; return response; }, remove: async () => { } }, close: async () => { } }) } }));
+  const handle = await factory.create(startInput());
+  const first = handle.check("ready");
+  assert.equal(await Promise.race([first, new Promise(resolve => setTimeout(() => resolve("timeout"), 5))]), "timeout");
+  const later = Array.from({ length: 20 }, () => handle.check("live"));
+  assert.equal(reads, 1);
+  finish({ id: "replacement", time: {} });
+  assert.equal((await first).reason_code, "probe_error");
+  assert.equal((await Promise.all(later)).every(result => result.outcome === "unknown"), true);
+  await handle.stop();
+});
+
+test("later OpenCode checks reject an expired caller's stale unarchived session", async () => {
+  const delayed = Promise.withResolvers();
+  let reads = 0;
+  let archived = false;
+  const factory = new OpenCodeSdkSessionFactory(async () => ({
+    OpenCode: {
+      create: async () => ({
+        sessions: {
+          create: async () => ({ id: "owned" }),
+          get: () => { reads++; return reads === 1 ? delayed.promise : Promise.resolve({ id: "owned", time: archived ? { archived: 1 } : {} }); },
+          remove: async () => { },
+        }, close: async () => { }
+      })
+    }
+  }));
+  const handle = await factory.create(startInput());
+  const first = handle.check("ready");
+  assert.equal(await Promise.race([first, new Promise(resolve => setTimeout(() => resolve("timeout"), 5))]), "timeout");
+  archived = true;
+  const later = handle.check("ready");
+  delayed.resolve({ id: "owned", time: {} });
+  await first;
+  assert.equal((await later).reason_code, "probe_timeout");
+  assert.equal(reads, 1);
+  assert.notEqual((await handle.check("ready")).outcome, "passed");
+  assert.equal(reads, 2);
+  await handle.stop();
+});
+
+test("OpenCode validates native closure when a health request rejects", async () => {
+  const delayed = Promise.withResolvers();
+  const factory = new OpenCodeSdkSessionFactory(async () => ({
+    OpenCode: {
+      create: async () => ({
+        sessions: {
+          create: async () => ({ id: "owned" }), get: () => delayed.promise, remove: async () => { },
+        }, close: async () => { }
+      })
+    }
+  }));
+  const handle = await factory.create(startInput());
+  const pending = handle.check("ready");
+  await handle.stop();
+  delayed.reject(new Error("PRIVATE native failure"));
+  const result = await pending;
+  assert.equal(result.reason_code, "observation_changed");
+  assert.equal(result.observed_at, null);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
+  assert.equal((await handle.check("ready")).reason_code, "session_closed");
+});

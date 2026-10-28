@@ -16,6 +16,7 @@ import logging
 import os
 import sys
 from contextlib import redirect_stdout
+from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -51,6 +52,9 @@ class HermesRuntime:
 
     def __init__(self) -> None:
         self._started = False
+        self._stopping = False
+        self._health_lock = asyncio.Lock()
+        self._health_task: asyncio.Task[Any] | None = None
         self._agent_config: AgentConfig | None = None
         self._runtime_id: str | None = None
         self._settings: dict[str, Any] = {}
@@ -74,6 +78,7 @@ class HermesRuntime:
                 "Hermes runtime is already started",
             )
 
+        self._stopping = False
         try:
             agent_config = payload.get("config")
             if not isinstance(agent_config, AgentConfig):
@@ -475,7 +480,120 @@ class HermesRuntime:
         self._relay_session_pending = False
         self._relay_finalize_hook_invoked = False
 
+    async def check(self, level: str) -> dict[str, Any]:
+        """Observe the owned Hermes session through its native diagnostic interface."""
+        result: dict[str, Any] = {
+            "outcome": "unknown",
+            "reason_code": "probe_error",
+            "activity": "unknown",
+            "source": "fabric.adapter",
+            "observed_at": None,
+        }
+        sources = {
+            "live": "fabric.adapter.liveness",
+            "active": "fabric.adapter.interface",
+            "ready": "fabric.adapter.readiness",
+        }
+        if level not in sources:
+            return {
+                **result,
+                "outcome": "unsupported",
+                "reason_code": "unsupported_level",
+            }
+        agent, config, model = self._agent, self._agent_config, self._model_config
+        runtime_id, database = self._runtime_id, self._session_db
+        if (
+            not self._started
+            or agent is None
+            or config is None
+            or model is None
+            or database is None
+            or not runtime_id
+        ):
+            return {**result, "reason_code": "runtime_unavailable"}
+        if self._stopping:
+            return {**result, "reason_code": "observation_changed"}
+
+        def unchanged() -> bool:
+            return (
+                self._started
+                and not self._stopping
+                and self._agent is agent
+                and self._agent_config is config
+                and self._model_config is model
+                and self._session_db is database
+                and self._runtime_id == runtime_id
+            )
+
+        def observed(outcome: str, reason: str | None) -> dict[str, Any]:
+            if not unchanged():
+                return {**result, "reason_code": "observation_changed"}
+            if getattr(agent, "_memory_provider_shutdown", False):
+                outcome, reason = "failed", "session_closed"
+            return {
+                **result,
+                "outcome": outcome,
+                "reason_code": reason,
+                "activity": "stopped"
+                if reason == "session_closed"
+                else (
+                    "busy"
+                    if self._active_invoke_task is not None
+                    and not self._active_invoke_task.done()
+                    else "idle"
+                ),
+                "source": sources[level],
+                "observed_at": datetime.now(timezone.utc)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+            }
+
+        if not unchanged():
+            return {**result, "reason_code": "observation_changed"}
+        if getattr(agent, "_memory_provider_shutdown", False):
+            return observed("failed", "session_closed")
+        if level != "live" and not callable(agent.run_conversation):
+            return observed("failed", "endpoint_unavailable")
+        try:
+            async with self._health_lock:
+                pending = self._health_task
+                if pending is not None and not pending.done():
+                    await asyncio.wait({pending})
+                if not unchanged():
+                    return {**result, "reason_code": "observation_changed"}
+                if getattr(agent, "_memory_provider_shutdown", False):
+                    return observed("failed", "session_closed")
+                # Retain one diagnostic worker when a caller's deadline expires.
+                task = asyncio.create_task(
+                    asyncio.to_thread(agent.get_activity_summary)
+                )
+                task.add_done_callback(
+                    lambda done: None if done.cancelled() else done.exception()
+                )
+                self._health_task = task
+                await asyncio.wait({task})
+                summary = task.result()
+                self._health_task = None
+            if not isinstance(summary, dict) or any(
+                type(summary.get(key)) is not int or summary[key] < 0
+                for key in (
+                    "api_call_count",
+                    "budget_used",
+                    "budget_max",
+                    "max_iterations",
+                )
+            ):
+                raise ValueError("invalid native diagnostic response")
+        except Exception:
+            if not unchanged():
+                return {**result, "reason_code": "observation_changed"}
+            if getattr(agent, "_memory_provider_shutdown", False):
+                return observed("failed", "session_closed")
+            return result
+        return observed("passed", None)
+
     async def stop(self) -> None:
+        self._stopping = True
         active_invoke_task = self._active_invoke_task
         errors: list[BaseException] = []
         if active_invoke_task is not None:

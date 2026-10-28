@@ -109,6 +109,7 @@ Only Claude-specific controls belong in `harness.settings`:
 | Setting | Type | Required | Static default |
 | --- | --- | --- | --- |
 | `permission_mode` | One of `default`, `acceptEdits`, `bypassPermissions`, `plan`, `dontAsk`, or `auto` | No | No default |
+| `reasoning_effort` | One of `low`, `medium`, `high`, `xhigh`, or `max` | No | Harness default |
 | `max_budget_usd` | Number greater than `0` | No | No default |
 | `max_buffer_size` | Integer greater than or equal to `1` | No | Claude Agent SDK default |
 | `setting_sources` | Array containing `user`, `project`, or `local` | No | `[]` |
@@ -283,6 +284,19 @@ The runtime must remain on the same local host for its lifetime. A persisted
 NeMo Fabric-to-Claude correlation record is not an attach token and cannot recover a
 stopped or crashed local host.
 
+## Health Checks
+
+Runtime checks support three cumulative levels, including during an invocation:
+
+| Level | Native evidence |
+| --- | --- |
+| `live` | The owned Claude Code subprocess has not exited. |
+| `active` | The connected CLI returns a current, valid `get_mcp_status()` response. |
+| `ready` | A current, valid status response from the initialized CLI serves as a qualified equivalent of a native health response. |
+
+Active and ready use the same native status probe for this MVP. The health result describes initialized CLI responsiveness; MCP connection states remain native configuration diagnostics.
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
 
 ## Testing
 

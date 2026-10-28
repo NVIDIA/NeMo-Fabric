@@ -52,26 +52,35 @@ function fakeSdk(options = {}) {
   const core = {
     async start(value) {
       calls.start.push(value);
-      return { sessionId: "cline-session-1", result: results.shift() };
+      return { sessionId: "cline-session-1" };
     },
     async send(value) {
       calls.send.push(value);
-      if (options.sendError !== undefined) throw options.sendError;
+      if (options.sendError !== undefined && calls.send.length > 1) throw options.sendError;
       return results.shift();
     },
-    async stop(value) { calls.stop.push(value); },
-    async dispose(value) { calls.dispose.push(value); },
+    async stop(value) {
+      calls.stop.push(value);
+    },
+    async dispose(value) {
+      calls.dispose.push(value);
+    },
   };
   return {
     calls,
     loader: async () => ({
       ALL_DEFAULT_TOOL_NAMES: ["read_files", "search_codebase", "run_commands"],
-      ClineCore: { async create(value) {
-        calls.create.push(value);
-        await options.onCreate?.(process.env.CLINE_DATA_DIR);
-        return core;
-      } },
-      getClineDefaultSystemPrompt(value) { calls.prompts.push(value); return `system:${value.overridePrompt ?? "default"}`; },
+      ClineCore: {
+        async create(value) {
+          calls.create.push(value);
+          await options.onCreate?.(process.env.CLINE_DATA_DIR);
+          return core;
+        },
+      },
+      getClineDefaultSystemPrompt(value) {
+        calls.prompts.push(value);
+        return `system:${value.overridePrompt ?? "default"}`;
+      },
       async loadAgentPluginPackages(value) {
         calls.plugins.push(value);
         return { skills: [], mcpServers: [], diagnostics: [] };
@@ -87,15 +96,17 @@ test("maps model, endpoint, credential, system instruction, and built-in tool po
   const first = await handle.prompt("one");
   const second = await handle.prompt("two");
 
-  assert.deepEqual(sdk.calls.create, [{
-    clientName: "nemo-fabric",
-    backendMode: "local",
-    toolPolicies: {
-      read_files: { enabled: true, autoApprove: true },
-      search_codebase: { enabled: false, autoApprove: true },
-      run_commands: { enabled: false, autoApprove: true },
+  assert.deepEqual(sdk.calls.create, [
+    {
+      clientName: "nemo-fabric",
+      backendMode: "local",
+      toolPolicies: {
+        read_files: { enabled: true, autoApprove: true },
+        search_codebase: { enabled: false, autoApprove: true },
+        run_commands: { enabled: false, autoApprove: true },
+      },
     },
-  }]);
+  ]);
   assert.deepEqual(sdk.calls.prompts, []);
   assert.deepEqual(sdk.calls.start[0], {
     config: {
@@ -119,9 +130,11 @@ test("maps model, endpoint, credential, system instruction, and built-in tool po
       run_commands: { enabled: false, autoApprove: true },
     },
     localRuntime: { configExtensions: [] },
-    prompt: "one",
   });
-  assert.deepEqual(sdk.calls.send, [{ sessionId: "cline-session-1", prompt: "two" }]);
+  assert.deepEqual(sdk.calls.send, [
+    { sessionId: "cline-session-1", prompt: "one" },
+    { sessionId: "cline-session-1", prompt: "two" },
+  ]);
   assert.deepEqual(first.usage, { input_tokens: 2, output_tokens: 3, total_tokens: 5, cost_usd: 0.5 });
   assert.deepEqual(second.usage, { input_tokens: 4, output_tokens: 1, total_tokens: 5 });
   await handle.stop();
@@ -154,11 +167,11 @@ test("stops the retained Cline session and disposes its core", async () => {
   assert.deepEqual(sdk.calls.dispose, ["NeMo Fabric runtime stopped"]);
 });
 
-test("disposes Cline even when no invocation started a session", async () => {
+test("stops the initialized Cline session even before the first invocation", async () => {
   const sdk = fakeSdk();
   const handle = await new ClineSdkSessionFactory(sdk.loader).create(input());
   await handle.stop();
-  assert.deepEqual(sdk.calls.stop, []);
+  assert.deepEqual(sdk.calls.stop, ["cline-session-1"]);
   assert.deepEqual(sdk.calls.dispose, ["NeMo Fabric runtime stopped"]);
 });
 

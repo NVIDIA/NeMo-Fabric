@@ -5,7 +5,7 @@
 // one native session, and the temporary credential environment required by the
 // upstream SDK.
 
-import type { AgentUsage } from "nemo-fabric-adapter-contract";
+import type { AdapterCheckResult, CheckLevel, AgentUsage } from "nemo-fabric-adapter-contract";
 import type { AdapterStartInput } from "nemo-fabric-adapters-common";
 import { LifecycleError } from "nemo-fabric-adapters-common";
 import { randomUUID } from "node:crypto";
@@ -775,6 +775,7 @@ function leaseEnvironment(input: AdapterStartInput, credentialName: string): Env
 }
 
 class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
+  private healthObservation?: Promise<boolean>;
   readonly id: string;
   private readonly client: OpenCodeClient;
   private readonly environment: EnvironmentLease;
@@ -794,6 +795,25 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
     this.environment = environment;
     this.endpointProxy = endpointProxy;
     this.skillsRoot = skillsRoot;
+  }
+
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    const source = level === "live" ? "fabric.adapter.liveness" : level === "active" ? "fabric.adapter.interface" : "fabric.adapter.readiness";
+    if (this.stopped) return { outcome: "failed", reason_code: "session_closed", source, observed_at: new Date().toISOString(), activity: "stopped" };
+    if (this.healthObservation !== undefined) return { outcome: "unknown", reason_code: "probe_timeout", source, observed_at: null, activity: "unknown" };
+    const sessionId = this.id;
+    try {
+      const observation: Promise<boolean> = Promise.resolve(this.client.sessions.get({ sessionID: sessionId })).then((value: unknown) => typeof value === "object" && value !== null && "id" in value && value.id === sessionId && "time" in value && typeof value.time === "object" && value.time !== null && !("archived" in value.time));
+      this.healthObservation = observation;
+      void observation.finally(() => { if (this.healthObservation === observation) this.healthObservation = undefined; }).catch(() => { });
+      const valid = await observation;
+      if (this.stopped || this.id !== sessionId) return { outcome: "unknown", reason_code: "observation_changed", source, observed_at: null, activity: "unknown" };
+      return valid
+        ? { outcome: "passed", reason_code: null, source, observed_at: new Date().toISOString(), activity: "idle" }
+        : { outcome: "unknown", reason_code: "probe_error", source, observed_at: new Date().toISOString(), activity: "unknown" };
+    } catch {
+      return { outcome: "unknown", reason_code: this.stopped || this.id !== sessionId ? "observation_changed" : "probe_error", source, observed_at: null, activity: "unknown" };
+    }
   }
 
   async prompt(text: string): Promise<OpenCodePromptOutcome> {

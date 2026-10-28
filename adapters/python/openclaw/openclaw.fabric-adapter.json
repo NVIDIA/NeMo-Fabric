@@ -73,7 +73,7 @@
       "shutdown_timeout_seconds": {
         "type": "number",
         "exclusiveMinimum": 0,
-        "default": 10,
+        "default": 5,
         "description": "Maximum graceful Gateway shutdown time before forced termination."
       },
       "connect_timeout_seconds": {
@@ -85,8 +85,7 @@
       "read_timeout_seconds": {
         "type": "number",
         "exclusiveMinimum": 0,
-        "default": 600,
-        "description": "Timeout between response bytes from the local OpenClaw Gateway."
+        "description": "Timeout between response bytes from the local OpenClaw Gateway. When unset, the invocation timeout bounds the response."
       }
     },
     "additionalProperties": false

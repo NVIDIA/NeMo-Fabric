@@ -11,15 +11,21 @@ RUN_FABRIC_CLINE_INTEGRATION=1 NVIDIA_API_KEY=... \
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 from pathlib import Path
 import shutil
 import uuid
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 import requests
 
+from nemo_fabric import CheckRequest
 from nemo_fabric import DiscoveryConfig
+from nemo_fabric import EnvironmentHandle
 from nemo_fabric import EnvironmentConfig
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
@@ -179,3 +185,99 @@ async def test_cline_live_provider_retains_context(tmp_path):
     )
     assert second.metadata["adapter"]["finish_reason"] == "completed"
     assert nonce in second.output["response"]
+
+
+async def test_cline_health_does_not_wait_for_the_first_model_request(tmp_path):
+    entered = threading.Event()
+    release = threading.Event()
+    model_calls = []
+
+    class ModelHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            model_calls.append(
+                json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            )
+            entered.set()
+            assert release.wait(30), "test must release the blocked model response"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(
+                b'data: {"id":"test","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"done"},"finish_reason":null}]}\n\n'
+                b'data: {"id":"test","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
+                b"data: [DONE]\n\n"
+            )
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ModelHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    fabric = Fabric()
+    configured = cline_config(
+        workspace=tmp_path,
+        api_key_env="CLINE_HEALTH_KEY",
+        credential="PRIVATE-test-key",
+        base_url=f"http://127.0.0.1:{server.server_port}/v1",
+    )
+    try:
+        async with await fabric.start_runtime(configured, base_dir=ROOT) as runtime:
+            environment = EnvironmentHandle.from_mapping(runtime.handle.environment)
+
+            async def observe(activity):
+                for level in ("live", "active", "ready"):
+                    report = await asyncio.wait_for(
+                        fabric.check(
+                            environment=environment,
+                            request=CheckRequest(
+                                scope="runtime",
+                                runtime_id=runtime.runtime_id,
+                                level=level,
+                                timeout_seconds=1.0,
+                            ),
+                        ),
+                        timeout=2,
+                    )
+                    assert report.outcome == "passed", report
+                    assert [check["name"] for check in report.checks] == list(
+                        ("live", "active", "ready")[
+                            : ("live", "active", "ready").index(level) + 1
+                        ]
+                    )
+                    assert report.runtime["activity"] == activity
+                    assert "PRIVATE" not in json.dumps(report.to_mapping())
+
+            await observe("idle")
+            assert model_calls == []
+            invocation = asyncio.create_task(runtime.invoke(input="PRIVATE prompt"))
+            try:
+                assert await asyncio.to_thread(entered.wait, 10)
+                await observe("busy")
+                assert not invocation.done()
+                timed_out = await fabric.check(
+                    environment=environment,
+                    request=CheckRequest(
+                        scope="runtime",
+                        runtime_id=runtime.runtime_id,
+                        level="ready",
+                        timeout_seconds=0.000001,
+                    ),
+                )
+                assert timed_out.outcome == "unknown"
+                assert timed_out.reason_code == "probe_timeout"
+                assert not invocation.done()
+                await observe("busy")
+                assert len(model_calls) == 1
+            finally:
+                release.set()
+            assert (
+                await asyncio.wait_for(invocation, timeout=10)
+            ).status == "succeeded"
+            await observe("idle")
+            assert len(model_calls) == 1
+    finally:
+        release.set()
+        await asyncio.to_thread(server.shutdown)
+        server.server_close()
+        thread.join(timeout=5)

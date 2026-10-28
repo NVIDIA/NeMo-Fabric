@@ -4,6 +4,15 @@
       "descriptor": {
         "adapter_id": "nvidia.fabric.claude",
         "adapter_kind": "python",
+        "capabilities": {
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          }
+        },
         "config": {
           "accepts": [
             "models",
@@ -158,6 +167,17 @@
               ],
               "type": "string"
             },
+            "reasoning_effort": {
+              "description": "Claude reasoning effort. Omit to preserve the harness default.",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
             "setting_sources": {
               "default": [],
               "description": "Claude settings scopes to load.",
@@ -196,7 +216,7 @@
         "name": "nemo-fabric-adapters-claude",
         "version": "0.6.0"
       },
-      "sha256": "cded65f1e927f3b7154f79b3eb6312a5fa34551265ffe6df1ec271e55de9c407",
+      "sha256": "0de6bc6d0206f15c6b678c44ac9b485fe8ff0a7aee3e8e1a403dc74441f4e5aa",
       "source": "adapters/python/claude/claude.fabric-adapter.json"
     },
     "nvidia.fabric.cline": {
@@ -205,6 +225,13 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -336,13 +363,22 @@
         "name": "nemo-fabric-adapters-cline",
         "version": "0.6.0"
       },
-      "sha256": "4c695e93660eafc004482c1b1e5ac951c33dad22bdb3752791f184e02735e684",
+      "sha256": "7a5f2d99a36837819dddb8408e6b2a615875cfb0cdc822bbbde4401e0ec4670a",
       "source": "adapters/typescript/cline/cline.fabric-adapter.json"
     },
     "nvidia.fabric.codex": {
       "descriptor": {
         "adapter_id": "nvidia.fabric.codex",
         "adapter_kind": "python",
+        "capabilities": {
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          }
+        },
         "config": {
           "accepts": [
             "models",
@@ -481,7 +517,9 @@
                 "low",
                 "medium",
                 "high",
-                "xhigh"
+                "xhigh",
+                "max",
+                "ultra"
               ],
               "type": "string"
             },
@@ -530,7 +568,7 @@
         "name": "nemo-fabric-adapters-codex",
         "version": "0.6.0"
       },
-      "sha256": "f66fb66d3a366977619bc9e88a4d926e0b71bbc28ac965b9a416bf2559106ce5",
+      "sha256": "ff6cd27c4334b8000551cec2180e7f64afe3f67def4d30a5287f692b05f3d0fe",
       "source": "adapters/python/codex/codex.fabric-adapter.json"
     },
     "nvidia.fabric.droid": {
@@ -539,6 +577,11 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -660,13 +703,22 @@
         "name": "nemo-fabric-adapters-droid",
         "version": "0.6.0"
       },
-      "sha256": "6d1b3e67bf4d7b803c292057a27aa6c1c272f1160118cf0bb349ee273b067f14",
+      "sha256": "0c44210e0ba4e58a173b6ed1e38ecb4d518d84a4dd5c68449a7155463c591c73",
       "source": "adapters/typescript/droid/droid.fabric-adapter.json"
     },
     "nvidia.fabric.hermes": {
       "descriptor": {
         "adapter_id": "nvidia.fabric.hermes",
         "adapter_kind": "python",
+        "capabilities": {
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          }
+        },
         "config": {
           "accepts": [
             "models",
@@ -781,7 +833,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.6.0"
       },
-      "sha256": "e482a89dda834dc5bfdbcb7f6041ad5e457a73918d74d8a8215f0171b8947465",
+      "sha256": "6539b80cd3dbc76f2db58640bb957dcbe5f9e45421a2d7f9a45785325f354f38",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {
@@ -790,6 +842,13 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -881,7 +940,7 @@
         "name": "nemo-fabric-adapters-kilo",
         "version": "0.6.0"
       },
-      "sha256": "608aeacfa0cfa5ff7ccd28e3f66cadd53f82780bc882b8577e7e8687dfd3dd07",
+      "sha256": "a1777a88417be1f908cc065509dfda6cf966e1e0f897fcfdd13b74abc281a559",
       "source": "adapters/typescript/kilo/kilo.fabric-adapter.json"
     },
     "nvidia.fabric.kiro": {
@@ -890,6 +949,11 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -991,13 +1055,22 @@
         "name": "nemo-fabric-adapters-kiro",
         "version": "0.6.0"
       },
-      "sha256": "bd84a149c0114be483b129da5937b3e540816d1c8fe9708663e5cb46417362aa",
+      "sha256": "e7393a07550505f23a3396128a29f5b078492ce7f1580f6f3b79d5872e4587a2",
       "source": "adapters/typescript/kiro/kiro.fabric-adapter.json"
     },
     "nvidia.fabric.langchain.deepagents": {
       "descriptor": {
         "adapter_id": "nvidia.fabric.langchain.deepagents",
         "adapter_kind": "python",
+        "capabilities": {
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          }
+        },
         "config": {
           "accepts": [
             "models",
@@ -1246,6 +1319,18 @@
               },
               "required": [],
               "type": "object"
+            },
+            "reasoning_effort": {
+              "description": "Reasoning effort passed to ChatOpenAI. Requires an OpenAI-compatible provider; omit to preserve the model default.",
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh"
+              ],
+              "type": "string"
             }
           },
           "required": [],
@@ -1274,7 +1359,7 @@
         "name": "nemo-fabric-adapters-deepagents",
         "version": "0.6.0"
       },
-      "sha256": "819b1f9747af83011c98d5889c56dac9a735008b25e93bbc94c1cfde3050a44e",
+      "sha256": "d4394a8dd328bd1b1f89386a75f176cfc83755e0c6714c3c9839468510deb181",
       "source": "adapters/python/deepagents/deepagents.fabric-adapter.json"
     },
     "nvidia.fabric.mini-swe-agent": {
@@ -1742,13 +1827,12 @@
               "type": "object"
             },
             "read_timeout_seconds": {
-              "default": 600,
-              "description": "Timeout between response bytes from the local OpenClaw Gateway.",
+              "description": "Timeout between response bytes from the local OpenClaw Gateway. When unset, the invocation timeout bounds the response.",
               "exclusiveMinimum": 0,
               "type": "number"
             },
             "shutdown_timeout_seconds": {
-              "default": 10,
+              "default": 5,
               "description": "Maximum graceful Gateway shutdown time before forced termination.",
               "exclusiveMinimum": 0,
               "type": "number"
@@ -1768,7 +1852,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.6.0"
       },
-      "sha256": "4ec9c777897ed39b5d2ef477f713a451d5f9194df266879cb5dd90b930d6cc0a",
+      "sha256": "b2a9ef847226bc5858024776b50fb87c6d57cd4332accc6583aacb5d348a17f5",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {
@@ -1777,6 +1861,13 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -1897,7 +1988,7 @@
         "name": "nemo-fabric-adapters-opencode",
         "version": "0.6.0"
       },
-      "sha256": "86175ea45671c92601bf1a132fc0fe91f3de82f19ce8bf4249e9993125c32641",
+      "sha256": "805000dba39244d6e33cacfd228660f73ba0c2854aa7d8813cef8479eea67b20",
       "source": "adapters/typescript/opencode/opencode.fabric-adapter.json"
     },
     "nvidia.fabric.openhands": {
@@ -1906,6 +1997,12 @@
         "adapter_kind": "python",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -2013,7 +2110,7 @@
         "name": "nemo-fabric-adapters-openhands",
         "version": "0.6.0"
       },
-      "sha256": "2625d8af8e8f6ab2a27ec8e6234caa64362d6ad4f235e607fda803914e10afb6",
+      "sha256": "4039f0131e9f8db3348b74eaed48be062f0d989769ecfbb9c86af693e20e2962",
       "source": "adapters/python/openhands/openhands.fabric-adapter.json"
     },
     "nvidia.fabric.pi": {
@@ -2251,6 +2348,13 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -2352,7 +2456,7 @@
         "name": "nemo-fabric-adapters-qwen",
         "version": "0.6.0"
       },
-      "sha256": "ffd6ed76db07ac79e04edc6cdc183729b1e569cb67015503b93aea50f951b3d2",
+      "sha256": "bb260462f2f5322f22c5e3bb6d4fdcd4e3f23845b7ad8fdeec017928cf062fb3",
       "source": "adapters/typescript/qwen/qwen.fabric-adapter.json"
     },
     "nvidia.fabric.remote-agent": {
@@ -2498,6 +2602,11 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -2678,7 +2787,7 @@
         "name": "nemo-fabric-adapters-strands",
         "version": "0.6.0"
       },
-      "sha256": "09cbfc363b9f89f9e66b39dceea2c70f58c6bce5de8f51ecd1071c64413719ce",
+      "sha256": "37982ca315b241b03fce3edb1d49d2f1663e3224ebcf89824d3a976055ccd949",
       "source": "adapters/typescript/strands/strands.fabric-adapter.json"
     }
   },

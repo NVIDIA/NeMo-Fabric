@@ -3,7 +3,7 @@
 
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { Readable, Writable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -96,6 +96,15 @@ app.onRequest(methods.agent.session.setConfigOption, ({ params }) => {
 });
 app.onRequest(methods.agent.session.prompt, async ({ params, client }) => {
   const input = params.prompt.find((block) => block.type === "text")?.text ?? "";
+  if (process.env.TEST_PROMPT_STARTED !== undefined)
+    writeFileSync(process.env.TEST_PROMPT_STARTED, "started");
+  if (process.env.TEST_PROMPT_DELAY_MS !== undefined)
+    await delay(Number(process.env.TEST_PROMPT_DELAY_MS));
+  while (
+    process.env.TEST_PROMPT_GATE !== undefined &&
+    !existsSync(process.env.TEST_PROMPT_GATE)
+  )
+    await delay(5);
   if (input === "hang") return await new Promise(() => {});
   let permission = "none";
   if (input === "permission") {

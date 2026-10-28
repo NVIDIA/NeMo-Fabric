@@ -1,8 +1,21 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { AgentRunRequest, AgentRunResult, AgentUsage, JsonObject, RuntimeContext } from "nemo-fabric-adapter-contract";
-import { LifecycleError, type AdapterRuntime, type AdapterStartInput } from "nemo-fabric-adapters-common";
+import type {
+  AdapterCheckResult,
+  CheckLevel,
+  AgentRunRequest,
+  AgentRunResult,
+  AgentUsage,
+  JsonObject,
+  RuntimeContext,
+} from "nemo-fabric-adapter-contract";
+import {
+  unobservedHealth,
+  LifecycleError,
+  type AdapterRuntime,
+  type AdapterStartInput,
+} from "nemo-fabric-adapters-common";
 
 import type { KiroPromptOutcome, KiroSessionFactory, KiroSessionHandle } from "./kiro-acp.js";
 
@@ -28,6 +41,8 @@ function failed(
 
 export class KiroAdapterRuntime implements AdapterRuntime {
   private readonly factory: KiroSessionFactory;
+  private invoking = false;
+  private generation = 0;
   private session?: KiroSessionHandle;
 
   constructor(factory: KiroSessionFactory) {
@@ -39,10 +54,12 @@ export class KiroAdapterRuntime implements AdapterRuntime {
       throw new LifecycleError("kiro_already_started", "Kiro adapter runtime is already started");
     }
     this.session = await this.factory.create(input);
+    this.generation += 1;
   }
 
   private async invalidate(session: KiroSessionHandle): Promise<void> {
     if (this.session !== session) return;
+    this.generation += 1;
     this.session = undefined;
     try {
       await session.stop();
@@ -83,12 +100,15 @@ export class KiroAdapterRuntime implements AdapterRuntime {
         ? undefined
         : context.deadline_millis - Date.now();
     let outcome: KiroPromptOutcome;
+    this.invoking = true;
     try {
       outcome = await session.prompt(request.input, timeoutMs);
     } catch (error) {
       await this.invalidate(session);
       if (error instanceof LifecycleError) throw error;
       throw new LifecycleError("kiro_session_failed", "Kiro ACP session communication failed");
+    } finally {
+      this.invoking = false;
     }
     const extensions = resultExtensions(session, outcome);
     if (outcome.stopReason === "cancelled") {
@@ -124,7 +144,30 @@ export class KiroAdapterRuntime implements AdapterRuntime {
     };
   }
 
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    const session = this.session;
+    const generation = this.generation;
+    if (session === undefined)
+      return {
+        ...unobservedHealth("session_closed"),
+        outcome: "failed",
+        activity: "stopped",
+      };
+    let result: AdapterCheckResult;
+    try {
+      result = await session.check(level);
+    } catch {
+      result = unobservedHealth("probe_error");
+    }
+    if (this.session !== session || this.generation !== generation)
+      return unobservedHealth("observation_changed");
+    return result.outcome === "passed"
+      ? { ...result, activity: this.invoking ? "busy" : "idle" }
+      : result;
+  }
+
   async stop(): Promise<void> {
+    this.generation += 1;
     const session = this.session;
     this.session = undefined;
     if (session !== undefined) await session.stop();

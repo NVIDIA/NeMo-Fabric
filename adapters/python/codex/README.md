@@ -81,6 +81,20 @@ return codes, stdout, or stderr.
 
 Normalized `usage` contains invocation-local token counts from the SDK's cumulative thread totals, including cached input tokens. Input tokens already include cached tokens (`input_tokens_include_cache=True`). Reused threads report the difference from the previous invocation rather than counting the thread total again. Missing, invalid, or reset counters remain unknown; a missing snapshot requires a new baseline before differences can be reported. The adapter preserves native usage in `output.usage`, does not infer cost, and retains available usage on unsuccessful results. If the SDK raises before returning usage, normalized usage remains unavailable.
 
+## Runtime Health
+
+Use `Fabric.check(environment=..., request=...)` with a runtime ID and `live`, `active`, or `ready`. Checks run during an invocation and report `busy` or `idle` for NeMo Fabric activity.
+
+- `live` checks whether the owned Codex app-server process has exited.
+- `active` reads the selected native thread through the app-server request interface and confirms the thread is loaded.
+- `ready` uses the same fresh native response as a readiness equivalent: the initialized thread must report `idle` or `active`. Native `systemError` fails readiness; `notLoaded` reports a closed session.
+
+Each check uses the caller's deadline. A pending native health request remains the only request in flight after a caller timeout. Later checks wait within their own deadlines, then obtain a fresh response after the pending request completes.
+
+Run the credential-free native qualification with `uv run --no-sync pytest tests/e2e/test_codex_checks.py -q`. The tests use the SDK-pinned app-server and a local mock provider before, during, and after an invocation.
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+
 ## Configuration
 
 Use normalized `FabricConfig` fields for portable configuration:
@@ -117,10 +131,13 @@ Only Codex-specific controls belong in `harness.settings`:
 | `approval_mode` | One of `auto_review` or `deny_all` | No | `auto_review` |
 | `developer_instructions` | Nonempty string | No | No default |
 | `personality` | One of `none`, `friendly`, or `pragmatic` | No | No default |
-| `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh` | No | No default |
+| `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra` | No | No default |
 | `service_tier` | Nonempty string | No | No default |
 | `output_schema` | JSON Schema object for the final assistant message | No | No default |
 | `config_overrides` | Object that maps nonempty dotted Codex configuration keys to JSON-compatible values | No | `{}` |
+
+`ultra` uses Codex's model-specific effort selection. Codex resolves it to a
+supported provider effort; models without effort metadata fall back to `medium`.
 
 Planning validates these settings against the schema in the resolved Codex
 descriptor. Unknown keys, empty dotted-key segments, invalid types, and invalid

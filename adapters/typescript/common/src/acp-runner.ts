@@ -66,6 +66,7 @@ export interface AcpPromptResult {
 export interface AcpSession {
   readonly sessionId: string;
   readonly initializeResponse: InitializeResponse;
+  observeProcess(): { alive: boolean };
   prompt(text: string, timeoutMs?: number): Promise<AcpPromptResult>;
   stop(): Promise<void>;
 }
@@ -237,6 +238,16 @@ class SpawnedAcpSession implements AcpSession {
     this.shutdownTimeoutMs = options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;
   }
 
+  observeProcess(): { alive: boolean } {
+    return {
+      alive:
+        !this.stopped &&
+        !this.processTerminated &&
+        this.child.pid !== undefined &&
+        this.child.exitCode === null &&
+        this.child.signalCode === null,
+    };
+  }
   async prompt(text: string, timeoutMs = this.promptTimeoutMs): Promise<AcpPromptResult> {
     if (this.stopped) {
       throw new AcpRunnerError("acp_session_stopped", "The ACP session is already stopped");

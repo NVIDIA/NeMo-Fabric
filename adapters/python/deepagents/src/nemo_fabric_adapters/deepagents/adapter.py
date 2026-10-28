@@ -11,6 +11,7 @@ LangGraph checkpointer across ordered invocations.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import inspect
 import json
@@ -18,6 +19,7 @@ import math
 import os
 import uuid
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from typing import NamedTuple
@@ -25,6 +27,7 @@ from typing import NamedTuple
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import ToolMessage
 from langgraph.errors import GraphRecursionError
+from langgraph.types import StateSnapshot
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
@@ -192,7 +195,9 @@ def selected_model_name(model_config: AgentModelConfig) -> str:
     return model_config.model
 
 
-def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | None]:
+def build_chat_model(
+    model_config: AgentModelConfig, settings: dict[str, Any]
+) -> tuple[Any, str, str | None]:
     """Build a LangChain chat model from Fabric model config.
 
     Known OpenAI-compatible providers use ``ChatOpenAI``. Other providers are
@@ -208,6 +213,21 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
     temperature = model_config.temperature
     top_p = model_config.top_p
     max_tokens = model_config.max_tokens
+
+    if "reasoning_effort" in settings:
+        if settings["reasoning_effort"] not in (
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+        ):
+            raise AdapterConfigError("harness.settings.reasoning_effort is invalid.")
+        if provider not in OPENAI_COMPATIBLE_PROVIDERS:
+            raise AdapterConfigError(
+                "harness.settings.reasoning_effort requires an OpenAI-compatible provider."
+            )
 
     if provider in OPENAI_COMPATIBLE_PROVIDERS - {"openai"} and not base_url:
         raise AdapterConfigError(
@@ -244,6 +264,8 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
         kwargs["top_p"] = top_p
     if max_tokens is not None:
         kwargs["max_completion_tokens"] = max_tokens
+    if "reasoning_effort" in settings:
+        kwargs["reasoning_effort"] = settings["reasoning_effort"]
     return ChatOpenAI(**_supported_kwargs(ChatOpenAI, kwargs)), model_name, base_url
 
 
@@ -592,6 +614,10 @@ class DeepAgentsRuntime:
 
     def __init__(self) -> None:
         self._started = False
+        self._stopping = False
+        self._active_invoke_task: asyncio.Task[Any] | None = None
+        self._health_lock = asyncio.Lock()
+        self._health_task: asyncio.Task[Any] | None = None
         self._start_payload: dict[str, Any] | None = None
         self._runtime_id: str | None = None
         self._model_name: str | None = None
@@ -617,6 +643,7 @@ class DeepAgentsRuntime:
                 "Deep Agents runtime is already started",
             )
 
+        self._stopping = False
         try:
             agent_config = payload["config"]
             runtime_context = RuntimeContext.from_mapping(
@@ -627,7 +654,9 @@ class DeepAgentsRuntime:
             settings = agent_config.harness.settings if agent_config.harness else {}
             base_dir = common_utils.base_dir(payload)
             runtime_id = runtime_context.runtime_id
-            model, self._model_name, self._base_url = build_chat_model(model_config)
+            model, self._model_name, self._base_url = build_chat_model(
+                model_config, settings
+            )
             self._runtime_id = runtime_id
             self._thread_id = uuid.uuid4().hex
 
@@ -662,6 +691,7 @@ class DeepAgentsRuntime:
             self._checkpointer = await open_checkpointer(
                 checkpointer_path(runtime_context, base_dir, runtime_id)
             )
+            await self._checkpointer.setup()
             agent_kwargs["checkpointer"] = self._checkpointer
 
             if self._observability is not None:
@@ -706,6 +736,19 @@ class DeepAgentsRuntime:
         return add_nemo_relay_integration(agent_kwargs)
 
     async def invoke(
+        self,
+        request: AgentRunRequest,
+        runtime_context: RuntimeContext,
+    ) -> AgentRunResult:
+        task = asyncio.current_task()
+        self._active_invoke_task = task
+        try:
+            return await self._invoke(request, runtime_context)
+        finally:
+            if self._active_invoke_task is task:
+                self._active_invoke_task = None
+
+    async def _invoke(
         self,
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
@@ -929,7 +972,138 @@ class DeepAgentsRuntime:
             return telemetry_runtime, None, _error_text(exc)
         return telemetry_runtime, relay_artifacts, None
 
+    async def check(self, level: str) -> dict[str, Any]:
+        """Observe the owned graph's checkpoint connection and request interface."""
+        result: dict[str, Any] = {
+            "outcome": "unknown",
+            "reason_code": "probe_error",
+            "activity": "unknown",
+            "source": "fabric.adapter",
+            "observed_at": None,
+        }
+        sources = {
+            "live": "fabric.adapter.liveness",
+            "active": "fabric.adapter.interface",
+            "ready": "fabric.adapter.readiness",
+        }
+        if level not in sources:
+            return {
+                **result,
+                "outcome": "unsupported",
+                "reason_code": "unsupported_level",
+            }
+        if self._stopping:
+            return {**result, "reason_code": "observation_changed"}
+        agent, saver = self._agent, self._checkpointer
+        runtime_id, thread_id = self._runtime_id, self._thread_id
+        payload = self._start_payload
+        if (
+            not self._started
+            or agent is None
+            or saver is None
+            or not runtime_id
+            or not thread_id
+            or payload is None
+        ):
+            return {**result, "reason_code": "runtime_unavailable"}
+        connection = saver.conn
+
+        def unchanged() -> bool:
+            return (
+                self._started
+                and not self._stopping
+                and self._agent is agent
+                and self._checkpointer is saver
+                and saver.conn is connection
+                and agent.checkpointer is saver
+                and self._runtime_id == runtime_id
+                and self._thread_id == thread_id
+                and self._start_payload is payload
+            )
+
+        def observed(outcome: str, reason: str | None) -> dict[str, Any]:
+            if not unchanged():
+                return {**result, "reason_code": "observation_changed"}
+            if not connection._running:
+                outcome, reason = "failed", "session_closed"
+            return {
+                **result,
+                "outcome": outcome,
+                "reason_code": reason,
+                "activity": "stopped"
+                if reason == "session_closed"
+                else (
+                    "busy"
+                    if self._active_invoke_task is not None
+                    and not self._active_invoke_task.done()
+                    else "idle"
+                ),
+                "source": sources[level],
+                "observed_at": datetime.now(timezone.utc)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+            }
+
+        if not unchanged():
+            return {**result, "reason_code": "observation_changed"}
+        if not connection._running:
+            return observed("failed", "session_closed")
+
+        async def probe() -> Any:
+            if level == "live":
+                return await connection.execute_fetchall("SELECT 1")
+            if level == "active":
+                return await asyncio.to_thread(agent.get_input_jsonschema)
+            return await agent.aget_state({"configurable": {"thread_id": thread_id}})
+
+        try:
+            async with self._health_lock:
+                pending = self._health_task
+                if pending is not None and not pending.done():
+                    await asyncio.wait({pending})
+                # Keep one native read in flight when a caller's deadline expires.
+                task = asyncio.create_task(probe())
+                task.add_done_callback(
+                    lambda done: None if done.cancelled() else done.exception()
+                )
+                self._health_task = task
+                await asyncio.wait({task})
+                evidence = task.result()
+                self._health_task = None
+            if not unchanged():
+                return {**result, "reason_code": "observation_changed"}
+            if not connection._running:
+                return observed("failed", "session_closed")
+            if level == "live":
+                if evidence != [(1,)]:
+                    return result
+            elif level == "active":
+                if (
+                    not callable(agent.astream)
+                    or not isinstance(evidence, dict)
+                    or "messages" not in evidence.get("properties", {})
+                ):
+                    return observed("failed", "endpoint_unavailable")
+            else:
+                if not isinstance(evidence, StateSnapshot):
+                    return result
+                native_config = evidence.config
+                if not isinstance(native_config, dict) or not isinstance(
+                    native_config.get("configurable"), dict
+                ):
+                    return result
+                if native_config["configurable"].get("thread_id") != thread_id:
+                    return {**result, "reason_code": "observation_changed"}
+        except Exception:
+            if not unchanged():
+                return {**result, "reason_code": "observation_changed"}
+            if not connection._running:
+                return observed("failed", "session_closed")
+            return result
+        return observed("passed", None)
+
     async def stop(self) -> None:
+        self._stopping = True
         checkpointer = self._checkpointer
         self._start_payload = None
         self._runtime_id = None
@@ -949,6 +1123,7 @@ class DeepAgentsRuntime:
         self._started = False
         if checkpointer is not None:
             await close_checkpointer(checkpointer)
+        self._stopping = False
 
 
 def _apply_callbacks(

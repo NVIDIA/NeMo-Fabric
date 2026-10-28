@@ -43,6 +43,11 @@
         "default": [],
         "description": "Claude settings scopes to load."
       },
+      "reasoning_effort": {
+        "type": "string",
+        "enum": ["low", "medium", "high", "xhigh", "max"],
+        "description": "Claude reasoning effort. Omit to preserve the harness default."
+      },
       "max_budget_usd": {
         "type": "number",
         "exclusiveMinimum": 0,
@@ -121,5 +126,8 @@
         "integration_modes": ["hooks", "gateway"]
       }
     }
+  },
+  "capabilities": {
+    "metadata": {"health_checks": ["live", "active", "ready"]}
   }
 }

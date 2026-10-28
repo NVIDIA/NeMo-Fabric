@@ -126,3 +126,18 @@ flowchart TB
 
 For installation, configuration, and operational guidance, see the
 [Kilo Code integration guide](../../../docs/integrations/harness/kilo.mdx).
+
+## Runtime health
+
+`Fabric.check()` supports `live`, `active`, and `ready`. `live` observes the
+owned Kilo server process exit and signal status. `active` requests the selected
+session through `session.get()` and verifies its native session identifier.
+`ready` requires `global.health()` to return `healthy: true`.
+
+These read-only observations use the pinned Kilo SDK request interface and can
+run during an invocation. Busy alone does not fail a check. Readiness covers
+native local server health; readiness does not promise model access, valid
+credentials, or MCP connectivity. Checks never send prompts or abort a turn.
+At most one native health request remains outstanding after a caller timeout.
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.

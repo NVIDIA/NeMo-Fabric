@@ -296,7 +296,8 @@ On Python 3.12 or later, install the tested OpenHands SDK and tools, then instal
 the NeMo Fabric extra:
 
 ```bash
-pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0"
+pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0" \
+  "litellm==1.100.1" "mcp==1.28.1"
 pip install "nemo-fabric[openhands]"
 ```
 
