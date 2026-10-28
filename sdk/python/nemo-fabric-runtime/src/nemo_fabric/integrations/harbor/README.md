@@ -59,6 +59,18 @@ adapter-specific timeout codes are not automatically reclassified.
 
 The task runner validates telemetry after the one-shot NeMo Fabric runtime shuts down. For Relay trajectories finalized during shutdown, it reads the runtime-owned plugin configuration and collects local ATIF files from that runtime's configured output directory. It validates the trajectory before promoting it to Harbor's `agent/trajectory.json`; ambiguous or malformed artifacts remain telemetry failures rather than changing the verifier reward. Remote-only output and nested filename templates are not collected by this fallback. Adapter invocation results and multi-turn behavior are unchanged.
 
+## Relay OpenTelemetry Export
+
+`fabric_telemetry=relay` writes Relay ATIF and ATOF files to the task's artifact directory. To also export Relay spans from the task container to an OpenTelemetry backend, pass the SDK's `RelayOpenTelemetryConfig` object as `fabric_relay_opentelemetry`:
+
+```bash
+--ak fabric_telemetry=relay \
+--ak 'fabric_relay_opentelemetry={"enabled":true,"endpoints":[{"type":"openinference","endpoint":"https://collector.example.com/v1/traces","service_name":"harbor-fabric"}]}' \
+--ak fabric_relay_full_payloads=true
+```
+
+The bridge copies the object into `relay.observability.opentelemetry` and `fabric_relay_full_payloads` into `relay.observability.enable_full_payloads`, which retains complete sanitized model requests on LLM start events. Both options require `fabric_telemetry=relay`; host preflight rejects them otherwise. The runner exports from inside the task container, so the endpoint must be reachable from there and accepted by the installed Relay release. Harbor retains agent options in its job configuration, so preflight also rejects literal values for credential headers such as `Authorization`. Name a credential variable in `header_env` instead, for example `{"authorization": "OTEL_EXPORTER_API_KEY"}`, and supply its value through `--ae` under a name recognized by Harbor's redaction policy.
+
 ## Native Resource Stats
 
 `fabric_system_stats` configures the task-local runner's `FabricConfig.system_stats`. Omission collects all metric groups before and after the invocation. Use `--ak 'fabric_system_stats={"sampling":{"interval_ms":1000,"max_samples":10000}}'` to enable periodic sampling, or `--ak fabric_system_stats=null` to disable invocation stats. Add `"collect":["process","cgroup.cpu"]` to the JSON object to select groups. Empty, duplicate, unknown, and invalid sampling selections fail host preflight.

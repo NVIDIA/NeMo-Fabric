@@ -39,6 +39,7 @@ from nemo_fabric import RelayAtifConfig
 from nemo_fabric import RelayAtofConfig
 from nemo_fabric import RelayAtofFileSinkConfig
 from nemo_fabric import RelayObservabilityConfig
+from nemo_fabric import RelayOpenTelemetryConfig
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
 from nemo_fabric import RuntimeConfig
@@ -175,6 +176,14 @@ else:
         fabric_telemetry: Literal["none", "relay"] = Field(
             default="none", description="Enable Relay-backed ATIF and ATOF telemetry."
         )
+        fabric_relay_opentelemetry: RelayOpenTelemetryConfig | None = Field(
+            default=None,
+            description="Relay OpenTelemetry export; requires fabric_telemetry=relay.",
+        )
+        fabric_relay_full_payloads: bool = Field(
+            default=False,
+            description="Retain complete sanitized model requests on Relay LLM start events; requires fabric_telemetry=relay.",
+        )
         fabric_provenance: ProvenanceConfig = Field(
             default_factory=ProvenanceConfig,
             description="Default-on software evidence; enabled=false skips host and guest collectors.",
@@ -289,6 +298,25 @@ else:
                 raise ValueError(
                     "fabric_package and fabric_install_command are mutually exclusive"
                 )
+            return self
+
+        @model_validator(mode="after")
+        def validate_relay_export(self) -> "FabricAgentOptions":
+            opentelemetry = self.fabric_relay_opentelemetry
+            if self.fabric_telemetry != "relay" and (
+                opentelemetry is not None or self.fabric_relay_full_payloads
+            ):
+                raise ValueError(
+                    "fabric_relay_opentelemetry and fabric_relay_full_payloads require fabric_telemetry=relay"
+                )
+            # Harbor keeps agent options in its job configuration, outside the
+            # trial-directory scrubber, so credential headers must stay names.
+            for endpoint in opentelemetry.endpoints if opentelemetry else ():
+                for header in endpoint.headers:
+                    if is_sensitive_env_key(header):
+                        raise ValueError(
+                            f"fabric_relay_opentelemetry header '{header}' is a credential; name an environment variable in header_env instead"
+                        )
             return self
 
     class FabricAgent(BaseAgent):
@@ -608,6 +636,7 @@ else:
             )
 
         def _build_config(self) -> FabricConfig:
+            opentelemetry = self.options.fabric_relay_opentelemetry
             config = build_harbor_config(
                 adapter_id=self.fabric_adapter_id,
                 workspace=self.fabric_workspace,
@@ -621,6 +650,12 @@ else:
                 blocked_tools=self.fabric_blocked_tools,
                 enabled_tools=self.fabric_enabled_tools,
                 telemetry=self.fabric_telemetry,
+                relay_opentelemetry=(
+                    opentelemetry.model_copy(deep=True)
+                    if opentelemetry is not None
+                    else None
+                ),
+                relay_full_payloads=self.options.fabric_relay_full_payloads,
                 model_name=self.model_name,
                 mcp_servers=tuple(
                     HarborMcpServer.model_validate(server.model_dump(mode="python"))
@@ -729,6 +764,8 @@ def build_harbor_config(
     blocked_tools: list[str] | None = None,
     enabled_tools: list[str] | None = None,
     telemetry: Literal["none", "relay"] = "none",
+    relay_opentelemetry: RelayOpenTelemetryConfig | None = None,
+    relay_full_payloads: bool = False,
     model_name: str | None = None,
     mcp_servers: tuple[HarborMcpServer, ...] = (),
     discovery_paths: tuple[str | Path, ...] = (),
@@ -830,7 +867,13 @@ def build_harbor_config(
                         )
                     ],
                 ),
+                opentelemetry=relay_opentelemetry,
+                enable_full_payloads=relay_full_payloads,
             ),
+        )
+    elif relay_opentelemetry is not None or relay_full_payloads:
+        raise ValueError(
+            "relay_opentelemetry and relay_full_payloads require telemetry='relay'"
         )
     return config
 
