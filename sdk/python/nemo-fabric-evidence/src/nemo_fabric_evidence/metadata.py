@@ -26,6 +26,8 @@ from pathlib import Path, PurePosixPath
 from nemo_fabric_evidence.evidence import (
     ExecutionEvidence,
     MAX_REPORT_BYTES,
+    MAX_ENTRIES,
+    MAX_ENVIRONMENTS,
     SoftwareEntry,
     SoftwareEnvironment,
     VersionObservation,
@@ -255,19 +257,19 @@ def combine(*reports: ExecutionEvidence) -> ExecutionEvidence:
                 )
             result.setdefault("infrastructure", {})[kind] = infrastructure
     environments = result["software_environments"]
-    if len(environments) > 16:
-        environments[15:] = ExecutionEvidence.gap(
+    if len(environments) > MAX_ENVIRONMENTS:
+        environments[MAX_ENVIRONMENTS - 1 :] = ExecutionEvidence.gap(
             "additional_contexts", "report_context_limit"
         ).to_mapping()["software_environments"]
-        environments[-1]["context_ref"] = "env-15"
+        environments[-1]["context_ref"] = f"env-{MAX_ENVIRONMENTS - 1}"
     while (
-        sum(len(env["entries"]) for env in environments) > 128
+        sum(len(env["entries"]) for env in environments) > MAX_ENTRIES
         or len(
             json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode(
                 "utf-8"
             )
         )
-        > 64 * 1024
+        > MAX_REPORT_BYTES
     ):
         env = environments[-1]
         if env["entries"]:

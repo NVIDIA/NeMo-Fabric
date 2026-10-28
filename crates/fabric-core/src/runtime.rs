@@ -2909,13 +2909,14 @@ fn exchange_lifecycle_message(
             local_host_diagnostics(host),
         ));
     }
-    if host.execution.is_some() && operation != AdapterLifecycleOperation::Stop {
-        if response.execution.is_some() || host.adapter_execution.is_none() {
-            host.adapter_execution = Some(crate::ExecutionEvidence::receive(
-                response.execution,
-                "adapter",
-            ));
-        }
+    if host.execution.is_some()
+        && operation != AdapterLifecycleOperation::Stop
+        && (response.execution.is_some() || host.adapter_execution.is_none())
+    {
+        host.adapter_execution = Some(crate::ExecutionEvidence::receive(
+            response.execution,
+            "adapter",
+        ));
     }
     match response.outcome {
         AdapterLifecycleOutcome::Succeeded { output } => Ok(output),
