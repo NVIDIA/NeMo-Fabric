@@ -633,7 +633,7 @@ else:
             )
             config.provenance = self.options.fabric_provenance.model_copy(deep=True)
             if self._host_execution is not None:
-                from nemo_fabric_adapter_contract.metadata import combine
+                from nemo_fabric_evidence.metadata import combine
 
                 existing = config.provenance.reports
                 config.provenance.reports = (
@@ -1133,8 +1133,8 @@ def populate_context_from_telemetry_summary(context: AgentContext, path: Path) -
 
 def _harbor_execution_report():
     """Explicit platform-owner report, captured once per Harbor agent instance."""
-    from nemo_fabric_adapter_contract.evidence import ExecutionEvidence, SoftwareEntry
-    from nemo_fabric_adapter_contract.metadata import (
+    from nemo_fabric_evidence.evidence import ExecutionEvidence, SoftwareEntry
+    from nemo_fabric_evidence.metadata import (
         collect_selected,
         observation,
         observed_at,
@@ -1146,8 +1146,8 @@ def _harbor_execution_report():
             ("fabric_sdk", "nemo-fabric-runtime", "nemo_fabric.client"),
             (
                 "contract",
-                "nemo-fabric-adapter-contract",
-                "nemo_fabric_adapter_contract.models",
+                "nemo-fabric-evidence",
+                "nemo_fabric_evidence.evidence",
             ),
             ("integration", "harbor", "harbor"),
         ],

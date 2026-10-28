@@ -53,7 +53,11 @@ def provenance_wheels_fixture(tmp_path):
     pytest.importorskip("setuptools", minversion="77")
     directory = tmp_path / "wheels"
     directory.mkdir()
-    for project in ("adapter-contract/python", "adapters/python/common"):
+    for project in (
+        "sdk/python/nemo-fabric-evidence",
+        "adapter-contract/python",
+        "adapters/python/common",
+    ):
         built = subprocess.run(
             [
                 uv,
