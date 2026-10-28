@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 from nemo_fabric import DiscoveryConfig
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
@@ -61,6 +62,24 @@ def config(
 
 def test_opencode_descriptor_declares_the_minimum_supported_surface():
     descriptor = json.loads(DESCRIPTOR.read_text(encoding="utf-8"))
+    extensions = descriptor.pop("extension_schemas")
+    assert set(extensions) == {"usage"}
+    validator = Draft202012Validator(extensions["usage"])
+    evidence = {
+        "nvidia.fabric.opencode.usage_evidence.v1": {
+            "observed": {
+                "input_tokens": 120,
+                "output_tokens": 30,
+                "cached_input_tokens": 20,
+            },
+            "gaps": ["scope_unverified"],
+        }
+    }
+    validator.validate(evidence)
+    evidence["nvidia.fabric.opencode.usage_evidence.v1"]["observed"][
+        "input_tokens"
+    ] = -1
+    assert not validator.is_valid(evidence)
 
     assert descriptor == {
         "contract_version": "fabric.adapter/v1alpha2",

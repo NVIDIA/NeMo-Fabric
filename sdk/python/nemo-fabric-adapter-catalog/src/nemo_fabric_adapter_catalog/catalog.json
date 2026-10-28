@@ -1887,6 +1887,70 @@
           ]
         },
         "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "usage": {
+            "additionalProperties": false,
+            "properties": {
+              "nvidia.fabric.opencode.usage_evidence.v1": {
+                "additionalProperties": false,
+                "properties": {
+                  "gaps": {
+                    "items": {
+                      "enum": [
+                        "scope_unverified",
+                        "missing_usage",
+                        "unfinished_work"
+                      ]
+                    },
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "observed": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cached_input_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "input_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "output_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "reasoning_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "total_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "observed",
+                  "gaps"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "nvidia.fabric.opencode.usage_evidence.v1"
+            ],
+            "type": "object"
+          }
+        },
         "model_schema": {
           "additionalProperties": false,
           "allOf": [
@@ -1988,7 +2052,7 @@
         "name": "nemo-fabric-adapters-opencode",
         "version": "0.6.0"
       },
-      "sha256": "805000dba39244d6e33cacfd228660f73ba0c2854aa7d8813cef8479eea67b20",
+      "sha256": "6094db2a3be9d36728ec3fbc24541b9bde144758dbb6ca50f00059f2197dbd38",
       "source": "adapters/typescript/opencode/opencode.fabric-adapter.json"
     },
     "nvidia.fabric.openhands": {

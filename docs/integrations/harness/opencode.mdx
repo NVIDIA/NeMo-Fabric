@@ -160,7 +160,7 @@ supply. These rules are not a filesystem sandbox and do not prevent shell tools
 from reading files in the workspace.
 
 The adapter accepts plain-text input and returns the final response in
-`output.response`. Streaming, Relay, tool policy, subagents,
+`output.response`. Streaming, Relay, tool policy, NeMo Fabric subagent configuration,
 provider-specific model settings, and `max_tokens` are not supported.
 
 ## Understand the Runtime Lifecycle
@@ -168,8 +168,9 @@ provider-specific model settings, and `max_tokens` are not supported.
 The adapter runs in a persistent Bun process. `start` creates one embedded
 OpenCode host and one OpenCode session for the NeMo Fabric runtime. Ordered
 plain-text invocations reuse that session and its conversation history. A
-successful result has `output.response`. Usage fields are present when OpenCode
-reports them. `stop` removes the OpenCode session and closes the embedded host.
+successful result has `output.response`. `stop` removes the OpenCode session and closes the embedded host.
+
+For OpenAI-compatible Chat Completions responses, the result retains observed token counts under `usage.metadata["nvidia.fabric.opencode.usage_evidence.v1"]`. These counts include cache and reasoning where reported, but do not cover title generation, auxiliary generation, or OpenCode's built-in child sessions. After child work or a background shell task starts, later invocations leave observations unavailable because that work can resume the root session. Complete invocation totals and provider-reported cost remain unknown, including in Harbor. See the [adapter's token usage limits](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/typescript/opencode#token-usage) before using these observations in comparisons.
 
 ```mermaid
 flowchart LR

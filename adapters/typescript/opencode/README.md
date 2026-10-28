@@ -104,7 +104,7 @@ The adapter accepts plain-text input and returns the final response in
 `output.response`. It uses the Fabric workspace while disabling ambient OpenCode
 project configuration, user configuration, and instruction discovery.
 
-Streaming, Relay, tool policy, subagents, provider-specific model settings, and
+Streaming, Relay, tool policy, NeMo Fabric subagent configuration, provider-specific model settings, and
 `max_tokens` are not supported.
 
 One Bun adapter process owns one embedded OpenCode host and session for each
@@ -123,3 +123,9 @@ OpenCode supports `live`, `active`, `ready` through `Fabric.check()`. Each level
 Checks remain independent of an invocation. A busy invocation is healthy. Checks use the caller deadline and never cancel an invocation, stop the runtime, or repair a failure. Health does not establish valid model credentials, provider access, MCP connectivity, or successful model output. At most one native request remains outstanding. A check returns `unknown/probe_timeout` while an earlier native request remains pending; later checks do not reuse a delayed reply. Reports contain only the generic health contract fields.
 
 Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+
+## Token Usage
+
+With OpenCode 2.0.23, NeMo Fabric preserves observed Chat Completions usage in `RunResult.usage.metadata["nvidia.fabric.opencode.usage_evidence.v1"]`. Its `observed` counts cover root-session primary and compaction HTTP requests that start during the invocation. For each response, input includes cached tokens and output includes reasoning tokens. Do not add cache or reasoning to those counts again. When fields are missing, each sum can cover a different set of requests. An omitted count stays absent, and a reported zero stays zero.
+
+These observations have `scope_unverified` because they exclude title generation, auxiliary generation, and child sessions. OpenCode's built-in child work can still run, even though NeMo Fabric subagent configuration is unsupported. Missing usage adds `missing_usage`; unfinished requests add `unfinished_work`. After child work or a background shell task starts, later invocations leave observations unavailable because that work can resume the root session. Other response protocols also leave usage unavailable. Complete invocation token totals and provider-reported cost stay unknown, including in Harbor. OpenCode's locally calculated cost is not a provider-reported amount.

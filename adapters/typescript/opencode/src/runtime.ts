@@ -29,6 +29,12 @@ export interface OpenCodeSessionFactory {
   create(input: AdapterStartInput): Promise<OpenCodeSessionHandle>;
 }
 
+export class OpenCodePromptFailure extends LifecycleError {
+  constructor(readonly usage: AgentUsage) {
+    super("opencode_session_failed", "OpenCode session communication failed", { retryable: false });
+  }
+}
+
 function failed(
   code: string,
   message: string,
@@ -131,6 +137,7 @@ export class OpenCodeAdapterRuntime implements AdapterRuntime {
         outcome = await session.prompt(request.input);
       } catch (error) {
         await this.invalidate(session);
+        if (error instanceof OpenCodePromptFailure) return failed(error.code, error.message, error.usage);
         if (error instanceof LifecycleError) {
           throw error;
         }

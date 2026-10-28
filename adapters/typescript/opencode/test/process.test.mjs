@@ -97,7 +97,7 @@ async function close(server) {
   });
 }
 
-function openAiStream(text) {
+function openAiStream(text, usage) {
   const chunk = (delta, finishReason = null) =>
     `data: ${JSON.stringify({
       id: "chatcmpl-opencode-test",
@@ -106,8 +106,72 @@ function openAiStream(text) {
       model: "nvidia/nemotron-3.5-lightning-30b-a3b",
       choices: [{ index: 0, delta, finish_reason: finishReason }],
     })}\n\n`;
-  return `${chunk({ role: "assistant" })}${chunk({ content: text })}${chunk({}, "stop")}data: [DONE]\n\n`;
+  const usageChunk = usage === undefined ? "" : `data: ${JSON.stringify({
+    id: "chatcmpl-opencode-test",
+    object: "chat.completion.chunk",
+    created: 0,
+    model: "nvidia/nemotron-3.5-lightning-30b-a3b",
+    choices: [],
+    usage,
+  })}\n\n`;
+  return `${chunk({ role: "assistant" })}${chunk({ content: text })}${chunk({}, "stop")}${usageChunk}data: [DONE]\n\n`;
 }
+
+test("preserves raw inclusive usage from a controlled OpenAI-compatible endpoint", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "fabric-opencode-usage-"));
+  const requests = [];
+  const endpoint = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    requests.push({ path: request.url, payload });
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.end(openAiStream("done", payload.stream_options?.include_usage === true ? {
+      prompt_tokens: 120,
+      completion_tokens: 30,
+      total_tokens: 150,
+      prompt_tokens_details: { cached_tokens: 20 },
+      completion_tokens_details: { reasoning_tokens: 5 },
+    } : undefined));
+  });
+  const endpointUrl = await listen(endpoint);
+  try {
+    const result = await exchange(workspace, [{
+      operation: "start",
+      payload: {
+        agent_name: "opencode-usage-test",
+        base_dir: workspace,
+        config: { models: { default: {
+          provider: "nvidia",
+          model: "nvidia/nemotron-3.5-nano-30b-a3b",
+          api_key_env: "TEST_API_KEY",
+          base_url: `${endpointUrl}/v1`,
+        } } },
+        runtime_context: context(workspace, "start"),
+      },
+    }, {
+      operation: "invoke",
+      payload: { request: { input: "Reply done." }, runtime_context: context(workspace, "usage") },
+    }, { operation: "stop", payload: { runtime_id: "runtime-1" } }], {}, 30_000);
+    assert.equal(result.exitCode, 0, result.stderr);
+    assert.equal(result.responses[1].outcome.output.status, "succeeded", result.stderr);
+    const usage = result.responses[1].outcome.output.usage;
+    assert.ok(requests.length > 0);
+    assert.ok(requests.every(({ path }) => path === "/v1/chat/completions"));
+    assert.ok(requests.every(({ payload }) => payload.stream_options?.include_usage === true));
+    assert.deepEqual(usage?.extensions["nvidia.fabric.opencode.usage_evidence.v1"], {
+      observed: { input_tokens: 120, output_tokens: 30, total_tokens: 150, cached_input_tokens: 20, reasoning_tokens: 5 },
+      gaps: ["scope_unverified"],
+    });
+    assert.equal(usage?.input_tokens, undefined);
+    assert.equal(usage?.output_tokens, undefined);
+    assert.equal(usage?.total_tokens, undefined);
+    assert.equal(usage?.cost_usd, undefined);
+  } finally {
+    await close(endpoint);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
 
 function openAiToolCall(name, input) {
   const chunk = (delta, finishReason = null) =>

@@ -9,6 +9,10 @@ import test from "node:test";
 
 import { extractOpenCodePromptOutcome, loadOpenCodeSdk, OpenCodeSdkSessionFactory } from "../dist/opencode-sdk.js";
 
+const unavailableUsage = { extensions: { "nvidia.fabric.opencode.usage_evidence.v1": {
+  observed: {}, gaps: ["scope_unverified", "missing_usage"],
+} } };
+
 function startInput() {
   return {
     agentName: "opencode-sdk-test",
@@ -1236,7 +1240,7 @@ test("rejects undeclared provider-specific model settings before loading the SDK
   await assert.rejects(factory.create(input), (error) => error.code === "opencode_model_settings_unsupported");
 });
 
-test("extracts the final assistant text and usage from OpenCode session history", () => {
+test("extracts final assistant text while keeping supplied usage separate from session counters", () => {
   const outcome = extractOpenCodePromptOutcome([
     { type: "user", text: "first" },
     {
@@ -1256,15 +1260,15 @@ test("extracts the final assistant text and usage from OpenCode session history"
       tokens: { input: 5, output: 7, reasoning: 2, cache: { read: 1, write: 0 } },
       cost: 0.023,
     },
-  ], new Set(["assistant-first"]));
+  ], new Set(["assistant-first"]), unavailableUsage);
 
   assert.deepEqual(outcome, {
     text: "second answer",
-    usage: { input_tokens: 5, output_tokens: 7, total_tokens: 12, cost_usd: 0.023 },
+    usage: unavailableUsage,
   });
 });
 
-test("sums usage across every new assistant message in a tool-using prompt", () => {
+test("does not report projected session counts or calculated costs as provider usage", () => {
   const outcome = extractOpenCodePromptOutcome(
     [
       {
@@ -1289,7 +1293,6 @@ test("sums usage across every new assistant message in a tool-using prompt", () 
 
   assert.deepEqual(outcome, {
     text: "done",
-    usage: { input_tokens: 28, output_tokens: 32, total_tokens: 60, cost_usd: 0.03 },
   });
 });
 
@@ -1311,7 +1314,7 @@ test("preserves a redacted OpenCode terminal error and handles malformed assista
   assert.deepEqual(extractOpenCodePromptOutcome([]), {});
 });
 
-test("collects usage and a diff after a terminal model error", async () => {
+test("retains a usage gap and a diff after a terminal model error", async () => {
   let contextCalls = 0;
   const factory = new OpenCodeSdkSessionFactory(async () => ({
     OpenCode: {
@@ -1348,7 +1351,7 @@ test("collects usage and a diff after a terminal model error", async () => {
   assert.deepEqual(await handle.prompt("edit"), {
     errorMessage: "OpenCode model invocation failed",
     patch: "diff --git a/example.txt b/example.txt\n+changed\n",
-    usage: { input_tokens: 5, output_tokens: 7, total_tokens: 12, cost_usd: 0.012 },
+    usage: unavailableUsage,
   });
   await handle.stop();
 });
@@ -1392,7 +1395,7 @@ test("does not return a prior assistant response for a new prompt", async () => 
   }));
 
   const handle = await factory.create(startInput());
-  assert.deepEqual(await handle.prompt("second"), {});
+  assert.deepEqual(await handle.prompt("second"), { usage: unavailableUsage });
   assert.equal(contextCalls, 2);
   await handle.stop();
 });
@@ -1441,7 +1444,7 @@ test("finds a new assistant response after OpenCode compacts session history", a
   }));
 
   const handle = await factory.create(startInput());
-  assert.deepEqual(await handle.prompt("continue"), { text: "compacted answer" });
+  assert.deepEqual(await handle.prompt("continue"), { text: "compacted answer", usage: unavailableUsage });
   await handle.stop();
 });
 
@@ -1455,7 +1458,9 @@ test("creates, invokes, and cleans up one embedded OpenCode session", async () =
     const factory = new OpenCodeSdkSessionFactory(async () => ({
       OpenCode: {
         async create(options) {
-          calls.push(["create", options, process.env.OPENCODE_TEST_KEY]);
+          const { plugins, ...hostOptions } = options;
+          assert.equal(plugins.length, 1);
+          calls.push(["create", hostOptions, process.env.OPENCODE_TEST_KEY]);
           return {
             sessions: {
               async create(input) {
@@ -1496,6 +1501,7 @@ test("creates, invokes, and cleans up one embedded OpenCode session", async () =
     assert.deepEqual(await handle.prompt("hello"), {
       text: "done",
       patch: "diff --git a/example.txt b/example.txt\n+added\n",
+      usage: unavailableUsage,
     });
     await handle.stop();
 

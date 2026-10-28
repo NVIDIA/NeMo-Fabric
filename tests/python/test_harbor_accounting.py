@@ -104,6 +104,18 @@ def test_normalized_usage_reaches_harbor_without_telemetry(result_path):
             None,
         ),
         ({"metadata": {"estimated_cost_usd": 0.25}}, None, None),
+        (
+            {
+                "metadata": {
+                    "nvidia.fabric.opencode.usage_evidence.v1": {
+                        "observed": {"input_tokens": 120, "output_tokens": 30},
+                        "gaps": ["scope_unverified"],
+                    }
+                }
+            },
+            None,
+            None,
+        ),
     ],
 )
 def test_cache_semantics_and_unknown_values(

@@ -16,6 +16,9 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { selectModel, selectSystemInstruction } from "./configuration.js";
 import { ModelEndpointProxy } from "./model-endpoint-proxy.js";
 import type { OpenCodePromptOutcome, OpenCodeSessionFactory, OpenCodeSessionHandle } from "./runtime.js";
+import { OpenCodePromptFailure } from "./runtime.js";
+import { OpenCodeUsageCollector } from "./usage.js";
+import type { OpenCodeInvocationUsage } from "./usage.js";
 
 type OpenCodeClient = Awaited<ReturnType<(typeof import("@opencode/sdk"))["OpenCode"]["create"]>>;
 type OpenCodeEmbedOptions = { overrides?: unknown[] };
@@ -544,63 +547,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function usage(message: Record<string, unknown>): AgentUsage | undefined {
-  const tokens = isRecord(message.tokens) ? message.tokens : undefined;
-  const input = tokens?.input;
-  const output = tokens?.output;
-  const cost = message.cost;
-  if (typeof input !== "number" && typeof output !== "number" && typeof cost !== "number") {
-    return undefined;
-  }
-  const result: AgentUsage = {};
-  if (typeof input === "number") {
-    result.input_tokens = input;
-  }
-  if (typeof output === "number") {
-    result.output_tokens = output;
-  }
-  if (typeof input === "number" && typeof output === "number") {
-    result.total_tokens = input + output;
-  }
-  if (typeof cost === "number") {
-    result.cost_usd = cost;
-  }
-  return result;
-}
-
-function totalUsage(messages: Record<string, unknown>[]): AgentUsage | undefined {
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let costUsd = 0;
-  let hasInputTokens = false;
-  let hasOutputTokens = false;
-  let hasCostUsd = false;
-  for (const message of messages) {
-    const current = usage(message);
-    if (current?.input_tokens !== undefined && current.input_tokens !== null) {
-      inputTokens += current.input_tokens;
-      hasInputTokens = true;
-    }
-    if (current?.output_tokens !== undefined && current.output_tokens !== null) {
-      outputTokens += current.output_tokens;
-      hasOutputTokens = true;
-    }
-    if (current?.cost_usd !== undefined && current.cost_usd !== null) {
-      costUsd += current.cost_usd;
-      hasCostUsd = true;
-    }
-  }
-  if (!hasInputTokens && !hasOutputTokens && !hasCostUsd) {
-    return undefined;
-  }
-  return {
-    ...(hasInputTokens ? { input_tokens: inputTokens } : {}),
-    ...(hasOutputTokens ? { output_tokens: outputTokens } : {}),
-    ...(hasInputTokens && hasOutputTokens ? { total_tokens: inputTokens + outputTokens } : {}),
-    ...(hasCostUsd ? { cost_usd: costUsd } : {}),
-  };
-}
-
 function patch(diffs: unknown): string | undefined {
   if (!Array.isArray(diffs)) {
     return undefined;
@@ -625,6 +571,7 @@ function messageIds(messages: unknown[]): Set<string> {
 export function extractOpenCodePromptOutcome(
   messages: unknown[],
   existingMessageIds?: ReadonlySet<string>,
+  invocationUsage?: AgentUsage,
 ): OpenCodePromptOutcome {
   const assistantMessages: Record<string, unknown>[] = [];
   for (const message of messages) {
@@ -641,9 +588,8 @@ export function extractOpenCodePromptOutcome(
   }
   const terminal = assistantMessages.at(-1);
   if (terminal === undefined) {
-    return {};
+    return invocationUsage === undefined ? {} : { usage: invocationUsage };
   }
-  const invocationUsage = totalUsage(assistantMessages);
   if (terminal.finish === "error" || terminal.error !== undefined) {
     return {
       errorMessage: "OpenCode model invocation failed",
@@ -651,7 +597,7 @@ export function extractOpenCodePromptOutcome(
     };
   }
   if (!Array.isArray(terminal.content)) {
-    return {};
+    return invocationUsage === undefined ? {} : { usage: invocationUsage };
   }
   const text = terminal.content
     .filter((part): part is Record<string, unknown> => isRecord(part) && part.type === "text")
@@ -781,6 +727,7 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
   private readonly environment: EnvironmentLease;
   private readonly endpointProxy?: EndpointProxy;
   private readonly skillsRoot?: string;
+  private readonly usageCollector: OpenCodeUsageCollector;
   private stopped = false;
 
   constructor(
@@ -789,12 +736,14 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
     environment: EnvironmentLease,
     endpointProxy?: EndpointProxy,
     skillsRoot?: string,
+    usageCollector = new OpenCodeUsageCollector(),
   ) {
     this.id = id;
     this.client = client;
     this.environment = environment;
     this.endpointProxy = endpointProxy;
     this.skillsRoot = skillsRoot;
+    this.usageCollector = usageCollector;
   }
 
   async check(level: CheckLevel): Promise<AdapterCheckResult> {
@@ -818,14 +767,16 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
 
   async prompt(text: string): Promise<OpenCodePromptOutcome> {
     let promptMayHaveBeenSubmitted = false;
+    let evidence: OpenCodeInvocationUsage | undefined;
     try {
       const historyBeforePrompt = await this.client.sessions.context({ sessionID: this.id });
       const existingMessageIds = messageIds(historyBeforePrompt);
+      evidence = this.usageCollector.begin(this.id);
       promptMayHaveBeenSubmitted = true;
       await this.client.sessions.prompt({ sessionID: this.id, text });
       await this.client.sessions.wait({ sessionID: this.id });
       const historyAfterPrompt = await this.client.sessions.context({ sessionID: this.id });
-      const outcome = extractOpenCodePromptOutcome(historyAfterPrompt, existingMessageIds);
+      const outcome = extractOpenCodePromptOutcome(historyAfterPrompt, existingMessageIds, this.usageCollector.end(evidence));
       try {
         const sessionPatch = patch(await this.client.sessions.diff({ sessionID: this.id }));
         return { ...outcome, ...(sessionPatch === undefined ? {} : { patch: sessionPatch }) };
@@ -833,6 +784,7 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
         return outcome;
       }
     } catch {
+      if (evidence !== undefined) throw new OpenCodePromptFailure(this.usageCollector.end(evidence));
       throw new LifecycleError("opencode_session_failed", "OpenCode session communication failed", {
         retryable: !promptMayHaveBeenSubmitted,
       });
@@ -915,7 +867,9 @@ export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
         this.sdkLoader === loadOpenCodeSdk
           ? await loadEmbeddedOpenCodeCreate()
           : (sdk.OpenCode.create as EmbeddedOpenCodeCreate);
+      const usageCollector = new OpenCodeUsageCollector();
       client = await createEmbeddedClient({
+        plugins: [usageCollector.plugin()],
         config: { directory: workspace, project: false, content: configContent },
         fs: { filewatcher: false },
         models: { fetch: false },
@@ -928,7 +882,7 @@ export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
       });
       sessionId = session.id;
       await waitForMcpConnections(client, workspace, Object.keys(mcpServers));
-      return new OpenCodeSdkSessionHandle(session.id, client, environment, endpointProxy, runtimeSkills.root);
+      return new OpenCodeSdkSessionHandle(session.id, client, environment, endpointProxy, runtimeSkills.root, usageCollector);
     } catch (error) {
       if (client !== undefined) {
         if (sessionId !== undefined) {
