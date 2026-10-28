@@ -528,6 +528,7 @@ def test_nvidia_custom_endpoint_preserves_served_model_id(
                 ],
                 "usage": {
                     "prompt_tokens": 11,
+                    "prompt_tokens_details": {"cached_tokens": 3},
                     "completion_tokens": 5,
                     "total_tokens": 16,
                 },
@@ -553,6 +554,7 @@ def test_nvidia_custom_endpoint_preserves_served_model_id(
         monkeypatch.setattr(litellm, "client_session", client)
         llm = adapter._llm(adapter._load_openhands_api(), model)
         llm.num_retries = 0
+        baseline = llm.metrics.deep_copy()
         llm.completion(
             [Message(role="user", content=[TextContent(text="finish")])],
             tools=FinishTool.create() if with_tools else None,
@@ -566,6 +568,14 @@ def test_nvidia_custom_endpoint_preserves_served_model_id(
         assert payload["tools"][0]["function"]["name"] == "finish"
     assert llm.metrics.accumulated_token_usage.prompt_tokens == 11
     assert llm.metrics.accumulated_token_usage.completion_tokens == 5
+    assert llm.metrics.accumulated_token_usage.cache_read_tokens == 3
+    usage = adapter._usage(llm, baseline)
+    assert usage.input_tokens == 11
+    assert usage.input_tokens_include_cache is True
+    assert usage.output_tokens == 5
+    assert usage.total_tokens == 16
+    assert usage.cached_input_tokens is None
+    assert usage.cost_usd is None
 
 
 async def test_repeated_invocation_returns_only_current_turn_and_usage(
@@ -586,6 +596,7 @@ async def test_repeated_invocation_returns_only_current_turn_and_usage(
     assert second.usage is not None
     assert second.usage.to_mapping() == {
         "input_tokens": 11,
+        "input_tokens_include_cache": True,
         "output_tokens": 5,
         "total_tokens": 16,
         "cost_usd": 0.25,

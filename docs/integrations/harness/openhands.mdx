@@ -129,6 +129,9 @@ Missing records leave counters unknown, including requests that fail before
 the SDK observes usage. Recorded tokens remain available after a later failure.
 Cost remains unknown unless the SDK records a cost for every returned response;
 its zero-initialized accumulator does not establish a free request.
+Input tokens follow LiteLLM's inclusive `prompt_tokens` convention. The adapter
+sets `input_tokens_include_cache=true` without adding cache tokens again or
+inventing a missing cache breakdown.
 
 ## Run the Code Review Example
 

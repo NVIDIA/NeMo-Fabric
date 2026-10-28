@@ -327,6 +327,9 @@ def _usage(api_llm: Any, baseline: Any) -> contract.AgentUsage | None:
     output_tokens = int(tokens.completion_tokens)
     return contract.AgentUsage(
         input_tokens=input_tokens,
+        # LiteLLM normalizes prompt_tokens to include cache reads and writes;
+        # OpenHands copies that count unchanged into its per-call metrics.
+        input_tokens_include_cache=True,
         output_tokens=output_tokens,
         total_tokens=input_tokens + output_tokens,
         # The SDK omits cost records when pricing fails. Its zero-initialized

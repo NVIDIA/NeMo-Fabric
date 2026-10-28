@@ -141,6 +141,9 @@ token counters unknown instead of reporting the SDK's zero-initialized
 accumulator. Recorded tokens remain available after a later invocation failure.
 Cost is unknown unless the SDK records a cost for every returned response;
 an unmapped model's default accumulated cost does not establish a free request.
+Reported input tokens include cached input, following LiteLLM's normalized
+`prompt_tokens` convention. The adapter sets `input_tokens_include_cache` to
+`true` and does not add the cache count again or infer a missing cache breakdown.
 
 ## Runtime Health
 
