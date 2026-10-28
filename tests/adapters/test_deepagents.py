@@ -1703,6 +1703,9 @@ def test_local_shell_file_tools_accept_physical_workspace_paths(
 def test_local_shell_listed_paths_round_trip_with_workspace_prefix(
     tmp_path, make_payload, operation
 ):
+    from deepagents.middleware.filesystem import FilesystemMiddleware
+    from langchain.tools import ToolRuntime
+
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     payload = make_payload(tmp_path)
@@ -1715,7 +1718,8 @@ def test_local_shell_listed_paths_round_trip_with_workspace_prefix(
     outer = workspace / "report.txt"
     outer.write_text("outer file")
     # On POSIX, the native virtual path of this file equals the outer file's
-    # physical path. On Windows this also checks canonical output paths.
+    # physical path. On Windows this checks that virtual output paths survive
+    # the tools' validation instead of exposing rejected drive-prefixed paths.
     nested = workspace / Path(*backend.cwd.parts[1:]) / "report.txt"
     nested.parent.mkdir(parents=True)
     nested.write_text("nested file")
@@ -1733,12 +1737,30 @@ def test_local_shell_listed_paths_round_trip_with_workspace_prefix(
     assert result.error is None
     assert len(entries) == 1
     listed_path = entries[0]["path"]
-    read = backend.read(listed_path)
-    assert read.error is None
-    assert "nested file" in read.file_data["content"]
-    assert Path(listed_path) == nested.resolve()
-    edit = backend.edit(listed_path, "nested file", "edited nested file")
-    assert edit.error is None
+    tools = {
+        tool.name: tool
+        for tool in FilesystemMiddleware(
+            backend=backend, tools=["read_file", "edit_file"]
+        ).tools
+    }
+    runtime = ToolRuntime(
+        state={},
+        context=None,
+        config={},
+        stream_writer=lambda _: None,
+        tool_call_id="path-round-trip",
+        store=None,
+    )
+    read = tools["read_file"].func(file_path=listed_path, runtime=runtime)
+    assert read.status == "success", read.content
+    assert "nested file" in read.content
+    edit = tools["edit_file"].func(
+        file_path=listed_path,
+        old_string="nested file",
+        new_string="edited nested file",
+        runtime=runtime,
+    )
+    assert edit.status == "success", edit.content
     assert nested.read_text() == "edited nested file"
     assert outer.read_text() == "outer file"
 

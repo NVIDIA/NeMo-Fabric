@@ -281,6 +281,10 @@ def _local_shell_backend(**kwargs: Any) -> Any:
             # Listings and searches must return paths the resolver reads back
             # unambiguously, even if a nested path repeats the workspace prefix.
             virtual = super()._to_virtual_path(path)
+            # Deep Agents tools reject drive-prefixed paths. Windows virtual
+            # paths cannot collide with the drive-qualified physical aliases.
+            if self.cwd.drive:
+                return virtual
             return str(self.cwd / virtual.lstrip("/"))
 
         def _resolve_path(self, key: str) -> Path:
