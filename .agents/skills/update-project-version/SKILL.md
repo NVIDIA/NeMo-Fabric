@@ -32,6 +32,7 @@ pre-release or build-metadata variants used during packaging.
 - The setuptools projects do not derive their versions from Cargo. Update the
   literal `project.version` in every one of these files:
   - `sdk/python/nemo-fabric/pyproject.toml`
+  - `sdk/python/nemo-fabric-evidence/pyproject.toml`
   - `adapter-contract/python/pyproject.toml`
   - `adapters/python/*/pyproject.toml`
 - Keep internal Python package requirement pins aligned with the Python release
@@ -59,7 +60,7 @@ versions rather than blindly copying incompatible syntax.
    - `Cargo.toml` `[workspace.package].version`
    - `Cargo.toml` `workspace.dependencies.nemo-fabric-core.version`
    - The setuptools `project.version` in the published SDK metapackage,
-     Python adapter contract, and every adapter `pyproject.toml`
+     shared Python contract, Python adapter contract, and every adapter `pyproject.toml`
    - Every internal `nemo-fabric-*` exact-version requirement
    - The TypeScript adapter-contract `package.json` and `package-lock.json`
    - `Cargo.lock` through Cargo metadata resolution
@@ -77,7 +78,7 @@ If editing the helper code, keep these contracts aligned:
   `nemo-fabric-core` workspace dependency, then verify every `nemo-fabric-*` workspace
   package through Cargo metadata.
 - `set_python_project_versions` must update the published SDK metapackage,
-  Python adapter contract, every adapter `pyproject.toml` discovered under
+  shared Python contract, Python adapter contract, every adapter `pyproject.toml` discovered under
   `adapters/python/`, and all internal exact-version pins while
   rejecting a static version in
   `sdk/python/nemo-fabric-runtime/pyproject.toml`.

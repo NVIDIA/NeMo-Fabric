@@ -33,7 +33,7 @@ package-specific tag pushes:
 |---|---|
 | crates.io | `nemo-fabric-core`, `nemo-fabric-cli` |
 | npm | `nemo-fabric-adapter-contract`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-droid`, `nemo-fabric-adapters-pi`, `nemo-fabric-adapters-opencode`, `nemo-fabric-adapters-qwen`, `nemo-fabric-adapters-kiro`, `nemo-fabric-adapters-strands` |
-| GitHub Actions | `nemo-fabric`, `nemo-fabric-runtime`, `nemo-fabric-collector`, `nemo-fabric-adapter-catalog`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-claude`, `nemo-fabric-adapters-codex`, `nemo-fabric-adapters-deepagents`, `nemo-fabric-adapters-hermes`, and `nemo-fabric-adapters-nooa` wheel artifacts |
+| GitHub Actions | `nemo-fabric`, `nemo-fabric-runtime`, `nemo-fabric-evidence`, `nemo-fabric-adapter-contract`, `nemo-fabric-collector`, `nemo-fabric-adapter-catalog`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-claude`, `nemo-fabric-adapters-codex`, `nemo-fabric-adapters-deepagents`, `nemo-fabric-adapters-hermes`, and `nemo-fabric-adapters-nooa` wheel artifacts |
 | Fern | The documentation site |
 
 ## Version Model
@@ -48,6 +48,7 @@ NeMo Fabric versions are anchored on the workspace SemVer in the repository root
 - `sdk/python/nemo-fabric/pyproject.toml`,
   `sdk/python/nemo-fabric-collector/pyproject.toml`,
   `sdk/python/nemo-fabric-adapter-catalog/pyproject.toml`,
+  `sdk/python/nemo-fabric-evidence/pyproject.toml`,
   `adapter-contract/python/pyproject.toml`, and every
   `adapters/python/*/pyproject.toml` carry the Python package versions and internal
   dependency pins and must stay aligned with the same release version. The
@@ -212,6 +213,11 @@ the first publication. No separate package tag or manual upload is required.
 PR CI tests sdist-to-wheel builds, isolated installation without harness SDKs,
 and release dispatch with external writes mocked.
 
+`nemo-fabric-evidence` must have its own KitMaker project before its first
+publication. Ensure the shared contract wheel is available when installing its
+version-matched runtime and adapter-contract consumers. The shared package
+introduces no third-party dependency.
+
 The helper updates:
 
 1. The root [`Cargo.toml`](Cargo.toml) workspace version.
@@ -219,6 +225,7 @@ The helper updates:
    `nemo-fabric-core`.
 3. [`sdk/python/nemo-fabric/pyproject.toml`](sdk/python/nemo-fabric/pyproject.toml),
    [`sdk/python/nemo-fabric-adapter-catalog/pyproject.toml`](sdk/python/nemo-fabric-adapter-catalog/pyproject.toml),
+   [`sdk/python/nemo-fabric-evidence/pyproject.toml`](sdk/python/nemo-fabric-evidence/pyproject.toml),
    [`adapter-contract/python/pyproject.toml`](adapter-contract/python/pyproject.toml),
    every `adapters/python/*/pyproject.toml`, and their internal dependency pins to
    the same release version.
@@ -465,7 +472,8 @@ The release pipeline then:
 1. Normalizes and validates the tag format, then stamps ecosystem-specific
    package metadata in each disposable workflow checkout.
 2. Builds platform `nemo-fabric-runtime` wheels and pure-Python
-   `nemo-fabric`, `nemo-fabric-collector`, and adapter wheels with the exact tag
+   `nemo-fabric`, `nemo-fabric-evidence`, `nemo-fabric-adapter-contract`,
+   `nemo-fabric-collector`, and adapter wheels with the exact tag
    version, then uploads them as GitHub Actions artifacts.
 3. Publishes `nemo-fabric-core` and `nemo-fabric-cli` to crates.io through
    trusted publishing for stable, beta, and RC tags. Alpha tags are not

@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
-from nemo_fabric_adapter_contract.evidence import ExecutionEvidence
-from nemo_fabric_adapter_contract.evidence import VersionObservation
+from nemo_fabric_evidence.evidence import ExecutionEvidence
+from nemo_fabric_evidence.evidence import VersionObservation
 
 FIXTURE = Path(__file__).parents[1] / "fixtures/provenance/report.json"
 
@@ -152,3 +152,21 @@ def test_schema_requires_participants_and_infrastructure_context_references():
     assert validator.is_valid(report)
     report["software_environments"][0]["participants"] = []
     assert not validator.is_valid(report)
+
+
+def test_adapter_evidence_and_validation_reexports_preserve_type_identity():
+    from nemo_fabric_evidence.codec import ContractValidationError
+    from nemo_fabric_evidence.models import ContractModel
+    from nemo_fabric_adapter_contract import evidence
+    from nemo_fabric_adapter_contract.codec import (
+        ContractValidationError as LegacyError,
+    )
+    from nemo_fabric_adapter_contract.models import ContractModel as LegacyModel
+
+    assert evidence.ExecutionEvidence is ExecutionEvidence
+    assert evidence.VersionObservation is VersionObservation
+    assert LegacyError is ContractValidationError
+    assert LegacyModel is ContractModel
+    report = evidence.ExecutionEvidence.from_mapping(json.loads(FIXTURE.read_text()))
+    assert isinstance(report, ExecutionEvidence)
+    assert isinstance(report, LegacyModel)

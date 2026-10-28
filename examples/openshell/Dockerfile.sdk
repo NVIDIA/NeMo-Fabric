@@ -34,6 +34,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/src/fabric/target \
     uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels --config-setting build-args=--locked sdk/python/nemo-fabric-runtime \
+    && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels sdk/python/nemo-fabric-evidence \
     && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapter-contract/python \
     && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapters/python/common \
     && uv pip install --python /opt/fabric/bin/python --find-links /wheels /wheels/*.whl

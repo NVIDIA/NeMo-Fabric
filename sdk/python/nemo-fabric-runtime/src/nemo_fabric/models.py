@@ -21,7 +21,7 @@ from typing import Any
 from typing import Literal
 from typing import Self
 
-from nemo_fabric_adapter_contract.evidence import ExecutionEvidence
+from nemo_fabric_evidence.evidence import ExecutionEvidence
 
 from pydantic import BaseModel
 from pydantic import ConfigDict

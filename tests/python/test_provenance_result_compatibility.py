@@ -80,3 +80,36 @@ def test_typed_snapshot_optional_attributes_and_explicit_forwarding_are_consiste
     assert (
         ProvenanceConfig(reports=snapshot).reports.to_mapping() == snapshot.to_mapping()
     )
+
+
+def test_sdk_evidence_round_trip_without_the_adapter_contract():
+    import subprocess
+    import sys
+
+    script = """
+import sys
+from types import SimpleNamespace
+
+def reject_adapter_contract(fullname, path=None, target=None):
+    if fullname == "nemo_fabric_adapter_contract" or fullname.startswith("nemo_fabric_adapter_contract."):
+        raise ModuleNotFoundError("Adapter contract import is blocked")
+    return None
+
+sys.meta_path.insert(0, SimpleNamespace(find_spec=reject_adapter_contract))
+from nemo_fabric import ExecutionEvidence, ProvenanceConfig, RunResult
+from nemo_fabric_evidence.evidence import ExecutionEvidence as SharedReport
+
+report = SharedReport.gap("caller_sdk", "no_existing_report")
+assert isinstance(ProvenanceConfig(reports=report).reports, SharedReport)
+assert ProvenanceConfig(reports=report).reports.to_mapping() == report.to_mapping()
+snapshot = ExecutionEvidence.from_mapping(report.to_mapping())
+assert ProvenanceConfig(reports=snapshot).reports.to_mapping() == report.to_mapping()
+result = RunResult.from_mapping({
+    "agent_name": "example", "harness": "example", "adapter_kind": "python",
+    "runtime_id": "r", "invocation_id": "i", "request_id": "q",
+    "status": "succeeded", "output": "ok", "execution": report.to_mapping(),
+})
+assert result.execution.to_mapping() == report.to_mapping()
+assert not any(name.startswith("nemo_fabric_adapter_contract") for name in sys.modules)
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)

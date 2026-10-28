@@ -9,6 +9,8 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock LICENSE ./
 COPY crates/ crates/
 COPY environment-providers/ environment-providers/
+COPY sdk/python/nemo-fabric-evidence/ sdk/python/nemo-fabric-evidence/
+RUN /opt/build/bin/pip wheel --no-deps sdk/python/nemo-fabric-evidence --wheel-dir /wheels
 COPY sdk/python/nemo-fabric-runtime/ sdk/python/nemo-fabric-runtime/
 WORKDIR /src/sdk/python/nemo-fabric-runtime
 RUN /opt/build/bin/maturin build --locked --compatibility linux --out /wheels

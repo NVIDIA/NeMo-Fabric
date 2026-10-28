@@ -12,9 +12,9 @@ ref_name := ""
 # Linux wheel artifacts target this minimum glibc version for compatibility.
 linux_glibc_version := "2.17"
 
-python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector sdk/python/nemo-fabric-adapter-catalog adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/openclaw adapters/python/openhands adapters/python/remote-agent"
+python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector sdk/python/nemo-fabric-adapter-catalog sdk/python/nemo-fabric-evidence adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/openclaw adapters/python/openhands adapters/python/remote-agent"
 
-python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector sdk/python/nemo-fabric-adapter-catalog adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/openclaw adapters/python/openhands adapters/python/remote-agent"
+python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector sdk/python/nemo-fabric-adapter-catalog sdk/python/nemo-fabric-evidence adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/openclaw adapters/python/openhands adapters/python/remote-agent"
 
 # List Python package paths, one per line.
 python-package-paths:
@@ -280,6 +280,8 @@ clean:
         .coverage \
         build \
         dist \
+        sdk/python/nemo-fabric-evidence/build \
+        sdk/python/nemo-fabric-evidence/dist \
         adapter-contract/python/build \
         adapter-contract/python/dist \
         docs/node_modules \
@@ -437,6 +439,7 @@ install-hermes-agent:
         uv venv --python 3.14 --clear "$REPO_ROOT/.venv-hermes"
     fi
     uv pip install --python "$REPO_ROOT/.venv-hermes/bin/python" \
+        --editable "$REPO_ROOT/sdk/python/nemo-fabric-evidence" \
         --editable "$REPO_ROOT/adapter-contract/python" \
         --editable "$REPO_ROOT/adapters/python/common" \
         --editable "$REPO_ROOT/adapters/python/hermes[relay]" \

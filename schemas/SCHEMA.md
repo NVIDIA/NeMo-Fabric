@@ -8,8 +8,9 @@ SPDX-License-Identifier: Apache-2.0
 This directory contains committed JSON Schema snapshots for the public NeMo Fabric
 contract. The files are generated from the Rust core types, not edited by hand.
 
-The Python adapter-contract package exposes dependency-free dataclasses with
-optional Pydantic interoperability. Those models are hand-maintained against
+The Python adapter-contract package exposes standard-library dataclasses with
+optional Pydantic interoperability. Shared evidence types and validation live in
+`nemo-fabric-evidence`, consumed by both the SDK and adapter contract. Those models are hand-maintained against
 these Rust-generated schemas. The TypeScript adapter-contract package generates
 compile-time declarations from the committed schema snapshots. When a
 schema-backed Rust type changes, update each applicable language binding and

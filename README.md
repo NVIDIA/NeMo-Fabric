@@ -58,6 +58,7 @@ NeMo Fabric is an execution layer for NVIDIA products that build, evaluate, depl
 NeMo Fabric separates consumers from execution targets through a stable, versioned contract. This makes it extensible in two directions:
 
 - **Integrate a consumer:** Applications, evaluation systems, and rollout platforms use the Python SDK and typed `FabricConfig` to run different harnesses without implementing each harness integration. Start with the [consumer integration overview](docs/integrations/consumer/overview.mdx) or [consumer integration skills](skills/README.md).
+- **Shared Python contracts:** The SDK and adapter contract consume the standard-library [shared contract package](sdk/python/nemo-fabric-evidence/README.md) for software evidence and validation.
 - **Add an execution target:** Adapters translate the NeMo Fabric contract into the native behavior of a harness, framework, custom agent, or remote service. Start with the [adapter contract](docs/adapter-contract/README.md) and [adapter examples](docs/adapter-contract/examples.md).
 
 ## Documentation

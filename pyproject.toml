@@ -144,6 +144,7 @@ package = false
 default-groups = ["adapters", "collector", "dev", "test"]
 
 [tool.uv.sources]
+nemo-fabric-evidence = { path = "sdk/python/nemo-fabric-evidence", editable = true }
 nemo-fabric-adapter-catalog = { path = "sdk/python/nemo-fabric-adapter-catalog", editable = true }
 nemo-fabric = { path = "sdk/python/nemo-fabric", editable = true }
 nemo-fabric-collector = { path = "sdk/python/nemo-fabric-collector", editable = true }

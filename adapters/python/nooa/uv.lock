@@ -656,9 +656,15 @@ wheels = [
 name = "nemo-fabric-adapter-contract"
 version = "0.6.0"
 source = { editable = "../../../adapter-contract/python" }
+dependencies = [
+    { name = "nemo-fabric-evidence" },
+]
 
 [package.metadata]
-requires-dist = [{ name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.12,<3" }]
+requires-dist = [
+    { name = "nemo-fabric-evidence", editable = "../../../sdk/python/nemo-fabric-evidence" },
+    { name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.12,<3" },
+]
 provides-extras = ["pydantic"]
 
 [[package]]
@@ -715,6 +721,11 @@ requires-dist = [
     { name = "nooa-cli", marker = "extra == 'harness'", specifier = ">=0.0.10,<0.0.11" },
 ]
 provides-extras = ["harness", "relay", "full"]
+
+[[package]]
+name = "nemo-fabric-evidence"
+version = "0.6.0"
+source = { editable = "../../../sdk/python/nemo-fabric-evidence" }
 
 [[package]]
 name = "nemo-relay"

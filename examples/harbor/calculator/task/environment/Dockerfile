@@ -19,6 +19,7 @@ RUN npm install --global openclaw@2026.9.4 --allow-scripts=openclaw
 
 COPY vendor/nemo-fabric /opt/nemo-fabric
 RUN pip install --no-cache-dir \
+        -e /opt/nemo-fabric/sdk/python/nemo-fabric-evidence \
         -e /opt/nemo-fabric/adapter-contract/python \
         -e /opt/nemo-fabric/sdk/python/nemo-fabric-runtime \
         -e /opt/nemo-fabric/adapters/python/common \

@@ -7,6 +7,7 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 COPY vendor/nemo-fabric-source.tar.gz /tmp/nemo-fabric-source.tar.gz
 RUN mkdir /src /packages \
     && tar -xzf /tmp/nemo-fabric-source.tar.gz -C /src \
+    && uv build --wheel --out-dir /packages /src/sdk/python/nemo-fabric-evidence \
     && cd /src/sdk/python/nemo-fabric-runtime \
     && uvx --from 'maturin[zig]>=1.9.3,<2.0' maturin build \
         --release --locked --compatibility manylinux_2_17 --zig --out /packages
@@ -17,6 +18,7 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 COPY --from=fabric-builder /packages /opt/nemo-fabric/wheelhouse
 COPY vendor/harness-constraints.txt /opt/nemo-fabric/harness-constraints.txt
 COPY --from=fabric-builder /src/LICENSE /opt/nemo-fabric-source/LICENSE
+COPY --from=fabric-builder /src/sdk/python/nemo-fabric-evidence /opt/nemo-fabric-source/sdk/python/nemo-fabric-evidence
 COPY --from=fabric-builder /src/adapter-contract/python /opt/nemo-fabric-source/adapter-contract/python
 COPY --from=fabric-builder /src/adapters/python/common /opt/nemo-fabric-source/adapters/python/common
 COPY --from=fabric-builder /src/adapters/python/deepagents /opt/nemo-fabric-source/adapters/python/deepagents

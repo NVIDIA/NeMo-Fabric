@@ -2544,7 +2544,7 @@ class VersionObservation(FabricMapping):
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        from nemo_fabric_adapter_contract.evidence import (
+        from nemo_fabric_evidence.evidence import (
             VersionObservation as Observation,
         )
 
@@ -2618,13 +2618,13 @@ class ExecutionEvidence(FabricMapping):
 
     @classmethod
     def from_mapping(cls, mapping: Mapping[str, Any]) -> Self:
-        from nemo_fabric_adapter_contract.evidence import ExecutionEvidence as Report
+        from nemo_fabric_evidence.evidence import ExecutionEvidence as Report
 
         return cls(Report.receive(mapping, "reporter").to_mapping())
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        from nemo_fabric_adapter_contract.evidence import ExecutionEvidence as Report
+        from nemo_fabric_evidence.evidence import ExecutionEvidence as Report
 
         data = Report.receive(data, "reporter").to_mapping()
         data["software_environments"] = tuple(
