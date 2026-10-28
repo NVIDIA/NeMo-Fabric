@@ -1,0 +1,139 @@
+---
+title: "Enum Measurement"
+sidebar-title: "Measurement"
+slug: "/reference/api/rust-library-reference/nemo-fabric-core/system_stats/cgroup/enum-measurement"
+description: "A measured value or its availability. Unlimited is distinct from unknown and is used only for limits. No missing measurement is replaced with zero."
+position: 3
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub enum Measurement&lt;T&gt; &#123;\n    NotCollected,\n    Available &#123;\n        value: T,\n    &#125;,\n    Unlimited,\n    Unavailable &#123;\n        reason: <a href=\"https://doc.rust-lang.org/1.99.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    Unsupported &#123;\n        reason: <a href=\"https://doc.rust-lang.org/1.99.1/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n&#125;"}} /></pre>
+
+A measured value or its availability. Unlimited is distinct from unknown and is used only for limits. No missing measurement is replaced with zero.
+
+## Variants
+
+### `NotCollected`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "NotCollected"}} /></pre>
+
+Its metric group was explicitly excluded from collection.
+
+### `Available`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "Available"}} /></pre>
+
+A value was read successfully.
+
+#### Fields
+
+##### `value: T`
+
+Observed numeric value, with units defined by its containing field.
+
+### `Unlimited`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "Unlimited"}} /></pre>
+
+No limit is configured in the visible hierarchy.
+
+### `Unavailable`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "Unavailable"}} /></pre>
+
+The source could not be read or its counter changed epoch.
+
+#### Fields
+
+##### `reason: String`
+
+Safe reason the reading is unknown.
+
+### `Unsupported`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "Unsupported"}} /></pre>
+
+The operating system or controller does not expose this measurement.
+
+#### Fields
+
+##### `reason: String`
+
+Missing platform or controller capability.
+
+## Trait Implementations
+
+### `impl<T: Clone> Clone for Measurement<T>`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;T: <a href=\"https://doc.rust-lang.org/1.99.1/core/clone/trait.Clone.html\">Clone</a>&gt; <a href=\"https://doc.rust-lang.org/1.99.1/core/clone/trait.Clone.html\">Clone</a> for <a href=\"enum-measurement.mdx\">Measurement</a>&lt;T&gt;"}} /></pre>
+
+#### `clone`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.99.1/core/clone/trait.Clone.html#tymethod.clone\">clone</a>(&amp;self) -&gt; <a href=\"enum-measurement.mdx\">Measurement</a>&lt;T&gt;"}} /></pre>
+
+#### `clone_from`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.99.1/core/clone/trait.Clone.html#method.clone_from\">clone_from</a>(&amp;mut self, source: &amp;Self)"}} /></pre>
+
+### `impl<T: Debug> Debug for Measurement<T>`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;T: <a href=\"https://doc.rust-lang.org/1.99.1/core/fmt/trait.Debug.html\">Debug</a>&gt; <a href=\"https://doc.rust-lang.org/1.99.1/core/fmt/trait.Debug.html\">Debug</a> for <a href=\"enum-measurement.mdx\">Measurement</a>&lt;T&gt;"}} /></pre>
+
+#### `fmt`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.99.1/core/fmt/trait.Debug.html#tymethod.fmt\">fmt</a>(&amp;self, f: &amp;mut <a href=\"https://doc.rust-lang.org/1.99.1/core/fmt/struct.Formatter.html\">Formatter</a>&lt;'_&gt;) -&gt; <a href=\"https://doc.rust-lang.org/1.99.1/core/fmt/type.Result.html\">Result</a>"}} /></pre>
+
+### `impl<'de, T> Deserialize<'de> for Measurement<T>where T: Deserialize<'de>,`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;'de, T&gt; <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html\">Deserialize</a>&lt;'de&gt; for <a href=\"enum-measurement.mdx\">Measurement</a>&lt;T&gt;where\n    T: <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html\">Deserialize</a>&lt;'de&gt;,"}} /></pre>
+
+#### `deserialize`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html#tymethod.deserialize\">deserialize</a>&lt;__D&gt;(__deserializer: __D) -&gt; <a href=\"https://doc.rust-lang.org/1.99.1/core/result/enum.Result.html\">Result</a>&lt;Self, __D::<a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserializer.html#associatedtype.Error\">Error</a>&gt;where\n    __D: <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserializer.html\">Deserializer</a>&lt;'de&gt;,"}} /></pre>
+
+### `impl<T> JsonSchema for Measurement<T>where T: JsonSchema,`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;T&gt; JsonSchema for <a href=\"enum-measurement.mdx\">Measurement</a>&lt;T&gt;where\n    T: JsonSchema,"}} /></pre>
+
+#### `schema_name`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn schema_name() -&gt; <a href=\"https://doc.rust-lang.org/1.99.1/alloc/borrow/enum.Cow.html\">Cow</a>&lt;'static, <a href=\"https://doc.rust-lang.org/1.99.1/std/primitive.str.html\">str</a>&gt;"}} /></pre>
+
+#### `schema_id`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn schema_id() -&gt; <a href=\"https://doc.rust-lang.org/1.99.1/alloc/borrow/enum.Cow.html\">Cow</a>&lt;'static, <a href=\"https://doc.rust-lang.org/1.99.1/std/primitive.str.html\">str</a>&gt;"}} /></pre>
+
+#### `json_schema`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn json_schema(generator: &amp;mut SchemaGenerator) -&gt; Schema"}} /></pre>
+
+#### `inline_schema`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn inline_schema() -&gt; <a href=\"https://doc.rust-lang.org/1.99.1/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+### `impl<T: PartialEq> PartialEq for Measurement<T>`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;T: <a href=\"https://doc.rust-lang.org/1.99.1/core/cmp/trait.PartialEq.html\">PartialEq</a>&gt; <a href=\"https://doc.rust-lang.org/1.99.1/core/cmp/trait.PartialEq.html\">PartialEq</a> for <a href=\"enum-measurement.mdx\">Measurement</a>&lt;T&gt;"}} /></pre>
+
+#### `eq`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.99.1/core/cmp/trait.PartialEq.html#tymethod.eq\">eq</a>(&amp;self, other: &amp;<a href=\"enum-measurement.mdx\">Measurement</a>&lt;T&gt;) -&gt; <a href=\"https://doc.rust-lang.org/1.99.1/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+#### `ne`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.99.1/core/cmp/trait.PartialEq.html#method.ne\">ne</a>(&amp;self, other: <a href=\"https://doc.rust-lang.org/1.99.1/std/primitive.reference.html\">&amp;Rhs</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.99.1/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+### `impl<T> Serialize for Measurement<T>where T: Serialize,`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;T&gt; <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\">Serialize</a> for <a href=\"enum-measurement.mdx\">Measurement</a>&lt;T&gt;where\n    T: <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\">Serialize</a>,"}} /></pre>
+
+#### `serialize`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html#tymethod.serialize\">serialize</a>&lt;__S&gt;(&amp;self, __serializer: __S) -&gt; <a href=\"https://doc.rust-lang.org/1.99.1/core/result/enum.Result.html\">Result</a>&lt;__S::<a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html#associatedtype.Ok\">Ok</a>, __S::<a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html#associatedtype.Error\">Error</a>&gt;where\n    __S: <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html\">Serializer</a>,"}} /></pre>
+
+### `impl<T: PartialEq> StructuralPartialEq for Measurement<T>`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;T: <a href=\"https://doc.rust-lang.org/1.99.1/core/cmp/trait.PartialEq.html\">PartialEq</a>&gt; <a href=\"https://doc.rust-lang.org/1.99.1/core/marker/trait.StructuralPartialEq.html\">StructuralPartialEq</a> for <a href=\"enum-measurement.mdx\">Measurement</a>&lt;T&gt;"}} /></pre>

@@ -190,3 +190,9 @@ invocation-scoped path beneath `opencode/` and returns it as a `patch` artifact.
 Without an artifact root, it returns no patch artifact.
 
 Create a new runtime to change the selected model or workspace.
+
+## Runtime Health
+
+`Fabric.check()` supports `live`, `active`, and `ready`. Each level obtains a fresh native `sessions.get({ sessionID })` response and validates the selected unarchived session. Readiness establishes local session availability.
+
+Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.

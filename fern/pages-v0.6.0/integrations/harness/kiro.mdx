@@ -128,3 +128,14 @@ Set `KIRO_API_KEY` before these commands only in a non-interactive environment.
 
 The example intentionally does not project the shared NeMo Fabric skill or system
 instruction because the initial Kiro adapter does not advertise those fields.
+
+## Runtime health
+
+`Fabric.check()` supports `live`. The adapter observes the selected ACP child
+process identifier, exit status, and signal status through the shared process
+runner. A retained session identifier is insufficient. A busy process remains
+live, and a stopped or exited process fails the liveness observation.
+
+`active` and `ready` are unsupported. Checks do not send prompts, change session settings, or cancel invocations.
+
+Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.

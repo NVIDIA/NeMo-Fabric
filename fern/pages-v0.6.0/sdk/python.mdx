@@ -66,7 +66,6 @@ config = FabricConfig(
     },
 )
 
-
 async def main() -> None:
     fabric = Fabric()
     result = await fabric.run(
@@ -76,7 +75,6 @@ async def main() -> None:
 
     print(result.status)
     print(result.output.response)
-
 
 asyncio.run(main())
 ```
@@ -229,7 +227,108 @@ root is separate. OpenShell invocation is buffered; streaming and shared-service
 hosting remain local SDK capabilities. Commands with uncertain outcomes are
 never replayed; an uncertain start blocks further starts in that sandbox.
 
+### Runtime Health
+
+Use `Fabric.check(environment=..., request=...)` to check runtime health. Refer to the [health-check overview](health-checks.mdx) for scopes, outcomes, and deadlines, and the [adapter support table](health-checks.mdx#native-evidence-by-adapter) for supported levels and native evidence.
+
+The runtime ID selects the exact session inside the supplied environment:
+
+```python
+from nemo_fabric import CheckRequest, Fabric
+
+fabric = Fabric()
+environment = await fabric.prepare_environment(config)
+runtime = await fabric.start_runtime_in(config, environment)
+try:
+    report = await fabric.check(
+        environment=environment,
+        request=CheckRequest(
+            scope="runtime", runtime_id=runtime.runtime_id, level="ready"
+        ),
+    )
+    print(report.outcome)
+finally:
+    await runtime.stop()
+    await fabric.release_environment(environment)
+```
+
+The default level is `live`, and the default timeout is three seconds. A request
+for `ready` evaluates `live`, `active`, and `ready` in order, stopping at the
+first nonpassing result. One deadline covers routing, every probe, and response
+decoding. Checks can run during an invocation; a busy session can pass all
+three levels. A timeout returns `unknown/probe_timeout`. Stop or environment release during a probe returns
+`unknown/observation_changed`.
+
+`CheckReport` is an immutable mapping with outcomes `passed`, `failed`, `unknown`,
+and `unsupported`. Reports contain fixed evidence-source IDs, UTC timestamps,
+and elapsed milliseconds. An unavailable runtime returns
+`unknown/runtime_unavailable`. Adapters without health support return
+`unsupported/unsupported_adapter`.
+
+Cline `live` checks verify native session residency, identity, and closure. `active` checks also inspect request-interface state. `ready` checks additionally call `ClineCore.get()` to read a fresh native session snapshot. Cline checks can run during the first invocation and do not require model access. Refer to the [Cline health contract](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.6.0/adapters/typescript/cline/README.md#runtime-health).
+
+Codex checks its owned app-server process and a fresh loaded-thread response; native `idle` or `active` status is the readiness equivalent. Pi checks native session liveness, initialization and request-interface guards, and required model, tool, and MCP connection state. OpenClaw checks Gateway liveness, completed startup, selected-agent registration, the enabled Chat Completions endpoint, and native readiness including configured channels. Deep Agents checks its owned checkpoint connection, compiled message interface, and native state for the selected LangGraph thread. Hermes checks its owned native session, initialized invocation interface, and a fresh `get_activity_summary()` diagnostic response. Runtime activity covers NeMo Fabric invocations. Refer to the [OpenClaw runtime health guide](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.6.0/adapters/python/openclaw/README.md#runtime-health).
+
+A local `CheckRequest(scope="server")` returns `unsupported/unsupported_scope`. For OpenShell environments,
+`Fabric.check()` maps to `fabric-agent-ctl check` in the sandbox. Server requests
+stop at the runtime server; runtime requests select the owned agent and use the
+local SDK health path inside the sandbox. Health uses an independent provider
+worker during remote invocations.
+
+The diagram shows the local runtime adapter path. OpenShell adds the provider
+and command bridge before this path; server checks stop at the runtime server.
+
+```mermaid
+flowchart LR
+    SDK["Fabric SDK"] --> Core["Rust core"]
+    Core -->|"start / invoke / stop<br/>stdin / stdout"| Lifecycle
+    Core -->|"check<br/>authenticated loopback TCP"| Health
+    Endpoint["health.endpoint.json<br/>port and shared secret"] -.->|"endpoint discovery"| Core
+    subgraph Host["Adapter host process"]
+        Lifecycle["Lifecycle dispatcher"] -->|"await operation"| Adapter["Adapter runtime instance"]
+        Health["Health listener"] -->|"check native state"| Adapter
+        Adapter --> Harness["Native harness SDK"]
+    end
+```
+
+The lifecycle dispatcher awaits each start, invocation, or stop operation. The
+health listener checks the same adapter runtime through a separate connection,
+so checks can run while an invocation is pending. The host publishes the port
+and a per-process shared secret in a private `health.endpoint.json` file under
+`FABRIC_HOME`; the Rust core reads that file and authenticates health requests
+and responses. Each health request carries the remaining timeout budget, which the host applies
+to the probe.
+
+### Gateway Service Health
+
+Check a prepared or attached OpenClaw Gateway with `Fabric.check(service=..., request=...)`. Service checks use the selected process-local `ServiceHandle`:
+
+```python
+from nemo_fabric import CheckRequest, Fabric
+
+fabric = Fabric()
+async with await fabric.prepare_service(config) as service:
+    report = await fabric.check(
+        service=service.handle,
+        request=CheckRequest(
+            scope="service", service_id=service.service_id, level="ready"
+        ),
+    )
+    print(report.outcome)
+```
+
+For OpenClaw, `live` validates `/healthz`, `active` validates an authenticated `/v1/models` response, and `ready` follows native `/readyz`, including configured channel health. A failed channel can fail Gateway readiness while `live` and `active` pass. Refer to the [OpenClaw Gateway health guide](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.6.0/adapters/python/openclaw/README.md#gateway-health).
+
+Service checks evaluate earlier levels in order under the same three-second default deadline. They can run during invocations. Reports have `scope="service"`, the selected `service_id`, and null runtime evidence. Release during a check invalidates evidence with `unknown/observation_changed`; a released or unavailable binding returns `unknown/service_unavailable`. Service hosting and checks remain local SDK capabilities; the sandbox command bridge continues to support server and runtime checks.
+
+
 ### Sandbox Command Bridge
+
+`fabric-agent-ctl check` checks server responsiveness with a three-second default deadline. Use `--timeout-seconds SECONDS` to set another positive, finite budget. Server checks work before a runtime exists and during an invocation. Completed checks return a `fabric.check/v1alpha1` report in `result`, with `changed: false`; passed health exits 0, while failed, unknown, or unsupported health exits 1. Use `fabric-agent-ctl check --agent researcher --runtime-id R1 --ready` to check one runtime and return a runtime-scoped report. Runtime checks require both target flags and default to `--live`; `--active` and `--ready` are mutually exclusive alternatives. OpenShell SDK requests map to these named commands. Each layer forwards the remaining deadline, and failed health evidence stays in the typed SDK report.
+
+`fabric.check/v1alpha1` identifies the shared report schema returned by
+`Fabric.check()` and `fabric-agent-ctl check`. The executable ships with
+`nemo-fabric-runtime` and follows the SDK package release.
 
 `fabric-agent-ctl serve` starts one runtime server per sandbox. The `start`, `invoke`, and `stop` commands call the existing `Fabric.start_runtime()`, `Runtime.invoke()`, and `Runtime.stop()` methods. Start accepts `FabricConfig` and returns the SDK `RuntimeHandle` mapping. Invoke accepts a full `RunRequest` through `--request` or any JSON SDK input through `--input`, and returns the SDK `RunResult` mapping. Stop returns JSON null. These payloads occupy the response envelope's `result` field; command diagnostics remain separate. Targeted commands require the returned runtime ID and exact agent name. The caller waits for the private socket before start. Caller-side preflight uses `Fabric.plan()` and `Fabric.doctor()`; startup validates configuration against installed descriptors.
 
@@ -592,6 +691,29 @@ If a config contains relative paths, pass a `base_dir` to `plan(...)`,
 `start_runtime(...)`. The base directory anchors skills, workspaces, artifacts,
 and other relative paths to the caller's package or job layout.
 
+### Configure Dynamic Relay Plugins
+
+Dynamic Relay plugins are configured separately under `relay.plugins.dynamic`. Enable `telemetry.providers.relay` with `enable_relay()` so NeMo Fabric forwards this configuration to the adapter's Relay integration. The following example configures a dynamic plugin without static components:
+
+```python
+from nemo_fabric import RelayConfig
+
+plugin_config = config.model_copy(deep=True)
+plugin_config.relay = RelayConfig(
+    plugins={
+        "dynamic": [
+            {
+                "manifest": "/opt/switchyard/relay-plugin.toml",
+                "enabled": True,
+            }
+        ]
+    }
+)
+plugin_config.enable_relay()
+```
+
+NeMo Fabric preserves the `relay.plugins` section alongside any configured `relay.observability`, `relay.components`, and `relay.policy`. Relay owns manifest validation, loading, and activation. Use absolute manifest paths accessible inside the agent environment. Plugin activation depends on the selected adapter's Relay integration and the installed Relay version. For Hermes installation requirements, refer to [Use the Hermes Agent Adapter](../integrations/harness/hermes.mdx).
+
 ## API Inventory
 
 Create `Fabric()` as the primary SDK entrypoint. It is a regular Python object,
@@ -626,7 +748,6 @@ import asyncio
 
 from nemo_fabric import Fabric
 
-
 async def main():
     fabric = Fabric()
     async with await fabric.prepare_service(config) as service:
@@ -634,7 +755,6 @@ async def main():
             async with await fabric.start_runtime(config, service=service) as second:
                 first_result = await first.invoke(input="Inspect the repository")
                 second_result = await second.invoke(input="Review the latest patch")
-
 
 asyncio.run(main())
 ```
@@ -648,7 +768,6 @@ an attachment only removes NeMo Fabric-owned clients and temporary state.
 import asyncio
 
 from nemo_fabric import Fabric, ServiceReference
-
 
 async def main():
     reference = ServiceReference.from_mapping(
@@ -666,7 +785,6 @@ async def main():
     async with await fabric.attach_service(config, reference) as service:
         async with await fabric.start_runtime(config, service=service) as runtime:
             result = await runtime.invoke(input="Review the latest patch")
-
 
 asyncio.run(main())
 ```
@@ -786,13 +904,142 @@ as another user. On a kernel without children lists, every snapshot is
 unavailable under those mount options, because hidden processes are missing
 from the process table that the snapshot reads to find the tree.
 
-Each `RunResult` from a local runtime also carries `resource_snapshot`, read
-once after the adapter returned the result. It is `None` when the read failed;
-a failed read never fails the invocation. To estimate one invocation's CPU time,
-take a snapshot before it and subtract its `cpu_time_seconds` from the
-result's snapshot. CPU time can drop when a descendant is reparented out of the
-tree, so treat a difference as an estimate and a negative difference as
-unknown.
+By default, each `RunResult` from a local runtime carries `system_stats` with before/after observations and a monotonic duration for the adapter exchange. Both observations run under the invocation lock, so queued invocations cannot contaminate the baseline. Runtime startup, endpoint collection, artifact preparation, and teardown are excluded from `elapsed_seconds`. Optional periodic sampling runs concurrently and can affect execution; the elapsed measurement does not subtract that effect. The existing `resource_snapshot` field retains its independent final process-tree reading even when invocation stats or the process group is disabled. When the process group is selected, it reuses `system_stats.after.snapshot`, or is `None` if unavailable.
+
+### Invocation System Stats
+
+For a hands-on walkthrough with configuration examples and annotated results, see [Resource Usage and Stats](./system-stats.mdx).
+
+**Identical configs can produce different amounts of agent work and encounter different system conditions. Stats should help separate those two.**
+
+Omitting `system_stats` selects every supported metric group at the invocation endpoints. Explicit `None` disables invocation stats, including before/after collection and stats artifacts. The SDK preserves that explicit null across planning and task-runner serialization.
+
+```python
+from nemo_fabric import SystemStatsConfig, SystemStatsSamplingConfig
+
+config.system_stats = None  # Disable invocation stats.
+config.system_stats = SystemStatsConfig()  # All groups, endpoints only.
+config.system_stats = SystemStatsConfig(
+    collect=["process", "cgroup.cpu"],
+    sampling=SystemStatsSamplingConfig(interval_ms=1000, max_samples=10_000),
+)
+config.system_stats.sampling = None  # Endpoints only for subsequent runs.
+```
+
+| `collect` group | Measurements |
+| --- | --- |
+| `process` | Adapter-host tree CPU time, RSS, and process count. |
+| `cgroup.cpu` | Visible CPU limits, usage, and throttling. |
+| `cgroup.memory` | Visible memory limits, accounted memory, provider peak, swap, and OOM kills. |
+| `cgroup.pressure` | CPU, memory, and I/O pressure counters. |
+
+Omit `collect` for all supported groups. Empty lists, duplicates, and unknown names are rejected; use `system_stats=None` to disable stats. The invocation stats collector skips excluded groups in both endpoints and periodic samples. `collected_groups` records the selected groups, including those unavailable on the current platform. A `not_collected` status identifies excluded process observations and cgroup measurements; it differs from `unavailable` and `unsupported`, and never substitutes zero. Unselected process gauge reductions and an entirely excluded cgroup block are omitted. Identity, duration, scope, and sampling-quality metadata remain available. Metric selection does not change the separate `resource_snapshot` contract.
+
+```python
+result = await runtime.invoke(input="Fix the failing test")
+stats = result.system_stats
+if stats is not None:
+    print(stats.elapsed_seconds, stats.cpu_time_seconds_estimate)
+    if stats.after.status == "available":
+        print(stats.after.snapshot.resident_memory_bytes)
+    elif stats.after.status in {"unavailable", "unsupported"}:
+        print(stats.after.status, stats.after.reason)
+    else:
+        print(stats.after.status)
+```
+
+For example, a serialized `RunResult` contains this fragment. The IDs already associate the measurements with one invocation; no additional identity file is required.
+
+```json
+{
+  "runtime_id": "runtime-1",
+  "invocation_id": "invocation-2",
+  "request_id": "trial-42",
+  "system_stats": {
+    "elapsed_seconds": 8.0,
+    "before": {
+      "status": "available",
+      "snapshot": {
+        "runtime_id": "runtime-1",
+        "started_at": "2026-10-21T09:00:00.000Z",
+        "observed_at": "2026-10-21T09:01:00.000Z",
+        "resident_memory_bytes": 52428800,
+        "process_count": 1,
+        "cpu_time_seconds": 12.0
+      }
+    },
+    "after": {
+      "status": "available",
+      "snapshot": {
+        "runtime_id": "runtime-1",
+        "started_at": "2026-10-21T09:00:00.000Z",
+        "observed_at": "2026-10-21T09:01:08.000Z",
+        "resident_memory_bytes": 83886080,
+        "process_count": 1,
+        "cpu_time_seconds": 14.5
+      }
+    },
+    "cpu_time_seconds_estimate": 2.5
+  }
+}
+```
+
+The CPU estimate is 2.5 seconds for this invocation, excluding the warm runtime's previous 12 seconds. It is omitted when either reading is missing, runtime identities differ, or the counter decreases. Process reaping and reparenting can distort even a positive difference; this is an estimate, not exact accounting. Background work in the same process tree also contributes; the difference does not isolate agent-only CPU. Endpoint memory and process counts are instantaneous gauges, not peaks, averages, or invocation allocations.
+
+For Harbor, these measurements come from the adapter host inside the task runner, even when a separate host selects the task and capabilities. Harbor's existing result JSON carries the new field without a new stats file. For a model team comparing identical configs, pair `usage` with these measurements: more tokens or tool calls can explain more agent work; similar work with longer elapsed time warrants investigating execution conditions. Endpoint observations alone miss intermediate peaks and cannot explain every source of latency. Enable sampled stats and inspect native cgroup evidence below; remote inference latency requires serving-side evidence.
+
+A failed read appears as `{"status": "unavailable", "reason": "..."}`; an unsupported provider or operating system uses `"unsupported"`. Collection failures preserve the adapter outcome, including a normalized failed result. Disabled collection, older results, and execution backends without collection have `system_stats=None`. Protocol failures and timeouts that raise without a `RunResult` still raise. When sampling is enabled, NeMo Fabric retains sample and summary artifacts where possible even if the adapter exchange fails. These measurements require neither NeMo Relay collection nor invocation recording.
+
+### Sampled Peaks and Means
+
+A process can allocate 400 MiB during execution and return to 80 MiB before the final reading. Endpoints miss that spike. Enable native sampling independently of Relay or invocation recording:
+
+```python
+from nemo_fabric import SystemStatsConfig, SystemStatsSamplingConfig
+
+config.system_stats = SystemStatsConfig(
+    sampling=SystemStatsSamplingConfig(interval_ms=1000, max_samples=10_000),
+)
+config.runtime.artifacts = "artifacts"
+result = await Fabric().run(config, input="Fix the failing test")
+stats = result.system_stats
+sampled = None if stats is None else stats.sampled
+if sampled is not None:
+    rss = sampled.resident_memory_bytes
+    if rss is not None:
+        print(rss.sampled_peak, rss.time_weighted_mean, rss.covered_fraction)
+    if sampled.samples is not None:
+        print(sampled.samples.path)
+
+```
+
+The mean holds the preceding reading across adjacent valid observations and excludes missing readings or gaps larger than twice cadence. Retained JSONL offsets allow benchmark tooling to correlate samples with trajectory events and select its own analysis windows. Temporal overlap with a span does not prove exclusive attribution.
+
+For readings **80 MiB → 400 MiB → 80 MiB** at 0, 1, and 2 seconds, the final value is 80 MiB, sampled peak is 400 MiB, range is 80–400 MiB, and hold-last-value mean is 240 MiB. A sampled maximum can miss brief spikes between observations. It is not a true high-water mark.
+
+Sampling uses one process-wide scheduler, retains both endpoints, and bounds intermediate retention with `max_samples`. The result exposes retained/dropped sample counts, collection time, largest gap, truncation, per-gauge covered time, diagnostics, and artifact references. Late samples are discarded after invocation closes. A full series preserves the final endpoint rather than silently reporting an old value as final. Counter resets, changed targets, missing observations, and long gaps invalidate affected sampled CPU estimates. Sampling does not replace endpoint-derived CPU or cgroup deltas; collection quality and continuity are reported under `sampled`.
+
+With an artifact root, the layout is:
+
+```text
+artifacts/.fabric/<runtime_id>/<invocation_id>/
+  adapter-invocation.json
+  system-stats.jsonl
+  system-stats-summary.json
+  stdout.txt
+```
+
+Every sample and saved summary carries the existing runtime, invocation, and request IDs. `RunResult.artifacts` references both stats files. Without an explicit artifact root, these files use the runtime's temporary `.fabric` directory. Optional stats persistence failures produce diagnostics and preserve the agent outcome. A known series write failure suppresses its artifact reference while retaining in-memory reductions and a `sample_write_failed` diagnostic. Samples and a summary are retained even if the adapter protocol raises without a normalized result; they do not invent a terminal agent status or a second lifecycle journal. Consumers should handle an interrupted last JSONL line explicitly.
+
+### Native Cgroup Constraints
+
+On Linux cgroup v2, `result.system_stats.cgroup` contains before/after observations for the **adapter host's cgroup**, plus CPU-use, throttled-time, and OOM-kill deltas. Snapshots expose visible CPU/memory limits, container-accounted current memory, swap, provider memory high-water, and CPU/memory/I/O pressure totals. Missing limit sources report `unsupported`. Visible numeric limits take precedence over `max`; `unlimited` requires an explicit `max` source with no numeric bound. Individual missing measurements remain explicit; unsupported platforms do not substitute host-wide readings.
+
+This cgroup can contain the NeMo Fabric runner, the adapter tree, and other workloads. Its totals overlap process-tree totals and must not be added to them. Limits account for visible ancestors only; namespaces can hide additional restrictions. `memory_peak_bytes` covers cgroup lifetime or an external reset, not one invocation. The collector does not reset shared counters or write to cgroup control files.
+
+Pair these observations with `usage` and reward: more tokens/tool calls can explain more agent work; similar work with throttled CPU and a lower visible limit suggests a constrained execution environment. These signals support investigation and do not establish causality. Remote inference-server GPU usage still requires serving-side telemetry.
+
+The [native stats example](https://github.com/NVIDIA/NeMo-Fabric/tree/v0.6.0/examples/system_stats) produces a transient memory spike and retained artifacts without model credentials.
 
 Snapshots observe resources only. They do not enforce limits, stop runtimes, or
 queue requests. Use the operating system or execution environment, such as
@@ -878,7 +1125,6 @@ from nemo_fabric import (
     ModelConfig,
 )
 
-
 async def main() -> None:
     config = FabricConfig(
         metadata=MetadataConfig(name="streaming-agent"),
@@ -895,7 +1141,6 @@ async def main() -> None:
             print(record)
         result = await stream.result()
         print(result.status, result.output)
-
 
 asyncio.run(main())
 ```
@@ -993,10 +1238,8 @@ NeMo Fabric concurrency limit or scheduler.
 ```python
 import asyncio
 
-
 async def review_one(prompt: str):
     return await Fabric().run(config, input=prompt)
-
 
 async def main() -> None:
     results = await asyncio.gather(
@@ -1004,7 +1247,6 @@ async def main() -> None:
         review_one("Review patch B"),
     )
     print([result.status for result in results])
-
 
 asyncio.run(main())
 ```
@@ -1028,6 +1270,7 @@ Important fields:
 | `output` | Harness output normalized to the configured output schema. |
 | `error` | Structured failure metadata when available. |
 | `usage` | Optional `RunUsage` with invocation-local input, cached-input, output, and total token counts, reported cost in USD, and provider metadata. |
+| `system_stats` | Optional `InvocationSystemStats`: monotonic adapter exchange duration, before/after observations with availability, and an optional CPU counter difference estimate. |
 | `resource_snapshot` | Optional `RuntimeResourceSnapshot` of the runtime, read once after the adapter returned the result. |
 | `artifacts` | Output files, logs, patches, native artifacts, and other materialized references. |
 | `telemetry` | References to NeMo Relay or other telemetry streams produced by the run. |

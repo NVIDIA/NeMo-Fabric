@@ -91,6 +91,14 @@ The adapter passes these fields to LangChain only when configured, so omitted
 fields preserve the model provider's defaults. Planning rejects unknown
 top-level model fields and every key under `models.<role>.settings`.
 
+Set `harness.settings.reasoning_effort` to `none`, `minimal`, `low`, `medium`,
+`high`, or `xhigh` to pass a reasoning effort to `ChatOpenAI`. For example,
+`settings={"reasoning_effort": "none"}` disables reasoning on endpoints that
+support that value. This setting requires an OpenAI-compatible provider, and
+the endpoint must support the selected value. Omit the setting to preserve the
+model default. Subagents inherit the setting when they inherit the main model;
+a subagent with its own `model` override uses that model's defaults.
+
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, replacement system instructions, blocked tools, and telemetry.
 The adapter rejects `append` system instructions. Use
@@ -218,3 +226,9 @@ model provider configuration.
 For the complete configuration, subagent, lifecycle, and telemetry reference,
 refer to the
 [LangChain Deep Agents adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/v0.6.0/adapters/python/deepagents).
+
+## Runtime Health
+
+`Fabric.check()` supports `live`, `active`, and `ready`. The adapter checks the owned checkpoint connection, the compiled graph interface, and a fresh native state response for the selected thread.
+
+Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
