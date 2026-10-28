@@ -871,6 +871,110 @@
           ]
         },
         "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "usage": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "nemo_fabric.detailed_token_usage.v1": {
+                "additionalProperties": false,
+                "properties": {
+                  "cache_write_input_tokens": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "cached_input_tokens": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "input_tokens": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "input_tokens_include_cache": {
+                    "const": true
+                  },
+                  "output_tokens": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "output_tokens_include_reasoning": {
+                    "const": true
+                  },
+                  "reasoning_tokens": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "nvidia.fabric.kilo.usage_evidence.v1": {
+                "additionalProperties": false,
+                "properties": {
+                  "gaps": {
+                    "items": {
+                      "enum": [
+                        "missing_usage",
+                        "scope_unverified",
+                        "unfinished_work"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "observed": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cache_write_input_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "cached_input_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "input_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "output_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "reasoning_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "total_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "observed",
+                  "gaps"
+                ],
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
         "model_schema": {
           "additionalProperties": false,
           "properties": {
@@ -940,7 +1044,7 @@
         "name": "nemo-fabric-adapters-kilo",
         "version": "0.6.0"
       },
-      "sha256": "a1777a88417be1f908cc065509dfda6cf966e1e0f897fcfdd13b74abc281a559",
+      "sha256": "6bf1bf8c3df7c62c7942c23c5b1639df54764773e2f4d945c19daf04c701a7a1",
       "source": "adapters/typescript/kilo/kilo.fabric-adapter.json"
     },
     "nvidia.fabric.kiro": {
