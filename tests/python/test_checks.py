@@ -200,27 +200,37 @@ async def test_sdk_timeout_does_not_use_invocation_teardown(
     check_environment, check_report, monkeypatch
 ):
     native = MagicMock()
+    release = threading.Event()
+    finished = threading.Event()
 
     def check(*args):
-        time.sleep(0.08)
-        return json.dumps(check_report)
+        try:
+            assert release.wait(5), "test probe was not released"
+            return json.dumps(check_report)
+        finally:
+            finished.set()
 
     native.check_environment.side_effect = check
     monkeypatch.setattr("nemo_fabric.client._native", native)
-    report = await asyncio.wait_for(
-        Fabric().check(
-            environment=check_environment,
-            request=CheckRequest(
-                scope="runtime", runtime_id="runtime-1", timeout_seconds=0.01
-            ),
-        ),
-        0.05,
-    )
-    assert report.outcome == "unknown"
-    assert report.reason_code == "probe_timeout"
-    native.stop_runtime.assert_not_called()
-    native.invoke_runtime.assert_not_called()
-    await asyncio.sleep(0.09)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        monkeypatch.setattr("nemo_fabric.client._CHECK_EXECUTOR", executor)
+        try:
+            report = await asyncio.wait_for(
+                Fabric().check(
+                    environment=check_environment,
+                    request=CheckRequest(
+                        scope="runtime", runtime_id="runtime-1", timeout_seconds=0.01
+                    ),
+                ),
+                5,
+            )
+            assert report.outcome == "unknown"
+            assert report.reason_code == "probe_timeout"
+            assert not finished.is_set()
+            native.stop_runtime.assert_not_called()
+            native.invoke_runtime.assert_not_called()
+        finally:
+            release.set()
 
 
 async def test_health_does_not_queue_behind_invocation_workers(
