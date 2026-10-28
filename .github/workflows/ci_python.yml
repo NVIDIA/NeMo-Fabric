@@ -150,7 +150,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        relay-cli-version: ["0.9.0", "0.10.0", "0.11.0"]
+        relay-cli-version: ["0.9.0", "0.10.0", "0.10.1", "0.11.0"]
     if: ${{ (inputs.ref_type || github.ref_type) != 'tag' && !inputs.skip_tests }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30

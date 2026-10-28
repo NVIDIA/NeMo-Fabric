@@ -57,7 +57,7 @@ The adapter finds `nemo-relay` on `PATH` by default. To select a specific execut
 FABRIC_NEMO_RELAY_COMMAND="/absolute/path/to/nemo-relay" uv run python your_app.py
 ```
 
-The adapter uses the selected executable to start the Relay gateway and send Pi hook events. When the runtime stops, the adapter restores the extension's previous command setting.
+The adapter uses the selected executable to start the Relay gateway. With Relay 0.11, the Pi extension also uses that executable to forward hook events. Relay 0.9 and 0.10 extensions send hook events directly over HTTP. When the runtime stops, the adapter restores the extension's previous command setting.
 
 Use the [Pi extension](https://github.com/NVIDIA/NeMo-Relay/tree/0.11.0/crates/cli/assets/pi-extension) from the same Relay release as the command-line tool. Configure the extension path as shown in the next section.
 

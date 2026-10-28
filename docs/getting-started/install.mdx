@@ -317,7 +317,7 @@ The Relay Python package requires 0.11. Claude, Codex, and Pi support stable CLI
 
 Relay gateways require HTTPS for remote model endpoints by default, including private network and Kubernetes Service addresses. Plain HTTP remains available for loopback endpoints. To trust a credential-free remote HTTP model endpoint, set `harness.settings.insecure_http_model_hosts` to its exact hostname or IP address. Prompts and responses travel unencrypted, and Relay strips credential headers before forwarding. Relay 0.11 also requires HTTPS for remote telemetry collectors by default. Relay supports explicit exceptions for trusted collectors through `insecure_http_hosts`, or `NEMO_RELAY_OTEL_INSECURE_HTTP_HOSTS` for automatic OTLP exporters. Use HTTPS when model requests or telemetry contain credentials or sensitive content.
 
-NeMo Fabric generates a `PreToolUse` check for Claude and Codex. With Relay 0.11, a delivery failure blocks the operation with exit code 2. Relay 0.9 and 0.10 return exit code 1 for delivery failures.
+NeMo Fabric generates a `PreToolUse` check for Claude and Codex. With Relay 0.10.1 and later, a delivery failure blocks the operation with exit code 2. Relay 0.9.x and 0.10.0 return exit code 1 for delivery failures.
 
 Claude hooks set `onFailure: "block"` so delivery errors, process launch failures, crashes, and timeouts block the tool call. This requires Claude Code 2.1.295 or later; the pinned `claude-agent-sdk==0.2.166` bundles 2.1.299.
 
