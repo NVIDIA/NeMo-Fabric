@@ -95,6 +95,22 @@ class Fabric:
         self._software_snapshot = None
         self._software_snapshot_lock = Lock()
 
+    def _set_execution_participant(self, participant: str) -> None:
+        """Relabel only this instance's own cached observations when embedded."""
+        from nemo_fabric_evidence.evidence import ExecutionEvidence
+
+        with self._software_snapshot_lock:
+            snapshot = self._software_snapshot
+            if snapshot is not None:
+                snapshot = ExecutionEvidence.from_mapping(snapshot.to_mapping())
+                for environment in snapshot.software_environments:
+                    environment.participants = [
+                        participant if value == self._execution_participant else value
+                        for value in environment.participants
+                    ]
+                self._software_snapshot = snapshot
+            self._execution_participant = participant
+
     def _with_provenance(self, config: FabricConfig) -> FabricConfig:
         if not isinstance(config, FabricConfig):
             _config_json(config)

@@ -155,21 +155,24 @@ def refresh_passive(report: dict) -> dict:
                 (
                     env
                     for env in decoded.software_environments
-                    if participant in env.participants
+                    if participant in env.participants and env.status == "available"
                 ),
                 None,
             )
             if env is None:
+                refs = {env.context_ref for env in decoded.software_environments}
+                index = 0
+                while f"passive-{index}" in refs:
+                    index += 1
                 env = SoftwareEnvironment(
-                    context_ref=f"env-{len(decoded.software_environments)}",
+                    context_ref=f"passive-{index}",
                     participants=[participant],
                     status="available",
-                    complete=True,
+                    complete=False,
+                    reason="selected_passive_observations_only",
                     entries=[],
                 )
                 decoded.software_environments.append(env)
-            if env.status != "available":
-                continue
             replacement = next(
                 (
                     i
@@ -184,7 +187,7 @@ def refresh_passive(report: dict) -> dict:
                 # An existing source observed a changed version. Equal values
                 # retain the shared service's original capture time.
                 env.entries[replacement] = entry
-        return ExecutionEvidence.receive(decoded.to_mapping(), "adapter").to_mapping()
+        return combine(decoded).to_mapping()
     except Exception:
         return ExecutionEvidence.gap(
             "adapter", "passive_report_invalid_or_over_budget"

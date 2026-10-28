@@ -54,8 +54,7 @@ class RuntimeServer:
     ):
         self.directory = directory
         self.fabric = fabric if fabric is not None else Fabric()
-        if fabric is None:
-            self.fabric._execution_participant = "guest_sdk"
+        self.fabric._set_execution_participant("guest_sdk")
         self.runtimes: dict[str, OwnedRuntime] = {}
         self.shutting_down = False
         # Sticky after any successful or uncertain start. The transport uses this
