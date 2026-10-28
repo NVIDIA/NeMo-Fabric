@@ -248,7 +248,7 @@ async def test_start_maps_normalized_configuration(
     await runtime.start(_start_payload(openhands_payload))
 
     mock_openhands["llm_factory"].assert_called_once_with(
-        model="nvidia/test-model",
+        model="nvidia_nim/nvidia/test-model",
         usage_id="agent",
         api_key="secret:test-key",
         base_url="https://example.test/v1",
@@ -482,8 +482,78 @@ async def test_start_prefixes_an_unqualified_model_with_its_provider(
     await adapter.OpenHandsRuntime().start(_start_payload(openhands_payload))
 
     assert mock_openhands["llm_factory"].call_args.kwargs["model"] == (
-        "nvidia/test-model"
+        "nvidia_nim/test-model"
     )
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    ["nvidia/test-model", "nvidia_nim/nvidia/test-model"],
+)
+def test_nvidia_custom_endpoint_preserves_served_model_id(
+    model_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    pytest.importorskip("openhands.sdk")
+    pytest.importorskip("openhands.tools")
+    import httpx
+    import litellm
+    from litellm.caching.caching import InMemoryCache
+    from openhands.sdk.llm import Message
+    from openhands.sdk.llm import TextContent
+
+    requests = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-nim",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "nvidia/test-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": "done"},
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 11,
+                    "completion_tokens": 5,
+                    "total_tokens": 16,
+                },
+            },
+        )
+
+    model = AgentConfig.from_mapping(
+        {
+            "models": {
+                "default": {
+                    "provider": "nvidia",
+                    "model": model_name,
+                    "base_url": "http://nim.example.test/v1",
+                    "api_key_env": "TEST_OPENHANDS_API_KEY",
+                }
+            }
+        }
+    ).models["default"]
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "unused")
+    # LiteLLM caches OpenAI clients across calls, including their HTTP transport.
+    monkeypatch.setattr(litellm, "in_memory_llm_clients_cache", InMemoryCache())
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        monkeypatch.setattr(litellm, "client_session", client)
+        llm = adapter._llm(adapter._load_openhands_api(), model)
+        llm.num_retries = 0
+        llm.completion([Message(role="user", content=[TextContent(text="finish")])])
+
+    assert len(requests) == 1
+    assert str(requests[0].url) == "http://nim.example.test/v1/chat/completions"
+    assert json.loads(requests[0].content)["model"] == "nvidia/test-model"
+    assert llm.metrics.accumulated_token_usage.prompt_tokens == 11
+    assert llm.metrics.accumulated_token_usage.completion_tokens == 5
 
 
 async def test_repeated_invocation_returns_only_current_turn_and_usage(
@@ -704,9 +774,7 @@ async def test_start_rejects_unapplied_mcp_extensions(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
-    openhands_payload["config"]["mcp"]["extensions"] = {
-        "example.test/option": True
-    }
+    openhands_payload["config"]["mcp"]["extensions"] = {"example.test/option": True}
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
         await adapter.OpenHandsRuntime().start(_start_payload(openhands_payload))

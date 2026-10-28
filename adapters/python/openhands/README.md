@@ -79,6 +79,11 @@ directory. Each skill path must be a directory containing `SKILL.md`. The
 adapter disables ambient OpenHands user, public, project, and memory loading;
 only explicitly configured NeMo Fabric skills are loaded.
 
+For `provider="nvidia"`, the adapter adds LiteLLM's `nvidia_nim/` dispatch
+prefix while preserving the served model ID, including its `nvidia/`
+namespace. This also supports self-hosted NIM endpoints through `base_url`.
+An existing `nvidia_nim/` prefix is retained once.
+
 The adapter configures the OpenHands SDK standard summarizing condenser,
 `default_condenser`, with the agent model. When the history sent to the model
 exceeds 80 events, or exceeds the model input token limit when OpenHands knows

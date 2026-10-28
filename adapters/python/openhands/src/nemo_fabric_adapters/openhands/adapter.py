@@ -109,9 +109,12 @@ def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
 
 
 def _llm(api: OpenHandsApi, model: contract.AgentModelConfig) -> Any:
-    wire_model = (
-        model.model if "/" in model.model else f"{model.provider}/{model.model}"
-    )
+    wire_model = model.model
+    if model.provider == "nvidia" and not wire_model.startswith("nvidia_nim/"):
+        # LiteLLM's dispatch prefix is separate from the NIM served model ID.
+        wire_model = f"nvidia_nim/{wire_model}"
+    elif "/" not in wire_model:
+        wire_model = f"{model.provider}/{wire_model}"
     kwargs: dict[str, Any] = {"model": wire_model, "usage_id": "agent"}
     if model.api_key_env is not None:
         api_key = os.environ.get(model.api_key_env)

@@ -64,6 +64,11 @@ workspace. Supported tool names are `terminal` (alias `bash`) and
 `file_editor` (alias `edit`). OpenHands retains its internal finish and
 reasoning tools.
 
+For `provider="nvidia"`, the adapter adds LiteLLM's `nvidia_nim/` dispatch
+prefix while preserving the served model ID, including its `nvidia/`
+namespace. This also supports self-hosted NIM endpoints through `base_url`.
+An existing `nvidia_nim/` prefix is retained once.
+
 Skill paths resolve from the configuration base directory and must contain a
 `SKILL.md` file. The adapter disables ambient OpenHands user, public, project,
 and memory loading, so only explicitly configured NeMo Fabric skills load.
