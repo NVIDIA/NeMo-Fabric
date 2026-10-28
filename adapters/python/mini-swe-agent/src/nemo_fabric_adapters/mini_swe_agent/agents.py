@@ -274,7 +274,9 @@ def _relay_response(message: dict[str, Any]) -> Any:
 
     response = deepcopy(response)
     cost = extra.get("cost")
-    if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+    # mini-SWE-agent never reports a calculated cost of zero: it records 0.0
+    # when the model has no price, so only a positive cost is known.
+    if isinstance(cost, (int, float)) and not isinstance(cost, bool) and cost > 0:
         usage = response.setdefault("usage", {})
         if isinstance(usage, dict):
             usage.setdefault("cost", float(cost))

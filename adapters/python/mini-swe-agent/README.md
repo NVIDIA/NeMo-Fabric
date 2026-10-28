@@ -78,7 +78,11 @@ async def main():
 result = asyncio.run(main())
 ```
 
-The result includes the submitted final text and API-call usage.
+The result includes the submitted final text and API-call usage. The adapter
+does not report model cost. It runs mini-SWE-agent with
+`cost_tracking="ignore_errors"`, so a model without a LiteLLM price, such as a
+self-hosted endpoint, does not fail the run. Relay events include a cost only
+when mini-SWE-agent calculates one.
 
 ## Continue a Task Across Invocations
 
