@@ -4,6 +4,8 @@
 """Selected adapter-owned package observations at runtime initialization."""
 
 import sys
+from collections.abc import Mapping
+from typing import Any
 
 from nemo_fabric_adapter_contract.evidence import ExecutionEvidence, SoftwareEntry
 from nemo_fabric_adapter_contract.metadata import (
@@ -13,9 +15,15 @@ from nemo_fabric_adapter_contract.metadata import (
 )
 
 
+def collection_enabled(payload: Mapping[str, Any]) -> bool:
+    """Treat absent or null optional controls as the default-enabled setting."""
+    control = payload.get("provenance")
+    return not isinstance(control, Mapping) or control.get("enabled", True) is not False
+
+
 def collect_runtime(runtime, payload) -> ExecutionEvidence | None:
     """Honor disable before looking up metadata; do not scan dependencies."""
-    if payload.get("provenance", {}).get("enabled", True) is False:
+    if not collection_enabled(payload):
         return None
     try:
         module = sys.modules.get(type(runtime).__module__)

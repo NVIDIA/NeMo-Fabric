@@ -9,6 +9,7 @@ import json
 import os
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from nemo_fabric_adapters.common import lifecycle
@@ -542,6 +543,42 @@ def test_malformed_openai_stream_request_uses_the_invoke_error_stage():
     }
 
 
+@pytest.mark.parametrize("control", [None, {}, {"enabled": False}])
+def test_optional_provenance_control_preserves_start_and_collection(
+    monkeypatch, control
+):
+    from nemo_fabric_adapter_contract.evidence import ExecutionEvidence
+    from nemo_fabric_adapters.common import provenance
+
+    mock_runtime = MagicMock(spec=lifecycle.AdapterRuntime)
+    mock_runtime.start.return_value = None
+    mock_runtime.stop.return_value = None
+    mock_collect = MagicMock(return_value=ExecutionEvidence.gap("adapter", "fixture"))
+    monkeypatch.setattr(provenance, "collect_selected", mock_collect)
+    input_stream, output_stream = _streams(
+        [
+            _request(
+                "start",
+                {"runtime_context": {"runtime_id": "runtime-1"}, "provenance": control},
+            ),
+            _request("stop", {"runtime_id": "runtime-1"}),
+        ]
+    )
+    lifecycle.serve(
+        lambda: mock_runtime, input_stream=input_stream, output_stream=output_stream
+    )
+    responses = [json.loads(line) for line in output_stream.getvalue().splitlines()]
+    assert all(response["outcome"]["status"] == "succeeded" for response in responses)
+    if control == {"enabled": False}:
+        assert "execution" not in responses[0]
+        mock_collect.assert_not_called()
+    else:
+        assert (
+            responses[0]["execution"]["software_environments"][0]["reason"] == "fixture"
+        )
+        mock_collect.assert_called_once()
+
+
 def test_lifecycle_host_reuses_one_runtime_and_one_event_loop():
     runtime_id = "runtime-1"
     input_stream, output_stream = _streams(
@@ -596,9 +633,15 @@ def test_lifecycle_host_reuses_one_runtime_and_one_event_loop():
         "stop",
     ]
     assert all(item["outcome"]["status"] == "succeeded" for item in responses)
-    assert all(set(item) == {"operation", "outcome", "execution"} for item in responses[:3])
+    assert all(
+        set(item) == {"operation", "outcome", "execution"} for item in responses[:3]
+    )
     assert set(responses[3]) == {"operation", "outcome"}
-    assert responses[0]["execution"] == responses[1]["execution"] == responses[2]["execution"]
+    assert (
+        responses[0]["execution"]
+        == responses[1]["execution"]
+        == responses[2]["execution"]
+    )
     assert responses[1]["outcome"]["output"] == {
         "status": "succeeded",
         "output": {"count": 1, "input": "first"},

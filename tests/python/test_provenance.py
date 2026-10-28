@@ -119,7 +119,6 @@ async def test_disable_skips_host_and_adapter_metadata_work(
     def unexpected(participant):
         raise AssertionError("host collector ran while disabled")
 
-    monkeypatch.setattr(sdk_provenance, "sdk_snapshot", unexpected)
     monkeypatch.setenv("ADAPTER_PYTHON", sys.executable)
     marker = tmp_path / "lookups"
     adapter = next(
@@ -127,8 +126,10 @@ async def test_disable_skips_host_and_adapter_metadata_work(
             "adapters/*/src/nemo_fabric_test_adapters/*/adapter.py"
         )
     )
+    source = adapter.read_text()
+    assert source.count("    lifecycle.serve(ShimRuntime)") == 1
     adapter.write_text(
-        adapter.read_text().replace(
+        source.replace(
             "    lifecycle.serve(ShimRuntime)",
             """    import importlib.metadata
     original = importlib.metadata.distribution
@@ -150,9 +151,17 @@ async def test_disable_skips_host_and_adapter_metadata_work(
             },
             "discovery": {"local_paths": ["adapters"]},
             "runtime": {"artifacts": str(tmp_path / "artifacts")},
-            "provenance": {"enabled": False},
+            "provenance": {"enabled": True},
         }
     )
+    enabled = await Fabric().run(
+        config, base_dir=hermes_shim_agent_dir, input="positive control"
+    )
+    assert enabled.status == "succeeded"
+    assert marker.read_text()
+    marker.unlink()
+    monkeypatch.setattr(sdk_provenance, "sdk_snapshot", unexpected)
+    config.provenance.enabled = False
     result = await Fabric().run(
         config, base_dir=hermes_shim_agent_dir, input="still executes"
     )

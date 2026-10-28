@@ -581,9 +581,12 @@ async def _handle_start(
             ) from error
         payload = {**payload, "config": config}
 
-    from nemo_fabric_adapters.common.provenance import enable_capture
+    from nemo_fabric_adapters.common.provenance import (
+        collection_enabled,
+        enable_capture,
+    )
 
-    enable_capture(payload.get("provenance", {}).get("enabled", True) is not False)
+    enable_capture(collection_enabled(payload))
     candidate = runtime_factory()
     try:
         output = await _adapter_call("start", lambda: candidate.start(payload))

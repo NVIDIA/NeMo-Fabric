@@ -94,6 +94,27 @@ def test_target_bounds_are_explicit_without_scanning_all_packages():
     assert len(env.entries) <= metadata.MAX_TARGETS + 1
 
 
+def test_work_budget_preserves_partial_inventory_before_the_hard_wait(monkeypatch):
+    monkeypatch.setattr(
+        metadata.time, "monotonic", MagicMock(side_effect=[0.0, 0.0, 0.21])
+    )
+    mock_version = MagicMock(
+        return_value=metadata.observation(
+            "1.0+full", "test:metadata", metadata.observed_at()
+        )
+    )
+    monkeypatch.setattr(metadata, "package_version", mock_version)
+    report = metadata.collect_selected(
+        "adapter", [("harness", "first", None), ("framework", "second", None)]
+    )
+    env = report.software_environments[0]
+    assert not env.complete
+    assert env.reason == "collection_truncated_or_work_budget"
+    assert [entry.name for entry in env.entries] == ["python", "first"]
+    assert env.entries[1].version.value == "1.0+full"
+    mock_version.assert_called_once()
+
+
 def test_source_metadata_bytes_are_bounded_before_parsing(monkeypatch, tmp_path):
     info = tmp_path / "example-1.0.dist-info"
     info.mkdir()

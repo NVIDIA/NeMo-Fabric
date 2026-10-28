@@ -198,7 +198,9 @@ def collect_selected(
         complete = len(selected) <= MAX_TARGETS
         started = time.monotonic()
         for role, distribution, module_name in selected[:MAX_TARGETS]:
-            if time.monotonic() - started >= COLLECTION_SECONDS:
+            # Leave time for the worker to publish a partial report before
+            # bounded_collect's hard wait expires.
+            if time.monotonic() - started >= COLLECTION_SECONDS * 0.8:
                 complete = False
                 break
             version = package_version(
