@@ -869,7 +869,16 @@ class DeepAgentsRuntime:
                 else None
             ),
             usage=(
-                AgentUsage(**tokens, cost_usd=cost)
+                # LangChain UsageMetadata input_tokens includes all input types,
+                # including cache. Preserve that convention for consumers such
+                # as Harbor without inventing a missing cache breakdown.
+                AgentUsage(
+                    **tokens,
+                    input_tokens_include_cache=(
+                        True if "input_tokens" in tokens else None
+                    ),
+                    cost_usd=cost,
+                )
                 if tokens or cost is not None
                 else None
             ),
@@ -1467,6 +1476,7 @@ def _final_response(messages: list[dict[str, Any]]) -> Any:
 
 def _aggregate_usage(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
     totals: dict[str, Any] = {}
+    unknown: set[str] = set()
     cost = 0.0
     has_cost = False
     for message in messages:
@@ -1483,6 +1493,10 @@ def _aggregate_usage(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
                 and 0 <= value <= (1 << 64) - 1
             ):
                 totals[target] = int(totals.get(target, 0)) + value
+            elif message.get("role") in ("ai", "assistant"):
+                # One missing model response makes this dimension incomplete;
+                # do not promote the other responses' partial sum to a total.
+                unknown.add(target)
         # Cost is not part of LangChain's UsageMetadata; surface it only when a
         # model/provider reports it on the usage or response metadata.
         candidate = (
@@ -1498,6 +1512,11 @@ def _aggregate_usage(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
             has_cost = True
     if has_cost:
         totals["cost"] = cost
+    for target in unknown:
+        totals.pop(target, None)
+    for target in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        if totals.get(target, 0) > (1 << 64) - 1:
+            totals.pop(target)
     return totals or None
 
 

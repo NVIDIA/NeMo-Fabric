@@ -266,7 +266,11 @@ service.
 The normalized result includes the final response, buffered messages and
 per-step events, LangGraph thread id, token usage (and cost when the provider
 reports it), and errors. Usage aggregates the current turn across the main agent
-and any delegated subagents (streamed with `subgraphs=True`). Configuration and
+and any delegated subagents (streamed with `subgraphs=True`). Input totals use
+LangChain's inclusive convention, which already includes cached tokens; an
+unavailable cache breakdown stays unknown. If an assistant message omits a token
+counter, that invocation's corresponding total stays unknown rather than
+reporting a partial sum. Configuration and
 preflight failures (a missing credential, an absent `deepagents` package, or an
 invalid MCP server) fail runtime start before an invocation is accepted.
 

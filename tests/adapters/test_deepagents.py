@@ -529,6 +529,22 @@ async def test_single_invocation_normalizes_response_usage_and_thread(
     assert "instructions" not in fake_sdks["create_kwargs"]
 
 
+async def test_invocation_preserves_inclusive_input_usage(
+    tmp_path, make_payload, fake_sdks
+):
+    payload = make_payload(tmp_path)
+    runtime = adapter.DeepAgentsRuntime()
+    await runtime.start(lifecycle_start_payload(payload))
+    try:
+        result = await runtime.invoke(*lifecycle_invocation(payload))
+        assert result.usage.input_tokens == 5
+        assert result.usage.input_tokens_include_cache is True
+        assert result.usage.cached_input_tokens is None
+        assert result.usage.output_tokens == 7
+    finally:
+        await runtime.stop()
+
+
 @pytest.mark.parametrize(
     ("request_input", "encoded"),
     [(0, "0"), (False, "false"), ({}, "{}"), ([], "[]")],
@@ -2240,6 +2256,31 @@ def test_aggregate_usage_discards_nonfinite_cost(message):
 
 def test_aggregate_usage_discards_tokens_larger_than_uint64():
     assert adapter._aggregate_usage([{"usage": {"input_tokens": 1 << 64}}]) is None
+
+
+@pytest.mark.parametrize("missing", [None, {}, {"input_tokens": True}])
+def test_aggregate_usage_does_not_promote_partial_assistant_totals(missing):
+    messages = [
+        {
+            "role": "assistant",
+            "usage": {"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
+        },
+        {"role": "assistant", "usage": missing},
+    ]
+    assert adapter._aggregate_usage(messages) is None
+
+
+def test_aggregate_usage_keeps_independently_complete_dimensions():
+    assert adapter._aggregate_usage(
+        [
+            {
+                "role": "assistant",
+                "usage": {"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
+            },
+            {"role": "assistant", "usage": {"input_tokens": 3}},
+            {"role": "tool", "content": "no model usage"},
+        ]
+    ) == {"prompt_tokens": 8}
 
 
 async def test_replayed_state_usage_counts_current_turn_only(
