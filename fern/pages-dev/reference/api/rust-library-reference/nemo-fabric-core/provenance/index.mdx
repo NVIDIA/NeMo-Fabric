@@ -1,0 +1,35 @@
+---
+title: "Module provenance"
+sidebar-title: "provenance"
+description: "Selected software evidence. Optional evidence never controls invocation success."
+position: 170
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+Selected software evidence. Optional evidence never controls invocation success.
+
+## Structs
+
+- [ContainerSoftwareReport](struct-containersoftwarereport.mdx): Existing environment-owner report of a container engine server.
+- [ExecutionEvidence](struct-executionevidence.mdx): Selected software evidence included inline in a RunResult.
+- [InfrastructureSoftware](struct-infrastructuresoftware.mdx): Conditional infrastructure software reports.
+- [ProvenanceConfig](struct-provenanceconfig.mdx): Default-on collector control and explicit reports forwarded in existing dispatch.
+- [SandboxSoftwareReport](struct-sandboxsoftwarereport.mdx): Existing sandbox/provider report, without any new service discovery.
+- [SoftwareEntry](struct-softwareentry.mdx): One selected component in an installation inventory.
+- [SoftwareEnvironment](struct-softwareenvironment.mdx): An observed installation/resolution context, never inferred from equal versions.
+- [VersionObservation](struct-versionobservation.mdx): A full version or an explicit reason why it could not be captured.
+
+## Enums
+
+- [EvidenceOrigin](enum-evidenceorigin.mdx): Whether evidence was observed by its source or supplied by an owner.
+- [EvidenceStatus](enum-evidencestatus.mdx): Availability of one expected observation.
+- [InventoryStatus](enum-inventorystatus.mdx): Availability of an installation inventory.
+
+## Constants
+
+- [MAX_ENTRIES](constant-max-entries.mdx): Maximum selected entries across one report.
+- [MAX_ENVIRONMENTS](constant-max-environments.mdx): Maximum installation contexts in one report.
+- [MAX_REPORT_BYTES](constant-max-report-bytes.mdx): Maximum serialized size of one software report (64 KiB).
