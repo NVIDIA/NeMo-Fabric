@@ -1,0 +1,97 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Selected Debian package attribution evidence requested for the OpenShell examples.
+# Versions are reviewed inventory entries, not new build constraints or a complete SBOM.
+# Copyright files are published by Debian for the exact source-package versions.
+
+[[package]]
+name = "git"
+version = "1:2.47.3-0+deb13u1"
+license = "GPL-2.0-only; additional file-specific licenses in the Debian notice"
+context = "Installed in the shared OpenShell task image."
+url = "https://metadata.ftp-master.debian.org/changelogs/main/g/git/git_2.47.3-0+deb13u1_copyright"
+hash = "sha256:263a2b847e1809cb78c2379802f090117888995d3f7773e030d2a7ebd80db3ec"
+
+[[package]]
+name = "iproute2"
+version = "6.15.0-1"
+license = "GPL-2.0-only"
+context = "Installed in the shared OpenShell task image."
+url = "https://metadata.ftp-master.debian.org/changelogs/main/i/iproute2/iproute2_6.15.0-1_copyright"
+hash = "sha256:344ddcf4dfe65b86416e058309218b4ac1ee7bc1e624cc40ad87222cc979fdac"
+
+[[package]]
+name = "nftables"
+version = "1.1.3-1"
+license = "GPL-2.0-only; additional file-specific licenses in the Debian notice"
+context = "Installed in the shared OpenShell task image."
+url = "https://metadata.ftp-master.debian.org/changelogs/main/n/nftables/nftables_1.1.3-1_copyright"
+hash = "sha256:ede1a9831433483bf9ce57f46af958ff7591799aff8fdff1368a8a4cf2323996"
+
+[[package]]
+name = "build-essential"
+version = "12.12"
+license = "GPL-2.0-or-later (metapackage); transitive toolchain has mixed licenses"
+context = "Installed in the SDK image build stage. This notice covers the metapackage, not every transitive compiler or build tool."
+url = "https://metadata.ftp-master.debian.org/changelogs/main/b/build-essential/build-essential_12.12_copyright"
+hash = "sha256:5ac244848c8571fcd7044b0c3778cde9e068ce169227b0354a1be519b695358f"
+
+[[package]]
+name = "ca-certificates"
+version = "20250419"
+license = "MPL-2.0 (Mozilla certificate data); GPL-2.0-or-later (Debian scripts and packaging)"
+context = "Installed in the shared OpenShell task image. Preserve the distinction between certificate data and packaging."
+url = "https://metadata.ftp-master.debian.org/changelogs/main/c/ca-certificates/ca-certificates_20250419_copyright"
+hash = "sha256:e85e1bcad3a915dc7e6f41412bc5bdeba275cadd817896ea0451f2140a93967c"
+
+[[package]]
+name = "libstdc++6"
+version = "14.2.0-19"
+license = "GPL-3.0-or-later WITH GCC-exception-3.1; additional notices in the GCC source-package copyright"
+context = "Installed in the shared OpenShell task image. Debian publishes a combined GCC source-package notice covering multiple binaries; its file-specific terms do not all apply to libstdc++6."
+url = "https://metadata.ftp-master.debian.org/changelogs/main/g/gcc-14/gcc-14_14.2.0-19_copyright"
+hash = "sha256:20390f8a6f3b1e4d7cb45dd8652dabb259bbef688cbad839bcdb0b9ba7252f79"
+
+# Complete standard texts referenced by the Debian copyright notices.
+# Debian common-license aliases GPL and LGPL refer to version 3.
+
+[[license]]
+name = "Apache-2.0"
+url = "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/Apache-2.0.txt"
+hash = "sha256:074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
+
+[[license]]
+name = "Artistic-1.0-Perl"
+url = "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/Artistic-1.0-Perl.txt"
+hash = "sha256:9e18ef4d50faba562e3efa37d8961d6e9956d1c103bfc4fc1caeb07e8effe885"
+
+[[license]]
+name = "GFDL-1.2-only"
+url = "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/GFDL-1.2-only.txt"
+hash = "sha256:1118a91a3290bc8981f922dfcffc1a619592c007aa31b7a98cee694d933c86ce"
+
+[[license]]
+name = "GPL-2.0-only"
+url = "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/GPL-2.0-only.txt"
+hash = "sha256:aaf135472f81c5b4a0dca9367e5bb5e9750032b5bebe5442b36e4c0a47430df3"
+
+[[license]]
+name = "GPL-3.0-only"
+url = "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/GPL-3.0-only.txt"
+hash = "sha256:fb981668c18a279e285fc4d83fba1e836cc84dd4daa73c9697d3cfd2d8aca6e0"
+
+[[license]]
+name = "LGPL-2.0-only"
+url = "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/LGPL-2.0-only.txt"
+hash = "sha256:86dc99d7e5060915ab1dfc1378b7dd351c62088bfa74067e8aa1868c6fdba7d8"
+
+[[license]]
+name = "LGPL-2.1-only"
+url = "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/LGPL-2.1-only.txt"
+hash = "sha256:5749785c8bdefafcb5d798270ed0a967036fe2ca63dcedade1627565dfef81d2"
+
+[[license]]
+name = "LGPL-3.0-only"
+url = "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/LGPL-3.0-only.txt"
+hash = "sha256:996af0513df21f7496288951c41428a03c174e9e4a9d63665c57d670f845ccb1"
