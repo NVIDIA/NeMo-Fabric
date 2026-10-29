@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import math
@@ -1153,6 +1154,24 @@ def write_report(output: Path, report: dict) -> None:
     temporary.replace(output / "summary.md")
 
 
+@contextmanager
+def defer_sigterm():
+    """Finish owned-resource cleanup and evidence persistence before termination."""
+    pending = False
+
+    def defer(_signum, _frame):
+        nonlocal pending
+        pending = True
+
+    previous = signal.signal(signal.SIGTERM, defer)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+        if pending:
+            raise KeyboardInterrupt
+
+
 def run(plan: dict, environment: dict, output: Path, selected: list[str]) -> int:
     validate_plan(plan)
     if environment["plan"] != plan:
@@ -1448,36 +1467,52 @@ def run(plan: dict, environment: dict, output: Path, selected: list[str]) -> int
             code = 1
         finally:
             try:
-                result["cleanup"] = (
-                    "passed" if cleanup(prefix, directory / "cleanup.log") else "failed"
-                )
-            except (OSError, subprocess.SubprocessError, ValueError):
-                result["cleanup"] = "failed"
-            if result["cleanup"] != "passed":
-                result["outcome"] = "failed"
+                with defer_sigterm():
+                    try:
+                        result["cleanup"] = (
+                            "passed"
+                            if cleanup(prefix, directory / "cleanup.log")
+                            else "failed"
+                        )
+                    except (OSError, subprocess.SubprocessError, ValueError):
+                        result["cleanup"] = "failed"
+                    if result["cleanup"] != "passed":
+                        result["outcome"] = "failed"
+                        result.setdefault("failures", []).append(
+                            {
+                                "category": "cleanup",
+                                "reason": "Owned Compose resource cleanup failed",
+                            }
+                        )
+                    # Harbor redacts its configuration. Scrub known secrets from all
+                    # retained text as well, including failing harness stdout.
+                    for path in directory.rglob("*"):
+                        if path.is_file() and not path.is_symlink():
+                            try:
+                                text = path.read_text(encoding="utf-8")
+                            except UnicodeError:
+                                continue
+                            cleaned = sanitize_artifact(
+                                text,
+                                path.suffix,
+                                (row["api_key_env"],) if row.get("api_key_env") else (),
+                            )
+                            if cleaned != text:
+                                path.write_text(cleaned, encoding="utf-8")
+                    result["finished_at"] = now()
+                    write_report(output, report)
+            except KeyboardInterrupt:
+                code = 130
+                report.update(state="cancelled", finished_at=now())
+                result.update(outcome="failed", reason="Qualification cancelled")
                 result.setdefault("failures", []).append(
                     {
-                        "category": "cleanup",
-                        "reason": "Owned Compose resource cleanup failed",
+                        "category": "cancelled",
+                        "reason": "Termination during finalization",
                     }
                 )
-            # Harbor redacts its configuration. Scrub known secrets from all
-            # retained text as well, including failing harness stdout.
-            for path in directory.rglob("*"):
-                if path.is_file() and not path.is_symlink():
-                    try:
-                        text = path.read_text(encoding="utf-8")
-                    except UnicodeError:
-                        continue
-                    cleaned = sanitize_artifact(
-                        text,
-                        path.suffix,
-                        (row["api_key_env"],) if row.get("api_key_env") else (),
-                    )
-                    if cleaned != text:
-                        path.write_text(cleaned, encoding="utf-8")
-            result["finished_at"] = now()
-            write_report(output, report)
+                with defer_sigterm():
+                    write_report(output, report)
         print(f"{row['adapter_id']}: {result['outcome']}", flush=True)
         if code == 130:
             report["state"] = "cancelled"

@@ -1194,3 +1194,90 @@ def test_provider_override_preserves_model_in_command_selection_and_report(
     )["selected"]
     assert selected["provider"] == "openai"
     assert selected["model"] == model
+
+
+@pytest.mark.usefixtures("clean_qualification_checkout")
+@pytest.mark.parametrize("termination_phase", ["cleanup", "scrub", "report"])
+def test_termination_finishes_cleanup_scrubbing_and_cancellation_report(
+    tmp_path, qualification_plan, monkeypatch, termination_phase, restore_environ
+):
+    row = next(r for r in qualification_plan["adapters"] if r["action"] == "run")
+    restore_environ[row["api_key_env"]] = "private-test-credential"
+    identity = {
+        "editable": [],
+        "packages": {
+            "nemo-fabric-runtime": qualification_plan["version"],
+            "harbor": qualification_plan["harbor_version"],
+        },
+        "catalog_sha256": qualify.fingerprint(qualify.plan_catalog(qualification_plan)),
+        "wheel_sha256": {"nemo-fabric-runtime": "test-wheel-hash"},
+    }
+    environment = {
+        "plan": qualification_plan,
+        "python": sys.executable,
+        "wheel_sha256": {"nemo_fabric_runtime-test.whl": "test-wheel-hash"},
+        "adapters": {row["adapter_id"]: {"status": "ready", "image": "owned-image"}},
+    }
+    monkeypatch.setattr(qualify, "execute", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(qualify, "stage_task", lambda *args, **kwargs: None)
+    output_calls = iter([json.dumps(identity), ValueError("preflight failure")])
+
+    original_check_output = qualify.subprocess.check_output
+
+    def check_output(command, *args, **kwargs):
+        if command[0] == "git":
+            return original_check_output(command, *args, **kwargs)
+        value = next(output_calls)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    monkeypatch.setattr(qualify.subprocess, "check_output", check_output)
+    cleanup_finished = []
+    signalled = []
+
+    def terminate(phase):
+        if phase == termination_phase and not signalled:
+            signalled.append(phase)
+            qualify.signal.raise_signal(qualify.signal.SIGTERM)
+
+    def cleanup(prefix, log):
+        (log.parent / "artifact.txt").write_text("private-test-credential")
+        terminate("cleanup")
+        cleanup_finished.append(True)
+        return True
+
+    original_scrub = qualify.sanitize_artifact
+
+    def scrub(*args, **kwargs):
+        terminate("scrub")
+        return original_scrub(*args, **kwargs)
+
+    original_write = qualify.write_report
+
+    def write(output, report):
+        if any(r.get("finished_at") for r in report["adapters"]):
+            terminate("report")
+        return original_write(output, report)
+
+    monkeypatch.setattr(qualify, "cleanup", cleanup)
+    monkeypatch.setattr(qualify, "sanitize_artifact", scrub)
+    monkeypatch.setattr(qualify, "write_report", write)
+    output = tmp_path / "out"
+    previous = qualify.signal.signal(qualify.signal.SIGTERM, qualify.stop)
+    try:
+        assert (
+            qualify.run(qualification_plan, environment, output, [row["adapter_id"]])
+            == 1
+        )
+        assert qualify.signal.getsignal(qualify.signal.SIGTERM) is qualify.stop
+    finally:
+        qualify.signal.signal(qualify.signal.SIGTERM, previous)
+    report = qualify.load(output / "report.json")
+    assert signalled == [termination_phase]
+    assert cleanup_finished == [True]
+    assert report["state"] == "cancelled"
+    assert report["finished_at"]
+    assert len(report["adapters"]) == len(qualification_plan["adapters"])
+    artifact = next(output.glob("*/artifact.txt"))
+    assert "private-test-credential" not in artifact.read_text()
