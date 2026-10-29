@@ -2422,12 +2422,15 @@ pub fn resolve_run_plan_from_config_with_adapter_directories(
     )
 }
 
-/// Validated metadata for standalone host admission, never an execution plan.
+/// Validated supplied metadata for host admission, never an execution plan.
 #[doc(hidden)]
 #[derive(Debug, Serialize)]
 pub struct AdapterInspection {
     /// Core-normalized supplied descriptor.
     pub descriptor: AdapterDescriptor,
+    /// Core-normalized supplied workflow target, when selected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_descriptor: Option<AdapterTargetDescriptor>,
     /// Requested providers and their resolved configuration.
     pub telemetry_plan: Option<TelemetryPlan>,
 }
@@ -2441,11 +2444,12 @@ pub struct AdapterInspection {
 pub fn inspect_adapter_config(
     mut config: FabricConfig,
     descriptor_path: &Path,
+    target_descriptor_path: Option<&Path>,
 ) -> Result<AdapterInspection> {
-    if config.workflow.is_some() {
+    if config.workflow.is_some() != target_descriptor_path.is_some() {
         return invalid_config(
             "workflow",
-            "standalone inspection does not qualify workflow targets",
+            "workflow inspection requires exactly one supplied target descriptor",
         );
     }
     config.discovery = None;
@@ -2460,8 +2464,7 @@ pub fn inspect_adapter_config(
     if config
         .harness
         .as_ref()
-        .map(|harness| harness.adapter_id.as_str())
-        != Some(descriptor.adapter_id.as_str())
+        .is_some_and(|harness| harness.adapter_id != descriptor.adapter_id)
     {
         return invalid_config(
             "harness.adapter_id",
@@ -2480,9 +2483,54 @@ pub fn inspect_adapter_config(
         }],
         descriptor: descriptor.clone(),
     };
-    let plan = resolve_selected_descriptors(config, base_dir, Some(resolved), None, true)?;
+    let target = target_descriptor_path
+        .map(|supplied| {
+            let path = supplied
+                .canonicalize()
+                .map_err(|source| FabricError::Read {
+                    path: supplied.to_path_buf(),
+                    source,
+                })?;
+            let target = load_adapter_target_descriptor(&path)?;
+            let workflow = config.workflow.as_ref().expect("target requires workflow");
+            if target.id != workflow.target_id {
+                return invalid_config(
+                    "workflow.target_id",
+                    "does not match supplied host metadata",
+                );
+            }
+            if target.adapter_id != descriptor.adapter_id {
+                return invalid_config(
+                    "workflow.target_id",
+                    "target adapter does not match supplied host adapter",
+                );
+            }
+            let target_type = target.target_type();
+            if !descriptor.target_types.contains(&target_type) {
+                return Err(FabricError::AdapterDescriptorUnsupported {
+                    adapter_id: descriptor.adapter_id.clone(),
+                    field: "target_types",
+                    value: target_type.as_str().to_string(),
+                });
+            }
+            Ok(ResolvedAdapterTargetDescriptor {
+                provenance: vec![DescriptorProvenance {
+                    source: DescriptorSource::ExplicitLocal,
+                    root: path
+                        .parent()
+                        .expect("canonical descriptor has a parent")
+                        .to_path_buf(),
+                    path,
+                }],
+                descriptor: target,
+            })
+        })
+        .transpose()?;
+    let target_descriptor = target.as_ref().map(|resolved| resolved.descriptor.clone());
+    let plan = resolve_selected_descriptors(config, base_dir, Some(resolved), target, true)?;
     Ok(AdapterInspection {
         descriptor,
+        target_descriptor,
         telemetry_plan: plan.telemetry_plan,
     })
 }
@@ -4325,7 +4373,8 @@ mod tests {
             local_paths: vec![PathBuf::from("/task-only/nonexistent-descriptor")],
             ..Default::default()
         });
-        let inspection = inspect_adapter_config(config.clone(), &path).expect("host inspection");
+        let inspection =
+            inspect_adapter_config(config.clone(), &path, None).expect("host inspection");
         assert_eq!(
             inspection.descriptor,
             load_adapter_descriptor(&path).expect("descriptor")
@@ -4340,9 +4389,106 @@ mod tests {
             .expect("harness")
             .settings
             .insert("not_a_supported_setting".to_string(), Value::Bool(true));
-        assert!(inspect_adapter_config(config, &path).is_err());
+        assert!(inspect_adapter_config(config, &path, None).is_err());
         let mismatch = typed_config("nvidia.fabric.codex");
-        assert!(inspect_adapter_config(mismatch, &path).is_err());
+        assert!(inspect_adapter_config(mismatch, &path, None).is_err());
+    }
+
+    #[test]
+    fn host_workflow_inspection_uses_only_supplied_metadata() {
+        let adapter_path = repository_adapter_dir().join("python/nooa/nooa.fabric-adapter.json");
+        let target_path =
+            repository_adapter_dir().join("python/nooa/targets/coding-agent.fabric-target.json");
+        let target = load_adapter_target_descriptor(&target_path).expect("target metadata");
+        let mut config = typed_config("nvidia.fabric.nooa");
+        config.workflow = Some(WorkflowConfig {
+            target_id: target.id.clone(),
+            settings: serde_json::Map::new(),
+            extensions: BTreeMap::new(),
+        });
+        config.discovery = Some(DiscoveryConfig {
+            local_paths: vec![PathBuf::from("/task-only/nonexistent-descriptors")],
+            ..Default::default()
+        });
+        let inspection = inspect_adapter_config(config.clone(), &adapter_path, Some(&target_path))
+            .expect("supplied metadata validates without discovery");
+        assert_eq!(inspection.target_descriptor, Some(target));
+        let value = serde_json::to_value(inspection).expect("inspection JSON");
+        assert!(value.get("adapter_target_descriptor").is_none());
+        assert!(value.get("config").is_none());
+        config.harness = None;
+        inspect_adapter_config(config, &adapter_path, Some(&target_path))
+            .expect("workflow alone selects the supplied adapter");
+    }
+
+    #[test]
+    fn host_workflow_inspection_rejects_incomplete_mismatched_or_invalid_metadata() {
+        let adapter_path = repository_adapter_dir().join("python/nooa/nooa.fabric-adapter.json");
+        let target_path =
+            repository_adapter_dir().join("python/nooa/targets/coding-agent.fabric-target.json");
+        let mut config = typed_config("nvidia.fabric.nooa");
+        assert!(inspect_adapter_config(config.clone(), &adapter_path, Some(&target_path)).is_err());
+        config.workflow = Some(WorkflowConfig {
+            target_id: "nvidia.nooa.coding-agent".to_string(),
+            settings: serde_json::Map::new(),
+            extensions: BTreeMap::new(),
+        });
+        assert!(inspect_adapter_config(config.clone(), &adapter_path, None).is_err());
+        let mut wrong_target = config.clone();
+        wrong_target.workflow.as_mut().expect("workflow").target_id = "wrong.target".to_string();
+        assert!(inspect_adapter_config(wrong_target, &adapter_path, Some(&target_path)).is_err());
+        config
+            .workflow
+            .as_mut()
+            .expect("workflow")
+            .settings
+            .insert("unsupported".to_string(), Value::Bool(true));
+        assert!(inspect_adapter_config(config, &adapter_path, Some(&target_path)).is_err());
+        let mut wrong_adapter = typed_config("nvidia.fabric.hermes");
+        wrong_adapter.workflow = Some(WorkflowConfig {
+            target_id: "nvidia.nooa.coding-agent".to_string(),
+            settings: serde_json::Map::new(),
+            extensions: BTreeMap::new(),
+        });
+        let hermes_path = repository_adapter_dir().join("python/hermes/hermes.fabric-adapter.json");
+        assert!(inspect_adapter_config(wrong_adapter, &hermes_path, Some(&target_path)).is_err());
+    }
+
+    #[test]
+    fn host_workflow_inspection_requires_adapter_target_type_support() {
+        let original = repository_adapter_dir().join("python/nooa/nooa.fabric-adapter.json");
+        let target_path =
+            repository_adapter_dir().join("python/nooa/targets/coding-agent.fabric-target.json");
+        let mut descriptor = load_adapter_descriptor(original).expect("adapter metadata");
+        descriptor.target_types.clear();
+        let path = std::env::temp_dir().join(format!(
+            "fabric-inspection-{}-{}.fabric-adapter.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&descriptor).expect("metadata JSON"),
+        )
+        .expect("write metadata");
+        let mut config = typed_config("nvidia.fabric.nooa");
+        config.workflow = Some(WorkflowConfig {
+            target_id: "nvidia.nooa.coding-agent".to_string(),
+            settings: serde_json::Map::new(),
+            extensions: BTreeMap::new(),
+        });
+        let result = inspect_adapter_config(config, &path, Some(&target_path));
+        std::fs::remove_file(&path).expect("remove metadata");
+        assert!(matches!(
+            result,
+            Err(FabricError::AdapterDescriptorUnsupported {
+                field: "target_types",
+                ..
+            })
+        ));
     }
 
     fn typed_config(adapter_id: &str) -> FabricConfig {

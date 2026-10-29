@@ -329,8 +329,13 @@ print(plan.adapter.adapter_id, report.status)
   discovery paths. Missing metadata makes conservative claims and rejects
   requested optional features. Pass `expected_descriptor_sha256=profile.descriptor_sha256`
   to task-side `run()` or `start_runtime()` to reject descriptor drift before
-  startup. This standalone profile does not qualify workflow targets or attached
-  services. Declared support is not runtime provenance or proof of an artifact.
+  startup. For a registered workflow, also pass
+  `target_descriptor=get_target_descriptor(config.workflow.target_id)` from the
+  matching catalog or canonical external metadata. The fingerprint then binds
+  both normalized descriptors, including the target factory and settings schema;
+  missing or mismatched metadata fails admission. Standalone fingerprints stay
+  unchanged. Attached services need separate admission. Declared support is not
+  runtime provenance or proof of an artifact.
 
 ## Consume Results And Handle Errors
 

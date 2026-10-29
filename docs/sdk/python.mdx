@@ -126,8 +126,14 @@ or successful evidence production. ATIF requires a selected provider declaring
 that output; Relay additionally requires one explicitly enabled observability
 component with ATIF enabled. Unconfirmed ATIF requests, including ambiguous
 duplicate components, fail admission.
-This profile covers standalone adapters, not registered workflows or attached
-services, which need route-specific admission.
+For a registered workflow, also supply its canonical target metadata:
+`inspect_adapter(config, descriptor, target_descriptor=get_target_descriptor(config.workflow.target_id))`.
+Import `get_target_descriptor` from `nemo_fabric_adapter_catalog`. The fingerprint
+then covers both normalized descriptors, including the target factory reference
+and settings schema. Missing or mismatched target metadata fails admission.
+Task execution still resolves its own installed target and verifies both
+descriptors before starting the factory. Standalone fingerprints are unchanged.
+Attached services require separate route-specific admission.
 
 ## Execution Model
 
