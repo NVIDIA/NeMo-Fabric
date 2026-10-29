@@ -138,6 +138,8 @@ const expectedByPackage = {
   "nemo-fabric-adapters-kiro": [
     "LICENSE",
     "README.md",
+    "dist/byom.d.ts",
+    "dist/byom.js",
     "dist/cli.d.ts",
     "dist/cli.js",
     "dist/configuration.d.ts",
