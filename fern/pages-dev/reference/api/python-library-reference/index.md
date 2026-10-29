@@ -24,7 +24,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 ## Classes
 
 - [`client.Fabric`](./nemo_fabric.client.md#class-fabric): Primary Python entrypoint for NeMo Fabric.
-- [`capabilities.AdapterCapabilityProfile`](./nemo_fabric.capabilities.md#class-adaptercapabilityprofile): Declared support for a standalone runtime, not observed execution provenance.
+- [`capabilities.AdapterCapabilityProfile`](./nemo_fabric.capabilities.md#class-adaptercapabilityprofile): Declared runtime support, not observed execution provenance.
 - [`check.CheckReport`](./nemo_fabric.check.md#class-checkreport): Immutable health check report.
 - [`check.CheckRequest`](./nemo_fabric.check.md#class-checkrequest): Select server, runtime, or registered service health.
 - [`runtime.Runtime`](./nemo_fabric.runtime.md#class-runtime): One logical, stateful harness execution.
@@ -110,7 +110,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 ## Functions
 
-- [`capabilities.inspect_adapter`](./nemo_fabric.capabilities.md#function-inspect_adapter): Inspect a standalone runtime using descriptor metadata without loading its SDK.
+- [`capabilities.inspect_adapter`](./nemo_fabric.capabilities.md#function-inspect_adapter): Inspect supplied adapter and optional workflow metadata without loading its SDK.
 
 
 ---
