@@ -4,6 +4,7 @@
 import asyncio
 import json
 import re
+import sys
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -979,11 +980,13 @@ def test_external_workflow_metadata_is_not_task_discovery(tmp_path):
     assert payload.adapter_descriptor_sha256 is not None
 
 
-@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not ((3, 12) <= sys.version_info[:2] < (3, 14)),
+    reason="NOOA supports Python 3.12 and 3.13",
+)
 @pytest.mark.usefixtures("nemo_relay")
 async def test_registered_workflow_round_trip_and_target_drift(tmp_path, monkeypatch):
     import os
-    import sys
 
     from nemo_fabric import FabricConfigError
     from nemo_fabric import RunRequest
@@ -1024,6 +1027,7 @@ async def test_registered_workflow_round_trip_and_target_drift(tmp_path, monkeyp
     result = await runner.run(payload)
     assert result.status == "succeeded", result.to_mapping()
     assert result.output["response"] == "test: reply-1: hello"
+    assert (tmp_path / ".echo-agent-closed").is_file()
 
     target["spec"]["entrypoint"]["ref"] = "not_imported.factory:create_agent"
     target_path.write_text(json.dumps(target))
