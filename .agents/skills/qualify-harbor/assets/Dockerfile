@@ -16,13 +16,16 @@ ARG INSTALL_MODE
 RUN mkdir /wheels && if [ "$INSTALL_MODE" = source ]; then \
       pip wheel --no-deps --wheel-dir /wheels /src/adapter-contract/python \
         /src/sdk/python/nemo-fabric-runtime /src/sdk/python/nemo-fabric \
+        /src/sdk/python/nemo-fabric-evidence \
         /src/sdk/python/nemo-fabric-adapter-catalog \
         /src/adapters/python/*/; \
     else pip download --only-binary=:all: --no-deps --dest /wheels \
         "nemo-fabric==$FABRIC_VERSION" "nemo-fabric-runtime==$FABRIC_VERSION" \
+        "nemo-fabric-evidence==$FABRIC_VERSION" \
         "nemo-fabric-adapter-catalog==$FABRIC_VERSION" \
         "nemo-fabric-adapter-contract==$FABRIC_VERSION" "nemo-fabric-adapters-common==$FABRIC_VERSION"; fi
 RUN pip install /wheels/nemo_fabric-*.whl /wheels/nemo_fabric_runtime-*.whl \
+    /wheels/nemo_fabric_evidence-*.whl \
     /wheels/nemo_fabric_adapter_catalog-*.whl /wheels/nemo_fabric_adapter_contract-*.whl \
     /wheels/nemo_fabric_adapters_common-*.whl
 COPY identity.py /qualification/identity.py

@@ -113,6 +113,7 @@ def base_environment(plan: dict, work: Path, host_python: str) -> dict:
                 in {
                     "nemo_fabric",
                     "nemo_fabric_runtime",
+                    "nemo_fabric_evidence",
                     "nemo_fabric_adapter_catalog",
                     "nemo_fabric_adapter_contract",
                     "nemo_fabric_adapters_common",
