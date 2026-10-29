@@ -95,7 +95,7 @@ the runner and identity/descriptor probes use `task_python`, while the upstream
 task verifier keeps its original interpreter and instructions. No exact match
 between host and task Python versions is required.
 
-Fabric runtime/catalog/adapter packages must remain noneditable. A pinned
+NeMo Fabric runtime/catalog/adapter packages must remain noneditable. A pinned
 Hermes source installation is supported even when its metadata says editable:
 record `{"hermes-agent":"<exact-commit>"}` in
 `/opt/qualification-harness-sources.json`. The identity collector records its
@@ -120,7 +120,7 @@ git -C "$WORK/tb2" sparse-checkout set kv-store-grpc
 git -C "$WORK/tb2" checkout 2fd12b88aafdd04a52c298e3940bcb189f9766d6
 ```
 
-The gate requires `--task` pointing to that single directory. It records a hash of the task inputs and verifier, rejects a dataset root, and rejects changed files after planning. Preparation builds the task's original Dockerfile before adding NeMo Fabric and each harness. Harbor builds from the prepared image rather than pulling the task-only `docker_image`. The instruction, task assets, resources, and upstream verifier stay intact; the oracle solution is excluded from staging. A wrapper collects the agent's final package and selection evidence before running the upstream verifier, whose own dependency installation is outside the agent's execution. Fabric package/wheel identity, installed Python harness distributions, npm harness packages, interpreter/source identity, catalog and descriptor provenance remain protected. Other Python package changes are recorded, allowing task setup to install or replace its own dependencies. If such changes break execution, lifecycle/result checks still fail. The original base and final image IDs are retained. This integration overlay is not an unmodified leaderboard submission.
+The gate requires `--task` pointing to that single directory. It records a hash of the task inputs and verifier, rejects a dataset root, and rejects changed files after planning. Preparation builds the task's original Dockerfile before adding NeMo Fabric and each harness. Harbor builds from the prepared image rather than pulling the task-only `docker_image`. The instruction, task assets, resources, and upstream verifier stay intact; the oracle solution is excluded from staging. A wrapper collects the agent's final package and selection evidence before running the upstream verifier, whose own dependency installation is outside the agent's execution. NeMo Fabric package/wheel identity, installed Python harness distributions, npm harness packages, interpreter/source identity, catalog and descriptor provenance remain protected. Other Python package changes are recorded, allowing task setup to install or replace its own dependencies. If such changes break execution, lifecycle/result checks still fail. The original base and final image IDs are retained. This integration overlay is not an unmodified leaderboard submission.
 
 Set the version, compatible Harbor pin, served model ID, and container-reachable endpoint for your environment. The following example uses an already running local NIM endpoint and a nonsecret placeholder key:
 
@@ -152,9 +152,9 @@ python3 "$QUALIFY/prepare.py" --plan "$WORK/plan.json" --work "$WORK/environment
 
 Preparation and execution each require new directories and never overwrite previous evidence. Pass `--host-python /absolute/path/to/python` to `prepare.py` to use an existing Python 3.12+ interpreter rather than downloading Python 3.12. A base installation failure writes `environment.json` and logs before exiting; run the gate with `python3` in that case to produce a fully blocked report. `prepare.py` continues past individual harness installation failures, which become failed matrix rows. Retain the environment directory while inspecting or reproducing a run. Images are tagged with the source revision; record their immutable IDs in the report. No image is pushed.
 
-For a keyed HTTPS provider, export `MODEL_API_KEY` securely, use its model slug and `--base-url https://...`, supply a nonzero cost estimate with token/pricing assumptions, and set the appropriate endpoint kind. Each plan row can override `model`, `model_provider`, `base_url`, `api_key_env`, `harness_settings`, `telemetry`, and `image`. A custom task image must contain the matching runtime/catalog/adapter, its harness, `/qualification/identity.py`, and `/opt/qualification-identity.json` produced by that script. Fabric packages must be noneditable; supported pinned Hermes source installs follow the provenance rules above. Set a prerequisite row's `action` to `run` only after providing those dependencies. Do not pass a generic local model to a proprietary provider under a fabricated model alias.
+For a keyed HTTPS provider, export `MODEL_API_KEY` securely, use its model slug and `--base-url https://...`, supply a nonzero cost estimate with token/pricing assumptions, and set the appropriate endpoint kind. Each plan row can override `model`, `model_provider`, `base_url`, `api_key_env`, `harness_settings`, `telemetry`, and `image`. A custom task image must contain the matching runtime/catalog/adapter, its harness, `/qualification/identity.py`, and `/opt/qualification-identity.json` produced by that script. NeMo Fabric packages must be noneditable; supported pinned Hermes source installs follow the provenance rules above. Set a prerequisite row's `action` to `run` only after providing those dependencies. Do not pass a generic local model to a proprietary provider under a fabricated model alias.
 
-For an OpenAI-compatible endpoint with a vendor-prefixed served ID, set that row’s `model_provider` to `openai` without changing `model`. This requires the SDK bridge containing [PR #522](https://github.com/NVIDIA/NeMo-Fabric/pull/522); generate the plan with `--bridge sdk`. Native Harbor’s equivalent option is deferred to a separate upstream change. The selected provider is retained in both admission input and the report. Older SDKs remain usable when the override is omitted.
+For an OpenAI-compatible endpoint with a vendor-prefixed served ID, set that row’s `model_provider` to `openai` without changing `model`. This requires the SDK bridge containing [PR #534](https://github.com/NVIDIA/NeMo-Fabric/pull/534); generate the plan with `--bridge sdk`. Native Harbor’s equivalent option is deferred to a separate upstream change. The selected provider is retained in both admission input and the report. Older SDKs remain usable when the override is omitted.
 
 For adapter-declared model settings, use the SDK bridge and set that plan row's
 `model_settings` object. It projects to `fabric_model_settings` and remains
@@ -162,7 +162,7 @@ subject to the adapter model schema. For example, an explicitly unpriced
 Mini-SWE model uses `{"cost_tracking":"disabled"}` with a positive `max_turns`
 on the same row. This disables monetary budgeting and keeps cost unavailable;
 it does not report a zero cost. `max_turns` projects to `fabric_max_turns`.
-The bridge and runner must both contain the model-settings transport from #522.
+The bridge and runner must both contain the model-settings transport from #534.
 
 For a registered workflow, generate the plan with `--bridge sdk` and configure
 that adapter's row with `workflow_target_id` and optional `workflow_settings`.
@@ -203,14 +203,14 @@ A developer subset retains every other row as excluded and sets `scope=developer
 Exit zero means the requested subset passed, or every entry passed in a full run. A subset never sets `full_catalog_passed=true`. Nonzero means failure, blocked coverage, cancellation, or invalid prerequisites.
 
 The gate tests integration, not model task quality. A valid reward of zero does
-not fail a completed Harbor/Fabric/harness round trip. The report keeps task
+not fail a completed Harbor/NeMo Fabric/harness round trip. The report keeps task
 reward and `checks.task_success` as informational evidence. Missing, malformed,
 or nonfinite reward evidence still fails verifier completion; Harbor exceptions,
 failed invocations, timeouts, and cleanup failures remain failures.
 
 Harness accounting availability is a separate capability observation. Missing
 complete counters remain unknown, with a recorded limitation; they do not fail
-integration when Fabric transports the same normalized unknown values into
+integration when NeMo Fabric transports the same normalized unknown values into
 Harbor. `checks.usage_available` is informational. A mismatch in result identity
 or accounting transport still fails, regardless of reward or usage availability.
 Reports record these pass criteria explicitly and show reward alongside the
