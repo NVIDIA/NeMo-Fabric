@@ -33,17 +33,17 @@ Mitigation: Review and scan skill before deployment. <br>
 - [Installation guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx) <br>
 - [Hermes integration guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes.mdx) <br>
 - [Adapter catalog guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/sdk/python/nemo-fabric-adapter-catalog/README.md) <br>
-- [System stats guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/system-stats.mdx) <br>
+- [Resource usage and stats](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/system-stats.mdx) <br>
 - [code_review_agent example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent) <br>
 - [Harbor example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/harbor) <br>
 - [Harbor integration](https://github.com/NVIDIA/NeMo-Fabric/tree/main/sdk/python/nemo-fabric-runtime/src/nemo_fabric/integrations/harbor) <br>
 - [API reference: nemo_fabric.client](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.client.md) <br>
 - [API reference: nemo_fabric.runtime](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.runtime.md) <br>
+- [API reference: nemo_fabric.openai_streaming](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.openai_streaming.md) <br>
+- [API reference: nemo_fabric.streaming](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.streaming.md) <br>
 - [API reference: nemo_fabric.models](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.models.md) <br>
 - [API reference: nemo_fabric.types](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.types.md) <br>
 - [API reference: nemo_fabric.errors](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.errors.md) <br>
-- [API reference: nemo_fabric.streaming](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.streaming.md) <br>
-- [API reference: nemo_fabric.openai_streaming](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.openai_streaming.md) <br>
 
 
 ## Skill Output: <br>
@@ -83,15 +83,15 @@ Underlying evaluation signals used in this run: <br>
 ## Evaluation Results: <br>
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 82.2% — baseline ran, but no comparable score was available; uplift unavailable | 74.1% — baseline ran, but no comparable score was available; uplift unavailable |
-| Security | 100.0% → 100.0% (±0.0 points) | 83.3% → 83.3% (±0.0 points) |
-| Correctness | 50.0% → 90.0% (+40.0 points) | 46.7% → 73.3% (+26.6 points) |
-| Discoverability | 90.0% — baseline ran, but no comparable score was available; uplift unavailable | 87.5% — baseline ran, but no comparable score was available; uplift unavailable |
-| Effectiveness | 26.5% → 62.9% (+36.4 points) | 47.7% → 54.9% (+7.2 points) |
-| Efficiency | 68.3% — baseline ran, but no comparable score was available; uplift unavailable | 71.3% — baseline ran, but no comparable score was available; uplift unavailable |
+| Overall | 80.9% — baseline ran, but no comparable score was available; uplift unavailable | 73.4% — baseline ran, but no comparable score was available; uplift unavailable |
+| Security | 100.0% → 100.0% (±0.0 points) | 66.7% → 58.3% (-8.4 points) |
+| Correctness | 33.3% → 86.7% (+53.4 points) | 30.0% → 80.0% (+50.0 points) |
+| Discoverability | 93.8% — baseline ran, but no comparable score was available; uplift unavailable | 85.0% — baseline ran, but no comparable score was available; uplift unavailable |
+| Effectiveness | 33.6% → 52.0% (+18.4 points) | 24.6% → 71.8% (+47.2 points) |
+| Efficiency | 72.2% — baseline ran, but no comparable score was available; uplift unavailable | 71.8% — baseline ran, but no comparable score was available; uplift unavailable |
 
 ## Skill Version(s): <br>
-a736aa8a (source: git SHA, committed 2026-10-27) <br>
+64a7c2d (source: git SHA, committed 2026-10-29) <br>
 
 ## Ethical Considerations: <br>
 NVIDIA believes Trustworthy AI is a shared responsibility and we have established policies and practices to enable development for a wide array of AI applications. When downloaded or used in accordance with our terms of service, developers should work with their internal team to ensure this skill meets requirements for the relevant industry and use case and addresses unforeseen product misuse. <br>
