@@ -183,7 +183,7 @@ def test_openclaw_rejects_invalid_port_range(settings: dict[str, object]):
     assert caught.value.metadata == {"field": "harness.settings.port_range"}
 
 
-@pytest.mark.parametrize("raw", ["2026.9.4 extra", "2026.9.4\nuntrusted suffix"])
+@pytest.mark.parametrize("raw", ["2026.9.34 extra", "2026.9.34\nuntrusted suffix"])
 async def test_gateway_records_the_same_version_it_validates(monkeypatch, raw):
     from nemo_fabric_adapters.common import provenance
 
@@ -202,7 +202,7 @@ async def test_gateway_records_the_same_version_it_validates(monkeypatch, raw):
         validated = await adapter.OpenClawRuntime()._probe_gateway(
             client, "http://gateway.test", "default"
         )
-    assert validated == "2026.9.4"
+    assert validated == "2026.9.34"
     assert mock_record.call_args.args[1] == validated
 
 
