@@ -131,7 +131,7 @@ export MODEL_API_KEY=unused
 python3 "$QUALIFY/qualify.py" plan \
   --output "$WORK/plan.json" \
   --task "$WORK/tb2/kv-store-grpc" \
-  --mode source --version 0.6.0 \
+  --mode source --version 0.7.0 \
   --harbor-version 0.24.1.dev202610250408 \
   --model nvidia/nemotron-3-ultra-550b-a55b \
   --base-url http://model-gateway:8000/v1 \

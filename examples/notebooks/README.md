@@ -41,6 +41,8 @@ variations notebook shows advanced composition against a real, maintained agent.
   Each notebook securely prompts for any missing keys it uses. Press Enter to
   skip a key and the live harness calls that require it.
 
+In a source checkout, the setup cells install the matching NeMo Fabric packages from local source paths. The Hermes adapter and its shared dependencies are installed in the separate Hermes environment; Relay 0.10 remains isolated from the main environment's Relay 0.11 installation.
+
 Every live cell checks the prerequisites it can inspect. Missing key-based
 credentials skip their harness and still show its resolved plan. Codex
 authentication is validated only after its adapter starts, so an attempted
