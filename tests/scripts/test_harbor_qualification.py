@@ -466,7 +466,11 @@ def test_interrupt_terminates_only_its_process_group(tmp_path):
     kill.assert_called_once_with(process.pid, qualify.signal.SIGINT)
 
 
-def test_cleanup_does_not_remove_another_jobs_resources(tmp_path):
+@pytest.mark.parametrize(
+    "delete_statuses",
+    [(0, 0, 0, 0), (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)],
+)
+def test_cleanup_does_not_remove_another_jobs_resources(tmp_path, delete_statuses):
     with (
         patch("qualify.subprocess.run") as run,
         patch("qualify.subprocess.check_output") as output,
@@ -475,20 +479,24 @@ def test_cleanup_does_not_remove_another_jobs_resources(tmp_path):
         run.side_effect = [
             subprocess.CompletedProcess([], 0, stdout="probe"),
             subprocess.CompletedProcess([], 0, stdout="owned unrelated"),
-            subprocess.CompletedProcess([], 0, stdout="owned unrelated"),
+            subprocess.CompletedProcess([], 0, stdout="owned later-owned unrelated"),
         ]
         output.side_effect = [
             json.dumps({"com.docker.compose.project": "fq-unique-0__trial"}),
             json.dumps({"com.docker.compose.project": "another-user"}),
             json.dumps({"com.docker.compose.project": "fq-unique-0__trial"}),
+            json.dumps({"com.docker.compose.project": "fq-unique-0__trial"}),
             json.dumps({"com.docker.compose.project": "another-user"}),
         ]
-        execute.return_value = 0
-        assert qualify.cleanup("fq-unique", tmp_path / "cleanup.log") is True
+        execute.side_effect = delete_statuses
+        assert qualify.cleanup("fq-unique", tmp_path / "cleanup.log") is (
+            not any(delete_statuses)
+        )
         assert [call.args[0] for call in execute.call_args_list] == [
             ["docker", "rm", "-f", "probe"],
             ["docker", "rm", "-f", "owned"],
             ["docker", "network", "rm", "owned"],
+            ["docker", "network", "rm", "later-owned"],
         ]
 
 

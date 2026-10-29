@@ -1045,6 +1045,7 @@ def inspect_results(
 
 def cleanup(prefix: str, log: Path) -> bool:
     """Remove only Compose resources carrying this invocation's unique task prefix."""
+    cleanup_failed = False
     probes = subprocess.run(
         [
             "docker",
@@ -1060,7 +1061,7 @@ def cleanup(prefix: str, log: Path) -> bool:
     ).stdout.split()
     for resource in probes:
         if execute(["docker", "rm", "-f", resource], log, 30):
-            return False
+            cleanup_failed = True
     for kind, listing, deletion in (
         ("container", ["ps", "-aq"], ["rm", "-f"]),
         ("network", ["network", "ls", "-q"], ["network", "rm"]),
@@ -1090,8 +1091,8 @@ def cleanup(prefix: str, log: Path) -> bool:
             labels = json.loads(inspected)
             if (labels or {}).get("com.docker.compose.project", "").startswith(prefix):
                 if execute(["docker", *deletion, resource], log, 30):
-                    return False
-    return True
+                    cleanup_failed = True
+    return not cleanup_failed
 
 
 def write_report(output: Path, report: dict) -> None:
