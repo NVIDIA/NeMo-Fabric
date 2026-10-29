@@ -91,7 +91,8 @@ class _SkillRegistry:
 
 
 class EchoInteractiveAgent:
-    def __init__(self) -> None:
+    def __init__(self, prefix: str = "") -> None:
+        self._prefix = prefix
         self.queue_manager = _QueueManager()
         self.event_manager = _EventManager()
         self.skills = _SkillRegistry(self)
@@ -140,7 +141,9 @@ class EchoInteractiveAgent:
         )
         self.event_manager.emit(
             "AgentMessage",
-            SimpleNamespace(content=f"reply-{self._invocations}: {message}"),
+            SimpleNamespace(
+                content=f"{self._prefix}reply-{self._invocations}: {message}"
+            ),
         )
         return SimpleNamespace(kind="DONE", explanation="echo complete")
 
@@ -148,5 +151,5 @@ class EchoInteractiveAgent:
         await self.queue_manager.shutdown()
 
 
-def create_agent(_context: Any) -> EchoInteractiveAgent:
-    return EchoInteractiveAgent()
+def create_agent(context: Any) -> EchoInteractiveAgent:
+    return EchoInteractiveAgent(prefix=context.settings.get("prefix", ""))
