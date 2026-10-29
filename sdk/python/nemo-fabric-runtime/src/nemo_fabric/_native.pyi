@@ -2,7 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 def version() -> str: ...
-def inspect_adapter_metadata(config_json: str, descriptor_path: str) -> str: ...
+def inspect_adapter_metadata(
+    config_json: str,
+    descriptor_path: str,
+    target_descriptor_path: str | None = None,
+) -> str: ...
 def plan_config(
     config_json: str,
     base_dir: str | None = None,

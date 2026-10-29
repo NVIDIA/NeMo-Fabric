@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from dataclasses import FrozenInstanceError
@@ -385,3 +386,179 @@ async def test_real_harbor_runner_matches_custom_task_descriptor(
         FabricConfigError, match="Host/task adapter descriptor mismatch"
     ):
         await runner.run(payload)
+
+
+@pytest.fixture(name="workflow_metadata")
+def workflow_metadata_fixture(custom_config, custom_descriptor):
+    from nemo_fabric import WorkflowConfig
+
+    custom_descriptor["target_types"] = ["workflow"]
+    custom_config.workflow = WorkflowConfig(
+        target_id="example.custom.workflow", settings={"mode": "safe"}
+    )
+    target = {
+        "contract_version": "fabric.adapter/v1alpha2",
+        "type": "workflow",
+        "id": "example.custom.workflow",
+        "adapter_id": custom_descriptor["adapter_id"],
+        "spec": {
+            "entrypoint": {
+                "kind": "module_function",
+                "ref": "not_installed.workflow:run",
+            },
+            "settings_schema": {
+                "type": "object",
+                "properties": {"mode": {"enum": ["safe", "other"]}},
+                "additionalProperties": False,
+            },
+        },
+    }
+    return custom_config, custom_descriptor, target
+
+
+def test_workflow_inspection_uses_supplied_metadata_without_sdk_or_task_discovery(
+    workflow_metadata, monkeypatch
+):
+    from nemo_fabric import DiscoveryConfig
+    import nemo_fabric.client as client
+
+    config, descriptor, target = workflow_metadata
+    config.discovery = DiscoveryConfig(local_paths=["/task-only/missing-descriptors"])
+    monkeypatch.setitem(sys.modules, "not_installed", None)
+    monkeypatch.setattr(
+        client._native,
+        "plan_config",
+        Mock(side_effect=AssertionError("execution discovery must not run")),
+    )
+    before = config.to_mapping()
+    profile = inspect_adapter(config, descriptor, target_descriptor=target)
+    assert profile.skills and profile.mcp
+    assert len(profile.descriptor_sha256) == 64
+    assert config.to_mapping() == before
+    config.harness = None
+    assert inspect_adapter(config, descriptor, target_descriptor=target) == profile
+
+
+@pytest.mark.parametrize("missing", ["adapter", "target"])
+def test_workflow_inspection_requires_both_metadata_records(workflow_metadata, missing):
+    config, descriptor, target = workflow_metadata
+    with pytest.raises(FabricConfigError, match="requires adapter and target metadata"):
+        inspect_adapter(
+            config,
+            None if missing == "adapter" else descriptor,
+            target_descriptor=None if missing == "target" else target,
+        )
+
+
+def test_target_metadata_without_workflow_is_rejected(custom_config, custom_descriptor):
+    with pytest.raises(FabricConfigError, match="requires a configured workflow"):
+        inspect_adapter(custom_config, custom_descriptor, target_descriptor={})
+
+
+@pytest.mark.parametrize(
+    "invalid", ["target_id", "adapter_id", "type", "target_support", "settings"]
+)
+def test_workflow_inspection_fails_closed_and_sanitizes_invalid_metadata(
+    workflow_metadata, invalid
+):
+    config, descriptor, target = workflow_metadata
+    secret = "private-model-setting-do-not-disclose"
+    if invalid == "target_id":
+        target["id"] = "example.wrong.workflow"
+    elif invalid == "adapter_id":
+        target["adapter_id"] = "example.other.adapter"
+    elif invalid == "type":
+        target["type"] = "unsupported"
+    elif invalid == "target_support":
+        descriptor["target_types"] = []
+    else:
+        config.workflow.settings["mode"] = secret
+    with pytest.raises(
+        FabricConfigError, match="Workflow target metadata or configuration is invalid"
+    ) as caught:
+        inspect_adapter(config, descriptor, target_descriptor=target)
+    assert secret not in str(caught.value)
+    assert caught.value.__cause__ is None
+
+
+def test_workflow_fingerprint_matches_execution_plan_and_includes_target(
+    workflow_metadata, tmp_path
+):
+    from nemo_fabric import DiscoveryConfig
+
+    config, descriptor, target = workflow_metadata
+    profile = inspect_adapter(config, descriptor, target_descriptor=target)
+    adapter_path = tmp_path / "custom.fabric-adapter.json"
+    target_path = tmp_path / "custom.fabric-target.json"
+    adapter_path.write_text(json.dumps(descriptor))
+    target_path.write_text(json.dumps(target))
+    config.discovery = DiscoveryConfig(local_paths=[adapter_path, target_path])
+    plan = Fabric().plan(config, base_dir=tmp_path)
+    mapping = plan.to_mapping()
+    canonical = json.dumps(
+        {
+            "adapter": mapping["adapter_descriptor"]["descriptor"],
+            "target": mapping["adapter_target_descriptor"]["descriptor"],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    assert profile.descriptor_sha256 == hashlib.sha256(canonical.encode()).hexdigest()
+    assert _adapter_descriptor_sha256(plan) == profile.descriptor_sha256
+    _verify_adapter_descriptor(plan, profile.descriptor_sha256)
+
+
+def test_standalone_fingerprint_keeps_original_byte_contract(
+    custom_config, custom_descriptor, tmp_path
+):
+    from nemo_fabric import DiscoveryConfig
+
+    path = tmp_path / "custom.fabric-adapter.json"
+    path.write_text(json.dumps(custom_descriptor))
+    custom_config.discovery = DiscoveryConfig(local_paths=[path])
+    plan = Fabric().plan(custom_config, base_dir=tmp_path)
+    original = json.dumps(
+        plan.to_mapping()["adapter_descriptor"]["descriptor"],
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    assert (
+        _adapter_descriptor_sha256(plan)
+        == hashlib.sha256(original.encode()).hexdigest()
+    )
+
+
+@pytest.mark.parametrize("method", ["run", "start_runtime"])
+async def test_sdk_rejects_target_drift_before_native_start(
+    workflow_metadata, tmp_path, monkeypatch, method
+):
+    from nemo_fabric import DiscoveryConfig
+    import nemo_fabric.client as client
+
+    config, descriptor, target = workflow_metadata
+    profile = inspect_adapter(config, descriptor, target_descriptor=target)
+    adapter_path = tmp_path / "custom.fabric-adapter.json"
+    target_path = tmp_path / "custom.fabric-target.json"
+    adapter_path.write_text(json.dumps(descriptor))
+    target["spec"]["entrypoint"]["ref"] = "not_installed.changed:run"
+    target_path.write_text(json.dumps(target))
+    config.discovery = DiscoveryConfig(local_paths=[adapter_path, target_path])
+    start = Mock(side_effect=AssertionError("native start must not run"))
+    native = Mock(spec=client._native)
+    native.plan_config = client._native.plan_config
+    native.start_runtime = start
+    monkeypatch.setattr(client, "_native", native)
+    lifecycle = AsyncMock(side_effect=AssertionError("lifecycle must not run"))
+    monkeypatch.setattr(client, "_run_native_lifecycle", lifecycle)
+    with pytest.raises(
+        FabricConfigError, match="Host/task adapter descriptor mismatch"
+    ):
+        await getattr(Fabric(), method)(
+            config,
+            base_dir=tmp_path,
+            expected_descriptor_sha256=profile.descriptor_sha256,
+        )
+    start.assert_not_called()
+    lifecycle.assert_not_called()

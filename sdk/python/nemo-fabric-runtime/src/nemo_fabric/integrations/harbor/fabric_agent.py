@@ -45,6 +45,7 @@ from nemo_fabric import RuntimeConfig
 from nemo_fabric import ProvenanceConfig
 from nemo_fabric import SystemStatsConfig
 from nemo_fabric import ToolsConfig
+from nemo_fabric import WorkflowConfig
 from nemo_fabric.integrations.harbor.models import FabricRunPayload
 from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
 from nemo_fabric.integrations.harbor.models import HarborMcpServer
@@ -136,6 +137,19 @@ else:
         fabric_adapter_descriptor: Path | None = Field(
             default=None,
             description="Host-readable canonical descriptor for an external adapter; task discovery remains separate.",
+        )
+        fabric_workflow_target_id: str | None = Field(
+            default=None,
+            strict=True,
+            description="Registered workflow target ID for the selected adapter.",
+        )
+        fabric_workflow_settings: dict[str, Any] | None = Field(
+            default=None,
+            description="Construction settings validated by the workflow target descriptor.",
+        )
+        fabric_target_descriptor: Path | None = Field(
+            default=None,
+            description="Host-readable canonical descriptor for an external workflow target; task discovery remains separate.",
         )
         fabric_workspace: str = Field(
             default=HARBOR_DEFAULT_WORKSPACE,
@@ -231,6 +245,31 @@ else:
                 )
             return value
 
+        @field_validator("fabric_workflow_target_id")
+        @classmethod
+        def validate_workflow_target_id(cls, value: str | None) -> str | None:
+            if value is not None and (not value or value != value.strip()):
+                raise ValueError(
+                    "fabric_workflow_target_id must be non-empty without surrounding whitespace"
+                )
+            return value
+
+        @field_validator("fabric_workflow_settings", mode="before")
+        @classmethod
+        def validate_workflow_settings(cls, value: Any) -> Any:
+            if value is not None:
+                if not isinstance(value, dict) or any(
+                    not isinstance(key, str) for key in value
+                ):
+                    raise ValueError("fabric_workflow_settings must be a JSON object")
+                try:
+                    json.dumps(value, allow_nan=False)
+                except (TypeError, ValueError, OverflowError, RecursionError):
+                    raise ValueError(
+                        "fabric_workflow_settings must contain JSON values"
+                    ) from None
+            return value
+
         @field_validator("fabric_model_api_key_env")
         @classmethod
         def validate_model_api_key_env(cls, value: str | None) -> str | None:
@@ -280,6 +319,13 @@ else:
 
         @model_validator(mode="after")
         def validate_paths_and_install(self) -> "FabricAgentOptions":
+            if self.fabric_workflow_target_id is None and (
+                self.fabric_workflow_settings is not None
+                or self.fabric_target_descriptor is not None
+            ):
+                raise ValueError(
+                    "fabric_workflow_settings and fabric_target_descriptor require fabric_workflow_target_id"
+                )
             for name in (
                 "fabric_workspace",
                 "fabric_config_target",
@@ -351,6 +397,9 @@ else:
             fabric_model_settings: dict[str, Any] | None = None,
             fabric_discovery_paths: list[str] | None = None,
             fabric_adapter_descriptor: Path | None = None,
+            fabric_workflow_target_id: str | None = None,
+            fabric_workflow_settings: dict[str, Any] | None = None,
+            fabric_target_descriptor: Path | None = None,
             **kwargs: Any,
         ) -> None:
             super().__init__(
@@ -363,6 +412,9 @@ else:
                 fabric_config_target=fabric_config_target,
                 fabric_discovery_paths=fabric_discovery_paths,
                 fabric_adapter_descriptor=fabric_adapter_descriptor,
+                fabric_workflow_target_id=fabric_workflow_target_id,
+                fabric_workflow_settings=fabric_workflow_settings,
+                fabric_target_descriptor=fabric_target_descriptor,
                 fabric_workspace=fabric_workspace,
                 fabric_harness_settings=fabric_harness_settings,
                 fabric_model_provider=fabric_model_provider,
@@ -396,6 +448,9 @@ else:
             self.fabric_config_target = options.fabric_config_target
             self.fabric_discovery_paths = list(options.fabric_discovery_paths or [])
             self.fabric_adapter_descriptor = options.fabric_adapter_descriptor
+            self.fabric_workflow_target_id = options.fabric_workflow_target_id
+            self.fabric_workflow_settings = options.fabric_workflow_settings
+            self.fabric_target_descriptor = options.fabric_target_descriptor
             self.fabric_workspace = options.fabric_workspace
             self.fabric_harness_settings = dict(options.fabric_harness_settings or {})
             self.fabric_model_provider = options.fabric_model_provider
@@ -456,8 +511,40 @@ else:
                         )
                     except KeyError:
                         self._host_descriptor = None
+            self._host_target_descriptor = None
+            if self.fabric_target_descriptor is not None:
+                try:
+                    self._host_target_descriptor = json.loads(
+                        self.fabric_target_descriptor.read_text(encoding="utf-8")
+                    )
+                except (OSError, UnicodeError, ValueError):
+                    raise FabricConfigError(
+                        "The host workflow target descriptor could not be read as JSON"
+                    ) from None
+            elif self.fabric_workflow_target_id is not None:
+                try:
+                    from nemo_fabric_adapter_catalog import get_target_descriptor
+                except ModuleNotFoundError as error:
+                    if error.name != "nemo_fabric_adapter_catalog":
+                        raise
+                else:
+                    try:
+                        self._host_target_descriptor = get_target_descriptor(
+                            self.fabric_workflow_target_id
+                        )
+                    except KeyError:
+                        pass
+            if (
+                self.fabric_workflow_target_id is not None
+                and self._host_target_descriptor is None
+            ):
+                raise FabricConfigError(
+                    "Registered workflow admission requires host target descriptor metadata"
+                )
             self._capability_profile = inspect_adapter(
-                self._build_config(), self._host_descriptor
+                self._build_config(),
+                self._host_descriptor,
+                target_descriptor=self._host_target_descriptor,
             )
             if self.skills_dir is not None and not self._capability_profile.skills:
                 raise FabricConfigError(
@@ -617,7 +704,11 @@ else:
 
         def _build_spec(self, instruction: str) -> FabricRunPayload:
             config = self._build_config()
-            profile = inspect_adapter(config, self._host_descriptor)
+            profile = inspect_adapter(
+                config,
+                self._host_descriptor,
+                target_descriptor=self._host_target_descriptor,
+            )
             # Transport names; values arrive through Harbor's managed exec env.
             for name in self.fabric_environment_env:
                 config.environment.env.pop(name, None)
@@ -637,6 +728,8 @@ else:
                 harness_settings=self.fabric_harness_settings,
                 model_provider_name=self.fabric_model_provider,
                 model_settings=self.fabric_model_settings,
+                workflow_target_id=self.fabric_workflow_target_id,
+                workflow_settings=self.fabric_workflow_settings,
                 model_base_url=self.fabric_model_base_url,
                 model_api_key_env=self.fabric_model_api_key_env,
                 system_instruction=self.fabric_system_instruction,
@@ -747,6 +840,8 @@ def build_harbor_config(
     harness_settings: dict[str, Any] | None = None,
     model_provider_name: str | None = None,
     model_settings: dict[str, Any] | None = None,
+    workflow_target_id: str | None = None,
+    workflow_settings: dict[str, Any] | None = None,
     model_base_url: str | None = None,
     model_api_key_env: str | None = None,
     system_instruction: str | None = None,
@@ -762,6 +857,26 @@ def build_harbor_config(
 ) -> FabricConfig:
     """Construct the typed config controlled by Harbor agent inputs."""
 
+    if workflow_target_id is None and workflow_settings is not None:
+        raise ValueError("workflow_settings requires workflow_target_id")
+    if workflow_target_id is not None and (
+        not isinstance(workflow_target_id, str)
+        or not workflow_target_id
+        or workflow_target_id != workflow_target_id.strip()
+    ):
+        raise ValueError(
+            "workflow_target_id must be non-empty without surrounding whitespace"
+        )
+    if workflow_settings is not None:
+        if not isinstance(workflow_settings, dict) or any(
+            not isinstance(key, str) for key in workflow_settings
+        ):
+            raise ValueError("workflow_settings must be a JSON object")
+        try:
+            json.dumps(workflow_settings, allow_nan=False)
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            raise ValueError("workflow_settings must contain JSON values") from None
+
     name = f"harbor-{adapter_id.rsplit('.', maxsplit=1)[-1]}"
     artifact_root = f"{HARBOR_ARTIFACT_ROOT}/{name}"
     settings = dict(harness_settings or {})
@@ -774,6 +889,14 @@ def build_harbor_config(
             adapter_id=adapter_id,
             resolution="preinstalled",
             settings=settings,
+        ),
+        workflow=(
+            WorkflowConfig(
+                target_id=workflow_target_id,
+                settings=dict(workflow_settings or {}),
+            )
+            if workflow_target_id is not None
+            else None
         ),
         discovery=(
             DiscoveryConfig(local_paths=list(discovery_paths))

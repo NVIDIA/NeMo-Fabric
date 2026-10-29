@@ -757,8 +757,11 @@ def test_harbor_023_options_schema_and_preflight():
         "fabric_provenance",
         "fabric_telemetry",
         "fabric_timeout_sec",
+        "fabric_target_descriptor",
         "fabric_venv_path",
         "fabric_workspace",
+        "fabric_workflow_settings",
+        "fabric_workflow_target_id",
     }
     assert FabricAgent.capabilities.atif is False
     for field in ("skills", "mcp_servers"):
@@ -890,3 +893,138 @@ def test_root_readme_routes_to_primary_documentation():
 
     for path in primary_documentation:
         assert f"]({path})" in readme
+
+
+def test_registered_workflow_options_preserve_selection_and_settings(tmp_path):
+    from nemo_fabric import inspect_adapter
+    from nemo_fabric.integrations.harbor import FabricAgent
+    from nemo_fabric_adapter_catalog import (
+        get_adapter_descriptor,
+        get_target_descriptor,
+    )
+
+    agent = FabricAgent(
+        logs_dir=tmp_path,
+        fabric_adapter_id="nvidia.fabric.nooa",
+        fabric_workflow_target_id="nvidia.nooa.coding-agent",
+        fabric_workflow_settings={},
+    )
+    payload = agent._build_spec("Solve the task.")
+    assert payload.config.harness.adapter_id == "nvidia.fabric.nooa"
+    assert payload.config.workflow.target_id == "nvidia.nooa.coding-agent"
+    assert payload.config.workflow.settings == {}
+    profile = inspect_adapter(
+        payload.config,
+        get_adapter_descriptor("nvidia.fabric.nooa"),
+        target_descriptor=get_target_descriptor("nvidia.nooa.coding-agent"),
+    )
+    assert payload.adapter_descriptor_sha256 == profile.descriptor_sha256
+    assert agent._capability_profile.mcp and agent._capability_profile.skills
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"fabric_workflow_settings": {}},
+        {"fabric_workflow_target_id": " "},
+        {"fabric_workflow_target_id": "nvidia.nooa.coding-agent "},
+        {
+            "fabric_workflow_target_id": "nvidia.nooa.coding-agent",
+            "fabric_workflow_settings": [],
+        },
+        {"fabric_target_descriptor": "target.json"},
+    ],
+)
+def test_workflow_preflight_rejects_incomplete_selection(arguments):
+    from nemo_fabric.integrations.harbor.fabric_agent import FabricAgentOptions
+
+    with pytest.raises(ValueError):
+        FabricAgentOptions(fabric_adapter_id="nvidia.fabric.nooa", **arguments)
+
+
+def test_workflow_preflight_rejects_wrong_binding_and_target_settings(tmp_path):
+    from nemo_fabric import FabricConfigError
+    from nemo_fabric.integrations.harbor import FabricAgent
+
+    for adapter, settings in [
+        ("nvidia.fabric.hermes", {}),
+        ("nvidia.fabric.nooa", {"unexpected": "private-value"}),
+    ]:
+        with pytest.raises(FabricConfigError) as error:
+            FabricAgent(
+                logs_dir=tmp_path,
+                fabric_adapter_id=adapter,
+                fabric_workflow_target_id="nvidia.nooa.coding-agent",
+                fabric_workflow_settings=settings,
+            )
+        assert "private-value" not in str(error.value)
+
+
+def test_external_workflow_metadata_is_not_task_discovery(tmp_path):
+    from nemo_fabric.integrations.harbor import FabricAgent
+
+    agent = FabricAgent(
+        logs_dir=tmp_path,
+        fabric_adapter_id="nvidia.fabric.nooa",
+        fabric_workflow_target_id="nvidia.tests.nooa.echo",
+        fabric_workflow_settings={"prefix": "test"},
+        fabric_adapter_descriptor=ROOT
+        / "adapters/python/nooa/nooa.fabric-adapter.json",
+        fabric_target_descriptor=ROOT / "tests/fixtures/nooa/echo.fabric-target.json",
+        fabric_discovery_paths=["/task-only/descriptors"],
+    )
+    payload = agent._build_spec("hello")
+    assert payload.config.discovery.local_paths == ["/task-only/descriptors"]
+    assert payload.config.workflow.settings == {"prefix": "test"}
+    assert payload.adapter_descriptor_sha256 is not None
+
+
+@pytest.mark.asyncio
+async def test_registered_workflow_round_trip_and_target_drift(tmp_path, monkeypatch):
+    import os
+    import sys
+
+    from nemo_fabric import FabricConfigError
+    from nemo_fabric import RunRequest
+    from nemo_fabric import inspect_adapter
+    from nemo_fabric.integrations.harbor import runner
+    from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
+    from nemo_fabric.integrations.harbor.models import FabricRunPayload
+
+    fixture = ROOT / "tests/fixtures/nooa"
+    target_path = tmp_path / "echo.fabric-target.json"
+    target = json.loads((fixture / "echo.fabric-target.json").read_text())
+    target_path.write_text(json.dumps(target))
+    adapter_path = ROOT / "adapters/python/nooa/nooa.fabric-adapter.json"
+    descriptor = json.loads(adapter_path.read_text())
+    monkeypatch.setenv("ADAPTER_PYTHON", sys.executable)
+    monkeypatch.setenv(
+        "PYTHONPATH",
+        os.pathsep.join([str(fixture / "src"), os.environ.get("PYTHONPATH", "")]),
+    )
+    config = build_harbor_config(
+        adapter_id="nvidia.fabric.nooa",
+        workspace=str(tmp_path),
+        workflow_target_id="nvidia.tests.nooa.echo",
+        workflow_settings={},
+        discovery_paths=(adapter_path, target_path),
+    )
+    config.runtime.artifacts = str(tmp_path / "artifacts")
+    config.environment.artifacts = str(tmp_path / "artifacts")
+    config.enable_relay(output_dir=tmp_path / "relay")
+    profile = inspect_adapter(config, descriptor, target_descriptor=target)
+    payload = FabricRunPayload(
+        config=config,
+        config_base_dir=str(tmp_path),
+        logs_dir=str(tmp_path / "logs"),
+        request=RunRequest(input="hello"),
+        adapter_descriptor_sha256=profile.descriptor_sha256,
+    )
+    result = await runner.run(payload)
+    assert result.status == "succeeded", result.to_mapping()
+    assert result.output["response"] == "reply-1: hello"
+
+    target["spec"]["entrypoint"]["ref"] = "not_imported.factory:create_agent"
+    target_path.write_text(json.dumps(target))
+    with pytest.raises(FabricConfigError, match="descriptor mismatch"):
+        await runner.run(payload)

@@ -34,6 +34,30 @@ adapter's model schema and runtime validation still apply. This option requires
 a model. Keep credentials in managed environment variables, outside model
 settings. This option applies to the SDK bridge; native Harbor owns a separate
 implementation.
+## Registered Workflow Targets
+
+Use `fabric_workflow_target_id` to select a registered workflow while keeping
+`fabric_adapter_id` explicit. For example, select `nvidia.nooa.coding-agent` with
+adapter `nvidia.fabric.nooa`. Pass construction settings through
+`fabric_workflow_settings`; the target descriptor's schema validates them before
+task setup. These settings are separate from adapter `fabric_harness_settings`,
+and cannot be supplied without a target ID.
+
+Host admission reads adapter and target metadata from the matching catalog,
+without importing a harness SDK or target factory. For an external target, pass
+its canonical host-readable JSON file as `fabric_target_descriptor`, separately
+from `fabric_adapter_descriptor`. Missing target metadata, mismatched adapter
+bindings, unsupported target types, and invalid settings fail admission.
+
+Install the executable descriptors inside the task environment or configure
+`fabric_discovery_paths` there. Host descriptor paths are not execution discovery
+paths. Before starting the harness, the task runner verifies a fingerprint of
+both normalized descriptors against host admission, including the registered
+factory reference and settings schema. Use matching host and task versions.
+
+Workflow selection preserves the existing skill, MCP, environment, and lifecycle
+contracts. Capability admission is a metadata claim; verify task execution,
+accounting, and any requested skill/MCP behavior separately.
 
 ## Resource Stats
 

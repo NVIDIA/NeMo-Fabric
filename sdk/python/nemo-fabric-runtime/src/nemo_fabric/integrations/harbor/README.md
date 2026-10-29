@@ -110,13 +110,51 @@ task-local paths or add catalog resources to execution discovery.
 When metadata is unavailable, basic execution remains possible with false
 optional-feature claims. Requested skills, MCP, or telemetry fail clearly rather
 than being silently dropped. Malformed metadata is an error. Registered workflows
-require target-specific admission and are not supported by this standalone path.
+also require host target metadata; missing target metadata always fails admission.
 
 The runner compares the host's normalized descriptor fingerprint with the
-descriptor in its actual execution plan before starting the harness. A mismatch
+descriptor in its actual execution plan before starting the harness. For a
+registered workflow, the fingerprint includes both the adapter and target
+descriptors, including the factory reference and settings schema. A mismatch
 fails with instructions to align the host catalog and task adapter releases or
 external metadata. Pin compatible versions in both environments. This check
 detects descriptor drift; it is not runtime-observed software provenance.
+
+## Registered Workflow Targets
+
+Set `fabric_workflow_target_id` to run a registered workflow through its selected
+adapter. Keep `fabric_adapter_id` explicit; admission rejects a target bound to a
+different adapter or an adapter that does not declare workflow target support.
+`fabric_workflow_settings` contains construction settings validated against the
+target's settings schema, separately from `fabric_harness_settings`. Settings
+without a workflow target are rejected.
+
+For example, the registered NOOA coding target uses these Harbor agent options:
+
+```python
+FabricAgent(
+    logs_dir=logs_dir,
+    fabric_adapter_id="nvidia.fabric.nooa",
+    fabric_workflow_target_id="nvidia.nooa.coding-agent",
+    fabric_workflow_settings={},
+    model_name="nvidia/nemotron-3-ultra-550b-a55b",
+    fabric_model_base_url="https://your-model-endpoint.example/v1",
+    fabric_model_api_key_env="MODEL_API_KEY",
+    extra_env={"MODEL_API_KEY": api_key},
+)
+```
+
+The host loads the target's metadata from the matching adapter catalog without
+importing the target factory or harness SDK. For an external target, supply
+`fabric_target_descriptor=/host/target.fabric-target.json`, independently of
+`fabric_adapter_descriptor`. Install matching executable adapter and target
+descriptors in the task environment or locate them through
+`fabric_discovery_paths`. A host descriptor path is never task discovery.
+
+Workflow selection uses the same task workspace, skill collection, MCP transport,
+and lifecycle as standalone adapters. Optional capabilities still come from the
+selected adapter's validated metadata. Admission does not establish successful
+execution, verifier reward, complete accounting, or tested skill/MCP behavior.
 
 ## Explicit Harness Recipes
 
