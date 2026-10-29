@@ -608,6 +608,7 @@ def qualification_job_fixture(tmp_path, qualification_plan):
         ("source_origin", "adapter_admission"),
         ("fingerprint", "adapter_admission"),
         ("missing_result", "transport_runner"),
+        ("agent_result_shape", "transport_runner"),
         ("runner_error", "adapter_admission"),
     ],
 )
@@ -646,6 +647,10 @@ def test_result_checks_remain_independent(qualification_job, mutation, category)
         spec = qualify.load(job / "trial/agent/fabric-run-one.json")
         spec["adapter_descriptor_sha256"] = "wrong"
         qualify.save(job / "trial/agent/fabric-run-one.json", spec)
+    elif mutation == "agent_result_shape":
+        trial = qualify.load(job / "trial/result.json")
+        trial["agent_result"] = ["malformed"]
+        qualify.save(job / "trial/result.json", trial)
     elif mutation == "missing_result":
         (job / "trial/agent/fabric-result-one.json").unlink()
     elif mutation == "runner_error":

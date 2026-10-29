@@ -1038,7 +1038,14 @@ def inspect_results(
             summary["checks"]["telemetry_atif"] = validation["status"] == "succeeded"
             if not summary["checks"]["telemetry_atif"]:
                 fail("telemetry_export", "Relay export validation failed")
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        RuntimeError,
+    ) as error:
         fail("transport_runner", str(error))
     return summary
 
