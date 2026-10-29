@@ -740,7 +740,11 @@ def _wheel_metadata_from_bytes(data: bytes, *, package_name: str) -> tuple[str, 
 
 
 def _declared_sdist_license_texts(
-    tf: tarfile.TarFile, root_dir: str, declared_files: list[str]
+    tf: tarfile.TarFile,
+    root_dir: str,
+    declared_files: list[str],
+    *,
+    all_declared: bool = False,
 ) -> list[tuple[str, str]]:
     """Return the best declared sdist license file, if the sdist bundles one."""
     declared_candidates: list[tuple[int, str, str, str]] = []
@@ -751,6 +755,10 @@ def _declared_sdist_license_texts(
             declared_candidates.append(
                 (declared_index, rel, _relative_archive_path_display(candidate), text),
             )
+    if all_declared:
+        return list(
+            dict.fromkeys((path, text) for _, _, path, text in declared_candidates)
+        )
     selected_declared = _choose_declared_license(declared_candidates)
     return [selected_declared] if selected_declared else []
 
@@ -768,10 +776,14 @@ def _heuristic_sdist_license_texts(tf: tarfile.TarFile, root_dir: str) -> list[t
     return [selected_heuristic] if selected_heuristic else []
 
 
-def _sdist_metadata_from_bytes(data: bytes, *, package_name: str) -> tuple[str, list[tuple[str, str]]]:
+def _sdist_metadata_from_bytes(
+    data: bytes, *, package_name: str, all_declared: bool = False
+) -> tuple[str, list[tuple[str, str]]]:
     """Extract a license label and bundled license texts from one sdist artifact."""
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as tf:
-        members: list[str] = [name for name in tf.getnames() if name.endswith("/PKG-INFO")]
+        members: list[str] = [
+            name for name in tf.getnames() if name.endswith("/PKG-INFO")
+        ]
         if not members:
             raise ValueError(f"No PKG-INFO found in sdist for {package_name}")
         metadata_path = cast(str, min(members, key=len))
@@ -781,7 +793,12 @@ def _sdist_metadata_from_bytes(data: bytes, *, package_name: str) -> tuple[str, 
             raise ValueError(f"Failed to read PKG-INFO from sdist for {package_name}")
         metadata = Parser().parsestr(raw)
         license_name = _metadata_license_name(metadata)
-        license_texts = _declared_sdist_license_texts(tf, root_dir, metadata.get_all("License-File", []))
+        license_texts = _declared_sdist_license_texts(
+            tf,
+            root_dir,
+            metadata.get_all("License-File", []),
+            all_declared=all_declared,
+        )
         if not license_texts:
             # Sdists are our best fallback for unresolved packages because they are typically
             # platform-agnostic and more likely to include complete source-level license files.
@@ -801,7 +818,11 @@ def _artifact_metadata_from_lockfile(pkg: dict[str, Any]) -> tuple[str, list[tup
     sdist_metadata: tuple[str, list[tuple[str, str]]] | None = None
     if isinstance(sdist, dict) and sdist.get("url") and sdist.get("hash"):
         data = _download_locked_artifact(sdist["url"], sdist["hash"])
-        sdist_metadata = _sdist_metadata_from_bytes(data, package_name=package_name)
+        sdist_metadata = _sdist_metadata_from_bytes(
+            data,
+            package_name=package_name,
+            all_declared=bool(pkg.get("all-license-files")),
+        )
         if not _is_weak_license_name(sdist_metadata[0]):
             return sdist_metadata
 
@@ -1220,6 +1241,47 @@ def cmd_node() -> int:
     return 0
 
 
+def cmd_system() -> int:
+    """Generate selected Debian image notices from hash-pinned copyright evidence."""
+    manifest_path = ROOT / "scripts" / "licensing" / "system-image-packages.toml"
+    with manifest_path.open("rb") as f:
+        manifest = tomllib.load(f)
+    parts = [
+        ATTRIBUTIONS_MD_LICENSE_PREFIX,
+        "\n# Third-Party Software Attributions (System Packages)\n\n",
+        "Selected Debian package notices for the NVIDIA NeMo Fabric OpenShell examples. "
+        "Versions describe reviewed dependency evidence, not a complete image inventory or build constraints. "
+        "Build-stage packages and runtime packages are identified separately below. "
+        "Transitive toolchain packages require their own license review.\n\n",
+        "Generated from `scripts/licensing/system-image-packages.toml`. "
+        "Do not edit directly; regenerate with `./scripts/generate_attributions.sh system`.\n\n",
+    ]
+    for kind in ("package", "license"):
+        if kind == "license":
+            parts.append("# Referenced Standard License Texts\n\n")
+        for item in manifest.get(kind, []):
+            text = _download_locked_artifact(item["url"], item["hash"]).decode("utf-8")
+            # Keep the upstream wording while avoiding trailing whitespace in Markdown.
+            text = "\n".join(line.rstrip() for line in text.splitlines()) + "\n"
+            title = item["name"] + (
+                f" ({item['version']})" if kind == "package" else ""
+            )
+            parts.append(f"## {title}\n\n")
+            if kind == "package":
+                parts.append(
+                    f"License summary: {_md_inline_safe(item['license'])}\n\n{item['context']}\n\n"
+                )
+            parts.append(f"Evidence: [upstream notice]({item['url']})\n\n")
+            parts.append(f"SHA-256: `{item['hash'].removeprefix('sha256:')}`\n\n")
+            fence = _markdown_code_fence(text)
+            parts.append(f"{fence}text\n{text.rstrip()}\n{fence}\n\n")
+    (ROOT / "ATTRIBUTIONS-System.md").write_text(
+        "".join(parts).rstrip() + "\n", encoding="utf-8"
+    )
+    print("Wrote ATTRIBUTIONS-System.md", file=sys.stderr)
+    return 0
+
+
 def main() -> int:
     """Dispatch the lockfile-to-markdown generator for the requested ecosystem."""
     p = argparse.ArgumentParser(description=__doc__)
@@ -1227,6 +1289,9 @@ def main() -> int:
     sub.add_parser("rust", help="ATTRIBUTIONS-Rust.md from Cargo.lock")
     sub.add_parser("python", help="ATTRIBUTIONS-Python.md from uv.lock")
     sub.add_parser("node", help="ATTRIBUTIONS-Node.md from package-lock.json")
+    sub.add_parser(
+        "system", help="ATTRIBUTIONS-System.md from selected Debian image packages"
+    )
     args = p.parse_args()
     if args.cmd == "rust":
         return cmd_rust()
@@ -1234,6 +1299,8 @@ def main() -> int:
         return cmd_python()
     if args.cmd == "node":
         return cmd_node()
+    if args.cmd == "system":
+        return cmd_system()
     return 2
 
 

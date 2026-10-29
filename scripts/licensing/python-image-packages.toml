@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Attribution evidence for selected image-only Python dependencies absent from
+# Attribution evidence for selected image-only Python dependency versions absent from
 # the root uv.lock. This file does not install packages or constrain image builds.
 # It is not a complete image inventory. Keep artifact URLs and SHA-256 hashes
-# from the referenced upstream lockfile; the generator verifies the downloads.
+# from the referenced upstream lockfile or PyPI metadata; the generator verifies
+# the downloads.
 
 [[package]]
 name = "pillow"
@@ -15,3 +16,24 @@ version = "12.3.0"
 # The Dockerfile installs Hermes editable and does not consume its uv.lock;
 # this records the reviewed version, not a verified final-image inventory.
 sdist = { url = "https://files.pythonhosted.org/packages/1c/3d/bb7fca845737cf9d7dbde16ed1843984665ff2e0a518f5db43e77ec540b9/pillow-12.3.0.tar.gz", hash = "sha256:3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce" }
+
+# Reviewed Python image dependency; evidence: https://pypi.org/project/regex/2026.9.29/
+[[package]]
+name = "regex"
+version = "2026.9.29"
+all-license-files = true
+sdist = { url = "https://files.pythonhosted.org/packages/fc/f2/af1da9d3ceed77bfcdce40427d49ba0be94e4fe84245e3bfef68c10e75b6/regex-2026.9.29.tar.gz", hash = "sha256:8b5fcc4771732191b2b7d1dd68d8f0353f47f8d90b6150f6dce58bf1112442cb" }
+
+# Reviewed Python image dependency; evidence: https://pypi.org/project/typing-extensions/4.16.0/
+[[package]]
+name = "typing-extensions"
+version = "4.16.0"
+all-license-files = true
+sdist = { url = "https://files.pythonhosted.org/packages/f6/cc/6253133b5bb138fc3306cebfbda2c520f545d36b5be2c7255cc528bb45d6/typing_extensions-4.16.0.tar.gz", hash = "sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5" }
+
+# Reviewed Python image dependency; evidence: https://pypi.org/project/orjson/3.13.0/
+[[package]]
+name = "orjson"
+version = "3.13.0"
+all-license-files = true
+sdist = { url = "https://files.pythonhosted.org/packages/f2/72/380b97dc45bd162d23afe5194721ef678d9eac7cfaa549fe2873f7f0a518/orjson-3.13.0.tar.gz", hash = "sha256:d1de5eb04485110c5da4c657e49168995d55e076b1ce60f1a042e254f4186c4f" }

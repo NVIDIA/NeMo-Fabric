@@ -13,6 +13,8 @@ New to NeMo Fabric? Start with the [onboarding notebooks](notebooks/README.md) f
 guided, human-facing tour of the Python SDK, then come back to the runnable
 examples below.
 
+Third-party notices for selected example image dependencies are recorded in the [Python attributions](../ATTRIBUTIONS-Python.md) and [system package attributions](../ATTRIBUTIONS-System.md).
+
 ## Onboarding notebooks
 
 [`notebooks`](notebooks/README.md) is a two-notebook tour of the Python SDK:

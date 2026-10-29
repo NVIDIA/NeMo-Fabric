@@ -102,6 +102,13 @@ commitment.
   upstream evidence and hash-pinned artifacts. This attribution input neither
   installs packages nor represents a complete image inventory; both Python
   attribution generation and license diffs include it.
+  Set `all-license-files = true` for entries whose source artifacts declare
+  multiple license files needed to preserve the full license expression.
+- Record selected Debian image package notices in
+  `scripts/licensing/system-image-packages.toml` with versioned copyright
+  evidence and hashes. Preserve file-specific terms, runtime exceptions, and
+  build-stage scope. Regenerate `ATTRIBUTIONS-System.md` with the
+  `attributions-system` hook; this is not a complete image or toolchain inventory.
 - Regenerate the attribution files with the named pre-commit hooks instead of
   editing generated output:
 
@@ -109,6 +116,7 @@ commitment.
   uv run pre-commit run --all-files attributions-rust
   uv run pre-commit run --all-files attributions-python
   uv run pre-commit run --all-files attributions-node
+  uv run pre-commit run --all-files attributions-system
   ```
 
 The license diff is evidence for reviewers. Dependency approvers make
