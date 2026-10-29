@@ -27,7 +27,7 @@ const runResultSchema = JSON.parse(
 const currentConditionals = runResultSchema.allOf;
 
 const evidenceSchema = JSON.parse(await readFile(
-  resolve(packageRoot, "../..", "schemas/adapter-contract/execution-evidence.schema.json"), "utf8",
+  resolve(packageRoot, "../..", "schemas/evidence/execution-evidence.schema.json"), "utf8",
 ));
 
 test("software projection accepts the canonical observation and coverage conditions", () => {

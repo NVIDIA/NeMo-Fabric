@@ -158,8 +158,8 @@ impl SchemaName {
     fn relative_path(self) -> PathBuf {
         let filename = self.filename();
         match self {
-            Self::ExecutionEvidence
-            | Self::AdapterCheckRequest
+            Self::ExecutionEvidence => PathBuf::from("evidence").join(filename),
+            Self::AdapterCheckRequest
             | Self::AdapterCheckResult
             | Self::AgentConfig
             | Self::AgentRunRequest
@@ -344,6 +344,10 @@ mod tests {
 
     #[test]
     fn schemas_use_contract_boundary_snapshot_paths() {
+        assert_eq!(
+            SchemaName::ExecutionEvidence.relative_path(),
+            PathBuf::from("evidence/execution-evidence.schema.json")
+        );
         for schema in [
             SchemaName::AdapterDescriptor,
             SchemaName::AgentConfig,

@@ -167,3 +167,5 @@ manifest name, then rerun the check. Do not add CI write tokens or manually
 publish supported versions.
 
 - The Python runtime and adapter contract both depend on the exact-version, standard-library `nemo-fabric-evidence` package for shared evidence, codecs, and validation. Keep package builds, version stamping, editable sources, locks, and release artifacts aligned. The SDK must not depend on or import the southbound adapter contract. Preserve adapter-contract compatibility re-exports. Keep collectors and lifecycle/transport implementations outside the shared package.
+
+- Canonical shared evidence schemas live in `schemas/evidence/`, separate from `schemas/adapter-contract/` and `schemas/sdk/`. The Rust generator owns this path. The TypeScript adapter-contract package consumes the shared schema and retains its existing bundled schema exports; update generation, parity tests and docs together when moving canonical snapshots.

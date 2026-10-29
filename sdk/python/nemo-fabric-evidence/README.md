@@ -8,6 +8,8 @@ SPDX-License-Identifier: Apache-2.0
 `nemo-fabric-evidence` provides shared Python software-evidence types, validation, and
 JSON-compatible serialization for the NeMo Fabric SDK and adapter contract.
 It uses only the Python standard library and has no runtime dependencies.
+The canonical JSON Schema is `schemas/evidence/execution-evidence.schema.json`,
+generated from the Rust core and shared by SDK and adapter consumers.
 
 ```bash
 pip install nemo-fabric-evidence

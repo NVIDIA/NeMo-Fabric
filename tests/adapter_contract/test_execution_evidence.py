@@ -20,7 +20,7 @@ def test_selected_report_matches_rust_schema_and_round_trips():
     schema = json.loads(
         (
             Path(__file__).parents[2]
-            / "schemas/adapter-contract/execution-evidence.schema.json"
+            / "schemas/evidence/execution-evidence.schema.json"
         ).read_text()
     )
     Draft202012Validator(schema).validate(report)
@@ -86,7 +86,7 @@ def test_schema_rejects_availability_contradictions_and_accepts_utc_offset():
     schema = json.loads(
         (
             Path(__file__).parents[2]
-            / "schemas/adapter-contract/execution-evidence.schema.json"
+            / "schemas/evidence/execution-evidence.schema.json"
         ).read_text()
     )
     validator = Draft202012Validator(schema)
@@ -122,7 +122,7 @@ def test_schema_and_python_reject_blank_inventory_identity(path):
     schema = json.loads(
         (
             Path(__file__).parents[2]
-            / "schemas/adapter-contract/execution-evidence.schema.json"
+            / "schemas/evidence/execution-evidence.schema.json"
         ).read_text()
     )
     assert not Draft202012Validator(schema).is_valid(report)
@@ -135,7 +135,7 @@ def test_schema_requires_participants_and_infrastructure_context_references():
     schema = json.loads(
         (
             Path(__file__).parents[2]
-            / "schemas/adapter-contract/execution-evidence.schema.json"
+            / "schemas/evidence/execution-evidence.schema.json"
         ).read_text()
     )
     validator = Draft202012Validator(schema)

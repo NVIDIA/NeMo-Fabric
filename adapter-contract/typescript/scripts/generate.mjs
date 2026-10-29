@@ -29,12 +29,13 @@ const currentYear = new Date().getFullYear();
 const banner = `// SPDX-FileCopyrightText: Copyright (c) ${currentYear}, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// This file is generated from the canonical adapter-contract JSON Schemas.
+// This file is generated from the canonical NeMo Fabric JSON Schemas.
 // Do not edit it directly; run \`npm run generate\` instead.`;
 
 const schemaSpecs = [
   {
     name: "execution-evidence",
+    directory: resolve(repositoryRoot, "schemas/evidence"),
     output: "execution-evidence.ts",
     project: projectExecutionEvidence,
   },
@@ -84,13 +85,18 @@ const schemaInventory = (await readdir(schemaDirectory, { withFileTypes: true })
 assertAdapterSchemaInventory(
   schemaInventory,
   [
-    ...schemaSpecs.map((spec) => `${spec.name}.schema.json`),
+    ...schemaSpecs
+      .filter((spec) => spec.directory === undefined)
+      .map((spec) => `${spec.name}.schema.json`),
     ...transportSchemaNames,
   ],
 );
 
 for (const spec of schemaSpecs) {
-  const sourcePath = resolve(schemaDirectory, `${spec.name}.schema.json`);
+  const sourcePath = resolve(
+    spec.directory ?? schemaDirectory,
+    `${spec.name}.schema.json`,
+  );
   const schemaBytes = await readFile(sourcePath);
   const schema = JSON.parse(schemaBytes.toString("utf8"));
 

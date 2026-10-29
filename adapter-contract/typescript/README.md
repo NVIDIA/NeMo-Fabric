@@ -80,8 +80,11 @@ values but are represented as JavaScript `number`; values greater than
 
 ## JSON Schemas
 
-The package bundles byte-identical copies of the canonical schemas. Consumers
-that need runtime validation can use their validator of choice, for example:
+The package bundles byte-identical copies of the canonical adapter schemas in
+`schemas/adapter-contract/` and the shared evidence schema in
+`schemas/evidence/`. Its bundled `schemas/execution-evidence` export remains
+available as a consumer of the shared schema. Consumers that need runtime
+validation can use their validator of choice, for example:
 
 ```typescript
 import agentConfigSchema from "nemo-fabric-adapter-contract/schemas/agent-config" with { type: "json" };
