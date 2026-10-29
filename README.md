@@ -84,5 +84,5 @@ Planned areas of development include:
 - **Support long-running, artifact-heavy workloads:** Make OpenShell timeouts and response/artifact limits configurable, including unlimited task duration, with clear limit errors and guidance for retrieving large screenshots.
 - **Expose task progress and recoverable results:** Provide task state, step progress, plans, pending requests, sandbox task listings, and paginated events, with final results retrievable after invocation ends or the caller disconnects.
 - **Standardize model usage accounting:** Report input, cached, output, and reasoning tokens consistently, distinguish complete, partial, and unknown usage, and attribute delegated work to the correct invocation.
-- **Capture execution provenance:** Record Fabric and adapter versions, requested models, sanitized MCP configuration, and execution environment, with explicit sources and unknowns.
+- **Capture execution provenance:** Record NeMo Fabric and adapter versions, requested models, sanitized MCP configuration, and execution environment, with explicit sources and unknowns.
 
