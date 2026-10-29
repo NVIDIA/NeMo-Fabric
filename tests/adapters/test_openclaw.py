@@ -807,6 +807,7 @@ def test_openclaw_attach_rejects_deployment_owned_configuration(
     mock_openclaw: Path,
 ):
     config = _config(mock_openclaw, with_skills=True)
+    config.models["default"].settings["supports_usage_in_streaming"] = True
     assert config.harness is not None
     config.harness.settings["channel_config"] = {
         "channels": {"telegram": {"enabled": True}},
@@ -824,6 +825,7 @@ def test_openclaw_attach_rejects_deployment_owned_configuration(
     assert caught.value.code == "openclaw_attach_configuration_unverifiable"
     assert set(caught.value.metadata["fields"]) == {
         "models.base_url",
+        "models.settings.supports_usage_in_streaming",
         "tools",
         "mcp",
         "skills",
@@ -1890,10 +1892,12 @@ def test_openclaw_streaming_usage_capability_requires_custom_endpoint(tmp_path: 
     config = _config(Path("openclaw"))
     config.models["default"].base_url = None
     config.models["default"].settings["supports_usage_in_streaming"] = True
-    with pytest.raises(adapter.lifecycle.LifecycleError):
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
         adapter._openclaw_config(
             config, _context(tmp_path), base_dir=tmp_path, port=20000, token_env="TOKEN"
         )
+
+    assert caught.value.code == "openclaw_invalid_configuration"
 
 
 @pytest.mark.parametrize(

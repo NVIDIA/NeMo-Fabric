@@ -1051,3 +1051,23 @@ def test_native_metrics_do_not_report_partially_priced_cost():
     assert usage.input_tokens == 22
     assert usage.output_tokens == 10
     assert usage.cost_usd is None
+
+
+@pytest.mark.parametrize("response_without_tokens", [False, True])
+def test_usage_requires_tokens_for_every_observed_response(response_without_tokens):
+    usage = SimpleNamespace(prompt_tokens=11, completion_tokens=5)
+    metrics = MagicMock()
+    metrics.diff.return_value = SimpleNamespace(
+        accumulated_token_usage=usage,
+        token_usages=[usage],
+        response_latencies=[object()] * (2 if response_without_tokens else 1),
+        accumulated_cost=0,
+        costs=[],
+    )
+    result = adapter._usage(SimpleNamespace(metrics=metrics), object())
+    if response_without_tokens:
+        assert result is None
+    else:
+        # A later failed request without a response adds no response record.
+        assert result.input_tokens == 11
+        assert result.output_tokens == 5

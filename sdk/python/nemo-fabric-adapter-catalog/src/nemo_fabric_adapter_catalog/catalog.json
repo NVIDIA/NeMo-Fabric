@@ -2622,6 +2622,15 @@
                     "type": "integer"
                   }
                 },
+                "required": [
+                  "input_tokens",
+                  "output_tokens",
+                  "cached_input_tokens",
+                  "cache_write_input_tokens",
+                  "input_tokens_include_cache",
+                  "output_tokens_include_reasoning",
+                  "total_tokens"
+                ],
                 "type": "object"
               }
             },
@@ -2744,7 +2753,7 @@
         "name": "nemo-fabric-adapters-pi",
         "version": "0.6.0"
       },
-      "sha256": "2c171e2520f7add91df4542a278800df4734febb301a098571d317a3d9a24124",
+      "sha256": "1d3f4b6933689530782ba0ebd019ca9af3476a8f9b7d5b955783d0a59b743283",
       "source": "adapters/typescript/pi/pi.fabric-adapter.json"
     },
     "nvidia.fabric.qwen": {

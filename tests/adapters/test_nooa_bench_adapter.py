@@ -253,8 +253,10 @@ def test_bench_usage_keeps_only_positive_observed_dimensions(
 )
 def test_pinned_nooa_metrics_bridge_preserves_inclusive_prompt_tokens_and_resets_tasks():
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-    from litellm.types.utils import ModelResponse
-    from nooa.runtime.actor import _make_llm_metrics_bridge
+    ModelResponse = pytest.importorskip("litellm.types.utils").ModelResponse
+    _make_llm_metrics_bridge = pytest.importorskip(
+        "nooa.runtime.actor"
+    )._make_llm_metrics_bridge
     from nooa.runtime.token_usage import get_task_tokens
     from nooa.runtime.token_usage import start_task_tokens
     from nooa.unifiedllm.unifiedllm import _extract_reasoning_and_usage

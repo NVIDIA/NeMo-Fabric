@@ -321,7 +321,11 @@ def _usage(api_llm: Any, baseline: Any) -> contract.AgentUsage | None:
     tokens = metrics.accumulated_token_usage
     # Metrics initializes an all-zero accumulator even before the first response.
     # Only per-call records establish that the SDK observed token usage.
-    if tokens is None or not metrics.token_usages:
+    if (
+        tokens is None
+        or not metrics.token_usages
+        or len(metrics.token_usages) != len(metrics.response_latencies)
+    ):
         return None
     input_tokens = int(tokens.prompt_tokens)
     output_tokens = int(tokens.completion_tokens)
@@ -572,7 +576,6 @@ class OpenHandsRuntime:
 
 def main() -> None:
     lifecycle.serve(OpenHandsRuntime, config_loader=contract.AgentConfig.from_mapping)
-
 
 
 # Selected software reported by the shared lifecycle host; no dependency scan.

@@ -18,7 +18,7 @@ Relay artifacts.
 
 ## Model Provider
 
-Use `fabric_model_provider=openai` for an OpenAI-compatible endpoint whose served model ID starts with another vendor prefix. For example, combine it with `model_name="nvidia/nemotron-3-ultra-550b-a55b"` and `fabric_model_base_url` to select the OpenAI protocol while preserving the exact served model ID. Without an override, the provider is inferred from the model prefix as before. The override requires a model and remains subject to the selected adapter’s model schema.
+For adapters that honor `models.default.provider`, such as Qwen, use `fabric_model_provider=openai` for an OpenAI-compatible endpoint whose served model ID starts with another vendor prefix. For example, combine it with `model_name="nvidia/nemotron-3-ultra-550b-a55b"` and `fabric_model_base_url` to select the OpenAI protocol while preserving the exact served model ID. Without an override, the provider is inferred from the model prefix as before. The override requires a model and remains subject to the selected adapter’s model schema. Mini-SWE and OpenHands select their LiteLLM backend from the model ID; this override does not change that routing.
 
 ## Model Settings
 
