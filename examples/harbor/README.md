@@ -13,6 +13,8 @@ you want to exercise.
 
 ## Walkthroughs
 
+For reproducible repository integration checks, use the [`qualify-harbor` maintainer skill](../../.agents/skills/qualify-harbor/SKILL.md). It runs one shared Terminal-Bench task across a catalog-derived harness matrix with isolated host/task installs and reports blocked and failed coverage alongside deterministic verifier results. The individual walkthroughs below do not establish an all-harness integration pass.
+
 | Walkthrough | What it demonstrates |
 | --- | --- |
 | [Calculator walkthrough](calculator/README.md) | Validate the complete integration and Harbor reward with a deterministic, credential-free smoke test, then run the same task with OpenClaw, Claude, Pi, or Codex. |

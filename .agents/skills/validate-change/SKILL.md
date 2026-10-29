@@ -59,6 +59,7 @@ surfaces touched by a change.
 - **Adapter behavior changed**
   Run the focused adapter tests under `tests/adapters`, then `just test-python`.
 - **Harbor integration changed**
+  Use `qualify-harbor` for real inference and container checks across the adapter catalog or a developer subset. Retain its complete catalog report; deterministic tests alone do not establish an all-harness integration pass.
   Run `tests/integrations/test_harbor_runner.py` and
   `tests/python/test_adapter_capabilities.py`, then `just test-python`.
   For host admission changes, verify metadata inspection without harness SDKs
