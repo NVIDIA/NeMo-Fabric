@@ -218,12 +218,26 @@ provides only its fallback path; configure required variables explicitly and
 use absolute executable paths when needed. The `execute` tool remains subject
 to `tools.enabled` and `tools.blocked`, like all other Deep Agents built-ins.
 
-File tools and shell commands use different absolute-path namespaces when
-`virtual_mode=True`. For file tools, `/report.txt` resolves to
-`<workspace>/report.txt`; in `execute`, the same path refers to `/report.txt` on
-the adapter host. Shell commands start in `environment.workspace`, so use
-workspace-relative paths, such as `cat report.txt`, for files surfaced by file
-tools. Do not pass a file tool's virtual absolute path directly to `execute`.
+On POSIX, with `local_shell`, file tools accept absolute paths inside
+`environment.workspace` as aliases for workspace files. For example, with
+workspace `/app`, both file-tool paths `/app/report.txt` and `/report.txt` refer
+to `/app/report.txt` on disk. Shell commands use host paths and start in the
+workspace, so `cat report.txt` and `cat /app/report.txt` read that file.
+
+On POSIX, listings and searches return canonical physical paths inside the
+workspace. These paths identify the same file in subsequent reads and edits,
+even when a nested directory repeats the workspace prefix. For example, `/app/app/report.txt`
+remains distinct from `/app/report.txt`; the relative file-tool path
+`app/report.txt` also identifies the nested file.
+
+On Windows, listings and searches retain workspace-rooted virtual paths, such
+as `/nested/report.txt`. Use these paths with file tools; Deep Agents rejects
+drive-prefixed paths such as `C:/workspace/nested/report.txt` before backend
+resolution. Shell commands continue to use native host paths.
+
+File-tool traversal and symlink-escape checks remain enabled. Paths outside the
+workspace retain the existing virtual-root interpretation; they do not grant
+access to host files.
 
 Python middleware, `FilesystemPermission` objects, Python tool objects, and
 precompiled `runnable` subagents are not exposed through `harness.settings`.
@@ -252,7 +266,11 @@ service.
 The normalized result includes the final response, buffered messages and
 per-step events, LangGraph thread id, token usage (and cost when the provider
 reports it), and errors. Usage aggregates the current turn across the main agent
-and any delegated subagents (streamed with `subgraphs=True`). Configuration and
+and any delegated subagents (streamed with `subgraphs=True`). Input totals use
+LangChain's inclusive convention, which already includes cached tokens; an
+unavailable cache breakdown stays unknown. If an assistant message omits a token
+counter, that invocation's corresponding total stays unknown rather than
+reporting a partial sum. Configuration and
 preflight failures (a missing credential, an absent `deepagents` package, or an
 invalid MCP server) fail runtime start before an invocation is accepted.
 

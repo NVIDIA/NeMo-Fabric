@@ -31,6 +31,12 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[2]
 SDK_ROOT = ROOT_DIR / "sdk" / "python" / "nemo-fabric-runtime" / "src" / "nemo_fabric"
 PYPROJECT = ROOT_DIR / "sdk" / "python" / "nemo-fabric-runtime" / "pyproject.toml"
+EVIDENCE_PYPROJECT = (
+    ROOT_DIR / "sdk" / "python" / "nemo-fabric-evidence" / "pyproject.toml"
+)
+EVIDENCE_VERSION = tomllib.loads(EVIDENCE_PYPROJECT.read_text(encoding="utf-8"))[
+    "project"
+]["version"]
 ALLOWED = set(sys.stdlib_module_names) | {
     "nemo_fabric",
     "nemo_fabric_evidence",
@@ -43,7 +49,7 @@ OPTIONAL_LAZY_IMPORTS = {
     "client.py": {"nemo_fabric_collector"},
 }
 EXPECTED_DEPENDENCIES = [
-    "nemo-fabric-evidence == 0.6.0",
+    f"nemo-fabric-evidence == {EVIDENCE_VERSION}",
     "httpx~=0.28",
     "pydantic>=2.12,<3",
     "typing-extensions>=4.12",

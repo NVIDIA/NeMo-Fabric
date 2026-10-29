@@ -5,7 +5,7 @@
 version: 1
 filesystem_policy:
   include_workdir: false
-  read_only: [/usr, /bin, /sbin, /lib, /lib64, /etc, /opt, /app, /proc, /dev/urandom]
+  read_only: [/usr, /bin, /sbin, /lib, /lib64, /etc, /opt, /proc, /dev/urandom]
   read_write: [/sandbox, /tmp, /dev/null, /home/sandbox]
 landlock:
   compatibility: best_effort

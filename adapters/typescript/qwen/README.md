@@ -98,10 +98,28 @@ adapter returns the per-invocation difference. Create a new runtime to change
 the selected model, workspace, system instructions, skills, MCP servers, tool
 policy, or permission mode.
 
+Input totals include cached tokens, and output totals include reasoning tokens
+under the adapter's fixed OpenAI authentication path. Cache counters are
+reported separately as a breakdown and are not added again. Missing or invalid
+counters, cumulative-counter resets, and all-zero usage observations remain
+unknown rather than being converted to zero. A valid snapshot establishes a
+baseline for later invocation deltas.
+
+These are the pinned SDK's provider-reported observations, not independently
+verified billing totals. The SDK normalizes missing provider usage to zero and
+can omit usage from failed requests. An all-zero observation cannot distinguish
+missing data from real zero consumption, and partial omissions inside a
+nonzero summary cannot be detected through the public result.
+
 The adapter gives the child process isolated temporary Qwen home and runtime
 directories. It disables usage statistics, telemetry, extensions, ambient
 skills, and ambient MCP servers. Explicit NeMo Fabric `environment.env` values
 and the selected model credential are forwarded to the child process.
+
+The adapter disables Qwen's automatic CLI relaunch, which sizes the replacement
+process's heap from host RAM. The SDK-owned child retains Node.js's default
+memory sizing for its container and any explicit `NODE_OPTIONS` heap setting
+forwarded through `environment.env`.
 
 In SDK mode, Qwen Code's `default` permission mode denies tool calls that need
 interactive approval. Use `auto` for Qwen's classifier-mediated policy. Use

@@ -17,7 +17,9 @@ The shared `nvidia.fabric.nooa` adapter owns the common NOOA queue dispatcher.
 It also maps normalized skill paths and whole MCP servers into compatible
 registered targets.
 The dedicated `nvidia.fabric.nooa.bench-agent` adapter maps the benchmark-native
-`BenchAgent` task contract directly into a NeMo Fabric invocation.
+`BenchAgent` task contract directly into a NeMo Fabric invocation. Its
+[observed token usage](docs/bench-agent.md#observed-token-usage) preserves the
+SDK's inclusive input convention and documents missing-request limitations.
 
 ## Install
 
@@ -27,6 +29,8 @@ tested NOOA packages together:
 ```bash
 pip install "nemo-fabric[nooa]"
 ```
+
+The `harness` and `full` extras constrain LiteLLM below 1.106 for NOOA and standalone BenchAgent runs. LiteLLM 1.106.4 and 1.106.5 import MCP types unavailable in MCP 1.x during ordinary tool dispatch. The tested 1.105.6 dispatch works without an MCP runtime.
 
 For a split adapter environment, install
 `nemo-fabric-adapters-nooa[harness]`. Use the adapter package without an extra

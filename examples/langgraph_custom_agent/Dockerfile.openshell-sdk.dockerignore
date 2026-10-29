@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Send only the custom LangGraph workload to its task-image build.
+**
+!examples/
+!examples/langgraph_custom_agent/
+!examples/langgraph_custom_agent/**
+**/__pycache__
+**/*.pyc
+**/*.so
+**/.venv
+**/node_modules
+**/dist
+examples/langgraph_custom_agent/artifacts
+examples/langgraph_custom_agent/results

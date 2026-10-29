@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run the OpenClaw code-review agent through the normal host SDK.
+"""Run a code-review harness through the normal host SDK.
 
 Configure an OpenShell sandbox, start the task-side Fabric runtime, invoke the
 agent across review turns, and collect the report on the host.
@@ -13,18 +13,25 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
 from nemo_fabric import (
+    DiscoveryConfig,
     EnvironmentConfig,
     EnvironmentReference,
     Fabric,
     FabricConfig,
     RunRequest,
+    ToolsConfig,
 )
 
-from examples.code_review_agent.config import openclaw_config
+from examples.code_review_agent.config import (
+    CODE_REVIEW_INSTRUCTION,
+    hermes_config,
+    with_relay,
+)
 
 
 DEFAULT_PROMPTS = (
@@ -33,12 +40,31 @@ DEFAULT_PROMPTS = (
     "suggest the smallest correction.",
 )
 TASK_ROOT = "/sandbox/code-review"
+TASK_ARTIFACT_ROOT = "/sandbox/artifacts"
+HERMES_TASK_DISCOVERY_PATH = "/opt/fabric/adapters/python/hermes"
 
 
 def build_config(args: argparse.Namespace) -> FabricConfig:
-    """Build the standard OpenClaw config with OpenShell environment settings."""
+    """Build a harness config with OpenShell environment settings."""
 
-    config = openclaw_config()
+    relay_enabled = getattr(args, "relay", False)
+    config = hermes_config()
+    hermes_descriptor = (
+        Path(__file__).resolve().parents[2]
+        / "adapters/python/hermes/hermes.fabric-adapter.json"
+    )
+    if not hermes_descriptor.is_file():
+        raise FileNotFoundError(
+            "Hermes adapter descriptor is missing from this checkout"
+        )
+    config.discovery = DiscoveryConfig(local_paths=[hermes_descriptor])
+    config.instructions.system.content = (
+        f"{CODE_REVIEW_INSTRUCTION} Use the terminal tool to read workspace files."
+    )
+    config.tools = ToolsConfig(enabled=["terminal"])
+    config.runtime.max_turns = 6
+    if relay_enabled:
+        config = with_relay(config)
     config.metadata.name = "openshell-code-review"
     model = config.models["default"]
     model.provider = "openai"
@@ -47,15 +73,13 @@ def build_config(args: argparse.Namespace) -> FabricConfig:
     model.api_key_env = "OPENAI_API_KEY"
     model.max_tokens = 1024
     config.skills.paths = [f"{TASK_ROOT}/skills/code-review"]
-    config.runtime.artifacts = str(
-        Path(args.results_file).resolve().parent / "artifacts"
-    )
+    config.runtime.artifacts = Path(args.results_file).resolve().parent / "artifacts"
     config.environment = EnvironmentConfig(
         provider="openshell",
         ownership=args.ownership,
         control_location="in_env_control",
         workspace=f"{TASK_ROOT}/repos/my-service",
-        artifacts=f"{TASK_ROOT}/artifacts/code-review",
+        artifacts=TASK_ARTIFACT_ROOT,
         connection={"gateway": args.gateway, "workspace": args.workspace},
         settings={
             "image": args.image,
@@ -63,6 +87,7 @@ def build_config(args: argparse.Namespace) -> FabricConfig:
             "policy_yaml": Path(args.policy_file).read_text(encoding="utf-8"),
             "providers": ["hosted"],
             "sandbox_name": args.sandbox_name,
+            "task_discovery_paths": [HERMES_TASK_DISCOVERY_PATH],
         },
     )
     if args.ownership == "caller_owned":
@@ -110,10 +135,18 @@ async def run_demo(args: argparse.Namespace) -> dict[str, Any]:
                     context={"turn": index},
                 )
             )
-            report["reviews"].append(result.to_mapping())
+            review = result.to_mapping()
+            report["reviews"].append(review)
             if result.status != "succeeded":
                 report["error"] = {
                     "code": "invoke_failed",
+                    "request_id": result.request_id,
+                }
+                break
+            output = review.get("output")
+            if isinstance(output, dict) and output.get("completed") is False:
+                report["error"] = {
+                    "code": "hermes_incomplete",
                     "request_id": result.request_id,
                 }
                 break
@@ -121,7 +154,13 @@ async def run_demo(args: argparse.Namespace) -> dict[str, Any]:
             report["status"] = "succeeded"
     except Exception as error:
         # Keep process output out of reports; SDK exceptions may include command data.
-        report["error"] = {"code": type(error).__name__}
+        if os.environ.get("OPENSHELL_CODE_REVIEW_DEBUG_ERRORS") == "true":
+            print(f"Code-review SDK failure: {error}", file=sys.stderr)
+        failure = {"code": getattr(error, "code", None) or type(error).__name__}
+        stage = getattr(error, "stage", None)
+        if isinstance(stage, str):
+            failure["stage"] = stage
+        report["error"] = failure
     finally:
         try:
             if runtime is not None:
@@ -129,18 +168,14 @@ async def run_demo(args: argparse.Namespace) -> dict[str, Any]:
                     await runtime.stop()
                 except Exception as error:
                     report["status"] = "failed"
-                    report["error"] = report["error"] or {
-                        "code": type(error).__name__
-                    }
+                    report["error"] = report["error"] or {"code": type(error).__name__}
         finally:
             if environment is not None:
                 try:
                     await fabric.release_environment(environment)
                 except Exception as error:
                     report["status"] = "failed"
-                    report["error"] = report["error"] or {
-                        "code": type(error).__name__
-                    }
+                    report["error"] = report["error"] or {"code": type(error).__name__}
 
     result_path = Path(args.results_file)
     result_path.parent.mkdir(parents=True, exist_ok=True)
@@ -168,7 +203,9 @@ def _record_fabric_owned_sandbox(args: argparse.Namespace, environment: Any) -> 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ownership", choices=("caller_owned", "fabric_owned"), required=True)
+    parser.add_argument(
+        "--ownership", choices=("caller_owned", "fabric_owned"), required=True
+    )
     parser.add_argument("--gateway", required=True)
     parser.add_argument("--workspace", default="default")
     parser.add_argument("--image", required=True)
@@ -176,11 +213,18 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--results-file", required=True)
     parser.add_argument("--sandbox-name", required=True)
     parser.add_argument("--sandbox-id")
+    parser.add_argument("--relay", action="store_true")
     parser.add_argument(
-        "--model", default="nvidia/nemotron-3.5-lightning-30b-a3b"
+        "--model",
+        default=os.environ.get(
+            "OPENSHELL_CODE_REVIEW_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b"
+        ),
     )
     parser.add_argument(
-        "--base-url", default="https://integrate.api.nvidia.com/v1"
+        "--base-url",
+        default=os.environ.get(
+            "OPENSHELL_CODE_REVIEW_BASE_URL", "https://integrate.api.nvidia.com/v1"
+        ),
     )
     parser.add_argument("--input", dest="inputs", action="append")
     return parser
@@ -193,8 +237,10 @@ def main() -> None:
     args.inputs = args.inputs or list(DEFAULT_PROMPTS)
     if len(args.inputs) != 2:
         raise SystemExit("--input must be supplied exactly twice")
-    if not os.environ.get("NVIDIA_API_KEY"):
-        raise SystemExit("NVIDIA_API_KEY is required to configure the hosted provider")
+    if not (os.environ.get("OPENAI_API_KEY") or os.environ.get("NVIDIA_API_KEY")):
+        raise SystemExit(
+            "OPENAI_API_KEY or NVIDIA_API_KEY is required for the model provider"
+        )
     report = asyncio.run(run_demo(args))
     if report["status"] != "succeeded":
         raise SystemExit(1)

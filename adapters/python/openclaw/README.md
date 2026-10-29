@@ -34,8 +34,8 @@ Managed runtimes and NeMo Fabric-owned services also require the pinned OpenClaw
 version:
 
 ```bash
-# Requires Node.js >=24.16.0 <25 or >=26.1.0, and npm 11.16+.
-npm install --global openclaw@2026.9.4 --allow-scripts=openclaw
+# Requires Node.js >=24.22.1 <25 or >=26.12.1, and npm 11.16+.
+npm install --global openclaw@2026.9.34 --allow-scripts=openclaw
 ```
 
 An attachment to a caller-owned Gateway does not require a local OpenClaw
@@ -44,6 +44,18 @@ prepared use, if `openclaw` is not in `PATH`, set
 `harness.settings.openclaw_command` to the absolute path of the executable. A
 bare command is resolved through `PATH`; a relative path containing a directory
 is resolved from the NeMo Fabric base directory.
+
+### Upgrade a Gateway With Retained State
+
+When upgrading a caller-owned Gateway from OpenClaw 2026.9.4, stop the Gateway and run `openclaw backup create --verify` with the Gateway's existing `OPENCLAW_STATE_DIR` and `OPENCLAW_CONFIG_PATH` before upgrading. The backup must include the active config, its include files, and all configured agent directories, including paths outside the state directory. Protect the archive because it can contain credentials.
+
+Before upgrading, check the backup result and manifest for the active config, its include files, and every configured agent directory. For paths marked `covered`, confirm that the archive contains the data under a parent directory. Fix missing required paths and rerun the backup. Continue with the upgrade after confirming that all required data is backed up.
+
+Before migration, copy every legacy session directory while the Gateway is stopped. Include `sessions.json`, `.jsonl` transcripts, and session directories outside `OPENCLAW_STATE_DIR`. The backup command excludes legacy `.jsonl` transcripts. Protect these copies and keep them with the verified archive for rollback.
+
+Run `openclaw doctor --fix` with the 2026.9.34 executable and the same path settings. The command imports legacy `sessions.json` files and JSONL session data into each agent's SQLite database. Restart the Gateway after the command succeeds. Keep the verified backup for rollback.
+
+Managed runtimes and NeMo Fabric-owned services use temporary state directories, so each new Gateway starts with fresh state.
 
 ## Configuration
 
@@ -65,6 +77,24 @@ For custom OpenAI-compatible providers, set `models.<role>.base_url`; the
 adapter generates an OpenClaw custom provider using the
 `openai-completions` API adapter. Set `api_key_env` when that provider requires
 an API key.
+
+If that endpoint supports `stream_options.include_usage`, set
+`models.<role>.settings.supports_usage_in_streaming` to `true`. This maps to
+the model's native `compat.supportsUsageInStreaming` setting; it requests
+usage from the model endpoint, separately from the Gateway's trailing usage
+chunk. Set it to `false` for endpoints that reject streaming usage, or omit
+it to retain OpenClaw's endpoint capability detection. This setting requires
+`base_url` and is unavailable when attaching to a deployment-owned service.
+
+OpenClaw 2026.9.4's Chat Completions Gateway can return aggregate usage or
+fall back to the last model call, and synthesizes zero counters when usage
+is missing. The response does not identify which source it used. The adapter
+therefore leaves standard complete usage counters unknown and preserves the
+reported counters under
+`usage.extensions["nvidia.fabric.openclaw.usage_evidence.v1"].observed`, with
+`scope_unverified` in `gaps`. Missing usage adds `missing_usage`; all-zero
+observations add `zero_unverified`. These observations do not establish
+complete accounting for retries, compaction, child agents, or background work.
 
 ### Harness Settings
 
@@ -195,7 +225,7 @@ shows a sanitized service handle:
     "agent_id": "default"
   },
   "metadata": {
-    "openclaw_version": "2026.9.4"
+    "openclaw_version": "2026.9.34"
   }
 }
 ```

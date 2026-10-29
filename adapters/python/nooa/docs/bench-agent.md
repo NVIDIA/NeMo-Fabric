@@ -32,6 +32,21 @@ that `_run_evaluation()` replaces. During runtime shutdown, it closes the
 active shell and model. Native errors are not copied into the public result
 because they can contain model, tool, or environment details.
 
+## Observed Token Usage
+
+The adapter resets NOOA's task accumulator for each invocation. Positive input
+and output totals from the native metrics bridge are preserved on successful
+and failed results. NOOA forwards LiteLLM's inclusive `prompt_tokens` count, so
+input totals already include cached tokens. The bridge does not retain cache
+breakdowns or provider cost; those fields remain unknown.
+
+NOOA 0.0.10 initializes absent usage to zero. Zero dimensions remain unknown
+rather than being presented as measured zero. These are SDK-observed totals,
+not an exhaustive billing audit: missing per-request usage and unsuccessful
+retry attempts can be omitted upstream, and the public aggregate does not
+identify those omissions. The adapter does not reconstruct missing requests or
+add estimated cache, reasoning, or cost components.
+
 ## Run with Harbor
 
 Harbor selects the adapter through `FabricAgent` with

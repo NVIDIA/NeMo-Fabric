@@ -20,6 +20,45 @@ workflows:
 
 [Run NeMo Fabric agents with Harbor](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/harbor)
 
+## Model Provider
+
+Omit `fabric_model_provider` to retain provider inference from the model name. Override it only when the selected adapter requires a different value; an OpenAI-compatible endpoint alone is not a reason to set `openai`. For adapters that honor `models.default.provider`, such as Qwen, use `fabric_model_provider=openai` for an OpenAI-compatible endpoint whose served model ID starts with another vendor prefix. For example, combine it with `model_name="nvidia/nemotron-3-ultra-550b-a55b"` and `fabric_model_base_url` to select the OpenAI protocol while preserving the exact served model ID. Without an override, the provider is inferred from the model prefix as before. The override requires a model and remains subject to the selected adapter’s model schema. Mini-SWE and OpenHands construct their LiteLLM model name from both the provider and model ID. With provider `nvidia`, both adapters prepend `nvidia_nim/` unless that prefix is already present. With other providers, they prepend `<provider>/` only to slash-free model IDs and preserve IDs that contain `/`. Selecting `openai` for the `nvidia/...` example therefore prevents adding `nvidia_nim/`; it does not add an `openai/` prefix. LiteLLM cannot infer a provider from that unchanged `nvidia/...` ID, so keep the inferred `nvidia` provider for Mini-SWE and OpenHands in this example.
+
+## Model Settings
+
+Pass adapter-declared model settings with `fabric_model_settings`, for example
+`--ak 'fabric_model_settings={"cost_tracking":"disabled"}'` for an explicitly
+unpriced Mini-SWE model. Pair that policy with a positive `fabric_max_turns`.
+The bridge copies these settings into `models.default.settings`; the selected
+adapter's model schema and runtime validation still apply. This option requires
+a model. Keep credentials in managed environment variables, outside model
+settings. This option applies to the SDK bridge; native Harbor owns a separate
+implementation.
+## Registered Workflow Targets
+
+Use `fabric_workflow_target_id` to select a registered workflow while keeping
+`fabric_adapter_id` explicit. For example, select `nvidia.nooa.coding-agent` with
+adapter `nvidia.fabric.nooa`. Pass construction settings through
+`fabric_workflow_settings`; the target descriptor's schema validates them before
+task setup. These settings are separate from adapter `fabric_harness_settings`,
+and cannot be supplied without a target ID.
+
+Host admission reads adapter and target metadata from the matching catalog,
+without importing a harness SDK or target factory. For an external target, pass
+its canonical host-readable JSON file as `fabric_target_descriptor`, separately
+from `fabric_adapter_descriptor`. Missing target metadata, mismatched adapter
+bindings, unsupported target types, and invalid settings fail admission.
+
+Install the executable descriptors inside the task environment or configure
+`fabric_discovery_paths` there. Host descriptor paths are not execution discovery
+paths. Before starting the harness, the task runner verifies a fingerprint of
+both normalized descriptors against host admission, including the registered
+factory reference and settings schema. Use matching host and task versions.
+
+Workflow selection preserves the existing skill, MCP, environment, and lifecycle
+contracts. Capability admission is a metadata claim; verify task execution,
+accounting, and any requested skill/MCP behavior separately.
+
 ## Resource Stats
 
 For an example of collecting resource stats inside a task container, follow the [SWE-bench walkthrough](../../../examples/harbor/swebench/README.md#run-deep-agents-with-resource-stats). The [Resource Usage and Stats](../../sdk/system-stats.mdx) guide explains the configuration model, collection scope, and metric interpretation.

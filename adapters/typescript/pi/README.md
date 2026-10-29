@@ -46,6 +46,23 @@ configured extensions are trusted code. The adapter raises the compaction
 reserve toward the selected model's maximum output while retaining at least
 half of the context window for input.
 
+## Invocation Usage
+
+Each invocation reads only new entries from Pi's raw session ledger, including
+retained failed attempts, compaction and branch summaries, nested tool usage,
+and auxiliary usage records. Automatic cache warming is disabled so background
+refresh calls cannot escape the invocation boundary. Session history and previous invocations are not
+counted again. Input totals include cache reads and cache writes; output totals
+already include reasoning tokens. Available breakdowns are returned through
+`nemo_fabric.detailed_token_usage.v1`.
+
+Missing or inconsistent usage leaves the complete counters unknown. Pi 1.0.3
+initializes unreported provider usage to zero, so an all-zero record also remains
+unknown. A failed or retried summary can omit attempt usage from the ledger;
+complete counters remain unknown in that case. Nonzero records can retain real
+zero input, output, or cache dimensions. Configured-rate SDK cost estimates are
+not published as provider-reported `cost_usd`.
+
 ## Install the Adapter
 
 Pi 1.0 requires Node.js 22.19.0 or newer.
@@ -53,16 +70,20 @@ Pi 1.0 requires Node.js 22.19.0 or newer.
 ### Install for Consumers
 
 Install the adapter in the project that owns the NeMo Fabric configuration,
-then install the compatible Pi SDK harness version selected by that project:
+then install the supported Pi SDK package set:
 
 ```bash
 npm install nemo-fabric-adapters-pi
-npm install @earendil-works/pi-ai@^1.0.0 @earendil-works/pi-coding-agent@^1.0.0 @earendil-works/pi-mcp@^1.0.0
+npm install --save-exact @earendil-works/pi-ai@1.0.3 @earendil-works/pi-coding-agent@1.0.3 @earendil-works/pi-mcp@1.0.3 @earendil-works/pi-codemode@1.0.3
 ```
 
 The adapter declares the Pi packages as optional peers. Installing the adapter
 alone does not install a harness, and starting it without compatible Pi packages
 returns `pi_harness_unavailable`.
+
+The supported SDK packages are pinned together at 1.0.3. The coding-agent
+package otherwise permits newer `pi-codemode` versions with incompatible exports;
+installing all four packages keeps fresh installs on the tested combination.
 
 ### Install for Source Development
 

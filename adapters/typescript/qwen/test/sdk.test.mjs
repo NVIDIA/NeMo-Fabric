@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,11 +11,14 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { QwenAdapterRuntime } from "../dist/runtime.js";
-import { QwenSdkSessionFactory } from "../dist/qwen-sdk.js";
+import { QwenSdkSession, QwenSdkSessionFactory } from "../dist/qwen-sdk.js";
 
 const mcpServerPath = fileURLToPath(new URL("./fixtures/mcp-server.mjs", import.meta.url));
 
 test("bundled Qwen CLI keeps context across two SDK prompts", { timeout: 45_000 }, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "fabric-qwen-memory-"));
+  const startupLog = join(workspace, "startup.jsonl");
+  const startupProbe = fileURLToPath(new URL("./fixtures/record-startup.cjs", import.meta.url));
   const requests = [];
   const server = createServer(async (request, response) => {
     const chunks = [];
@@ -25,7 +29,7 @@ test("bundled Qwen CLI keeps context across two SDK prompts", { timeout: 45_000 
     response.writeHead(200, { "content-type": "text/event-stream" });
     const common = { id: `chatcmpl-${requests.length}`, object: "chat.completion.chunk", created: 0, model: "fabric-test-model" };
     response.write(`data: ${JSON.stringify({ ...common, choices: [{ index: 0, delta: { role: "assistant", content: isSecondTurn ? "turn-2" : "turn-1" }, finish_reason: null }] })}\n\n`);
-    response.write(`data: ${JSON.stringify({ ...common, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } })}\n\n`);
+    response.write(`data: ${JSON.stringify({ ...common, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7, prompt_tokens_details: { cached_tokens: 3 }, completion_tokens_details: { reasoning_tokens: 1 } } })}\n\n`);
     response.end("data: [DONE]\n\n");
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -33,29 +37,44 @@ test("bundled Qwen CLI keeps context across two SDK prompts", { timeout: 45_000 
   try {
     const port = server.address().port;
     session = await new QwenSdkSessionFactory().create({
-      agentName: "qwen-test", baseDir: process.cwd(),
+      agentName: "qwen-test", baseDir: workspace,
       config: {
         models: { default: { provider: "openai", model: "fabric-test-model", api_key_env: "FABRIC_QWEN_TEST_KEY", base_url: `http://127.0.0.1:${port}/v1` } },
         instructions: { system: { content: "Fabric Qwen instruction probe", mode: "replace" } },
       },
       runtimeContext: {
-        artifacts: {}, environment: { control_location: "external_control", env: { FABRIC_QWEN_TEST_KEY: "local-test-key" }, environment_id: "env-1", ownership: "caller_owned", provider: "local", workspace: process.cwd() },
+        artifacts: {}, environment: { control_location: "external_control", env: {
+          FABRIC_QWEN_TEST_KEY: "local-test-key",
+          FABRIC_QWEN_STARTUP_LOG: startupLog,
+          NODE_OPTIONS: `--max-old-space-size=512 --require=${JSON.stringify(startupProbe)}`,
+          QWEN_CODE_NO_RELAUNCH: "",
+        }, environment_id: "env-1", ownership: "caller_owned", provider: "local", workspace },
         invocation_id: "start", request_id: "start", runtime_id: "runtime-1",
       },
     });
     const first = await session.prompt("Remember token cobalt");
+    const firstRequestCount = requests.length;
     const second = await session.prompt("Which token did I ask you to remember?");
     assert.equal(first.text, "turn-1", JSON.stringify(first));
     assert.equal(second.text, "turn-2", JSON.stringify(second));
-    assert.deepEqual(first.usage, { input_tokens: 10, output_tokens: 4, total_tokens: 14 });
-    assert.deepEqual(second.usage, { input_tokens: 10, output_tokens: 4, total_tokens: 14 });
+    assert.deepEqual(first.usage, { input_tokens: 10, output_tokens: 4, total_tokens: 14, cached_input_tokens: 6, input_tokens_include_cache: true });
+    assert.equal(first.usage.input_tokens, firstRequestCount * 5);
+    assert.deepEqual(second.usage, { input_tokens: 10, output_tokens: 4, total_tokens: 14, cached_input_tokens: 6, input_tokens_include_cache: true });
+    assert.equal(second.usage.input_tokens, (requests.length - firstRequestCount) * 5);
     assert.ok(requests.length >= 2);
     assert.match(String(requests[0].messages[0].content), /Fabric Qwen instruction probe/);
     assert.match(JSON.stringify(requests.at(-1).messages), /Remember token cobalt/);
+    const startups = (await readFile(startupLog, "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(startups.length, 1, "Qwen must not relaunch with a host-sized heap");
+    const expectedHeapLimit = Number(execFileSync(process.execPath, [
+      "--max-old-space-size=512", "-p", "require('node:v8').getHeapStatistics().heap_size_limit",
+    ], { env: { ...process.env, NODE_OPTIONS: "" }, encoding: "utf8" }));
+    assert.equal(startups[0].heap_size_limit, expectedHeapLimit, "Qwen must preserve the caller's Node heap limit");
   } finally {
     await session?.close();
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -286,4 +305,118 @@ test("native Qwen read-only control health passes before during and after a bloc
     await new Promise(resolve => server.close(resolve));
   }
   assert.equal((await runtime.check("live")).reason_code, "runtime_unavailable");
+});
+
+function usageSession(summaries) {
+  return new QwenSdkSession({
+    isClosed: () => false,
+    getSessionId: () => "usage-test",
+    async next() {
+      return { done: false, value: { type: "result", subtype: "success", result: "ok", usage: summaries.shift() } };
+    },
+  }, { push() {} }, "/unused", { hasMcpFailure: () => false });
+}
+
+const unknownUsage = {
+  input_tokens: null, output_tokens: null, total_tokens: null,
+  cached_input_tokens: null, input_tokens_include_cache: true,
+};
+
+test("Qwen cumulative usage preserves cache deltas and real zero output", async () => {
+  const session = usageSession([
+    { input_tokens: 10, output_tokens: 0, total_tokens: 10, cache_read_input_tokens: 3 },
+    { input_tokens: 30, output_tokens: 4, total_tokens: 34, cache_read_input_tokens: 8 },
+  ]);
+  assert.deepEqual((await session.prompt("one")).usage, {
+    input_tokens: 10, output_tokens: 0, total_tokens: 10,
+    cached_input_tokens: 3, input_tokens_include_cache: true,
+  });
+  assert.deepEqual((await session.prompt("two")).usage, {
+    input_tokens: 20, output_tokens: 4, total_tokens: 24,
+    cached_input_tokens: 5, input_tokens_include_cache: true,
+  });
+});
+
+test("Qwen reset snapshots remain unknown and establish a fresh baseline", async () => {
+  const session = usageSession([
+    { input_tokens: 100, output_tokens: 20, total_tokens: 120, cache_read_input_tokens: 10 },
+    { input_tokens: 10, output_tokens: 2, total_tokens: 12, cache_read_input_tokens: 1 },
+    { input_tokens: 30, output_tokens: 5, total_tokens: 35, cache_read_input_tokens: 4 },
+  ]);
+  await session.prompt("one");
+  assert.deepEqual((await session.prompt("two")).usage, unknownUsage);
+  assert.deepEqual((await session.prompt("three")).usage, {
+    input_tokens: 20, output_tokens: 3, total_tokens: 23,
+    cached_input_tokens: 3, input_tokens_include_cache: true,
+  });
+});
+
+for (const missing of [undefined, { input_tokens: 0, output_tokens: 0 }, { input_tokens: NaN, output_tokens: -1, total_tokens: 1.5 }]) {
+  test(`Qwen missing or invalid snapshot stays unknown through baseline recovery: ${JSON.stringify(missing)}`, async () => {
+    const session = usageSession([
+      missing,
+      { input_tokens: 20, output_tokens: 2, total_tokens: 22, cache_read_input_tokens: 3 },
+      { input_tokens: 30, output_tokens: 5, total_tokens: 35, cache_read_input_tokens: 4 },
+    ]);
+    assert.deepEqual((await session.prompt("one")).usage, unknownUsage);
+    assert.deepEqual((await session.prompt("two")).usage, unknownUsage);
+    assert.deepEqual((await session.prompt("three")).usage, {
+      input_tokens: 10, output_tokens: 3, total_tokens: 13,
+      cached_input_tokens: 1, input_tokens_include_cache: true,
+    });
+  });
+}
+
+test("Qwen does not invent missing total or cache counters", async () => {
+  const session = usageSession([{ input_tokens: 10, output_tokens: 2 }]);
+  assert.deepEqual((await session.prompt("one")).usage, {
+    input_tokens: 10, output_tokens: 2, total_tokens: null,
+    cached_input_tokens: null, input_tokens_include_cache: true,
+  });
+});
+
+test("bundled Qwen CLI missing provider usage remains unknown", { timeout: 45_000 }, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "fabric-qwen-unknown-usage-"));
+  const server = createServer(async (request, response) => {
+    for await (const _chunk of request) { /* Drain the request. */ }
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    const common = { id: "chatcmpl-missing-usage", object: "chat.completion.chunk", created: 0, model: "fabric-test-model" };
+    response.write(`data: ${JSON.stringify({ ...common, choices: [{ index: 0, delta: { role: "assistant", content: "ready" }, finish_reason: null }] })}\n\n`);
+    response.write(`data: ${JSON.stringify({ ...common, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`);
+    response.end("data: [DONE]\n\n");
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  let session;
+  try {
+    session = await new QwenSdkSessionFactory().create({
+      agentName: "qwen-usage-test", baseDir: workspace,
+      config: { models: { default: { provider: "openai", model: "fabric-test-model", api_key_env: "FABRIC_QWEN_TEST_KEY", base_url: `http://127.0.0.1:${server.address().port}/v1` } } },
+      runtimeContext: {
+        artifacts: {}, environment: { control_location: "external_control", env: { FABRIC_QWEN_TEST_KEY: "local-test-key" }, environment_id: "env-1", ownership: "caller_owned", provider: "local", workspace },
+        invocation_id: "start", request_id: "start", runtime_id: "runtime-usage",
+      },
+    });
+    const turn = await session.prompt("Answer ready");
+    assert.equal(turn.text, "ready");
+    assert.deepEqual(turn.usage, unknownUsage);
+  } finally {
+    await session?.close();
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
+test("Qwen unchanged cumulative metrics do not invent a zero-cost invocation", async () => {
+  const session = usageSession([
+    { input_tokens: 10, output_tokens: 2, total_tokens: 12, cache_read_input_tokens: 3 },
+    { input_tokens: 10, output_tokens: 2, total_tokens: 12, cache_read_input_tokens: 3 },
+    { input_tokens: 30, output_tokens: 5, total_tokens: 35, cache_read_input_tokens: 4 },
+  ]);
+  await session.prompt("one");
+  assert.deepEqual((await session.prompt("two")).usage, unknownUsage);
+  assert.deepEqual((await session.prompt("three")).usage, {
+    input_tokens: 20, output_tokens: 3, total_tokens: 23,
+    cached_input_tokens: 1, input_tokens_include_cache: true,
+  });
 });

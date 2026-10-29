@@ -109,9 +109,12 @@ def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
 
 
 def _llm(api: OpenHandsApi, model: contract.AgentModelConfig) -> Any:
-    wire_model = (
-        model.model if "/" in model.model else f"{model.provider}/{model.model}"
-    )
+    wire_model = model.model
+    if model.provider == "nvidia" and not wire_model.startswith("nvidia_nim/"):
+        # LiteLLM's dispatch prefix is separate from the NIM served model ID.
+        wire_model = f"nvidia_nim/{wire_model}"
+    elif "/" not in wire_model:
+        wire_model = f"{model.provider}/{wire_model}"
     kwargs: dict[str, Any] = {"model": wire_model, "usage_id": "agent"}
     if model.api_key_env is not None:
         api_key = os.environ.get(model.api_key_env)
@@ -315,16 +318,33 @@ def _mcp_servers(api: OpenHandsApi, config: contract.AgentConfig) -> dict[str, A
 
 def _usage(api_llm: Any, baseline: Any) -> contract.AgentUsage | None:
     metrics = api_llm.metrics.diff(baseline)
+    # Proxy-reported cost can be complete even when token usage is unavailable.
+    cost = (
+        float(metrics.accumulated_cost)
+        if metrics.costs and len(metrics.costs) == len(metrics.response_latencies)
+        else None
+    )
     tokens = metrics.accumulated_token_usage
-    if tokens is None:
-        return None
+    # Metrics initializes an all-zero accumulator even before the first response.
+    # Only per-call records establish that the SDK observed token usage.
+    if (
+        tokens is None
+        or not metrics.token_usages
+        or len(metrics.token_usages) != len(metrics.response_latencies)
+    ):
+        return contract.AgentUsage(cost_usd=cost) if cost is not None else None
     input_tokens = int(tokens.prompt_tokens)
     output_tokens = int(tokens.completion_tokens)
     return contract.AgentUsage(
         input_tokens=input_tokens,
+        # LiteLLM normalizes prompt_tokens to include cache reads and writes;
+        # OpenHands copies that count unchanged into its per-call metrics.
+        input_tokens_include_cache=True,
         output_tokens=output_tokens,
         total_tokens=input_tokens + output_tokens,
-        cost_usd=float(metrics.accumulated_cost),
+        # The SDK omits cost records when pricing fails. Its zero-initialized
+        # accumulated cost alone cannot distinguish missing pricing from free.
+        cost_usd=cost,
     )
 
 
@@ -560,7 +580,6 @@ class OpenHandsRuntime:
 
 def main() -> None:
     lifecycle.serve(OpenHandsRuntime, config_loader=contract.AgentConfig.from_mapping)
-
 
 
 # Selected software reported by the shared lifecycle host; no dependency scan.

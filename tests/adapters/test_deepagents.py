@@ -173,6 +173,8 @@ def fake_sdks_fixture(monkeypatch):
     recorder["init_chat_model"] = mock_init_chat_model
     recorder["fs_backend"] = mock_fs_backend
     recorder["local_shell_backend"] = mock_local_shell_backend
+    recorder["local_shell_factory"] = adapter._local_shell_backend
+    monkeypatch.setattr(adapter, "_local_shell_backend", mock_local_shell_backend)
 
     def build_agent(**kwargs):
         recorder["create_kwargs"] = kwargs
@@ -485,6 +487,9 @@ def use_real_langgraph_fixture(fake_sdks, monkeypatch):
 def use_real_deepagents_fixture(fake_sdks, monkeypatch):
     """Drop the fake Deep Agents stubs so the real backend package resolves."""
 
+    monkeypatch.setattr(
+        adapter, "_local_shell_backend", fake_sdks["local_shell_factory"]
+    )
     for name in (
         "deepagents",
         "deepagents.backends",
@@ -522,6 +527,22 @@ async def test_single_invocation_normalizes_response_usage_and_thread(
     # system prompt must reach deepagents under the real param name (not ``instructions``)
     assert fake_sdks["create_kwargs"]["system_prompt"] == "be concise"
     assert "instructions" not in fake_sdks["create_kwargs"]
+
+
+async def test_invocation_preserves_inclusive_input_usage(
+    tmp_path, make_payload, fake_sdks
+):
+    payload = make_payload(tmp_path)
+    runtime = adapter.DeepAgentsRuntime()
+    await runtime.start(lifecycle_start_payload(payload))
+    try:
+        result = await runtime.invoke(*lifecycle_invocation(payload))
+        assert result.usage.input_tokens == 5
+        assert result.usage.input_tokens_include_cache is True
+        assert result.usage.cached_input_tokens is None
+        assert result.usage.output_tokens == 7
+    finally:
+        await runtime.stop()
 
 
 @pytest.mark.parametrize(
@@ -1661,6 +1682,133 @@ def test_local_shell_backend_keeps_file_and_shell_path_namespaces_distinct(
 
 
 @pytest.mark.usefixtures("use_real_deepagents")
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("filename", ["report.txt", "report ' $ `.txt"])
+def test_local_shell_file_tools_accept_physical_workspace_paths(
+    tmp_path, make_payload, nested, filename
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target = workspace / "nested" / filename if nested else workspace / filename
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["environment"]["workspace"] = str(workspace)
+    payload["runtime_context"]["environment"]["env"] = {
+        "FABRIC_TEST_TARGET": str(target)
+    }
+    backend = adapter.resolve_backend(
+        RuntimeContext.from_mapping(payload["runtime_context"]),
+        str(tmp_path),
+        {"type": "local_shell"},
+    )
+    result = backend.write(str(target), "same workspace")
+
+    assert result.error is None
+    assert target.read_text() == "same workspace"
+    shell = backend.execute(
+        f'"{sys.executable}" -c "import os; from pathlib import Path; '
+        "assert Path(os.environ['FABRIC_TEST_TARGET']).read_text() == 'same workspace'\""
+    )
+    assert shell.exit_code == 0
+    read = backend.read(str(target))
+    assert read.error is None
+    assert "same workspace" in read.file_data["content"]
+
+
+@pytest.mark.usefixtures("use_real_deepagents")
+@pytest.mark.parametrize("operation", ["ls", "glob", "grep"])
+def test_local_shell_listed_paths_round_trip_with_workspace_prefix(
+    tmp_path, make_payload, operation
+):
+    from deepagents.middleware.filesystem import FilesystemMiddleware
+    from langchain.tools import ToolRuntime
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["environment"]["workspace"] = str(workspace)
+    backend = adapter.resolve_backend(
+        RuntimeContext.from_mapping(payload["runtime_context"]),
+        str(tmp_path),
+        {"type": "local_shell"},
+    )
+    outer = workspace / "report.txt"
+    outer.write_text("outer file")
+    # On POSIX, the native virtual path of this file equals the outer file's
+    # physical path. On Windows this checks that virtual output paths survive
+    # the tools' validation instead of exposing rejected drive-prefixed paths.
+    nested = workspace / Path(*backend.cwd.parts[1:]) / "report.txt"
+    nested.parent.mkdir(parents=True)
+    nested.write_text("nested file")
+
+    if operation == "ls":
+        result = backend.ls(str(nested.parent))
+        entries = result.entries
+    elif operation == "glob":
+        result = backend.glob("*.txt", path=str(nested.parent))
+        entries = result.matches
+    else:
+        result = backend.grep("nested file", path=str(nested.parent))
+        entries = result.matches
+
+    assert result.error is None
+    assert len(entries) == 1
+    listed_path = entries[0]["path"]
+    tools = {
+        tool.name: tool
+        for tool in FilesystemMiddleware(
+            backend=backend, tools=["read_file", "edit_file"]
+        ).tools
+    }
+    runtime = ToolRuntime(
+        state={},
+        context=None,
+        config={},
+        stream_writer=lambda _: None,
+        tool_call_id="path-round-trip",
+        store=None,
+    )
+    read = tools["read_file"].func(file_path=listed_path, runtime=runtime)
+    assert read.status == "success", read.content
+    assert "nested file" in read.content
+    edit = tools["edit_file"].func(
+        file_path=listed_path,
+        old_string="nested file",
+        new_string="edited nested file",
+        runtime=runtime,
+    )
+    assert edit.status == "success", edit.content
+    assert nested.read_text() == "edited nested file"
+    assert outer.read_text() == "outer file"
+
+
+@pytest.mark.usefixtures("use_real_deepagents")
+@pytest.mark.parametrize("escape", ["traversal", "symlink"])
+def test_local_shell_workspace_alias_preserves_file_confinement(
+    tmp_path, make_payload, escape
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["environment"]["workspace"] = str(workspace)
+    backend = adapter.resolve_backend(
+        RuntimeContext.from_mapping(payload["runtime_context"]),
+        str(tmp_path),
+        {"type": "local_shell"},
+    )
+    if escape == "symlink":
+        (workspace / "link").symlink_to(outside, target_is_directory=True)
+        target = workspace / "link" / "escaped.txt"
+    else:
+        target = workspace / ".." / "outside" / "escaped.txt"
+
+    with pytest.raises(ValueError, match="traversal|outside root"):
+        backend.write(str(target), "must not escape")
+    assert not (outside / "escaped.txt").exists()
+
+
+@pytest.mark.usefixtures("use_real_deepagents")
 def test_local_shell_backend_forwards_only_explicit_environment(tmp_path, make_payload):
     os.environ["AMBIENT_ONLY"] = "ambient"
     payload = make_payload(tmp_path)
@@ -2108,6 +2256,31 @@ def test_aggregate_usage_discards_nonfinite_cost(message):
 
 def test_aggregate_usage_discards_tokens_larger_than_uint64():
     assert adapter._aggregate_usage([{"usage": {"input_tokens": 1 << 64}}]) is None
+
+
+@pytest.mark.parametrize("missing", [None, {}, {"input_tokens": True}])
+def test_aggregate_usage_does_not_promote_partial_assistant_totals(missing):
+    messages = [
+        {
+            "role": "assistant",
+            "usage": {"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
+        },
+        {"role": "assistant", "usage": missing},
+    ]
+    assert adapter._aggregate_usage(messages) is None
+
+
+def test_aggregate_usage_keeps_independently_complete_dimensions():
+    assert adapter._aggregate_usage(
+        [
+            {
+                "role": "assistant",
+                "usage": {"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
+            },
+            {"role": "assistant", "usage": {"input_tokens": 3}},
+            {"role": "tool", "content": "no model usage"},
+        ]
+    ) == {"prompt_tokens": 8}
 
 
 async def test_replayed_state_usage_counts_current_turn_only(

@@ -46,7 +46,7 @@ print one JSON document containing `atof_records` and the separate terminal
 `result`. Relay retains redirect-decision marks in configured ATOF artifacts, while
 Pi's startup `model_redirect` marks are not included in `atof_records`.
 
-The [OpenShell Code Review example](code_review_agent/README.md#openshell-code-review) gives an agent the sample `calculator.py` repository inside a real OpenShell sandbox. Separate SDK exec calls start a runtime, perform two review turns, and stop the runtime. The demonstration records prompts, normalized results, command timings, and a readable transcript. Its image contains OpenClaw and the current NeMo Fabric SDK, and the runtime server can manage multiple runtime IDs in one sandbox.
+The [OpenShell Code Review example](code_review_agent/README.md#run-hermes-in-openshell) packages Hermes Agent inside the sandbox and uses the normal SDK/provider lifecycle from the host. It runs two review turns and can collect NeMo Relay evidence.
 
 ## LangGraph Custom Agent
 
@@ -62,6 +62,10 @@ in a separate directory:
 
 Start with the model-backed example. You can then vary its model settings, add
 a stdio MCP tool, or enable NeMo Relay telemetry.
+
+The [OpenShell SDK path](langgraph_custom_agent/README.md#run-the-custom-agent-in-openshell)
+packages this same custom agent in a sandbox image while the host consumer
+keeps the normal SDK lifecycle.
 
 ## Harbor
 

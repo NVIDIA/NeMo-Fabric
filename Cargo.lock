@@ -492,7 +492,7 @@ dependencies = [
 
 [[package]]
 name = "fabric-python"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "nemo-fabric-core",
  "pyo3",
@@ -1339,7 +1339,7 @@ checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 
 [[package]]
 name = "nemo-fabric-cli"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "clap",
  "nemo-fabric-core",
@@ -1348,7 +1348,7 @@ dependencies = [
 
 [[package]]
 name = "nemo-fabric-core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "chrono",
  "getrandom 0.4.3",
@@ -1365,9 +1365,10 @@ dependencies = [
 
 [[package]]
 name = "nemo-fabric-openshell-provider"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "async-trait",
+ "miniz_oxide",
  "openshell-policy",
  "openshell-sdk",
  "serde",

@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-fabric-adapter-contract"
-version = "0.6.0"
+version = "0.7.0"
 description = "Typed Python contract for NeMo Fabric adapters"
 authors = [
   { name = "NVIDIA Corporation" },
@@ -25,7 +25,7 @@ license-files = ["LICENSE"]
 readme = "pypi.md"
 requires-python = ">=3.11"
 dependencies = [
-  "nemo-fabric-evidence == 0.6.0",
+  "nemo-fabric-evidence == 0.7.0",
 ]
 
 [project.optional-dependencies]

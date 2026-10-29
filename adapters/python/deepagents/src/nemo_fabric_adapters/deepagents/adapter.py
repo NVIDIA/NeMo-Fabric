@@ -269,6 +269,39 @@ def build_chat_model(
     return ChatOpenAI(**_supported_kwargs(ChatOpenAI, kwargs)), model_name, base_url
 
 
+def _local_shell_backend(**kwargs: Any) -> Any:
+    from deepagents.backends import LocalShellBackend
+
+    workspace = Path(kwargs["root_dir"]).absolute()
+
+    class WorkspaceLocalShellBackend(LocalShellBackend):
+        """Accept the shell's workspace paths without weakening virtual file checks."""
+
+        def _to_virtual_path(self, path: Path) -> str:
+            # Listings and searches must return paths the resolver reads back
+            # unambiguously, even if a nested path repeats the workspace prefix.
+            virtual = super()._to_virtual_path(path)
+            # Deep Agents tools reject drive-prefixed paths. Windows virtual
+            # paths cannot collide with the drive-qualified physical aliases.
+            if self.cwd.drive:
+                return virtual
+            return str(self.cwd / virtual.lstrip("/"))
+
+        def _resolve_path(self, key: str) -> Path:
+            path = Path(key)
+            if path.is_absolute():
+                for root in (workspace, self.cwd):
+                    try:
+                        relative = path.relative_to(root)
+                    except ValueError:
+                        continue
+                    # Native resolution still rejects traversal and symlink escapes.
+                    return super()._resolve_path("/" + relative.as_posix())
+            return super()._resolve_path(key)
+
+    return WorkspaceLocalShellBackend(**kwargs)
+
+
 def resolve_backend(
     runtime_context: RuntimeContext,
     base_dir: str,
@@ -290,9 +323,7 @@ def resolve_backend(
         root = Path(base_dir) / root
 
     if backend_config is not None:
-        from deepagents.backends import LocalShellBackend
-
-        return LocalShellBackend(
+        return _local_shell_backend(
             root_dir=str(root),
             virtual_mode=True,
             env=dict(runtime_context.environment.env),
@@ -838,7 +869,16 @@ class DeepAgentsRuntime:
                 else None
             ),
             usage=(
-                AgentUsage(**tokens, cost_usd=cost)
+                # LangChain UsageMetadata input_tokens includes all input types,
+                # including cache. Preserve that convention for consumers such
+                # as Harbor without inventing a missing cache breakdown.
+                AgentUsage(
+                    **tokens,
+                    input_tokens_include_cache=(
+                        True if "input_tokens" in tokens else None
+                    ),
+                    cost_usd=cost,
+                )
                 if tokens or cost is not None
                 else None
             ),
@@ -1436,6 +1476,7 @@ def _final_response(messages: list[dict[str, Any]]) -> Any:
 
 def _aggregate_usage(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
     totals: dict[str, Any] = {}
+    unknown: set[str] = set()
     cost = 0.0
     has_cost = False
     for message in messages:
@@ -1452,6 +1493,10 @@ def _aggregate_usage(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
                 and 0 <= value <= (1 << 64) - 1
             ):
                 totals[target] = int(totals.get(target, 0)) + value
+            elif message.get("role") in ("ai", "assistant"):
+                # One missing model response makes this dimension incomplete;
+                # do not promote the other responses' partial sum to a total.
+                unknown.add(target)
         # Cost is not part of LangChain's UsageMetadata; surface it only when a
         # model/provider reports it on the usage or response metadata.
         candidate = (
@@ -1467,6 +1512,11 @@ def _aggregate_usage(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
             has_cost = True
     if has_cost:
         totals["cost"] = cost
+    for target in unknown:
+        totals.pop(target, None)
+    for target in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        if totals.get(target, 0) > (1 << 64) - 1:
+            totals.pop(target)
     return totals or None
 
 

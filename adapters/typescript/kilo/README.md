@@ -113,6 +113,8 @@ The Kilo Code harness is not embedded in the adapter process. `start` launches
 creates one session. `stop` deletes the session, terminates that server, and
 removes its temporary profile.
 
+Kilo Code's `background_process` tool stops session-scoped processes when the session ends, the active session group changes, or the Kilo Code server exits. For a service that must survive runtime shutdown, set `persistent: true` on that tool call. This matters in Harbor, where verification runs after the runtime stops. Persistent processes require separate cleanup; Harbor removes them when it destroys the task container.
+
 ```mermaid
 flowchart TB
   Fabric["NeMo Fabric runtime"]

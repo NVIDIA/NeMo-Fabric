@@ -3,7 +3,7 @@
 
 FROM python:3.14-slim-bookworm
 
-COPY --from=node:24.16.0-bookworm-slim /usr/local /usr/local
+COPY --from=node:24.22.1-bookworm-slim /usr/local /usr/local
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -14,8 +14,6 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-ini
     && sh /tmp/rustup-init.sh -y --profile minimal \
     && rm -f /tmp/rustup-init.sh
 ENV PATH=/root/.cargo/bin:$PATH
-
-RUN npm install --global openclaw@2026.9.4 --allow-scripts=openclaw
 
 COPY vendor/nemo-fabric /opt/nemo-fabric
 RUN pip install --no-cache-dir \

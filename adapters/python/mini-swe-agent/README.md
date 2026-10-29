@@ -23,7 +23,7 @@ environment:
 | `pip install nemo-fabric-adapters-mini-swe-agent` | No | Yes | No | No |
 
 The `harness` and `full` extras install the latest compatible mini-SWE-agent
-2.x release.
+2.x release and constrain LiteLLM below 1.106. LiteLLM 1.106.4 and 1.106.5 import MCP types unavailable in MCP 1.x during ordinary tool dispatch. The tested 1.105.6 dispatch works without an MCP runtime. This constraint does not enable MCP tools in the adapter. For provider `nvidia`, the adapter adds LiteLLM’s `nvidia_nim/` dispatch prefix while preserving the configured served model ID, including its vendor prefix.
 
 ## Configuration
 
@@ -35,6 +35,32 @@ sampling fields through mini-SWE-agent's LiteLLM model arguments and rejects
 `runtime.timeout_seconds` sets the NVIDIA NeMo Fabric invocation deadline. Use
 `harness.settings.timeout` to set the maximum duration of one command; the
 default is `30` seconds.
+
+For a local or unpriced model, explicitly set
+`models.<role>.settings={"cost_tracking": "disabled"}` and a positive
+`runtime.max_turns`. The default is strict SDK pricing and its monetary budget;
+ambient `MSWEA_COST_TRACKING` does not override it. Disabled tracking removes
+the SDK monetary budget, so use it only when you accept execution without a
+monetary cap. Turn and invocation time limits still apply. Cost remains
+unavailable in Fabric output and Relay telemetry; the SDK's fallback zero is
+not reported as measured cost. Provider token usage in Relay is preserved.
+
+For example, these fields explicitly opt into an unpriced model:
+
+```json
+{
+  "models": {
+    "default": {
+      "provider": "nvidia",
+      "model": "nvidia/nemotron-3-ultra-550b-a55b",
+      "base_url": "http://localhost:8000/v1",
+      "settings": {"cost_tracking": "disabled"}
+    }
+  },
+  "runtime": {"max_turns": 50, "timeout_seconds": 1800}
+}
+```
+
 
 Set `models.<role>.api_key_env` to the environment variable containing the
 model-provider credential. This adapter does not support MCP, skills, tool

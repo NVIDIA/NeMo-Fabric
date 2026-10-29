@@ -4,7 +4,7 @@
 # NVIDIA's OpenAI-compatible endpoint; the agent receives a shadow credential.
 id: nvidia-code-review
 display_name: NVIDIA Code Review
-description: NVIDIA-hosted model access for the OpenClaw code-review example
+description: NVIDIA-hosted model access for the Hermes code-review example
 category: inference
 inference_capable: true
 credentials:
@@ -23,7 +23,6 @@ endpoints:
     access: read-write
     enforcement: enforce
 binaries:
-  - /usr/local/bin/node
   - /usr/local/bin/python3.13
   - /usr/local/bin/python3.14
   - /opt/fabric/bin/python

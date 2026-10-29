@@ -103,12 +103,47 @@
       "max_tokens": {"type": "integer", "minimum": 1},
       "settings": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "supports_usage_in_streaming": {
+            "type": "boolean",
+            "description": "Whether the configured custom OpenAI-compatible endpoint supports stream_options.include_usage. Requires base_url; omitted values retain OpenClaw capability detection."
+          }
+        },
         "additionalProperties": false
       }
     },
     "required": ["provider", "model"],
     "additionalProperties": false
+  },
+  "extension_schemas": {
+    "usage": {
+      "type": "object",
+      "properties": {
+        "nvidia.fabric.openclaw.usage_evidence.v1": {
+          "type": "object",
+          "properties": {
+            "observed": {
+              "type": "object",
+              "properties": {
+                "input_tokens": {"type": "integer", "minimum": 0},
+                "output_tokens": {"type": "integer", "minimum": 0},
+                "total_tokens": {"type": "integer", "minimum": 0}
+              },
+              "additionalProperties": false
+            },
+            "gaps": {
+              "type": "array",
+              "items": {"enum": ["scope_unverified", "missing_usage", "zero_unverified"]},
+              "uniqueItems": true
+            }
+          },
+          "required": ["observed", "gaps"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["nvidia.fabric.openclaw.usage_evidence.v1"],
+      "additionalProperties": false
+    }
   },
   "requirements": {},
   "config": {

@@ -175,6 +175,8 @@ export function normalizeUsage(
       "nemo_fabric.detailed_token_usage.v1": {
         input_tokens: input,
         output_tokens: output,
+        // CLI 0.2.1 forwards SDK output usage without subtracting reasoning.
+        output_tokens_include_reasoning: true,
         total_tokens: total,
         input_tokens_include_cache: true,
         ...((cache ?? 0) > 0 ? { cached_input_tokens: cache } : {}),

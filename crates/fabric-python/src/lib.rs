@@ -70,14 +70,22 @@ fn plan_config(py: Python<'_>, config_json: String, base_dir: Option<String>) ->
 
 /// Inspect supplied host metadata without probing executable adapter locations.
 #[pyfunction]
+#[pyo3(signature = (config_json, descriptor_path, target_descriptor_path=None))]
 fn inspect_adapter_metadata(
     py: Python<'_>,
     config_json: String,
     descriptor_path: String,
+    target_descriptor_path: Option<String>,
 ) -> PyResult<String> {
     let config = parse_config(config_json)?;
     let inspection = py
-        .detach(|| inspect_adapter_config(config, Path::new(&descriptor_path)))
+        .detach(|| {
+            inspect_adapter_config(
+                config,
+                Path::new(&descriptor_path),
+                target_descriptor_path.as_deref().map(Path::new),
+            )
+        })
         .map_err(to_py_error)?;
     to_json(&inspection)
 }

@@ -22,7 +22,7 @@ license-files = ["LICENSE"]
 readme = "pypi.md"
 requires-python = ">=3.11"
 dependencies = [
-  "nemo-fabric-evidence == 0.6.0",
+  "nemo-fabric-evidence == 0.7.0",
   "httpx~=0.28",
   "pydantic>=2.12,<3",
   "typing-extensions>=4.12",
@@ -34,7 +34,7 @@ fabric-agent-ctl = "nemo_fabric.runtime_server.cli:main"
 
 [project.optional-dependencies]
 streaming = [
-  "nemo-fabric-collector == 0.6.0",
+  "nemo-fabric-collector == 0.7.0",
 ]
 
 [project.urls]

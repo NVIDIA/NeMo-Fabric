@@ -1,4 +1,4 @@
-# Keep the OpenClaw image build context to its adapter and review workload.
+# Keep the Hermes image build context to its adapter and review workload.
 **
 !Cargo.toml
 !Cargo.lock
@@ -8,9 +8,10 @@
 !adapters/python/
 !adapters/python/common/
 !adapters/python/common/**
-!adapters/python/openclaw/
-!adapters/python/openclaw/**
+!adapters/python/hermes/
+!adapters/python/hermes/**
 !examples/
+!examples/__init__.py
 !examples/code_review_agent/
 !examples/code_review_agent/**
 **/__pycache__

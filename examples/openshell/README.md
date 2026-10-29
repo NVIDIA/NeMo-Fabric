@@ -7,7 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 
 This directory contains the shared demo launcher, a reusable task-image
 Dockerfile, and setup guidance. The runnable agents live in the
-[echo](../openshell_echo/README.md) and [Code Review](../code_review_agent/README.md)
+[echo](../openshell_echo/README.md), [Code Review](../code_review_agent/README.md),
+and [custom LangGraph](../langgraph_custom_agent/README.md#run-the-custom-agent-in-openshell)
 examples.
 
 In each SDK demo, a consumer runs on the host and uses the NeMo Fabric SDK with
@@ -27,15 +28,7 @@ Builds and test output are kept under `.tmp/`.
 Set `UV_PROJECT_ENVIRONMENT` to an installed NeMo Fabric environment if it is
 not at `.tmp/host-stack-tests`. The environment needs NeMo Fabric and the
 native extension. The SDK/provider examples use the Rust OpenShell provider
-binary downloaded by the launcher and do not require the OpenShell Python SDK.
-The raw/direct [Code Review command-line example](../code_review_agent/README.md#rawdirect-openshell-code-review)
-uses the OpenShell Python SDK; install the version matching the pinned gateway
-only when using that example:
-
-```bash
-export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$PWD/.tmp/host-stack-tests}"
-uv pip install --python "$UV_PROJECT_ENVIRONMENT/bin/python" openshell==0.1.2
-```
+binary built by the launcher.
 
 Set `OPENSHELL_VERSION` to test another release and
 `OPENSHELL_EXAMPLE_PORT` if port `18080` is already in use.
@@ -78,7 +71,9 @@ For another agent, adapt the example workload hooks and provide:
   access; and
 - a normal SDK consumer that starts, invokes, and stops the runtime.
 
-The SDK echo example checks server health before starting a runtime and exercises state across two turns, normalized results,
-declared artifact collection, and both environment ownership modes. The Code
-Review example exercises a packaged third-party harness, model endpoint policy,
-and optional Hermes Relay evidence.
+Start with SDK echo, which checks server health before starting a runtime, to inspect two-turn state, normalized results, artifact
+collection, and both environment ownership modes without a model credential.
+The [Hermes code-review example](../code_review_agent/README.md#run-hermes-in-openshell)
+then shows a packaged third-party harness, model endpoint policy, and optional
+Relay evidence. The [custom LangGraph example](../langgraph_custom_agent/README.md#run-the-custom-agent-in-openshell)
+uses the same SDK lifecycle with an application-owned agent and adapter.

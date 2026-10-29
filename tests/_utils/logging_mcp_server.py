@@ -8,10 +8,10 @@ from __future__ import annotations
 import argparse
 from collections.abc import Awaitable, Callable
 import json
+from importlib.metadata import version as distribution_version
 from pathlib import Path
 
 import uvicorn
-from mcp.server.fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import Receive, Scope, Send
@@ -52,7 +52,15 @@ class PrintHeadersMiddleware:
         await self.app(scope, receive, send)
 
 
-server = FastMCP("header-printer", stateless_http=True, json_response=True)
+MCP_MAJOR_VERSION = int(distribution_version("mcp").split(".", 1)[0])
+if MCP_MAJOR_VERSION >= 2:
+    from mcp.server.mcpserver import MCPServer
+
+    server = MCPServer("header-printer")
+else:
+    from mcp.server.fastmcp import FastMCP
+
+    server = FastMCP("header-printer", stateless_http=True, json_response=True)
 
 
 @server.custom_route("/health", methods=["GET"])
@@ -77,7 +85,11 @@ def create_app(
     if transport == "sse":
         mcp_app = server.sse_app()
     elif transport == "streamable-http":
-        mcp_app = server.streamable_http_app()
+        mcp_app = (
+            server.streamable_http_app(stateless_http=True, json_response=True)
+            if MCP_MAJOR_VERSION >= 2
+            else server.streamable_http_app()
+        )
     else:
         raise ValueError(f"Unsupported MCP transport: {transport}")
     return PrintHeadersMiddleware(mcp_app, log_requests=log_requests)

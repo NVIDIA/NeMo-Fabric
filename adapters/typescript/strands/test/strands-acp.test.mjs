@@ -190,6 +190,8 @@ test("omits ambiguous zero cache counts while preserving positive counts and tok
     assert.equal(usage.output_tokens, 5);
     assert.equal(usage.total_tokens, 15);
     assert.equal(usage.input_tokens_include_cache, true);
+    assert.equal(detail.output_tokens_include_reasoning, true);
+    assert.equal(Object.hasOwn(detail, "reasoning_tokens"), false);
     assert.equal(Object.hasOwn(usage, "cached_input_tokens"), read > 0);
     assert.equal(Object.hasOwn(detail, "cached_input_tokens"), read > 0);
     assert.equal(Object.hasOwn(detail, "cache_write_input_tokens"), write > 0);

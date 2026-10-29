@@ -15,13 +15,13 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/NVIDIA/nemo-fabric"
 
 [workspace.dependencies]
-nemo-fabric-core = { path = "crates/fabric-core", version = "0.6.0" }
+nemo-fabric-core = { path = "crates/fabric-core", version = "0.7.0" }
 
 # UTC health evidence and strict RFC 3339 timestamp validation.
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }

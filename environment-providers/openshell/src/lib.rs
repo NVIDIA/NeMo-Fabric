@@ -14,6 +14,11 @@ use std::io::{BufRead, Write};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use miniz_oxide::inflate::decompress_to_vec_zlib_with_limit;
+use openshell_sdk::provider_readiness::{
+    ProviderWaitOutcome, ProviderWaitResult, provider_status, provider_wait_deadline,
+    wait_for_provider_status_until,
+};
 use openshell_sdk::raw::proto;
 use openshell_sdk::{
     AuthConfig, ClientConfig, DeleteOptions, DeletionOutcome, DeletionResult, ExecOptions,
@@ -29,6 +34,12 @@ const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 const MAX_EXEC_OUTPUT_BYTES: usize = 3 * 1024 * 1024;
 const DEFAULT_READY_TIMEOUT_SECONDS: u64 = 60;
 const DEFAULT_DELETE_TIMEOUT_SECONDS: u64 = 30;
+// Compressed decimal JSON byte arrays stay below the 3 MiB exec-output limit.
+// Expansion is separately bounded before bytes cross the provider protocol.
+const MAX_COMPRESSED_ARTIFACT_FILE_BYTES: usize = 256 * 1024;
+const MAX_TOTAL_COMPRESSED_ARTIFACT_BYTES: usize = 700 * 1024;
+const MAX_ARTIFACT_FILE_BYTES: usize = 1024 * 1024;
+const MAX_TOTAL_ARTIFACT_BYTES: usize = 2 * 1024 * 1024;
 const DEFAULT_EXEC_TIMEOUT_SECONDS: u64 = 30;
 const GATEWAY_CALL_TIMEOUT_SECONDS: u64 = 30;
 const MAX_OPERATION_TIMEOUT_SECONDS: u64 = 600;
@@ -615,43 +626,74 @@ async fn collect_artifacts<F: GatewayFactory>(
     )
     .await?;
     if executed.exit_code != 0
-        || executed.stdout.len().saturating_add(executed.stderr.len()) > 3 * 1024 * 1024
+        || executed.stdout.len().saturating_add(executed.stderr.len()) > MAX_EXEC_OUTPUT_BYTES
     {
         return Err(ProviderError::contract(
             "artifact_read_failed",
             "declared artifacts could not be read as bounded regular files",
         ));
     }
-    let response: ArtifactResponse = serde_json::from_slice(&executed.stdout).map_err(|_| {
-        ProviderError::contract(
-            "artifact_read_failed",
-            "artifact reader returned an invalid response",
-        )
-    })?;
-    if response.files.len() != paths.len()
-        || response
-            .files
-            .iter()
-            .zip(paths)
-            .any(|(file, path)| file.path != path || file.content.len() > 256 * 1024)
-        || response
-            .files
-            .iter()
-            .map(|file| file.content.len())
-            .sum::<usize>()
-            > 512 * 1024
-    {
-        return Err(ProviderError::contract(
-            "artifact_read_failed",
-            "artifact reader failed correlation or size checks",
-        ));
-    }
-    serde_json::to_value(response.files).map_err(|_| {
+    let files = decode_artifact_response(&executed.stdout, &paths)?;
+    serde_json::to_value(files).map_err(|_| {
         ProviderError::contract(
             "artifact_read_failed",
             "artifact output could not be encoded",
         )
     })
+}
+
+fn decode_artifact_response(
+    stdout: &[u8],
+    paths: &[String],
+) -> Result<Vec<CollectedArtifact>, ProviderError> {
+    let response: ArtifactResponse = serde_json::from_slice(stdout).map_err(|_| {
+        ProviderError::contract(
+            "artifact_read_failed",
+            "artifact reader returned an invalid response",
+        )
+    })?;
+    if response.files.len() != paths.len() {
+        return Err(ProviderError::contract(
+            "artifact_read_failed",
+            "artifact reader failed correlation or size checks",
+        ));
+    }
+    let mut compressed_total = 0usize;
+    let mut uncompressed_total = 0usize;
+    let mut files = Vec::with_capacity(paths.len());
+    for (file, path) in response.files.into_iter().zip(paths) {
+        compressed_total = compressed_total.saturating_add(file.content.len());
+        uncompressed_total = uncompressed_total.saturating_add(file.uncompressed_size);
+        if file.path != path.as_str()
+            || file.content.len() > MAX_COMPRESSED_ARTIFACT_FILE_BYTES
+            || compressed_total > MAX_TOTAL_COMPRESSED_ARTIFACT_BYTES
+            || file.uncompressed_size > MAX_ARTIFACT_FILE_BYTES
+            || uncompressed_total > MAX_TOTAL_ARTIFACT_BYTES
+        {
+            return Err(ProviderError::contract(
+                "artifact_read_failed",
+                "artifact reader failed correlation or size checks",
+            ));
+        }
+        let content = decompress_to_vec_zlib_with_limit(&file.content, MAX_ARTIFACT_FILE_BYTES)
+            .map_err(|_| {
+                ProviderError::contract(
+                    "artifact_read_failed",
+                    "artifact reader returned invalid compressed bytes",
+                )
+            })?;
+        if content.len() != file.uncompressed_size {
+            return Err(ProviderError::contract(
+                "artifact_read_failed",
+                "artifact reader returned an incorrect file size",
+            ));
+        }
+        files.push(CollectedArtifact {
+            path: file.path,
+            content,
+        });
+    }
+    Ok(files)
 }
 
 async fn prepare_environment<F>(
@@ -715,7 +757,7 @@ where
                     environment_id.to_string(),
                 )]),
                 environment: environment.env,
-                providers: settings.providers,
+                providers: settings.providers.clone(),
                 command: settings.command,
                 policy: settings.policy,
             },
@@ -778,6 +820,30 @@ where
             return Err(error);
         }
     };
+    for provider in &settings.providers {
+        if let Err(error) = bounded_gateway_call(
+            "provider_ready",
+            Duration::from_secs(settings.ready_timeout_seconds),
+            client.wait_provider_ready(
+                connection.workspace.as_deref(),
+                &sandbox.name,
+                provider,
+                Duration::from_secs(settings.ready_timeout_seconds),
+            ),
+        )
+        .await
+        {
+            cleanup_created_sandbox(
+                client.as_ref(),
+                connection.workspace.as_deref(),
+                &sandbox.name,
+                &sandbox.id,
+                settings.delete_timeout_seconds,
+            )
+            .await?;
+            return Err(error);
+        }
+    }
     if ready.id != sandbox.id
         || ready.workspace != connection.workspace.as_deref().unwrap_or("default")
         || sandbox.workspace != connection.workspace.as_deref().unwrap_or("default")
@@ -907,6 +973,19 @@ where
             "sandbox_policy_mismatch",
             "OpenShell sandbox policy does not match settings.policy_yaml",
         ));
+    }
+    for provider in &settings.providers {
+        bounded_gateway_call(
+            "provider_ready",
+            Duration::from_secs(settings.ready_timeout_seconds),
+            client.wait_provider_ready(
+                connection.workspace.as_deref(),
+                &sandbox.name,
+                provider,
+                Duration::from_secs(settings.ready_timeout_seconds),
+            ),
+        )
+        .await?;
     }
 
     let mut provider_connection = connection.to_safe_map();
@@ -1407,10 +1486,16 @@ struct TaskDiagnostic {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ArtifactResponse {
-    files: Vec<CollectedArtifact>,
+    files: Vec<CompressedArtifact>,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct CompressedArtifact {
+    path: String,
+    content: Vec<u8>,
+    uncompressed_size: usize,
+}
+#[derive(Debug, Serialize)]
 struct CollectedArtifact {
     path: String,
     content: Vec<u8>,
@@ -1928,6 +2013,13 @@ trait Gateway: Send + Sync {
         name: &str,
         timeout: Duration,
     ) -> Result<SandboxSnapshot, ProviderError>;
+    async fn wait_provider_ready(
+        &self,
+        workspace: Option<&str>,
+        sandbox: &str,
+        provider: &str,
+        timeout: Duration,
+    ) -> Result<(), ProviderError>;
     async fn exec(
         &self,
         workspace: Option<&str>,
@@ -1966,6 +2058,26 @@ impl GatewayFactory for SdkGatewayFactory {
 
 struct SdkGateway {
     client: OpenShellClient,
+}
+
+fn require_provider_ready(result: ProviderWaitResult) -> Result<(), ProviderError> {
+    match result.outcome {
+        ProviderWaitOutcome::Complete
+            if result.status.state == proto::ProviderReadinessState::Ready as i32 =>
+        {
+            Ok(())
+        }
+        ProviderWaitOutcome::TimedOut => Err(ProviderError::contract(
+            "provider_readiness_timeout",
+            "OpenShell did not finish applying the provider before the timeout",
+        )),
+        ProviderWaitOutcome::Complete | ProviderWaitOutcome::Terminal => {
+            Err(ProviderError::contract(
+                "provider_readiness_failed",
+                "OpenShell could not apply the configured provider",
+            ))
+        }
+    }
 }
 
 #[async_trait]
@@ -2068,6 +2180,58 @@ impl Gateway for SdkGateway {
         }
         .map_err(map_sdk_error)?;
         Ok(sandbox_snapshot(sandbox))
+    }
+
+    async fn wait_provider_ready(
+        &self,
+        workspace: Option<&str>,
+        sandbox: &str,
+        provider: &str,
+        timeout: Duration,
+    ) -> Result<(), ProviderError> {
+        let deadline = provider_wait_deadline(timeout).map_err(|_| {
+            ProviderError::contract(
+                "provider_readiness_invalid",
+                "OpenShell provider readiness timeout is invalid",
+            )
+        })?;
+        let mut grpc = self.client.raw_grpc();
+        let status = tokio::time::timeout_at(
+            deadline,
+            provider_status(
+                &mut grpc,
+                proto::GetSandboxProviderStatusRequest {
+                    sandbox: sandbox.to_string(),
+                    provider: provider.to_string(),
+                    receipt_id: String::new(),
+                    workspace_scope: Some(proto::workspace_selector(
+                        workspace.unwrap_or("default").to_string(),
+                    )),
+                },
+            ),
+        )
+        .await
+        .map_err(|_| {
+            ProviderError::contract(
+                "provider_readiness_timeout",
+                "OpenShell provider readiness check timed out",
+            )
+        })?
+        .map_err(|_| {
+            ProviderError::contract(
+                "provider_readiness_failed",
+                "OpenShell provider readiness check failed",
+            )
+        })?;
+        let result = wait_for_provider_status_until(&mut grpc, &status, deadline)
+            .await
+            .map_err(|_| {
+                ProviderError::contract(
+                    "provider_readiness_failed",
+                    "OpenShell provider readiness wait failed",
+                )
+            })?;
+        require_provider_ready(result)
     }
 
     async fn exec(
@@ -2233,6 +2397,7 @@ fn grpc_error_code(code: tonic::Code) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use miniz_oxide::deflate::compress_to_vec_zlib;
 
     #[test]
     fn server_check_maps_to_the_named_health_command() {
@@ -2306,6 +2471,51 @@ mod tests {
         );
         assert_eq!(name, generated_sandbox_name(id));
         assert_ne!(name, generated_sandbox_name("another-environment-id"));
+    }
+
+    #[test]
+    fn completed_provider_wait_requires_ready_state() {
+        for (state, expected) in [
+            (proto::ProviderReadinessState::Ready, true),
+            (proto::ProviderReadinessState::Revoked, false),
+            (proto::ProviderReadinessState::Unspecified, false),
+        ] {
+            let result = ProviderWaitResult {
+                status: proto::ProviderReadinessStatus {
+                    state: state as i32,
+                    ..Default::default()
+                },
+                outcome: ProviderWaitOutcome::Complete,
+            };
+            assert_eq!(require_provider_ready(result).is_ok(), expected);
+        }
+    }
+
+    #[test]
+    fn artifact_response_expands_large_relay_file_with_a_bound() {
+        let content = vec![b'x'; 687_836];
+        let compressed = compress_to_vec_zlib(&content, 6);
+        let paths = vec!["relay/trajectory.atif.json".to_string()];
+        let response = serde_json::to_vec(&json!({"files": [{
+            "path": paths[0],
+            "content": compressed,
+            "uncompressed_size": content.len(),
+        }]}))
+        .expect("wire response");
+
+        let files = decode_artifact_response(&response, &paths).expect("bounded expansion");
+        assert_eq!(files[0].path, paths[0]);
+        assert_eq!(files[0].content, content);
+
+        let oversized = vec![b'x'; MAX_ARTIFACT_FILE_BYTES + 1];
+        let response = serde_json::to_vec(&json!({"files": [{
+            "path": paths[0],
+            "content": compress_to_vec_zlib(&oversized, 6),
+            "uncompressed_size": oversized.len(),
+        }]}))
+        .expect("oversized response");
+        let error = decode_artifact_response(&response, &paths).expect_err("reject expansion");
+        assert_eq!(error.code(), "artifact_read_failed");
     }
 
     #[tokio::test]
@@ -2649,6 +2859,7 @@ mod tests {
                     "policy_yaml".to_string(),
                     json!("version: 1\nfilesystem_policy:\n  include_workdir: true\n"),
                 ),
+                ("providers".to_string(), json!(["hosted"])),
             ]),
         };
 
@@ -2675,6 +2886,7 @@ mod tests {
                 "health",
                 "create:fabric-demo:environment-1",
                 "wait_ready:fabric-demo:fabric-sandbox-1",
+                "wait_provider_ready:fabric-demo:fabric-sandbox-1:hosted",
             ]
         );
     }
@@ -2723,6 +2935,9 @@ mod tests {
         };
         let mut environment = environment_plan_fixture();
         environment.ownership = "caller_owned".to_string();
+        environment
+            .settings
+            .insert("providers".to_string(), json!(["hosted"]));
         let reference = EnvironmentReference {
             provider: "openshell".to_string(),
             resource: Map::from_iter([
@@ -2744,7 +2959,12 @@ mod tests {
         );
         assert_eq!(
             *calls.lock().expect("calls"),
-            ["connect", "health", "get:fabric-demo:fabric-sandbox-1",]
+            [
+                "connect",
+                "health",
+                "get:fabric-demo:fabric-sandbox-1",
+                "wait_provider_ready:fabric-demo:fabric-sandbox-1:hosted",
+            ]
         );
     }
 
@@ -3337,6 +3557,20 @@ mod tests {
             sandbox.id = self.ready_id.to_string();
             sandbox.workspace = workspace.unwrap_or("default").to_string();
             Ok(sandbox)
+        }
+
+        async fn wait_provider_ready(
+            &self,
+            workspace: Option<&str>,
+            sandbox: &str,
+            provider: &str,
+            _timeout: Duration,
+        ) -> Result<(), ProviderError> {
+            self.calls.lock().expect("calls").push(format!(
+                "wait_provider_ready:{}:{sandbox}:{provider}",
+                workspace.unwrap_or("default")
+            ));
+            Ok(())
         }
 
         async fn exec(

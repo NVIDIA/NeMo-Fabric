@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-fabric-adapter-catalog"
-version = "0.6.0"
+version = "0.7.0"
 description = "Metadata-only catalog of bundled NVIDIA NeMo Fabric adapter descriptors"
 authors = [{ name = "NVIDIA Corporation" }]
 license = "Apache-2.0"

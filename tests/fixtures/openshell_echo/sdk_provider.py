@@ -15,6 +15,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import zlib
 
 from nemo_fabric import Fabric, FabricConfig, RunRequest
 from nemo_fabric.runtime_server.health import server_report
@@ -111,7 +112,14 @@ async def main():
                     timeout=5,
                     check=True,
                 )
-                output = json.loads(result.stdout)["files"]
+                # The task reader uses a compressed wire format. Match the real
+                # provider boundary by returning original bytes to Fabric core.
+                output = []
+                for file in json.loads(result.stdout)["files"]:
+                    content = zlib.decompress(bytes(file["content"]))
+                    if len(content) != file["uncompressed_size"]:
+                        raise ValueError("artifact reader returned an incorrect file size")
+                    output.append({"path": file["path"], "content": list(content)})
             elif operation == "release":
                 output = (
                     {"released": True, "detached": False}

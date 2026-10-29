@@ -100,6 +100,9 @@ def mock_openhands_fixture(monkeypatch: pytest.MonkeyPatch) -> dict:
     metrics_delta = SimpleNamespace(
         accumulated_token_usage=usage,
         accumulated_cost=0.25,
+        token_usages=[usage],
+        costs=[SimpleNamespace(cost=0.25)],
+        response_latencies=[SimpleNamespace(response_id="response-test")],
     )
     metrics = MagicMock()
     metrics.deep_copy.return_value = object()
@@ -248,7 +251,7 @@ async def test_start_maps_normalized_configuration(
     await runtime.start(_start_payload(openhands_payload))
 
     mock_openhands["llm_factory"].assert_called_once_with(
-        model="nvidia/test-model",
+        model="nvidia_nim/nvidia/test-model",
         usage_id="agent",
         api_key="secret:test-key",
         base_url="https://example.test/v1",
@@ -482,8 +485,97 @@ async def test_start_prefixes_an_unqualified_model_with_its_provider(
     await adapter.OpenHandsRuntime().start(_start_payload(openhands_payload))
 
     assert mock_openhands["llm_factory"].call_args.kwargs["model"] == (
-        "nvidia/test-model"
+        "nvidia_nim/test-model"
     )
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    ["nvidia/test-model", "nvidia_nim/nvidia/test-model"],
+)
+@pytest.mark.parametrize("with_tools", [False, True])
+def test_nvidia_custom_endpoint_preserves_served_model_id(
+    model_name: str,
+    with_tools: bool,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    pytest.importorskip("openhands.sdk")
+    pytest.importorskip("openhands.tools")
+    import httpx
+    import litellm
+    from litellm.caching.caching import InMemoryCache
+    from openhands.sdk.llm import Message
+    from openhands.sdk.llm import TextContent
+    from openhands.sdk.tool import FinishTool
+
+    requests = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-nim",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "nvidia/test-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": "done"},
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 11,
+                    "prompt_tokens_details": {"cached_tokens": 3},
+                    "completion_tokens": 5,
+                    "total_tokens": 16,
+                },
+            },
+        )
+
+    model = AgentConfig.from_mapping(
+        {
+            "models": {
+                "default": {
+                    "provider": "nvidia",
+                    "model": model_name,
+                    "base_url": "http://nim.example.test/v1",
+                    "api_key_env": "TEST_OPENHANDS_API_KEY",
+                }
+            }
+        }
+    ).models["default"]
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "unused")
+    # LiteLLM caches OpenAI clients across calls, including their HTTP transport.
+    monkeypatch.setattr(litellm, "in_memory_llm_clients_cache", InMemoryCache())
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        monkeypatch.setattr(litellm, "client_session", client)
+        llm = adapter._llm(adapter._load_openhands_api(), model)
+        llm.num_retries = 0
+        baseline = llm.metrics.deep_copy()
+        llm.completion(
+            [Message(role="user", content=[TextContent(text="finish")])],
+            tools=FinishTool.create() if with_tools else None,
+        )
+
+    assert len(requests) == 1
+    assert str(requests[0].url) == "http://nim.example.test/v1/chat/completions"
+    payload = json.loads(requests[0].content)
+    assert payload["model"] == "nvidia/test-model"
+    if with_tools:
+        assert payload["tools"][0]["function"]["name"] == "finish"
+    assert llm.metrics.accumulated_token_usage.prompt_tokens == 11
+    assert llm.metrics.accumulated_token_usage.completion_tokens == 5
+    assert llm.metrics.accumulated_token_usage.cache_read_tokens == 3
+    usage = adapter._usage(llm, baseline)
+    assert usage.input_tokens == 11
+    assert usage.input_tokens_include_cache is True
+    assert usage.output_tokens == 5
+    assert usage.total_tokens == 16
+    assert usage.cached_input_tokens is None
+    assert usage.cost_usd is None
 
 
 async def test_repeated_invocation_returns_only_current_turn_and_usage(
@@ -504,6 +596,7 @@ async def test_repeated_invocation_returns_only_current_turn_and_usage(
     assert second.usage is not None
     assert second.usage.to_mapping() == {
         "input_tokens": 11,
+        "input_tokens_include_cache": True,
         "output_tokens": 5,
         "total_tokens": 16,
         "cost_usd": 0.25,
@@ -589,6 +682,9 @@ async def test_invocation_failure_reports_the_underlying_sdk_error(
         assert result.error.message == "OpenHands could not complete the invocation."
         assert result.error.retryable is False
         assert result.error.extensions == {"sdk_error": sdk_error}
+        assert result.usage.input_tokens == 11
+        assert result.usage.output_tokens == 5
+        assert result.usage.cost_usd == 0.25
     finally:
         await runtime.stop()
 
@@ -704,9 +800,7 @@ async def test_start_rejects_unapplied_mcp_extensions(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
-    openhands_payload["config"]["mcp"]["extensions"] = {
-        "example.test/option": True
-    }
+    openhands_payload["config"]["mcp"]["extensions"] = {"example.test/option": True}
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
         await adapter.OpenHandsRuntime().start(_start_payload(openhands_payload))
@@ -894,3 +988,109 @@ async def test_health_discards_observation_when_native_read_changes_ownership(ra
         None,
     )
     assert "private" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("response_without_usage", [False, True])
+def test_native_metrics_defaults_do_not_establish_zero_usage(response_without_usage):
+    pytest.importorskip("openhands.sdk")
+    from openhands.sdk.llm.utils.metrics import Metrics
+
+    metrics = Metrics(model_name="test-model")
+    baseline = metrics.deep_copy()
+    if response_without_usage:
+        metrics.add_response_latency(0.1, "response-test")
+    assert adapter._usage(SimpleNamespace(metrics=metrics), baseline) is None
+
+
+@pytest.mark.parametrize("tokens", [(11, 5), (0, 0)])
+@pytest.mark.parametrize("cost", [None, 0.0, 0.25])
+def test_native_metrics_preserve_recorded_usage_and_only_recorded_cost(tokens, cost):
+    pytest.importorskip("openhands.sdk")
+    from openhands.sdk.llm.utils.metrics import Metrics
+
+    metrics = Metrics(model_name="test-model")
+    baseline = metrics.deep_copy()
+    metrics.add_response_latency(0.1, "response-test")
+    metrics.add_token_usage(
+        prompt_tokens=tokens[0],
+        completion_tokens=tokens[1],
+        cache_read_tokens=0,
+        cache_write_tokens=0,
+        context_window=0,
+        response_id="response-test",
+    )
+    if cost is not None:
+        metrics.add_cost(cost)
+    usage = adapter._usage(SimpleNamespace(metrics=metrics), baseline)
+    assert usage.input_tokens == tokens[0]
+    assert usage.output_tokens == tokens[1]
+    assert usage.total_tokens == sum(tokens)
+    assert usage.cost_usd == cost
+    # An unchanged warm conversation supplies no new per-call evidence.
+    assert adapter._usage(SimpleNamespace(metrics=metrics), metrics.deep_copy()) is None
+
+
+def test_native_metrics_do_not_report_partially_priced_cost():
+    pytest.importorskip("openhands.sdk")
+    from openhands.sdk.llm.utils.metrics import Metrics
+
+    metrics = Metrics(model_name="test-model")
+    baseline = metrics.deep_copy()
+    for response_id in ["first", "second"]:
+        metrics.add_response_latency(0.1, response_id)
+        metrics.add_token_usage(
+            prompt_tokens=11,
+            completion_tokens=5,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+            context_window=0,
+            response_id=response_id,
+        )
+    metrics.add_cost(0.25)
+    usage = adapter._usage(SimpleNamespace(metrics=metrics), baseline)
+    assert usage.input_tokens == 22
+    assert usage.output_tokens == 10
+    assert usage.cost_usd is None
+
+
+@pytest.mark.parametrize("response_without_tokens", [False, True])
+def test_usage_requires_tokens_for_every_observed_response(response_without_tokens):
+    usage = SimpleNamespace(prompt_tokens=11, completion_tokens=5)
+    metrics = MagicMock()
+    metrics.diff.return_value = SimpleNamespace(
+        accumulated_token_usage=usage,
+        token_usages=[usage],
+        response_latencies=[object()] * (2 if response_without_tokens else 1),
+        accumulated_cost=0,
+        costs=[],
+    )
+    result = adapter._usage(SimpleNamespace(metrics=metrics), object())
+    if response_without_tokens:
+        assert result is None
+    else:
+        # A later failed request without a response adds no response record.
+        assert result.input_tokens == 11
+        assert result.output_tokens == 5
+
+
+@pytest.mark.parametrize("token_records", [0, 1])
+@pytest.mark.parametrize("cost_records", [1, 2])
+def test_usage_retains_only_complete_cost_when_token_coverage_is_partial(
+    token_records, cost_records
+):
+    metrics = MagicMock()
+    metrics.diff.return_value = SimpleNamespace(
+        accumulated_token_usage=SimpleNamespace(prompt_tokens=11, completion_tokens=5),
+        token_usages=[object()] * token_records,
+        response_latencies=[object(), object()],
+        accumulated_cost=0.25,
+        costs=[object()] * cost_records,
+    )
+    result = adapter._usage(SimpleNamespace(metrics=metrics), object())
+    if cost_records == 2:
+        assert result.cost_usd == 0.25
+        assert result.input_tokens is None
+        assert result.output_tokens is None
+        assert result.total_tokens is None
+    else:
+        assert result is None

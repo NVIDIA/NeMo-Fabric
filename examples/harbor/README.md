@@ -13,6 +13,8 @@ you want to exercise.
 
 ## Walkthroughs
 
+For reproducible repository integration checks, use the [`qualify-harbor` maintainer skill](../../.agents/skills/qualify-harbor/SKILL.md). It runs one shared Terminal-Bench task across a catalog-derived harness matrix with isolated host/task installs and reports blocked and failed coverage alongside deterministic verifier results. The individual walkthroughs below do not establish an all-harness integration pass.
+
 | Walkthrough | What it demonstrates |
 | --- | --- |
 | [Calculator walkthrough](calculator/README.md) | Validate the complete integration and Harbor reward with a deterministic, credential-free smoke test, then run the same task with OpenClaw, Claude, Pi, or Codex. |
@@ -68,20 +70,20 @@ not read task paths; adapter and asset resolution is deferred to
 
 Use the following package requirements for the two-environment model. Pin the
 host and task packages to the same NeMo Fabric release. These examples use
-version `0.6.0`.
+version `0.7.0`.
 
 | Environment | Required Dependencies | Purpose |
 | --- | --- | --- |
-| Harbor host | `nemo-fabric[harbor]==0.6.0` | Harbor CLI, `FabricAgent`, and typed `FabricConfig` construction |
-| Claude task without Relay | `nemo-fabric[claude]==0.6.0` | NeMo Fabric runner, Claude adapter, and supported Claude harness |
-| Codex task | `nemo-fabric[codex]==0.6.0` | NeMo Fabric runner, Codex adapter, and SDK-managed app-server; the calculator image installs the local adapter source with its `harness` extra |
-| Pi task | `nemo-fabric==0.6.0`, `nemo-fabric-adapters-pi@0.6.0`, and a compatible Pi SDK harness | NeMo Fabric runner and task-local Pi adapter descriptor; the calculator image builds both from the vendored source |
-| Claude task with Relay | `nemo-fabric[claude]==0.6.0` plus a NeMo Relay CLI in the `>=0.9,<0.12` range on `PATH` | NeMo Fabric runner, Claude adapter and harness, and the adapter-managed Relay gateway and hooks |
-| Pi task with Relay | `nemo-fabric==0.6.0`, `nemo-fabric-adapters-pi@0.6.0`, a compatible Pi SDK harness, `nemo-relay-cli-bin>=0.9.0,<0.12.0` on `PATH`, and the matching Relay Pi extension | NeMo Fabric runner, Pi adapter and harness, and the adapter-managed Relay gateway and extension |
-| Hermes Agent task with Relay | Task image with a Relay 0.10-compatible Hermes Agent, `nemo-fabric==0.6.0`, `nemo-fabric-adapters-hermes==0.6.0`, and `nemo-relay>=0.10,<0.11` | NeMo Fabric runner, preinstalled Hermes Agent and adapter, and the NeMo Relay Python package |
-| OpenClaw task | Node.js 24.16+ or 26.1+, OpenClaw, `nemo-fabric==0.6.0`, and `nemo-fabric-adapters-openclaw==0.6.0` | NeMo Fabric runner, OpenClaw adapter, and the adapter-managed local OpenClaw Gateway |
-| NOOA BenchAgent task | `nemo-fabric==0.6.0` and `nemo-fabric-adapters-nooa[harness]==0.6.0` | NeMo Fabric runner, the packaged BenchAgent adapter and descriptors, and tested NOOA harness packages |
-| NOOA BenchAgent task with Relay | `nemo-fabric==0.6.0` and `nemo-fabric-adapters-nooa[full]==0.6.0` | Baseline dependencies plus compatible Relay telemetry support |
+| Harbor host | `nemo-fabric[harbor]==0.7.0` | Harbor CLI, `FabricAgent`, and typed `FabricConfig` construction |
+| Claude task without Relay | `nemo-fabric[claude]==0.7.0` | NeMo Fabric runner, Claude adapter, and supported Claude harness |
+| Codex task | `nemo-fabric[codex]==0.7.0` | NeMo Fabric runner, Codex adapter, and SDK-managed app-server; the calculator image installs the local adapter source with its `harness` extra |
+| Pi task | `nemo-fabric==0.7.0`, `nemo-fabric-adapters-pi@0.7.0`, and a compatible Pi SDK harness | NeMo Fabric runner and task-local Pi adapter descriptor; the calculator image builds both from the vendored source |
+| Claude task with Relay | `nemo-fabric[claude]==0.7.0` plus a NeMo Relay CLI in the `>=0.9,<0.12` range on `PATH` | NeMo Fabric runner, Claude adapter and harness, and the adapter-managed Relay gateway and hooks |
+| Pi task with Relay | `nemo-fabric==0.7.0`, `nemo-fabric-adapters-pi@0.7.0`, a compatible Pi SDK harness, `nemo-relay-cli-bin>=0.9.0,<0.12.0` on `PATH`, and the matching Relay Pi extension | NeMo Fabric runner, Pi adapter and harness, and the adapter-managed Relay gateway and extension |
+| Hermes Agent task with Relay | Task image with a Relay 0.10-compatible Hermes Agent, `nemo-fabric==0.7.0`, `nemo-fabric-adapters-hermes==0.7.0`, and `nemo-relay>=0.10,<0.11` | NeMo Fabric runner, preinstalled Hermes Agent and adapter, and the NeMo Relay Python package |
+| OpenClaw task | Node.js 24.16+ or 26.1+, OpenClaw, `nemo-fabric==0.7.0`, and `nemo-fabric-adapters-openclaw==0.7.0` | NeMo Fabric runner, OpenClaw adapter, and the adapter-managed local OpenClaw Gateway |
+| NOOA BenchAgent task | `nemo-fabric==0.7.0` and `nemo-fabric-adapters-nooa[harness]==0.7.0` | NeMo Fabric runner, the packaged BenchAgent adapter and descriptors, and tested NOOA harness packages |
+| NOOA BenchAgent task with Relay | `nemo-fabric==0.7.0` and `nemo-fabric-adapters-nooa[full]==0.7.0` | Baseline dependencies plus compatible Relay telemetry support |
 
 The `nemo-fabric` package installs the runtime. The `relay` extra installs the
 NeMo Relay Python package, not the CLI required by Claude.
@@ -109,6 +111,7 @@ container boundary:
 | `--skill` | `skills.paths` |
 | `--mcp-config` | `mcp.servers` |
 | `--ak fabric_telemetry=relay` | `telemetry.providers.relay` and `relay.observability` |
+| `--ak fabric_model_provider=<provider>` | `models.default.provider` (overrides model-prefix inference) |
 | `--ak fabric_model_base_url=<url>` | `models.default.base_url` |
 | `--ak fabric_model_api_key_env=<name>` | `models.default.api_key_env` |
 | `--ak fabric_discovery_paths='["/task/adapter.fabric-adapter.json"]'` | `discovery.local_paths` for task-local descriptors such as Pi |

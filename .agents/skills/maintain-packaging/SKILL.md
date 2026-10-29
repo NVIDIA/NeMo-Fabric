@@ -56,6 +56,13 @@ in parity. The task uses `fabric-agent-ctl` from the Python SDK.
 
 Run `just adapter-catalog`, `just check-adapter-catalog`, and `uv build --wheel --sdist --out-dir dist sdk/python/nemo-fabric-adapter-catalog` when maintaining the bundle. `just set-version` refreshes it after stamping Python and TypeScript versions. Python tests and wheel builds reject stale bundles; wheels and source distributions must build independently of the adapter source tree. Keep these maintainer details out of the PyPI-facing package README.
 
+### Pi SDK Compatibility
+
+Keep Pi’s optional peer constraints, development pins, consumer install command,
+and harness-install diagnostic aligned across all four SDK packages, including
+`pi-codemode`. Verify imports in a fresh consumer install from packed artifacts;
+the workspace lockfile can hide incompatible transitive SDK resolutions.
+
 ### Select Dependencies
 
 Treat every direct dependency as a long-lived API, supply-chain, and licensing

@@ -106,7 +106,11 @@ async def test_qwen_doctor_and_run_against_local_provider(
     assert "user_count=1" in first["output"]["response"]
     assert "second" in second["output"]["response"]
     assert "user_count=2" in second["output"]["response"]
-    assert second["usage"]["input_tokens"] >= 0
+    # This provider fixture emits all-zero usage, which the pinned SDK also
+    # synthesizes for missing usage. Neither proves a zero-token invocation.
+    for result in (single, first, second):
+        assert "input_tokens" not in result["usage"]
+        assert "output_tokens" not in result["usage"]
 
     captured = requests.get(f"{api_server}/_requests", timeout=5).json()
     evidence = [

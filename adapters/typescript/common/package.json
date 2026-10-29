@@ -1,6 +1,6 @@
 {
   "name": "nemo-fabric-adapters-common",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Shared TypeScript lifecycle host for NVIDIA NeMo Fabric adapters.",
   "license": "Apache-2.0",
   "type": "module",
@@ -45,7 +45,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "1.5.1",
     "ajv": "8.20.0",
-    "nemo-fabric-adapter-contract": "0.6.0",
+    "nemo-fabric-adapter-contract": "0.7.0",
     "zod": "4.6.6"
   },
   "devDependencies": {

@@ -113,7 +113,9 @@ async def _close_shell(agent: Any) -> None:
         await _await_if_needed(close())
 
 
-def _failure_output(code: str, message: str) -> AgentRunResult:
+def _failure_output(
+    code: str, message: str, usage: AgentUsage | None = None
+) -> AgentRunResult:
     return AgentRunResult(
         status=AgentRunStatus.FAILED,
         output={
@@ -124,6 +126,7 @@ def _failure_output(code: str, message: str) -> AgentRunResult:
             "completed": False,
         },
         error=AgentRunError(code=code, message=message),
+        usage=usage,
     )
 
 
@@ -141,10 +144,23 @@ def _usage(tokens: Any) -> AgentUsage | None:
         return None
     if input_tokens < 0 or output_tokens < 0:
         return None
+    # NOOA initializes the accumulator to zero and substitutes zero for missing
+    # provider dimensions. Only positive observations distinguish reported usage.
+    observed_input = input_tokens if input_tokens > 0 else None
+    observed_output = output_tokens if output_tokens > 0 else None
+    if observed_input is None and observed_output is None:
+        return None
     return AgentUsage(
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        total_tokens=input_tokens + output_tokens,
+        input_tokens=observed_input,
+        output_tokens=observed_output,
+        # unifiedllm passes LiteLLM prompt_tokens through unchanged: its inclusive
+        # prompt count already contains cache hits. Do not add them again.
+        input_tokens_include_cache=True if observed_input is not None else None,
+        total_tokens=(
+            observed_input + observed_output
+            if observed_input is not None and observed_output is not None
+            else None
+        ),
     )
 
 
@@ -304,6 +320,7 @@ class BenchRuntime:
             }
             if self._instruction is not None:
                 task_input["instructions"] = self._instruction
+            read_usage: Callable[[], AgentUsage | None] | None = None
             try:
                 from nooa.runtime.token_usage import get_task_tokens
                 from nooa.runtime.token_usage import start_task_tokens
@@ -312,14 +329,16 @@ class BenchRuntime:
                 # previous one first so persistent Fabric runtimes do not leak it.
                 await _close_shell(agent)
                 start_task_tokens()
+                read_usage = lambda: _usage(get_task_tokens())
                 native = await agent._run_evaluation(task_input)
-                usage = _usage(get_task_tokens())
+                usage = read_usage()
                 if not isinstance(native, dict):
                     raise ValueError("BenchAgent result must be an object")
                 if native.get("success") is not True:
                     return _failure_output(
                         "nooa_bench_task_failed",
                         "OO Agents BenchAgent reported task failure; inspect adapter stderr for details",
+                        usage=usage,
                     )
                 return _success_output(native, usage)
             except asyncio.CancelledError:
@@ -332,6 +351,7 @@ class BenchRuntime:
                 return _failure_output(
                     "nooa_bench_invoke_failed",
                     "OO Agents BenchAgent invocation failed; inspect adapter stderr for details",
+                    usage=read_usage() if read_usage is not None else None,
                 )
 
         try:

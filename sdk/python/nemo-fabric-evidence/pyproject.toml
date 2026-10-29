@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-fabric-evidence"
-version = "0.6.0"
+version = "0.7.0"
 description = "Shared software evidence for NVIDIA NeMo Fabric SDKs and adapters"
 authors = [{ name = "NVIDIA Corporation" }]
 license = "Apache-2.0"

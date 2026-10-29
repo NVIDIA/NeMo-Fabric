@@ -79,6 +79,11 @@ directory. Each skill path must be a directory containing `SKILL.md`. The
 adapter disables ambient OpenHands user, public, project, and memory loading;
 only explicitly configured NeMo Fabric skills are loaded.
 
+For `provider="nvidia"`, the adapter adds LiteLLM's `nvidia_nim/` dispatch
+prefix while preserving the served model ID, including its `nvidia/`
+namespace. This also supports self-hosted NIM endpoints through `base_url`.
+An existing `nvidia_nim/` prefix is retained once.
+
 The adapter configures the OpenHands SDK standard summarizing condenser,
 `default_condenser`, with the agent model. When the history sent to the model
 exceeds 80 events, or exceeds the model input token limit when OpenHands knows
@@ -129,6 +134,16 @@ Each invocation returns only the final response and usage for that turn. `stop`
 closes the conversation and removes the adapter-owned temporary profile state.
 Create a new runtime to change the model, workspace, tools, MCP servers, or
 skills.
+
+Usage requires invocation-local SDK token records. If a request fails before
+the SDK records usage, or a response contains no usage, the adapter leaves
+token counters unknown instead of reporting the SDK's zero-initialized
+accumulator. Recorded tokens remain available after a later invocation failure.
+Cost is unknown unless the SDK records a cost for every returned response;
+an unmapped model's default accumulated cost does not establish a free request.
+Reported input tokens include cached input, following LiteLLM's normalized
+`prompt_tokens` convention. The adapter sets `input_tokens_include_cache` to
+`true` and does not add the cache count again or infer a missing cache breakdown.
 
 ## Runtime Health
 
