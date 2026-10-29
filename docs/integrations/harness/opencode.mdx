@@ -160,7 +160,7 @@ supply. These rules are not a filesystem sandbox and do not prevent shell tools
 from reading files in the workspace.
 
 The adapter accepts plain-text input and returns the final response in
-`output.response`. Streaming, Relay, tool policy, subagents,
+`output.response`. Streaming, Relay, tool policy, NeMo Fabric subagent configuration,
 provider-specific model settings, and `max_tokens` are not supported.
 
 ## Understand the Runtime Lifecycle
@@ -168,8 +168,11 @@ provider-specific model settings, and `max_tokens` are not supported.
 The adapter runs in a persistent Bun process. `start` creates one embedded
 OpenCode host and one OpenCode session for the NeMo Fabric runtime. Ordered
 plain-text invocations reuse that session and its conversation history. A
-successful result has `output.response`. Usage fields are present when OpenCode
-reports them. `stop` removes the OpenCode session and closes the embedded host.
+successful result has `output.response`. `stop` removes the OpenCode session and closes the embedded host.
+
+For OpenAI-compatible Chat Completions responses, the adapter reports standard input and output counts when it proves ownership and completion of OpenCode-managed model work, including automatic title generation and attributable foreground children. Input includes cache reads, and output includes reasoning; do not add these breakdowns again. Harbor receives the same counts. Ambiguous runs retain partial observations and coverage gaps under `usage.metadata["nvidia.fabric.opencode.usage_evidence.v1"]`, with standard totals left unknown. Provider-reported cost stays unknown. Refer to the [adapter's token usage limits](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/typescript/opencode#token-usage) before using these counts in comparisons.
+
+When coverage cannot be proved, the evidence may include `scope_reasons` with bounded reason codes such as `background_shell`, `title_completion_unconfirmed`, or `observer_lost`. These diagnostics contain no native error messages, shell commands, or credentials and do not make partial counters complete.
 
 ```mermaid
 flowchart LR
@@ -190,3 +193,9 @@ invocation-scoped path beneath `opencode/` and returns it as a `patch` artifact.
 Without an artifact root, it returns no patch artifact.
 
 Create a new runtime to change the selected model or workspace.
+
+## Runtime Health
+
+`Fabric.check()` supports `live`, `active`, and `ready`. Each level obtains a fresh native `sessions.get({ sessionID })` response and validates the selected unarchived session. Readiness establishes local session availability.
+
+Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.

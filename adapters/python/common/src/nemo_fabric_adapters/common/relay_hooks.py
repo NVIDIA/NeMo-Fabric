@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 from sys import platform
 from typing import Any, Literal
 
+
+RELAY_TOOL_CHECK_PATH = Path(__file__).with_name("relay_tool_check.py").resolve()
 
 RelayHookAgent = Literal["claude", "codex"]
 
@@ -22,7 +25,6 @@ RELAY_HOOK_EVENTS: dict[RelayHookAgent, tuple[str, ...]] = {
         "PreToolUse",
         "PostToolUse",
         "PostToolUseFailure",
-        "PermissionRequest",
         "SubagentStart",
         "SubagentStop",
         "Notification",
@@ -36,7 +38,6 @@ RELAY_HOOK_EVENTS: dict[RelayHookAgent, tuple[str, ...]] = {
         "UserPromptSubmit",
         "PreToolUse",
         "PostToolUse",
-        "PermissionRequest",
         "SubagentStart",
         "SubagentStop",
         "Stop",
@@ -50,14 +51,12 @@ RELAY_TOOL_HOOK_EVENTS: dict[RelayHookAgent, frozenset[str]] = {
             "PreToolUse",
             "PostToolUse",
             "PostToolUseFailure",
-            "PermissionRequest",
         }
     ),
     "codex": frozenset(
         {
             "PreToolUse",
             "PostToolUse",
-            "PermissionRequest",
         }
     ),
 }
@@ -82,17 +81,35 @@ def render_relay_hooks(
     else:
         executable_arg = shlex.quote(str(executable))
     command = f"{executable_arg} hook-forward {agent}"
+    python_arg = (
+        subprocess.list2cmdline([sys.executable.replace("\\", "/")])
+        if platform == "win32"
+        else shlex.quote(sys.executable)
+    )
+    helper_arg = (
+        subprocess.list2cmdline([str(RELAY_TOOL_CHECK_PATH).replace("\\", "/")])
+        if platform == "win32"
+        else shlex.quote(str(RELAY_TOOL_CHECK_PATH))
+    )
     hooks: dict[str, list[dict[str, Any]]] = {}
     for event in RELAY_HOOK_EVENTS[agent]:
+        # Relay reports tool-check delivery failures; the host handles process failures.
+        failure_policy = "--fail-closed" if event == "PreToolUse" else "--fail-open"
+        hook_command = f"{command} {failure_policy}"
+        if agent == "codex" and event == "PreToolUse":
+            # Keep workspace files and PYTHONPATH out of the approval check.
+            hook_command = f"{python_arg} -I {helper_arg} {hook_command}"
         group: dict[str, Any] = {
             "hooks": [
                 {
                     "type": "command",
-                    "command": command,
-                    "timeout": 30,
+                    "command": hook_command,
+                    "timeout": 45,
                 }
             ]
         }
+        if agent == "claude" and event == "PreToolUse":
+            group["hooks"][0]["onFailure"] = "block"
         if event in RELAY_TOOL_HOOK_EVENTS[agent]:
             group["matcher"] = "*"
         hooks[event] = [group]

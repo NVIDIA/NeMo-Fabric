@@ -9,7 +9,7 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and engineers creating, migrating, reviewing, or maintaining third-party adapters that integrate external agent harnesses or custom-agent runtimes with NVIDIA NeMo Fabric through the published southbound adapter contract. <br>
+Developers and engineers creating, migrating, reviewing, or maintaining third-party adapters that integrate external agent harnesses or custom-agent runtimes with NVIDIA NeMo Fabric through the published southbound adapter contract, including descriptors, AgentConfig mapping, lifecycle implementation, discovery packaging, and conformance checks. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
@@ -38,8 +38,8 @@ Mitigation: Review and scan skill before deployment. <br>
 **Other Properties Related to Output:** [None] <br>
 
 ## Evaluation Agents Used: <br>
-- Claude Code (`aws/anthropic/bedrock-claude-opus-4-8`) <br>
-- Codex (`openai/openai/gpt-5.5`) <br>
+- Claude Code (`aws/anthropic/bedrock-claude-opus-5-5`) <br>
+- Codex (`openai/openai/gpt-6.1-sol`) <br>
 
 
 
@@ -68,15 +68,15 @@ Underlying evaluation signals used in this run: <br>
 ## Evaluation Results: <br>
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | Not available | 78.3% — baseline ran, but no comparable score was available; uplift unavailable |
-| Security | Not available | 57.1% → 85.7% (+28.6 points) |
-| Correctness | Not available | 71.4% → 82.9% (+11.5 points) |
-| Discoverability | Not available | 82.0% — baseline ran, but no comparable score was available; uplift unavailable |
-| Effectiveness | Not available | 52.1% → 70.2% (+18.1 points) |
-| Efficiency | Not available | 70.6% — baseline ran, but no comparable score was available; uplift unavailable |
+| Overall | 77.0% — baseline ran, but no comparable score was available; uplift unavailable | 69.6% — baseline ran, but no comparable score was available; uplift unavailable |
+| Security | 71.4% → 71.4% (±0.0 points) | 57.1% → 71.4% (+14.3 points) |
+| Correctness | 42.9% → 88.6% (+45.7 points) | 51.4% → 82.9% (+31.5 points) |
+| Discoverability | 92.0% — baseline ran, but no comparable score was available; uplift unavailable | 84.0% — baseline ran, but no comparable score was available; uplift unavailable |
+| Effectiveness | 24.3% → 53.4% (+29.1 points) | 24.1% → 38.1% (+14.0 points) |
+| Efficiency | 79.5% — baseline ran, but no comparable score was available; uplift unavailable | 71.5% — baseline ran, but no comparable score was available; uplift unavailable |
 
 ## Skill Version(s): <br>
-ac263cc (source: git SHA, committed 2026-10-08) <br>
+a736aa8a (source: git SHA, committed 2026-10-27) <br>
 
 ## Ethical Considerations: <br>
 NVIDIA believes Trustworthy AI is a shared responsibility and we have established policies and practices to enable development for a wide array of AI applications. When downloaded or used in accordance with our terms of service, developers should work with their internal team to ensure this skill meets requirements for the relevant industry and use case and addresses unforeseen product misuse. <br>

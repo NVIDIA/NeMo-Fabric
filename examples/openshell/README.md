@@ -71,7 +71,7 @@ For another agent, adapt the example workload hooks and provide:
   access; and
 - a normal SDK consumer that starts, invokes, and stops the runtime.
 
-Start with SDK echo to inspect two-turn state, normalized results, artifact
+Start with SDK echo, which checks server health before starting a runtime, to inspect two-turn state, normalized results, artifact
 collection, and both environment ownership modes without a model credential.
 The [Hermes code-review example](../code_review_agent/README.md#run-hermes-in-openshell)
 then shows a packaged third-party harness, model endpoint policy, and optional

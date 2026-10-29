@@ -215,6 +215,109 @@ def test_bench_descriptor_is_a_closed_harness_adapter(tmp_path: Path):
     assert plan["adapter"]["adapter_kind"] == "python"
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="NOOA BenchAgent storage requires the Unix-only fcntl module",
+)
+@pytest.mark.usefixtures("nemo_relay")
+async def test_bench_runtime_with_real_relay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from nooa_bench.bench_agent import BenchAgent
+
+    os.environ["OPENAI_API_KEY"] = "test-key"
+    monkeypatch.chdir(tmp_path)
+    evaluation = AsyncMock(
+        return_value={
+            "success": True,
+            "response": "test -f result.txt",
+            "result": {
+                "solution_description": "Compatibility smoke completed.",
+                "evidence": "Deterministic evaluation result.",
+                "command_to_verify": "test -f result.txt",
+            },
+        }
+    )
+    monkeypatch.setattr(BenchAgent, "_run_evaluation", evaluation)
+    relay_directory = tmp_path / "relay"
+    config_path = tmp_path / "relay.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "relay": {
+                    "config": {
+                        "version": 1,
+                        "components": [
+                            {
+                                "kind": "observability",
+                                "enabled": True,
+                                "config": {
+                                    "version": 4,
+                                    "atof": {
+                                        "enabled": True,
+                                        "sinks": [
+                                            {
+                                                "type": "file",
+                                                "output_directory": str(
+                                                    relay_directory
+                                                ),
+                                                "filename": "events.atof.jsonl",
+                                                "mode": "append",
+                                            }
+                                        ],
+                                    },
+                                    "atif": {
+                                        "enabled": True,
+                                        "output_directory": str(relay_directory),
+                                    },
+                                },
+                            }
+                        ],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(config_path)
+    runtime = bench_adapter.BenchRuntime()
+    await runtime.start(_start_payload(tmp_path))
+    event_paths: set[Path] = set()
+    try:
+        for index in range(2):
+            context = _runtime_context(
+                invocation_id=f"bench-invocation-{index}",
+                request_id=f"bench-request-{index}",
+            ).to_mapping()
+            context["telemetry"] = {
+                "relay_enabled": True,
+                "config_path": str(config_path),
+                "env": {"FABRIC_RELAY_CONFIG_PATH": str(config_path)},
+                "metadata": {"telemetry_providers": ["relay"]},
+            }
+            result = await runtime.invoke(
+                AgentRunRequest.from_mapping({"input": "Check Relay compatibility."}),
+                RuntimeContext.from_mapping(context),
+            )
+            assert result.status is AgentRunStatus.SUCCEEDED, result.to_mapping()
+            assert {item["kind"] for item in result.output["relay_artifacts"]} == {
+                "atof",
+                "atif",
+            }
+            assert result.output["telemetry"].get("error") is None, result.to_mapping()
+            event_paths.update(
+                Path(item["path"])
+                for item in result.output["relay_artifacts"]
+                if item["kind"] == "atof"
+            )
+    finally:
+        await runtime.stop()
+    events = "\n".join(path.read_text(encoding="utf-8") for path in event_paths)
+    assert "bench-request-0" in events
+    assert "bench-request-1" in events
+    assert evaluation.await_count == 2
+
+
 async def test_bench_runtime_maps_task_result_usage_and_cleanup(
     tmp_path: Path,
     bench_dependencies: dict[str, MagicMock],

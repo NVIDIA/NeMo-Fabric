@@ -696,5 +696,12 @@ class NooaRuntime:
             ) from telemetry_error
 
 
+
+# Selected software reported by the shared lifecycle host; no dependency scan.
+PROVENANCE_PACKAGES = (
+    ("adapter", "nemo-fabric-adapters-nooa", "nemo_fabric_adapters.nooa.adapter"),
+    ("harness", "nooa", "nooa"),
+)
+
 if __name__ == "__main__":
     main()

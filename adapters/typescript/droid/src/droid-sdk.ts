@@ -6,13 +6,19 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
 import type {
+  AdapterCheckResult,
+  CheckLevel,
   AgentConfig,
   AgentMcpServerConfig,
   AgentModelConfig,
   AgentUsage,
   JsonObject,
 } from "nemo-fabric-adapter-contract";
-import { LifecycleError, type AdapterStartInput } from "nemo-fabric-adapters-common";
+import {
+  unobservedHealth,
+  LifecycleError,
+  type AdapterStartInput,
+} from "nemo-fabric-adapters-common";
 
 import type { DroidPromptOutcome, DroidSessionFactory, DroidSessionHandle } from "./runtime.js";
 
@@ -681,10 +687,46 @@ class DroidSdkSessionHandle implements DroidSessionHandle {
   private readonly session: DroidSdkSession;
   private readonly runtimeRoot?: string;
   private stopped = false;
+  private healthPending = false;
 
   constructor(session: DroidSdkSession, runtimeRoot?: string) {
     this.session = session;
     this.runtimeRoot = runtimeRoot;
+  }
+
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    if (this.stopped)
+      return {
+        ...unobservedHealth("session_closed"),
+        outcome: "failed",
+        activity: "stopped",
+      };
+    if (level !== "live")
+      return {
+        ...unobservedHealth("unsupported_level"),
+        outcome: "unsupported",
+      };
+    // The SDK has no cancellation option for listTools. Retain at most one pending request across caller timeouts.
+    if (this.healthPending) return unobservedHealth("probe_timeout");
+    this.healthPending = true;
+    try {
+      const tools = await this.session.listTools();
+      if (this.stopped) return unobservedHealth("observation_changed");
+      if (!Array.isArray(tools)) return unobservedHealth("probe_error");
+      return {
+        outcome: "passed",
+        reason_code: null,
+        activity: "unknown",
+        source: "fabric.adapter.liveness",
+        observed_at: new Date().toISOString(),
+      };
+    } catch {
+      return unobservedHealth(
+        this.stopped ? "observation_changed" : "probe_error",
+      );
+    } finally {
+      this.healthPending = false;
+    }
   }
 
   async prompt(text: string): Promise<DroidPromptOutcome> {

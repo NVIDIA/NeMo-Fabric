@@ -16,7 +16,9 @@ test("descriptor claims only implemented normalized fields", () => {
     "models", "models.base_url", "models.temperature", "models.top_p", "instructions.system", "tools.blocked", "skills", "mcp", "mcp.tool_filters",
   ]);
   assert.deepEqual(descriptor.config.system_instruction_modes, ["replace", "append"]);
-  assert.deepEqual(descriptor.capabilities, { streaming: false, cancellation: false, updates: false, service: false });
+  assert.deepEqual(descriptor.capabilities, {
+    metadata: { health_checks: ["live", "active", "ready"] }, streaming: false, cancellation: false, updates: false, service: false
+  });
 });
 
 test("selects and validates an OpenAI-compatible model", () => {

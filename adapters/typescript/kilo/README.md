@@ -84,14 +84,27 @@ variables, explicit NeMo Fabric `environment.env` values, variables named by
 `environment.env_names`, and the selected model credential. Other parent
 variables are not forwarded.
 
-The adapter is non-interactive. It denies follow-up questions, access outside
-the workspace, doom-loop continuation, and direct reads of `.env` files. These
-permission rules are not a filesystem sandbox and cannot prevent an enabled
-shell tool from reading workspace files.
+The adapter is non-interactive. When `tools.enabled` is omitted, it allows shell
+commands unless `tools.blocked` lists `bash`. It denies follow-up questions,
+access outside the workspace, doom-loop continuation, and direct reads of `.env`
+files. These permission rules are not a filesystem sandbox and cannot prevent an
+enabled shell tool from reading workspace files.
 
 `models.max_tokens`, provider-specific model settings, append-mode system
 instructions, streaming, cancellation, service mode, and Relay telemetry are
 unsupported.
+
+## Model Usage
+
+Each invocation counts Kilo Code's completed model steps linked to its prompt. Input counts include cache reads and writes. Output counts include reasoning. A supplied total is retained separately; the adapter does not invent one by adding other fields. Model calls made inside external tools are outside this measurement.
+
+Kilo Code replaces some missing values with zero and clamps its token calculations at zero. The adapter recovers a count only when that calculation is reversible. A stored zero does not establish reported zero usage.
+
+Complete counts appear in `RunResult.usage` only when the step records and retry events establish their coverage. Child tasks, scheduled work, internal continuation turns, retries, or a lost event connection leave coverage gaps. Failed requests retain available observations. Late records from an earlier prompt do not enter a later invocation.
+
+`RunResult.usage.metadata["nvidia.fabric.kilo.usage_evidence.v1"]` keeps `observed` counts and `gaps`. Observed input and output use the inclusive conventions above. Missing fields remain unknown. A gap means the observations are incomplete, and the observed sum is not a complete total or a guaranteed lower bound. Cache and reasoning breakdowns appear only when their values can be recovered; their absence does not invalidate a known inclusive count.
+
+The adapter leaves provider-reported cost unknown because Kilo Code exposes provider amounts and catalog estimates through the same field. Memory updates can make separate model calls. If memory is enabled or its status cannot be read, complete counts stay unknown for that runtime. Complete counts require the default Kilo runtime. Supplying `KILO_CONFIG` or `KILO_EXPERIMENTAL_NATIVE_LLM` leaves coverage unverified.
 
 ## Understand the Runtime Lifecycle
 
@@ -125,3 +138,18 @@ flowchart TB
 
 For installation, configuration, and operational guidance, see the
 [Kilo Code integration guide](../../../docs/integrations/harness/kilo.mdx).
+
+## Runtime health
+
+`Fabric.check()` supports `live`, `active`, and `ready`. `live` observes the
+owned Kilo server process exit and signal status. `active` requests the selected
+session through `session.get()` and verifies its native session identifier.
+`ready` requires `global.health()` to return `healthy: true`.
+
+These read-only observations use the pinned Kilo SDK request interface and can
+run during an invocation. Busy alone does not fail a check. Readiness covers
+native local server health; readiness does not promise model access, valid
+credentials, or MCP connectivity. Checks never send prompts or abort a turn.
+At most one native health request remains outstanding after a caller timeout.
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.

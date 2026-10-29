@@ -138,3 +138,9 @@ Then run:
 ```
 
 Do not combine the OpenHands variant with `--relay`.
+
+## Runtime Health
+
+`Fabric.check()` supports `live` and `active`. Liveness observes the owned native conversation closure flags. Active requires completed native lazy initialization and can return `unknown/capabilities_unverified` before the first invocation. The adapter does not provide a qualified read-only `ready` check.
+
+Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.

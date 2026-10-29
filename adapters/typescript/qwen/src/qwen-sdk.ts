@@ -9,7 +9,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
-import type { AgentUsage } from "nemo-fabric-adapter-contract";
+import type { AdapterCheckResult, CheckLevel, AgentUsage } from "nemo-fabric-adapter-contract";
 import { LifecycleError, type AdapterStartInput } from "nemo-fabric-adapters-common";
 import type { Query, SDKResultMessage, SDKUserMessage } from "@qwen-code/sdk";
 
@@ -87,8 +87,9 @@ class PromptQueue implements AsyncIterable<SDKUserMessage> {
   }
 }
 
-class QwenSdkSession implements QwenSession {
+export class QwenSdkSession implements QwenSession {
   private closed = false;
+  private healthObservation?: Promise<boolean>;
   private previousUsage = { input: 0, output: 0, total: 0 };
 
   constructor(
@@ -113,6 +114,25 @@ class QwenSdkSession implements QwenSession {
       output_tokens: Math.max(0, current.output - previous.output),
       total_tokens: Math.max(0, current.total - previous.total),
     };
+  }
+
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    const source = level === "live" ? "fabric.adapter.liveness" : level === "active" ? "fabric.adapter.interface" : "fabric.adapter.readiness";
+    if (this.closed || this.query.isClosed()) return { outcome: "failed", reason_code: "session_closed", source, observed_at: new Date().toISOString(), activity: "stopped" };
+    if (this.healthObservation !== undefined) return { outcome: "unknown", reason_code: "probe_timeout", source, observed_at: null, activity: "unknown" };
+    const sessionId = this.query.getSessionId();
+    try {
+      const observation: Promise<boolean> = this.query.supportedCommands().then(value => value !== null && Array.isArray(value.commands) && value.commands.every(command => typeof command === "string"));
+      this.healthObservation = observation;
+      void observation.finally(() => { if (this.healthObservation === observation) this.healthObservation = undefined; }).catch(() => { });
+      const valid = await observation;
+      if (this.closed || this.query.isClosed() || this.query.getSessionId() !== sessionId) return { outcome: "unknown", reason_code: "observation_changed", source, observed_at: null, activity: "unknown" };
+      return valid
+        ? { outcome: "passed", reason_code: null, source, observed_at: new Date().toISOString(), activity: "idle" }
+        : { outcome: "unknown", reason_code: "probe_error", source, observed_at: new Date().toISOString(), activity: "unknown" };
+    } catch {
+      return { outcome: "unknown", reason_code: this.closed || this.query.isClosed() || this.query.getSessionId() !== sessionId ? "observation_changed" : "probe_error", source, observed_at: null, activity: "unknown" };
+    }
   }
 
   async prompt(input: string): Promise<QwenTurn> {

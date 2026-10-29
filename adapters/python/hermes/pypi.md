@@ -31,13 +31,6 @@ provides. None of these expressions installs Hermes Agent:
 | `pip install "nemo-fabric-adapters-hermes[relay]"` | No | Yes | No | Yes |
 | `pip install nemo-fabric-adapters-hermes` | No | Yes | No | No |
 
-Released Hermes Agent v2026.9.24 requires Relay 0.8.x. Ordinary runs remain
-supported in a separate environment. Relay telemetry and streaming require a
-Hermes build compatible with the chosen Relay version. Until a compatible
-release is available, NeMo Fabric tests a merged upstream revision that
-requires Relay 0.10 on supported Python 3.14 platforms. Use the `relay` and
-`full` extras only with a compatible Hermes checkout. The adapter fails at
-startup if Relay telemetry is enabled with an incompatible Hermes or Relay
-installation.
+Hermes Agent v0.22.5 and the pinned upstream revision require Relay `>=0.10,<0.11` on supported Python 3.14 platforms. The adapter's `relay` and `full` extras use that range. Keep Hermes in a separate Python environment when the NeMo Fabric application uses Relay 0.11 for other adapters. NeMo Fabric checks the installed Hermes integration and Relay version at startup when telemetry is enabled.
 
 Refer to the [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install) for more details.

@@ -62,7 +62,68 @@
     },
     "additionalProperties": false
   },
+  "extension_schemas": {
+    "usage": {
+      "type": "object",
+      "properties": {
+        "nvidia.fabric.opencode.usage_evidence.v1": {
+          "type": "object",
+          "properties": {
+            "observed": {
+              "type": "object",
+              "properties": {
+                "input_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+                "output_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+                "total_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+                "cached_input_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+                "reasoning_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991}
+              },
+              "additionalProperties": false
+            },
+            "scope_reasons": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "observer_unavailable",
+                  "observer_lost",
+                  "configuration_changed",
+                  "prepare_scope_read_failed",
+                  "unsupported_configuration",
+                  "root_execution_unconfirmed",
+                  "title_completion_unconfirmed",
+                  "final_scope_read_failed",
+                  "child_ancestry_unverified",
+                  "child_ownership_changed",
+                  "manual_session_change",
+                  "tool_result_unavailable",
+                  "background_shell",
+                  "background_subagent",
+                  "unsupported_protocol",
+                  "auxiliary_generation",
+                  "unsupported_request_kind",
+                  "prompt_failed",
+                  "unfinished_work"
+                ]
+              },
+              "uniqueItems": true,
+              "description": "Bounded reasons invocation ownership or completion could not be proved; contains no native messages, commands, or credentials."
+            },
+            "gaps": {
+              "type": "array",
+              "items": {"enum": ["scope_unverified", "missing_usage", "unfinished_work"]},
+              "uniqueItems": true
+            }
+          },
+          "required": ["observed", "gaps"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["nvidia.fabric.opencode.usage_evidence.v1"],
+      "additionalProperties": false
+    }
+  },
   "capabilities": {
+    "metadata": {"health_checks": ["live", "active", "ready"]},
     "streaming": false,
     "cancellation": false,
     "updates": false,

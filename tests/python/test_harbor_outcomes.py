@@ -78,6 +78,41 @@ async def test_bridge_rejects_unsuccessful_result_and_preserves_evidence(
     assert context.metadata["fabric"]["runtime_id"] == "runtime-test"
 
 
+@pytest.mark.parametrize("failure", ["write", "replace"])
+async def test_optional_evidence_write_failure_preserves_downloaded_result(
+    bridge, monkeypatch, failure
+):
+    from pathlib import Path
+    from harbor.models.agent.context import AgentContext
+
+    agent, environment, document = bridge
+    original_write, original_replace = Path.write_text, Path.replace
+    injected = []
+
+    def write(path, content, *args, **kwargs):
+        if failure == "write" and path.parent.name.startswith(".fabric-result-"):
+            original_write(path, "partial write", *args, **kwargs)
+            injected.append(failure)
+            raise OSError("injected write failure")
+        return original_write(path, content, *args, **kwargs)
+
+    def replace(path, target):
+        if failure == "replace" and path.parent.name.startswith(".fabric-result-"):
+            injected.append(failure)
+            raise OSError("injected replace failure")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "write_text", write)
+    monkeypatch.setattr(Path, "replace", replace)
+    context = AgentContext()
+    await agent.run("test", environment, context)
+    assert injected == [failure]
+    assert json.loads(agent._result_path.read_text()) == document
+    assert not list(agent.logs_dir.glob(".fabric-result-*"))
+    agent.populate_context_post_run(context)
+    assert context.metadata["fabric"]["status"] == "succeeded"
+
+
 async def test_cancellation_takes_precedence_over_error_classification(bridge):
     from harbor.models.agent.context import AgentContext
 
@@ -379,7 +414,10 @@ async def test_bridge_retains_runner_failure_record(bridge, code, exception):
 
 
 @pytest.mark.parametrize("runner_failure", [False, True])
-async def test_inner_deadline_enters_harbor_agent_timeout_path(bridge, runner_failure):
+async def test_inner_deadline_enters_harbor_agent_timeout_path(
+    bridge, runner_failure, tmp_path
+):
+    from harbor.models.trial.paths import TrialPaths
     from harbor.models.trial.result import TrialResult
     from harbor.trial.errors import AgentTimeoutError
     from harbor.trial.trial import Trial
@@ -402,6 +440,7 @@ async def test_inner_deadline_enters_harbor_agent_timeout_path(bridge, runner_fa
     mock_trial.agent = agent
     mock_trial.agent_environment = environment
     mock_trial.user_agent = None
+    mock_trial.paths = TrialPaths(trial_dir=tmp_path)
     mock_trial._now.return_value = datetime.now(timezone.utc)
     mock_trial._phase_network_policy = MagicMock(return_value=AsyncExitStack())
     mock_trial._log_context.return_value = nullcontext()

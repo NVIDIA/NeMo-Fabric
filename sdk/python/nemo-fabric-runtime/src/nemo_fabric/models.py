@@ -21,6 +21,8 @@ from typing import Any
 from typing import Literal
 from typing import Self
 
+from nemo_fabric_evidence.evidence import ExecutionEvidence
+
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
@@ -1077,6 +1079,70 @@ class ToolsConfig(FabricBaseModel):
         return self
 
 
+class SystemStatsSamplingConfig(FabricBaseModel):
+    """Opt-in periodic collection; bounds include both endpoint samples."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    interval_ms: int = Field(default=1000, ge=100, le=60000, strict=True)
+    max_samples: int = Field(default=10000, ge=2, le=100000, strict=True)
+
+
+class SystemStatsConfig(FabricBaseModel):
+    """Native invocation stats selection, independent of Relay and recording.
+
+    All supported groups are selected by default. sampling=None collects only
+    endpoints. Set FabricConfig.system_stats=None to disable invocation stats;
+    the independent final resource_snapshot contract is preserved.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    collect: list[
+        Literal["process", "cgroup.cpu", "cgroup.memory", "cgroup.pressure"]
+    ] = Field(
+        default_factory=lambda: [
+            "process",
+            "cgroup.cpu",
+            "cgroup.memory",
+            "cgroup.pressure",
+        ],
+        min_length=1,
+        json_schema_extra={"uniqueItems": True},
+    )
+    sampling: SystemStatsSamplingConfig | None = None
+
+    @field_validator("collect")
+    @classmethod
+    def _validate_collect(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("collect must not contain duplicate groups")
+        return value
+
+
+class ProvenanceConfig(FabricBaseModel):
+    """Default-on software collection and explicitly forwarded owner reports.
+
+    Set enabled=False to prevent collector work in the caller and guest. Reports
+    are snapshots captured by their owner at initialization, not callbacks.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = True
+    reports: ExecutionEvidence | None = None
+
+    @field_validator("reports", mode="before")
+    @classmethod
+    def _report(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        from nemo_fabric.types import ExecutionEvidence as Snapshot
+
+        if isinstance(value, (ExecutionEvidence, Snapshot)):
+            value = value.to_mapping()
+        return ExecutionEvidence.receive(value, "reporter")
+
+
 class FabricConfig(FabricBaseModel):
     """SDK-facing typed NeMo Fabric agent configuration.
 
@@ -1097,9 +1163,22 @@ class FabricConfig(FabricBaseModel):
     instructions: InstructionsConfig | None = None
     mcp: McpConfig | None = None
     skills: SkillConfig | None = None
+    provenance: ProvenanceConfig = Field(default_factory=ProvenanceConfig)
+    system_stats: SystemStatsConfig | None = Field(default_factory=SystemStatsConfig)
     telemetry: TelemetryConfig | None = None
     relay: RelayConfig | None = None
     tools: ToolsConfig | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_stats_switch(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        data = handler(self)
+        # Null disables collection; dropping it would restore the default on
+        # the other side of an SDK, plan, or task-runner boundary.
+        if self.system_stats is None:
+            data["system_stats"] = None
+        return data
 
     @model_validator(mode="after")
     def _validate_selector(self) -> Self:

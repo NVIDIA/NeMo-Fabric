@@ -35,6 +35,8 @@ CLINE_DESCRIPTOR = "../../adapters/typescript/cline/cline.fabric-adapter.json"
 DROID_DESCRIPTOR = "../../adapters/typescript/droid/droid.fabric-adapter.json"
 QWEN_DESCRIPTOR = "../../adapters/typescript/qwen/qwen.fabric-adapter.json"
 KILO_DESCRIPTOR = "../../adapters/typescript/kilo/kilo.fabric-adapter.json"
+STRANDS_DESCRIPTOR = "../../adapters/typescript/strands/strands.fabric-adapter.json"
+KIRO_DESCRIPTOR = "../../adapters/typescript/kiro/kiro.fabric-adapter.json"
 CODE_REVIEW_INSTRUCTION = (
     "You are a concise code reviewer. Read the relevant workspace files before "
     "reporting correctness risks."
@@ -238,6 +240,51 @@ def droid_config() -> FabricConfig:
         workspace=WORKSPACE,
         artifacts="./artifacts/droid",
     )
+    return config
+
+
+def kiro_config() -> FabricConfig:
+    """Return the Kiro ACP adapter variant."""
+
+    config = base_config().model_copy(deep=True)
+    config.discovery = DiscoveryConfig(local_paths=[KIRO_DESCRIPTOR])
+    config.harness = HarnessConfig(
+        adapter_id="nvidia.fabric.kiro",
+        resolution="preinstalled",
+        settings={"permission_mode": "allow_once"},
+    )
+    config.models = {}
+    config.instructions = None
+    config.tools = None
+    config.skills = None
+    config.runtime = RuntimeConfig(
+        input_schema="text",
+        output_schema="message",
+        artifacts="./artifacts/kiro",
+    )
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=WORKSPACE,
+        artifacts="./artifacts/kiro",
+    )
+    return config
+
+
+def strands_config() -> FabricConfig:
+    """Return the standard Strands harness through the shared ACP runner."""
+    config = kiro_config()
+    config.discovery = DiscoveryConfig(local_paths=[STRANDS_DESCRIPTOR])
+    config.harness = HarnessConfig(
+        adapter_id="nvidia.fabric.strands",
+        resolution="preinstalled",
+        settings={"builtin_tools": ["read"]},
+    )
+    config.models = {"default": _nvidia_code_review_model()}
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(mode="append", content=CODE_REVIEW_INSTRUCTION)
+    )
+    config.runtime.artifacts = "./artifacts/strands"
+    config.environment.artifacts = "./artifacts/strands"
     return config
 
 

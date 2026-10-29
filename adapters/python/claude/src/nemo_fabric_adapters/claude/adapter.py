@@ -16,9 +16,11 @@ import subprocess
 from dataclasses import asdict
 from dataclasses import dataclass
 from dataclasses import is_dataclass
+from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from typing import get_args
 
 from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk import ClaudeSDKClient
@@ -32,6 +34,8 @@ from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import HookMatcher
 from claude_agent_sdk._errors import MessageParseError
+from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
+from claude_agent_sdk.types import EffortLevel
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
@@ -42,9 +46,14 @@ from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
+from nemo_fabric_adapters.common import health as health_transport
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import relay_artifacts
 from nemo_fabric_adapters.common import relay_gateway
+from nemo_fabric_adapters.common.relay_http import (
+    RelayHttpModelError,
+    relay_http_model_config,
+)
 from nemo_fabric_adapters.common import relay_hooks
 from nemo_fabric_adapters.common import utils as common_utils
 
@@ -515,6 +524,8 @@ def prepare_claude_relay(
     model: AgentModelConfig,
     runtime_context: RuntimeContext,
     base_dir: str,
+    *,
+    settings: dict[str, Any] | None = None,
 ) -> ClaudeRelaySettings | None:
     """Generate Relay gateway and Claude hook configuration."""
 
@@ -533,7 +544,8 @@ def prepare_claude_relay(
         ) from error
 
     try:
-        relay_gateway.relay_cli_contract(executable)
+        contract = relay_gateway.relay_cli_contract(executable)
+        http_config = relay_http_model_config(settings or {}, contract)
         plugin_config = common_utils.load_relay_plugin_config(
             {
                 "agent_name": agent_name,
@@ -543,9 +555,13 @@ def prepare_claude_relay(
             }
         )
         config_path, plugin_config_path = common_utils.write_relay_configs(
-            relay_config={"agents": {"claude": {"command": "claude"}}},
+            relay_config={"agents": {"claude": {"command": "claude"}}, **http_config},
             plugin_config=plugin_config,
         )
+    except RelayHttpModelError as error:
+        raise AdapterRelayError(
+            "claude_relay_invalid_http_model_hosts", str(error)
+        ) from error
     except (
         OSError,
         RuntimeError,
@@ -635,6 +651,11 @@ def build_options(
 ) -> ClaudeAgentOptions:
     settings = _settings(config)
     model = _selected_model_config(config)
+    effort: EffortLevel | None = settings.get("reasoning_effort")
+    if "reasoning_effort" in settings and effort not in get_args(EffortLevel):
+        raise AdapterConfigError(
+            "claude_invalid_configuration", "reasoning_effort is invalid"
+        )
     permission_mode = settings.get("permission_mode")
     if permission_mode is not None and permission_mode not in PERMISSION_MODES:
         raise AdapterConfigError(
@@ -700,6 +721,7 @@ def build_options(
             max_turns=max_turns,
             max_budget_usd=max_budget,
             max_buffer_size=settings.get("max_buffer_size"),
+            effort=effort,
             setting_sources=sources,
             cli_path=_resolve_path(base_dir, cli_path) if cli_path else None,
             mcp_servers=mcp.config_path if mcp is not None else {},
@@ -1068,6 +1090,105 @@ class ClaudeRuntime:
         self._gateway_process: subprocess.Popen[Any] | None = None
         self._mcp_config_path: Path | None = None
         self._unusable = False
+        self._health_lock = asyncio.Lock()
+        self._health_task: asyncio.Task | None = None
+        self._active_invoke_task: asyncio.Task | None = None
+
+    async def check(self, level: str) -> dict[str, Any]:
+        """Observe the owned Claude CLI and its read-only MCP status interface."""
+        unknown = health_transport.unobserved_health
+        sources = {
+            "live": "fabric.adapter.liveness",
+            "active": "fabric.adapter.interface",
+            "ready": "fabric.adapter.readiness",
+        }
+        if level not in sources:
+            return {**unknown("unsupported_level"), "outcome": "unsupported"}
+        client, config = self._client, self._agent_config
+        transport = getattr(client, "_transport", None)
+        # The pinned SDK owns this process object for the connected CLI.
+        process = (
+            transport._process
+            if isinstance(transport, SubprocessCLITransport)
+            else None
+        )
+        if client is None or config is None or process is None:
+            return unknown("runtime_unavailable")
+
+        def observed(outcome: str, reason: str | None) -> dict[str, Any]:
+            if (
+                self._client is not client
+                or self._agent_config is not config
+                or client._transport is not transport
+                or transport._process is not process
+            ):
+                return unknown("observation_changed")
+            if process.returncode is not None:
+                outcome, reason = "failed", "agent_exited"
+            elif level != "live" and (self._unusable or not transport.is_ready()):
+                outcome, reason = "failed", "endpoint_unavailable"
+            return {
+                "outcome": outcome,
+                "reason_code": reason,
+                "activity": "stopped"
+                if reason == "agent_exited"
+                else "busy"
+                if self._active_invoke_task is not None
+                and not self._active_invoke_task.done()
+                else "idle",
+                "source": sources[level],
+                "observed_at": datetime.now(timezone.utc)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+            }
+
+        if process.returncode is not None or level == "live":
+            return observed("passed", None)
+        if self._unusable or not transport.is_ready():
+            return observed("failed", "endpoint_unavailable")
+
+        try:
+            async with self._health_lock:
+                # SDK 0.2.166 does not remove cancelled control requests. Keep
+                # at most one native request until its own bounded wait ends.
+                if self._health_task is not None:
+                    await asyncio.wait({self._health_task})
+                snapshot = observed("passed", None)
+                if snapshot["outcome"] != "passed":
+                    return snapshot
+                task = asyncio.create_task(client.get_mcp_status())
+                self._health_task = task
+
+                def completed(task: asyncio.Task) -> None:
+                    if self._health_task is task:
+                        self._health_task = None
+                    if not task.cancelled():
+                        task.exception()
+
+                task.add_done_callback(completed)
+                await asyncio.wait({task})
+                response = task.result()
+        except Exception:
+            return observed("unknown", "probe_error")
+
+        if not isinstance(response, dict) or not isinstance(
+            response.get("mcpServers"), list
+        ):
+            return observed("unknown", "probe_error")
+        names = set()
+        for server in response["mcpServers"]:
+            if (
+                not isinstance(server, dict)
+                or not isinstance(server.get("name"), str)
+                or not server["name"]
+                or server["name"] in names
+                or not isinstance(server.get("status"), str)
+                or server.get("status")
+                not in {"connected", "pending", "failed", "needs-auth", "disabled"}
+            ):
+                return observed("unknown", "probe_error")
+            names.add(server["name"])
+        return observed("passed", None)
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._client is not None:
@@ -1082,7 +1203,11 @@ class ClaudeRuntime:
             model = _selected_model_config(agent_config)
             fabric_runtime_id = runtime_context.runtime_id
             relay = prepare_claude_relay(
-                common_utils.agent_name(payload), model, runtime_context, base_dir
+                common_utils.agent_name(payload),
+                model,
+                runtime_context,
+                base_dir,
+                settings=_settings(agent_config),
             )
             self._relay = relay
             self._gateway_process = _start_relay_gateway(
@@ -1113,6 +1238,17 @@ class ClaudeRuntime:
         self._cost_total = 0.0
 
     async def invoke(
+        self,
+        request: AgentRunRequest,
+        runtime_context: RuntimeContext,
+    ) -> AgentRunResult:
+        self._active_invoke_task = asyncio.current_task()
+        try:
+            return await self._invoke(request, runtime_context)
+        finally:
+            self._active_invoke_task = None
+
+    async def _invoke(
         self,
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
@@ -1205,6 +1341,12 @@ class ClaudeRuntime:
             async with deadline:
                 await client.query(prompt)
                 async for message in client.receive_response():
+                    if getattr(message, "subtype", None) == "init":
+                        data = getattr(message, "data", {})
+                        if isinstance(data, dict) and isinstance(data.get("claude_code_version"), str):
+                            from nemo_fabric_adapters.common.provenance import record_version
+
+                            record_version("claude", data["claude_code_version"], "harness:claude_init")
                     if isinstance(message, ResultMessage):
                         result = message
                     else:
@@ -1282,7 +1424,9 @@ class ClaudeRuntime:
         ):
             total = None
         self._cost_total = total
-        reset = any(isinstance(message, ConversationResetMessage) for message in messages)
+        reset = any(
+            isinstance(message, ConversationResetMessage) for message in messages
+        )
         if total is None or previous is None or reset or total < previous:
             return None
         # Drop float subtraction noise such as 0.19999999999999998. A tenth of a
@@ -1353,6 +1497,14 @@ def main() -> None:
 
     lifecycle.serve(ClaudeRuntime, config_loader=AgentConfig.from_mapping)
 
+
+
+# Selected software reported by the shared lifecycle host; no dependency scan.
+PROVENANCE_HARNESS = "claude"
+PROVENANCE_PACKAGES = (
+    ("adapter", "nemo-fabric-adapters-claude", "nemo_fabric_adapters.claude.adapter"),
+    ("harness", "claude-agent-sdk", "claude_agent_sdk"),
+)
 
 if __name__ == "__main__":
     main()

@@ -14,6 +14,8 @@ from NOOA's base `Agent` and implements the benchmark-specific
 Complete the [shared installation and Relay setup](../README.md) before using this
 adapter.
 
+NOOA BenchAgent requires a Unix-like environment because its storage imports Python's `fcntl` module. Native Windows execution is unsupported.
+
 ## Task Mapping
 
 One NeMo Fabric invocation maps to one BenchAgent task:

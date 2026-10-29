@@ -157,7 +157,9 @@ jobs:
             adapters/typescript/pi \
             adapters/typescript/opencode \
             adapters/typescript/qwen \
-            adapters/typescript/kilo; do
+            adapters/typescript/kilo \
+            adapters/typescript/kiro \
+            adapters/typescript/strands; do
             python3 scripts/ci/publish_typescript_package.py \
               --action publish \
               --package-directory "$package_directory" \

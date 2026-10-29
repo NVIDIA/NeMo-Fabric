@@ -80,7 +80,7 @@ async def test_cancelled_prepare_releases_confirmed_environment(
     if release_fails:
         native.release_environment.side_effect = RuntimeError("deletion denied")
     monkeypatch.setattr(fabric, "_require_native_module", lambda operation: native)
-    task = asyncio.create_task(fabric.prepare_environment(MagicMock()))
+    task = asyncio.create_task(fabric.prepare_environment(hermes_shim_config()))
     try:
         async with asyncio.timeout(5):
             while not entered.is_set():

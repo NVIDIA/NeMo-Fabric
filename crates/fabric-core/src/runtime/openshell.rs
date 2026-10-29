@@ -29,8 +29,11 @@ enum State {
 }
 #[derive(Clone)]
 struct Binding {
+    host_execution: Option<crate::ExecutionEvidence>,
+    sandbox_software: Option<crate::provenance::SandboxSoftwareReport>,
     state: State,
     runtime_id: Option<String>,
+    agent: Option<String>,
 }
 const START_KEY: &str = "\0starting";
 const UNKNOWN_START_KEY: &str = "\0unknown-start";
@@ -60,6 +63,24 @@ fn invalid_environment(field: &str) -> FabricError {
         field: format!("environment.{field}"),
         reason: "a verified OpenShell binding is required".to_string(),
     }
+}
+
+pub(super) fn check_agent(
+    environment: &EnvironmentHandle,
+    runtime_id: &str,
+) -> Result<Option<String>> {
+    let key = resource_key(environment)?;
+    let bindings = BINDINGS.lock().unwrap_or_else(|error| error.into_inner());
+    let Some(bindings) = bindings.get(&key) else {
+        return Ok(None);
+    };
+    if bindings.contains_key(RELEASE_KEY) {
+        return Ok(None);
+    }
+    Ok(bindings
+        .get(runtime_id)
+        .filter(|binding| matches!(binding.state, State::Active | State::Invoking))
+        .and_then(|binding| binding.agent.clone()))
 }
 fn invoke_seconds(plan: &RunPlan) -> Result<u64> {
     let seconds = plan.config.runtime.timeout_seconds.unwrap_or(240.0);
@@ -108,6 +129,16 @@ fn task_environment_config(
 }
 fn task_config(plan: &RunPlan, environment: &EnvironmentHandle) -> Result<crate::FabricConfig> {
     let mut config = plan.config.clone();
+    config.provenance.reports = crate::provenance::core_snapshot(&plan.config.provenance);
+    if let Some(report) = &mut config.provenance.reports {
+        for env in &mut report.software_environments {
+            for participant in &mut env.participants {
+                if participant == "core" {
+                    *participant = "caller_core".into();
+                }
+            }
+        }
+    }
     let workspace = task_root(environment.workspace.as_deref(), "workspace", None)?;
     let artifacts = task_root(
         environment.artifacts.as_deref(),
@@ -166,8 +197,11 @@ fn set_state(key: &str, runtime_id: &str, state: State) {
         .insert(
             runtime_id.to_string(),
             Binding {
+                host_execution: None,
+                sandbox_software: None,
                 state,
                 runtime_id: Some(runtime_id.to_string()),
+                agent: None,
             },
         );
 }
@@ -178,8 +212,11 @@ fn set_start_state(key: &str, state: State) {
     environment_bindings.insert(
         UNKNOWN_START_KEY.to_string(),
         Binding {
+            host_execution: None,
+            sandbox_software: None,
             state,
             runtime_id: None,
+            agent: None,
         },
     );
 }
@@ -267,8 +304,14 @@ fn claim(runtime: &RuntimeHandle, stopping: bool) -> Result<Option<String>> {
 
 impl RuntimeAdapter for OpenShellRuntimeAdapter {
     fn start(&self, plan: &RunPlan, environment: EnvironmentHandle) -> Result<RuntimeHandle> {
-        let config = serde_json::to_value(task_config(plan, &environment)?)
-            .map_err(FabricError::SerializeJson)?;
+        let task_config = task_config(plan, &environment)?;
+        let host_execution = task_config.provenance.reports.clone();
+        let sandbox_software = if plan.config.provenance.enabled {
+            sandbox_software(&environment)
+        } else {
+            None
+        };
+        let config = serde_json::to_value(task_config).map_err(FabricError::SerializeJson)?;
         let key = resource_key(&environment)?;
         {
             let mut bindings = BINDINGS.lock().unwrap_or_else(|error| error.into_inner());
@@ -289,8 +332,11 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
             environment_bindings.insert(
                 START_KEY.to_string(),
                 Binding {
+                    host_execution: None,
+                    sandbox_software: None,
                     state: State::Starting,
                     runtime_id: None,
+                    agent: None,
                 },
             );
         }
@@ -377,6 +423,9 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                 Binding {
                     state: State::Active,
                     runtime_id: Some(runtime.runtime_id.clone()),
+                    agent: Some(runtime.agent_name.clone()),
+                    host_execution,
+                    sandbox_software,
                 },
             );
         }
@@ -439,6 +488,23 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                     .get("relay_enabled")
                     .and_then(Value::as_bool)
                     .unwrap_or(telemetry.provider.as_deref() == Some("relay"));
+            }
+            if !plan.config.provenance.enabled {
+                result.execution = None;
+            } else {
+                let binding = BINDINGS
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .get(&key)
+                    .and_then(|bindings| bindings.get(&runtime.runtime_id))
+                    .cloned();
+                if let Some(binding) = binding {
+                    result.execution = Some(dispatch_execution(
+                        binding.host_execution,
+                        result.execution.take(),
+                        binding.sandbox_software,
+                    ));
+                }
             }
             confirmed = true;
             collect_result_artifacts(plan, runtime, &mut result)?;
@@ -545,8 +611,11 @@ pub(super) fn release(environment: &EnvironmentHandle) -> Result<()> {
         bindings.entry(key.clone()).or_default().insert(
             RELEASE_KEY.to_string(),
             Binding {
+                host_execution: None,
+                sandbox_software: None,
                 state: State::Releasing,
                 runtime_id: None,
+                agent: None,
             },
         );
         previous
@@ -563,8 +632,11 @@ pub(super) fn release(environment: &EnvironmentHandle) -> Result<()> {
             BTreeMap::from([(
                 UNKNOWN_START_KEY.to_string(),
                 Binding {
+                    host_execution: None,
+                    sandbox_software: None,
                     state: State::Unknown,
                     runtime_id: None,
+                    agent: None,
                 },
             )]),
         );
@@ -972,4 +1044,125 @@ mod tests {
         );
         std::fs::remove_dir_all(temporary).expect("remove fixture");
     }
+}
+
+fn sandbox_software(
+    environment: &EnvironmentHandle,
+) -> Option<crate::provenance::SandboxSoftwareReport> {
+    use crate::provenance::*;
+    let version = environment
+        .metadata
+        .get("openshell.gateway_version")?
+        .as_str()?
+        .to_string();
+    let stamp = environment
+        .metadata
+        .get("openshell.gateway_version_observed_at_millis");
+    let original = stamp
+        .and_then(Value::as_u64)
+        .filter(|millis| *millis <= 253_402_300_799_999);
+    let invalid = stamp.is_some() && original.is_none();
+    let observed_at = crate::time::rfc3339_millis(
+        original
+            .and_then(|millis| UNIX_EPOCH.checked_add(Duration::from_millis(millis)))
+            .unwrap_or_else(SystemTime::now),
+    );
+    let source = if original.is_some() {
+        "provider:gateway_health"
+    } else {
+        "host:provider_report_at_runtime_start"
+    };
+    let observation = |value: String| VersionObservation {
+        status: EvidenceStatus::Available,
+        value: Some(value),
+        source: source.into(),
+        origin: EvidenceOrigin::Reported,
+        observed_at: observed_at.clone(),
+        reason: None,
+    };
+    let service_version = if invalid {
+        VersionObservation {
+            status: EvidenceStatus::Unavailable,
+            value: None,
+            reason: Some("original_capture_time_invalid".into()),
+            source: "host:provider_report_at_runtime_start".into(),
+            origin: EvidenceOrigin::Reported,
+            observed_at: observed_at.clone(),
+        }
+    } else {
+        observation(version)
+    };
+    Some(SandboxSoftwareReport {
+        context_refs: vec![],
+        provider: observation("openshell".into()),
+        service_version,
+    })
+}
+
+fn dispatch_execution(
+    host: Option<crate::ExecutionEvidence>,
+    guest: Option<crate::ExecutionEvidence>,
+    sandbox: Option<crate::provenance::SandboxSoftwareReport>,
+) -> crate::ExecutionEvidence {
+    use crate::provenance::*;
+    let mut guest = ExecutionEvidence::receive(
+        guest.and_then(|g| serde_json::to_value(g).ok()),
+        "guest_sdk",
+    );
+    if !guest
+        .software_environments
+        .iter()
+        .any(|env| env.participants.iter().any(|p| p == "guest_sdk"))
+    {
+        guest.append(ExecutionEvidence::gap(
+            "guest_sdk",
+            "expected_guest_sdk_report_missing",
+        ));
+    }
+    let host = host.unwrap_or_default();
+    // This is an exact copy of the request's own forwarded prefix, including
+    // capture times and local refs, not an installation merge by equal versions.
+    let retained = !host.software_environments.is_empty()
+        && guest
+            .software_environments
+            .starts_with(&host.software_environments)
+        && host
+            .infrastructure
+            .as_ref()
+            .is_none_or(|i| guest.infrastructure.as_ref() == Some(i));
+    let start = host.software_environments.len();
+    let mut result = if retained {
+        guest
+    } else {
+        let mut result = host;
+        result.append(guest);
+        result
+    };
+    for env in result.software_environments.iter_mut().skip(start) {
+        for participant in &mut env.participants {
+            if participant == "core" {
+                *participant = "guest_core".into();
+            }
+        }
+    }
+    if let Some(mut sandbox) = sandbox {
+        sandbox.context_refs = result
+            .software_environments
+            .iter()
+            .skip(start)
+            .map(|env| env.context_ref.clone())
+            .collect();
+        if !sandbox.context_refs.is_empty() {
+            let infrastructure = result.infrastructure.get_or_insert_with(Default::default);
+            if infrastructure.sandbox.is_some() {
+                result.append(ExecutionEvidence::gap(
+                    "infrastructure",
+                    "conflicting_sandbox_reports",
+                ));
+            } else {
+                infrastructure.sandbox = Some(sandbox);
+            }
+        }
+    }
+    ExecutionEvidence::receive(serde_json::to_value(result).ok(), "guest_sdk")
 }

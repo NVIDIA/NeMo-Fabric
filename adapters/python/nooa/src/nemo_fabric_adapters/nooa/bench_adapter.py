@@ -399,5 +399,11 @@ class BenchRuntime:
             ) from primary
 
 
+PROVENANCE_PACKAGES = (
+    ("adapter", "nemo-fabric-adapters-nooa", __name__),
+    ("harness", "nooa-bench", "nooa_bench.bench_agent"),
+    ("framework", "nooa", "nooa"),
+)
+
 if __name__ == "__main__":
     main()

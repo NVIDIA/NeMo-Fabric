@@ -81,6 +81,7 @@ def test_qwen_descriptor_claims_only_verified_fields():
         "system_instruction_modes": ["replace", "append"],
     }
     assert descriptor["capabilities"] == {
+        "metadata": {"health_checks": ["live", "active", "ready"]},
         "streaming": False,
         "cancellation": False,
         "updates": False,

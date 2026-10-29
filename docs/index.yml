@@ -24,6 +24,10 @@ navigation:
     contents:
       - page: Python SDK
         path: ./sdk/python.mdx
+      - page: Health Checks
+        path: ./sdk/health-checks.mdx
+      - page: Resource Usage and Stats
+        path: ./sdk/system-stats.mdx
   - section: Adapter Contract
     contents:
       - page: Overview
@@ -74,6 +78,10 @@ navigation:
             path: ./integrations/harness/deepagents.mdx
           - page: Kilo Code
             path: ./integrations/harness/kilo.mdx
+          - page: Kiro
+            path: ./integrations/harness/kiro.mdx
+          - page: AWS Strands
+            path: ./integrations/harness/strands.mdx
           - page: mini-SWE-agent
             path: ./integrations/harness/mini-swe-agent.mdx
           - page: OpenClaw
@@ -100,6 +108,8 @@ navigation:
                 path: ./reference/api/python-library-reference/nemo_fabric.client.md
               - page: Adapter Capability Inspection
                 path: ./reference/api/python-library-reference/nemo_fabric.capabilities.md
+              - page: Runtime Health
+                path: ./reference/api/python-library-reference/nemo_fabric.check.md
               - page: Runtime
                 path: ./reference/api/python-library-reference/nemo_fabric.runtime.md
               - page: Service

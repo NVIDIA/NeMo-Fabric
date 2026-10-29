@@ -1,0 +1,44 @@
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+# AWS Strands
+
+Use `nvidia.fabric.strands` to run the standard AWS Strands harness through NVIDIA NeMo Fabric's shared ACP runner. One NeMo Fabric runtime owns a Strands CLI child process and a persistent conversation.
+
+Install Node.js 22.19 or newer and the separately managed CLI:
+
+```bash
+npm install --global @strands-agents/cli@0.2.1
+just install-typescript-strands
+npm run build --prefix adapter-contract/typescript
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-strands
+```
+
+From a source checkout, try the code-review example with an NVIDIA-hosted model:
+
+```bash
+export NVIDIA_API_KEY="<your-key>"
+.venv/bin/python -m examples.code_review_agent --variant strands --plan
+.venv/bin/python -m examples.code_review_agent --variant strands --input "Review the workspace changes."
+```
+
+The adapter accepts the default model role, append-only system instructions, and normalized MCP servers over stdio, streamable HTTP, or SSE. Use provider `bedrock` for the AWS SDK credential chain, or `openai`/`nvidia` with an explicit Chat Completions `base_url`. Omitting `api_key_env` supports a keyless endpoint. Non-loopback HTTP model endpoints require `harness.settings.insecure_http_model_hosts`.
+
+The code-review example enables only `read`. Select native tools for other applications with `harness.settings.builtin_tools`; the default is `shell`, `read`, `write`, and `edit`. These tools execute with the task environment's permissions. The standard ACP path does not expose an adapter permission mode. Each runtime uses an isolated CLI profile with personal configuration, discovery, disk session persistence, and long-term memory disabled. Conversation state lasts until stop and is limited to 100 dispatched invocations by default through `max_invocations`.
+
+The adapter supports text invocations, invocation-local token usage, deadline cleanup, and independent runtimes.
+
+## Limitations
+
+Strands CLI 0.2.1 reports zero cache counters even when the provider did not report them. The adapter omits these ambiguous zero cache counts and preserves positive counts and inclusive input/output totals. Genuine zero cache counts cannot be distinguished from missing counts.
+
+The adapter does not advertise custom source agents, native streaming, public cancellation, services, Relay telemetry, or normalized skills and tool policy.
+
+See the [Strands adapter guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/typescript/strands/README.md) for complete configuration, endpoint mapping, MCP restrictions, lifecycle behavior, and live E2E commands.
+
+## Runtime Health
+
+`Fabric.check()` supports `live` by observing the owned ACP child process exit and signal state. A busy process remains live. `active` and `ready` are unsupported.
+
+Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.

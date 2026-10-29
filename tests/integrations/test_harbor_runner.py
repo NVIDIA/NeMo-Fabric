@@ -267,7 +267,9 @@ def test_codex_adapter_maps_fabric_request_to_sdk(tmp_path):
     assert adapter.selected_model(config) == "gpt-5.4"
     assert adapter.sandbox(config) == adapter.Sandbox.workspace_write
     assert adapter._reasoning_effort(config) == adapter.ReasoningEffort.high
-    assert adapter.thread_config(config, context, relay=None) == {}
+    assert adapter.thread_config(config, context, relay=None) == {
+        "mcp_optional_startup_grace_ms": 0
+    }
     assert adapter.resolve_cwd(context, payload["base_dir"]) == tmp_path
 
 
@@ -408,7 +410,7 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     ):
         assert swebench.count(value) == 2
     assert swebench.count("fabric_config_target=/opt/nemo-fabric-config") == 4
-    assert swebench.count("fabric_python=/opt/nemo-fabric-venv/bin/python") == 4
+    assert swebench.count("fabric_python=/opt/nemo-fabric-venv/bin/python") == 6
     assert "--job-name django-13741-opencode-install" not in swebench
     assert "--job-name django-13741-opencode" not in swebench
     assert (
@@ -707,10 +709,17 @@ def test_harbor_lifecycle_populates_context_after_run(tmp_path: Path):
     )
 
     assert context.metadata["fabric"]["status"] == "succeeded"
-    assert context.n_input_tokens == 12
-    assert context.n_cache_tokens == 3
-    assert context.n_output_tokens == 4
-    assert context.cost_usd == 0.25
+    atif_metrics = context.metadata["fabric"]["atif_final_metrics"]
+    assert atif_metrics["source"] == "atif"
+    assert atif_metrics["coverage"] == "unverified"
+    assert atif_metrics["final_metrics"]["total_prompt_tokens"] == 12
+    assert atif_metrics["final_metrics"]["total_cached_tokens"] == 3
+    assert atif_metrics["final_metrics"]["total_completion_tokens"] == 4
+    assert atif_metrics["final_metrics"]["total_cost_usd"] == 0.25
+    assert context.n_input_tokens is None
+    assert context.n_cache_tokens is None
+    assert context.n_output_tokens is None
+    assert context.cost_usd is None
 
 
 def test_harbor_023_options_schema_and_preflight():
@@ -740,6 +749,8 @@ def test_harbor_023_options_schema_and_preflight():
         "fabric_python",
         "fabric_runtime_timeout_seconds",
         "fabric_system_instruction",
+        "fabric_system_stats",
+        "fabric_provenance",
         "fabric_telemetry",
         "fabric_timeout_sec",
         "fabric_venv_path",
@@ -763,6 +774,77 @@ def test_harbor_023_options_schema_and_preflight():
 
     agent.kwargs["fabric_workspace"] = "relative/path"
     with pytest.raises(ValueError, match="fabric_workspace must be an absolute"):
+        AgentFactory.run_preflight(agent)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        (
+            [],
+            {"collect": ["process", "cgroup.cpu", "cgroup.memory", "cgroup.pressure"]},
+        ),
+        (["fabric_system_stats=null"], None),
+        (
+            ["fabric_system_stats={}"],
+            {"collect": ["process", "cgroup.cpu", "cgroup.memory", "cgroup.pressure"]},
+        ),
+        (
+            [
+                'fabric_system_stats={"collect":["process","cgroup.cpu"],"sampling":{"interval_ms":100,"max_samples":2}}'
+            ],
+            {
+                "collect": ["process", "cgroup.cpu"],
+                "sampling": {"interval_ms": 100, "max_samples": 2},
+            },
+        ),
+    ],
+)
+def test_harbor_stats_cli_options_survive_runner_transport(
+    tmp_path, arguments, expected
+):
+    from harbor.agents.factory import AgentFactory
+    from harbor.cli.utils import parse_kwargs
+    from nemo_fabric.integrations.harbor.models import FabricRunPayload
+
+    agent = AgentFactory.create_agent_from_import_path(
+        "nemo_fabric.integrations.harbor:FabricAgent",
+        logs_dir=tmp_path,
+        fabric_adapter_id="nvidia.fabric.langchain.deepagents",
+        **parse_kwargs(arguments),
+    )
+    payload = agent._build_spec("review the task")
+    wire = payload.model_dump_json(exclude_none=True)
+    assert json.loads(wire)["config"]["system_stats"] == expected
+    decoded = FabricRunPayload.model_validate_json(wire)
+    assert decoded.config.to_mapping()["system_stats"] == expected
+    assert agent._build_config().harness.settings == {}
+
+
+@pytest.mark.parametrize(
+    "stats",
+    [
+        {"collect": []},
+        {"collect": ["unknown"]},
+        {"collect": ["process", "process"]},
+        {"sampling": {"interval_ms": 99}},
+        {"sampling": {"max_samples": 1}},
+        {"sampling": {"interval_ms": True}},
+        {"unknown": True},
+    ],
+)
+def test_harbor_rejects_invalid_stats_during_preflight(stats):
+    from harbor.agents.factory import AgentFactory
+    from harbor.models.trial.config import AgentConfig
+
+    agent = AgentConfig(
+        import_path="nemo_fabric.integrations.harbor:FabricAgent",
+        kwargs={
+            "fabric_adapter_id": "nvidia.fabric.langchain.deepagents",
+            "fabric_system_stats": stats,
+        },
+    )
+    with pytest.raises(ValueError):
         AgentFactory.run_preflight(agent)
 
 
