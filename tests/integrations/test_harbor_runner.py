@@ -526,6 +526,8 @@ def test_harbor_relay_telemetry_exports_direct_atof_and_atif():
     swebench = SWEBENCH_README.read_text(encoding="utf-8")
 
     assert "openinference" not in observability
+    assert "opentelemetry" not in observability
+    assert observability["enable_full_payloads"] is False
     assert observability["atof"]["enabled"] is True
     assert observability["atif"]["enabled"] is True
     assert not (CALCULATOR_ROOT / "host-gateway.compose.yaml").exists()
@@ -747,6 +749,8 @@ def test_harbor_023_options_schema_and_preflight():
         "fabric_model_base_url",
         "fabric_package",
         "fabric_python",
+        "fabric_relay_full_payloads",
+        "fabric_relay_opentelemetry",
         "fabric_runtime_timeout_seconds",
         "fabric_system_instruction",
         "fabric_system_stats",
@@ -846,6 +850,117 @@ def test_harbor_rejects_invalid_stats_during_preflight(stats):
     )
     with pytest.raises(ValueError):
         AgentFactory.run_preflight(agent)
+
+
+RELAY_OTEL_ENDPOINT = {
+    "type": "openinference",
+    "endpoint": "https://phoenix.example.test/v1/traces",
+    "headers": {"X-Scope-OrgID": "harbor"},
+    "header_env": {"authorization": "PHOENIX_API_KEY"},
+    "resource_attributes": {"openinference.project.name": "harbor-fabric"},
+    "service_name": "harbor-fabric",
+}
+
+
+def test_harbor_relay_export_cli_options_survive_runner_transport(tmp_path):
+    from harbor.agents.factory import AgentFactory
+    from harbor.cli.utils import parse_kwargs
+    from nemo_fabric.integrations.harbor.models import FabricRunPayload
+
+    opentelemetry = {"enabled": True, "endpoints": [RELAY_OTEL_ENDPOINT]}
+    agent = AgentFactory.create_agent_from_import_path(
+        "nemo_fabric.integrations.harbor:FabricAgent",
+        logs_dir=tmp_path,
+        fabric_adapter_id="nvidia.fabric.mini-swe-agent",
+        **parse_kwargs(
+            [
+                "fabric_telemetry=relay",
+                f"fabric_relay_opentelemetry={json.dumps(opentelemetry)}",
+                "fabric_relay_full_payloads=true",
+            ]
+        ),
+    )
+
+    wire = agent._build_spec("review the task").model_dump_json(exclude_none=True)
+    decoded = FabricRunPayload.model_validate_json(wire)
+    observability = decoded.config.to_mapping()["relay"]["observability"]
+    [endpoint] = observability["opentelemetry"]["endpoints"]
+
+    assert observability["enable_full_payloads"] is True
+    assert observability["opentelemetry"]["enabled"] is True
+    assert {key: endpoint[key] for key in RELAY_OTEL_ENDPOINT} == RELAY_OTEL_ENDPOINT
+    assert observability["atif"]["enabled"] is True
+    assert observability["atof"]["enabled"] is True
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        (
+            {
+                "fabric_relay_opentelemetry": {
+                    "enabled": True,
+                    "endpoints": [RELAY_OTEL_ENDPOINT],
+                }
+            },
+            "require fabric_telemetry=relay",
+        ),
+        ({"fabric_relay_full_payloads": True}, "require fabric_telemetry=relay"),
+        (
+            {
+                "fabric_telemetry": "relay",
+                "fabric_relay_opentelemetry": {
+                    "enabled": True,
+                    "endpoints": [
+                        {
+                            **RELAY_OTEL_ENDPOINT,
+                            "headers": {"Authorization": "Bearer secret-value"},
+                        }
+                    ],
+                },
+            },
+            "header 'Authorization' is a credential",
+        ),
+        (
+            {
+                "fabric_telemetry": "relay",
+                "fabric_relay_opentelemetry": {"enabled": True},
+            },
+            "requires at least one endpoint",
+        ),
+    ],
+)
+def test_harbor_rejects_invalid_relay_export_during_preflight(options, message):
+    from harbor.agents.factory import AgentFactory
+    from harbor.models.trial.config import AgentConfig
+
+    agent = AgentConfig(
+        import_path="nemo_fabric.integrations.harbor:FabricAgent",
+        kwargs={"fabric_adapter_id": "nvidia.fabric.mini-swe-agent", **options},
+    )
+    with pytest.raises(ValueError, match=message) as caught:
+        AgentFactory.run_preflight(agent)
+
+    assert "secret-value" not in str(caught.value)
+
+
+@pytest.mark.parametrize("option", ["relay_opentelemetry", "relay_full_payloads"])
+def test_harbor_builder_requires_relay_telemetry_for_relay_export(option):
+    from nemo_fabric import RelayOpenTelemetryConfig
+    from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
+
+    values = {
+        "relay_opentelemetry": RelayOpenTelemetryConfig.model_validate(
+            {"enabled": True, "endpoints": [RELAY_OTEL_ENDPOINT]}
+        ),
+        "relay_full_payloads": True,
+    }
+    with pytest.raises(ValueError, match="require telemetry='relay'"):
+        build_harbor_config(
+            adapter_id="demo.fabric.smoke",
+            workspace="/testbed",
+            **{option: values[option]},
+        )
 
 
 def test_harbor_023_factory_loads_fabric_agent(tmp_path: Path):
