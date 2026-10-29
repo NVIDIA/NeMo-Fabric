@@ -64,6 +64,11 @@ workspace. Supported tool names are `terminal` (alias `bash`) and
 `file_editor` (alias `edit`). OpenHands retains its internal finish and
 reasoning tools.
 
+For `provider="nvidia"`, the adapter adds LiteLLM's `nvidia_nim/` dispatch
+prefix while preserving the served model ID, including its `nvidia/`
+namespace. This also supports self-hosted NIM endpoints through `base_url`.
+An existing `nvidia_nim/` prefix is retained once.
+
 Skill paths resolve from the configuration base directory and must contain a
 `SKILL.md` file. The adapter disables ambient OpenHands user, public, project,
 and memory loading, so only explicitly configured NeMo Fabric skills load.
@@ -118,6 +123,15 @@ Each invocation returns only the final response and usage for that turn. `stop`
 closes the conversation and removes the adapter-owned temporary profile state.
 Create a new runtime to change the model, workspace, tools, MCP servers, or
 skills.
+
+The adapter requires invocation-local SDK token records before reporting usage.
+Missing records leave counters unknown, including requests that fail before
+the SDK observes usage. Recorded tokens remain available after a later failure.
+Cost remains unknown unless the SDK records a cost for every returned response;
+its zero-initialized accumulator does not establish a free request.
+Input tokens follow LiteLLM's inclusive `prompt_tokens` convention. The adapter
+sets `input_tokens_include_cache=true` without adding cache tokens again or
+inventing a missing cache breakdown.
 
 ## Run the Code Review Example
 

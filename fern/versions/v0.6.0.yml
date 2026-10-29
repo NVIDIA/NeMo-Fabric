@@ -14,6 +14,8 @@ navigation:
   contents:
   - page: Install
     path: ../pages-v0.6.0/getting-started/install.mdx
+  - page: Artifacts
+    path: ../pages-v0.6.0/getting-started/artifacts.mdx
   - page: Quickstart
     path: ../pages-v0.6.0/getting-started/quickstart.mdx
 - section: Experimentation
