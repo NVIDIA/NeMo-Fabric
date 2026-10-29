@@ -1071,3 +1071,26 @@ def test_usage_requires_tokens_for_every_observed_response(response_without_toke
         # A later failed request without a response adds no response record.
         assert result.input_tokens == 11
         assert result.output_tokens == 5
+
+
+@pytest.mark.parametrize("token_records", [0, 1])
+@pytest.mark.parametrize("cost_records", [1, 2])
+def test_usage_retains_only_complete_cost_when_token_coverage_is_partial(
+    token_records, cost_records
+):
+    metrics = MagicMock()
+    metrics.diff.return_value = SimpleNamespace(
+        accumulated_token_usage=SimpleNamespace(prompt_tokens=11, completion_tokens=5),
+        token_usages=[object()] * token_records,
+        response_latencies=[object(), object()],
+        accumulated_cost=0.25,
+        costs=[object()] * cost_records,
+    )
+    result = adapter._usage(SimpleNamespace(metrics=metrics), object())
+    if cost_records == 2:
+        assert result.cost_usd == 0.25
+        assert result.input_tokens is None
+        assert result.output_tokens is None
+        assert result.total_tokens is None
+    else:
+        assert result is None

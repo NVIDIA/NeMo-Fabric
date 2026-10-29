@@ -318,6 +318,12 @@ def _mcp_servers(api: OpenHandsApi, config: contract.AgentConfig) -> dict[str, A
 
 def _usage(api_llm: Any, baseline: Any) -> contract.AgentUsage | None:
     metrics = api_llm.metrics.diff(baseline)
+    # Proxy-reported cost can be complete even when token usage is unavailable.
+    cost = (
+        float(metrics.accumulated_cost)
+        if metrics.costs and len(metrics.costs) == len(metrics.response_latencies)
+        else None
+    )
     tokens = metrics.accumulated_token_usage
     # Metrics initializes an all-zero accumulator even before the first response.
     # Only per-call records establish that the SDK observed token usage.
@@ -326,7 +332,7 @@ def _usage(api_llm: Any, baseline: Any) -> contract.AgentUsage | None:
         or not metrics.token_usages
         or len(metrics.token_usages) != len(metrics.response_latencies)
     ):
-        return None
+        return contract.AgentUsage(cost_usd=cost) if cost is not None else None
     input_tokens = int(tokens.prompt_tokens)
     output_tokens = int(tokens.completion_tokens)
     return contract.AgentUsage(
@@ -338,9 +344,7 @@ def _usage(api_llm: Any, baseline: Any) -> contract.AgentUsage | None:
         total_tokens=input_tokens + output_tokens,
         # The SDK omits cost records when pricing fails. Its zero-initialized
         # accumulated cost alone cannot distinguish missing pricing from free.
-        cost_usd=float(metrics.accumulated_cost)
-        if metrics.costs and len(metrics.costs) == len(metrics.response_latencies)
-        else None,
+        cost_usd=cost,
     )
 
 
