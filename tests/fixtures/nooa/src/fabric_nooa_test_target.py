@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -91,7 +92,8 @@ class _SkillRegistry:
 
 
 class EchoInteractiveAgent:
-    def __init__(self, prefix: str = "") -> None:
+    def __init__(self, close_marker: Path, prefix: str = "") -> None:
+        self._close_marker = close_marker
         self._prefix = prefix
         self.queue_manager = _QueueManager()
         self.event_manager = _EventManager()
@@ -149,7 +151,11 @@ class EchoInteractiveAgent:
 
     async def close(self) -> None:
         await self.queue_manager.shutdown()
+        self._close_marker.touch()
 
 
 def create_agent(context: Any) -> EchoInteractiveAgent:
-    return EchoInteractiveAgent(prefix=context.settings.get("prefix", ""))
+    return EchoInteractiveAgent(
+        close_marker=context.workspace / ".echo-agent-closed",
+        prefix=context.settings.get("prefix", ""),
+    )
