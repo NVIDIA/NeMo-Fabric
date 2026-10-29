@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+import math
+import re
+from datetime import datetime
 from collections.abc import Mapping
 from dataclasses import MISSING
 from dataclasses import dataclass
@@ -12,17 +15,14 @@ from dataclasses import field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
-from typing import ClassVar
 from typing import Literal
 from typing import Self
 
+from nemo_fabric_evidence.models import ContractModel
+
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.codec import JsonValue
-from nemo_fabric_adapter_contract.codec import decode_dataclass
-from nemo_fabric_adapter_contract.codec import decode_field
-from nemo_fabric_adapter_contract.codec import encode_dataclass
 from nemo_fabric_adapter_contract.codec import json_mapping
-from nemo_fabric_adapter_contract.codec import validate_dataclass
 
 
 def _optional(default: Any = None):
@@ -67,51 +67,81 @@ def _bounded_int(value: int | None, field_name: str, maximum: int) -> None:
         )
 
 
+CheckLevel = Literal["live", "active", "ready"]
+CheckReason = Literal[
+    "server_stopping",
+    "capabilities_unverified",
+    "runtime_unavailable",
+    "service_unavailable",
+    "agent_exited",
+    "session_closed",
+    "endpoint_unavailable",
+    "health_failed",
+    "probe_timeout",
+    "probe_error",
+    "observation_changed",
+    "unsupported_adapter",
+    "unsupported_level",
+    "unsupported_scope",
+]
+
+
 @dataclass(slots=True, kw_only=True)
-class ContractModel:
-    """Base for adapter-facing contract dataclasses."""
+class AdapterCheckRequest(ContractModel):
+    """Request for one native adapter health probe."""
 
-    # Pydantic reads this metadata only when its optional TypeAdapter is used.
-    # It does not require importing Pydantic in the base contract package.
-    __pydantic_config__: ClassVar[dict[str, Any]] = {
-        "extra": "forbid",
-        "allow_inf_nan": False,
-    }
-
-    def __post_init__(self) -> None:
-        validate_dataclass(self)
-        self._validate()
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name not in self.__dataclass_fields__:
-            raise AttributeError(f"{type(self).__name__} has no field {name!r}")
-        try:
-            previous = getattr(self, name)
-        except AttributeError:
-            object.__setattr__(self, name, value)
-            return
-
-        decoded = decode_field(self, name, value)
-        object.__setattr__(self, name, decoded)
-        try:
-            self._validate()
-        except ContractValidationError:
-            object.__setattr__(self, name, previous)
-            raise
+    runtime_id: str
+    level: CheckLevel
+    timeout_seconds: float
 
     def _validate(self) -> None:
-        """Validate constraints that are more specific than field types."""
+        _nonblank(self.runtime_id, "runtime_id")
+        if "\x00" in self.runtime_id:
+            raise ContractValidationError("must not contain NUL", path=("runtime_id",))
+        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
+            raise ContractValidationError(
+                "must be positive and finite", path=("timeout_seconds",)
+            )
 
-    @classmethod
-    def from_mapping(cls, value: Any) -> Self:
-        """Validate and decode one closed adapter wire mapping."""
 
-        return decode_dataclass(cls, value)
+@dataclass(slots=True, kw_only=True)
+class AdapterCheckResult(ContractModel):
+    """Result of one adapter health probe; null fields are required."""
 
-    def to_mapping(self) -> dict[str, Any]:
-        """Return a detached JSON-compatible adapter wire mapping."""
+    outcome: Literal["passed", "failed", "unknown", "unsupported"]
+    reason_code: CheckReason | None
+    activity: Literal["idle", "busy", "stopping", "stopped", "unknown"]
+    source: Literal[
+        "fabric.runtime_server",
+        "fabric.runtime_server.transport",
+        "fabric.adapter",
+        "fabric.adapter.liveness",
+        "fabric.adapter.interface",
+        "fabric.adapter.readiness",
+    ]
+    observed_at: str | None
 
-        return encode_dataclass(self)
+    def _validate(self) -> None:
+        if (self.outcome == "passed") != (self.reason_code is None):
+            raise ContractValidationError(
+                "inconsistent health outcome", path=("reason_code",)
+            )
+        if self.outcome == "passed" and self.observed_at is None:
+            raise ContractValidationError(
+                "passing requires fresh evidence", path=("observed_at",)
+            )
+        if self.observed_at is not None:
+            try:
+                if not re.fullmatch(
+                    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)",
+                    self.observed_at,
+                ):
+                    raise ValueError()
+                datetime.fromisoformat(self.observed_at)
+            except ValueError:
+                raise ContractValidationError(
+                    "must be a UTC timestamp", path=("observed_at",)
+                ) from None
 
 
 @dataclass(slots=True, kw_only=True)

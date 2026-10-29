@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -174,6 +174,13 @@ Read the implementation before reporting findings.
       assert.equal(responses.length, 2, `stdout:\n${stdout}\nstderr:\n${stderr}`);
       assert.equal(responses[0].operation, "start");
       assert.equal(responses[0].outcome.status, "succeeded");
+      const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+      const entries = responses[0].execution.software_environments.flatMap((environment) => environment.entries);
+      const harness = entries.find((entry) => entry.name === "@earendil-works/pi-coding-agent");
+      assert.equal(harness?.role, "harness");
+      assert.equal(harness.version.status, "available");
+      assert.equal(harness.version.value, manifest.devDependencies[harness.name]);
+      assert.equal(entries.some((entry) => entry.name === "@mariozechner/pi-coding-agent"), false);
       assert.equal(responses[1].operation, "stop");
       assert.equal(responses[1].outcome.status, "succeeded");
       assert.match(stderr, /extension-loaded/);

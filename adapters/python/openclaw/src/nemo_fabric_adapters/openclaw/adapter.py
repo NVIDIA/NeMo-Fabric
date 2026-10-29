@@ -22,6 +22,8 @@ import sys
 import tempfile
 import threading
 from collections import deque
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from types import FrameType
 from typing import Any
@@ -37,7 +39,8 @@ from nemo_fabric_adapters.openclaw import _windows_job
 
 
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 30.0
-DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 10.0
+# Fabric gives the adapter host 10 s to stop, including this wait.
+DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
 DEFAULT_READ_TIMEOUT_SECONDS = 600.0
 HEALTH_CHECK_INTERVAL_SECONDS = 2.0
@@ -123,6 +126,19 @@ def _validate_attach_config(config: contract.AgentConfig) -> None:
             "OpenClaw attach_service cannot verify deployment-owned configuration",
             metadata={"fields": unsupported},
         )
+
+
+def _read_timeout(settings: dict[str, Any]) -> float | None:
+    """Return the configured Gateway read timeout.
+
+    Without one, Fabric's invocation deadline bounds the response.
+    """
+
+    if "read_timeout_seconds" not in settings:
+        return None
+    return _positive_setting(
+        settings, "read_timeout_seconds", DEFAULT_READ_TIMEOUT_SECONDS
+    )
 
 
 def _positive_setting(settings: dict[str, Any], name: str, default: float) -> float:
@@ -736,7 +752,8 @@ def _write_service_connection(
         prefix=f".{path.name}.",
     )
     try:
-        os.fchmod(descriptor, 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             descriptor = -1
             stream.write(payload)
@@ -799,6 +816,181 @@ class OpenClawRuntime:
         self._previous_signal_handlers: dict[int, Any] = {}
         self._signal_handler: Any = None
         self._windows_job: int | None = None
+        self._service_host = False
+        self._active_invoke_task: asyncio.Task | None = None
+
+    async def check(self, level: str) -> dict[str, Any]:
+        """Check Gateway or runtime health using native endpoints.
+
+        Gateway readiness follows native ``/readyz``, including configured
+        channels. Runtime activity covers NeMo Fabric invocations. The health-channel
+        caller supplies one deadline for every native request.
+        """
+        result: dict[str, Any] = {
+            "outcome": "unknown",
+            "reason_code": "probe_error",
+            "activity": "unknown",
+            "source": "fabric.adapter",
+            "observed_at": None,
+        }
+        endpoints = {
+            "live": ("/healthz", "fabric.adapter.liveness"),
+            "active": ("/v1/models", "fabric.adapter.interface"),
+            "ready": ("/readyz", "fabric.adapter.readiness"),
+        }
+        if level not in endpoints:
+            return {
+                **result,
+                "outcome": "unsupported",
+                "reason_code": "unsupported_level",
+            }
+        if self._stopping:
+            return {**result, "reason_code": "observation_changed"}
+        client, gateway_url = self._client, self._gateway_url
+        context, config, agent_id = self._context, self._config, self._agent_id
+        service_host = self._service_host
+        if client is None or client.is_closed or gateway_url is None:
+            return {**result, "reason_code": "runtime_unavailable"}
+        if not service_host and (context is None or config is None):
+            return {**result, "reason_code": "runtime_unavailable"}
+        path, source = endpoints[level]
+
+        def unchanged() -> bool:
+            return (
+                not self._stopping
+                and self._client is client
+                and self._gateway_url == gateway_url
+                and self._context is context
+                and self._config is config
+                and self._agent_id == agent_id
+                and self._service_host == service_host
+            )
+
+        def observed(outcome: str, reason: str | None) -> dict[str, Any]:
+            if not unchanged():
+                return {**result, "reason_code": "observation_changed"}
+            if self._process is not None and self._process.returncode is not None:
+                outcome, reason = "failed", "agent_exited"
+            elif (
+                not service_host
+                and level != "live"
+                and self._gateway_failure is not None
+            ):
+                outcome, reason = "failed", "endpoint_unavailable"
+            return {
+                **result,
+                "outcome": outcome,
+                "reason_code": reason,
+                "activity": "unknown"
+                if service_host
+                else "stopped"
+                if reason == "agent_exited"
+                else (
+                    "busy"
+                    if self._active_invoke_task is not None
+                    and not self._active_invoke_task.done()
+                    else "idle"
+                ),
+                "source": source,
+                "observed_at": datetime.now(timezone.utc)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+            }
+
+        def unobserved(reason: str = "probe_error") -> dict[str, Any]:
+            if not unchanged():
+                return {**result, "reason_code": "observation_changed"}
+            if self._process is not None and self._process.returncode is not None:
+                return observed("failed", "agent_exited")
+            return {**result, "reason_code": reason}
+
+        if self._process is not None and self._process.returncode is not None:
+            return observed("failed", "agent_exited")
+        if not service_host and level != "live" and self._gateway_failure is not None:
+            return observed("failed", "endpoint_unavailable")
+
+        def unique(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise ValueError("duplicate Gateway health field")
+                value[key] = item
+            return value
+
+        paths = [path]
+        if not service_host and level == "active":
+            paths = ["/startupz", "/v1/models", "/v1/chat/completions"]
+        for path in paths:
+            try:
+                async with client.stream(
+                    "GET",
+                    f"{gateway_url}{path}",
+                    follow_redirects=False,
+                    headers={"Accept-Encoding": "identity"},
+                ) as response:
+                    status = response.status_code
+                    if path == "/v1/chat/completions":
+                        # The Chat Completions route returns 405 with Allow: POST
+                        # for GET requests. A disabled route returns 404 even when
+                        # the Responses API serves /v1/models.
+                        if status != 405:
+                            return observed("failed", "endpoint_unavailable")
+                        if response.headers.get("allow", "").strip() != "POST":
+                            return unobserved()
+                        continue
+                    if status != 200 and not (level == "ready" and status == 503):
+                        return observed("failed", "endpoint_unavailable")
+                    if (
+                        response.headers.get("content-encoding", "identity").lower()
+                        != "identity"
+                    ):
+                        return unobserved()
+                    body = bytearray()
+                    async for chunk in response.aiter_raw(chunk_size=16 * 1024 + 1):
+                        body.extend(chunk)
+                        if len(body) > 16 * 1024:
+                            return unobserved()
+                    data = json.loads(body, object_pairs_hook=unique)
+            except httpx.TimeoutException:
+                return unobserved("probe_timeout")
+            except (httpx.HTTPError, ValueError):
+                return unobserved()
+            if not unchanged():
+                return {**result, "reason_code": "observation_changed"}
+            if not isinstance(data, dict):
+                return unobserved()
+            if path in {"/healthz", "/startupz"}:
+                valid = data.get("ok") is True and data.get("status") == (
+                    "live" if path == "/healthz" else "started"
+                )
+            elif path == "/v1/models":
+                models = data.get("data")
+                valid = (
+                    data.get("object") == "list"
+                    and isinstance(models, list)
+                    and all(
+                        isinstance(model, dict)
+                        and isinstance(model.get("id"), str)
+                        and bool(model["id"])
+                        and model.get("object") == "model"
+                        for model in models
+                    )
+                )
+                if (
+                    valid
+                    and not service_host
+                    and not any(
+                        model["id"] == f"openclaw/{agent_id}" for model in models
+                    )
+                ):
+                    return observed("failed", "endpoint_unavailable")
+            else:
+                if status == 503 and data.get("ready") is False:
+                    return observed("failed", "health_failed")
+                valid = status == 200 and data.get("ready") is True
+            if not valid:
+                return unobserved()
+        return observed("passed", None)
 
     async def start(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         config: contract.AgentConfig = payload["config"]
@@ -811,6 +1003,10 @@ class OpenClawRuntime:
                 "openclaw_invalid_service_context",
                 "OpenClaw service context must be an object",
             )
+        self._service_host = service is not None and service.get("operation") in {
+            "prepare",
+            "attach",
+        }
         common_instructions.system_instruction(
             config, adapter="OpenClaw", supported_modes={"replace"}
         )
@@ -846,6 +1042,16 @@ class OpenClawRuntime:
             command, "--version", env=child_env, timeout=startup_timeout
         )
         version = _validate_openclaw_version(version_output)
+        from nemo_fabric_adapters.common.provenance import record_version
+
+        record_version(
+            "openclaw",
+            version,
+            "adapter:openclaw_startup_version",
+            participant="service",
+            origin="observed",
+            kind="component",
+        )
 
         port = _select_port(settings)
 
@@ -938,9 +1144,7 @@ class OpenClawRuntime:
                         "connect_timeout_seconds",
                         DEFAULT_CONNECT_TIMEOUT_SECONDS,
                     ),
-                    read=_positive_setting(
-                        settings, "read_timeout_seconds", DEFAULT_READ_TIMEOUT_SECONDS
-                    ),
+                    read=_read_timeout(settings),
                     write=DEFAULT_READ_TIMEOUT_SECONDS,
                     pool=DEFAULT_CONNECT_TIMEOUT_SECONDS,
                 ),
@@ -983,9 +1187,7 @@ class OpenClawRuntime:
                 connect=_positive_setting(
                     settings, "connect_timeout_seconds", DEFAULT_CONNECT_TIMEOUT_SECONDS
                 ),
-                read=_positive_setting(
-                    settings, "read_timeout_seconds", DEFAULT_READ_TIMEOUT_SECONDS
-                ),
+                read=_read_timeout(settings),
                 write=DEFAULT_READ_TIMEOUT_SECONDS,
                 pool=DEFAULT_CONNECT_TIMEOUT_SECONDS,
             ),
@@ -1049,7 +1251,17 @@ class OpenClawRuntime:
             version = response.json()["version"]
             if not isinstance(version, str):
                 raise TypeError("version is not a string")
-            return _validate_openclaw_version(f"OpenClaw {version}")
+            validated = _validate_openclaw_version(f"OpenClaw {version}")
+            from nemo_fabric_adapters.common.provenance import record_version
+
+            record_version(
+                "openclaw",
+                validated,
+                "service:startupz",
+                participant="service",
+                kind="component",
+            )
+            return validated
         except lifecycle.LifecycleError:
             raise
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as error:
@@ -1277,6 +1489,7 @@ class OpenClawRuntime:
                 agent_id=agent_id,
             )
         )
+        self._active_invoke_task = invoke_task
         failure_task = asyncio.create_task(self._gateway_failed.wait())
         try:
             await asyncio.wait(
@@ -1290,6 +1503,8 @@ class OpenClawRuntime:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(invoke_task, failure_task, return_exceptions=True)
+            if self._active_invoke_task is invoke_task:
+                self._active_invoke_task = None
 
     def _install_signal_handlers(self) -> None:
         if os.name == "nt":
@@ -1389,16 +1604,17 @@ class OpenClawRuntime:
         )
         model = _selected_model(self._config)
         try:
-            text, usage = await self._invoke_monitored_gateway(
-                self._client,
-                f"{gateway_url}/v1/chat/completions",
-                messages=messages,
-                temperature=model.temperature,
-                top_p=model.top_p,
-                max_tokens=model.max_tokens,
-                user=context.runtime_id,
-                agent_id=self._agent_id,
-            )
+            async with asyncio.timeout_at(lifecycle.invocation_deadline(context)):
+                text, usage = await self._invoke_monitored_gateway(
+                    self._client,
+                    f"{gateway_url}/v1/chat/completions",
+                    messages=messages,
+                    temperature=model.temperature,
+                    top_p=model.top_p,
+                    max_tokens=model.max_tokens,
+                    user=context.runtime_id,
+                    agent_id=self._agent_id,
+                )
         except lifecycle.LifecycleError:
             raise
         except httpx.HTTPStatusError as error:
@@ -1418,6 +1634,16 @@ class OpenClawRuntime:
                 "OpenClaw Gateway request could not be completed",
                 retryable=False,
             ) from error
+        except TimeoutError:
+            return contract.AgentRunResult(
+                status=contract.AgentRunStatus.FAILED,
+                output={},
+                error=contract.AgentRunError(
+                    code="timeout",
+                    message="OpenClaw invocation timed out",
+                    retryable=False,
+                ),
+            )
         except Exception as error:
             raise lifecycle.LifecycleError(
                 "openclaw_invalid_response",
@@ -1531,6 +1757,15 @@ class OpenClawRuntime:
 def main() -> None:
     lifecycle.serve(OpenClawRuntime, config_loader=contract.AgentConfig.from_mapping)
 
+
+# Selected software reported by the shared lifecycle host; no dependency scan.
+PROVENANCE_PACKAGES = (
+    (
+        "adapter",
+        "nemo-fabric-adapters-openclaw",
+        "nemo_fabric_adapters.openclaw.adapter",
+    ),
+)
 
 if __name__ == "__main__":
     main()

@@ -42,7 +42,7 @@ harness = [
   "langgraph-sdk>=0.4.4",
 ]
 relay = [
-  "nemo-relay>=0.9,<0.11",
+  "nemo-relay>=0.11,<0.12",
 ]
 full = [
   "deepagents>=0.6.12,<0.8.0",
@@ -51,7 +51,7 @@ full = [
   "langgraph-sdk>=0.4.4",
   # Fabric owns the compatible harness range above. Relay's deepagents extra
   # carries its own harness constraint and would narrow this range.
-  "nemo-relay>=0.9,<0.11",
+  "nemo-relay>=0.11,<0.12",
 ]
 
 [project.urls]

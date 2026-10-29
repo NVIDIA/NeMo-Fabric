@@ -4,6 +4,15 @@
       "descriptor": {
         "adapter_id": "nvidia.fabric.claude",
         "adapter_kind": "python",
+        "capabilities": {
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          }
+        },
         "config": {
           "accepts": [
             "models",
@@ -136,6 +145,25 @@
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
+            "insecure_http_model_hosts": {
+              "description": "Hosts trusted for credential-free HTTP model forwarding through NeMo Relay >=0.11.0; no schemes, ports, paths, wildcards, brackets, or zone identifiers.",
+              "items": {
+                "anyOf": [
+                  {
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$"
+                  },
+                  {
+                    "format": "ipv6",
+                    "pattern": "^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"
+                  }
+                ],
+                "maxLength": 253,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
             "max_budget_usd": {
               "description": "Maximum amount in US dollars that Claude may spend during one invocation.",
               "exclusiveMinimum": 0,
@@ -155,6 +183,17 @@
                 "plan",
                 "dontAsk",
                 "auto"
+              ],
+              "type": "string"
+            },
+            "reasoning_effort": {
+              "description": "Claude reasoning effort. Omit to preserve the harness default.",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
               ],
               "type": "string"
             },
@@ -196,7 +235,7 @@
         "name": "nemo-fabric-adapters-claude",
         "version": "0.6.0"
       },
-      "sha256": "cded65f1e927f3b7154f79b3eb6312a5fa34551265ffe6df1ec271e55de9c407",
+      "sha256": "303693778c2f6255a8a13f74c8abf2980a998149c93c47a1063913422c9671c8",
       "source": "adapters/python/claude/claude.fabric-adapter.json"
     },
     "nvidia.fabric.cline": {
@@ -205,6 +244,13 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -274,15 +320,61 @@
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
             "properties": {
-              "cache_read_tokens": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "cache_write_tokens": {
-                "minimum": 0,
-                "type": "integer"
+              "nvidia.fabric.cline.usage_evidence.v1": {
+                "additionalProperties": false,
+                "properties": {
+                  "complete_source": {
+                    "enum": [
+                      "nvidia_openai_compatible_http"
+                    ]
+                  },
+                  "gaps": {
+                    "items": {
+                      "enum": [
+                        "scope_unverified",
+                        "missing_usage",
+                        "zero_unverified",
+                        "cache_relationship_unverified",
+                        "cache_breakdown_unreported",
+                        "cache_write_unreported"
+                      ]
+                    },
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "observed": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cache_write_input_tokens": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "cached_input_tokens": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "input_tokens": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "output_tokens": {
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "observed",
+                  "gaps"
+                ],
+                "type": "object"
               }
             },
+            "required": [
+              "nvidia.fabric.cline.usage_evidence.v1"
+            ],
             "type": "object"
           }
         },
@@ -336,13 +428,22 @@
         "name": "nemo-fabric-adapters-cline",
         "version": "0.6.0"
       },
-      "sha256": "4c695e93660eafc004482c1b1e5ac951c33dad22bdb3752791f184e02735e684",
+      "sha256": "66ff12840fc8a005278a94b88f3ca54760d8f18ea7f04e7bc939e5a3f838605a",
       "source": "adapters/typescript/cline/cline.fabric-adapter.json"
     },
     "nvidia.fabric.codex": {
       "descriptor": {
         "adapter_id": "nvidia.fabric.codex",
         "adapter_kind": "python",
+        "capabilities": {
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          }
+        },
         "config": {
           "accepts": [
             "models",
@@ -460,6 +561,25 @@
               "minLength": 1,
               "type": "string"
             },
+            "insecure_http_model_hosts": {
+              "description": "Hosts trusted for credential-free HTTP model forwarding through NeMo Relay >=0.11.0; no schemes, ports, paths, wildcards, brackets, or zone identifiers.",
+              "items": {
+                "anyOf": [
+                  {
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$"
+                  },
+                  {
+                    "format": "ipv6",
+                    "pattern": "^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"
+                  }
+                ],
+                "maxLength": 253,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
             "output_schema": {
               "description": "JSON Schema that constrains the final assistant message for each turn.",
               "type": "object"
@@ -481,7 +601,9 @@
                 "low",
                 "medium",
                 "high",
-                "xhigh"
+                "xhigh",
+                "max",
+                "ultra"
               ],
               "type": "string"
             },
@@ -530,7 +652,7 @@
         "name": "nemo-fabric-adapters-codex",
         "version": "0.6.0"
       },
-      "sha256": "f66fb66d3a366977619bc9e88a4d926e0b71bbc28ac965b9a416bf2559106ce5",
+      "sha256": "823aa2423aad2b524ffc47aaf88de71a56e2aaf5e7c1837768a7b5c829d0411c",
       "source": "adapters/python/codex/codex.fabric-adapter.json"
     },
     "nvidia.fabric.droid": {
@@ -539,6 +661,11 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -660,13 +787,22 @@
         "name": "nemo-fabric-adapters-droid",
         "version": "0.6.0"
       },
-      "sha256": "6d1b3e67bf4d7b803c292057a27aa6c1c272f1160118cf0bb349ee273b067f14",
+      "sha256": "0c44210e0ba4e58a173b6ed1e38ecb4d518d84a4dd5c68449a7155463c591c73",
       "source": "adapters/typescript/droid/droid.fabric-adapter.json"
     },
     "nvidia.fabric.hermes": {
       "descriptor": {
         "adapter_id": "nvidia.fabric.hermes",
         "adapter_kind": "python",
+        "capabilities": {
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          }
+        },
         "config": {
           "accepts": [
             "models",
@@ -781,7 +917,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.6.0"
       },
-      "sha256": "e482a89dda834dc5bfdbcb7f6041ad5e457a73918d74d8a8215f0171b8947465",
+      "sha256": "6539b80cd3dbc76f2db58640bb957dcbe5f9e45421a2d7f9a45785325f354f38",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {
@@ -790,6 +926,13 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -812,6 +955,110 @@
           ]
         },
         "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "usage": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "nemo_fabric.detailed_token_usage.v1": {
+                "additionalProperties": false,
+                "properties": {
+                  "cache_write_input_tokens": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "cached_input_tokens": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "input_tokens": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "input_tokens_include_cache": {
+                    "const": true
+                  },
+                  "output_tokens": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "output_tokens_include_reasoning": {
+                    "const": true
+                  },
+                  "reasoning_tokens": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "nvidia.fabric.kilo.usage_evidence.v1": {
+                "additionalProperties": false,
+                "properties": {
+                  "gaps": {
+                    "items": {
+                      "enum": [
+                        "missing_usage",
+                        "scope_unverified",
+                        "unfinished_work"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "observed": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cache_write_input_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "cached_input_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "input_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "output_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "reasoning_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "total_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "observed",
+                  "gaps"
+                ],
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
         "model_schema": {
           "additionalProperties": false,
           "properties": {
@@ -881,13 +1128,137 @@
         "name": "nemo-fabric-adapters-kilo",
         "version": "0.6.0"
       },
-      "sha256": "608aeacfa0cfa5ff7ccd28e3f66cadd53f82780bc882b8577e7e8687dfd3dd07",
+      "sha256": "6bf1bf8c3df7c62c7942c23c5b1639df54764773e2f4d945c19daf04c701a7a1",
       "source": "adapters/typescript/kilo/kilo.fabric-adapter.json"
+    },
+    "nvidia.fabric.kiro": {
+      "descriptor": {
+        "adapter_id": "nvidia.fabric.kiro",
+        "adapter_kind": "process",
+        "capabilities": {
+          "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live"
+            ]
+          },
+          "service": false,
+          "streaming": false,
+          "updates": false
+        },
+        "config": {
+          "accepts": [
+            "models",
+            "mcp"
+          ]
+        },
+        "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "run_result": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "session_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "stop_reason": {
+                "enum": [
+                  "end_turn",
+                  "max_tokens",
+                  "max_turn_requests",
+                  "refusal",
+                  "cancelled"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "session_id",
+              "stop_reason"
+            ],
+            "type": "object"
+          }
+        },
+        "model_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "api_key_env": {
+              "const": "KIRO_API_KEY"
+            },
+            "model": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "provider": {
+              "const": "kiro"
+            }
+          },
+          "required": [
+            "provider",
+            "model"
+          ],
+          "type": "object"
+        },
+        "requirements": {
+          "binaries": [
+            "node",
+            "kiro-cli"
+          ]
+        },
+        "runner": {
+          "command": "node",
+          "script": "dist/cli.js"
+        },
+        "settings_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "effort": {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
+            "mode_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "permission_mode": {
+              "enum": [
+                "deny",
+                "allow_once"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "ecosystem": "typescript",
+      "package": {
+        "name": "nemo-fabric-adapters-kiro",
+        "version": "0.6.0"
+      },
+      "sha256": "e7393a07550505f23a3396128a29f5b078492ce7f1580f6f3b79d5872e4587a2",
+      "source": "adapters/typescript/kiro/kiro.fabric-adapter.json"
     },
     "nvidia.fabric.langchain.deepagents": {
       "descriptor": {
         "adapter_id": "nvidia.fabric.langchain.deepagents",
         "adapter_kind": "python",
+        "capabilities": {
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          }
+        },
         "config": {
           "accepts": [
             "models",
@@ -1136,6 +1507,18 @@
               },
               "required": [],
               "type": "object"
+            },
+            "reasoning_effort": {
+              "description": "Reasoning effort passed to ChatOpenAI. Requires an OpenAI-compatible provider; omit to preserve the model default.",
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh"
+              ],
+              "type": "string"
             }
           },
           "required": [],
@@ -1164,7 +1547,7 @@
         "name": "nemo-fabric-adapters-deepagents",
         "version": "0.6.0"
       },
-      "sha256": "819b1f9747af83011c98d5889c56dac9a735008b25e93bbc94c1cfde3050a44e",
+      "sha256": "d4394a8dd328bd1b1f89386a75f176cfc83755e0c6714c3c9839468510deb181",
       "source": "adapters/python/deepagents/deepagents.fabric-adapter.json"
     },
     "nvidia.fabric.mini-swe-agent": {
@@ -1468,6 +1851,18 @@
         "adapter_kind": "python",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ],
+            "service_health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": true,
           "streaming": false,
           "updates": false
@@ -1620,13 +2015,12 @@
               "type": "object"
             },
             "read_timeout_seconds": {
-              "default": 600,
-              "description": "Timeout between response bytes from the local OpenClaw Gateway.",
+              "description": "Timeout between response bytes from the local OpenClaw Gateway. When unset, the invocation timeout bounds the response.",
               "exclusiveMinimum": 0,
               "type": "number"
             },
             "shutdown_timeout_seconds": {
-              "default": 10,
+              "default": 5,
               "description": "Maximum graceful Gateway shutdown time before forced termination.",
               "exclusiveMinimum": 0,
               "type": "number"
@@ -1646,7 +2040,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.6.0"
       },
-      "sha256": "5ab8b29595214e214214b051b60bc314dc65f07add60a73283f434a62e3f7402",
+      "sha256": "b2a9ef847226bc5858024776b50fb87c6d57cd4332accc6583aacb5d348a17f5",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {
@@ -1655,6 +2049,13 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -1674,6 +2075,97 @@
           ]
         },
         "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "usage": {
+            "additionalProperties": false,
+            "properties": {
+              "nvidia.fabric.opencode.usage_evidence.v1": {
+                "additionalProperties": false,
+                "properties": {
+                  "gaps": {
+                    "items": {
+                      "enum": [
+                        "scope_unverified",
+                        "missing_usage",
+                        "unfinished_work"
+                      ]
+                    },
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "observed": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cached_input_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "input_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "output_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "reasoning_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "total_tokens": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "scope_reasons": {
+                    "description": "Bounded reasons invocation ownership or completion could not be proved; contains no native messages, commands, or credentials.",
+                    "items": {
+                      "enum": [
+                        "observer_unavailable",
+                        "observer_lost",
+                        "configuration_changed",
+                        "prepare_scope_read_failed",
+                        "unsupported_configuration",
+                        "root_execution_unconfirmed",
+                        "title_completion_unconfirmed",
+                        "final_scope_read_failed",
+                        "child_ancestry_unverified",
+                        "child_ownership_changed",
+                        "manual_session_change",
+                        "tool_result_unavailable",
+                        "background_shell",
+                        "background_subagent",
+                        "unsupported_protocol",
+                        "auxiliary_generation",
+                        "unsupported_request_kind",
+                        "prompt_failed",
+                        "unfinished_work"
+                      ]
+                    },
+                    "type": "array",
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "observed",
+                  "gaps"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "nvidia.fabric.opencode.usage_evidence.v1"
+            ],
+            "type": "object"
+          }
+        },
         "model_schema": {
           "additionalProperties": false,
           "allOf": [
@@ -1775,7 +2267,7 @@
         "name": "nemo-fabric-adapters-opencode",
         "version": "0.6.0"
       },
-      "sha256": "86175ea45671c92601bf1a132fc0fe91f3de82f19ce8bf4249e9993125c32641",
+      "sha256": "8cb126e7d382bb58fc3447166a7d5f858ae2af14118aa1533bf7ae6f4c206495",
       "source": "adapters/typescript/opencode/opencode.fabric-adapter.json"
     },
     "nvidia.fabric.openhands": {
@@ -1784,6 +2276,12 @@
         "adapter_kind": "python",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -1808,6 +2306,18 @@
           ]
         },
         "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "run_error": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "sdk_error": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
         "model_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -1879,7 +2389,7 @@
         "name": "nemo-fabric-adapters-openhands",
         "version": "0.6.0"
       },
-      "sha256": "062ef09ba5e82dfdf0b4374632a8b39b7ff975160b0c6f62e68d2f4ac6f0b59e",
+      "sha256": "4039f0131e9f8db3348b74eaed48be062f0d989769ecfbb9c86af693e20e2962",
       "source": "adapters/python/openhands/openhands.fabric-adapter.json"
     },
     "nvidia.fabric.pi": {
@@ -1888,6 +2398,13 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -2054,8 +2571,27 @@
               "type": "array",
               "uniqueItems": true
             },
+            "insecure_http_model_hosts": {
+              "description": "Hosts trusted for credential-free HTTP model forwarding through NeMo Relay >=0.11.0; no schemes, ports, paths, wildcards, brackets, or zone identifiers.",
+              "items": {
+                "anyOf": [
+                  {
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$"
+                  },
+                  {
+                    "format": "ipv6",
+                    "pattern": "^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*$"
+                  }
+                ],
+                "maxLength": 253,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
             "relay_extension_path": {
-              "description": "Absolute path or environment.workspace-relative path to the NeMo Relay 0.9 or 0.10 Pi extension",
+              "description": "Absolute path or environment.workspace-relative path to the NeMo Relay Pi extension matching the CLI release",
               "minLength": 1,
               "type": "string"
             }
@@ -2101,7 +2637,7 @@
         "name": "nemo-fabric-adapters-pi",
         "version": "0.6.0"
       },
-      "sha256": "3cb85c7a0e52e49827e889631da96ca7936c7260d52aac8b52835484a0cafad9",
+      "sha256": "cae10ac33988f37ef1fc81f26a3850701ef210a2701622feb9741fccf134872f",
       "source": "adapters/typescript/pi/pi.fabric-adapter.json"
     },
     "nvidia.fabric.qwen": {
@@ -2110,6 +2646,13 @@
         "adapter_kind": "process",
         "capabilities": {
           "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
           "service": false,
           "streaming": false,
           "updates": false
@@ -2211,7 +2754,7 @@
         "name": "nemo-fabric-adapters-qwen",
         "version": "0.6.0"
       },
-      "sha256": "ffd6ed76db07ac79e04edc6cdc183729b1e569cb67015503b93aea50f951b3d2",
+      "sha256": "bb260462f2f5322f22c5e3bb6d4fdcd4e3f23845b7ad8fdeec017928cf062fb3",
       "source": "adapters/typescript/qwen/qwen.fabric-adapter.json"
     },
     "nvidia.fabric.remote-agent": {
@@ -2350,6 +2893,200 @@
       },
       "sha256": "39870c056b7aa15b8706b6cabf9190029f6c9165c5c9ce4b427f5f18bd7ba70a",
       "source": "adapters/python/remote-agent/remote-agent.fabric-adapter.json"
+    },
+    "nvidia.fabric.strands": {
+      "descriptor": {
+        "adapter_id": "nvidia.fabric.strands",
+        "adapter_kind": "process",
+        "capabilities": {
+          "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live"
+            ]
+          },
+          "service": false,
+          "streaming": false,
+          "updates": false
+        },
+        "config": {
+          "accepts": [
+            "models",
+            "mcp",
+            "instructions.system",
+            "models.base_url"
+          ],
+          "system_instruction_modes": [
+            "append"
+          ]
+        },
+        "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "run_result": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "session_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "stop_reason": {
+                "enum": [
+                  "end_turn",
+                  "max_tokens",
+                  "max_turn_requests",
+                  "refusal",
+                  "cancelled"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "session_id",
+              "stop_reason"
+            ],
+            "type": "object"
+          },
+          "usage": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "nemo_fabric.detailed_token_usage.v1": {
+                "additionalProperties": false,
+                "properties": {
+                  "cache_write_input_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "cached_input_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "input_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "input_tokens_include_cache": {
+                    "type": "boolean"
+                  },
+                  "output_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "output_tokens_include_reasoning": {
+                    "type": "boolean"
+                  },
+                  "total_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "model_schema": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "model": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "provider": {
+                  "const": "bedrock"
+                }
+              },
+              "required": [
+                "provider",
+                "model"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "api_key_env": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                  "type": "string"
+                },
+                "base_url": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "model": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "provider": {
+                  "enum": [
+                    "openai",
+                    "nvidia"
+                  ]
+                }
+              },
+              "required": [
+                "provider",
+                "model",
+                "base_url"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "requirements": {
+          "binaries": [
+            "node",
+            "strands"
+          ]
+        },
+        "runner": {
+          "command": "node",
+          "script": "dist/cli.js"
+        },
+        "settings_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "builtin_tools": {
+              "items": {
+                "enum": [
+                  "shell",
+                  "read",
+                  "write",
+                  "edit",
+                  "web_fetch"
+                ]
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "insecure_http_model_hosts": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "max_invocations": {
+              "default": 100,
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "ecosystem": "typescript",
+      "package": {
+        "name": "nemo-fabric-adapters-strands",
+        "version": "0.6.0"
+      },
+      "sha256": "37982ca315b241b03fce3edb1d49d2f1663e3224ebcf89824d3a976055ccd949",
+      "source": "adapters/typescript/strands/strands.fabric-adapter.json"
     }
   },
   "catalog_version": "0.6.0",

@@ -79,12 +79,53 @@ unauthenticated stdio, SSE, and streamable HTTP MCP servers. It does not
 advertise streaming, telemetry, or Relay integration.
 
 Each NeMo Fabric runtime owns one local Cline core and one interactive Cline
-session. The first invocation calls `ClineCore.start()`. Later invocations call
+session. Runtime startup calls `ClineCore.start()` without a prompt. Every invocation calls
 `ClineCore.send()` with the retained session ID, and `stop()` closes the
 session, disposes the core, and removes runtime-scoped state. Independent
 NeMo Fabric runtimes do not share Cline state.
+
+## Usage evidence
+
+Results from `ClineCore.send()` retain positive input, output, cache-read, and
+cache-write counts in `RunResult.usage.metadata["nvidia.fabric.cline.usage_evidence.v1"]`.
+The `observed` object holds these Cline counts. The `gaps` list identifies
+missing or unverified usage. Cline can fill unavailable counts with zero, so a
+zero in the Cline SDK result does not prove that the provider reported zero.
+
+When the selected provider is `nvidia` and `base_url` is set, the adapter captures
+model requests through Cline's configured HTTP hook during each send. It sets
+input, output, and total token counts only when every captured request returns
+valid terminal usage that does not conflict with nonzero SDK counts. A zero
+reported by the provider stays zero. The OpenAI-compatible input count includes
+cache reads, and its output count includes reasoning tokens. The adapter reports
+cache reads only when the provider supplies that count. If a request fails,
+omits usage, or follows an unexpected path, complete counts remain
+unknown and the observations stay available. Other Cline providers return
+observations with unverified coverage. Provider-reported cost remains unknown.
+Harbor uses complete counts when present and retains observations in NeMo Fabric
+result metadata.
 
 The adapter accepts no Cline-specific `harness.settings`. Unsupported
 normalized fields, unknown settings, unknown built-in tool names, authenticated
 MCP configuration, and MCP tool allowlists or blocklists fail instead of being
 ignored.
+
+## Runtime Health
+
+`Fabric.check()` supports `live`, `active`, and `ready` for the selected Cline runtime. Runtime startup initializes an interactive native session without a prompt or model request. Checks use a separate health connection and can finish while the first or any later invocation waits for a model response.
+
+- `live` verifies the owned local host still contains the same resident session and native agent identity, and the native agent has not shut down.
+- `active` also observes `SessionRuntime.canStartRun()` and the native running flag. An active run counts as busy and remains healthy.
+- `ready` also obtains a fresh `ClineCore.get()` response for that resident session and validates the native session identity and live status.
+
+These observations are qualified against `@cline/sdk@0.0.83` and `@cline/core@0.0.83`. The adapter guards the local host's resident-session map and native agent closure fields because `ClineCore.get()` can return historical rows after shutdown. An incompatible native layout returns `unsupported/capabilities_unverified`. Session replacement or closure during a probe invalidates the observation. Checks return fixed safe evidence fields and exclude native snapshots, configuration, prompts, and credentials.
+
+One caller deadline covers the health request. A timeout leaves the invocation and session running. At most one native snapshot read remains pending after a timeout; later checks never reuse an earlier response. Passing health establishes local session and request-interface availability. Model access, credential validity, and tool-server availability require separate validation.
+
+Run the native qualification test after installing the supported Cline SDK:
+
+```bash
+node --test adapters/typescript/cline/test/native-health.mjs
+```
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.

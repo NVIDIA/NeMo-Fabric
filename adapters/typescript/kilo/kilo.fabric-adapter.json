@@ -44,5 +44,52 @@
     },
     "additionalProperties": false
   },
-  "capabilities": {"streaming": false, "cancellation": false, "updates": false, "service": false}
+  "extension_schemas": {
+    "usage": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "nvidia.fabric.kilo.usage_evidence.v1": {
+          "type": "object",
+          "properties": {
+            "observed": {
+              "type": "object",
+              "properties": {
+                "input_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+                "output_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+                "total_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+                "cached_input_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+                "cache_write_input_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+                "reasoning_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991}
+              },
+              "additionalProperties": false
+            },
+            "gaps": {
+              "type": "array",
+              "items": {"type": "string", "enum": ["missing_usage", "scope_unverified", "unfinished_work"]},
+              "uniqueItems": true
+            }
+          },
+          "required": ["observed", "gaps"],
+          "additionalProperties": false
+        },
+        "nemo_fabric.detailed_token_usage.v1": {
+          "type": "object",
+          "properties": {
+            "input_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+            "output_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+            "cached_input_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+            "cache_write_input_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+            "reasoning_tokens": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+            "input_tokens_include_cache": {"const": true},
+            "output_tokens_include_reasoning": {"const": true}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "capabilities": {
+    "metadata": {"health_checks": ["live", "active", "ready"]},"streaming": false, "cancellation": false, "updates": false, "service": false}
 }

@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
+import gc
 import json
 import os
 import subprocess
 import sys
 import time
+import weakref
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -542,6 +544,7 @@ def test_single_invocation_uses_native_thread_and_turn_contract(
     assert start["sandbox"] == adapter.Sandbox.workspace_write
     assert start["config"] == {
         "features": {"web_search": False},
+        "mcp_optional_startup_grace_ms": 0,
         "model_reasoning_effort": "high",
     }
     client.thread.turn.assert_awaited_once_with(
@@ -649,6 +652,7 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
 
     assert output["completed"] is True
     config = mock_codex.instances[0].thread_start.await_args.kwargs["config"]
+    assert config["mcp_optional_startup_grace_ms"] == 0
     assert config["mcp_servers"] == {
         "remote": {
             "url": "https://mcp.example.test/mcp",
@@ -1631,8 +1635,8 @@ def test_relay_uses_gateway_and_request_scoped_sdk_config(
         executable_arg = subprocess.list2cmdline([executable_arg.replace("\\", "/")])
     assert config["hooks"]["SessionStart"][0]["hooks"][0] == {
         "type": "command",
-        "command": f"{executable_arg} hook-forward codex",
-        "timeout": 30,
+        "command": f"{executable_arg} hook-forward codex --fail-open",
+        "timeout": 45,
     }
     assert output["relay_runtime"] == {
         "enabled": True,
@@ -1846,14 +1850,18 @@ def test_relay_stop_failure_is_reported_by_runtime_stop(
     assert error.code == "codex_relay_stop_failed"
 
 
+@pytest.mark.parametrize(
+    "effort",
+    [None, "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+)
 def test_native_sdk_controls_and_telemetry_are_request_scoped(
-    codex_payload, mock_codex
+    codex_payload, mock_codex, effort
 ):
     settings = codex_payload["config"]["harness"]["settings"]
     settings.update(
         {
             "personality": "pragmatic",
-            "reasoning_effort": "xhigh",
+            "reasoning_effort": effort,
             "output_schema": {
                 "type": "object",
                 "properties": {"summary": {"type": "string"}},
@@ -1903,7 +1911,9 @@ def test_native_sdk_controls_and_telemetry_are_request_scoped(
         },
     }
     turn = client.thread.turn.await_args.kwargs
-    assert turn["effort"] == adapter.ReasoningEffort.xhigh
+    assert turn["effort"] == (
+        None if effort is None else adapter.ReasoningEffort(effort)
+    )
     assert turn["output_schema"]["required"] == ["summary"]
 
 
@@ -1972,7 +1982,15 @@ def test_descriptor_has_no_codex_binary_requirement():
         ).read_text(encoding="utf-8")
     )
 
+    assert descriptor["capabilities"]["metadata"]["health_checks"] == [
+        "live",
+        "active",
+        "ready",
+    ]
     assert descriptor["adapter_id"] == "nvidia.fabric.codex"
+    assert descriptor["settings_schema"]["properties"]["reasoning_effort"]["enum"] == [
+        effort.value for effort in adapter.ReasoningEffort
+    ]
     assert descriptor["runner"] == {
         "module": "nemo_fabric_adapters.codex.adapter",
     }
@@ -2103,3 +2121,461 @@ def test_main_serves_persistent_runtime(monkeypatch):
     serve.assert_called_once_with(
         adapter.CodexRuntime, config_loader=AgentConfig.from_mapping
     )
+
+
+@pytest.mark.parametrize("effort", [True, 1, [], {}, "", "unknown"])
+def test_native_reasoning_effort_rejected_before_startup(
+    codex_payload, mock_codex, monkeypatch, effort
+):
+    codex_payload["config"]["harness"]["settings"]["reasoning_effort"] = effort
+    prepare_relay = MagicMock()
+    monkeypatch.setattr(adapter, "prepare_codex_relay", prepare_relay)
+
+    error = runtime_start_error(codex_payload)
+
+    assert error.code == "codex_invalid_configuration"
+    assert error.message in {
+        "reasoning_effort is invalid",
+        "harness.settings.reasoning_effort must be a non-empty string",
+    }
+    prepare_relay.assert_not_called()
+    assert mock_codex.instances == []
+
+
+@pytest.fixture(name="codex_health")
+async def codex_health_fixture(codex_payload, mock_codex):
+    from openai_codex.generated.v2_all import ThreadReadResponse
+
+    runtime = adapter.CodexRuntime()
+    await runtime.start(lifecycle_start_payload(codex_payload))
+    client, thread = runtime._client, runtime._thread
+    process = MagicMock(spec=subprocess.Popen)
+    process.poll.return_value = None
+    client._initialized = True
+    client._client._sync = SimpleNamespace(_proc=process)
+    thread._codex = client
+    thread.read = AsyncMock(
+        return_value=ThreadReadResponse.model_validate(
+            {
+                "thread": {
+                    "id": thread.id,
+                    "sessionId": thread.id,
+                    "cliVersion": "0.154.0",
+                    "createdAt": 1,
+                    "updatedAt": 1,
+                    "cwd": codex_payload["runtime_context"]["environment"]["workspace"],
+                    "ephemeral": False,
+                    "modelProvider": "openai",
+                    "preview": "",
+                    "source": "appServer",
+                    "status": {"type": "idle"},
+                    "turns": [],
+                }
+            }
+        )
+    )
+    try:
+        yield runtime, client, thread, process
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.parametrize("level", ["live", "active", "ready"])
+async def test_health_uses_native_evidence(codex_health, level):
+    from nemo_fabric_adapter_contract.models import AdapterCheckResult
+
+    runtime, client, thread, process = codex_health
+    result = await runtime.check(level)
+
+    AdapterCheckResult.from_mapping(result)
+    assert (result["outcome"], result["reason_code"], result["activity"]) == (
+        "passed",
+        None,
+        "idle",
+    )
+    assert (
+        result["source"]
+        == {
+            "live": "fabric.adapter.liveness",
+            "active": "fabric.adapter.interface",
+            "ready": "fabric.adapter.readiness",
+        }[level]
+    )
+    assert result["observed_at"] is not None
+    process.poll.assert_called()
+    if level == "live":
+        thread.read.assert_not_awaited()
+    else:
+        thread.read.assert_awaited_once_with(include_turns=False)
+    thread.turn.assert_not_awaited()
+    client.close.assert_not_awaited()
+
+
+@pytest.mark.parametrize("level", ["live", "active", "ready"])
+async def test_health_detects_owned_process_exit(codex_health, level):
+    runtime, _, thread, process = codex_health
+    process.poll.return_value = 1
+
+    result = await runtime.check(level)
+
+    assert (result["outcome"], result["reason_code"], result["activity"]) == (
+        "failed",
+        "agent_exited",
+        "stopped",
+    )
+    thread.read.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("status", "level", "outcome", "reason"),
+    [
+        ("notLoaded", "active", "failed", "session_closed"),
+        ("notLoaded", "ready", "failed", "session_closed"),
+        ("systemError", "active", "passed", None),
+        ("systemError", "ready", "failed", "health_failed"),
+        ("active", "ready", "passed", None),
+    ],
+)
+async def test_health_qualifies_native_thread_status(
+    codex_health, status, level, outcome, reason
+):
+    from openai_codex.generated.v2_all import ThreadStatus
+
+    runtime, _, thread, _ = codex_health
+    native = {"type": status}
+    if status == "active":
+        native["activeFlags"] = []
+    thread.read.return_value.thread.status = ThreadStatus.model_validate(native)
+
+    result = await runtime.check(level)
+
+    assert (result["outcome"], result["reason_code"]) == (outcome, reason)
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "missing_process",
+        "uninitialized",
+        "unusable",
+        "foreign_thread",
+        "wrong_id",
+        "malformed",
+        "probe_error",
+    ],
+)
+async def test_health_does_not_promote_invalid_evidence(codex_health, invalid):
+    runtime, client, thread, _ = codex_health
+    if invalid == "missing_process":
+        client._client._sync._proc = None
+    elif invalid == "uninitialized":
+        client._initialized = False
+    elif invalid == "unusable":
+        runtime._unusable = True
+    elif invalid == "foreign_thread":
+        thread._codex = object()
+    elif invalid == "wrong_id":
+        thread.read.return_value.thread.id = "other-thread"
+    elif invalid == "malformed":
+        thread.read.return_value = {"thread": {"status": {"type": "idle"}}}
+    else:
+        thread.read.side_effect = RuntimeError("credential-bearing native error")
+
+    result = await runtime.check("ready")
+
+    assert result["outcome"] != "passed"
+    assert "credential-bearing" not in json.dumps(result)
+    client.close.assert_not_awaited()
+
+
+@pytest.mark.parametrize("level", ["active", "ready"])
+async def test_health_reports_current_native_probe_cancellation(codex_health, level):
+    runtime, client, thread, _ = codex_health
+    thread.read.side_effect = asyncio.CancelledError
+
+    result = await runtime.check(level)
+
+    assert (result["outcome"], result["reason_code"], result["activity"]) == (
+        "unknown",
+        "probe_error",
+        "idle",
+    )
+    assert result["observed_at"] is not None
+    thread.read.assert_awaited_once_with(include_turns=False)
+    client.close.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "stop",
+        "client",
+        "process",
+        "thread",
+        "thread_id",
+        "unusable",
+        "initialized",
+        "thread_owner",
+        "config",
+        "runtime_id",
+    ],
+)
+async def test_health_invalidates_observation_when_ownership_changes(
+    codex_health, change
+):
+    runtime, client, thread, _ = codex_health
+    response = thread.read.return_value
+
+    async def read(**kwargs):
+        if change == "stop":
+            await runtime.stop()
+        elif change == "client":
+            runtime._client = MagicMock(spec=AsyncCodex)
+        elif change == "process":
+            client._client._sync._proc = MagicMock(spec=subprocess.Popen)
+        elif change == "thread":
+            runtime._thread = MagicMock(spec=AsyncThread)
+        elif change == "thread_id":
+            thread.id = "replacement-id"
+        elif change == "initialized":
+            client._initialized = False
+        elif change == "thread_owner":
+            thread._codex = object()
+        elif change == "config":
+            runtime._config = object()
+        elif change == "runtime_id":
+            runtime._fabric_runtime_id = "replacement-runtime"
+        else:
+            runtime._unusable = True
+        return response
+
+    thread.read.side_effect = read
+    result = await runtime.check("ready")
+
+    assert (result["outcome"], result["reason_code"]) == (
+        "unknown",
+        "observation_changed",
+    )
+    if change == "client":
+        runtime._client = client
+
+
+async def test_health_native_request_is_bounded_and_recovers_after_timeouts(
+    codex_health,
+):
+    runtime, client, thread, _ = codex_health
+    entered, release = asyncio.Event(), asyncio.Event()
+    response = thread.read.return_value
+
+    async def read(**kwargs):
+        entered.set()
+        await release.wait()
+        return response
+
+    thread.read.side_effect = read
+    try:
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(0.02):
+                await runtime.check("ready")
+        await entered.wait()
+        for _ in range(5):
+            with pytest.raises(TimeoutError):
+                async with asyncio.timeout(0.01):
+                    await runtime.check("active")
+        assert thread.read.await_count == 1
+        assert not runtime._health_task.cancelled()
+        client.close.assert_not_awaited()
+    finally:
+        release.set()
+        await asyncio.sleep(0)
+    thread.read.side_effect = None
+    assert (await runtime.check("ready"))["outcome"] == "passed"
+    assert thread.read.await_count == 2
+
+
+async def test_health_passes_during_invocation(codex_health, codex_payload):
+    runtime, _, thread, _ = codex_health
+    entered, release = asyncio.Event(), asyncio.Event()
+    handle = thread.turn.return_value
+
+    async def run():
+        entered.set()
+        await release.wait()
+        return successful_result()
+
+    handle.run.side_effect = run
+    invocation = asyncio.create_task(
+        runtime.invoke(*lifecycle_invocation(codex_payload))
+    )
+    try:
+        await entered.wait()
+        for level in ("live", "active", "ready"):
+            async with asyncio.timeout(1):
+                result = await runtime.check(level)
+            assert (result["outcome"], result["activity"]) == ("passed", "busy")
+            assert not invocation.done()
+        handle.interrupt.assert_not_awaited()
+    finally:
+        release.set()
+        await invocation
+    assert (await runtime.check("ready"))["activity"] == "idle"
+
+
+async def test_health_unstarted_and_unsupported():
+    runtime = adapter.CodexRuntime()
+    assert (await runtime.check("ready"))["reason_code"] == "runtime_unavailable"
+    result = await runtime.check("other")
+    assert (result["outcome"], result["reason_code"]) == (
+        "unsupported",
+        "unsupported_level",
+    )
+
+
+async def test_health_timeout_consumes_late_native_errors_without_logging(codex_health):
+    runtime, _, thread, _ = codex_health
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+    diagnostics = []
+    release = asyncio.Event()
+    pending = None
+
+    async def delayed_error(*_args, **_kwargs):
+        await release.wait()
+        raise RuntimeError("private-native-health-detail")
+
+    thread.read.side_effect = delayed_error
+    loop.set_exception_handler(
+        lambda _loop, context: diagnostics.append(context["message"])
+    )
+    try:
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(0.03):
+                await runtime.check("ready")
+        pending = runtime._health_task
+        assert pending is not None and not pending.done()
+        pending_ref = weakref.ref(pending)
+        release.set()
+        await asyncio.wait({pending})
+        await asyncio.sleep(0)
+        assert not pending.cancelled()
+        runtime._health_task = None
+        pending = None
+        gc.collect()
+        assert pending_ref() is None
+        assert diagnostics == []
+        thread.read.assert_awaited_once()
+    finally:
+        release.set()
+        if pending is not None:
+            await asyncio.gather(pending, return_exceptions=True)
+        loop.set_exception_handler(previous_handler)
+
+
+@pytest.mark.parametrize("completion", ["error", "cancelled"])
+async def test_health_obtains_fresh_evidence_after_an_older_probe_fails(
+    codex_health, completion
+):
+    runtime, _, thread, _ = codex_health
+    release = asyncio.Event()
+
+    async def diagnostic(*_args, **_kwargs):
+        if thread.read.await_count == 1:
+            await release.wait()
+            if completion == "cancelled":
+                raise asyncio.CancelledError
+            raise RuntimeError("private-prior-probe-detail")
+        return thread.read.return_value
+
+    thread.read.side_effect = diagnostic
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.03):
+            await runtime.check("ready")
+    pending = runtime._health_task
+    assert pending is not None and not pending.done()
+    checking = asyncio.create_task(runtime.check("ready"))
+    try:
+        await asyncio.sleep(0)
+        assert thread.read.await_count == 1
+        assert not checking.done()
+        release.set()
+        result = await asyncio.wait_for(checking, 1)
+        assert (result["outcome"], result["reason_code"]) == ("passed", None)
+        assert thread.read.await_count == 2
+    finally:
+        release.set()
+        await asyncio.gather(pending, checking, return_exceptions=True)
+
+
+@pytest.mark.parametrize("hosts", [["MODEL.TEST."], []])
+def test_codex_relay_propagates_explicit_http_model_hosts(
+    codex_payload, monkeypatch, tmp_path, hosts
+):
+    import tomllib
+
+    codex_payload["config"]["harness"]["settings"]["insecure_http_model_hosts"] = hosts
+    codex_payload["runtime_context"]["telemetry"] = {
+        "relay_enabled": True,
+        "metadata": {"telemetry_providers": ["relay"]},
+    }
+    intent = tmp_path / "relay.json"
+    intent.write_text(
+        json.dumps({"relay": {"config": {"version": 1, "components": []}}})
+    )
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(intent)
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "resolve_relay_command",
+        MagicMock(return_value=tmp_path / "nemo-relay"),
+    )
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "relay_cli_contract",
+        MagicMock(
+            return_value=adapter.relay_gateway.RelayCliContract(version=(0, 11, 0))
+        ),
+    )
+    config, context, base_dir = runtime_input(codex_payload)
+    relay = adapter.prepare_codex_relay(
+        codex_payload["agent_name"], config, context, base_dir
+    )
+    with relay.gateway.config_path.open("rb") as stream:
+        gateway_config = tomllib.load(stream)
+    assert gateway_config == {
+        "upstream": {"insecure_http_model_hosts": (["model.test"] if hosts else [])}
+    }
+
+
+@pytest.mark.parametrize(
+    ("hosts", "version", "message"),
+    [
+        (["model.test:80"], (0, 11, 0), "insecure_http_model_hosts"),
+        (["model.test"], (0, 10, 4), ">=0.11.0"),
+        ([], (0, 10, 4), ">=0.11.0"),
+    ],
+)
+def test_codex_relay_reports_invalid_or_unsupported_http_model_hosts(
+    codex_payload, monkeypatch, tmp_path, hosts, version, message
+):
+    codex_payload["config"]["harness"]["settings"]["insecure_http_model_hosts"] = hosts
+    codex_payload["runtime_context"]["telemetry"] = {"relay_enabled": True}
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "resolve_relay_command",
+        MagicMock(return_value=tmp_path / "nemo-relay"),
+    )
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "relay_cli_contract",
+        MagicMock(return_value=adapter.relay_gateway.RelayCliContract(version=version)),
+    )
+    write_configs = MagicMock()
+    monkeypatch.setattr(adapter.common_utils, "write_relay_configs", write_configs)
+    config, context, base_dir = runtime_input(codex_payload)
+    with pytest.raises(adapter.AdapterRelayError, match=message) as caught:
+        adapter.prepare_codex_relay(
+            codex_payload["agent_name"], config, context, base_dir
+        )
+
+    assert caught.value.code == "codex_relay_invalid_http_model_hosts"
+    assert isinstance(caught.value.__cause__, adapter.RelayHttpModelError)
+    write_configs.assert_not_called()

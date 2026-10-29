@@ -18,6 +18,7 @@ from pydantic import BaseModel
 MODULE_NAMES = (
     "nemo_fabric.client",
     "nemo_fabric.capabilities",
+    "nemo_fabric.check",
     "nemo_fabric.runtime",
     "nemo_fabric.service",
     "nemo_fabric.streaming",
@@ -266,7 +267,7 @@ def _class_supplement(exported_class: type[Any]) -> str:
         sections.append(_inheritance_section(exported_class))
     if issubclass(exported_class, BaseModel):
         sections.append(_model_fields_table(exported_class))
-    elif exported_class.__module__ == "nemo_fabric.types":
+    elif exported_class.__module__ in ("nemo_fabric.types", "nemo_fabric.check"):
         sections.append(_typed_fields_table(exported_class))
     if issubclass(exported_class, Enum):
         sections.append(_enum_values_table(exported_class))

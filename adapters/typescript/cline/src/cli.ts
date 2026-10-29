@@ -10,4 +10,4 @@ await serve(async () => {
     import("./runtime.js"),
   ]);
   return new ClineAdapterRuntime(new ClineSdkSessionFactory());
-});
+}, { software: { packageJson: new URL("../package.json", import.meta.url), harness: "cline", packages: [{"role": "harness", "name": "@cline/sdk"}] } });

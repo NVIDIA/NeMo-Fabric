@@ -277,5 +277,16 @@ def main() -> None:
     )
 
 
+
+# Selected software reported by the shared lifecycle host; no dependency scan.
+PROVENANCE_PACKAGES = (
+    (
+        "adapter",
+        "nemo-fabric-adapters-mini-swe-agent",
+        "nemo_fabric_adapters.mini_swe_agent.adapter",
+    ),
+    ("harness", "mini-swe-agent", "minisweagent"),
+)
+
 if __name__ == "__main__":
     main()

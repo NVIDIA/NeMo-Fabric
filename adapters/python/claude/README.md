@@ -9,7 +9,7 @@ The `nvidia.fabric.claude` adapter uses the official Claude Agent SDK for
 Python behind NeMo Fabric's normalized invocation contract. The SDK is an
 implementation detail; consumers select the Claude harness by adapter ID.
 
-The `harness` extra pins `claude-agent-sdk==0.2.165`; use the same version for an
+The `harness` extra pins `claude-agent-sdk==0.2.166`; use the same version for an
 environment-managed SDK. The SDK supplies a compatible Claude Code runtime.
 
 ## Install
@@ -109,6 +109,7 @@ Only Claude-specific controls belong in `harness.settings`:
 | Setting | Type | Required | Static default |
 | --- | --- | --- | --- |
 | `permission_mode` | One of `default`, `acceptEdits`, `bypassPermissions`, `plan`, `dontAsk`, or `auto` | No | No default |
+| `reasoning_effort` | One of `low`, `medium`, `high`, `xhigh`, or `max` | No | Harness default |
 | `max_budget_usd` | Number greater than `0` | No | No default |
 | `max_buffer_size` | Integer greater than or equal to `1` | No | Claude Agent SDK default |
 | `setting_sources` | Array containing `user`, `project`, or `local` | No | `[]` |
@@ -149,15 +150,17 @@ output tokens.
 Harbor accounting reads these counters before any ATIF trajectory. With the
 input counters present, Harbor sets `n_input_tokens` to input plus cache reads
 plus cache writes and `n_cache_tokens` to cache reads, from the same main-loop
-scope as `n_output_tokens`. A Relay trajectory then fills only the counts the
-result leaves unknown.
+scope as `n_output_tokens`. Counts the result leaves unknown stay unknown in
+Harbor; a Relay trajectory's totals are recorded separately and never fill them.
 
 ## Relay Observability
 
-Relay requires a NeMo Relay CLI in the `>=0.9,<0.11` range on `PATH`. The
+Relay requires a NeMo Relay CLI in the `>=0.9,<0.12` range on `PATH`. The
 Claude adapter does not provide a separate `relay` extra; its `harness` and
 `full` extras install the compatible CLI through `nemo-relay-cli-bin`. The root
 `nemo-fabric[relay]` extra installs only the Relay Python package.
+
+Claude `PreToolUse` hooks set `onFailure: "block"` to block tool calls when the Relay hook fails to start, crashes, or times out. This requires Claude Code 2.1.295 or later. The pinned `claude-agent-sdk==0.2.166` bundles Claude Code 2.1.299.
 
 Enable Relay through the normalized NeMo Fabric configuration:
 
@@ -169,7 +172,7 @@ config.enable_relay(
 ```
 
 For each Relay-enabled Claude runtime, NeMo Fabric starts one `nemo-relay` gateway,
-waits for its health endpoint, and stops it with the runtime. NeMo Fabric passes the
+waits up to 30 seconds for its health endpoint, and stops it with the runtime. NeMo Fabric passes the
 gateway URL to the connected Claude Code process through `ANTHROPIC_BASE_URL`
 and `NEMO_RELAY_GATEWAY_URL`, and passes the selected explicit model endpoint to
 the gateway as its Anthropic upstream. It also stages a runtime-scoped Claude
@@ -181,6 +184,31 @@ The NeMo Fabric result includes `relay_runtime.gateway_config_path`,
 `relay_runtime.gateway_log_path`, and the collected `relay_artifacts`. Relay
 startup failures return a stable adapter error and retain the gateway log for
 diagnosis.
+
+### Credential-free HTTP model gateways
+
+For Relay-enabled runs, NeMo Relay CLI 0.11.x supports explicit trust for
+HTTP model hosts. Set `harness.settings.insecure_http_model_hosts` to the exact
+hostnames or IP addresses of your private inference gateways:
+
+```python
+config.harness.settings["insecure_http_model_hosts"] = ["inference.internal", "10.0.0.10"]
+```
+
+Entries contain no scheme, port, path, or wildcard. Matching ignores DNS case
+and a trailing dot, permits any port or path on that host, and does not infer
+trust from DNS resolution. The adapter passes this list to Relay's runtime
+`[upstream]` configuration. An explicit empty list clears inherited HTTP trust;
+omitting the setting preserves Relay's existing configuration behavior. System
+Relay configuration takes precedence and can enforce an empty list.
+
+This path is for unauthenticated model endpoints: Relay strips authorization,
+API-key, cookie, and other credential headers before remote HTTP forwarding,
+including model credentials supplied to the harness. Relay rejects conflicting
+upstream authorization configuration. Prompts and responses still travel over
+plaintext HTTP. HTTPS remains the default. This setting affects Relay-enabled
+Codex, Claude, and Pi model forwarding; MCP policy is unchanged. Older Relay CLIs
+reject the setting with an upgrade message.
 
 ## Typed Configuration
 
@@ -283,6 +311,19 @@ The runtime must remain on the same local host for its lifetime. A persisted
 NeMo Fabric-to-Claude correlation record is not an attach token and cannot recover a
 stopped or crashed local host.
 
+## Health Checks
+
+Runtime checks support three cumulative levels, including during an invocation:
+
+| Level | Native evidence |
+| --- | --- |
+| `live` | The owned Claude Code subprocess has not exited. |
+| `active` | The connected CLI returns a current, valid `get_mcp_status()` response. |
+| `ready` | A current, valid status response from the initialized CLI serves as a qualified equivalent of a native health response. |
+
+Active and ready use the same native status probe for this MVP. The health result describes initialized CLI responsiveness; MCP connection states remain native configuration diagnostics.
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
 
 ## Testing
 

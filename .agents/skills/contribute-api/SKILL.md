@@ -41,3 +41,5 @@ runtime or bindings.
 - `docs/python-sdk-contract.md`
 - `schemas/SCHEMA.md`
 - `justfile`
+
+- Software provenance uses `FabricConfig.provenance` and optional `RunResult.execution`. Keep Rust, shared Python evidence dataclasses in `nemo-fabric-evidence`, SDK result mappings, generated TypeScript types and the canonical `schemas/evidence/execution-evidence.schema.json` aligned. The shared schema is generated from Rust and consumed by both NB and SB bindings; keep the TypeScript adapter-contract schema copy byte-identical. Preserve strict adapter result shapes: lifecycle evidence is carried beside the outcome. Optional report failure must not replace invocation outcomes.

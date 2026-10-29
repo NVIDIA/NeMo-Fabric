@@ -9,9 +9,13 @@ SPDX-License-Identifier: Apache-2.0
 execution contract implemented by NeMo Fabric adapters. It does not include a
 lifecycle host, harness integration, or NeMo Relay integration.
 
-Python adapters can use the package's standard-library dataclasses without an
-additional runtime dependency. Adapters in other languages can consume the JSON
+Python adapters use standard-library dataclasses backed by the version-matched
+`nemo-fabric-evidence` package. Neither package requires third-party libraries. Adapters in other languages can consume the JSON
 Schemas published by NeMo Fabric without a Python package dependency.
+
+`nemo_fabric_adapter_contract.evidence` and `.codec` preserve their existing
+imports by re-exporting shared types and validation from `nemo_fabric_evidence`.
+The SDK consumes that shared package directly.
 
 The dataclasses provide strict `from_mapping()` validation and JSON-compatible
 `to_mapping()` serialization. Install the optional `pydantic` extra when an
@@ -27,6 +31,8 @@ from nemo_fabric_adapter_contract.models import AgentConfig
 An adapter descriptor opts into the southbound configuration with
 `config.input=agent_config`. Python adapters using the optional common
 lifecycle host pass `AgentConfig.from_mapping` as the `config_loader`.
+
+`AdapterCheckRequest` and `AdapterCheckResult` define health-probe requests and results. Results preserve required null fields and use fixed reason codes and evidence-source identifiers. The common Python lifecycle host publishes an authenticated health channel for adapters with an asynchronous `check(level)` method returning an `AdapterCheckResult` mapping. The host applies the remaining deadline and invalidates observations during shutdown. A service host uses its service ID in the probe's `runtime_id` field.
 
 ## Install
 

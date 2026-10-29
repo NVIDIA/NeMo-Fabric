@@ -8,6 +8,11 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { extractOpenCodePromptOutcome, loadOpenCodeSdk, OpenCodeSdkSessionFactory } from "../dist/opencode-sdk.js";
+import { OpenCodePromptFailure } from "../dist/runtime.js";
+
+const unavailableUsage = { extensions: { "nvidia.fabric.opencode.usage_evidence.v1": {
+  observed: {}, gaps: ["scope_unverified", "missing_usage"], scope_reasons: ["observer_unavailable"],
+} } };
 
 function startInput() {
   return {
@@ -1236,7 +1241,7 @@ test("rejects undeclared provider-specific model settings before loading the SDK
   await assert.rejects(factory.create(input), (error) => error.code === "opencode_model_settings_unsupported");
 });
 
-test("extracts the final assistant text and usage from OpenCode session history", () => {
+test("extracts final assistant text while keeping supplied usage separate from session counters", () => {
   const outcome = extractOpenCodePromptOutcome([
     { type: "user", text: "first" },
     {
@@ -1256,15 +1261,15 @@ test("extracts the final assistant text and usage from OpenCode session history"
       tokens: { input: 5, output: 7, reasoning: 2, cache: { read: 1, write: 0 } },
       cost: 0.023,
     },
-  ], new Set(["assistant-first"]));
+  ], new Set(["assistant-first"]), unavailableUsage);
 
   assert.deepEqual(outcome, {
     text: "second answer",
-    usage: { input_tokens: 5, output_tokens: 7, total_tokens: 12, cost_usd: 0.023 },
+    usage: unavailableUsage,
   });
 });
 
-test("sums usage across every new assistant message in a tool-using prompt", () => {
+test("does not report projected session counts or calculated costs as provider usage", () => {
   const outcome = extractOpenCodePromptOutcome(
     [
       {
@@ -1289,7 +1294,6 @@ test("sums usage across every new assistant message in a tool-using prompt", () 
 
   assert.deepEqual(outcome, {
     text: "done",
-    usage: { input_tokens: 28, output_tokens: 32, total_tokens: 60, cost_usd: 0.03 },
   });
 });
 
@@ -1311,7 +1315,7 @@ test("preserves a redacted OpenCode terminal error and handles malformed assista
   assert.deepEqual(extractOpenCodePromptOutcome([]), {});
 });
 
-test("collects usage and a diff after a terminal model error", async () => {
+test("retains a usage gap and a diff after a terminal model error", async () => {
   let contextCalls = 0;
   const factory = new OpenCodeSdkSessionFactory(async () => ({
     OpenCode: {
@@ -1348,7 +1352,7 @@ test("collects usage and a diff after a terminal model error", async () => {
   assert.deepEqual(await handle.prompt("edit"), {
     errorMessage: "OpenCode model invocation failed",
     patch: "diff --git a/example.txt b/example.txt\n+changed\n",
-    usage: { input_tokens: 5, output_tokens: 7, total_tokens: 12, cost_usd: 0.012 },
+    usage: unavailableUsage,
   });
   await handle.stop();
 });
@@ -1392,7 +1396,7 @@ test("does not return a prior assistant response for a new prompt", async () => 
   }));
 
   const handle = await factory.create(startInput());
-  assert.deepEqual(await handle.prompt("second"), {});
+  assert.deepEqual(await handle.prompt("second"), { usage: unavailableUsage });
   assert.equal(contextCalls, 2);
   await handle.stop();
 });
@@ -1441,7 +1445,7 @@ test("finds a new assistant response after OpenCode compacts session history", a
   }));
 
   const handle = await factory.create(startInput());
-  assert.deepEqual(await handle.prompt("continue"), { text: "compacted answer" });
+  assert.deepEqual(await handle.prompt("continue"), { text: "compacted answer", usage: unavailableUsage });
   await handle.stop();
 });
 
@@ -1455,7 +1459,9 @@ test("creates, invokes, and cleans up one embedded OpenCode session", async () =
     const factory = new OpenCodeSdkSessionFactory(async () => ({
       OpenCode: {
         async create(options) {
-          calls.push(["create", options, process.env.OPENCODE_TEST_KEY]);
+          const { plugins, ...hostOptions } = options;
+          assert.equal(plugins.length, 1);
+          calls.push(["create", hostOptions, process.env.OPENCODE_TEST_KEY]);
           return {
             sessions: {
               async create(input) {
@@ -1496,6 +1502,7 @@ test("creates, invokes, and cleans up one embedded OpenCode session", async () =
     assert.deepEqual(await handle.prompt("hello"), {
       text: "done",
       patch: "diff --git a/example.txt b/example.txt\n+added\n",
+      usage: unavailableUsage,
     });
     await handle.stop();
 
@@ -1687,10 +1694,15 @@ test("does not mark a failure after prompt submission as retryable", async () =>
   const handle = await factory.create(startInput());
   await assert.rejects(
     handle.prompt("edit a file"),
-    (error) =>
-      error.code === "opencode_session_failed" &&
-      error.message === "OpenCode session communication failed" &&
-      error.retryable === false,
+    (error) => {
+      assert.ok(error instanceof OpenCodePromptFailure);
+      assert.deepEqual(error.usage, { extensions: { "nvidia.fabric.opencode.usage_evidence.v1": {
+        observed: {}, gaps: ["scope_unverified", "missing_usage"], scope_reasons: ["prompt_failed"],
+      } } });
+      return error.code === "opencode_session_failed" &&
+        error.message === "OpenCode session communication failed" &&
+        error.retryable === false;
+    },
   );
   await handle.stop();
 });
@@ -1817,4 +1829,280 @@ test("restores the environment lease when startup cleanup also fails", async () 
       process.env[ambientName] = previousAmbient;
     }
   }
+});
+
+test("health bounds native session reads and rejects malformed session identity", async () => {
+  let finish;
+  let reads = 0;
+  const response = new Promise(resolve => { finish = resolve; });
+  const factory = new OpenCodeSdkSessionFactory(async () => ({ OpenCode: { create: async () => ({ sessions: { create: async () => ({ id: "owned" }), get: () => { reads++; return response; }, remove: async () => { } }, close: async () => { } }) } }));
+  const handle = await factory.create(startInput());
+  const first = handle.check("ready");
+  assert.equal(await Promise.race([first, new Promise(resolve => setTimeout(() => resolve("timeout"), 5))]), "timeout");
+  const later = Array.from({ length: 20 }, () => handle.check("live"));
+  assert.equal(reads, 1);
+  finish({ id: "replacement", time: {} });
+  assert.equal((await first).reason_code, "probe_error");
+  assert.equal((await Promise.all(later)).every(result => result.outcome === "unknown"), true);
+  await handle.stop();
+});
+
+test("later OpenCode checks reject an expired caller's stale unarchived session", async () => {
+  const delayed = Promise.withResolvers();
+  let reads = 0;
+  let archived = false;
+  const factory = new OpenCodeSdkSessionFactory(async () => ({
+    OpenCode: {
+      create: async () => ({
+        sessions: {
+          create: async () => ({ id: "owned" }),
+          get: () => { reads++; return reads === 1 ? delayed.promise : Promise.resolve({ id: "owned", time: archived ? { archived: 1 } : {} }); },
+          remove: async () => { },
+        }, close: async () => { }
+      })
+    }
+  }));
+  const handle = await factory.create(startInput());
+  const first = handle.check("ready");
+  assert.equal(await Promise.race([first, new Promise(resolve => setTimeout(() => resolve("timeout"), 5))]), "timeout");
+  archived = true;
+  const later = handle.check("ready");
+  delayed.resolve({ id: "owned", time: {} });
+  await first;
+  assert.equal((await later).reason_code, "probe_timeout");
+  assert.equal(reads, 1);
+  assert.notEqual((await handle.check("ready")).outcome, "passed");
+  assert.equal(reads, 2);
+  await handle.stop();
+});
+
+test("OpenCode validates native closure when a health request rejects", async () => {
+  const delayed = Promise.withResolvers();
+  const factory = new OpenCodeSdkSessionFactory(async () => ({
+    OpenCode: {
+      create: async () => ({
+        sessions: {
+          create: async () => ({ id: "owned" }), get: () => delayed.promise, remove: async () => { },
+        }, close: async () => { }
+      })
+    }
+  }));
+  const handle = await factory.create(startInput());
+  const pending = handle.check("ready");
+  await handle.stop();
+  delayed.reject(new Error("PRIVATE native failure"));
+  const result = await pending;
+  assert.equal(result.reason_code, "observation_changed");
+  assert.equal(result.observed_at, null);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
+  assert.equal((await handle.check("ready")).reason_code, "session_closed");
+});
+
+async function accountingHandle({ entries = [{ type: "document", info: {} }], initialTitle, delayedTitle = false, postPromptEvent, priorContinuationInput } = {}) {
+  const hooks = new Map();
+  const queued = [];
+  const readers = [];
+  let stopped = false;
+  let title = initialTitle;
+  let submitted = 0;
+  let finishTitle;
+  const completeTitle = async () => {
+    const finish = finishTitle;
+    finishTitle = undefined;
+    await finish?.();
+  };
+  let rootIdle;
+  const idle = new Promise(resolve => { rootIdle = resolve; });
+  const push = event => {
+    const reader = readers.shift();
+    if (reader !== undefined) reader.resolve({ value: event, done: false });
+    else queued.push(event);
+  };
+  const fail = () => {
+    stopped = true;
+    for (const reader of readers.splice(0)) reader.reject(new Error("event stream lost"));
+  };
+  const call = async (kind, input, output) => {
+    const request = new Request("https://provider.test/v1/chat/completions");
+    await hooks.get("http.request")?.({ sessionID: "owned", kind, request });
+    return async () => {
+      const event = { sessionID: "owned", kind, request, response: new Response(JSON.stringify({ choices: [{ finish_reason: "stop" }], usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output } }), { headers: { "content-type": "application/json" } }) };
+      await hooks.get("http.response")?.(event);
+      await event.response.text();
+    };
+  };
+  const client = {
+    config: { get: async () => entries },
+    events: {
+      subscribe: ({ signal }) => ({
+        async *[Symbol.asyncIterator]() {
+          const abort = () => { stopped = true; for (const reader of readers.splice(0)) reader.resolve({ done: true }); };
+          signal.addEventListener("abort", abort, { once: true });
+          try {
+            yield { type: "server.connected" };
+            while (!stopped) {
+              const next = queued.length > 0 ? { value: queued.shift(), done: false } : await new Promise((resolve, reject) => readers.push({ resolve, reject }));
+              if (next.done) return;
+              yield next.value;
+            }
+          } finally { signal.removeEventListener("abort", abort); }
+        },
+      }),
+    },
+    sessions: {
+      create: async () => ({ id: "owned" }),
+      get: async () => ({ id: "owned", title, time: { created: 0 } }),
+      context: async () => {
+        if (!submitted) return [];
+        if (postPromptEvent !== undefined) { push(postPromptEvent); await Promise.resolve(); }
+        return [{ id: `answer-${submitted}`, type: "assistant", content: [{ type: "text", text: "done" }], finish: "stop" }];
+      },
+      prompt: async () => {
+        submitted++;
+        if (title === undefined) {
+          const finish = await call("title", 10, 2);
+          finishTitle = async () => { await finish(); title = "Generated title"; push({ type: "session.renamed", data: { sessionID: "owned", title } }); };
+        }
+        if (submitted > 1 && priorContinuationInput !== undefined) await (await call("primary", priorContinuationInput, 9))();
+        await (await call("primary", 120, 30))();
+      },
+      wait: async () => {
+        push({ type: "session.execution.succeeded", data: { sessionID: "owned" } });
+        rootIdle();
+        if (!delayedTitle) await completeTitle();
+      },
+      diff: async () => [],
+      remove: async () => {},
+    },
+    close: async () => {},
+  };
+  const factory = new OpenCodeSdkSessionFactory(async () => ({ OpenCode: { create: async options => {
+    await options.plugins[0].setup({ session: { get: client.sessions.get, hook: async (name, callback) => { hooks.set(name, callback); return { dispose: async () => {} }; } }, tool: { hook: async (name, callback) => { hooks.set(name, callback); return { dispose: async () => {} }; } } });
+    return client;
+  } } }));
+  const handle = await factory.create(startInput());
+  return { handle, idle, finishTitle: completeTitle, fail, push };
+}
+
+test("waits for automatic title completion before returning complete invocation counts", async () => {
+  const fixture = await accountingHandle({ delayedTitle: true });
+  try {
+    let settled = false;
+    const result = fixture.handle.prompt("hello", Date.now() + 1000).then(value => { settled = true; return value; });
+    await fixture.idle;
+    await Promise.resolve();
+    assert.equal(settled, false);
+    await fixture.finishTitle();
+    const outcome = await result;
+    assert.equal(outcome.text, "done");
+    assert.equal(outcome.usage.input_tokens, 130);
+    assert.equal(outcome.usage.output_tokens, 32);
+    assert.equal(outcome.usage.total_tokens, 162);
+  } finally { await fixture.handle.stop(); }
+});
+
+test("reports complete warm invocation counts without another title event", async () => {
+  const fixture = await accountingHandle({ initialTitle: "Existing title" });
+  try {
+    const outcome = await fixture.handle.prompt("hello", Date.now() + 1000);
+    assert.equal(outcome.usage.input_tokens, 120);
+    assert.equal(outcome.usage.output_tokens, 30);
+  } finally { await fixture.handle.stop(); }
+});
+
+test("keeps successful output and partial counts when the accounting deadline has expired", async () => {
+  const fixture = await accountingHandle({ delayedTitle: true });
+  try {
+    const outcome = await fixture.handle.prompt("hello", Date.now() - 1);
+    assert.equal(outcome.text, "done");
+    assert.equal(outcome.usage.input_tokens, undefined);
+    assert.equal(outcome.usage.extensions["nvidia.fabric.opencode.usage_evidence.v1"].observed.input_tokens, 120);
+  } finally { await fixture.handle.stop(); }
+});
+
+test("leaves complete counts unknown for additional configuration, warming, or plugins", async () => {
+  for (const entries of [
+    [{ type: "document", info: {} }, { type: "document", info: {} }],
+    [{ type: "document", info: { warming: true } }],
+    [{ type: "document", info: { plugins: ["custom-plugin"] } }],
+  ]) {
+    const fixture = await accountingHandle({ entries });
+    try {
+      const outcome = await fixture.handle.prompt("hello", Date.now() + 1000);
+      assert.equal(outcome.text, "done");
+      assert.equal(outcome.usage.input_tokens, undefined);
+    } finally { await fixture.handle.stop(); }
+  }
+});
+
+test("returns successful output with unknown completeness when the live observer fails", async () => {
+  const fixture = await accountingHandle({ delayedTitle: true });
+  try {
+    const pending = fixture.handle.prompt("hello", Date.now() + 1000);
+    await fixture.idle;
+    fixture.fail();
+    const outcome = await pending;
+    assert.equal(outcome.text, "done");
+    assert.equal(outcome.usage.input_tokens, undefined);
+  } finally { await fixture.handle.stop(); }
+});
+
+test("keeps complete counts unknown when title completion exceeds the invocation deadline", async () => {
+  const fixture = await accountingHandle({ delayedTitle: true });
+  try {
+    const pending = fixture.handle.prompt("hello", Date.now() + 30);
+    await fixture.idle;
+    const outcome = await pending;
+    assert.equal(outcome.text, "done");
+    assert.equal(outcome.usage.input_tokens, undefined);
+    assert.ok(outcome.usage.extensions["nvidia.fabric.opencode.usage_evidence.v1"].gaps.includes("scope_unverified"));
+  } finally { await fixture.handle.stop(); }
+});
+
+test("keeps complete counts unknown when configuration changes during the invocation", async () => {
+  const fixture = await accountingHandle({ delayedTitle: true });
+  try {
+    const pending = fixture.handle.prompt("hello", Date.now() + 1000);
+    await fixture.idle;
+    fixture.push({ type: "config.updated", data: {} });
+    await fixture.finishTitle();
+    const outcome = await pending;
+    assert.equal(outcome.text, "done");
+    assert.equal(outcome.usage.input_tokens, undefined);
+  } finally { await fixture.handle.stop(); }
+});
+
+test("supports a bounded accounting wait when the caller omits a deadline", async () => {
+  const fixture = await accountingHandle();
+  try {
+    const outcome = await fixture.handle.prompt("hello");
+    assert.equal(outcome.usage.input_tokens, 130);
+    assert.equal(outcome.usage.output_tokens, 32);
+  } finally { await fixture.handle.stop(); }
+});
+
+test("invalidates completeness when configuration changes during the final history read", async () => {
+  const fixture = await accountingHandle({ postPromptEvent: { type: "config.updated", data: {} } });
+  try {
+    const outcome = await fixture.handle.prompt("hello", Date.now() + 1000);
+    assert.equal(outcome.text, "done");
+    assert.equal(outcome.usage.input_tokens, undefined);
+    assert.ok(outcome.usage.extensions["nvidia.fabric.opencode.usage_evidence.v1"].gaps.includes("scope_unverified"));
+  } finally { await fixture.handle.stop(); }
+});
+
+test("leaves later root observations unknown when an opaque plugin can resume earlier work", async () => {
+  const fixture = await accountingHandle({
+    entries: [{ type: "document", info: { plugins: ["opaque-plugin"] } }],
+    priorContinuationInput: 900,
+  });
+  try {
+    const first = await fixture.handle.prompt("first", Date.now() + 1000);
+    assert.equal(first.text, "done");
+    assert.equal(first.usage.extensions["nvidia.fabric.opencode.usage_evidence.v1"].observed.input_tokens, 130);
+    const second = await fixture.handle.prompt("second", Date.now() + 1000);
+    assert.equal(second.text, "done");
+    assert.equal(second.usage.input_tokens, undefined);
+    assert.deepEqual(second.usage.extensions["nvidia.fabric.opencode.usage_evidence.v1"].observed, {});
+  } finally { await fixture.handle.stop(); }
 });

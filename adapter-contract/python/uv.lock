@@ -15,6 +15,9 @@ wheels = [
 name = "nemo-fabric-adapter-contract"
 version = "0.6.0"
 source = { editable = "." }
+dependencies = [
+    { name = "nemo-fabric-evidence" },
+]
 
 [package.optional-dependencies]
 pydantic = [
@@ -22,8 +25,16 @@ pydantic = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.12,<3" }]
+requires-dist = [
+    { name = "nemo-fabric-evidence", editable = "../../sdk/python/nemo-fabric-evidence" },
+    { name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.12,<3" },
+]
 provides-extras = ["pydantic"]
+
+[[package]]
+name = "nemo-fabric-evidence"
+version = "0.6.0"
+source = { editable = "../../sdk/python/nemo-fabric-evidence" }
 
 [[package]]
 name = "pydantic"

@@ -299,7 +299,7 @@ OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 ```
 
-## aiohttp (3.14.3)
+## aiohttp (3.14.5)
 
 ### Licenses
 License: `Apache-2.0 AND MIT`
@@ -1651,7 +1651,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## claude-agent-sdk (0.2.165)
+## claude-agent-sdk (0.2.166)
 
 ### Licenses
 License: `MIT`
@@ -3139,7 +3139,7 @@ Copyright (c) 2019, Omer Katz
  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## filelock (3.29.4)
+## filelock (4.2.4)
 
 ### Licenses
 License: `MIT`
@@ -3928,7 +3928,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## harbor (0.23.0)
+## harbor (0.24.0)
 
 ### Licenses
 License: `Apache-2.0`
@@ -6102,7 +6102,7 @@ OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## nemo-relay (0.10.0)
+## nemo-relay (0.11.0)
 
 ### Licenses
 License: `Apache-2.0`
@@ -6312,7 +6312,7 @@ Apache License
    limitations under the License.
 ```
 
-## nemo-relay-cli-bin (0.10.0)
+## nemo-relay-cli-bin (0.11.0)
 
 ### Licenses
 License: `Apache-2.0`
@@ -7025,7 +7025,7 @@ Apache License
    limitations under the License.
 ```
 
-## openai-codex (0.144.4)
+## openai-codex (0.154.0)
 
 ### Licenses
 License: `Apache-2.0`
@@ -7035,7 +7035,7 @@ License: `Apache-2.0`
 (No license file found in locked artifact for openai-codex; see package metadata or PyPI.)
 ```
 
-## openai-codex-cli-bin (0.144.4)
+## openai-codex-cli-bin (0.154.0)
 
 ### Licenses
 License: `Apache-2.0`
@@ -8935,7 +8935,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-## packaging (26.0)
+## packaging (26.3)
 
 ### Licenses
 License: `Apache-2.0 OR BSD-2-Clause`
@@ -12893,7 +12893,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 The above BSD License Applies to all code, even that also covered by Apache 2.0.
 ```
 
-## python-discovery (1.4.4)
+## python-discovery (1.6.4)
 
 ### Licenses
 License: `MIT`
@@ -14463,6 +14463,42 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+
+## semver (3.1.0)
+
+### Licenses
+License: `Copyright (c) 2013, Konstantine Rybnikov All rights reserved.`
+
+  - `LICENSE.txt`:
+```
+Copyright (c) 2013, Konstantine Rybnikov
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+  Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+  Redistributions in binary form must reproduce the above copyright notice, this
+  list of conditions and the following disclaimer in the documentation and/or
+  other materials provided with the distribution.
+
+  Neither the name of the python-semver org nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
 ## setuptools (84.0.0)
@@ -16082,14 +16118,14 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## virtualenv (21.6.0)
+## virtualenv (21.14.13)
 
 ### Licenses
 License: `MIT`
 
   - `LICENSE`:
 ```
-Copyright (c) 2020-202x The virtualenv developers
+Copyright (c) 2020-present The virtualenv developers
 
 Permission is hereby granted, free of charge, to any person obtaining
 a copy of this software and associated documentation files (the
@@ -16274,7 +16310,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## yarl (1.24.2)
+## yarl (1.25.1)
 
 ### Licenses
 License: `Apache-2.0`

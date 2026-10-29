@@ -56,6 +56,24 @@ environment, and telemetry without starting a runtime:
 .venv/bin/python -m examples.code_review_agent --plan
 ```
 
+### Collect Resource Stats
+
+The example collects before/after invocation stats by default. Add `--stats sampled` to collect periodic readings and retain peak, mean, and coverage summaries. This option composes with the harness selected by `--variant`:
+
+```bash
+.venv/bin/python -m examples.code_review_agent \
+  --variant deepagents \
+  --stats sampled \
+  --stats-interval-ms 1000 \
+  --stats-max-samples 1000 \
+  --input "Review calculator.py. Read the file first; do not edit it." \
+  > run-result.json
+```
+
+Install the [Deep Agents requirements](../../adapters/python/deepagents/README.md) and set `ADAPTER_PYTHON` to that environment's interpreter before running. Use `--stats before-after` for readings before and after the invocation or `--stats off` to disable invocation stats. Interval and retention overrides require sampled mode. The interval defaults to 1000 ms (range 100–60000), and retention defaults to 10000 readings including before/after readings (range 2–100000). Omit `--show-output` to keep redirected output valid JSON.
+
+For a complete self-hosted model command and a captured result walkthrough, see [Resource Usage and Stats](../../docs/sdk/system-stats.mdx). The same `--model`, `--base-url`, and `--api-key-env` overrides work with `--stats`.
+
 ### Change the Skills
 
 The default configuration loads `skills/code-review`. Remove the skill without
@@ -131,10 +149,8 @@ harness supports.
 
 Codex and Claude omit the default code-review skill; add
 `--skill-path ./skills/code-review` to retain it. Relay configurations for
-Codex, Claude, and Pi require a NeMo Relay CLI in the `>=0.9,<0.11` range.
-Pi also requires its Relay Pi extension. Hermes Agent and Deep Agents require
-the `nemo-relay>=0.9,<0.11` Python package. Cline does not support Relay
-telemetry in this initial adapter.
+Codex, Claude, and Pi require a NeMo Relay CLI in the `>=0.9,<0.12` range.
+Pi also requires its Relay Pi extension. Deep Agents requires the `nemo-relay>=0.11,<0.12` Python package. Hermes Agent keeps `nemo-relay>=0.10,<0.11` in its separate environment. Cline does not support Relay telemetry in this initial adapter.
 Additional requirements appear in the corresponding subsections.
 
 For example, after installing Deep Agents, this command keeps the default skill
@@ -180,7 +196,7 @@ it through the same `--variant` option. The variant discovers
 `nvidia.nooa.coding-agent` and uses the `NVIDIA_API_KEY` configured for the
 default demo.
 
-Its Relay integration requires `nemo-relay>=0.9,<0.11`. The `--stream` option
+Its Relay integration requires `nemo-relay>=0.11,<0.12`. The `--stream` option
 collects Relay ATOF records; it is not native model-response streaming.
 
 ### OpenClaw (`openclaw`)
@@ -193,7 +209,8 @@ On Python 3.12 or later, install the tested OpenHands SDK and tools, then instal
 the NeMo Fabric extra:
 
 ```bash
-pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0"
+pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0" \
+  "litellm==1.100.1" "mcp==1.28.1"
 pip install "nemo-fabric[openhands]"
 ```
 
@@ -329,6 +346,33 @@ connection. Use a dedicated credential for that server, or a placeholder when
 it requires none. Public IP addresses and hostnames remain blocked; omit the
 opt-in for HTTPS or loopback endpoints.
 
+### Kiro (`kiro`)
+
+Install Node.js 22.19 or later, install and authenticate Kiro CLI, then build
+the source adapter:
+
+```bash
+curl -fsSL https://cli.kiro.dev/install | bash
+kiro-cli login
+just install-typescript-kiro
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro
+```
+
+```bash
+.venv/bin/python -m examples.code_review_agent --variant kiro --plan
+.venv/bin/python -m examples.code_review_agent \
+  --variant kiro \
+  --input "Review calculator.py" \
+  --show-output
+```
+
+Set `KIRO_API_KEY` before these commands only in a non-interactive environment.
+The variant uses Kiro's current default model and permits only one-time tool
+approvals offered through ACP. It does not project the shared
+NeMo Fabric skill or system instruction because the initial Kiro adapter does not
+advertise those fields. Kiro does not currently support Relay through this
+adapter.
+
 ### Pi (`pi`)
 
 Install Node.js 22.19 or later, and follow the
@@ -339,7 +383,7 @@ This variant adds an explicit `read` tool to the default code-review skill and
 uses `NVIDIA_API_KEY`. Pi supports normalized stdio and streamable HTTP MCP
 servers.
 
-For Relay telemetry, install `nemo-relay-cli-bin>=0.9.0,<0.11.0` as described in the
+For Relay telemetry, install `nemo-relay-cli-bin>=0.9.0,<0.12.0` as described in the
 [Pi adapter instructions](../../adapters/typescript/pi/README.md#install-nemo-relay)
 and pass the Relay Pi extension path explicitly:
 
@@ -376,6 +420,23 @@ npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-qwen
 Set `NVIDIA_API_KEY` to run the example. The variant keeps the code-review skill,
 uses Qwen's non-interactive default approval mode, and blocks shell and edit
 tools. The variant does not configure an MCP server or Relay telemetry.
+
+### AWS Strands (`strands`)
+
+Run the standard AWS Strands harness through the shared ACP runner. From the repository root:
+
+```bash
+npm install --global @strands-agents/cli@0.2.1
+just install-typescript-strands
+npm run build --prefix adapter-contract/typescript
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-strands
+export NVIDIA_API_KEY="<your-key>"
+.venv/bin/python -m examples.code_review_agent --variant strands --plan
+.venv/bin/python -m examples.code_review_agent --variant strands --input "Review the workspace changes."
+```
+
+This variant uses the NVIDIA model configured in `strands_config()`, append-only review instructions, and the native read tool. Tool calls run with the task environment's permissions. Normalized skills and Relay telemetry are unsupported. For Bedrock or a keyless custom endpoint, update the default `ModelConfig` as shown in the [adapter guide](../../adapters/typescript/strands/README.md). No Dockerfile is required.
 
 ## Run Hermes in OpenShell
 

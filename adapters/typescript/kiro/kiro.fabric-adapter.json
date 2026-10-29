@@ -1,0 +1,56 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "adapter_id": "nvidia.fabric.kiro",
+  "adapter_kind": "process",
+  "runner": {
+    "command": "node",
+    "script": "dist/cli.js"
+  },
+  "requirements": {
+    "binaries": ["node", "kiro-cli"]
+  },
+  "config": {
+    "accepts": ["models", "mcp"]
+  },
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "mode_id": {"type": "string", "minLength": 1},
+      "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max"]},
+      "permission_mode": {"type": "string", "enum": ["deny", "allow_once"]}
+    },
+    "additionalProperties": false
+  },
+  "model_schema": {
+    "type": "object",
+    "properties": {
+      "provider": {"const": "kiro"},
+      "model": {"type": "string", "minLength": 1},
+      "api_key_env": {"const": "KIRO_API_KEY"}
+    },
+    "required": ["provider", "model"],
+    "additionalProperties": false
+  },
+  "extension_schemas": {
+    "run_result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "session_id": {"type": "string", "minLength": 1},
+        "stop_reason": {
+          "type": "string",
+          "enum": ["end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled"]
+        }
+      },
+      "required": ["session_id", "stop_reason"],
+      "additionalProperties": false
+    }
+  },
+  "capabilities": {
+    "metadata": {"health_checks": ["live"]},
+    "streaming": false,
+    "cancellation": false,
+    "updates": false,
+    "service": false
+  }
+}

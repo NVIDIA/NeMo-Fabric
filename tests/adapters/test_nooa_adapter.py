@@ -1501,9 +1501,11 @@ def _install_relay_doubles(
 @pytest.mark.parametrize(
     ("relay_version", "message"),
     [
-        ("0.8.9", "nemo-relay must satisfy >=0.9,<0.11"),
-        ("0.11.0", "nemo-relay must satisfy >=0.9,<0.11"),
-        ("0.10.0rc1", "the installed nemo-relay version is not a stable release"),
+        ("0.8.9", "nemo-relay must satisfy >=0.11,<0.12"),
+        ("0.9.4", "nemo-relay must satisfy >=0.11,<0.12"),
+        ("0.10.0", "nemo-relay must satisfy >=0.11,<0.12"),
+        ("0.12.0", "nemo-relay must satisfy >=0.11,<0.12"),
+        ("0.11.0rc3", "the installed nemo-relay version is not a stable release"),
     ],
 )
 def test_relay_version_rejects_unsupported_release(monkeypatch, relay_version, message):
@@ -1524,7 +1526,7 @@ async def test_relay_lifecycle_correlates_once_and_collects_current_artifacts(
     monkeypatch.setattr(
         nooa_telemetry.importlib.metadata,
         "version",
-        MagicMock(return_value="0.10.0"),
+        MagicMock(return_value="0.11.0"),
     )
     monkeypatch.setattr(
         nooa_telemetry.common_utils,
@@ -1605,7 +1607,7 @@ async def test_relay_records_none_result_and_collects_artifacts(
     monkeypatch.setattr(
         nooa_telemetry.importlib.metadata,
         "version",
-        MagicMock(return_value="0.10.0"),
+        MagicMock(return_value="0.11.0"),
     )
     monkeypatch.setattr(
         nooa_telemetry.common_utils,
@@ -1779,7 +1781,7 @@ async def test_relay_scope_leak_preserves_result_and_quarantines_later_turns(
     monkeypatch.setattr(
         nooa_telemetry.importlib.metadata,
         "version",
-        MagicMock(return_value="0.10.0"),
+        MagicMock(return_value="0.11.0"),
     )
     monkeypatch.setattr(
         nooa_telemetry.common_utils,

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Direct coverage for the temporary NOOA Relay 0.9 middleware."""
+"""Direct coverage for the temporary NOOA Relay 0.11 middleware."""
 
 from __future__ import annotations
 

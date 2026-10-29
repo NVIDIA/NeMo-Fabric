@@ -18,6 +18,7 @@ wheelhouse="$stage_dir/wheelhouse"
 mkdir -p "$wheelhouse"
 
 uv build --wheel --out-dir "$wheelhouse" "$repo_root/sdk/python/nemo-fabric"
+uv build --wheel --out-dir "$wheelhouse" "$repo_root/sdk/python/nemo-fabric-evidence"
 uv build --wheel --out-dir "$wheelhouse" "$repo_root/adapter-contract/python"
 uv build --wheel --out-dir "$wheelhouse" "$repo_root/adapters/python/common"
 uv build --wheel --out-dir "$wheelhouse" "$repo_root/adapters/python/nooa"

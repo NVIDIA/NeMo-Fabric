@@ -15,6 +15,7 @@ import { PiAdapterRuntime } from "../dist/runtime.js";
 
 const execFileAsync = promisify(execFile);
 const relayCommand = process.env.FABRIC_TEST_NEMO_RELAY_COMMAND;
+const remoteHost = process.env.FABRIC_TEST_HTTP_MODEL_HOST;
 
 function openAiStream(content) {
   const chunk = (delta, finishReason = null) =>
@@ -28,14 +29,14 @@ function openAiStream(content) {
   return `${chunk({ role: "assistant" })}${chunk({ content })}${chunk({}, "stop")}data: [DONE]\n\n`;
 }
 
-async function listen(server) {
+async function listen(server, host = "127.0.0.1") {
   await new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(0, host, resolve);
   });
   const address = server.address();
   assert.notEqual(typeof address, "string");
-  return `http://127.0.0.1:${address.port}`;
+  return `http://${host}:${address.port}`;
 }
 
 async function waitForRecord(records, predicate, timeoutMillis = 1_000) {
@@ -51,7 +52,7 @@ async function waitForRecord(records, predicate, timeoutMillis = 1_000) {
 }
 
 test(
-  "runs the released Relay CLI and shipped Pi extension end to end",
+  `runs Relay and the shipped Pi extension over ${remoteHost ? "trusted remote HTTP" : "loopback"}`,
   { skip: relayCommand === undefined ? "set FABRIC_TEST_NEMO_RELAY_COMMAND to the released CLI" : false },
   async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-relay-smoke-")));
@@ -59,6 +60,7 @@ test(
     const piAgentDir = join(root, "pi-agent");
     const runtimeConfigPath = join(root, "relay-runtime.json");
     const providerRequests = [];
+    const providerHeaders = [];
     const atofRecords = [];
     const upstream = createServer(async (request, response) => {
       if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
@@ -71,10 +73,11 @@ test(
       }
       const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       providerRequests.push(payload);
+      providerHeaders.push(request.headers);
       response.writeHead(200, { "content-type": "text/event-stream" });
       response.end(openAiStream("relay smoke ok"));
     });
-    const upstreamUrl = await listen(upstream);
+    const upstreamUrl = await listen(upstream, remoteHost);
     const collector = createServer(async (request, response) => {
       if (request.method !== "POST" || request.url !== "/v1/atof") {
         response.writeHead(404).end();
@@ -98,6 +101,8 @@ test(
     });
     const collectorUrl = await listen(collector);
     const previousConfigPath = process.env.FABRIC_RELAY_CONFIG_PATH;
+    const previousRelayCommand = process.env.NEMO_RELAY_PI_COMMAND;
+    const ambientRelayCommand = join(root, "unused-relay-command");
     let runtime;
     try {
       await mkdir(workspace);
@@ -146,6 +151,7 @@ test(
         "utf8",
       );
       process.env.FABRIC_RELAY_CONFIG_PATH = runtimeConfigPath;
+      process.env.NEMO_RELAY_PI_COMMAND = ambientRelayCommand;
       const runtimeContext = {
         artifacts: {},
         environment: {
@@ -166,7 +172,12 @@ test(
         agentName: "pi-relay-smoke",
         baseDir: root,
         config: {
-          harness: { settings: { relay_extension_path: extensionPath } },
+          harness: {
+            settings: {
+              relay_extension_path: extensionPath,
+              ...(remoteHost ? { insecure_http_model_hosts: [remoteHost] } : {}),
+            },
+          },
           models: {
             default: {
               api_key_env: "TEST_API_KEY",
@@ -205,12 +216,28 @@ test(
       assert.ok(firstSettled.receivedAt - firstCompletedAt < 1_000);
       assert.ok(secondSettled.receivedAt - secondCompletedAt < 1_000);
       assert.equal(providerRequests.length, 2);
+      assert.equal(
+        atofRecords.filter(
+          ({ record }) => record.kind === "scope" && record.category === "llm" && record.scope_category === "start",
+        ).length,
+        2,
+      );
+      for (const headers of providerHeaders) {
+        if (remoteHost) {
+          assert.equal(headers.authorization, undefined);
+          assert.equal(headers["x-api-key"], undefined);
+          assert.equal(headers.cookie, undefined);
+        } else {
+          assert.equal(headers.authorization, "Bearer credential-free-smoke");
+        }
+      }
       assert.equal(providerRequests[0].model, "openai/gpt-oss-20b");
       assert.equal(first.output.relay_artifacts.some((artifact) => artifact.kind === "atif"), false);
       assert.equal(second.output.relay_artifacts.some((artifact) => artifact.kind === "atif"), false);
 
       await runtime.stop();
       runtime = undefined;
+      assert.equal(process.env.NEMO_RELAY_PI_COMMAND, ambientRelayCommand);
 
       const atifDirectory = join(root, "atif", "relay-smoke");
       const atifFiles = await readdir(atifDirectory);
@@ -226,6 +253,11 @@ test(
       assert.match(atof, /session_shutdown/u);
     } finally {
       await runtime?.stop().catch(() => undefined);
+      if (previousRelayCommand === undefined) {
+        delete process.env.NEMO_RELAY_PI_COMMAND;
+      } else {
+        process.env.NEMO_RELAY_PI_COMMAND = previousRelayCommand;
+      }
       if (previousConfigPath === undefined) {
         delete process.env.FABRIC_RELAY_CONFIG_PATH;
       } else {

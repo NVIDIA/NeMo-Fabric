@@ -33,7 +33,13 @@ assert AgentConfig.from_mapping(value).to_mapping() == value
 assert "pydantic" not in sys.modules
 """
     env = os.environ.copy()
-    contract_source = str(ROOT / "adapter-contract" / "python" / "src")
+    contract_source = os.pathsep.join(
+        str(path)
+        for path in (
+            ROOT / "adapter-contract/python/src",
+            ROOT / "sdk/python/nemo-fabric-evidence/src",
+        )
+    )
     current_path = env.get("PYTHONPATH")
     env["PYTHONPATH"] = (
         f"{contract_source}{os.pathsep}{current_path}"

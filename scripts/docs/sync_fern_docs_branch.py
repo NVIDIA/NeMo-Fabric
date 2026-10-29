@@ -16,7 +16,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import quote, unquote, urlsplit
 
 import yaml
 
@@ -172,6 +172,44 @@ def copy_repository_assets(source_root: Path, target_fern: Path) -> None:
         shutil.copytree(source_assets, target_fern / "assets", dirs_exist_ok=True)
 
 
+def rewrite_repository_links(pages_dir: Path, source_root: Path) -> None:
+    """Resolve links outside docs to repository files in the published copy."""
+    source_root = source_root.resolve()
+    source_docs = source_root / "docs"
+    links = re.compile(
+        r"(?<!!)(\[[^\]\n]+\]\()(?P<target>\.\./[^)\s]+)"
+        r"""((?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\))"""
+    )
+    for page in pages_dir.rglob("*"):
+        if not page.is_file() or page.suffix not in {".md", ".mdx"}:
+            continue
+        original = source_docs / page.relative_to(pages_dir)
+
+        def replace(match: re.Match[str]) -> str:
+            target = urlsplit(match["target"])
+            linked = (original.parent / unquote(target.path)).resolve()
+            if (
+                not linked.is_relative_to(source_root)
+                or linked.is_relative_to(source_docs)
+                or not linked.is_file()
+                or linked.suffix not in {".md", ".mdx", ".json"}
+            ):
+                return match.group(0)
+            url = "https://github.com/NVIDIA/NeMo-Fabric/blob/main/" + quote(
+                linked.relative_to(source_root).as_posix(), safe="/"
+            )
+            if target.query:
+                url += "?" + target.query
+            if target.fragment:
+                url += "#" + target.fragment
+            return match.group(1) + url + match.group(3)
+
+        text = page.read_text(encoding="utf-8")
+        updated = links.sub(replace, text)
+        if updated != text:
+            page.write_text(updated, encoding="utf-8")
+
+
 def sync_dev(source_root: Path, target_root: Path) -> None:
     source_docs = source_root / "docs"
     source_fern = source_root / "fern"
@@ -191,6 +229,7 @@ def sync_dev(source_root: Path, target_root: Path) -> None:
         shutil.rmtree(pages_dev)
     shutil.copytree(source_docs, pages_dev, ignore=docs_ignore)
     prepare_generated_python_references_for_fern(pages_dev)
+    rewrite_repository_links(pages_dev, source_root)
 
     navigation = read_yaml(source_docs / "index.yml")
     write_yaml(
@@ -248,6 +287,7 @@ def release_version(target_root: Path, tag: str, source_root: Path) -> None:
 
     shutil.copytree(source_docs, pages_version, ignore=docs_ignore)
     prepare_generated_python_references_for_fern(pages_version)
+    rewrite_repository_links(pages_version, source_root)
     copy_repository_assets(source_root, target_fern)
     update_github_links(pages_version, display_tag, source_root)
     version_navigation = rewrite_doc_references(

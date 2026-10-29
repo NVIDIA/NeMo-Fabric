@@ -11,11 +11,15 @@ import json
 import logging
 import math
 import os
+import time
+from threading import Lock
 from collections.abc import Mapping
 from contextlib import AsyncExitStack
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from nemo_fabric._collector_client import _AtofCollectorClient
+from nemo_fabric.check import CheckReport, CheckRequest, _timeout_report
 from nemo_fabric.capabilities import _verify_adapter_descriptor
 from nemo_fabric.errors import (
     FabricConfigError,
@@ -57,6 +61,8 @@ except ImportError:
 
 
 _COLLECTOR_CONTROL_TIMEOUT_MARGIN_SECONDS = 1.0
+# Dedicated workers run health requests during invocations.
+_CHECK_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="fabric-health")
 logger = logging.getLogger(__name__)
 
 
@@ -72,6 +78,10 @@ class Fabric:
     ``attach_environment()``, then ``start_runtime_in()`` and
     ``release_environment()`` separately.
 
+    Software capture is deferred until enabled initialization so configuration
+    can disable all lookups. A new Fabric instance refreshes the SDK snapshot.
+    Embedded guest servers label their own SDK observations ``guest_sdk``.
+
     ``Fabric`` uses the native Rust extension. SDK calls raise
     ``FabricNativeUnavailableError`` when the native extension is not
     installed.
@@ -81,7 +91,160 @@ class Fabric:
     """
 
     def __init__(self) -> None:
-        pass
+        self._execution_participant = "caller_sdk"
+        self._software_snapshot = None
+        self._software_snapshot_lock = Lock()
+
+    def _set_execution_participant(self, participant: str) -> None:
+        """Relabel only this instance's own cached observations when embedded."""
+        from nemo_fabric_evidence.evidence import ExecutionEvidence
+
+        with self._software_snapshot_lock:
+            snapshot = self._software_snapshot
+            if snapshot is not None:
+                snapshot = ExecutionEvidence.from_mapping(snapshot.to_mapping())
+                for environment in snapshot.software_environments:
+                    environment.participants = [
+                        participant if value == self._execution_participant else value
+                        for value in environment.participants
+                    ]
+                self._software_snapshot = snapshot
+            self._execution_participant = participant
+
+    def _with_provenance(self, config: FabricConfig) -> FabricConfig:
+        if not isinstance(config, FabricConfig):
+            _config_json(config)
+        if not config.provenance.enabled:
+            return config
+        from nemo_fabric.provenance import sdk_snapshot, with_snapshot
+
+        with self._software_snapshot_lock:
+            snapshot = self._software_snapshot
+            if snapshot is None:
+                snapshot = sdk_snapshot(self._execution_participant)
+                # Another SDK instance may temporarily own the process-wide
+                # collector. Retry initialization later instead of caching
+                # that transient gap for this instance's entire lifetime.
+                if not any(
+                    env.reason == "collector_busy"
+                    for env in snapshot.software_environments
+                ):
+                    self._software_snapshot = snapshot
+        return with_snapshot(config, snapshot)
+
+    async def check(
+        self,
+        *,
+        request: CheckRequest,
+        environment: EnvironmentHandle | None = None,
+        service: ServiceHandle | None = None,
+    ) -> CheckReport:
+        """Check server, runtime, or service health.
+
+        OpenShell checks execute ``fabric-agent-ctl check`` inside the selected
+        sandbox. Runtime checks then use the local SDK and an independent
+        adapter health channel. Local server checks return unsupported.
+        The request's single deadline covers routing, all levels, and decoding.
+        Timeouts return ``unknown`` with reason ``probe_timeout``.
+        Service checks use the selected process-local ``ServiceHandle``.
+
+        Args:
+            environment: Prepared or attached environment for server or runtime scope.
+            service: Prepared or attached service handle for service scope.
+            request: Typed scope, runtime or service target, highest level, and timeout.
+
+        Returns:
+            An immutable ``CheckReport`` with ordered health observations.
+
+        Raises:
+            FabricConfigError: If arguments or returned evidence are invalid.
+            FabricNativeUnavailableError: If the native extension is missing.
+            FabricRuntimeError: If transport fails before a report can be formed.
+        """
+        started = time.monotonic()
+        if not isinstance(request, CheckRequest):
+            raise FabricConfigError("request must be a CheckRequest")
+        if request.scope == "service":
+            if environment is not None or not isinstance(service, ServiceHandle):
+                raise FabricConfigError(
+                    "service checks require a ServiceHandle and no environment"
+                )
+            if service.service_id != request.service_id:
+                raise FabricConfigError(
+                    "service handle does not match the requested service ID"
+                )
+            target_json = json.dumps(service.to_mapping())
+        else:
+            if service is not None:
+                raise FabricConfigError(
+                    "server and runtime checks cannot select a service"
+                )
+            target_json = _environment_json(environment)
+        native = self._require_native_module("check")
+        remaining = request.timeout_seconds - (time.monotonic() - started)
+        if remaining <= 0:
+            return _timeout_report(request, started)
+
+        def probe() -> str | None:
+            budget = request.timeout_seconds - (time.monotonic() - started)
+            if budget <= 0:
+                return None
+            payload = request.to_mapping()
+            payload["timeout_seconds"] = budget
+            check = (
+                native.check_service
+                if request.scope == "service"
+                else native.check_environment
+            )
+            return check(target_json, json.dumps(payload, allow_nan=False))
+
+        try:
+            raw = await asyncio.wait_for(
+                asyncio.get_running_loop().run_in_executor(_CHECK_EXECUTOR, probe),
+                remaining,
+            )
+        except TimeoutError:
+            return _timeout_report(request, started)
+        except Exception:
+            raise FabricRuntimeError(
+                "The health transport failed.", stage="check"
+            ) from None
+        if raw is None:
+            return _timeout_report(request, started)
+        try:
+
+            def unique(pairs):
+                value = {}
+                for key, item in pairs:
+                    if key in value:
+                        raise ValueError("duplicate check field")
+                    value[key] = item
+                return value
+
+            decoded = json.loads(raw, object_pairs_hook=unique)
+            report = CheckReport.from_mapping(decoded)
+        except (ValueError, TypeError):
+            raise FabricConfigError("The check report is invalid.") from None
+        if (
+            report.scope,
+            report.runtime_id,
+            report.service_id,
+            report.requested_level,
+        ) != (
+            request.scope,
+            request.runtime_id,
+            request.service_id,
+            request.level,
+        ):
+            raise FabricConfigError(
+                "The check report does not match the requested target."
+            )
+        if time.monotonic() - started >= request.timeout_seconds:
+            return _timeout_report(request, started)
+        report._complete(started)
+        if report.elapsed_ms >= request.timeout_seconds * 1000:
+            return _timeout_report(request, started)
+        return report
 
     def plan(
         self,
@@ -200,7 +363,9 @@ class Fabric:
                 normalized result can be returned.
         """
 
-        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
+        plan = await _call_blocking(
+            lambda: self.plan(self._with_provenance(config), base_dir=base_dir)
+        )
         if expected_descriptor_sha256 is not None:
             _verify_adapter_descriptor(plan, expected_descriptor_sha256)
         request_payload = _run_request_payload(
@@ -306,7 +471,9 @@ class Fabric:
             FabricRuntimeError: If environment preparation fails.
         """
 
-        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
+        plan = await _call_blocking(
+            lambda: self.plan(self._with_provenance(config), base_dir=base_dir)
+        )
         native = self._require_native_module("prepare_environment")
         prepared: str | None = None
 
@@ -390,7 +557,9 @@ class Fabric:
         """
 
         reference_json = _environment_reference_json(reference)
-        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
+        plan = await _call_blocking(
+            lambda: self.plan(self._with_provenance(config), base_dir=base_dir)
+        )
         native = self._require_native_module("attach_environment")
         try:
             raw = await _call_blocking(
@@ -621,7 +790,9 @@ class Fabric:
 
         try:
             plan = await _call_blocking(
-                lambda: self.plan(runtime_config, base_dir=base_dir)
+                lambda: self.plan(
+                    self._with_provenance(runtime_config), base_dir=base_dir
+                )
             )
             if expected_descriptor_sha256 is not None:
                 _verify_adapter_descriptor(plan, expected_descriptor_sha256)
@@ -709,7 +880,9 @@ class Fabric:
             FabricRuntimeError: If service startup fails.
         """
 
-        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
+        plan = await _call_blocking(
+            lambda: self.plan(self._with_provenance(config), base_dir=base_dir)
+        )
         native = self._require_native_module("prepare_service")
         started_service: dict[str, Any] | None = None
 
@@ -765,7 +938,9 @@ class Fabric:
 
         if not isinstance(reference, ServiceReference):
             raise FabricConfigError("reference must be a ServiceReference")
-        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
+        plan = await _call_blocking(
+            lambda: self.plan(self._with_provenance(config), base_dir=base_dir)
+        )
         native = self._require_native_module("attach_service")
         attached_service: dict[str, Any] | None = None
 

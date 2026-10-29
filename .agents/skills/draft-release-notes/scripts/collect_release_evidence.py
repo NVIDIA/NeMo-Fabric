@@ -93,6 +93,7 @@ def public_paths(commits_to_report: tuple[Commit, ...]) -> tuple[str, ...]:
         "crates/fabric-python/Cargo.toml",
         "sdk/python/nemo-fabric/pyproject.toml",
         "sdk/python/nemo-fabric-runtime/pyproject.toml",
+        "sdk/python/nemo-fabric-evidence/pyproject.toml",
         "adapter-contract/python/pyproject.toml",
         "adapter-contract/typescript/package.json",
     }

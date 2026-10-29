@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import logging
 import shlex
 import uuid
 import warnings
 from collections.abc import Mapping
 from pathlib import Path
 from pathlib import PurePosixPath
+from tempfile import TemporaryDirectory
 from typing import Any
 from typing import Literal
 from typing import NoReturn
@@ -40,6 +42,8 @@ from nemo_fabric import RelayObservabilityConfig
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
 from nemo_fabric import RuntimeConfig
+from nemo_fabric import ProvenanceConfig
+from nemo_fabric import SystemStatsConfig
 from nemo_fabric import ToolsConfig
 from nemo_fabric.integrations.harbor.models import FabricRunPayload
 from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
@@ -65,6 +69,12 @@ INSTALL_ENV_NAMES = {
 HARBOR_ARTIFACT_ROOT = "/logs/agent/fabric-artifacts"
 HARBOR_DEFAULT_WORKSPACE = "/testbed"
 _DETAILED_TOKEN_USAGE_V1_KEY = "nemo_fabric.detailed_token_usage.v1"
+# Evidence the bridge records beside the result, kept when result metadata is replaced.
+_BRIDGE_EVIDENCE_KEYS = (
+    "atif_final_metrics",
+    "harbor_atif_validation",
+    "telemetry_validation",
+)
 
 try:
     from harbor.agents.base import BaseAgent
@@ -91,7 +101,7 @@ if _HARBOR_IMPORT_ERROR is not None:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             raise ModuleNotFoundError(
                 "nemo_fabric.integrations.harbor requires the Harbor optional "
-                "dependency and a compatible Harbor release (0.23.x) on Python "
+                "dependency and a compatible Harbor release (0.24.x) on Python "
                 "3.12 or later; install nemo-fabric[harbor] on a supported interpreter"
             ) from _HARBOR_IMPORT_ERROR
 
@@ -164,6 +174,14 @@ else:
         )
         fabric_telemetry: Literal["none", "relay"] = Field(
             default="none", description="Enable Relay-backed ATIF and ATOF telemetry."
+        )
+        fabric_provenance: ProvenanceConfig = Field(
+            default_factory=ProvenanceConfig,
+            description="Default-on software evidence; enabled=false skips host and guest collectors.",
+        )
+        fabric_system_stats: SystemStatsConfig | None = Field(
+            default_factory=SystemStatsConfig,
+            description="Invocation stats selection and optional sampling; null disables stats.",
         )
         fabric_python: str = Field(
             default="python3",
@@ -280,8 +298,8 @@ else:
         reward calculation. NeMo Fabric owns the selected agent harness invocation.
         """
 
-        # Current Harbor main gates task skills and MCP servers on these fields;
-        # the published 0.23.0 capabilities model does not define them yet.
+        # Harbor gates task skills and MCP servers on these fields; __init__ sets
+        # them from the selected adapter's metadata.
         capabilities = AgentCapabilities()
         options_model = FabricAgentOptions
         options: FabricAgentOptions
@@ -346,6 +364,11 @@ else:
                 **kwargs,
             )
             options = self.options
+            self._host_execution = (
+                _harbor_execution_report()
+                if options.fabric_provenance.enabled
+                else None
+            )
             self.fabric_adapter_id = options.fabric_adapter_id
             self.fabric_config_base_dir = options.fabric_config_base_dir
             self.fabric_config_bundle = options.fabric_config_bundle
@@ -515,7 +538,34 @@ else:
                     diagnostic = FabricRunnerFailure.model_validate(document)
                 else:
                     diagnostic = None
-                normalized = None if diagnostic else RunResult.from_mapping(document)
+                if diagnostic is None and isinstance(document, dict):
+                    from nemo_fabric.provenance import _restore_dispatch_evidence
+
+                    original_execution = document.get("execution")
+                    document = _restore_dispatch_evidence(
+                        document,
+                        spec.config.provenance.reports,
+                        enabled=spec.config.provenance.enabled,
+                    )
+                    normalized = RunResult.from_mapping(document)
+                    if document.get("execution") != original_execution:
+                        try:
+                            with TemporaryDirectory(
+                                dir=host_result_path.parent, prefix=".fabric-result-"
+                            ) as temporary:
+                                updated = Path(temporary) / host_result_path.name
+                                updated.write_text(
+                                    json.dumps(document, indent=2), encoding="utf-8"
+                                )
+                                updated.replace(host_result_path)
+                        except OSError:
+                            logging.getLogger(__name__).warning(
+                                "Could not persist optional software evidence in the existing Harbor result artifact"
+                            )
+                else:
+                    normalized = (
+                        None if diagnostic else RunResult.from_mapping(document)
+                    )
             except (ValueError, TypeError, FabricConfigError):
                 ensure_success("NeMo Fabric run failed", result)
                 raise
@@ -558,7 +608,7 @@ else:
             )
 
         def _build_config(self) -> FabricConfig:
-            return build_harbor_config(
+            config = build_harbor_config(
                 adapter_id=self.fabric_adapter_id,
                 workspace=self.fabric_workspace,
                 harness_settings=self.fabric_harness_settings,
@@ -581,6 +631,21 @@ else:
                     *self.fabric_discovery_paths,
                 ),
             )
+            config.provenance = self.options.fabric_provenance.model_copy(deep=True)
+            if self._host_execution is not None:
+                from nemo_fabric_evidence.metadata import combine
+
+                existing = config.provenance.reports
+                config.provenance.reports = (
+                    self._host_execution
+                    if existing is None
+                    else combine(existing, self._host_execution)
+                )
+            stats = self.options.fabric_system_stats
+            config.system_stats = (
+                stats.model_copy(deep=True) if stats is not None else None
+            )
+            return config
 
         def _resolve_environment_config_base_dir(self) -> str:
             if self.fabric_config_bundle is not None:
@@ -614,6 +679,8 @@ else:
 
             if self._result_path is not None:
                 populate_context_from_result(context, self._result_path)
+            else:
+                _clear_accounting(context)
             populate_context_from_trajectory(context, self.logs_dir / "trajectory.json")
             populate_context_from_telemetry_summary(
                 context,
@@ -884,26 +951,33 @@ def populate_context_from_result(
     document = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(document, dict) and "runner_error" in document:
         failure = FabricRunnerFailure.model_validate(document)
-        if context.metadata is None:
-            context.metadata = {}
-        context.metadata["fabric"] = failure.model_dump()
+        _replace_result_metadata(context, failure.model_dump())
+        _clear_accounting(context)
         return failure
     result = RunResult.from_mapping(document)
     mapping = result.to_mapping()
-    if context.metadata is None:
-        context.metadata = {}
-    context.metadata["fabric"] = {
-        "status": mapping["status"],
-        "runtime_id": mapping["runtime_id"],
-        "invocation_id": mapping["invocation_id"],
-        "request_id": mapping["request_id"],
-        "harness": mapping["harness"],
-        "adapter_id": mapping.get("adapter_id"),
-        "artifacts": mapping["artifacts"],
-        "telemetry": mapping["telemetry"],
-        "error": mapping.get("error"),
-        "usage": mapping.get("usage"),
-    }
+    _replace_result_metadata(
+        context,
+        {
+            "status": mapping["status"],
+            "runtime_id": mapping["runtime_id"],
+            "invocation_id": mapping["invocation_id"],
+            "request_id": mapping["request_id"],
+            "harness": mapping["harness"],
+            "adapter_id": mapping.get("adapter_id"),
+            "artifacts": mapping["artifacts"],
+            "telemetry": mapping["telemetry"],
+            "error": mapping.get("error"),
+            "usage": mapping.get("usage"),
+        },
+    )
+    # Fabric results supply Harbor's accounting fields; an unknown dimension
+    # clears any value an earlier pass left in the context. ATIF metrics stay
+    # separate as evidence with unverified coverage.
+    input_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    output_tokens: int | None = None
+    cost_usd: float | None = None
     if result.usage is not None:
         usage = result.usage
         detailed_usage = _detailed_token_usage(usage)
@@ -959,19 +1033,39 @@ def populate_context_from_result(
             )
         else:
             output_tokens = usage.get("output_tokens")
-        if input_tokens is not None:
-            context.n_input_tokens = input_tokens
-        if cached_input_tokens is not None:
-            context.n_cache_tokens = cached_input_tokens
-        if output_tokens is not None:
-            context.n_output_tokens = output_tokens
-        if usage.get("cost_usd") is not None:
-            context.cost_usd = usage["cost_usd"]
+        cost_usd = usage.get("cost_usd")
+    context.n_input_tokens = input_tokens
+    context.n_cache_tokens = cached_input_tokens
+    context.n_output_tokens = output_tokens
+    context.cost_usd = cost_usd
     return result
 
 
+def _replace_result_metadata(context: AgentContext, fields: dict[str, Any]) -> None:
+    """Replace one pass's result fields while keeping the bridge's own evidence."""
+
+    if context.metadata is None:
+        context.metadata = {}
+    previous = context.metadata.get("fabric")
+    evidence = (
+        {key: previous[key] for key in _BRIDGE_EVIDENCE_KEYS if key in previous}
+        if isinstance(previous, dict)
+        else {}
+    )
+    context.metadata["fabric"] = {**fields, **evidence}
+
+
+def _clear_accounting(context: AgentContext) -> None:
+    """Without a Fabric result, no source can vouch for Harbor's accounting fields."""
+
+    context.n_input_tokens = None
+    context.n_cache_tokens = None
+    context.n_output_tokens = None
+    context.cost_usd = None
+
+
 def populate_context_from_trajectory(context: AgentContext, path: Path) -> None:
-    """Validate canonical ATIF with Harbor and backfill usage fields when present."""
+    """Validate canonical ATIF with Harbor and keep its totals as separate evidence."""
 
     if not path.is_file():
         return
@@ -986,15 +1080,23 @@ def populate_context_from_trajectory(context: AgentContext, path: Path) -> None:
     metrics = trajectory.final_metrics
     if metrics is None:
         return
-    # These are two views of one invocation, not additive accounting sources.
-    if context.n_input_tokens is None:
-        context.n_input_tokens = metrics.total_prompt_tokens
-    if context.n_cache_tokens is None:
-        context.n_cache_tokens = metrics.total_cached_tokens
-    if context.n_output_tokens is None:
-        context.n_output_tokens = metrics.total_completion_tokens
-    if context.cost_usd is None:
-        context.cost_usd = metrics.total_cost_usd
+    # ATIF totals can cover a different scope (for example subagents) and cache
+    # convention than the invocation, so they never fill Harbor's accounting.
+    _record_atif_final_metrics(context, metrics.model_dump(mode="json"))
+
+
+def _record_atif_final_metrics(
+    context: AgentContext, final_metrics: dict[str, Any]
+) -> None:
+    if context.metadata is None:
+        context.metadata = {}
+    fabric = context.metadata.setdefault("fabric", {})
+    if isinstance(fabric, dict):
+        fabric["atif_final_metrics"] = {
+            "source": "atif",
+            "coverage": "unverified",
+            "final_metrics": final_metrics,
+        }
 
 
 def _record_host_atif_validation(
@@ -1027,3 +1129,53 @@ def populate_context_from_telemetry_summary(context: AgentContext, path: Path) -
     fabric = context.metadata.setdefault("fabric", {})
     if isinstance(fabric, dict):
         fabric["telemetry_validation"] = summary
+
+
+def _harbor_execution_report():
+    """Explicit platform-owner report, captured once per Harbor agent instance."""
+    from nemo_fabric_evidence.evidence import ExecutionEvidence, SoftwareEntry
+    from nemo_fabric_evidence.metadata import (
+        collect_selected,
+        observation,
+        observed_at,
+    )
+
+    report = collect_selected(
+        "caller_sdk",
+        [
+            ("fabric_sdk", "nemo-fabric-runtime", "nemo_fabric.client"),
+            (
+                "contract",
+                "nemo-fabric-evidence",
+                "nemo_fabric_evidence.evidence",
+            ),
+            ("integration", "harbor", "harbor"),
+        ],
+    )
+    # These components are observed by this same initializing process/resolver.
+    # No version/path equality inference joins another installation.
+    environment = report.software_environments[0]
+    environment.participants.append("application")
+    if environment.status == "available":
+        try:
+            from nemo_fabric.client import _native
+
+            version = _native.version() if _native is not None else None
+            if not isinstance(version, str):
+                version = None
+        except Exception:
+            version = None
+        environment.entries.append(
+            SoftwareEntry(
+                role="fabric_core",
+                kind="component",
+                name="nemo-fabric-core",
+                version=observation(
+                    version,
+                    "caller_sdk:native.version",
+                    observed_at(),
+                    reason="native_core_version_unavailable",
+                ),
+            )
+        )
+    return ExecutionEvidence.receive(report.to_mapping(), "caller_sdk")

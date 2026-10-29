@@ -67,7 +67,9 @@ async def run(payload: FabricRunPayload) -> RunResult:
         if payload.adapter_descriptor_sha256 is not None
         else {}
     )
-    result = await Fabric().run(
+    fabric = Fabric()
+    fabric._execution_participant = "guest_sdk"
+    result = await fabric.run(
         config,
         base_dir=payload.config_base_dir,
         request=payload.request,

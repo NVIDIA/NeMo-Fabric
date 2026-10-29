@@ -11,26 +11,57 @@
     "pi",
     "opencode",
     "qwen",
-    "kilo"
+    "kilo",
+    "kiro",
+    "strands"
   ],
   "scripts": {
-    "build": "npm run build --workspace nemo-fabric-adapters-common && npm run build --workspace nemo-fabric-adapters-cline && npm run build --workspace nemo-fabric-adapters-droid && npm run build --workspace nemo-fabric-adapters-pi && npm run build --workspace nemo-fabric-adapters-opencode && npm run build --workspace nemo-fabric-adapters-qwen && npm run build --workspace nemo-fabric-adapters-kilo",
+    "build": "npm run build --workspace nemo-fabric-adapters-common && npm run build --workspace nemo-fabric-adapters-cline && npm run build --workspace nemo-fabric-adapters-droid && npm run build --workspace nemo-fabric-adapters-pi && npm run build --workspace nemo-fabric-adapters-opencode && npm run build --workspace nemo-fabric-adapters-qwen && npm run build --workspace nemo-fabric-adapters-kilo && npm run build --workspace nemo-fabric-adapters-kiro && npm run build --workspace nemo-fabric-adapters-strands",
     "pack:check": "npm run pack:contents && npm run pack:install-check",
-    "pack:contents": "npm run pack:check --workspace nemo-fabric-adapters-common && npm run pack:check --workspace nemo-fabric-adapters-cline && npm run pack:check --workspace nemo-fabric-adapters-droid && npm run pack:check --workspace nemo-fabric-adapters-pi && npm run pack:check --workspace nemo-fabric-adapters-opencode && npm run pack:check --workspace nemo-fabric-adapters-qwen && npm run pack:check --workspace nemo-fabric-adapters-kilo",
+    "pack:contents": "npm run pack:check --workspace nemo-fabric-adapters-common && npm run pack:check --workspace nemo-fabric-adapters-cline && npm run pack:check --workspace nemo-fabric-adapters-droid && npm run pack:check --workspace nemo-fabric-adapters-pi && npm run pack:check --workspace nemo-fabric-adapters-opencode && npm run pack:check --workspace nemo-fabric-adapters-qwen && npm run pack:check --workspace nemo-fabric-adapters-kilo && npm run pack:check --workspace nemo-fabric-adapters-kiro && npm run pack:check --workspace nemo-fabric-adapters-strands",
     "pack:install-check": "node scripts/check-install.mjs",
     "test": "npm run test:units && npm run test:dependencies && npm run pack:check",
     "test:dependencies": "npm ls --all && node scripts/audit-dependencies.mjs",
-    "test:units": "node --test scripts/audit-dependencies.test.mjs && npm test --workspace nemo-fabric-adapters-common && npm test --workspace nemo-fabric-adapters-cline && npm test --workspace nemo-fabric-adapters-droid && npm test --workspace nemo-fabric-adapters-pi && npm test --workspace nemo-fabric-adapters-opencode && npm test --workspace nemo-fabric-adapters-qwen && npm test --workspace nemo-fabric-adapters-kilo"
+    "test:units": "node --test scripts/audit-dependencies.test.mjs && npm test --workspace nemo-fabric-adapters-common && npm test --workspace nemo-fabric-adapters-cline && npm test --workspace nemo-fabric-adapters-droid && npm test --workspace nemo-fabric-adapters-pi && npm test --workspace nemo-fabric-adapters-opencode && npm test --workspace nemo-fabric-adapters-qwen && npm test --workspace nemo-fabric-adapters-kilo && npm test --workspace nemo-fabric-adapters-kiro && npm run test --workspace nemo-fabric-adapters-strands"
   },
   "devDependencies": {
-    "nemo-fabric-adapter-contract": "file:../../adapter-contract/typescript"
+    "nemo-fabric-adapter-contract": "file:../../adapter-contract/typescript",
+    "zod": "4.6.7"
   },
   "overrides": {
     "@opencode/core": {
-      "@modelcontextprotocol/client": "2.2.0",
-      "@modelcontextprotocol/core": "2.2.0"
+      "zod": "4.6.7",
+      "gitlab-ai-provider": {
+        "zod": "3.25.76",
+        "@anthropic-ai/sdk": {
+          "zod": "^3.25.0 || ^4.0.0"
+        },
+        "@ai-sdk/provider-utils": {
+          "zod": "^3.25.76 || ^4.1.8"
+        },
+        "openai": {
+          "zod": "^3.25 || ^4.0"
+        }
+      },
+      "@modelcontextprotocol/client": {
+        ".": "2.2.0",
+        "zod": "4.6.6"
+      },
+      "@modelcontextprotocol/core": {
+        ".": "2.2.0",
+        "zod": "4.6.6"
+      }
     },
-    "@parcel/watcher": "2.6.0"
+    "@opencode/plugin": {
+      "zod": "4.6.7"
+    },
+    "@parcel/watcher": "2.6.0",
+    "cross-spawn": "7.0.6",
+    "debug": "4.4.3",
+    "fast-uri": "3.1.9",
+    "@earendil-works/pi-coding-agent@1.0.3": {
+      "undici": "8.12.3"
+    }
   },
   "engines": {
     "node": ">=22.19.0"

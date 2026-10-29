@@ -183,6 +183,28 @@ Start one turn and stream raw NeMo Relay ATOF records as they arrive.
 ---
 
 
+### <kbd>method</kbd> `resource_snapshot`
+
+```python
+async def resource_snapshot() -> RuntimeResourceSnapshot
+```
+
+Return a timestamped resource snapshot of this runtime.
+
+The snapshot covers the local adapter host process and its live descendants. It does not wait for a running invocation, so it can be called while ``invoke()`` is in flight. It observes resources only and enforces no limits.
+
+
+
+**Raises:**
+
+ - <b>`ResourceObservationUnavailableError`</b>:  If the runtime stopped, is  stopping, its adapter host process exited, a live process in  its tree or the process table cannot be read, or the process  tree kept changing during the read.
+ - <b>`ResourceObservationUnsupportedError`</b>:  If the runtime's adapter  kind, environment provider, or operating system has no  resource reader.
+ - <b>`FabricNativeUnavailableError`</b>:  If the native extension is missing.
+ - <b>`FabricRuntimeError`</b>:  If the native snapshot call fails otherwise.
+
+---
+
+
 ### <kbd>method</kbd> `stop`
 
 ```python

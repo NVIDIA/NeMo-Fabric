@@ -397,6 +397,8 @@ async def test_relay_enabled_uses_instrumented_subclass_and_reports_artifacts(
     mini_payload,
     mock_relay,
 ):
+    import nemo_relay
+
     mini_payload["runtime_context"]["telemetry"] = {
         "relay_enabled": True,
         "metadata": {"telemetry_providers": ["relay"]},
@@ -433,6 +435,7 @@ async def test_relay_enabled_uses_instrumented_subclass_and_reports_artifacts(
         {"command": "submit"},
     )
     assert mock_relay["tool_starts"][0][2]["tool_call_id"] == "call-1"
+    assert isinstance(mock_relay["tool_ends"][0][1], nemo_relay.ToolExecutionResult)
     assert mock_relay["tool_ends"][0][2]["metadata"]["status"] == "submitted"
     assert mock_relay["step_ends"][0][1]["output"] == {
         "status": "interrupted",

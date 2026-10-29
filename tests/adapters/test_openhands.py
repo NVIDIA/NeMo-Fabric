@@ -5,13 +5,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 from enum import Enum
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import ANY
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
+from unittest.mock import PropertyMock
 
 import pytest
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -201,6 +204,7 @@ def test_descriptor_declares_only_initial_openhands_surface():
         "streaming": False,
         "updates": False,
         "cancellation": False,
+        "metadata": {"health_checks": ["live", "active"]},
     }
     assert descriptor["settings_schema"]["properties"] == {
         "condenser": {
@@ -214,6 +218,9 @@ def test_descriptor_declares_only_initial_openhands_surface():
         }
     }
     assert descriptor["settings_schema"]["additionalProperties"] is False
+    assert descriptor["extension_schemas"]["run_error"]["properties"] == {
+        "sdk_error": {"type": "string"}
+    }
     assert "telemetry" not in descriptor
 
 
@@ -546,7 +553,44 @@ async def test_send_message_failure_returns_failed_result(
     assert result.status is AgentRunStatus.FAILED
     assert result.error is not None
     assert result.error.code == "openhands_invocation_failed"
+    assert result.error.message == "OpenHands could not complete the invocation."
+    assert result.error.retryable is False
+    assert result.error.extensions == {"sdk_error": "RuntimeError"}
     conversation.arun.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("cause", "sdk_error"),
+    [
+        (ConnectionError("model endpoint unavailable"), "ConnectionError"),
+        (None, "RuntimeError"),
+    ],
+)
+async def test_invocation_failure_reports_the_underlying_sdk_error(
+    openhands_payload: dict,
+    mock_openhands: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    cause: BaseException | None,
+    sdk_error: str,
+):
+    monkeypatch.setenv("TEST_OPENHANDS_API_KEY", "test-key")
+    runtime = adapter.OpenHandsRuntime()
+    await runtime.start(_start_payload(openhands_payload))
+    try:
+        error = RuntimeError("Conversation run failed")
+        error.__cause__ = cause
+        mock_openhands["conversation"].arun.side_effect = error
+
+        result = await runtime.invoke(*_invocation(openhands_payload, "fail"))
+
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error is not None
+        assert result.error.code == "openhands_invocation_failed"
+        assert result.error.message == "OpenHands could not complete the invocation."
+        assert result.error.retryable is False
+        assert result.error.extensions == {"sdk_error": sdk_error}
+    finally:
+        await runtime.stop()
 
 
 async def test_invoke_rejects_a_different_runtime(
@@ -725,3 +769,128 @@ async def test_start_rejects_empty_mcp_target(
         await adapter.OpenHandsRuntime().start(_start_payload(openhands_payload))
 
     assert caught.value.code == "openhands_mcp_target_invalid"
+
+
+@pytest.mark.parametrize(
+    ("level", "initialized", "outcome", "reason"),
+    [
+        ("live", False, "passed", None),
+        ("active", True, "passed", None),
+        ("active", False, "unknown", "capabilities_unverified"),
+        ("ready", True, "unsupported", "unsupported_level"),
+        ("operational", True, "unsupported", "unsupported_level"),
+    ],
+)
+async def test_health_uses_native_conversation_lifecycle(
+    level, initialized, outcome, reason
+):
+    runtime = adapter.OpenHandsRuntime()
+    conversation = MagicMock()
+    conversation._cleanup_initiated = False
+    conversation._cleanup_complete = False
+    conversation._agent_ready = initialized
+    conversation._arun_task = None
+    runtime._conversation = conversation
+    runtime._runtime_id = "runtime-health"
+    result = await runtime.check(level)
+    assert (result["outcome"], result["reason_code"]) == (outcome, reason)
+    if outcome == "passed":
+        assert result["observed_at"] is not None
+        assert result["activity"] == "idle"
+    conversation.send_message.assert_not_called()
+    conversation.arun.assert_not_called()
+    conversation.close.assert_not_called()
+
+
+@pytest.mark.parametrize("flag", ["_cleanup_initiated", "_cleanup_complete"])
+@pytest.mark.parametrize("level", ["live", "active"])
+async def test_health_detects_native_closure(flag, level):
+    runtime = adapter.OpenHandsRuntime()
+    conversation = MagicMock()
+    conversation._cleanup_initiated = False
+    conversation._cleanup_complete = False
+    conversation._agent_ready = True
+    conversation._arun_task = None
+    setattr(conversation, flag, True)
+    runtime._conversation = conversation
+    runtime._runtime_id = "runtime-health"
+    result = await runtime.check(level)
+    assert (result["outcome"], result["reason_code"]) == ("failed", "session_closed")
+    assert result["activity"] == "stopped"
+
+
+async def test_health_rejects_unqualified_native_shape_and_missing_runtime():
+    runtime = adapter.OpenHandsRuntime()
+    assert (await runtime.check("live"))["reason_code"] == "runtime_unavailable"
+    runtime._runtime_id = "runtime-health"
+    runtime._conversation = SimpleNamespace()
+    result = await runtime.check("live")
+    assert (result["outcome"], result["reason_code"], result["observed_at"]) == (
+        "unknown",
+        "capabilities_unverified",
+        None,
+    )
+
+
+async def test_health_remains_available_during_native_arun(
+    openhands_payload, mock_openhands
+):
+    os.environ["TEST_OPENHANDS_API_KEY"] = "test-key"
+    runtime = adapter.OpenHandsRuntime()
+    await runtime.start(_start_payload(openhands_payload))
+    conversation = mock_openhands["conversation"]
+    conversation._cleanup_initiated = False
+    conversation._cleanup_complete = False
+    conversation._agent_ready = True
+    entered, release = asyncio.Event(), asyncio.Event()
+    original_arun = conversation.arun.side_effect
+
+    async def arun():
+        conversation._arun_task = asyncio.current_task()
+        entered.set()
+        await release.wait()
+        await original_arun()
+
+    conversation.arun.side_effect = arun
+    task = asyncio.create_task(
+        runtime.invoke(*_invocation(openhands_payload, "private prompt"))
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        for level in ("live", "active"):
+            result = await asyncio.wait_for(runtime.check(level), 0.1)
+            assert (result["outcome"], result["activity"]) == ("passed", "busy")
+        assert not task.done()
+        conversation.close.assert_not_called()
+        release.set()
+        assert (await task).status is AgentRunStatus.SUCCEEDED
+    finally:
+        release.set()
+        await task
+        await runtime.stop()
+
+
+@pytest.mark.parametrize("raises", [False, True])
+async def test_health_discards_observation_when_native_read_changes_ownership(raises):
+    runtime = adapter.OpenHandsRuntime()
+    conversation = MagicMock()
+    runtime._conversation = conversation
+    runtime._runtime_id = "runtime-health"
+
+    def changed():
+        runtime._generation += 1
+        if raises:
+            raise RuntimeError("private native error")
+        return False
+
+    type(conversation)._cleanup_initiated = PropertyMock(side_effect=changed)
+    conversation._cleanup_complete = False
+    conversation._agent_ready = True
+    conversation._arun_task = None
+    result = await runtime.check("live")
+    assert (result["outcome"], result["reason_code"], result["observed_at"]) == (
+        "unknown",
+        "observation_changed",
+        None,
+    )
+    assert "private" not in json.dumps(result)
