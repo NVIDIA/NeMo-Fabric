@@ -31,4 +31,13 @@ await serve(async () => {
     import("./runtime.js"),
   ]);
   return new OpenCodeAdapterRuntime(new OpenCodeSdkSessionFactory());
-}, { software: { packageJson: new URL("../package.json", import.meta.url), harness: "opencode", packages: [{"role": "framework", "name": "@opencode-ai/sdk"}] } });
+}, {
+  software: {
+    packageJson: new URL("../package.json", import.meta.url),
+    harness: "opencode",
+    packages: [
+      { role: "framework", name: "@opencode/sdk" },
+      { role: "framework", name: "@opencode/core" },
+    ],
+  },
+});

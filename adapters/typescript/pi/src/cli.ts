@@ -23,4 +23,10 @@ await serve(async () => {
     import("./runtime.js"),
   ]);
   return new PiAdapterRuntime(new PiSdkSessionFactory());
-}, { software: { packageJson: new URL("../package.json", import.meta.url), harness: "pi", packages: [{"role": "harness", "name": "@mariozechner/pi-coding-agent"}] } });
+}, {
+  software: {
+    packageJson: new URL("../package.json", import.meta.url),
+    harness: "pi",
+    packages: [{ role: "harness", name: "@earendil-works/pi-coding-agent" }],
+  },
+});

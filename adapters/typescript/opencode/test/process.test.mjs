@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -379,6 +379,15 @@ test("runs two real OpenCode SDK prompts through the process host", async () => 
     assert.equal(exitCode, 0, stderr);
     assert.deepEqual(responses.map((response) => response.operation), ["start", "invoke", "invoke", "stop"]);
     assert.equal(responses[0].outcome.status, "succeeded");
+    const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+    const entries = responses[0].execution.software_environments.flatMap((environment) => environment.entries);
+    for (const name of ["@opencode/sdk", "@opencode/core"]) {
+      const framework = entries.find((entry) => entry.name === name);
+      assert.equal(framework?.role, "framework");
+      assert.equal(framework.version.status, "available");
+      assert.equal(framework.version.value, manifest.devDependencies[name]);
+    }
+    assert.equal(entries.some((entry) => entry.name === "@opencode-ai/sdk"), false);
     assert.equal(responses[1].outcome.output.status, "succeeded");
     assert.equal(responses[1].outcome.output.output.response, "reply:user_count=1 latest=first");
     assert.equal(responses[2].outcome.output.status, "succeeded");
