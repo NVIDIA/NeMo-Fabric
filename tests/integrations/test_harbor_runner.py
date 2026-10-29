@@ -980,6 +980,7 @@ def test_external_workflow_metadata_is_not_task_discovery(tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("nemo_relay")
 async def test_registered_workflow_round_trip_and_target_drift(tmp_path, monkeypatch):
     import os
     import sys
