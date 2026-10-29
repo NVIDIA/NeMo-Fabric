@@ -40,8 +40,8 @@ COPY adapters/python/ adapters/python/
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/src/fabric/target \
     uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels --config-setting build-args=--locked sdk/python/nemo-fabric-runtime \
+    && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels sdk/python/nemo-fabric-evidence \
     && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapter-contract/python \
     && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapters/python/common \
     && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapters/python/openclaw \
@@ -55,7 +55,7 @@ RUN install -d -m 0700 -o 1000 -g 1000 /sandbox/tmp /sandbox/workspace /sandbox/
 ARG FABRIC_SOURCE_SHA256=unrecorded
 LABEL org.nvidia.nemo-fabric.runtime-server.interface="2" \
       org.nvidia.nemo-fabric.source-sha256="$FABRIC_SOURCE_SHA256" \
-      io.nemoclaw.fabric.bridge='{"interface_version":2,"operations":["start","invoke","stop","serve"]}' \
+      io.nemoclaw.fabric.bridge='{"interface_version":2,"operations":["start","invoke","stop","serve","check"]}' \
       io.nemoclaw.fabric.catalog=""
 RUN rm -f /usr/local/bin/fabric-agent \
     && ln -sf /opt/fabric/bin/fabric-agent-ctl /usr/local/bin/fabric-agent-ctl
@@ -83,7 +83,7 @@ metadata = {
     "schema_version": 1,
     "fabric_version": version("nemo-fabric-runtime"),
     "interface_version": 2,
-    "operations": ["start", "invoke", "stop", "serve"],
+    "operations": ["start", "invoke", "stop", "serve", "check"],
     "adapters": [plan.get("adapter_descriptor")],
 }
 Path("/opt/fabric/runtime-server.json").write_text(json.dumps(metadata, indent=2) + "\n")

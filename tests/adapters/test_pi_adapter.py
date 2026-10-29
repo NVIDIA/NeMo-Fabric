@@ -71,7 +71,7 @@ def test_pi_descriptor_declares_the_supported_surface():
         "minLength": 1,
         "description": (
             "Absolute path or environment.workspace-relative path to the "
-            "NeMo Relay 0.9 or 0.10 Pi extension"
+            "NeMo Relay Pi extension matching the CLI release"
         ),
     }
     assert descriptor["extension_schemas"]["run_result"] == {
@@ -89,6 +89,7 @@ def test_pi_descriptor_declares_the_supported_surface():
         }
     }
     assert descriptor["capabilities"] == {
+        "metadata": {"health_checks": ["live", "active", "ready"]},
         "streaming": False,
         "cancellation": False,
         "updates": False,

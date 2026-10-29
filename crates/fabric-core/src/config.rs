@@ -66,6 +66,12 @@ pub struct FabricConfig {
     /// Telemetry configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<TelemetryConfig>,
+    /// Selected software evidence. Omitted defaults on; enabled=false skips all collectors.
+    #[serde(default)]
+    pub provenance: crate::provenance::ProvenanceConfig,
+    /// Invocation stats: omitted means all endpoint groups, explicit null disables.
+    #[serde(default = "crate::system_stats::default_system_stats")]
+    pub system_stats: Option<crate::system_stats::SystemStatsConfig>,
     /// First-class NeMo Relay integration configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relay: Option<RelayConfig>,
@@ -1866,6 +1872,9 @@ pub fn load_adapter_target_descriptor(path: impl AsRef<Path>) -> Result<AdapterT
 }
 
 pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
+    if let Some(stats) = &config.system_stats {
+        stats.validate()?;
+    }
     if config.harness.is_none() && config.workflow.is_none() {
         return invalid_config(
             "harness",
@@ -3978,11 +3987,16 @@ fn resolve_relay_plugin_config(
         components.push(serde_json::to_value(component).unwrap_or(Value::Null));
     }
 
-    if !components.is_empty() || relay.policy.is_some() {
+    let plugins = relay.extensions.get("plugins");
+    if !components.is_empty() || relay.policy.is_some() || plugins.is_some() {
         let mut plugin_config = serde_json::json!({
             "version": 1,
             "components": components,
         });
+        // Relay owns validation and activation of dynamic plugin manifests.
+        if let Some(plugins) = plugins {
+            plugin_config["plugins"] = plugins.clone();
+        }
         if let Some(policy) = relay.policy.as_ref()
             && let Some(object) = plugin_config.as_object_mut()
         {
@@ -4457,6 +4471,50 @@ mod tests {
 
     fn repository_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    #[test]
+    fn relay_dynamic_plugins_survive_telemetry_planning() {
+        let plugins = serde_json::json!({
+            "dynamic": [{
+                "manifest": "/opt/switchyard/relay-plugin.toml",
+                "enabled": true,
+                "config": {"route": "canary"}
+            }]
+        });
+        for with_observability in [false, true] {
+            let mut config = config_with_model("nvidia.fabric.hermes", "nvidia");
+            config.telemetry = Some(
+                serde_json::from_value(serde_json::json!({
+                    "providers": {"relay": {}}
+                }))
+                .expect("Relay telemetry config"),
+            );
+            let mut relay = serde_json::json!({"plugins": plugins});
+            if with_observability {
+                relay["observability"] = serde_json::json!({"atif": {"enabled": true}});
+                relay["policy"] = serde_json::json!({"unknown_component": "error"});
+                relay["components"] = serde_json::json!([{"kind": "custom"}]);
+            }
+            config.relay = Some(serde_json::from_value(relay).expect("Relay plugin config"));
+
+            let telemetry = resolve_telemetry_plan(&config, None)
+                .expect("resolved telemetry")
+                .expect("telemetry plan");
+            let resolved = telemetry.relay_config.expect("Relay plugin config");
+
+            assert_eq!(resolved["version"], 1);
+            assert_eq!(resolved["plugins"], plugins);
+            let components = resolved["components"].as_array().expect("components");
+            if with_observability {
+                assert_eq!(components.len(), 2);
+                assert_eq!(components[0]["kind"], "observability");
+                assert_eq!(components[1]["kind"], "custom");
+                assert_eq!(resolved["policy"]["unknown_component"], "error");
+            } else {
+                assert!(components.is_empty());
+            }
+        }
     }
 
     #[test]

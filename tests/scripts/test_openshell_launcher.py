@@ -12,6 +12,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import socket
 import subprocess
@@ -168,7 +169,7 @@ def _operations(root: Path) -> list[dict]:
 def _run(launcher, workload, env):
     script, _, base_env = launcher
     return subprocess.run(
-        ["bash", str(script), str(workload), "--input", "words with spaces"],
+        ["/bin/bash", str(script), str(workload), "--input", "words with spaces"],
         env={**base_env, **env},
         text=True,
         capture_output=True,
@@ -176,7 +177,22 @@ def _run(launcher, workload, env):
     )
 
 
-def test_generic_workload_gets_ownership_and_consumer_args(launcher):
+@pytest.mark.parametrize(
+    ("model_env_args", "server_env_args"),
+    [
+        pytest.param([], None, id="default-server-env"),
+        pytest.param([], [], id="no-env"),
+        pytest.param(["--env", "MODEL_HINT=words with spaces"], [], id="no-server-env"),
+        pytest.param(
+            ["--env", "MODEL_HINT=words with spaces"],
+            ["--env", "SERVER_HINT=words with spaces"],
+            id="quoted-env",
+        ),
+    ],
+)
+def test_generic_workload_gets_ownership_and_consumer_args(
+    launcher, model_env_args, server_env_args
+):
     _, root, _ = launcher
     workload = root / "third-workload"
     workload.mkdir()
@@ -189,6 +205,12 @@ POLICY_FILE="${WORKLOAD_ROOT}/policy.yaml"
 stage_workload_image() { :; }
 run_workload_consumer() { local mode="$1"; shift; uv run --no-sync consumer "$mode" "$@"; }
 """
+        + f"MODEL_ENV_ARGS=({shlex.join(model_env_args)})\n"
+        + (
+            f"SERVER_ENV_ARGS=({shlex.join(server_env_args)})\n"
+            if server_env_args is not None
+            else ""
+        )
     )
 
     completed = _run(launcher, hook, {"OPENSHELL_EXAMPLE_MODE": "both"})
@@ -199,6 +221,26 @@ run_workload_consumer() { local mode="$1"; shift; uv run --no-sync consumer "$mo
     assert all(call["args"][-2:] == ["--input", "words with spaces"] for call in calls)
     assert all(call["provider"].endswith("/fabric-environment-openshell") for call in calls)
     assert not (root / "sandbox-state.json").exists()
+    create = next(
+        operation["args"]
+        for operation in _operations(root)
+        if operation["command"] == "openshell"
+        and "sandbox" in operation["args"]
+        and "create" in operation["args"]
+    )
+    expected_server_env = (
+        server_env_args
+        if server_env_args is not None
+        else [
+            "--env",
+            "ADAPTER_PYTHON=/opt/fabric/bin/python",
+            "--env",
+            "TMPDIR=/sandbox/tmp",
+        ]
+    )
+    assert create[create.index("--policy") + 2 : create.index("--detach")] == (
+        model_env_args + expected_server_env
+    )
 
 
 @pytest.mark.parametrize("mode", ["caller_owned", "fabric_owned"])
@@ -445,7 +487,7 @@ def test_invalid_platform_or_mode_stops_before_building(launcher, environment, m
         "stage_workload_image() { :; }\nrun_workload_consumer() { :; }\n"
     )
     completed = subprocess.run(
-        ["bash", str(script), str(workload)],
+        ["/bin/bash", str(script), str(workload)],
         env={**base_env, **environment},
         text=True,
         capture_output=True,

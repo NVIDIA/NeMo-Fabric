@@ -8,8 +8,8 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { AgentArtifact, AgentRunRequest, AgentRunResult, AgentUsage, RuntimeContext } from "nemo-fabric-adapter-contract";
-import { LifecycleError, type AdapterRuntime, type AdapterStartInput } from "nemo-fabric-adapters-common";
+import type { AdapterCheckResult, CheckLevel, AgentArtifact, AgentRunRequest, AgentRunResult, AgentUsage, RuntimeContext } from "nemo-fabric-adapter-contract";
+import { unobservedHealth, LifecycleError, type AdapterRuntime, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 export interface OpenCodePromptOutcome {
   text?: string;
@@ -20,12 +20,19 @@ export interface OpenCodePromptOutcome {
 
 export interface OpenCodeSessionHandle {
   id: string;
-  prompt(text: string): Promise<OpenCodePromptOutcome>;
+  check(level: CheckLevel): Promise<AdapterCheckResult>;
+  prompt(text: string, deadlineMillis?: number | null): Promise<OpenCodePromptOutcome>;
   stop(): Promise<void>;
 }
 
 export interface OpenCodeSessionFactory {
   create(input: AdapterStartInput): Promise<OpenCodeSessionHandle>;
+}
+
+export class OpenCodePromptFailure extends LifecycleError {
+  constructor(readonly usage: AgentUsage) {
+    super("opencode_session_failed", "OpenCode session communication failed", { retryable: false });
+  }
 }
 
 function failed(
@@ -49,6 +56,8 @@ function artifactSegment(identifier: string): string {
 
 export class OpenCodeAdapterRuntime implements AdapterRuntime {
   private readonly factory: OpenCodeSessionFactory;
+  private generation = 0;
+  private activeInvocations = 0;
   private session?: OpenCodeSessionHandle;
   private artifactCount = 0;
 
@@ -61,6 +70,8 @@ export class OpenCodeAdapterRuntime implements AdapterRuntime {
       throw new LifecycleError("opencode_already_started", "OpenCode adapter runtime is already started");
     }
     this.session = await this.factory.create(input);
+    this.generation++;
+    this.activeInvocations = 0;
     this.artifactCount = 0;
   }
 
@@ -95,6 +106,20 @@ export class OpenCodeAdapterRuntime implements AdapterRuntime {
     }
   }
 
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    const session = this.session;
+    const generation = this.generation;
+    if (session === undefined) return unobservedHealth("runtime_unavailable");
+    let result: AdapterCheckResult;
+    try {
+      result = await session.check(level);
+    } catch {
+      result = unobservedHealth("probe_error");
+    }
+    if (this.session !== session || this.generation !== generation) return unobservedHealth("observation_changed");
+    return result.outcome === "passed" ? { ...result, activity: this.activeInvocations > 0 ? "busy" : "idle" } : result;
+  }
+
   async invoke(request: AgentRunRequest, context: RuntimeContext): Promise<AgentRunResult> {
     if (this.session === undefined) {
       throw new LifecycleError("opencode_not_started", "OpenCode adapter runtime is not started");
@@ -104,37 +129,46 @@ export class OpenCodeAdapterRuntime implements AdapterRuntime {
     }
 
     const session = this.session;
-    let outcome: OpenCodePromptOutcome;
+    const generation = this.generation;
+    this.activeInvocations++;
     try {
-      outcome = await session.prompt(request.input);
-    } catch (error) {
-      await this.invalidate(session);
-      if (error instanceof LifecycleError) {
-        throw error;
+      let outcome: OpenCodePromptOutcome;
+      try {
+        outcome = await session.prompt(request.input, context.deadline_millis);
+      } catch (error) {
+        await this.invalidate(session);
+        if (error instanceof OpenCodePromptFailure) return failed(error.code, error.message, error.usage);
+        if (error instanceof LifecycleError) {
+          throw error;
+        }
+        throw new LifecycleError("opencode_session_failed", "OpenCode session communication failed", { retryable: true });
       }
-      throw new LifecycleError("opencode_session_failed", "OpenCode session communication failed", { retryable: true });
+      const artifacts = outcome.patch === undefined ? undefined : await this.writePatch(outcome.patch, context);
+      if (outcome.errorMessage !== undefined) {
+        return failed("opencode_model_error", outcome.errorMessage, outcome.usage, artifacts);
+      }
+      if (outcome.text === undefined || outcome.text.length === 0) {
+        return failed(
+          "opencode_no_assistant_response",
+          "OpenCode completed without a final assistant text response",
+          outcome.usage,
+          artifacts,
+        );
+      }
+      return {
+        status: "succeeded",
+        output: { response: outcome.text },
+        ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
+        ...(artifacts === undefined ? {} : { artifacts }),
+      };
+    } finally {
+      if (this.generation === generation) this.activeInvocations--;
     }
-    const artifacts = outcome.patch === undefined ? undefined : await this.writePatch(outcome.patch, context);
-    if (outcome.errorMessage !== undefined) {
-      return failed("opencode_model_error", outcome.errorMessage, outcome.usage, artifacts);
-    }
-    if (outcome.text === undefined || outcome.text.length === 0) {
-      return failed(
-        "opencode_no_assistant_response",
-        "OpenCode completed without a final assistant text response",
-        outcome.usage,
-        artifacts,
-      );
-    }
-    return {
-      status: "succeeded",
-      output: { response: outcome.text },
-      ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
-      ...(artifacts === undefined ? {} : { artifacts }),
-    };
   }
 
   async stop(): Promise<void> {
+    this.generation++;
+    this.activeInvocations = 0;
     const session = this.session;
     this.session = undefined;
     if (session !== undefined) {

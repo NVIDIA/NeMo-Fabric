@@ -20,8 +20,8 @@ import type {
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti/static";
-import type { AgentConfig, AgentModelConfig, AgentToolDefinition, JsonObject } from "nemo-fabric-adapter-contract";
-import { LifecycleError, type AdapterStartInput } from "nemo-fabric-adapters-common";
+import type { AdapterCheckResult, CheckLevel, CheckSource, AgentConfig, AgentModelConfig, AgentToolDefinition, JsonObject } from "nemo-fabric-adapter-contract";
+import { LifecycleError, unobservedHealth, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 import {
   PiRelayFactory,
@@ -366,6 +366,7 @@ function isolatedMcpCredentials(): McpCredentials {
 }
 
 interface McpReadiness {
+  healthy: boolean;
   fail(): void;
   ready(): void;
   result: Promise<boolean>;
@@ -383,7 +384,13 @@ function mcpReadiness(): McpReadiness {
       settle(ready);
     }
   };
-  return { fail: () => finish(false), ready: () => finish(true), result };
+  const status: McpReadiness = {
+    healthy: false,
+    fail: () => { status.healthy = false; finish(false); },
+    ready: () => { status.healthy = true; finish(true); },
+    result,
+  };
+  return status;
 }
 
 function trackedMcpTransport(transport: McpTransport, readiness: McpReadiness): McpTransport {
@@ -408,7 +415,7 @@ function trackedMcpTransport(transport: McpTransport, readiness: McpReadiness): 
         throw error;
       }
     },
-    close: () => transport.close(),
+    close: () => { readiness.fail(); return transport.close(); },
     onMessage: (listener) => transport.onMessage((message) => {
       if ("id" in message && toolListRequests.has(message.id)) {
         toolListRequests.delete(message.id);
@@ -521,8 +528,7 @@ function selectModel(config: AgentConfig): AgentModelConfig {
  *
  * It does, however, require what Pi has no usable default for. For an unknown model that means a
  * complete-enough definition: `api` (enforced at registration — Pi can't resolve the wire
- * protocol otherwise), `base_url`, and `context_window`/`max_tokens` (absent, these resolve to
- * undefined and break compaction/limit math rather than getting a sane default). Supplied values
+ * protocol otherwise), `base_url`, `context_window`/`max_tokens`, `input`, and `cost`. Supplied values
  * are validated (`api` a {@link SUPPORTED_MODEL_APIS} value, token limits positive, cost
  * well-formed) so a malformed override fails fast instead of reaching Pi.
  */
@@ -549,6 +555,9 @@ export function buildCatalogModel(model: AgentModelConfig, base: PiResolvedModel
     }
     return value;
   };
+  if (Array.isArray(meta.input) && meta.input.some((item) => item !== "text" && item !== "image")) {
+    fail("model extensions.input must contain only 'text' or 'image' values");
+  }
   const suppliedInput = Array.isArray(meta.input)
     ? (meta.input.filter((item) => item === "text" || item === "image") as ("text" | "image")[])
     : undefined;
@@ -559,27 +568,24 @@ export function buildCatalogModel(model: AgentModelConfig, base: PiResolvedModel
   const cost = parseCost(meta.cost, fail) ?? base?.cost;
   const contextWindow = positive(meta.context_window, base?.contextWindow, "context_window");
   const maxTokens = positive(model.max_tokens ?? meta.max_tokens, base?.maxTokens, "max_tokens");
-  // For an unknown model (not in Pi's catalog), require the fields Pi has no usable default for:
-  // base_url (Pi can't reach it otherwise) and context_window/max_tokens (absent, they resolve to
-  // undefined and break compaction/limit math rather than getting a sane Pi default). `api` is
-  // enforced separately at registration. The adapter still invents nothing — it requires the
-  // config to supply what Pi genuinely needs, failing fast with a clear error.
+  // An unknown model has no catalog entry to supply its endpoint, limits, input modalities,
+  // or cost rates. Require those fields before Pi uses them; `api` is enforced at registration.
   if (base === undefined) {
     const missing = [
       baseUrl === undefined ? "base_url" : undefined,
       contextWindow === undefined ? "context_window" : undefined,
       maxTokens === undefined ? "max_tokens" : undefined,
+      input === undefined ? "input" : undefined,
+      cost === undefined ? "cost" : undefined,
     ].filter((field): field is string => field !== undefined);
     if (missing.length > 0) {
       fail(
         `model '${model.model}' is not known to Pi, so a complete definition is required; ` +
-          `missing: ${missing.join(", ")} (set base_url and extensions.context_window/max_tokens)`,
+        `missing: ${missing.join(", ")} (set base_url and the required model extensions)`,
       );
     }
   }
-  // Build a sparse entry: include only resolved fields. Omitted optional ones (cost, reasoning,
-  // input) are left unset so Pi applies its own defaults — the adapter adds none. The SDK input
-  // type marks some fields non-optional but tolerates their absence at runtime.
+  // Include only resolved fields; the adapter adds no defaults for optional metadata.
   const entry: Record<string, unknown> = { id: model.model };
   if (typeof meta.name === "string" || base?.name !== undefined) {
     entry.name = typeof meta.name === "string" ? meta.name : base?.name;
@@ -869,12 +875,24 @@ class PiSdkSessionHandle implements PiSessionHandle {
   private stopped = false;
   private cumulativeTurnCount = 0;
   private readonly runtimeDir: string;
+  private initialized = false;
+  private requiredTools: readonly string[] = [];
+  private readonly nativeSessionId: string;
+  private readonly modelRuntime: PiModelRuntime;
+  private readonly expectedModel: { id: string; provider: string };
+  private readonly connections: Map<string, McpReadiness>;
 
-  constructor(session: AgentSession, state: { shutdownRequested: boolean }, runtimeDir: string, relay?: PiRelayRuntime) {
+  constructor(session: AgentSession, state: { shutdownRequested: boolean }, runtimeDir: string,
+    modelRuntime: PiModelRuntime, expectedModel: { id: string; provider: string },
+    connections: Map<string, McpReadiness>, relay?: PiRelayRuntime) {
     this.session = session;
     this.state = state;
     this.runtimeDir = runtimeDir;
     this.relay = relay;
+    this.modelRuntime = modelRuntime;
+    this.expectedModel = expectedModel;
+    this.connections = connections;
+    this.nativeSessionId = session.sessionId;
     this.unsubscribeTurnCounter = this.session.subscribe((event) => {
       if (event.type === "turn_start") {
         this.cumulativeTurnCount += 1;
@@ -884,6 +902,43 @@ class PiSdkSessionHandle implements PiSessionHandle {
 
   get turnCount(): number {
     return this.cumulativeTurnCount;
+  }
+
+  initialize(requiredTools: readonly string[]): void {
+    this.requiredTools = [...requiredTools];
+    this.initialized = true;
+  }
+
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    if (this.stopped) return { ...unobservedHealth("session_closed"), outcome: "failed", activity: "stopped" };
+    if (!this.initialized) return unobservedHealth("capabilities_unverified");
+    if (this.session.sessionId !== this.nativeSessionId) return unobservedHealth("observation_changed");
+    try {
+      // The native context checks that its runner has not been disposed.
+      // Both idle and busy responses are current liveness evidence.
+      const idle = this.session.extensionRunner.createContext().isIdle();
+      if (typeof idle !== "boolean") return unobservedHealth("probe_error");
+      const activity = idle ? "idle" : "busy";
+      const source: CheckSource = level === "live" ? "fabric.adapter.liveness"
+        : level === "active" ? "fabric.adapter.interface" : "fabric.adapter.readiness";
+      const observed_at = new Date().toISOString();
+      if (level !== "live" && this.state.shutdownRequested) return {
+        outcome: "failed", reason_code: "endpoint_unavailable", activity: "stopping", source, observed_at,
+      };
+      if (level === "ready") {
+        const model = this.session.model;
+        const available = new Set([
+          ...this.session.getActiveToolNames(), ...this.session.getCallableToolNames(),
+        ]);
+        if (model?.id !== this.expectedModel.id || model.provider !== this.expectedModel.provider
+          || this.modelRuntime.getModel(model.provider, model.id) === undefined
+          || this.requiredTools.some((name) => !available.has(name))
+          || [...this.connections.values()].some((connection) => !connection.healthy)) {
+          return { outcome: "failed", reason_code: "health_failed", activity, source, observed_at };
+        }
+      }
+      return { outcome: "passed", reason_code: null, activity, source, observed_at };
+    } catch { return unobservedHealth("probe_error"); }
   }
 
   async prompt(text: string): Promise<PiPromptOutcome> {
@@ -1020,7 +1075,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
 
     // Register the selected model into Pi's catalog as an overlay on its existing entry (if any):
     // supplied config fields override, omitted ones keep Pi's native value, and for an unknown
-    // (gateway) model the overlay base is empty so defaults + a required `api` apply. This way
+    // (gateway) model the overlay base is empty so its required metadata must be explicit. This way
     // selecting a known provider/model and changing nothing preserves all its native properties,
     // while an explicit base_url / extensions field is still honored. A Fabric agent runs ONE
     // model role per session (selectModel enforces default-or-sole), mirroring the other
@@ -1028,7 +1083,10 @@ export class PiSdkSessionFactory implements PiSessionFactory {
     const existing = modelRuntime.getModel(selected.provider, selected.model);
     const catalogEntry = buildCatalogModel(selected, existing);
     try {
-      modelRuntime.registerProvider(selected.provider, { models: [catalogEntry] });
+      // Keep the endpoint at provider scope so Relay can redirect it without a
+      // per-model baseUrl taking precedence over the extension's provider override.
+      const { baseUrl, ...modelDefinition } = catalogEntry;
+      modelRuntime.registerProvider(selected.provider, { baseUrl, models: [modelDefinition] });
     } catch (error) {
       const cause = error instanceof Error ? error.message : String(error);
       // Pi throws here with a 'no "api" specified' message when it can't resolve the model's
@@ -1120,7 +1178,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
       if (relayErrors.length > 0) {
         throw new LifecycleError(
           "pi_relay_extension_load_failed",
-          "The configured NeMo Relay Pi extension failed to load; use the Pi extension from a NeMo Relay 0.9 or 0.10 release",
+          "The configured NeMo Relay Pi extension failed to load; use the Pi extension matching the installed NeMo Relay CLI release",
           {
             metadata: {
               count: relayErrors.length,
@@ -1170,7 +1228,8 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         tools: enabled === null ? undefined : enabled,
         excludeTools: blocked,
       });
-      handle = new PiSdkSessionHandle(session, state, runtimeDir, relay);
+      handle = new PiSdkSessionHandle(session, state, runtimeDir, modelRuntime,
+        { id: model.id, provider: model.provider }, mcpConnections, relay);
       const blockedNames = new Set(blocked);
       const availableNames = new Set(session.getAllTools().map((tool) => tool.name));
       const missing = (enabled ?? []).filter((name) => !blockedNames.has(name) && !availableNames.has(name));
@@ -1203,6 +1262,7 @@ export class PiSdkSessionFactory implements PiSessionFactory {
         },
       });
       await requireMcpConnections(mcpConnections);
+      handle.initialize((enabled ?? session.getActiveToolNames()).filter((name) => !blockedNames.has(name)));
       // bindExtensions emits session_start; emitting it here would create a
       // duplicate Relay session scope.
       return handle;

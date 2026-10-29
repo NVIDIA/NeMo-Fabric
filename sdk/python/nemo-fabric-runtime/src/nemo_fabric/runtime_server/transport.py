@@ -11,8 +11,13 @@ import signal
 import stat
 import threading
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import UUID
+
+from nemo_fabric.check import CheckRequest
 
 from nemo_fabric.runtime_server.protocol import (
     CALL_SECONDS,
@@ -30,11 +35,43 @@ from nemo_fabric.runtime_server.protocol import (
     validate_response,
 )
 from nemo_fabric.runtime_server.state import RuntimeServer
+from nemo_fabric.runtime_server.health import (
+    CHECK_SECONDS,
+    check_response,
+    runtime_report,
+    server_report,
+)
 
 if sys.platform != "win32":
     import fcntl
 else:
     fcntl = None
+
+
+def _sandbox_lifecycle_id() -> str | None:
+    # Expect Linux /proc mounted for the sandbox's private process namespace:
+    #   /proc/sys/kernel/random/boot_id: b234f7d1-02cb-4b91-8717-90e4a8957dbb
+    #   /proc/1/stat: 1 (sandbox supervisor) S ... 123 ...
+    # In the stat example, the first "..." represents fields 4-21. Field 22 is
+    # process 1's start time in clock ticks since boot; it becomes index 19 after
+    # removing fields 1-2. The resulting marker is "<boot UUID>:<start ticks>":
+    #   b234f7d1-02cb-4b91-8717-90e4a8957dbb:123
+    # Unavailable or malformed inputs return None, so existing markers block startup.
+    try:
+        boot_id = UUID(Path("/proc/sys/kernel/random/boot_id").read_text().strip())
+        # The parenthesized process name can itself contain spaces and parentheses.
+        process, closing, tail = Path("/proc/1/stat").read_text().rpartition(")")
+        if not closing or not process.startswith("1 (") or not tail.startswith(" "):
+            return None
+        fields = tail.split()
+        if len(fields) < 20 or len(fields[0]) != 1 or not fields[0].isalpha():
+            return None
+        start_time = fields[19]  # /proc/PID/stat field 22, after name and PID.
+        if tail.isascii() and start_time.isdecimal():
+            return f"{boot_id}:{int(start_time)}"
+    except (OSError, ValueError):
+        pass
+    return None
 
 
 async def read_message(reader: asyncio.StreamReader, limit: int) -> dict[str, Any]:
@@ -53,6 +90,7 @@ async def client(
     socket_path: Path = Path(SOCKET_PATH),
     timeout: float = CALL_SECONDS,
 ) -> dict[str, Any]:
+    started = time.monotonic()
     operation = request["operation"]
     if fcntl is None:
         return envelope(
@@ -63,18 +101,73 @@ async def client(
     writer = None
     try:
         encoded = encode_request(request)
+        if operation == "check":
+            timeout = min(timeout, request.get("timeout_seconds", CHECK_SECONDS))
+        deadline = started + timeout
         # One deadline covers connection, write, and the complete response.
-        async with asyncio.timeout(timeout):
+        async with asyncio.timeout_at(
+            asyncio.get_running_loop().time() + max(0, deadline - time.monotonic())
+        ):
             reader, writer = await asyncio.open_unix_connection(
                 socket_path, limit=RESPONSE_LIMIT
             )
+            if operation == "check":
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError()
+                encoded = encode_request({**request, "timeout_seconds": remaining})
             writer.write(encoded)
             sent = True
             await writer.drain()
             response = await read_message(reader, RESPONSE_LIMIT)
             validate_response(response, operation)
+            if operation == "check":
+                finished = time.monotonic()
+                if finished >= deadline:
+                    raise TimeoutError()
+                report = response["result"]
+                if report is not None:
+                    runtime_id = request.get("runtime_id")
+                    expected = (
+                        "runtime" if runtime_id is not None else "server",
+                        runtime_id,
+                        request.get("level", "live")
+                        if runtime_id is not None
+                        else None,
+                    )
+                    if (
+                        report["scope"],
+                        report["runtime_id"],
+                        report["requested_level"],
+                    ) != expected:
+                        raise ProtocolError("invalid_response", "transport")
+                    report["elapsed_ms"] = max(0.0, (finished - started) * 1000)
+                    report["completed_at"] = (
+                        datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                    )
             return response
     except (OSError, ValueError, TypeError, KeyError, TimeoutError) as error:
+        if operation == "check" and isinstance(error, TimeoutError):
+            if "runtime_id" in request:
+                return check_response(
+                    runtime_report(
+                        CheckRequest(
+                            scope="runtime",
+                            runtime_id=request["runtime_id"],
+                            level=request.get("level", "live"),
+                            timeout_seconds=request.get(
+                                "timeout_seconds", CHECK_SECONDS
+                            ),
+                        ),
+                        "probe_timeout",
+                        started,
+                    )
+                )
+            return envelope(
+                operation,
+                server_report("unknown", started),
+                error=ProtocolError("probe_timeout", "check"),
+            )
         if not isinstance(error, ProtocolError):
             error = ProtocolError(
                 "invalid_response" if sent else "host_unavailable", "transport"
@@ -90,10 +183,11 @@ async def client(
     finally:
         if writer is not None:
             writer.close()
-            try:
-                await asyncio.wait_for(writer.wait_closed(), 1)
-            except (OSError, TimeoutError):
-                pass
+            if operation != "check":
+                try:
+                    await asyncio.wait_for(writer.wait_closed(), 1)
+                except (OSError, TimeoutError):
+                    pass
 
 
 async def serve(
@@ -165,8 +259,28 @@ async def serve(
         os.fchmod(lock, 0o600)
         if not stat.S_ISREG(os.fstat(lock).st_mode):
             raise OSError("host lock is not a regular file")
+        lifecycle_id = _sandbox_lifecycle_id()
         if marker.exists() or marker.is_symlink():
-            raise ProtocolError("cleanup_unconfirmed", "transport")
+            try:
+                marker_fd = os.open(marker, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(marker_fd, encoding="ascii") as previous:
+                    if not stat.S_ISREG(os.fstat(previous.fileno()).st_mode):
+                        raise ValueError("ownership marker is not a regular file")
+                    previous_id = previous.read(65)
+                boot_id, start_time = previous_id.split(":")
+                if (
+                    lifecycle_id is None
+                    or len(previous_id) > 64
+                    or not start_time.isdecimal()
+                    or previous_id != f"{UUID(boot_id)}:{int(start_time)}"
+                    or previous_id == lifecycle_id
+                ):
+                    raise ValueError("previous sandbox cleanup is unconfirmed")
+            except (OSError, ValueError) as error:
+                raise ProtocolError("cleanup_unconfirmed", "transport") from error
+            # The marker directory belongs exclusively to this sandbox. A new
+            # boot or namespace init process means its previous processes exited.
+            marker.unlink()
         for relative in ("tmp", "workspace", "artifacts"):
             (host.directory / relative).mkdir(mode=0o700, parents=True, exist_ok=True)
         if socket_path.exists() or socket_path.is_symlink():
@@ -185,8 +299,10 @@ async def serve(
         marker_fd = os.open(
             marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
         )
-        owned_marker = os.fstat(marker_fd)
-        os.close(marker_fd)
+        with os.fdopen(marker_fd, "w", encoding="ascii") as ownership:
+            ownership.write(lifecycle_id or "")
+            ownership.flush()
+            owned_marker = os.fstat(ownership.fileno())
         if stop_event is None:
             for sig in (signal.SIGINT, signal.SIGTERM):
                 loop.add_signal_handler(sig, request_stop)

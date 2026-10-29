@@ -6,9 +6,15 @@ requires-python = ">=3.11"
 name = "nemo-fabric-adapter-contract"
 version = "0.6.0"
 source = { editable = "../../../adapter-contract/python" }
+dependencies = [
+    { name = "nemo-fabric-evidence" },
+]
 
 [package.metadata]
-requires-dist = [{ name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.12,<3" }]
+requires-dist = [
+    { name = "nemo-fabric-evidence", editable = "../../../sdk/python/nemo-fabric-evidence" },
+    { name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.12,<3" },
+]
 provides-extras = ["pydantic"]
 
 [[package]]
@@ -36,3 +42,8 @@ requires-dist = [
     { name = "nemo-fabric-adapter-contract", editable = "../../../adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "../common" },
 ]
+
+[[package]]
+name = "nemo-fabric-evidence"
+version = "0.6.0"
+source = { editable = "../../../sdk/python/nemo-fabric-evidence" }

@@ -6,18 +6,22 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
 import type {
+  AdapterCheckResult,
+  CheckLevel,
   AgentConfig,
   AgentMcpServerConfig,
   AgentModelConfig,
   AgentUsage,
   JsonObject,
 } from "nemo-fabric-adapter-contract";
-import { LifecycleError, type AdapterStartInput } from "nemo-fabric-adapters-common";
+import { LifecycleError, unobservedHealth, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 import type { ClinePromptOutcome, ClineSessionFactory, ClineSessionHandle } from "./runtime.js";
+import { RawUsageCollector } from "./raw-usage.js";
 
 const CLINE_HARNESS_INSTALL_COMMAND = "npm install @cline/sdk@0.0.83";
 const CLINE_PLUGIN_NAME = "nvidia.fabric.cline";
+const CLINE_USAGE_EVIDENCE = "nvidia.fabric.cline.usage_evidence.v1";
 const AGENT_PLUGIN_MANIFEST_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
 const AGENT_PLUGIN_MCP_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
 
@@ -45,6 +49,7 @@ interface ClineStartResult {
 interface ClineCoreInstance {
   start(input: Record<string, unknown>): Promise<ClineStartResult>;
   send(input: { sessionId: string; prompt: string }): Promise<ClineResult | undefined>;
+  get?(sessionId: string): Promise<{ sessionId: string; status: string } | undefined>;
   stop(sessionId: string): Promise<void>;
   dispose(reason?: string): Promise<void>;
 }
@@ -368,9 +373,9 @@ async function validateRuntimePlugin(
   }
 }
 
-function normalizeUsage(usage: ClineUsage | undefined): AgentUsage | undefined {
+function normalizeUsage(usage: ClineUsage | undefined): AgentUsage {
   if (usage === undefined) {
-    return undefined;
+    return { extensions: { [CLINE_USAGE_EVIDENCE]: { observed: {}, gaps: ["scope_unverified", "missing_usage"] } } };
   }
   if (typeof usage !== "object" || usage === null) {
     throw new LifecycleError("cline_malformed_result", "Cline returned malformed usage metadata");
@@ -383,21 +388,20 @@ function normalizeUsage(usage: ClineUsage | undefined): AgentUsage | undefined {
   if (usage.totalCost !== undefined && (!Number.isFinite(usage.totalCost) || usage.totalCost < 0)) {
     throw new LifecycleError("cline_malformed_result", "Cline returned malformed usage metadata");
   }
-  const input = usage.inputTokens;
-  const output = usage.outputTokens;
-  if (input !== undefined && output !== undefined && !Number.isSafeInteger(input + output)) {
-    throw new LifecycleError("cline_malformed_result", "Cline returned malformed usage metadata");
-  }
-  const extensions: JsonObject = {
-    ...(usage.cacheReadTokens === undefined ? {} : { cache_read_tokens: usage.cacheReadTokens }),
-    ...(usage.cacheWriteTokens === undefined ? {} : { cache_write_tokens: usage.cacheWriteTokens }),
+  const observed: JsonObject = {
+    ...((usage.inputTokens ?? 0) > 0 ? { input_tokens: usage.inputTokens } : {}),
+    ...((usage.outputTokens ?? 0) > 0 ? { output_tokens: usage.outputTokens } : {}),
+    ...(usage.cacheReadTokens !== undefined && usage.cacheReadTokens > 0 ? { cached_input_tokens: usage.cacheReadTokens } : {}),
+    ...(usage.cacheWriteTokens !== undefined && usage.cacheWriteTokens > 0 ? { cache_write_input_tokens: usage.cacheWriteTokens } : {}),
   };
+  const gaps = ["scope_unverified"];
+  if (usage.inputTokens === undefined || usage.outputTokens === undefined) gaps.push("missing_usage");
+  if (usage.inputTokens === 0 || usage.outputTokens === 0 || usage.cacheReadTokens === 0 || usage.cacheWriteTokens === 0) {
+    gaps.push("zero_unverified");
+  }
+  if ((usage.cacheReadTokens ?? 0) > 0 || (usage.cacheWriteTokens ?? 0) > 0) gaps.push("cache_relationship_unverified");
   return {
-    ...(input === undefined ? {} : { input_tokens: input }),
-    ...(output === undefined ? {} : { output_tokens: output }),
-    ...(input === undefined || output === undefined ? {} : { total_tokens: input + output }),
-    ...(usage.totalCost === undefined ? {} : { cost_usd: usage.totalCost }),
-    ...(Object.keys(extensions).length === 0 ? {} : { extensions }),
+    extensions: { [CLINE_USAGE_EVIDENCE]: { observed, gaps } },
   };
 }
 
@@ -445,7 +449,7 @@ function normalizeResult(result: ClineResult | undefined, sessionId: string): Cl
     status,
     text: result.text,
     ...(status === "failed" && result.text.length > 0 ? { errorMessage: result.text } : {}),
-    ...(usage === undefined ? {} : { usage }),
+    usage,
     extensions: {
       session_id: sessionId,
       finish_reason: finishReason,
@@ -455,40 +459,165 @@ function normalizeResult(result: ClineResult | undefined, sessionId: string): Cl
   };
 }
 
+// Qualified against the local host in @cline/core 0.0.83. ClineCore.get can
+// return persisted history after shutdown; the resident object and native agent
+// closure gate must remain bound before and after every observation.
+interface ResidentSession {
+  sessionId: string;
+  agent: {
+    shutdownCalled: boolean;
+    running: boolean;
+    getAgentId(): string;
+    canStartRun(): boolean;
+  };
+}
+
+function residentSessions(core: ClineCoreInstance): Map<string, ResidentSession> | undefined {
+  const host = (core as unknown as { host?: { sessions?: unknown } }).host;
+  return host?.sessions instanceof Map ? host.sessions as Map<string, ResidentSession> : undefined;
+}
+
 class ClineSdkSessionHandle implements ClineSessionHandle {
   private readonly core: ClineCoreInstance;
   private readonly startInput: Record<string, unknown>;
   private sessionId?: string;
   private stopped = false;
+  private resident?: ResidentSession;
+  private agentId?: string;
+  private agent?: ResidentSession["agent"];
+  private sessions?: Map<string, ResidentSession>;
+  private probing = false;
   private readonly cleanup: () => Promise<void>;
+  private readonly rawUsage?: RawUsageCollector;
 
-  constructor(core: ClineCoreInstance, startInput: Record<string, unknown>, cleanup: () => Promise<void>) {
+  constructor(core: ClineCoreInstance, startInput: Record<string, unknown>, cleanup: () => Promise<void>, rawUsage?: RawUsageCollector) {
     this.core = core;
     this.startInput = startInput;
     this.cleanup = cleanup;
+    this.rawUsage = rawUsage;
+  }
+
+  async initialize(): Promise<void> {
+    const started = await this.core.start(this.startInput);
+    if (typeof started.sessionId !== "string" || started.sessionId.length === 0) {
+      throw new LifecycleError("cline_malformed_result", "Cline did not return a session identifier");
+    }
+    this.sessionId = started.sessionId;
+    const resident = residentSessions(this.core)?.get(started.sessionId);
+    if (resident?.sessionId === started.sessionId &&
+        typeof resident.agent?.shutdownCalled === "boolean" &&
+        typeof resident.agent.running === "boolean" &&
+        typeof resident.agent.getAgentId === "function" &&
+        typeof resident.agent.canStartRun === "function") {
+      this.resident = resident;
+      this.agent = resident.agent;
+      this.sessions = residentSessions(this.core);
+      this.agentId = resident.agent.getAgentId();
+    }
   }
 
   async prompt(text: string): Promise<ClinePromptOutcome> {
-    if (this.stopped) {
+    if (this.stopped || this.sessionId === undefined) {
       throw new LifecycleError("cline_session_stopped", "The Cline session is already stopped");
     }
     try {
-      if (this.sessionId === undefined) {
-        const started = await this.core.start({ ...this.startInput, prompt: text });
-        if (typeof started.sessionId !== "string" || started.sessionId.length === 0) {
-          throw new LifecycleError("cline_malformed_result", "Cline did not return a session identifier");
-        }
-        this.sessionId = started.sessionId;
-        return normalizeResult(started.result, this.sessionId);
-      }
-      return normalizeResult(await this.core.send({ sessionId: this.sessionId, prompt: text }), this.sessionId);
-    } catch (error) {
-      if (error instanceof LifecycleError) {
+      const capture = this.rawUsage?.begin();
+      let result: ClineResult | undefined;
+      try {
+        result = await this.core.send({ sessionId: this.sessionId, prompt: text });
+      } catch (error) {
+        if (capture !== undefined) this.rawUsage?.end(capture);
         throw error;
       }
-      throw new LifecycleError("cline_session_failed", sdkErrorMessage(error), {
-        retryable: true,
-      });
+      const completeUsage = capture === undefined ? undefined : this.rawUsage?.end(capture);
+      const outcome = normalizeResult(result, this.sessionId);
+      const sdkUsage = result?.usage;
+      const sdkAgrees = completeUsage !== undefined &&
+        (sdkUsage?.inputTokens === undefined || sdkUsage.inputTokens === 0 || sdkUsage.inputTokens === completeUsage.input_tokens) &&
+        (sdkUsage?.outputTokens === undefined || sdkUsage.outputTokens === 0 || sdkUsage.outputTokens === completeUsage.output_tokens) &&
+        (sdkUsage?.cacheReadTokens === undefined || sdkUsage.cacheReadTokens === 0 ||
+          completeUsage.cached_input_tokens === undefined || sdkUsage.cacheReadTokens === completeUsage.cached_input_tokens);
+      if (outcome.status === "completed" && completeUsage !== undefined && sdkAgrees) {
+        const gaps = [
+          ...(completeUsage.cached_input_tokens === undefined ? ["cache_breakdown_unreported"] : []),
+          ...((sdkUsage?.cacheWriteTokens ?? 0) > 0 ? ["cache_write_unreported"] : []),
+        ];
+        outcome.usage = {
+          ...outcome.usage,
+          ...completeUsage,
+          extensions: {
+            ...outcome.usage?.extensions,
+            [CLINE_USAGE_EVIDENCE]: {
+              ...(outcome.usage?.extensions?.[CLINE_USAGE_EVIDENCE] as JsonObject | undefined),
+              gaps,
+              complete_source: "nvidia_openai_compatible_http",
+            },
+          },
+        };
+      }
+      return outcome;
+    } catch (error) {
+      if (error instanceof LifecycleError) throw error;
+      throw new LifecycleError("cline_session_failed", sdkErrorMessage(error), { retryable: true });
+    }
+  }
+
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    const resident = this.resident;
+    const sessionId = this.sessionId;
+    const source = level === "ready" ? "fabric.adapter.readiness" : level === "active" ? "fabric.adapter.interface" : "fabric.adapter.liveness";
+    const observation = (outcome: AdapterCheckResult["outcome"], reason: AdapterCheckResult["reason_code"]): AdapterCheckResult => ({
+      outcome, reason_code: reason,
+      activity: this.stopped || resident?.agent.shutdownCalled ? "stopped" : resident?.agent.running ? "busy" : "idle",
+      source, observed_at: new Date().toISOString(),
+    } as AdapterCheckResult);
+    if (this.stopped) return observation("failed", "session_closed");
+    if (resident === undefined || sessionId === undefined || this.agentId === undefined) {
+      return { ...unobservedHealth("capabilities_unverified"), outcome: "unsupported" };
+    }
+    const unchanged = () => !this.stopped && residentSessions(this.core) === this.sessions &&
+      this.sessions?.get(sessionId) === resident && resident.agent === this.agent &&
+      resident.agent.getAgentId() === this.agentId && !resident.agent.shutdownCalled;
+    try {
+      const sessions = residentSessions(this.core);
+      const current = sessions?.get(sessionId);
+      if (
+        sessions !== this.sessions ||
+        (current !== undefined && current !== resident) ||
+        resident.agent !== this.agent ||
+        resident.agent.getAgentId() !== this.agentId
+      ) {
+        return unobservedHealth("observation_changed");
+      }
+      if (current === undefined || resident.agent.shutdownCalled) return observation("failed", "session_closed");
+      if (!unchanged()) return unobservedHealth("observation_changed");
+      const available = resident.agent.canStartRun();
+      if (typeof available !== "boolean" || typeof resident.agent.running !== "boolean") return unobservedHealth("probe_error");
+      // Native canStartRun is false during an active run as well as shutdown.
+      if (level !== "live" && !available && !resident.agent.running) return observation("failed", "endpoint_unavailable");
+      if (level === "ready") {
+        if (this.core.get === undefined) return { ...unobservedHealth("capabilities_unverified"), outcome: "unsupported" };
+        // Keep at most one uncancellable native read pending. A later request
+        // never consumes the previous request's reply.
+        if (this.probing) return unobservedHealth("probe_timeout");
+        this.probing = true;
+        let snapshot;
+        try {
+          snapshot = await this.core.get(sessionId);
+        } finally {
+          this.probing = false;
+        }
+        if (!unchanged()) return unobservedHealth("observation_changed");
+        if (snapshot?.sessionId !== sessionId || !["idle", "running", "pending"].includes(snapshot.status)) {
+          return observation("failed", "health_failed");
+        }
+      }
+      return unchanged() ? observation("passed", null) : unobservedHealth("observation_changed");
+    } catch {
+      try {
+        if (!unchanged()) return unobservedHealth("observation_changed");
+      } catch { return unobservedHealth("observation_changed"); }
+      return unobservedHealth("probe_error");
     }
   }
 
@@ -554,6 +683,9 @@ export class ClineSdkSessionFactory implements ClineSessionFactory {
     }
     const workspace = await resolveWorkspace(input);
     const files = await prepareRuntimeFiles(input);
+    const rawUsage = selected.provider === "nvidia" && typeof selected.base_url === "string" && selected.base_url.length > 0
+      ? new RawUsageCollector(selected.base_url)
+      : undefined;
     let core: ClineCoreInstance | undefined;
     try {
       const sdk = await this.loader();
@@ -565,6 +697,7 @@ export class ClineSdkSessionFactory implements ClineSessionFactory {
         clientName: "nemo-fabric",
         backendMode: "local",
         toolPolicies: policies,
+        ...(rawUsage === undefined ? {} : { fetch: rawUsage.fetch }),
       }));
       const systemPrompt =
         systemInstruction === undefined || systemInstruction === null
@@ -573,7 +706,7 @@ export class ClineSdkSessionFactory implements ClineSessionFactory {
               providerId: selected.provider,
             })
           : systemInstruction.content;
-      return new ClineSdkSessionHandle(core, {
+      const handle = new ClineSdkSessionHandle(core, {
         config: {
           providerId: selected.provider,
           modelId: selected.model,
@@ -599,7 +732,9 @@ export class ClineSdkSessionFactory implements ClineSessionFactory {
         localRuntime: { configExtensions: [] },
       }, async () => {
         await rm(files.root, { recursive: true, force: true });
-      });
+      }, rawUsage);
+      await handle.initialize();
+      return handle;
     } catch (error) {
       await core?.dispose("NeMo Fabric startup failed").catch(() => undefined);
       await rm(files.root, { recursive: true, force: true });

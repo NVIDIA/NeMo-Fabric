@@ -100,10 +100,43 @@ jobs:
         run: |
           uv sync --no-default-groups --group adapter-tests --group collector --group test --extra claude --extra codex --extra deepagents --extra mini-swe-agent --extra openclaw --extra openhands --extra remote-agent ${{ (matrix.python-version == '3.12' || matrix.python-version == '3.13') && '--extra nooa' || '' }} ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} --extra relay
 
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: adapters/typescript/package-lock.json
+
+      - name: Build Pi and Kiro adapters for Python health checks
+        run: |
+          just install-typescript-contract
+          npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-pi \
+            --workspace nemo-fabric-adapters-kiro --include-workspace-root --ignore-scripts
+          npm run build --prefix adapter-contract/typescript
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-pi
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro
+
       - name: Run pytest
         run: |
           set -euo pipefail
           just --set no_uv true test-python
+
+      - name: Test Kiro health with the pinned native CLI
+        if: matrix.platform == 'linux-amd64' && matrix.python-version == '3.12'
+        env:
+          RUN_FABRIC_KIRO_NATIVE_HEALTH: '1'
+        run: |
+          set -euo pipefail
+          kiro_root="$RUNNER_TEMP/fabric-kiro-native"
+          mkdir -p "$kiro_root"
+          curl --fail --location --retry 3 \
+            https://prod.download.cli.kiro.dev/stable/2.34.2/kirocli-x86_64-linux.tar.xz \
+            --output "$kiro_root/kiro.tar.xz"
+          echo "960175e0fb905379014b0fecd9a5021549917e514cdb10ce53e6024c6cc39e4f  $kiro_root/kiro.tar.xz" | sha256sum --check
+          tar --extract --file "$kiro_root/kiro.tar.xz" --directory "$kiro_root"
+          export PATH="$kiro_root/kirocli/bin:$PATH"
+          uv run --no-sync pytest tests/e2e/test_kiro_native_health.py -q
 
       - name: Test OpenHands condensation with the SDK
         if: matrix.platform == 'linux-amd64' && matrix.python-version == '3.12'
@@ -111,17 +144,20 @@ jobs:
           uv pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0"
           uv run --no-sync pytest tests/adapters/test_openhands.py -k test_invoke_condenses_history_and_counts_summary_usage -q
 
-  relay-0-9:
-    name: Relay 0.9 (Python 3.12, linux-amd64)
-    # The locks resolve Relay 0.10; this lane keeps the lowest supported minor
-    # working until the supported range drops 0.9.
+  relay-cli:
+    name: Relay CLI ${{ matrix.relay-cli-version }} (Python 3.12, linux-amd64)
+    # Cover supported CLI releases while keeping the Python SDK on its locked version.
+    strategy:
+      fail-fast: false
+      matrix:
+        relay-cli-version: ["0.9.0", "0.10.0", "0.10.1", "0.11.0"]
     if: ${{ (inputs.ref_type || github.ref_type) != 'tag' && !inputs.skip_tests }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
     env:
-      RELAY_VERSION: 0.9.4
+      RELAY_CLI_VERSION: ${{ matrix.relay-cli-version }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -155,8 +191,25 @@ jobs:
         run: |
           uv sync --no-default-groups --group adapter-tests --group collector --group test --extra claude --extra codex --extra deepagents --extra mini-swe-agent --extra openclaw --extra openhands --extra remote-agent --extra nooa --extra harbor --extra relay
 
-      - name: Install Relay ${{ env.RELAY_VERSION }}
-        run: uv pip install --python .venv/bin/python "nemo-relay==${RELAY_VERSION}" "nemo-relay-cli-bin==${RELAY_VERSION}"
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: adapters/typescript/package-lock.json
+
+      - name: Build Pi and Kiro adapters for Python health checks
+        run: |
+          just install-typescript-contract
+          npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-pi \
+            --workspace nemo-fabric-adapters-kiro --include-workspace-root --ignore-scripts
+          npm run build --prefix adapter-contract/typescript
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-pi
+          npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro
+
+      - name: Install Relay CLI ${{ env.RELAY_CLI_VERSION }}
+        run: uv pip install --python .venv/bin/python "nemo-relay-cli-bin==${RELAY_CLI_VERSION}"
 
       - name: Run pytest
         run: |
@@ -308,7 +361,8 @@ jobs:
       - name: Run deterministic Cline E2E
         run: |
           uv sync --frozen --no-default-groups --group test --no-sources-package hermes-agent
-          uv run --no-sync pytest tests/e2e/test_cline.py -k plans_diagnoses_runs_and_isolates_sessions -q
+          node --test adapters/typescript/cline/test/native-health.mjs
+          uv run --no-sync pytest tests/e2e/test_cline.py -k 'plans_diagnoses_runs_and_isolates_sessions or health_does_not_wait_for_the_first_model_request' -q
 
   qwen-e2e:
     name: Qwen Code E2E
@@ -358,12 +412,12 @@ jobs:
       - name: Run deterministic Qwen E2E
         run: |
           uv sync --frozen --no-default-groups --group test --no-sources-package hermes-agent
-          uv run --no-sync pytest tests/e2e/test_qwen.py -q
+          uv run --no-sync pytest tests/e2e/test_qwen.py tests/e2e/test_qwen_checks.py -q
 
   build-wheels:
     name: Build wheels (${{ matrix.platform }})
-    needs: [test, relay-0-9, hermes]
-    if: ${{ always() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.relay-0-9.result == 'success' || needs.relay-0-9.result == 'skipped') && (needs.hermes.result == 'success' || needs.hermes.result == 'skipped') }}
+    needs: [test, relay-cli, hermes]
+    if: ${{ always() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.relay-cli.result == 'success' || needs.relay-cli.result == 'skipped') && (needs.hermes.result == 'success' || needs.hermes.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:

@@ -1,8 +1,21 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { AgentRunRequest, AgentRunResult, AgentUsage, JsonObject, RuntimeContext } from "nemo-fabric-adapter-contract";
-import { LifecycleError, type AdapterRuntime, type AdapterStartInput } from "nemo-fabric-adapters-common";
+import type {
+  AdapterCheckResult,
+  CheckLevel,
+  AgentRunRequest,
+  AgentRunResult,
+  AgentUsage,
+  JsonObject,
+  RuntimeContext,
+} from "nemo-fabric-adapter-contract";
+import {
+  LifecycleError,
+  unobservedHealth,
+  type AdapterRuntime,
+  type AdapterStartInput,
+} from "nemo-fabric-adapters-common";
 
 export interface ClinePromptOutcome {
   status: "completed" | "aborted" | "failed";
@@ -15,6 +28,7 @@ export interface ClinePromptOutcome {
 export interface ClineSessionHandle {
   prompt(text: string): Promise<ClinePromptOutcome>;
   stop(): Promise<void>;
+  check?(level: CheckLevel): Promise<AdapterCheckResult>;
 }
 
 export interface ClineSessionFactory {
@@ -34,6 +48,7 @@ function failed(code: string, message: string, usage?: AgentUsage, extensions?: 
 export class ClineAdapterRuntime implements AdapterRuntime {
   private readonly factory: ClineSessionFactory;
   private session?: ClineSessionHandle;
+  private generation = 0;
 
   constructor(factory: ClineSessionFactory) {
     this.factory = factory;
@@ -44,6 +59,7 @@ export class ClineAdapterRuntime implements AdapterRuntime {
       throw new LifecycleError("cline_already_started", "Cline adapter runtime is already started");
     }
     this.session = await this.factory.create(input);
+    this.generation += 1;
   }
 
   private async invalidate(session: ClineSessionHandle): Promise<void> {
@@ -51,6 +67,7 @@ export class ClineAdapterRuntime implements AdapterRuntime {
       return;
     }
     this.session = undefined;
+    this.generation += 1;
     try {
       await session.stop();
     } catch {
@@ -117,9 +134,26 @@ export class ClineAdapterRuntime implements AdapterRuntime {
     };
   }
 
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    const session = this.session;
+    const generation = this.generation;
+    if (session === undefined) return { ...unobservedHealth("session_closed"), outcome: "failed", activity: "stopped" };
+    if (session.check === undefined) return { ...unobservedHealth("unsupported_adapter"), outcome: "unsupported" };
+    let result: AdapterCheckResult;
+    try {
+      result = await session.check(level);
+    } catch {
+      result = unobservedHealth("probe_error");
+    }
+    return this.session === session && this.generation === generation
+      ? result
+      : unobservedHealth("observation_changed");
+  }
+
   async stop(): Promise<void> {
     const session = this.session;
     this.session = undefined;
+    this.generation += 1;
     if (session !== undefined) {
       await session.stop();
     }

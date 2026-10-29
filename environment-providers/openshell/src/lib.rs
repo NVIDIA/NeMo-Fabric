@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::io::{BufRead, Write};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use miniz_oxide::inflate::decompress_to_vec_zlib_with_limit;
@@ -265,18 +265,35 @@ async fn runtime_command<F: GatewayFactory>(
             "runtime command timeout is unsupported",
         ));
     }
-    let (operation, arguments, payload) = command.arguments()?;
+    let started = Instant::now();
+    let health_budget = command
+        .check_timeout()
+        .map(|seconds| Duration::try_from_secs_f64(seconds).unwrap_or(Duration::MAX));
+    let remaining = |maximum: Duration| {
+        let duration = health_budget
+            .map(|budget| budget.saturating_sub(started.elapsed()).min(maximum))
+            .unwrap_or(maximum);
+        if duration.is_zero() {
+            Err(ProviderError::contract(
+                "probe_timeout",
+                "health deadline expired",
+            ))
+        } else {
+            Ok(duration)
+        }
+    };
+    let (operation, mut arguments, payload) = command.arguments()?;
     let binding = SandboxBinding::from_environment(&environment)?;
     let call_timeout = Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS);
     let client = bounded_gateway_call(
         "connect",
-        call_timeout,
+        remaining(call_timeout)?,
         factory.connect(&binding.connection),
     )
     .await?;
     let sandbox = bounded_gateway_call(
         "get",
-        call_timeout,
+        remaining(call_timeout)?,
         client.get(binding.connection.workspace.as_deref(), &binding.name),
     )
     .await?;
@@ -296,9 +313,17 @@ async fn runtime_command<F: GatewayFactory>(
             "SDK command payload exceeds its limit",
         ));
     }
+    let exec_timeout = remaining(Duration::from_secs(timeout_seconds))?;
+    if health_budget.is_some() {
+        let index = arguments
+            .iter()
+            .position(|value| value == "--timeout-seconds")
+            .expect("health timeout argument");
+        arguments[index + 1] = exec_timeout.as_secs_f64().to_string();
+    }
     let executed = bounded_gateway_call(
         "exec",
-        Duration::from_secs(timeout_seconds),
+        exec_timeout,
         client.exec(
             binding.connection.workspace.as_deref(),
             &binding.name,
@@ -306,7 +331,7 @@ async fn runtime_command<F: GatewayFactory>(
             ExecRequest {
                 workdir: None,
                 environment: HashMap::new(),
-                timeout: Duration::from_secs(timeout_seconds),
+                timeout: exec_timeout,
                 stdin,
             },
         ),
@@ -330,7 +355,7 @@ async fn runtime_command<F: GatewayFactory>(
             || !matches!(error.effects.as_str(), "none" | "applied" | "unknown")
             || !matches!(
                 error.stage.as_str(),
-                "request" | "validation" | "start" | "invoke" | "stop" | "transport"
+                "request" | "validation" | "start" | "invoke" | "stop" | "check" | "transport"
             )
             || !valid_diagnostic_code(&error.code)
         {
@@ -398,6 +423,45 @@ fn decode_sdk_command_response(
     let status = response["status"].as_str().unwrap_or_default();
     let result = &response["result"];
     let error = &response["error"];
+    if operation == "check" {
+        if response["changed"] != false || (!error.is_null() && error["effects"] != "none") {
+            return Err(ProviderError::contract(
+                "invalid_response",
+                "health command reported lifecycle effects",
+            ));
+        }
+        if result.is_object() {
+            let expected = match result["outcome"].as_str() {
+                Some("passed") if result["reason_code"].is_null() => "succeeded",
+                Some("failed" | "unknown") => "failed",
+                Some("unsupported") => "unsupported",
+                _ => {
+                    return Err(ProviderError::contract(
+                        "invalid_response",
+                        "invalid health outcome",
+                    ));
+                }
+            };
+            let passed = expected == "succeeded";
+            if status != expected
+                || (exit_code == 0) != passed
+                || passed != error.is_null()
+                || (!passed
+                    && (!error.is_object()
+                        || error.as_object().is_none_or(|value| value.len() != 4)
+                        || error["code"] != result["reason_code"]
+                        || error["stage"] != "check"
+                        || !error["message"].is_string()
+                        || !valid_diagnostic_code(error["code"].as_str().unwrap_or_default())))
+            {
+                return Err(ProviderError::contract(
+                    "invalid_response",
+                    "health outcome and command envelope disagree",
+                ));
+            }
+            return Ok(json!({"status": "returned", "value": result}));
+        }
+    }
     if status == "succeeded" {
         if exit_code != 0
             || !error.is_null()
@@ -437,7 +501,7 @@ fn decode_sdk_command_response(
         || !valid_diagnostic_code(code)
         || !matches!(
             stage,
-            "request" | "validation" | "start" | "invoke" | "stop" | "transport"
+            "request" | "validation" | "start" | "invoke" | "stop" | "check" | "transport"
         )
         || !matches!(effects, "none" | "applied" | "unknown")
     {
@@ -476,6 +540,18 @@ fn valid_diagnostic_code(code: &str) -> bool {
             | "request_too_large"
             | "response_too_large"
             | "invalid_input"
+            | "server_stopping"
+            | "probe_timeout"
+            | "probe_error"
+            | "observation_changed"
+            | "unsupported_adapter"
+            | "unsupported_level"
+            | "unsupported_scope"
+            | "capabilities_unverified"
+            | "agent_exited"
+            | "session_closed"
+            | "endpoint_unavailable"
+            | "health_failed"
     )
 }
 
@@ -630,6 +706,11 @@ where
 {
     validate_profile(&environment, "fabric_owned")?;
     let connection = OpenShellConnection::from_map(&environment.connection)?;
+    let capture = environment
+        .metadata
+        .get("fabric.provenance.enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
     let settings = OpenShellSettings::from_map(environment.settings)?;
     let policy_attached = settings.policy.is_some();
     let client = bounded_gateway_call(
@@ -644,6 +725,14 @@ where
         client.health(),
     )
     .await?;
+    let version_observed_at = capture
+        .then(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|d| u64::try_from(d.as_millis()).ok())
+        })
+        .flatten();
     if health.status != GatewayStatus::Healthy {
         return Err(ProviderError::contract(
             "gateway_unhealthy",
@@ -784,20 +873,23 @@ where
         "exec_timeout_seconds".to_string(),
         json!(settings.exec_timeout_seconds),
     );
-    Ok(json!({
-        "workspace": environment.workspace,
-        "artifacts": environment.artifacts,
-        "connection": provider_connection,
-        "metadata": {
-            "openshell.gateway_version": health.version,
-            "openshell.sandbox_id": ready.id,
-            "openshell.sandbox_name": ready.name,
-            "openshell.sandbox_phase": ready.phase.as_str(),
-            "openshell.sandbox_resource_version": ready.resource_version,
-            "openshell.runtime_image": settings.image,
-            "openshell.policy_attached": policy_attached,
-        },
-    }))
+    Ok(gateway_capture(
+        json!({
+            "workspace": environment.workspace,
+            "artifacts": environment.artifacts,
+            "connection": provider_connection,
+            "metadata": {
+                "openshell.gateway_version": health.version,
+                "openshell.sandbox_id": ready.id,
+                "openshell.sandbox_name": ready.name,
+                "openshell.sandbox_phase": ready.phase.as_str(),
+                "openshell.sandbox_resource_version": ready.resource_version,
+                "openshell.runtime_image": settings.image,
+                "openshell.policy_attached": policy_attached,
+            },
+        }),
+        version_observed_at,
+    ))
 }
 
 async fn attach_environment<F>(
@@ -818,11 +910,24 @@ where
     }
     let resource = OpenShellResourceReference::from_map(reference.resource)?;
     let connection = OpenShellConnection::from_map(&environment.connection)?;
+    let capture = environment
+        .metadata
+        .get("fabric.provenance.enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
     let settings = OpenShellSettings::from_map(environment.settings)?;
     let call_timeout = Duration::from_secs(GATEWAY_CALL_TIMEOUT_SECONDS);
     let client =
         bounded_gateway_call("connect", call_timeout, factory.connect(&connection)).await?;
     let health = bounded_gateway_call("health", call_timeout, client.health()).await?;
+    let version_observed_at = capture
+        .then(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|d| u64::try_from(d.as_millis()).ok())
+        })
+        .flatten();
     if health.status != GatewayStatus::Healthy {
         return Err(ProviderError::contract(
             "gateway_unhealthy",
@@ -894,21 +999,24 @@ where
         "exec_timeout_seconds".to_string(),
         json!(settings.exec_timeout_seconds),
     );
-    Ok(json!({
-        "workspace": environment.workspace,
-        "artifacts": environment.artifacts,
-        "connection": provider_connection,
-        "metadata": {
-            "openshell.gateway_version": health.version,
-            "openshell.sandbox_id": sandbox.id,
-            "openshell.sandbox_name": sandbox.name,
-            "openshell.sandbox_phase": sandbox.phase.as_str(),
-            "openshell.sandbox_resource_version": sandbox.resource_version,
-            "openshell.runtime_image": settings.image,
-            "openshell.policy_attached": sandbox.policy.is_some(),
-            "fabric.environment_binding": environment_id,
-        },
-    }))
+    Ok(gateway_capture(
+        json!({
+            "workspace": environment.workspace,
+            "artifacts": environment.artifacts,
+            "connection": provider_connection,
+            "metadata": {
+                "openshell.gateway_version": health.version,
+                "openshell.sandbox_id": sandbox.id,
+                "openshell.sandbox_name": sandbox.name,
+                "openshell.sandbox_phase": sandbox.phase.as_str(),
+                "openshell.sandbox_resource_version": sandbox.resource_version,
+                "openshell.runtime_image": settings.image,
+                "openshell.policy_attached": sandbox.policy.is_some(),
+                "fabric.environment_binding": environment_id,
+            },
+        }),
+        version_observed_at,
+    ))
 }
 
 async fn cleanup_created_sandbox(
@@ -1246,6 +1354,15 @@ enum ProviderOperation {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 enum TaskCommand {
+    Check {
+        timeout_seconds: f64,
+        #[serde(default)]
+        agent: Option<String>,
+        #[serde(default)]
+        runtime_id: Option<String>,
+        #[serde(default)]
+        level: Option<String>,
+    },
     Start {
         agent: String,
         config: Value,
@@ -1261,9 +1378,61 @@ enum TaskCommand {
     },
 }
 impl TaskCommand {
+    fn check_timeout(&self) -> Option<f64> {
+        match self {
+            Self::Check {
+                timeout_seconds, ..
+            } => Some(*timeout_seconds),
+            _ => None,
+        }
+    }
+
     fn arguments(self) -> Result<(&'static str, Vec<String>, Option<Value>), ProviderError> {
         let mut arguments = vec!["fabric-agent-ctl".to_string()];
         let (operation, agent, runtime_id, payload) = match self {
+            Self::Check {
+                timeout_seconds,
+                agent,
+                runtime_id,
+                level,
+            } => {
+                if !timeout_seconds.is_finite() || timeout_seconds <= 0.0 {
+                    return Err(ProviderError::contract(
+                        "invalid_runtime_command",
+                        "health timeout must be positive and finite",
+                    ));
+                }
+                arguments.extend([
+                    "check".into(),
+                    "--timeout-seconds".into(),
+                    timeout_seconds.to_string(),
+                ]);
+                match (agent, runtime_id, level) {
+                    (None, None, None) => {}
+                    (Some(agent), Some(runtime_id), Some(level))
+                        if !agent.trim().is_empty()
+                            && !agent.contains('\0')
+                            && !runtime_id.trim().is_empty()
+                            && !runtime_id.contains('\0')
+                            && ["live", "active", "ready"].contains(&level.as_str()) =>
+                    {
+                        arguments.extend([
+                            "--agent".into(),
+                            agent,
+                            "--runtime-id".into(),
+                            runtime_id,
+                            format!("--{level}"),
+                        ]);
+                    }
+                    _ => {
+                        return Err(ProviderError::contract(
+                            "invalid_runtime_command",
+                            "invalid health target",
+                        ));
+                    }
+                }
+                return Ok(("check", arguments, None));
+            }
             Self::Start { agent, config } => ("start", agent, None, Some(config)),
             Self::Invoke {
                 agent,
@@ -1334,6 +1503,8 @@ struct CollectedArtifact {
 
 #[derive(Debug, Deserialize)]
 struct EnvironmentPlan {
+    #[serde(default)]
+    metadata: Map<String, Value>,
     provider: String,
     control_location: String,
     ownership: String,
@@ -2227,6 +2398,65 @@ fn grpc_error_code(code: tonic::Code) -> &'static str {
 mod tests {
     use super::*;
     use miniz_oxide::deflate::compress_to_vec_zlib;
+
+    #[test]
+    fn server_check_maps_to_the_named_health_command() {
+        let command: TaskCommand = serde_json::from_value(json!({
+            "operation": "check", "timeout_seconds": 0.25
+        }))
+        .unwrap();
+        let (operation, arguments, input) = command.arguments().unwrap();
+        assert_eq!(operation, "check");
+        assert_eq!(
+            arguments,
+            ["fabric-agent-ctl", "check", "--timeout-seconds", "0.25"]
+        );
+        assert!(input.is_none());
+    }
+
+    #[test]
+    fn runtime_check_maps_to_the_exact_agent_and_level() {
+        let command: TaskCommand = serde_json::from_value(json!({
+            "operation": "check", "agent": "researcher", "runtime_id": "runtime-1",
+            "level": "ready", "timeout_seconds": 0.25
+        }))
+        .unwrap();
+        let (operation, arguments, payload) = command.arguments().unwrap();
+        assert_eq!(operation, "check");
+        assert!(payload.is_none());
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["--agent", "researcher"])
+        );
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["--runtime-id", "runtime-1"])
+        );
+        assert_eq!(arguments.last().unwrap(), "--ready");
+    }
+
+    #[test]
+    fn failed_health_evidence_is_returned_to_the_sdk() {
+        let report = json!({
+            "schema_version": "fabric.check/v1alpha1", "scope": "server",
+            "runtime_id": null, "requested_level": null,
+            "outcome": "failed", "reason_code": "server_stopping",
+            "completed_at": "2026-10-19T12:00:00Z", "elapsed_ms": 1,
+            "server": {"state": "stopping"}, "runtime": null,
+            "checks": [{"name": "server", "outcome": "failed",
+                "reason_code": "server_stopping", "source": "fabric.runtime_server",
+                "observed_at": "2026-10-19T12:00:00Z"}]
+        });
+        let response = json!({"operation": "check", "status": "failed", "changed": false,
+            "result": report, "error": {"code": "server_stopping", "stage": "check",
+                "effects": "none", "message": "PRIVATE"}});
+        let decoded =
+            decode_sdk_command_response("check", 1, response.to_string().as_bytes()).unwrap();
+        assert_eq!(decoded, json!({"status": "returned", "value": report}));
+        assert!(!decoded.to_string().contains("PRIVATE"));
+    }
     use std::sync::{Arc, Mutex};
 
     #[test]
@@ -2608,6 +2838,7 @@ mod tests {
             execution: None,
         };
         let environment = EnvironmentPlan {
+            metadata: Map::new(),
             provider: "openshell".to_string(),
             control_location: "in_env_control".to_string(),
             ownership: "fabric_owned".to_string(),
@@ -2640,6 +2871,11 @@ mod tests {
         assert_eq!(output["artifacts"], "/sandbox/artifacts");
         assert_eq!(output["connection"]["sandbox_id"], "sandbox-id-1");
         assert_eq!(output["connection"]["sandbox_name"], "fabric-sandbox-1");
+        assert!(
+            output["metadata"]["openshell.gateway_version_observed_at_millis"]
+                .as_u64()
+                .is_some()
+        );
         assert_eq!(output["metadata"]["openshell.sandbox_phase"], "ready");
         assert_eq!(output["metadata"]["openshell.sandbox_resource_version"], 1);
         assert_eq!(output["metadata"]["openshell.policy_attached"], true);
@@ -2652,6 +2888,39 @@ mod tests {
                 "wait_ready:fabric-demo:fabric-sandbox-1",
                 "wait_provider_ready:fabric-demo:fabric-sandbox-1:hosted",
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn disabled_provenance_does_not_add_gateway_observation_work() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let factory = MockFactory {
+            calls: Arc::clone(&calls),
+            ready_id: "sandbox-id-1",
+            deletion: None,
+            execution: None,
+        };
+        let mut environment = environment_plan_fixture();
+        environment
+            .metadata
+            .insert("fabric.provenance.enabled".into(), json!(false));
+        let output = prepare_environment("environment-disabled", environment, &factory)
+            .await
+            .unwrap();
+        assert!(
+            output["metadata"]
+                .get("openshell.gateway_version_observed_at_millis")
+                .is_none()
+        );
+        // The same required lifecycle calls still execute; provenance adds none.
+        assert_eq!(
+            calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|call| call.as_str() == "health")
+                .count(),
+            1
         );
     }
 
@@ -2809,6 +3078,7 @@ mod tests {
             execution: None,
         };
         let environment = EnvironmentPlan {
+            metadata: Map::new(),
             provider: "openshell".to_string(),
             control_location: "in_env_control".to_string(),
             ownership: "fabric_owned".to_string(),
@@ -3365,6 +3635,7 @@ mod tests {
 
     fn environment_plan_fixture() -> EnvironmentPlan {
         EnvironmentPlan {
+            metadata: Map::new(),
             provider: "openshell".to_string(),
             control_location: "in_env_control".to_string(),
             ownership: "fabric_owned".to_string(),
@@ -3432,4 +3703,11 @@ mod tests {
             ),
         }
     }
+}
+
+fn gateway_capture(mut report: Value, observed_at: Option<u64>) -> Value {
+    if let Some(observed_at) = observed_at {
+        report["metadata"]["openshell.gateway_version_observed_at_millis"] = json!(observed_at);
+    }
+    report
 }

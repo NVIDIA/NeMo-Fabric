@@ -17,7 +17,12 @@ import type {
   AgentRunResult,
   JsonObject,
   RuntimeContext,
+  AdapterCheckResult,
+  CheckLevel,
 } from "nemo-fabric-adapter-contract";
+import { collectSoftware, withSoftwareObservations, mergeSoftwareObservations, type SoftwareSelection } from "./provenance.js";
+import type { ExecutionEvidence, SoftwareEntry } from "nemo-fabric-adapter-contract";
+import { serveHealth, unobservedHealth } from "./health.js";
 
 export interface AdapterStartInput {
   agentName: string;
@@ -32,20 +37,28 @@ export interface AdapterRuntime {
   start(input: AdapterStartInput): Promise<void>;
   invoke(request: AgentRunRequest, context: RuntimeContext): Promise<AgentRunResult>;
   stop(): Promise<void>;
+  check?(level: CheckLevel): Promise<AdapterCheckResult>;
 }
 
 export type AdapterRuntimeFactory = () => AdapterRuntime | Promise<AdapterRuntime>;
 
 export interface LifecycleHostOptions {
+  software?: SoftwareSelection;
   input?: Readable;
   output?: Writable;
   diagnostics?: Writable;
 }
 
 interface HostState {
+  passive?: Map<string, SoftwareEntry>;
+  execution?: ExecutionEvidence;
+  software?: SoftwareSelection;
   runtime?: AdapterRuntime;
   runtimeId?: string;
   failed: boolean;
+  generation: number;
+  stopping?: boolean;
+  health?: { close(): Promise<void> };
 }
 
 interface LifecycleRequest {
@@ -62,6 +75,7 @@ interface LifecycleFailure {
 }
 
 interface LifecycleResponse {
+  execution?: ExecutionEvidence;
   operation: string;
   outcome:
     | { status: "succeeded"; output: unknown }
@@ -263,14 +277,18 @@ async function dispatch(
   }
 
   if (request.operation === "start") {
+    const directory = process.env.FABRIC_HOME;
     if (state.runtime !== undefined) {
       throw new LifecycleError("lifecycle_already_started", "Lifecycle host already owns a runtime");
     }
+    const provenance = request.payload.provenance;
+    const disabled = isRecord(provenance) && provenance.enabled === false;
+    state.passive = disabled ? undefined : new Map();
     let candidate: AdapterRuntime | undefined;
     try {
       candidate = await callAdapter("start", factory);
       const active = candidate;
-      await callAdapter("start", () => active.start(decodeStart(request.payload)));
+      await withSoftwareObservations(state.passive, () => callAdapter("start", () => active.start(decodeStart(request.payload))));
     } catch (error) {
       if (candidate !== undefined) {
         await stopQuietly(candidate, diagnostics);
@@ -280,6 +298,24 @@ async function dispatch(
     state.runtime = candidate;
     state.runtimeId = messageRuntimeId;
     state.failed = false;
+    state.execution = disabled ? undefined : await collectSoftware(state.software);
+    if (directory !== undefined && candidate.check !== undefined) {
+      try {
+        state.health = await serveHealth(messageRuntimeId, directory, async (level) => {
+          const generation = state.generation;
+          const runtime = state.runtime;
+          if (state.stopping || runtime?.check === undefined) return unobservedHealth("observation_changed");
+          if (state.failed && level !== "live") return {
+            ...unobservedHealth("endpoint_unavailable"), outcome: "failed",
+          };
+          const result = await runtime.check(level);
+          return state.generation === generation && state.runtime === runtime && !state.stopping
+            ? result : unobservedHealth("observation_changed");
+        });
+      } catch {
+        throw new LifecycleError("lifecycle_health_unavailable", "Adapter health channel could not be started");
+      }
+    }
     return success("start");
   }
 
@@ -291,6 +327,8 @@ async function dispatch(
   }
 
   if (request.operation === "stop") {
+    state.generation += 1;
+    state.stopping = true;
     const active = state.runtime;
     await callAdapter("stop", () => active.stop());
     state.runtime = undefined;
@@ -360,7 +398,7 @@ export async function serve(factory: AdapterRuntimeFactory, options: LifecycleHo
     process.stdout.write = process.stderr.write.bind(process.stderr) as typeof process.stdout.write;
   }
   const lines = createInterface({ input, crlfDelay: Infinity });
-  const state: HostState = { failed: false };
+  const state: HostState = { failed: false, generation: 0, software: options.software };
 
   try {
     for await (const line of lines) {
@@ -374,7 +412,8 @@ export async function serve(factory: AdapterRuntimeFactory, options: LifecycleHo
         }
         const request = decodeRequest(parsed);
         operation = request.operation;
-        response = await dispatch(state, factory, request, diagnostics);
+        response = await withSoftwareObservations(state.passive, () => dispatch(state, factory, request, diagnostics));
+        if (state.execution !== undefined && operation !== "stop") response.execution = mergeSoftwareObservations(state.execution, state.passive);
         shouldStop = operation === "stop";
       } catch (error) {
         const lifecycleError =
@@ -408,6 +447,9 @@ export async function serve(factory: AdapterRuntimeFactory, options: LifecycleHo
     }
   } finally {
     lines.close();
+    state.generation += 1;
+    state.stopping = true;
+    await state.health?.close();
     if (state.runtime !== undefined) {
       await stopQuietly(state.runtime, diagnostics);
     }

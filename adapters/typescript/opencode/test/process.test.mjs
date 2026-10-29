@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -97,7 +97,7 @@ async function close(server) {
   });
 }
 
-function openAiStream(text) {
+function openAiStream(text, usage) {
   const chunk = (delta, finishReason = null) =>
     `data: ${JSON.stringify({
       id: "chatcmpl-opencode-test",
@@ -106,7 +106,108 @@ function openAiStream(text) {
       model: "nvidia/nemotron-3.5-lightning-30b-a3b",
       choices: [{ index: 0, delta, finish_reason: finishReason }],
     })}\n\n`;
-  return `${chunk({ role: "assistant" })}${chunk({ content: text })}${chunk({}, "stop")}data: [DONE]\n\n`;
+  const usageChunk = usage === undefined ? "" : `data: ${JSON.stringify({
+    id: "chatcmpl-opencode-test",
+    object: "chat.completion.chunk",
+    created: 0,
+    model: "nvidia/nemotron-3.5-lightning-30b-a3b",
+    choices: [],
+    usage,
+  })}\n\n`;
+  return `${chunk({ role: "assistant" })}${chunk({ content: text })}${chunk({}, "stop")}${usageChunk}data: [DONE]\n\n`;
+}
+
+for (const missingTitleUsage of [false, true]) {
+  test(
+    missingTitleUsage
+      ? "keeps first-invocation usage partial when automatic title usage is missing"
+      : "includes delayed automatic title usage and isolates the next warm invocation",
+    async () => {
+      const workspace = await mkdtemp(join(tmpdir(), "fabric-opencode-usage-"));
+      const requests = [];
+      let finishPrimary;
+      const primaryFinished = new Promise((resolve) => { finishPrimary = resolve; });
+      const endpoint = createServer(async (request, response) => {
+        const chunks = [];
+        for await (const chunk of request) chunks.push(chunk);
+        const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        const title = payload.messages.some((message) =>
+          message.role === "system" && typeof message.content === "string" && message.content.includes("title generator"));
+        requests.push({ path: request.url, payload, title });
+        // The SDK's independent title request cannot finish before the primary response.
+        if (title) await primaryFinished;
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.end(openAiStream(title ? "Accounting probe title" : "done",
+          payload.stream_options?.include_usage === true && !(title && missingTitleUsage) ? {
+            prompt_tokens: title ? 7 : 120,
+            completion_tokens: title ? 3 : 30,
+            total_tokens: title ? 10 : 150,
+            prompt_tokens_details: { cached_tokens: title ? 2 : 20 },
+            completion_tokens_details: { reasoning_tokens: title ? 1 : 5 },
+          } : undefined), () => { if (!title) finishPrimary(); });
+      });
+      const endpointUrl = await listen(endpoint);
+      try {
+        const result = await exchange(workspace, [{
+          operation: "start",
+          payload: {
+            agent_name: "opencode-usage-test",
+            base_dir: workspace,
+            config: { models: { default: {
+              provider: "test",
+              model: "test",
+              api_key_env: "TEST_API_KEY",
+              base_url: `${endpointUrl}/v1`,
+            } } },
+            runtime_context: context(workspace, "start"),
+          },
+        }, {
+          operation: "invoke",
+          payload: { request: { input: "Reply done." }, runtime_context: {
+            ...context(workspace, "usage"), deadline_millis: Date.now() + 30_000,
+          } },
+        }, {
+          operation: "invoke",
+          payload: { request: { input: "Reply done again." }, runtime_context: {
+            ...context(workspace, "warm"), deadline_millis: Date.now() + 30_000,
+          } },
+        }, { operation: "stop", payload: { runtime_id: "runtime-1" } }], {}, 45_000);
+        assert.equal(result.exitCode, 0, result.stderr);
+        assert.equal(result.responses[1].outcome.output.status, "succeeded", result.stderr);
+        const usage = result.responses[1].outcome.output.usage;
+        assert.equal(requests.filter(({ title }) => title).length, 1);
+        assert.equal(requests.filter(({ title }) => !title).length, 2);
+        assert.ok(requests.every(({ path }) => path === "/v1/chat/completions"));
+        assert.ok(requests.every(({ payload }) => payload.stream_options?.include_usage === true));
+        assert.deepEqual(usage?.extensions["nvidia.fabric.opencode.usage_evidence.v1"], {
+          observed: missingTitleUsage
+            ? { input_tokens: 120, output_tokens: 30, total_tokens: 150, cached_input_tokens: 20, reasoning_tokens: 5 }
+            : { input_tokens: 127, output_tokens: 33, total_tokens: 160, cached_input_tokens: 22, reasoning_tokens: 6 },
+          gaps: missingTitleUsage ? ["missing_usage"] : [],
+        });
+        assert.equal(usage?.input_tokens, missingTitleUsage ? undefined : 127);
+        assert.equal(usage?.output_tokens, missingTitleUsage ? undefined : 33);
+        assert.equal(usage?.total_tokens, missingTitleUsage ? undefined : 160);
+        assert.equal(usage?.cached_input_tokens, missingTitleUsage ? undefined : 22);
+        assert.equal(usage?.input_tokens_include_cache, missingTitleUsage ? undefined : true);
+        assert.equal(usage?.cost_usd, undefined);
+        assert.equal(result.responses[2].outcome.output.status, "succeeded", result.stderr);
+        const warmUsage = result.responses[2].outcome.output.usage;
+        assert.equal(warmUsage?.input_tokens, 120);
+        assert.equal(warmUsage?.output_tokens, 30);
+        assert.equal(warmUsage?.cached_input_tokens, 20);
+        assert.equal(warmUsage?.input_tokens_include_cache, true);
+        assert.deepEqual(warmUsage?.extensions["nvidia.fabric.opencode.usage_evidence.v1"], {
+          observed: { input_tokens: 120, output_tokens: 30, total_tokens: 150, cached_input_tokens: 20, reasoning_tokens: 5 },
+          gaps: [],
+        });
+      } finally {
+        finishPrimary();
+        await close(endpoint);
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+  );
 }
 
 function openAiToolCall(name, input) {
@@ -278,6 +379,15 @@ test("runs two real OpenCode SDK prompts through the process host", async () => 
     assert.equal(exitCode, 0, stderr);
     assert.deepEqual(responses.map((response) => response.operation), ["start", "invoke", "invoke", "stop"]);
     assert.equal(responses[0].outcome.status, "succeeded");
+    const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+    const entries = responses[0].execution.software_environments.flatMap((environment) => environment.entries);
+    for (const name of ["@opencode/sdk", "@opencode/core"]) {
+      const framework = entries.find((entry) => entry.name === name);
+      assert.equal(framework?.role, "framework");
+      assert.equal(framework.version.status, "available");
+      assert.equal(framework.version.value, manifest.devDependencies[name]);
+    }
+    assert.equal(entries.some((entry) => entry.name === "@opencode-ai/sdk"), false);
     assert.equal(responses[1].outcome.output.status, "succeeded");
     assert.equal(responses[1].outcome.output.output.response, "reply:user_count=1 latest=first");
     assert.equal(responses[2].outcome.output.status, "succeeded");
@@ -499,3 +609,95 @@ test("denies interactive OpenCode operations instead of waiting for a reply", as
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+for (const background of [false, true])
+  test(`reports native shell accounting for background=${background}`, async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "fabric-opencode-shell-probe-"),
+    );
+    let primaries = 0;
+    const endpoint = createServer(async (req, res) => {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const payload = JSON.parse(Buffer.concat(chunks).toString());
+      const title = payload.messages.some(
+        (m) =>
+          m.role === "system" &&
+          typeof m.content === "string" &&
+          m.content.includes("title generator"),
+      );
+      const usage = {
+        prompt_tokens: 10,
+        completion_tokens: 2,
+        total_tokens: 12,
+      };
+      const body = title
+        ? openAiStream("Shell probe", usage)
+        : ++primaries === 1
+          ? openAiToolCall("shell", {
+              command: background ? "sleep 1" : "printf done",
+              background,
+            }).replace(
+              "data: [DONE]",
+              `data: ${JSON.stringify({ choices: [], usage })}\n\ndata: [DONE]`,
+            )
+          : openAiStream("done", usage);
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(body);
+    });
+    const url = await listen(endpoint);
+    try {
+      const result = await exchange(
+        workspace,
+        [
+          {
+            operation: "start",
+            payload: {
+              agent_name: "shell-probe",
+              base_dir: workspace,
+              config: {
+                models: {
+                  default: {
+                    provider: "test",
+                    model: "test",
+                    api_key_env: "TEST_API_KEY",
+                    base_url: `${url}/v1`,
+                  },
+                },
+              },
+              runtime_context: context(workspace, "start"),
+            },
+          },
+          {
+            operation: "invoke",
+            payload: {
+              request: { input: "Run shell then reply done." },
+              runtime_context: {
+                ...context(workspace, "probe"),
+                deadline_millis: Date.now() + 30000,
+              },
+            },
+          },
+          { operation: "stop", payload: { runtime_id: "runtime-1" } },
+        ],
+        {},
+        45000,
+      );
+      assert.equal(primaries, 2);
+      const usage = result.responses[1].outcome.output.usage;
+      assert.deepEqual(
+        usage.extensions["nvidia.fabric.opencode.usage_evidence.v1"],
+        {
+          observed: { input_tokens: 30, output_tokens: 6, total_tokens: 36 },
+          gaps: background ? ["scope_unverified"] : [],
+          ...(background ? { scope_reasons: ["background_shell"] } : {}),
+        },
+      );
+      assert.equal(usage.input_tokens, background ? undefined : 30);
+      assert.equal(usage.output_tokens, background ? undefined : 6);
+      assert.equal(result.exitCode, 0, result.stderr);
+    } finally {
+      await close(endpoint);
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });

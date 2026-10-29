@@ -34,6 +34,12 @@ def test_set_python_project_versions_updates_internal_pins_with_extras(
         '[project]\nname = "nemo-fabric-adapter-catalog"\nversion = "0.2.0"\n',
         encoding="utf-8",
     )
+    shared_path = tmp_path / "sdk/python/nemo-fabric-evidence/pyproject.toml"
+    shared_path.parent.mkdir()
+    shared_path.write_text(
+        '[project]\nname = "nemo-fabric-evidence"\nversion = "0.2.0"\n',
+        encoding="utf-8",
+    )
     coordinator_path = tmp_path / "pyproject.toml"
     coordinator_path.write_text(
         """\
@@ -102,6 +108,7 @@ dependencies = [
 [project]
 name = "nemo-fabric-adapter-contract"
 version = "0.2.0"
+dependencies = ["nemo-fabric-evidence == 0.2.0"]
 """,
         encoding="utf-8",
     )
@@ -113,6 +120,7 @@ version = "0.2.0"
 [project]
 name = "nemo-fabric-runtime"
 dynamic = ["version"]
+dependencies = ["nemo-fabric-evidence == 0.2.0"]
 
 [project.optional-dependencies]
 streaming = [
@@ -136,6 +144,8 @@ streaming = [
         )
     )["project"]
 
+    assert tomllib.loads(shared_path.read_text())["project"]["version"] == version
+    assert contract_project["dependencies"] == [f"nemo-fabric-evidence == {version}"]
     assert sdk_project["version"] == version
     assert sdk_project["dependencies"] == [f"nemo-fabric-runtime == {version}"]
     assert sdk_project["optional-dependencies"]["streaming"] == [
@@ -162,6 +172,7 @@ streaming = [
     assert tomllib.loads(catalog_path.read_text())["project"]["version"] == version
     runtime_project = tomllib.loads(runtime_path.read_text(encoding="utf-8"))["project"]
     assert runtime_project["dynamic"] == ["version"]
+    assert runtime_project["dependencies"] == [f"nemo-fabric-evidence == {version}"]
     assert runtime_project["optional-dependencies"]["streaming"] == [
         f"nemo-fabric-collector == {version}"
     ]

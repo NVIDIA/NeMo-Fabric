@@ -15,4 +15,4 @@ await serve(async () => {
     import("./runtime.js"),
   ]);
   return new QwenAdapterRuntime(new QwenSdkSessionFactory());
-});
+}, { software: { packageJson: new URL("../package.json", import.meta.url), harness: "qwen", packages: [{"role": "framework", "name": "@qwen-code/sdk"}] } });

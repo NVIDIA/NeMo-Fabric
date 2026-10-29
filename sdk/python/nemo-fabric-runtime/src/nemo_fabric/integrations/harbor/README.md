@@ -59,9 +59,17 @@ adapter-specific timeout codes are not automatically reclassified.
 
 The task runner validates telemetry after the one-shot NeMo Fabric runtime shuts down. For Relay trajectories finalized during shutdown, it reads the runtime-owned plugin configuration and collects local ATIF files from that runtime's configured output directory. It validates the trajectory before promoting it to Harbor's `agent/trajectory.json`; ambiguous or malformed artifacts remain telemetry failures rather than changing the verifier reward. Remote-only output and nested filename templates are not collected by this fallback. Adapter invocation results and multi-turn behavior are unchanged.
 
+## Native Resource Stats
+
+`fabric_system_stats` configures the task-local runner's `FabricConfig.system_stats`. Omission collects all metric groups before and after the invocation. Use `--ak 'fabric_system_stats={"sampling":{"interval_ms":1000,"max_samples":10000}}'` to enable periodic sampling, or `--ak fabric_system_stats=null` to disable invocation stats. Add `"collect":["process","cgroup.cpu"]` to the JSON object to select groups. Empty, duplicate, unknown, and invalid sampling selections fail host preflight.
+
+These options configure NeMo Fabric rather than harness settings or Relay. The result retains `system_stats` and references the raw JSONL and summary artifacts under the task's `/logs/agent/fabric-artifacts` directory, which Harbor collects with agent logs. Artifact paths in the JSON are task-side paths; locate their counterparts under the downloaded trial's `agent/fabric-artifacts` directory. The independent final `resource_snapshot` remains available when invocation stats are disabled. See [Resource Usage and Stats](../../../../../../../docs/sdk/system-stats.mdx) for collection scope and metric interpretation.
+
 ## Invocation Accounting
 
-The integration projects normalized `RunResult.usage` into Harbor's `AgentContext` without requiring NeMo Relay or ATIF. Harbor input counts include cache: inclusive NeMo Fabric input is copied unchanged, while exclusive input is combined with cache only when both counts are known. If input semantics are unknown, Harbor input remains unknown unless the adapter explicitly reports zero cache tokens. Legacy results remain valid, but their input count needs explicit cache semantics or an ATIF fallback to populate Harbor's inclusive count; the original values remain in result metadata. Unknown counts and costs remain `None`; estimates are not promoted to reported cost. ATIF metrics fill only missing fields and are never added to normalized usage. The same collection path applies to unsuccessful results that contain usage.
+The integration projects normalized `RunResult.usage` into Harbor's `AgentContext` without requiring NeMo Relay or ATIF. Harbor input counts include cache: inclusive NeMo Fabric input is copied unchanged, while exclusive input is combined with cache only when both counts are known. If input semantics are unknown, Harbor input remains unknown unless the adapter explicitly reports zero cache tokens. Legacy results remain valid, but their input count needs explicit cache semantics to populate Harbor's inclusive count; the original values remain in result metadata. Unknown counts and costs remain `None` and reported zeros remain zero; estimates are not promoted to reported cost. When the runner exits without a NeMo Fabric result, the integration sets all four Harbor accounting fields to `None`. ATIF `final_metrics` never fill these fields, because their scope and cache conventions are not verified against the invocation. They are kept under `metadata.fabric.atif_final_metrics` with `source: atif` and `coverage: unverified`. The same collection path applies to unsuccessful results that contain usage.
+
+**Reporting limitation:** Native Harbor trial and job totals sum available values and skip unknown fields. A displayed total can therefore omit usage or cost from steps or trials with unknown values. Do not interpret these aggregates as complete benchmark usage or expenditure when any contributing value is unknown.
 
 ## Host Admission And Task Execution
 
@@ -103,3 +111,9 @@ or turn and timeout limits. Specify those choices in the benchmark recipe throug
 `fabric_runtime_timeout_seconds`. Omitted values use the adapter's normal
 behavior. The example commands include the sandbox and permission settings
 needed by their tasks.
+
+### Software Evidence
+
+Harbor initializes one explicit host report with its application/integration, SDK, compiled core and executing interpreter observations. `FabricConfig.provenance.reports` carries that snapshot in the existing runner payload. The guest collects its own inventory; it never inspects the Harbor host. Receiving an old or malformed guest report preserves the invocation outcome and adds an explicit coverage gap while retaining the caller report.
+
+`fabric_provenance` uses the SDK's `ProvenanceConfig` shape and defaults on. Disable new provenance work in both the host and guest with `--ak 'fabric_provenance={"enabled":false}'`. The switch must be supplied before the Harbor agent initializes. Existing stats, telemetry, results and artifact handling continue to use their current controls. See the [software evidence examples](../../../../../../../examples/provenance/README.md) for reproducible local transport tests and their live-dependency limits.

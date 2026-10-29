@@ -32,9 +32,20 @@ use crate::config::{
 };
 use crate::environment::resolve_environment_provider;
 use crate::error::{FabricError, Result};
+use crate::resource_snapshot::{LocalHostProcess, RuntimeResourceSnapshot, snapshot_local_host};
+#[cfg(test)]
+use crate::system_stats::ResourceObservation;
+use crate::system_stats::{CgroupStats, InvocationSystemStats, StatsSession, SystemReader};
 
 mod openshell;
 use openshell::OpenShellRuntimeAdapter;
+
+pub(crate) fn remote_check_agent(
+    environment: &EnvironmentHandle,
+    runtime_id: &str,
+) -> Result<Option<String>> {
+    openshell::check_agent(environment, runtime_id)
+}
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
@@ -75,6 +86,10 @@ const DEFAULT_PYTHON: &str = "python.exe";
 #[cfg(test)]
 static TEST_STOPPED_AGENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static LOCAL_HOSTS: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<LocalAdapterHost>>>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
+// Adapter host processes by runtime id. A host's own mutex stays locked for a
+// whole invocation, so a resource snapshot reads the PID from here instead.
+static LOCAL_HOST_PROCESSES: LazyLock<Mutex<BTreeMap<String, LocalHostProcess>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 static LOCAL_SERVICES: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<LocalServiceRecord>>>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
@@ -140,6 +155,21 @@ pub struct RunResult {
     /// Normalized invocation usage when reported by the adapter target.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<RunUsage>,
+    /// Selected software evidence. Absent in older results and when collection is disabled.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::provenance::deserialize_optional_report"
+    )]
+    pub execution: Option<crate::provenance::ExecutionEvidence>,
+    /// Resource snapshot of the runtime, read once after the adapter returned this
+    /// result. Absent when the runtime's resources could not be observed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_snapshot: Option<RuntimeResourceSnapshot>,
+    /// Invocation duration and endpoint observations from the executing runner.
+    /// Absent in older results and when an execution backend does not collect them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_stats: Option<InvocationSystemStats>,
     /// Artifacts produced or collected by this run.
     #[serde(default)]
     pub artifacts: ArtifactManifest,
@@ -717,6 +747,7 @@ impl AdapterLifecycleOperation {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct AdapterLifecycleStart {
+    provenance: crate::ProvenanceConfig,
     agent_name: String,
     base_dir: PathBuf,
     config: AgentConfig,
@@ -739,6 +770,8 @@ enum AdapterServiceContext {
         reference: ServiceReference,
     },
     Connect {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        execution: Option<crate::ExecutionEvidence>,
         service_id: String,
         connection_path: PathBuf,
     },
@@ -810,6 +843,8 @@ enum AdapterLifecycleOutcome {
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 struct AdapterLifecycleResponse {
+    #[serde(default)]
+    execution: Option<Value>,
     operation: AdapterLifecycleOperation,
     outcome: AdapterLifecycleOutcome,
 }
@@ -841,6 +876,9 @@ struct RelayRuntimeConfig {
 }
 
 struct LocalAdapterHost {
+    service_execution: Option<crate::ExecutionEvidence>,
+    execution: Option<crate::ExecutionEvidence>,
+    adapter_execution: Option<crate::ExecutionEvidence>,
     child: Child,
     #[cfg(windows)]
     job: Option<std::os::windows::io::OwnedHandle>,
@@ -857,6 +895,7 @@ struct LocalAdapterHost {
 }
 
 struct LocalServiceRecord {
+    software_report: Option<crate::ExecutionEvidence>,
     host: LocalAdapterHost,
     runtime: RuntimeHandle,
     handle: ServiceHandle,
@@ -941,6 +980,7 @@ pub fn attach_environment(
 ///
 /// Caller-owned resources detach without deletion; local files remain in place.
 pub fn release_environment(environment: &EnvironmentHandle) -> Result<()> {
+    crate::check::invalidate_environment(environment);
     if environment.provider == "openshell" {
         return openshell::release(environment);
     }
@@ -1000,8 +1040,28 @@ pub fn start_runtime_with_service(
     let runtime = start_local_runtime(
         plan,
         environment,
-        Some((service.service_id.clone(), record.connection_path.clone())),
+        Some((
+            service.service_id.clone(),
+            record.connection_path.clone(),
+            if plan.config.provenance.enabled {
+                record.software_report.clone()
+            } else {
+                None
+            },
+        )),
     )?;
+    if plan.config.provenance.enabled {
+        let host = { local_hosts().get(&runtime.runtime_id).cloned() };
+        if let Some(host) = host {
+            let host = host.lock().unwrap_or_else(|error| error.into_inner());
+            if let Some(report) = host.adapter_execution.as_ref().and_then(service_evidence) {
+                record.software_report = Some(retain_service_snapshot(
+                    report,
+                    record.software_report.as_ref(),
+                ));
+            }
+        }
+    }
     record.active_runtime_ids.insert(runtime.runtime_id.clone());
     Ok(runtime)
 }
@@ -1022,6 +1082,7 @@ pub fn release_service(plan: &RunPlan, service: &ServiceHandle) -> Result<Vec<Fa
             runtime_ids: service_record.active_runtime_ids.iter().cloned().collect(),
         });
     }
+    crate::check::invalidate_service(&service_record.handle);
     service_record.state = LocalServiceState::Releasing;
     if let Err(error) = stop_service_host(&mut service_record) {
         service_record.state = LocalServiceState::ReleaseFailed;
@@ -1112,6 +1173,14 @@ fn start_service(
             local_host_diagnostics(&host),
         )
     })?;
+    let software_report = if plan.config.provenance.enabled {
+        host.adapter_execution
+            .as_ref()
+            .and_then(service_evidence)
+            .or_else(|| service_metadata_evidence(&info))
+    } else {
+        None
+    };
     let service_binding = service_binding(&service_id, plan, ownership, &info)?;
     let handle = ServiceHandle {
         service_id: service_id.clone(),
@@ -1122,9 +1191,23 @@ fn start_service(
         connection: info.connection,
         metadata: info.metadata,
     };
+    let levels = plan
+        .capabilities
+        .metadata
+        .get("service_health_checks")
+        .and_then(Value::as_array)
+        .map(|levels| {
+            levels
+                .iter()
+                .filter_map(|level| serde_json::from_value(level.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    crate::check::register_service(&handle, &runtime, levels);
     local_services().insert(
         service_id,
         Arc::new(Mutex::new(LocalServiceRecord {
+            software_report,
             host,
             runtime,
             handle: handle.clone(),
@@ -1184,6 +1267,47 @@ pub fn invoke_runtime(
         harness: harness(plan),
         adapter_kind: adapter_kind(plan),
     })
+}
+
+/// Read a timestamped resource snapshot of a started runtime.
+///
+/// The snapshot covers the runtime's local adapter host process and its live
+/// descendants. It does not wait for a running invocation. It returns
+/// [`FabricError::ResourceObservationUnavailable`] when the runtime stopped, is
+/// stopping, its host exited, a live process in its tree or the process table
+/// cannot be read, or the process tree kept changing during the read, and
+/// [`FabricError::ResourceObservationUnsupported`] when the adapter kind,
+/// environment provider, or operating system has no resource reader.
+pub fn runtime_resource_snapshot(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+) -> Result<RuntimeResourceSnapshot> {
+    validate_runtime_handle(plan, runtime)?;
+    if !uses_local_host(plan) {
+        return Err(FabricError::ResourceObservationUnsupported {
+            runtime_id: runtime.runtime_id.clone(),
+            reason: format!(
+                "adapter kind `{}` has no resource reader",
+                adapter_kind_name(runtime.adapter_kind)
+            ),
+        });
+    }
+    local_runtime_resource_snapshot(runtime)
+}
+
+fn local_runtime_resource_snapshot(runtime: &RuntimeHandle) -> Result<RuntimeResourceSnapshot> {
+    if runtime.environment.provider != "local" {
+        return Err(FabricError::ResourceObservationUnsupported {
+            runtime_id: runtime.runtime_id.clone(),
+            reason: format!(
+                "environment provider `{}` has no resource reader",
+                runtime.environment.provider
+            ),
+        });
+    }
+    // Clone the entry so the map lock is released before the process tree is read.
+    let host = local_host_processes().get(&runtime.runtime_id).cloned();
+    snapshot_local_host(&runtime.runtime_id, host.as_ref())
 }
 
 /// Invoke a started harness runtime and pass through native OpenAI chat-completion chunks.
@@ -1262,6 +1386,7 @@ fn validate_adapter_compatibility(plan: &RunPlan) -> Result<()> {
 /// Stop or detach from a harness runtime.
 pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
     validate_runtime_handle(plan, runtime)?;
+    crate::check::invalidate_runtime(runtime);
     if uses_local_host(plan) {
         let events = if runtime.environment.provider == "openshell" {
             OpenShellRuntimeAdapter.stop(runtime)?
@@ -1521,13 +1646,15 @@ fn runtime_binding(
     plan: &RunPlan,
     environment: &EnvironmentHandle,
 ) -> Result<String> {
+    let mut binding_plan = plan.clone();
+    binding_plan.config.provenance.reports = None;
     stable_hash(
         "fabric-runtime-binding",
         &RuntimeBindingMaterial {
             runtime_id,
             service_id,
             environment_id: &environment.environment_id,
-            plan,
+            plan: &binding_plan,
             environment: runtime_environment_binding(environment),
         },
     )
@@ -1550,11 +1677,13 @@ fn service_binding(
     ownership: ServiceOwnership,
     info: &AdapterServiceInfo,
 ) -> Result<String> {
+    let mut binding_plan = plan.clone();
+    binding_plan.config.provenance = Default::default();
     stable_hash(
         "fabric-service-binding",
         &ServiceBindingMaterial {
             service_id,
-            plan,
+            plan: &binding_plan,
             ownership,
             adapter_id: &info.adapter_id,
             service_type: &info.service_type,
@@ -1695,6 +1824,7 @@ impl RuntimeAdapter for LocalHostAdapter {
     }
 
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+        local_host_processes().remove(&runtime.runtime_id);
         let Some(host) = local_hosts().remove(&runtime.runtime_id) else {
             return Ok(vec![local_host_stop_event(runtime, true, false)]);
         };
@@ -1751,10 +1881,12 @@ impl RuntimeAdapter for LocalHostAdapter {
 fn start_local_runtime(
     plan: &RunPlan,
     environment: EnvironmentHandle,
-    service: Option<(String, PathBuf)>,
+    service: Option<(String, PathBuf, Option<crate::ExecutionEvidence>)>,
 ) -> Result<RuntimeHandle> {
     validate_local_host(plan, &environment)?;
-    let service_id = service.as_ref().map(|(service_id, _)| service_id.clone());
+    let service_id = service
+        .as_ref()
+        .map(|(service_id, _, _)| service_id.clone());
     let runtime_id = new_id("runtime");
     let runtime_binding = runtime_binding(&runtime_id, service_id.as_ref(), plan, &environment)?;
     let runtime = RuntimeHandle {
@@ -1775,9 +1907,11 @@ fn start_local_runtime(
     let mut artifacts = artifact_manifest(plan)?;
     let fabric_home = prepare_fabric_home(&artifacts, &runtime, &start_invocation)?;
     let relay_config = prepare_relay_runtime_config(plan, &runtime, &fabric_home, &mut artifacts)?;
+    let service_execution = service.as_ref().and_then(|(_, _, report)| report.clone());
     let service_context =
         service.map(
-            |(service_id, connection_path)| AdapterServiceContext::Connect {
+            |(service_id, connection_path, execution)| AdapterServiceContext::Connect {
+                execution,
                 service_id,
                 connection_path,
             },
@@ -1792,17 +1926,44 @@ fn start_local_runtime(
     )?;
     let environment_env = start.runtime_context.environment.env.clone();
     let request = AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Start(Box::new(start)));
-    let mut host = spawn_local_host(plan, &runtime, artifacts, relay_config, environment_env)?;
+    let started_at = SystemTime::now();
+    let levels = plan
+        .capabilities
+        .metadata
+        .get("health_checks")
+        .and_then(Value::as_array)
+        .map(|levels| {
+            levels
+                .iter()
+                .filter_map(|level| serde_json::from_value(level.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    crate::check::register(&runtime, levels);
+    let mut host = match spawn_local_host(plan, &runtime, artifacts, relay_config, environment_env)
+    {
+        Ok(host) => host,
+        Err(error) => {
+            crate::check::invalidate_runtime(&runtime);
+            return Err(error);
+        }
+    };
+    host.service_execution = service_execution;
     if let Err(error) = exchange_lifecycle_message(
         &mut host,
         &runtime.runtime_id,
         &request,
         LOCAL_HOST_START_TIMEOUT,
     ) {
+        crate::check::invalidate_runtime(&runtime);
         let _ = terminate_local_host(&mut host);
         let _ = remove_local_host_files(&host);
         return Err(error);
     }
+    local_host_processes().insert(
+        runtime.runtime_id.clone(),
+        LocalHostProcess::new(host.child.id(), started_at),
+    );
     local_hosts().insert(runtime.runtime_id.clone(), Arc::new(Mutex::new(host)));
     Ok(runtime)
 }
@@ -1978,16 +2139,113 @@ fn run_local_host_invocation_with_timeout(
             }
         };
         let fabric_invocation = write_fabric_invocation(&fabric_home, &adapter_payload)?;
-        match exchange_lifecycle_message(
+        let stats_config = plan.config.system_stats.as_ref();
+        let reader = SystemReader {
+            runtime_id: runtime.runtime_id.clone(),
+            host: local_host_processes().get(&runtime.runtime_id).cloned(),
+            local: runtime.environment.provider == "local",
+            collect: stats_config
+                .map(|config| config.collect.clone())
+                .unwrap_or_default(),
+        };
+        let before = stats_config.map(|_| reader.read());
+        let sampling = stats_config
+            .and_then(|config| config.sampling.as_ref())
+            .zip(before.as_ref())
+            .map(|(config, before)| {
+                StatsSession::prepare(config, &invocation, reader.clone(), before, &fabric_home)
+            });
+        let invocation_started = Instant::now();
+        if let Some(sampling) = &sampling {
+            sampling.start(invocation_started);
+        }
+        let exchange = exchange_lifecycle_message(
             &mut host_guard,
             &runtime.runtime_id,
             &lifecycle_request,
             invoke_timeout,
-        ) {
+        );
+        // Close the memory-only sampling window before reading the clock. No
+        // OS collection or sample-file I/O runs under this registration lock.
+        if let Some(sampling) = &sampling {
+            sampling.close();
+        }
+        let elapsed_seconds = invocation_started.elapsed().as_secs_f64();
+        // Endpoint collection and final artifact writes are outside elapsed time,
+        // and still under the host lock to exclude the next invocation.
+        let after = stats_config.map(|_| reader.read());
+        // Keep the independent final resource_snapshot contract even when the
+        // invocation stats block or its process group is disabled.
+        let resource_snapshot = if stats_config
+            .is_some_and(|config| config.includes(crate::SystemStatsMetricGroup::Process))
+        {
+            after
+                .as_ref()
+                .and_then(|reading| reading.adapter_tree.snapshot())
+                .cloned()
+        } else {
+            local_runtime_resource_snapshot(runtime).ok()
+        };
+        let system_stats = before
+            .zip(after)
+            .zip(stats_config)
+            .map(|((before, after), config)| {
+                let mut stats = InvocationSystemStats::new(
+                    before.adapter_tree,
+                    after.adapter_tree.clone(),
+                    elapsed_seconds,
+                );
+                stats.collected_groups = config.collect.clone();
+                if config
+                    .collect
+                    .iter()
+                    .any(|group| *group != crate::SystemStatsMetricGroup::Process)
+                {
+                    let mut cgroup = CgroupStats::new(before.cgroup, after.cgroup.clone());
+                    if !config.includes(crate::SystemStatsMetricGroup::CgroupCpu) {
+                        cgroup.cpu_usage_microseconds = crate::Measurement::NotCollected;
+                        cgroup.cpu_throttled_microseconds = crate::Measurement::NotCollected;
+                    }
+                    if !config.includes(crate::SystemStatsMetricGroup::CgroupMemory) {
+                        cgroup.oom_kills = crate::Measurement::NotCollected;
+                    }
+                    stats.cgroup = Some(cgroup);
+                }
+                if let Some(sampling) = &sampling {
+                    stats.sampled = Some(sampling.finish(elapsed_seconds, &after));
+                }
+                stats
+            });
+        // Optional evidence never replaces the adapter's original outcome.
+        let stats_summary = system_stats
+            .as_ref()
+            .filter(|_| sampling.is_some())
+            .map(|stats| crate::system_stats::persist_summary(stats, &invocation, &fabric_home));
+        match exchange {
             Ok(output) => {
                 let stderr = take_local_host_stderr(&mut host_guard);
                 Ok((
                     output,
+                    resource_snapshot,
+                    system_stats,
+                    {
+                        let mut execution = host_guard.execution.clone();
+                        if let (Some(report), Some(adapter)) =
+                            (&mut execution, &host_guard.adapter_execution)
+                        {
+                            append_adapter_evidence(
+                                report,
+                                adapter,
+                                host_guard.service_execution.as_ref(),
+                            );
+                        } else if let (Some(report), Some(service)) =
+                            (&mut execution, &host_guard.service_execution)
+                        {
+                            report.append(service.clone());
+                        }
+                        execution
+                    },
+                    stats_summary,
                     stderr,
                     host_guard.command.clone(),
                     host_guard.child.id(),
@@ -2010,6 +2268,10 @@ fn run_local_host_invocation_with_timeout(
     };
     let (
         adapter_output,
+        resource_snapshot,
+        system_stats,
+        execution,
+        stats_summary,
         stderr,
         host_command,
         host_pid,
@@ -2119,6 +2381,26 @@ fn run_local_host_invocation_with_timeout(
             "text/plain",
         )?;
     }
+    if let Some(sampled) = system_stats
+        .as_ref()
+        .and_then(|stats| stats.sampled.as_ref())
+    {
+        if let Some(samples) = &sampled.samples {
+            artifacts.artifacts.push(samples.clone());
+        }
+    }
+    match stats_summary {
+        Some(Ok(reference)) => artifacts.artifacts.push(reference),
+        Some(Err(_)) => events.push(event_with_metadata(
+            "system_stats_unavailable",
+            "system stats summary could not be persisted",
+            BTreeMap::from([(
+                "code".into(),
+                Value::String("stats_summary_write_failed".into()),
+            )]),
+        )),
+        None => {}
+    }
     collect_workspace_artifacts(&mut artifacts, &fabric_home, runtime, &mut events)?;
     promote_agent_artifacts_to_manifest(&agent_result.artifacts, &mut artifacts);
     promote_relay_artifacts_to_manifest(&output, &mut artifacts);
@@ -2161,6 +2443,9 @@ fn run_local_host_invocation_with_timeout(
         output,
         error,
         usage: agent_result.usage.as_ref().map(run_usage),
+        execution,
+        resource_snapshot,
+        system_stats,
         artifacts,
         telemetry: telemetry_ref(plan, relay_config.as_ref())
             .into_iter()
@@ -2182,6 +2467,7 @@ fn invalidate_timed_out_local_host(
             .is_some_and(|host| Arc::ptr_eq(host, expected_host))
         {
             hosts.remove(runtime_id);
+            local_host_processes().remove(runtime_id);
         }
     }
 
@@ -2337,6 +2623,12 @@ fn local_hosts() -> std::sync::MutexGuard<'static, BTreeMap<String, Arc<Mutex<Lo
         .unwrap_or_else(|error| error.into_inner())
 }
 
+fn local_host_processes() -> std::sync::MutexGuard<'static, BTreeMap<String, LocalHostProcess>> {
+    LOCAL_HOST_PROCESSES
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
+
 fn local_services()
 -> std::sync::MutexGuard<'static, BTreeMap<String, Arc<Mutex<LocalServiceRecord>>>> {
     LOCAL_SERVICES
@@ -2344,7 +2636,7 @@ fn local_services()
         .unwrap_or_else(|error| error.into_inner())
 }
 
-fn local_host_directory(id: &str) -> PathBuf {
+pub(crate) fn local_host_directory(id: &str) -> PathBuf {
     std::env::temp_dir()
         .join("nemo-fabric")
         .join("hosts")
@@ -2472,6 +2764,9 @@ fn spawn_local_host(
         });
     }
     Ok(LocalAdapterHost {
+        service_execution: None,
+        execution: crate::provenance::core_snapshot(&plan.config.provenance),
+        adapter_execution: None,
         child,
         #[cfg(windows)]
         job,
@@ -2660,6 +2955,23 @@ fn exchange_lifecycle_message(
             ),
             local_host_diagnostics(host),
         ));
+    }
+    if host.execution.is_some()
+        && operation != AdapterLifecycleOperation::Stop
+        && (response.execution.is_some() || host.adapter_execution.is_none())
+    {
+        let mut report = crate::ExecutionEvidence::receive(response.execution, "adapter");
+        if !report
+            .software_environments
+            .iter()
+            .any(|env| env.participants.iter().any(|p| p == "adapter"))
+        {
+            report.append(crate::ExecutionEvidence::gap(
+                "adapter",
+                "expected_adapter_report_missing",
+            ));
+        }
+        host.adapter_execution = Some(report);
     }
     match response.outcome {
         AdapterLifecycleOutcome::Succeeded { output } => Ok(output),
@@ -3026,6 +3338,10 @@ fn adapter_lifecycle_start(
 ) -> Result<AdapterLifecycleStart> {
     let config = adapter_lifecycle_config(plan);
     Ok(AdapterLifecycleStart {
+        provenance: crate::ProvenanceConfig {
+            enabled: plan.config.provenance.enabled,
+            reports: None,
+        },
         agent_name: plan.agent_name.clone(),
         base_dir: absolute_path(plan.base_dir.clone())?,
         config,
@@ -4118,6 +4434,15 @@ for line in sys.stdin:
                     "choices": [{"index": 0, "delta": {"content": "lo"}}],
                 },
             ])
+        if MODE == "memory_spike":
+            subprocess.run([sys.executable, "-c",
+                "import time\ndata=bytearray(192*1024*1024)\n"
+                "for i in range(0,len(data),4096): data[i]=1\n"
+                "time.sleep(0.7)"], check=True)
+        if MODE == "busy":
+            # A descendant that burns 1.2 s of CPU, then exits and is waited for.
+            subprocess.run([sys.executable, "-c",
+                "import time\nwhile time.process_time() < 1.2:\n    pass"], check=True)
         output = {
             "host_pid": os.getpid(),
             "invocation_count": invocations,
@@ -4397,6 +4722,9 @@ for line in sys.stdin:
             output: Value::Null,
             error: None,
             usage: None,
+            execution: None,
+            resource_snapshot: None,
+            system_stats: None,
             artifacts: ArtifactManifest::default(),
             telemetry: vec![
                 TelemetryRef {
@@ -4893,6 +5221,472 @@ for line in sys.stdin:
         assert_eq!(first.output["invocation_count"], 1);
         assert_eq!(second.output["invocation_count"], 2);
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn assert_unavailable(result: &Result<RuntimeResourceSnapshot>, runtime_id: &str) {
+        match result {
+            Err(FabricError::ResourceObservationUnavailable {
+                runtime_id: actual, ..
+            }) => assert_eq!(actual, runtime_id),
+            other => panic!("expected ResourceObservationUnavailable, got {other:?}"),
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_of_active_runtime_reads_host_tree() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let snapshot = runtime_resource_snapshot(&plan, &runtime).expect("snapshot");
+        stop_runtime(&plan, &runtime).expect("stop local host");
+
+        assert_eq!(snapshot.runtime_id, runtime.runtime_id);
+        assert!(snapshot.process_count >= 1);
+        assert!(snapshot.resident_memory_bytes > 0);
+        assert!(snapshot.cpu_time_seconds >= 0.0);
+        assert!(snapshot.started_at.ends_with('Z'));
+        assert!(snapshot.started_at <= snapshot.observed_at);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_during_invocation_returns_before_invocation_ends() {
+        let (root, plan) = local_host_plan("busy");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let saw_descendant = thread::scope(|scope| {
+            let invocation =
+                scope.spawn(|| invoke_runtime(&plan, &runtime, RunRequest::text("work")));
+            let mut saw_descendant = false;
+            while !saw_descendant && !invocation.is_finished() {
+                let snapshot = runtime_resource_snapshot(&plan, &runtime).expect("live snapshot");
+                saw_descendant = snapshot.process_count >= 2 && !invocation.is_finished();
+                thread::sleep(Duration::from_millis(20));
+            }
+            invocation
+                .join()
+                .expect("invocation thread")
+                .expect("invoke local host");
+            saw_descendant
+        });
+        stop_runtime(&plan, &runtime).expect("stop local host");
+
+        assert!(saw_descendant, "no snapshot saw the running descendant");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn invocation_result_carries_final_resource_snapshot_with_waited_descendant_cpu() {
+        let (root, plan) = local_host_plan("busy");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let result =
+            invoke_runtime(&plan, &runtime, RunRequest::text("work")).expect("invoke local host");
+        stop_runtime(&plan, &runtime).expect("stop local host");
+
+        let snapshot = result.resource_snapshot.expect("final resource snapshot");
+        assert_eq!(snapshot.runtime_id, result.runtime_id);
+        assert!(snapshot.process_count >= 1);
+        assert!(
+            snapshot.cpu_time_seconds >= 1.0,
+            "descendant CPU missing: {snapshot:?}"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn invocation_stats_isolate_concurrent_work_on_a_warm_runtime() {
+        let (root, plan) = local_host_plan("busy");
+        let runtime = start_runtime(&plan).expect("start local host");
+        let wall_started = Instant::now();
+        let mut results = thread::scope(|scope| {
+            let first = scope.spawn(|| invoke_runtime(&plan, &runtime, RunRequest::text("one")));
+            let second = scope.spawn(|| invoke_runtime(&plan, &runtime, RunRequest::text("two")));
+            vec![
+                first.join().unwrap().unwrap(),
+                second.join().unwrap().unwrap(),
+            ]
+        });
+        let wall_elapsed = wall_started.elapsed().as_secs_f64();
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        results.sort_by_key(|result| result.output["invocation_count"].as_u64().unwrap());
+        let first = results[0].system_stats.as_ref().expect("first stats");
+        let second = results[1].system_stats.as_ref().expect("second stats");
+        for result in &results {
+            let stats = result.system_stats.as_ref().unwrap();
+            assert!(stats.elapsed_seconds > 0.0);
+            let cpu = stats.cpu_time_seconds_estimate.expect("CPU estimate");
+            assert!(cpu >= 1.0, "waited child CPU missing: {stats:?}");
+            assert_eq!(stats.after.snapshot(), result.resource_snapshot.as_ref());
+        }
+        assert!(
+            second.before.snapshot().unwrap().cpu_time_seconds
+                >= first.after.snapshot().unwrap().cpu_time_seconds
+        );
+        assert!(
+            second.cpu_time_seconds_estimate.unwrap()
+                < second.after.snapshot().unwrap().cpu_time_seconds - 0.9,
+            "second estimate includes previous invocation's CPU"
+        );
+        assert!(
+            first.elapsed_seconds + second.elapsed_seconds <= wall_elapsed,
+            "elapsed measurements include time queued behind another invocation"
+        );
+        assert_ne!(results[0].invocation_id, results[1].invocation_id);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn disabling_invocation_stats_survives_serialization_and_preserves_final_snapshot() {
+        let (root, mut plan) = local_host_plan("echo");
+        assert!(plan.config.system_stats.is_some());
+        plan.config.system_stats = None;
+        let mapping = serde_json::to_value(&plan.config).unwrap();
+        assert!(mapping.get("system_stats").unwrap().is_null());
+        let decoded: crate::FabricConfig = serde_json::from_value(mapping.clone()).unwrap();
+        assert!(decoded.system_stats.is_none());
+        let mut omitted = mapping;
+        omitted.as_object_mut().unwrap().remove("system_stats");
+        let decoded: crate::FabricConfig = serde_json::from_value(omitted).unwrap();
+        assert_eq!(decoded.system_stats, Some(Default::default()));
+        let result = run_plan(&plan, RunRequest::text("disabled")).unwrap();
+        assert!(result.system_stats.is_none());
+        assert!(result.resource_snapshot.is_some());
+        assert!(
+            !result
+                .artifacts
+                .artifacts
+                .iter()
+                .any(|a| a.kind.starts_with("system_stats"))
+        );
+        let home = Path::new(result.metadata["fabric_home"].as_str().unwrap());
+        assert!(!home.join("system-stats.jsonl").exists());
+        assert!(!home.join("system-stats-summary.json").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn filtered_sampling_does_not_collect_unselected_process_or_memory_groups() {
+        let (root, mut plan) = local_host_plan("echo");
+        plan.config.system_stats = Some(crate::SystemStatsConfig {
+            collect: vec![crate::SystemStatsMetricGroup::CgroupCpu],
+            sampling: Some(Default::default()),
+        });
+        let result = run_plan(&plan, RunRequest::text("filtered")).unwrap();
+        let stats = result.system_stats.unwrap();
+        assert!(matches!(stats.before, ResourceObservation::NotCollected));
+        assert!(matches!(stats.after, ResourceObservation::NotCollected));
+        assert!(stats.cpu_time_seconds_estimate.is_none());
+        assert!(matches!(
+            stats.cgroup.unwrap().oom_kills,
+            crate::Measurement::NotCollected
+        ));
+        let sampled = stats.sampled.unwrap();
+        assert!(sampled.resident_memory_bytes.is_none());
+        assert!(sampled.process_count.is_none());
+        assert!(matches!(
+            sampled.cpu_time_seconds_estimate,
+            crate::Measurement::NotCollected
+        ));
+        let rows: Vec<Value> = fs::read_to_string(sampled.samples.unwrap().path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(rows.len(), 2);
+        assert!(
+            rows.iter()
+                .all(|row| row["adapter_tree"]["status"] == "not_collected")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn sampled_stats_capture_transient_worker_memory_and_preserve_correlation() {
+        let (root, mut plan) = local_host_plan("memory_spike");
+        plan.config.system_stats = Some(crate::SystemStatsConfig {
+            sampling: Some(crate::SystemStatsSamplingConfig {
+                interval_ms: 100,
+                max_samples: 100,
+            }),
+            ..Default::default()
+        });
+        let result = run_plan(&plan, RunRequest::text("spike")).expect("run with sampling");
+        let stats = result.system_stats.as_ref().unwrap();
+        let summary = stats.sampled.as_ref().unwrap();
+        let gauge = summary.resident_memory_bytes.as_ref().unwrap();
+        assert!(
+            gauge.sampled_peak.unwrap()
+                > stats.after.snapshot().unwrap().resident_memory_bytes + 128 * 1024 * 1024,
+            "peak was lost after worker exit: {summary:?}"
+        );
+        assert!(summary.sample_count >= 3);
+        // A spike sample need not have a neighbor within twice the interval.
+        assert!((0.0..=1.0).contains(&gauge.covered_fraction));
+        let path = &summary.samples.as_ref().unwrap().path;
+        let rows: Vec<Value> = fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(rows.len(), summary.sample_count as usize);
+        for row in &rows {
+            assert_eq!(row["runtime_id"], result.runtime_id);
+            assert_eq!(row["invocation_id"], result.invocation_id);
+            assert_eq!(row["request_id"], result.request_id);
+            assert!(row["offset_seconds"].as_f64().unwrap() <= stats.elapsed_seconds);
+        }
+        assert_eq!(
+            rows.last().unwrap()["offset_seconds"].as_f64(),
+            Some(stats.elapsed_seconds)
+        );
+        let reference = result
+            .artifacts
+            .artifacts
+            .iter()
+            .find(|a| a.kind == "system_stats_summary")
+            .unwrap();
+        let saved: Value =
+            serde_json::from_str(&fs::read_to_string(&reference.path).unwrap()).unwrap();
+        assert_eq!(saved["invocation_id"], result.invocation_id);
+        assert_eq!(saved["system_stats"], serde_json::to_value(stats).unwrap());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn sampled_stats_keep_final_endpoint_when_retention_is_full() {
+        let (root, mut plan) = local_host_plan("busy");
+        plan.config.system_stats = Some(crate::SystemStatsConfig {
+            sampling: Some(crate::SystemStatsSamplingConfig {
+                interval_ms: 100,
+                max_samples: 2,
+            }),
+            ..Default::default()
+        });
+        let result = run_plan(&plan, RunRequest::text("bounded")).unwrap();
+        let stats = result.system_stats.unwrap();
+        let before = stats.before.snapshot().unwrap();
+        let after = stats.after.snapshot().unwrap();
+        assert_eq!(
+            stats.cpu_time_seconds_estimate,
+            Some(after.cpu_time_seconds - before.cpu_time_seconds)
+        );
+        if let Some(cgroup) = &stats.cgroup
+            && let Some((before, after)) = cgroup.before.snapshot().zip(cgroup.after.snapshot())
+            && let Some((before, after)) = before
+                .cpu_usage_microseconds
+                .value()
+                .zip(after.cpu_usage_microseconds.value())
+        {
+            assert_eq!(
+                cgroup.cpu_usage_microseconds,
+                crate::Measurement::Available {
+                    value: after - before
+                }
+            );
+        }
+        let summary = stats.sampled.unwrap();
+        assert!(matches!(
+            summary.cpu_time_seconds_estimate,
+            crate::Measurement::Unavailable { .. }
+        ));
+        assert_eq!(summary.sample_count, 2);
+        assert!(summary.dropped_samples > 0);
+        assert!(summary.truncated);
+        let rows: Vec<Value> = fs::read_to_string(summary.samples.unwrap().path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[1]["offset_seconds"].as_f64(),
+            Some(stats.elapsed_seconds)
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn protocol_failure_retains_sample_evidence_without_replacing_the_error() {
+        let (root, mut plan) = local_host_plan("invoke_failure");
+        plan.config.system_stats = Some(crate::SystemStatsConfig {
+            sampling: Some(Default::default()),
+            ..Default::default()
+        });
+        let runtime = start_runtime(&plan).unwrap();
+        let error = invoke_runtime(&plan, &runtime, RunRequest::text("fail")).unwrap_err();
+        assert!(
+            matches!(error, FabricError::AdapterLifecycleOperation { code, .. } if code == "fake_invoke")
+        );
+        stop_runtime(&plan, &runtime).unwrap();
+        let path = root.join("artifacts/.fabric").join(runtime.runtime_id);
+        let summaries: Vec<_> = fs::read_dir(path)
+            .unwrap()
+            .filter_map(|entry| {
+                let path = entry.unwrap().path().join("system-stats-summary.json");
+                path.is_file().then_some(path)
+            })
+            .collect();
+        assert_eq!(summaries.len(), 1);
+        let summary: Value =
+            serde_json::from_str(&fs::read_to_string(&summaries[0]).unwrap()).unwrap();
+        assert_eq!(summary["system_stats"]["sampled"]["sample_count"], 2);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn observation_failure_preserves_invocation_result() {
+        let (root, plan) = local_host_plan("adapter_reported_failure");
+        let runtime = start_runtime(&plan).expect("start local host");
+        // Make observation unavailable without breaking the live adapter protocol.
+        local_host_processes().remove(&runtime.runtime_id);
+        let result = invoke_runtime(&plan, &runtime, RunRequest::text("fail"))
+            .expect("normalized adapter failure still returns a result");
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        assert_eq!(result.status, RunStatus::Failed);
+        assert_eq!(result.error.unwrap().code, "fake_adapter_failure");
+        assert!(result.resource_snapshot.is_none());
+        let stats = result.system_stats.expect("duration and availability");
+        assert!(stats.elapsed_seconds > 0.0);
+        assert!(stats.cpu_time_seconds_estimate.is_none());
+        for observation in [&stats.before, &stats.after] {
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            assert!(
+                matches!(observation, ResourceObservation::Unavailable { reason } if !reason.is_empty())
+            );
+            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+            assert!(
+                matches!(observation, ResourceObservation::Unsupported { reason } if !reason.is_empty())
+            );
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runtime_resource_snapshot_after_stop_is_unavailable() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+        stop_runtime(&plan, &runtime).expect("stop local host");
+
+        let result = runtime_resource_snapshot(&plan, &runtime);
+
+        if cfg!(any(target_os = "linux", target_os = "macos")) {
+            assert_unavailable(&result, &runtime.runtime_id);
+        } else {
+            assert!(matches!(
+                result,
+                Err(FabricError::ResourceObservationUnsupported { .. })
+            ));
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_after_host_exit_is_unavailable() {
+        let (root, plan) = local_host_plan("crash_after_start");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut result = runtime_resource_snapshot(&plan, &runtime);
+        while result.is_ok() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(50));
+            result = runtime_resource_snapshot(&plan, &runtime);
+        }
+        let _ = stop_runtime(&plan, &runtime);
+
+        assert_unavailable(&result, &runtime.runtime_id);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_during_concurrent_stop_is_snapshot_or_unavailable() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let results = thread::scope(|scope| {
+            let snapshots = scope.spawn(|| {
+                let mut results = Vec::new();
+                loop {
+                    let result = runtime_resource_snapshot(&plan, &runtime);
+                    let stopped = result.is_err();
+                    results.push(result);
+                    if stopped {
+                        return results;
+                    }
+                }
+            });
+            thread::sleep(Duration::from_millis(50));
+            stop_runtime(&plan, &runtime).expect("stop local host");
+            snapshots.join().expect("snapshot thread")
+        });
+
+        let (last, earlier) = results.split_last().expect("at least one snapshot");
+        assert!(earlier.iter().all(Result::is_ok));
+        assert_unavailable(last, &runtime.runtime_id);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn runtime_resource_snapshot_after_invocation_timeout_is_unavailable() {
+        let (root, plan) = local_host_plan("invoke_timeout");
+        let runtime = start_runtime(&plan).expect("start local host");
+        runtime_resource_snapshot(&plan, &runtime).expect("snapshot before the timeout");
+
+        run_local_host_adapter_with_timeout(
+            &plan,
+            &runtime,
+            RunRequest::text("hang"),
+            Duration::from_millis(100),
+        )
+        .expect_err("unresponsive host must time out");
+
+        assert_unavailable(
+            &runtime_resource_snapshot(&plan, &runtime),
+            &runtime.runtime_id,
+        );
+        let _ = stop_runtime(&plan, &runtime);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runtime_resource_snapshot_of_non_local_environment_is_unsupported() {
+        let (root, plan) = local_host_plan("success");
+        let mut environment = prepare_environment(&plan).expect("prepare environment");
+        environment.provider = "remote".to_string();
+        let runtime_id = new_id("runtime");
+        let runtime = RuntimeHandle {
+            runtime_binding: runtime_binding(&runtime_id, None, &plan, &environment)
+                .expect("runtime binding"),
+            runtime_id,
+            agent_name: plan.agent_name.clone(),
+            harness: harness(&plan),
+            adapter_kind: adapter_kind(&plan),
+            adapter_id: adapter_id(&plan),
+            service_id: None,
+            environment,
+        };
+
+        let result = runtime_resource_snapshot(&plan, &runtime);
+
+        assert!(
+            matches!(
+                &result,
+                Err(FabricError::ResourceObservationUnsupported { runtime_id, reason })
+                    if *runtime_id == runtime.runtime_id && reason.contains("remote")
+            ),
+            "{result:?}"
+        );
         let _ = fs::remove_dir_all(root);
     }
 
@@ -5818,6 +6612,257 @@ for line in sys.stdin:
     }
 
     #[test]
+    fn adapter_service_evidence_preserves_infrastructure_references() {
+        let mut adapter = crate::ExecutionEvidence::gap("adapter", "fixture");
+        adapter.append(crate::ExecutionEvidence::gap("service", "fixture"));
+        adapter.software_environments[1].status = crate::provenance::InventoryStatus::Available;
+        adapter.software_environments[1].complete = true;
+        adapter.software_environments[1].reason = None;
+        let observation = serde_json::json!({
+            "status": "available", "value": "fixture-engine",
+            "source": "owner:existing_report", "origin": "reported",
+            "observed_at": "2026-10-27T12:00:00Z"
+        });
+        adapter.infrastructure = Some(
+            serde_json::from_value(serde_json::json!({
+                "container": {
+                    "context_refs": [adapter.software_environments[1].context_ref],
+                    "engine": observation, "engine_version": observation
+                }
+            }))
+            .unwrap(),
+        );
+        assert!(adapter.valid());
+        let retained = service_evidence(&adapter).unwrap();
+        let mut report = crate::ExecutionEvidence::gap("core", "fixture");
+        append_adapter_evidence(&mut report, &adapter, Some(&retained));
+        assert!(report.valid());
+        assert_eq!(report.software_environments.len(), 3);
+        assert_eq!(report.software_environments[2].participants, ["service"]);
+        assert_eq!(
+            report
+                .infrastructure
+                .as_ref()
+                .unwrap()
+                .container
+                .as_ref()
+                .unwrap()
+                .context_refs,
+            [report.software_environments[2].context_ref.clone()]
+        );
+    }
+
+    fn retained_service_fixture() -> crate::ExecutionEvidence {
+        serde_json::from_value(serde_json::json!({
+            "software_environments": [{
+                "context_ref": "startup-service", "participants": ["service"],
+                "status": "available", "complete": true,
+                "entries": [{"role": "harness", "kind": "component", "name": "server",
+                    "version": {"status": "available", "value": "1.0+startup",
+                        "source": "service:startup", "origin": "reported",
+                        "observed_at": "2026-10-27T12:00:00Z"}}]
+            }],
+            "infrastructure": {"container": {
+                "context_refs": ["startup-service"],
+                "engine": {"status": "available", "value": "docker", "source": "owner:startup",
+                    "origin": "reported", "observed_at": "2026-10-27T12:00:00Z"},
+                "engine_version": {"status": "available", "value": "28.0", "source": "owner:startup",
+                    "origin": "reported", "observed_at": "2026-10-27T12:00:00Z"}
+            }}
+        })).unwrap()
+    }
+
+    #[test]
+    fn retained_service_infrastructure_survives_missing_current_report() {
+        let retained = service_evidence(&retained_service_fixture()).unwrap();
+        let mut result = crate::ExecutionEvidence::gap("core", "fixture");
+        append_adapter_evidence(
+            &mut result,
+            &crate::ExecutionEvidence::gap("adapter", "missing"),
+            Some(&retained),
+        );
+        assert!(result.valid());
+        assert_eq!(
+            result.software_environments[2].entries,
+            retained.software_environments[0].entries
+        );
+        assert_eq!(
+            result
+                .infrastructure
+                .unwrap()
+                .container
+                .unwrap()
+                .context_refs,
+            ["env-2"]
+        );
+    }
+
+    #[test]
+    fn partial_service_reports_preserve_retained_startup_and_deduplicate_infrastructure() {
+        for complete in [false, true] {
+            let retained = retained_service_fixture();
+            let mut adapter = retained.clone();
+            adapter.software_environments[0].entries.clear();
+            adapter.software_environments[0].complete = complete;
+            adapter.software_environments[0].reason = (!complete).then(|| "partial".into());
+            let mut result = crate::ExecutionEvidence::gap("core", "fixture");
+            append_adapter_evidence(&mut result, &adapter, Some(&retained));
+            assert!(result.valid());
+            assert_eq!(result.software_environments.len(), 3);
+            assert_eq!(
+                result.software_environments[2].entries,
+                retained.software_environments[0].entries
+            );
+            assert_eq!(
+                result
+                    .infrastructure
+                    .unwrap()
+                    .container
+                    .unwrap()
+                    .context_refs,
+                ["env-1", "env-2"]
+            );
+        }
+    }
+
+    #[test]
+    fn unavailable_reconnect_cannot_replace_shared_startup_snapshot() {
+        let retained = retained_service_fixture();
+        let current = crate::ExecutionEvidence::gap("service", "unavailable");
+        let saved = retain_service_snapshot(current, Some(&retained));
+        assert_eq!(saved, retained);
+        assert_eq!(retain_service_snapshot(saved.clone(), Some(&saved)), saved);
+        let mut next_connection = crate::ExecutionEvidence::gap("core", "fixture");
+        append_adapter_evidence(
+            &mut next_connection,
+            &crate::ExecutionEvidence::gap("adapter", "missing"),
+            Some(&saved),
+        );
+        assert!(next_connection.valid());
+        assert_eq!(
+            next_connection.software_environments[2].entries[0]
+                .version
+                .value
+                .as_deref(),
+            Some("1.0+startup")
+        );
+    }
+
+    #[test]
+    fn current_available_service_version_replaces_its_startup_observation() {
+        let retained = retained_service_fixture();
+        let mut current = retained.clone();
+        current.software_environments[0].entries[0].version.value = Some("2.0+current".into());
+        current.software_environments[0].entries[0]
+            .version
+            .observed_at = "2026-10-28T12:00:00Z".into();
+        let saved = retain_service_snapshot(current.clone(), Some(&retained));
+        assert_eq!(saved.software_environments.len(), 1);
+        assert_eq!(
+            saved.software_environments[0].entries,
+            current.software_environments[0].entries
+        );
+        let mut result = crate::ExecutionEvidence::default();
+        append_adapter_evidence(&mut result, &current, Some(&retained));
+        assert!(result.valid());
+        assert_eq!(result.software_environments.len(), 1);
+        assert_eq!(
+            result.software_environments[0].entries[0]
+                .version
+                .value
+                .as_deref(),
+            Some("2.0+current")
+        );
+    }
+
+    #[test]
+    fn conflicting_service_infrastructure_stays_an_explicit_gap() {
+        let retained = retained_service_fixture();
+        let mut adapter = retained.clone();
+        adapter
+            .infrastructure
+            .as_mut()
+            .unwrap()
+            .container
+            .as_mut()
+            .unwrap()
+            .engine_version
+            .value = Some("29.0".into());
+        let mut result = crate::ExecutionEvidence::default();
+        append_adapter_evidence(&mut result, &adapter, Some(&retained));
+        assert!(result.valid());
+        assert_eq!(
+            result.software_environments[0].reason.as_deref(),
+            Some("conflicting_infrastructure_reports")
+        );
+    }
+
+    #[test]
+    fn adapter_without_service_evidence_uses_the_retained_snapshot() {
+        let adapter = crate::ExecutionEvidence::gap("adapter", "fixture");
+        let retained = crate::ExecutionEvidence::gap("service", "fixture");
+        let mut report = crate::ExecutionEvidence::gap("core", "fixture");
+        append_adapter_evidence(&mut report, &adapter, Some(&retained));
+        assert!(report.valid());
+        assert_eq!(report.software_environments.len(), 3);
+        assert_eq!(report.software_environments[2].participants, ["service"]);
+        assert_eq!(retained.software_environments[0].context_ref, "env-0");
+    }
+
+    #[test]
+    fn adapter_service_gap_does_not_hide_a_retained_observation() {
+        let mut adapter = crate::ExecutionEvidence::gap("adapter", "fixture");
+        adapter.append(crate::ExecutionEvidence::gap("service", "report_missing"));
+        let retained: crate::ExecutionEvidence = serde_json::from_value(serde_json::json!({
+            "software_environments": [{
+                "context_ref": "original-service", "participants": ["service"],
+                "status": "available", "complete": true,
+                "entries": [{"role": "harness", "kind": "component", "name": "openclaw",
+                    "version": {"status": "available", "value": "2026.9.4",
+                        "source": "service:startupz", "origin": "reported",
+                        "observed_at": "2026-10-27T12:00:00Z"}}]
+            }]
+        }))
+        .unwrap();
+        let mut report = crate::ExecutionEvidence::gap("core", "fixture");
+        append_adapter_evidence(&mut report, &adapter, Some(&retained));
+        assert!(report.valid());
+        assert_eq!(report.software_environments.len(), 4);
+        assert_eq!(
+            report.software_environments[2].reason.as_deref(),
+            Some("report_missing")
+        );
+        assert_eq!(
+            report.software_environments[3].entries,
+            retained.software_environments[0].entries
+        );
+        assert_eq!(
+            retained.software_environments[0].context_ref,
+            "original-service"
+        );
+    }
+
+    #[test]
+    fn runtime_binding_excludes_observations_but_binds_initial_collection_control() {
+        let (root, plan) = local_host_plan("ok");
+        let environment = prepare_environment(&plan).unwrap();
+        let original = runtime_binding("test-runtime", None, &plan, &environment).unwrap();
+        let mut changed = plan.clone();
+        changed.config.provenance.reports =
+            Some(crate::ExecutionEvidence::gap("application", "test"));
+        assert_eq!(
+            runtime_binding("test-runtime", None, &changed, &environment).unwrap(),
+            original
+        );
+        changed.config.provenance.enabled = false;
+        assert_ne!(
+            runtime_binding("test-runtime", None, &changed, &environment).unwrap(),
+            original
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn explicit_binding_starts_in_the_prepared_local_environment() {
         let (root, plan) = local_host_plan("success");
         let environment = prepare_environment(&plan).expect("prepare local environment");
@@ -5930,4 +6975,219 @@ for line in sys.stdin:
         ));
         let _ = fs::remove_dir_all(root);
     }
+}
+
+fn covers_service_observations(
+    adapter: &crate::ExecutionEvidence,
+    retained: &crate::ExecutionEvidence,
+) -> bool {
+    // Availability alone does not establish coverage of startup observations.
+    retained.software_environments.iter().all(|old| {
+        adapter.software_environments.iter().any(|current| {
+            current.status == crate::provenance::InventoryStatus::Available
+                && current.participants.iter().any(|p| p == "service")
+                && old.entries.iter().all(|entry| {
+                    current.entries.iter().any(|new| {
+                        new.role == entry.role
+                            && new.kind == entry.kind
+                            && new.name == entry.name
+                            && (new.version.status == crate::provenance::EvidenceStatus::Available
+                                || entry.version.status
+                                    != crate::provenance::EvidenceStatus::Available)
+                    })
+                })
+        })
+    }) && retained.infrastructure.as_ref().is_none_or(|old| {
+        adapter.infrastructure.as_ref().is_some_and(|current| {
+            old.sandbox.as_ref().is_none_or(|old| {
+                current.sandbox.as_ref().is_some_and(|new| {
+                    old.provider == new.provider && old.service_version == new.service_version
+                })
+            }) && old.container.as_ref().is_none_or(|old| {
+                current.container.as_ref().is_some_and(|new| {
+                    old.engine == new.engine && old.engine_version == new.engine_version
+                })
+            })
+        })
+    })
+}
+
+fn append_adapter_evidence(
+    report: &mut crate::ExecutionEvidence,
+    adapter: &crate::ExecutionEvidence,
+    retained_service: Option<&crate::ExecutionEvidence>,
+) {
+    let covers_retained =
+        retained_service.is_none_or(|retained| covers_service_observations(adapter, retained));
+    report.append(adapter.clone());
+    if !covers_retained && let Some(service) = retained_service {
+        let mut service = service.clone();
+        let refs: std::collections::BTreeMap<_, _> = service
+            .software_environments
+            .iter()
+            .enumerate()
+            .map(|(index, env)| {
+                (
+                    env.context_ref.clone(),
+                    format!("env-{}", report.software_environments.len() + index),
+                )
+            })
+            .collect();
+        let mut sandbox_refs = Vec::new();
+        let mut container_refs = Vec::new();
+        // Forwarded startup infrastructure can appear in both reports. Deduplicate
+        // identical owner observations; conflicting reports retain append's gap.
+        if let (Some(old), Some(current)) = (&mut service.infrastructure, &adapter.infrastructure) {
+            if let (Some(left), Some(right)) = (&old.sandbox, &current.sandbox) {
+                let mut right = right.clone();
+                right.context_refs = left.context_refs.clone();
+                if *left == right {
+                    sandbox_refs = left
+                        .context_refs
+                        .iter()
+                        .filter_map(|key| refs.get(key).cloned())
+                        .collect();
+                    old.sandbox = None;
+                }
+            }
+            if let (Some(left), Some(right)) = (&old.container, &current.container) {
+                let mut right = right.clone();
+                right.context_refs = left.context_refs.clone();
+                if *left == right {
+                    container_refs = left
+                        .context_refs
+                        .iter()
+                        .filter_map(|key| refs.get(key).cloned())
+                        .collect();
+                    old.container = None;
+                }
+            }
+        }
+        report.append(service);
+        if !sandbox_refs.is_empty() || !container_refs.is_empty() {
+            let surviving: std::collections::BTreeSet<_> = report
+                .software_environments
+                .iter()
+                .filter(|env| {
+                    env.participants
+                        .iter()
+                        .any(|participant| participant == "service")
+                })
+                .map(|env| env.context_ref.clone())
+                .collect();
+            let extend = |keys: &mut Vec<String>, additional: Vec<String>| {
+                for key in additional {
+                    if surviving.contains(&key) && !keys.contains(&key) {
+                        keys.push(key);
+                    }
+                }
+            };
+            if let Some(infra) = &mut report.infrastructure {
+                if let Some(value) = &mut infra.sandbox {
+                    extend(&mut value.context_refs, sandbox_refs);
+                }
+                if let Some(value) = &mut infra.container {
+                    extend(&mut value.context_refs, container_refs);
+                }
+            }
+            // Additional joins also count toward the serialized byte budget.
+            report.append(crate::ExecutionEvidence::default());
+        }
+    }
+}
+
+fn retain_service_snapshot(
+    current: crate::ExecutionEvidence,
+    retained: Option<&crate::ExecutionEvidence>,
+) -> crate::ExecutionEvidence {
+    if let Some(retained) = retained
+        && ((covers_service_observations(retained, &current)
+            && current.software_environments.iter().all(|env| {
+                env.entries.iter().all(|entry| {
+                    retained
+                        .software_environments
+                        .iter()
+                        .any(|old| old.entries.contains(entry))
+                })
+            }))
+            || !current
+                .software_environments
+                .iter()
+                .any(|env| env.status == crate::provenance::InventoryStatus::Available))
+    {
+        return retained.clone();
+    }
+    let mut result = crate::ExecutionEvidence::default();
+    append_adapter_evidence(&mut result, &current, retained);
+    result
+}
+
+fn service_evidence(report: &crate::ExecutionEvidence) -> Option<crate::ExecutionEvidence> {
+    let mut environments: Vec<_> = report
+        .software_environments
+        .iter()
+        .filter(|env| env.participants.iter().any(|p| p == "service"))
+        .cloned()
+        .collect();
+    if environments.is_empty() {
+        return None;
+    }
+    let mut refs = std::collections::BTreeMap::new();
+    for (index, env) in environments.iter_mut().enumerate() {
+        let key = format!("env-{index}");
+        refs.insert(env.context_ref.clone(), key.clone());
+        env.context_ref = key;
+    }
+    let remap = |keys: &mut Vec<String>| {
+        *keys = keys
+            .iter()
+            .filter_map(|key| refs.get(key).cloned())
+            .collect();
+        !keys.is_empty()
+    };
+    let mut infrastructure = report.infrastructure.clone();
+    if let Some(infra) = &mut infrastructure {
+        if let Some(value) = &mut infra.sandbox
+            && !remap(&mut value.context_refs)
+        {
+            infra.sandbox = None;
+        }
+        if let Some(value) = &mut infra.container
+            && !remap(&mut value.context_refs)
+        {
+            infra.container = None;
+        }
+    }
+    Some(crate::ExecutionEvidence {
+        software_environments: environments,
+        infrastructure,
+    })
+}
+
+fn service_metadata_evidence(info: &AdapterServiceInfo) -> Option<crate::ExecutionEvidence> {
+    use crate::provenance::*;
+    let value = info.metadata.get("openclaw_version")?.as_str()?.to_string();
+    Some(ExecutionEvidence {
+        software_environments: vec![SoftwareEnvironment {
+            context_ref: "env-0".into(),
+            participants: vec!["service".into()],
+            status: InventoryStatus::Available,
+            complete: true,
+            reason: None,
+            entries: vec![SoftwareEntry {
+                role: "harness".into(),
+                kind: "component".into(),
+                name: "openclaw".into(),
+                version: VersionObservation {
+                    status: EvidenceStatus::Available,
+                    value: Some(value),
+                    source: "core:service_start_report".into(),
+                    origin: EvidenceOrigin::Reported,
+                    observed_at: crate::time::rfc3339_millis(SystemTime::now()),
+                    reason: None,
+                },
+            }],
+        }],
+        infrastructure: None,
+    })
 }

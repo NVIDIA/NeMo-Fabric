@@ -22,7 +22,7 @@ The adapter supports:
   (`api`, `context_window`, `max_tokens`, `cost`, `reasoning`, `input`, `name`);
   a field you set overrides, a field you omit keeps a Pi-known model's existing
   value. The adapter adds no defaults: a gateway model Pi does not ship must
-  supply `api`, `base_url`, `context_window`, and `max_tokens`.
+  supply `api`, `base_url`, `context_window`, `max_tokens`, `input`, and `cost`. Adapter startup rejects missing required metadata before invoking the model.
 - Optional replacement system instructions
 - Tool allow and block policy
 - NeMo Fabric custom tools loaded through normalized `tools.definitions`
@@ -31,7 +31,7 @@ The adapter supports:
 - Explicit local `.ts` or `.js` extension files contained by the NeMo Fabric
   workspace
 - Slash commands registered by those explicit extensions
-- NeMo Relay 0.9 or 0.10 telemetry through a runtime-owned gateway and an explicitly
+- NeMo Relay 0.9–0.11 telemetry through a runtime-owned gateway and an explicitly
   configured Relay Pi extension
 - Live model-turn ATOF records for successful Relay redirects through the
   default embedded NeMo Fabric collector. Startup `model_redirect` marks remain
@@ -79,29 +79,25 @@ To install and build all maintained TypeScript workspaces instead, run:
 just build-typescript
 ```
 
-The full build installs its own dependencies, so you do not need to run
-`just install-typescript-pi` first.
+The full build installs the required dependencies.
 
 ### Install NeMo Relay
 
-Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.11.0` on `PATH`. Install it
-separately from the npm adapter:
+Relay-enabled Pi runs require a NeMo Relay CLI in the `>=0.9.0,<0.12.0` range. Install the command-line tool:
 
 ```bash
-pip install "nemo-relay-cli-bin>=0.9.0,<0.11.0"
+pip install "nemo-relay-cli-bin>=0.9.0,<0.12.0"
 ```
 
-To select a specific Relay executable instead of relying on `PATH`, set
-`FABRIC_NEMO_RELAY_COMMAND` to its absolute path:
+The adapter finds `nemo-relay` on `PATH` by default. To select a specific executable, set `FABRIC_NEMO_RELAY_COMMAND` to its absolute path:
 
 ```bash
 FABRIC_NEMO_RELAY_COMMAND="/absolute/path/to/nemo-relay" uv run python your_app.py
 ```
 
-The adapter does not bundle the Relay Pi extension. Obtain the
-[`crates/cli/assets/pi-extension`](https://github.com/NVIDIA/NeMo-Relay/tree/0.10.0/crates/cli/assets/pi-extension)
-directory from the Relay release that matches the CLI and configure its path as described in the
-next section.
+The adapter uses the selected executable to start the Relay gateway. With Relay 0.11, the Pi extension also uses that executable to forward hook events. Relay 0.9 and 0.10 extensions send hook events directly over HTTP. When the runtime stops, the adapter restores the extension's previous command setting.
+
+Use the [Pi extension](https://github.com/NVIDIA/NeMo-Relay/tree/0.11.0/crates/cli/assets/pi-extension) from the same Relay release as the command-line tool. Configure the extension path as shown in the next section.
 
 ## Configure the Adapter
 
@@ -277,6 +273,19 @@ redirects, then prints one JSON document containing `atof_records` and the
 separate terminal `result`. Redirect-decision marks remain in configured Relay
 ATOF artifacts; Pi's startup marks are not included in `atof_records`.
 
+## Runtime Health
+
+Local SDK callers can use `Fabric.check()` with the runtime's environment and
+exact runtime ID. Pi supports three ordered health levels:
+
+| Level | Evidence |
+| --- | --- |
+| `live` | Completed initialization, unchanged session identity, and a fresh native `extensionRunner.createContext().isIdle()` response. Both idle and busy responses pass. |
+| `active` | Liveness plus completed extension binding and an available request interface. |
+| `ready` | Earlier levels plus the selected model remaining configured, required tools remaining active or callable through other tools, and required MCP transports having no observed error or closure. |
+
+Health probes use an authenticated channel during invocations. MCP failures and closures remain observable after startup. Stop and ownership changes invalidate observations collected in flight.
+
 ## Dependency Rationale
 
 `@earendil-works/pi-coding-agent` provides the native Pi session, resources,
@@ -296,3 +305,18 @@ create divergent implementations.
 
 `typescript` and `@types/node` are exact-pinned build inputs and are absent from
 the published production dependency graph.
+
+
+## Credential-free HTTP model gateways
+
+For Relay-enabled runs, set `harness.settings.insecure_http_model_hosts` to the exact bare DNS hostnames or IP addresses of trusted inference gateways. This requires NeMo Relay CLI 0.11.x.
+
+Remote HTTP model endpoints require `openai-completions`, `openai-responses`, or `anthropic-messages`. Other Pi model APIs, including `mistral-conversations`, require HTTPS or loopback HTTP because their requests bypass Relay's gateway. Fabric rejects unsupported remote HTTP APIs before session startup, including hosts listed in `insecure_http_model_hosts`.
+
+```python
+config.harness.settings["insecure_http_model_hosts"] = ["inference.internal", "10.0.0.10"]
+```
+
+Entries have no scheme, port, path, wildcard, brackets, or IPv6 zone identifier. DNS matching ignores case and a trailing dot. Each listed host may use custom ports and paths. NeMo Fabric writes explicit `[]` to revoke inherited trust and preserves omission when the setting is absent. System Relay configuration has higher priority and can enforce an empty list.
+
+Relay strips authorization, API-key, cookie, custom credential headers, and middleware-added credentials before forwarding remote HTTP model requests, including model credentials supplied to Pi. Relay rejects conflicting upstream authorization configuration. Prompts and responses remain unencrypted. HTTPS is the default; this opt-in does not authorize MCP or observability endpoints, caller-selected destinations, or remote HTTP WebSockets.

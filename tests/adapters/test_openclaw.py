@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
+import httpx
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
 from nemo_fabric.errors import FabricConfigError
@@ -31,7 +32,11 @@ from nemo_fabric_adapters.openclaw import adapter
 from nemo_fabric_adapters.openclaw import _windows_job
 
 
-def _context(workspace: Path, runtime_id: str = "openclaw-runtime") -> RuntimeContext:
+def _context(
+    workspace: Path,
+    runtime_id: str = "openclaw-runtime",
+    deadline_millis: int | None = None,
+) -> RuntimeContext:
     payload = {
         "runtime_id": runtime_id,
         "invocation_id": "openclaw-invocation",
@@ -46,6 +51,8 @@ def _context(workspace: Path, runtime_id: str = "openclaw-runtime") -> RuntimeCo
         },
         "artifacts": {},
     }
+    if deadline_millis is not None:
+        payload["deadline_millis"] = deadline_millis
     return RuntimeContext.from_mapping(payload)
 
 
@@ -174,6 +181,29 @@ def test_openclaw_rejects_invalid_port_range(settings: dict[str, object]):
 
     assert caught.value.code == "openclaw_invalid_configuration"
     assert caught.value.metadata == {"field": "harness.settings.port_range"}
+
+
+@pytest.mark.parametrize("raw", ["2026.9.4 extra", "2026.9.4\nuntrusted suffix"])
+async def test_gateway_records_the_same_version_it_validates(monkeypatch, raw):
+    from nemo_fabric_adapters.common import provenance
+
+    mock_record = MagicMock()
+    monkeypatch.setattr(provenance, "record_version", mock_record)
+
+    def respond(request):
+        data = (
+            {"data": [{"id": "openclaw/default"}]}
+            if request.url.path == "/v1/models"
+            else {"version": raw}
+        )
+        return httpx.Response(200, json=data)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        validated = await adapter.OpenClawRuntime()._probe_gateway(
+            client, "http://gateway.test", "default"
+        )
+    assert validated == "2026.9.4"
+    assert mock_record.call_args.args[1] == validated
 
 
 def test_openclaw_accepts_supported_version():
@@ -821,6 +851,28 @@ def test_openclaw_gateway_endpoint_rejects_nonliteral_or_remote_http(endpoint: s
     assert caught.value.code == "openclaw_invalid_service_reference"
 
 
+def test_openclaw_service_connection_without_fchmod(tmp_path: Path, monkeypatch):
+    """Older Windows Python versions can persist an attached service safely."""
+    monkeypatch.delattr(adapter.os, "fchmod", raising=False)
+    connection_path = tmp_path / "private" / "service-connection.json"
+
+    adapter._write_service_connection(
+        connection_path,
+        gateway_url="http://127.0.0.1:18789",
+        token="TEST_ONLY_GATEWAY_TOKEN",
+        agent_id="default",
+    )
+
+    assert adapter._read_service_connection(connection_path) == (
+        "http://127.0.0.1:18789",
+        "TEST_ONLY_GATEWAY_TOKEN",
+        "default",
+    )
+    assert list(connection_path.parent.iterdir()) == [connection_path]
+    if os.name == "posix":
+        assert connection_path.stat().st_mode & 0o777 == 0o600
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="Requires POSIX file modes")
 def test_openclaw_service_connection_atomically_replaces_symlink(tmp_path: Path):
     private = tmp_path / "private"
@@ -1098,6 +1150,57 @@ async def test_openclaw_read_failure_is_not_retryable(
     assert caught.value.retryable is False
 
 
+async def test_openclaw_invocation_deadline_bounds_the_gateway_request(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    context = _context(tmp_path, deadline_millis=int(time.time() * 1000) + 50)
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = None
+    runtime._client = MagicMock()
+    runtime._config = _config(tmp_path / "openclaw")
+    runtime._context = context
+    runtime._port = 12345
+    runtime._process = mock_process
+
+    request_started = asyncio.Event()
+    request_cancelled = asyncio.Event()
+
+    async def wait_for_gateway(*_args, **_kwargs):
+        request_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            request_cancelled.set()
+            raise
+
+    monkeypatch.setattr(
+        adapter, "_invoke_gateway", AsyncMock(side_effect=wait_for_gateway)
+    )
+
+    result = await asyncio.wait_for(
+        runtime.invoke(AgentRunRequest(input="Hello."), context), timeout=5
+    )
+
+    assert request_started.is_set()
+    assert request_cancelled.is_set()
+    assert result.status == adapter.contract.AgentRunStatus.FAILED
+    assert result.error is not None
+    assert result.error.code == "timeout"
+
+
+async def test_openclaw_read_timeout_applies_only_when_configured():
+    runtime = adapter.OpenClawRuntime()
+    unset = runtime._client_for({}, "token")
+    configured = runtime._client_for({"read_timeout_seconds": 30}, "token")
+    try:
+        assert unset.timeout.read is None
+        assert configured.timeout.read == 30
+    finally:
+        await unset.aclose()
+        await configured.aclose()
+
+
 async def test_openclaw_process_exit_fails_active_invocation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
@@ -1252,14 +1355,26 @@ async def test_openclaw_stop_completes_cleanup_before_propagating_cancellation(
     runtime._log_tasks = [log_task]
     runtime._temp_dir = mock_temp_dir
 
+    # stop() awaits only mocks and in-process tasks here, and no timer has to
+    # fire, so each step finishes within a few event-loop turns. Counting turns
+    # instead of seconds keeps a garbage-collector pause on a slow runner from
+    # failing the test.
+    async def run_event_loop_until(condition):
+        for _ in range(100):
+            if condition():
+                return True
+            await asyncio.sleep(0)
+        return condition()
+
     stop_task = asyncio.create_task(runtime.stop())
-    await asyncio.wait_for(entered.wait(), timeout=1)
-    stop_task.cancel()
     try:
-        with pytest.raises(asyncio.CancelledError):
-            await asyncio.wait_for(asyncio.shield(stop_task), timeout=0.2)
+        assert await run_event_loop_until(entered.is_set)
+        stop_task.cancel()
+        assert await run_event_loop_until(stop_task.done)
+        assert stop_task.cancelled()
     finally:
         release.set()
+        stop_task.cancel()
         with suppress(asyncio.CancelledError):
             await stop_task
 

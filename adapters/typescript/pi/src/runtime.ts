@@ -5,8 +5,8 @@
 // to a PiSessionHandle and normalized results while keeping SDK construction
 // behind a factory for focused lifecycle testing.
 
-import type { AgentRunRequest, AgentRunResult, JsonObject, RuntimeContext } from "nemo-fabric-adapter-contract";
-import { LifecycleError, type AdapterRuntime, type AdapterStartInput } from "nemo-fabric-adapters-common";
+import type { AdapterCheckResult, CheckLevel, AgentRunRequest, AgentRunResult, JsonObject, RuntimeContext } from "nemo-fabric-adapter-contract";
+import { LifecycleError, unobservedHealth, type AdapterRuntime, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 import { collectRelayArtifacts, type RelayArtifact } from "./relay-config.js";
 import type { PiRelayRuntime } from "./relay.js";
@@ -28,6 +28,7 @@ export interface PiSessionHandle {
   readonly turnCount?: number;
   prompt(text: string): Promise<PiPromptOutcome>;
   stop(): Promise<void>;
+  check(level: CheckLevel): Promise<AdapterCheckResult>;
 }
 
 export interface PiSessionFactory {
@@ -74,6 +75,8 @@ export class PiAdapterRuntime implements AdapterRuntime {
   private session?: PiSessionHandle;
   private turnCount = 0;
   private unusable = false;
+  private stopping = false;
+  private generation = 0;
 
   constructor(factory: PiSessionFactory) {
     this.factory = factory;
@@ -84,6 +87,8 @@ export class PiAdapterRuntime implements AdapterRuntime {
       throw new LifecycleError("pi_already_started", "Pi adapter runtime is already started");
     }
     this.session = await this.factory.create(input);
+    this.generation += 1;
+    this.stopping = false;
     this.turnCount = 0;
     this.unusable = false;
   }
@@ -174,9 +179,26 @@ export class PiAdapterRuntime implements AdapterRuntime {
     );
   }
 
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    const session = this.session;
+    const generation = this.generation;
+    if (session === undefined) return {
+      ...unobservedHealth("session_closed"), outcome: "failed", activity: "stopped",
+    };
+    if (this.stopping) return unobservedHealth("observation_changed");
+    if (this.unusable && level !== "live") return {
+      ...unobservedHealth("endpoint_unavailable"), outcome: "failed",
+    };
+    const result = await session.check(level);
+    return this.session === session && this.generation === generation && !this.stopping
+      ? result : unobservedHealth("observation_changed");
+  }
+
   async stop(): Promise<void> {
     const session = this.session;
     if (session !== undefined) {
+      this.stopping = true;
+      this.generation += 1;
       let failure: unknown;
       try {
         await session.stop();

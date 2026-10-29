@@ -115,7 +115,7 @@ def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
         )
 
 
-@pytest.mark.parametrize("relay_version", ["0.9.0", "0.10.0", "0.10.0+build.1"])
+@pytest.mark.parametrize("relay_version", ["0.10.0", "0.10.7", "0.10.0+build.1"])
 def test_validate_hermes_relay_compatibility_accepts_supported_checkout(
     monkeypatch, relay_version
 ):
@@ -125,16 +125,16 @@ def test_validate_hermes_relay_compatibility_accepts_supported_checkout(
 
 @pytest.mark.parametrize(
     "relay_version",
-    ["0.8.4", "0.09.0", "0.11.0", "0.9.0rc1", "0.10.0rc1", "0.9.0.dev1"],
+    ["0.8.4", "0.010.0", "0.9.0", "0.11.0", "0.12.0", "0.10.0rc1", "0.10.0.dev1"],
 )
-def test_validate_hermes_relay_compatibility_rejects_relay_outside_0_9_and_0_10(
+def test_validate_hermes_relay_compatibility_rejects_relay_outside_0_10(
     monkeypatch, relay_version
 ):
     monkeypatch.setattr(telemetry, "version", lambda _name: relay_version)
 
     with pytest.raises(
         RuntimeError,
-        match=f"requires nemo-relay 0.9 or 0.10; found {relay_version}",
+        match=f"requires nemo-relay 0.10; found {relay_version}",
     ):
         telemetry.validate_hermes_relay_compatibility()
 
@@ -155,9 +155,7 @@ async def test_runtime_start_rejects_published_hermes_relay_before_setup(
         ).to_mapping(),
     }
 
-    with pytest.raises(
-        RuntimeError, match="does not support Relay 0.9 or 0.10 telemetry"
-    ):
+    with pytest.raises(RuntimeError, match="does not support Relay 0.10 telemetry"):
         await adapter.HermesRuntime().start(payload)
 
     assert not (tmp_path / "artifacts" / ".fabric").exists()

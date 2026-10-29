@@ -41,29 +41,25 @@ To install and build all maintained TypeScript workspaces instead, run:
 just build-typescript
 ```
 
-The full build installs its own dependencies, so you do not need to run
-`just install-typescript-pi` first.
+The full build installs the required dependencies.
 
 ### Install NeMo Relay
 
-Relay-enabled Pi runs require `nemo-relay>=0.9.0,<0.11.0` on `PATH`. Install it
-separately from the npm adapter:
+Relay-enabled Pi runs require a NeMo Relay CLI in the `>=0.9.0,<0.12.0` range. Install the command-line tool:
 
 ```bash
-pip install "nemo-relay-cli-bin>=0.9.0,<0.11.0"
+pip install "nemo-relay-cli-bin>=0.9.0,<0.12.0"
 ```
 
-To select a specific Relay executable instead of relying on `PATH`, set
-`FABRIC_NEMO_RELAY_COMMAND` to its absolute path:
+The adapter finds `nemo-relay` on `PATH` by default. To select a specific executable, set `FABRIC_NEMO_RELAY_COMMAND` to its absolute path:
 
 ```bash
 FABRIC_NEMO_RELAY_COMMAND="/absolute/path/to/nemo-relay" uv run python your_app.py
 ```
 
-The adapter does not bundle the Relay Pi extension. Obtain the
-[`crates/cli/assets/pi-extension`](https://github.com/NVIDIA/NeMo-Relay/tree/0.10.0/crates/cli/assets/pi-extension)
-directory from the Relay release that matches the CLI and configure its path as described in the
-next section.
+The adapter uses the selected executable to start the Relay gateway. With Relay 0.11, the Pi extension also uses that executable to forward hook events. Relay 0.9 and 0.10 extensions send hook events directly over HTTP. When the runtime stops, the adapter restores the extension's previous command setting.
+
+Use the [Pi extension](https://github.com/NVIDIA/NeMo-Relay/tree/0.11.0/crates/cli/assets/pi-extension) from the same Relay release as the command-line tool. Configure the extension path as shown in the next section.
 
 ## Configure the Adapter
 
@@ -131,8 +127,7 @@ one of:
 - `mistral-conversations`
 - `pi-messages`
 
-The remaining Pi-specific model fields are optional and set directly on the
-model alongside `api`:
+The following Pi-specific model fields are set directly on the model alongside `api`:
 
 - `context_window` — the model's context window, in tokens.
 - `max_tokens` — the maximum response length, in tokens.
@@ -142,14 +137,7 @@ model alongside `api`:
 - `input` — the accepted input modalities, a list of `"text"` and/or `"image"`.
 - `name` — a display name for the model.
 
-Any field you set overrides. For a Pi-known model, any field you omit keeps that
-model's existing catalog value; the adapter supplies no defaults of its own. A
-gateway model Pi does not ship has no existing entry to fall back on, so a
-complete definition is required — `api`, `base_url`, `context_window`, and
-`max_tokens` — and adapter startup fails fast otherwise; `cost`, `reasoning`, `input`,
-and `name` remain optional. The example below registers an NVIDIA Nemotron model
-from the OpenAI-compatible [NVIDIA Build](https://build.nvidia.com) API, which Pi
-does not ship:
+Any field you set overrides. For a Pi-known model, any field you omit keeps that model's existing catalog value; the adapter supplies no defaults of its own. A gateway model Pi does not ship has no existing entry to fall back on, so a complete definition is required: `api`, `base_url`, `context_window`, `max_tokens`, `input`, and `cost`. Adapter startup rejects missing required metadata before invoking the model. The `reasoning` and `name` fields remain optional. The example below registers an NVIDIA Nemotron model from the OpenAI-compatible [NVIDIA Build](https://build.nvidia.com) API, which Pi does not ship:
 
 ```python
 from nemo_fabric import ModelConfig
@@ -166,11 +154,12 @@ ModelConfig(
     max_tokens=32_768,
     reasoning=True,
     input=["text"],
+    cost={"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
     name="Nemotron 3 Super 120B (NVIDIA Build)",
 )
 ```
 
-The `reasoning`, `input`, `cost`, and `name` fields are optional; omit any you don't need.
+The example uses zero cost rates, so Pi calculates zero token cost. Set the rates for your endpoint when you need cost estimates.
 
 ## Configure Skills and Extensions
 
@@ -251,7 +240,7 @@ adapter process, so concurrent NeMo Fabric runtimes remain isolated. Direct
 embedders must likewise place concurrent Relay-enabled Pi runtimes in separate
 processes.
 
-The released Relay 0.9 and 0.10 Pi extensions emit `turn_end` and close the per-turn
+The matching Relay Pi extension emits `turn_end` and closes the per-turn
 scope, but its local ATIF trajectory remains attached to Pi's session-level
 agent scope. Relay therefore finalizes that trajectory only after the Pi session
 closes. It is not included in the invocation's `relay_artifacts`. The adapter
@@ -367,3 +356,18 @@ resources remain disabled. The Relay extension does not add those resources.
 
 The Relay Pi hook route is available only on the loopback gateway and does not
 authenticate hook posts. Treat the loopback port as a local trust boundary.
+
+
+## Credential-free HTTP model gateways
+
+For Relay-enabled runs, set `harness.settings.insecure_http_model_hosts` to the exact bare DNS hostnames or IP addresses of trusted inference gateways. This requires NeMo Relay CLI 0.11.x.
+
+Remote HTTP model endpoints require `openai-completions`, `openai-responses`, or `anthropic-messages`. Other Pi model APIs, including `mistral-conversations`, require HTTPS or loopback HTTP because their requests bypass Relay's gateway. Fabric rejects unsupported remote HTTP APIs before session startup, including hosts listed in `insecure_http_model_hosts`.
+
+```python
+config.harness.settings["insecure_http_model_hosts"] = ["inference.internal", "10.0.0.10"]
+```
+
+Entries have no scheme, port, path, wildcard, brackets, or IPv6 zone identifier. DNS matching ignores case and a trailing dot. Each listed host may use custom ports and paths. NeMo Fabric writes explicit `[]` to revoke inherited trust and preserves omission when the setting is absent. System Relay configuration has higher priority and can enforce an empty list.
+
+Relay strips authorization, API-key, cookie, custom credential headers, and middleware-added credentials before forwarding remote HTTP model requests, including model credentials supplied to Pi. Relay rejects conflicting upstream authorization configuration. Prompts and responses remain unencrypted. HTTPS is the default; this opt-in does not authorize MCP or observability endpoints, caller-selected destinations, or remote HTTP WebSockets.

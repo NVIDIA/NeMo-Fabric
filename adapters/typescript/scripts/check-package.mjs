@@ -22,8 +22,15 @@ const expectedByPackage = {
   "nemo-fabric-adapters-common": [
     "LICENSE",
     "README.md",
+    "acp-runner.md",
+    "dist/acp-runner.d.ts",
+    "dist/acp-runner.js",
     "dist/index.d.ts",
     "dist/index.js",
+    "dist/health.d.ts",
+    "dist/health.js",
+    "dist/provenance.d.ts",
+    "dist/provenance.js",
     "dist/lifecycle.d.ts",
     "dist/lifecycle.js",
     "dist/model-endpoint.d.ts",
@@ -38,6 +45,8 @@ const expectedByPackage = {
     "dist/cli.js",
     "dist/cline-sdk.d.ts",
     "dist/cline-sdk.js",
+    "dist/raw-usage.d.ts",
+    "dist/raw-usage.js",
     "dist/runtime.d.ts",
     "dist/runtime.js",
     "package.json",
@@ -67,6 +76,8 @@ const expectedByPackage = {
     "dist/relay-config.js",
     "dist/relay-gateway.d.ts",
     "dist/relay-gateway.js",
+    "dist/relay-http.d.ts",
+    "dist/relay-http.js",
     "dist/relay.d.ts",
     "dist/relay.js",
     "dist/runtime.d.ts",
@@ -89,6 +100,8 @@ const expectedByPackage = {
     "dist/opencode-sdk.js",
     "dist/runtime.d.ts",
     "dist/runtime.js",
+    "dist/usage.d.ts",
+    "dist/usage.js",
     "opencode.fabric-adapter.json",
     "package.json",
   ],
@@ -117,7 +130,39 @@ const expectedByPackage = {
     "dist/kilo-sdk.js",
     "dist/runtime.d.ts",
     "dist/runtime.js",
+    "dist/usage-events.d.ts",
+    "dist/usage-events.js",
+    "dist/usage.d.ts",
+    "dist/usage.js",
     "kilo.fabric-adapter.json",
+    "package.json",
+  ],
+  "nemo-fabric-adapters-kiro": [
+    "LICENSE",
+    "README.md",
+    "dist/cli.d.ts",
+    "dist/cli.js",
+    "dist/configuration.d.ts",
+    "dist/configuration.js",
+    "dist/kiro-acp.d.ts",
+    "dist/kiro-acp.js",
+    "dist/runtime.d.ts",
+    "dist/runtime.js",
+    "kiro.fabric-adapter.json",
+    "package.json",
+  ],
+  "nemo-fabric-adapters-strands": [
+    "LICENSE",
+    "README.md",
+    "dist/cli.d.ts",
+    "dist/cli.js",
+    "dist/configuration.d.ts",
+    "dist/configuration.js",
+    "dist/strands-acp.d.ts",
+    "dist/strands-acp.js",
+    "dist/runtime.d.ts",
+    "dist/runtime.js",
+    "strands.fabric-adapter.json",
     "package.json",
   ],
 };
@@ -191,6 +236,17 @@ if (manifest.name === "nemo-fabric-adapters-droid") {
       manifest.peerDependenciesMeta?.["@factory/droid-sdk"]?.optional !== true ||
       manifest.devDependencies?.["@factory/droid-sdk"] !== "0.9.1") {
     throw new Error("The Droid SDK must be a compatible optional peer and exact-pinned development dependency");
+  }
+}
+if (manifest.name === "nemo-fabric-adapters-kiro") {
+  if (manifest.exports?.["./descriptor"] !== "./kiro.fabric-adapter.json") {
+    throw new Error("The Kiro package must export its adapter descriptor");
+  }
+  const descriptor = JSON.parse(
+    await readFile(join(packageRoot, "kiro.fabric-adapter.json"), "utf8"),
+  );
+  if (descriptor.runner?.command !== "node" || descriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("The Kiro descriptor runner must resolve inside the npm package");
   }
 }
 if (manifest.name === "nemo-fabric-adapters-opencode") {

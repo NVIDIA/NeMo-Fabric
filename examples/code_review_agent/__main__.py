@@ -14,7 +14,13 @@ from collections.abc import Callable
 from contextlib import AsyncExitStack
 from typing import Any
 
-from nemo_fabric import Fabric, FabricConfig
+from nemo_fabric import (
+    Fabric,
+    FabricConfig,
+    ModelConfig,
+    SystemStatsConfig,
+    SystemStatsSamplingConfig,
+)
 
 from examples.code_review_agent.config import (
     BASE_DIR,
@@ -25,6 +31,8 @@ from examples.code_review_agent.config import (
     droid_config,
     hermes_config,
     kilo_config,
+    kiro_config,
+    strands_config,
     nooa_config,
     openclaw_config,
     openhands_config,
@@ -37,6 +45,8 @@ from examples.code_review_agent.config import (
 CONFIG_BUILDERS: dict[str, Callable[[], FabricConfig]] = {
     "hermes": hermes_config,
     "kilo": kilo_config,
+    "kiro": kiro_config,
+    "strands": strands_config,
     "claude": claude_config,
     "cline": cline_config,
     "codex": codex_config,
@@ -74,6 +84,21 @@ async def main() -> None:
     )
     parser.add_argument("--base-url", help="Override the default model endpoint URL.")
     parser.add_argument(
+        "--stats",
+        choices=("off", "before-after", "sampled"),
+        help="Disable invocation stats, collect readings before and after the invocation, or enable periodic sampling. Defaults to the variant's configuration.",
+    )
+    parser.add_argument(
+        "--stats-interval-ms",
+        type=int,
+        help="Sampling interval in milliseconds (100–60000); requires --stats sampled. Default: 1000.",
+    )
+    parser.add_argument(
+        "--stats-max-samples",
+        type=int,
+        help="Maximum retained samples including before/after readings (2–100000); requires --stats sampled. Default: 10000.",
+    )
+    parser.add_argument(
         "--api-key-env",
         help="Override the environment variable containing the model credential.",
     )
@@ -86,7 +111,7 @@ async def main() -> None:
     parser.add_argument(
         "--pi-relay-extension-path",
         metavar="PATH",
-        help="Path to the NeMo Relay 0.9 or 0.10 Pi extension file or package directory.",
+        help="Path to the Pi extension file or package directory from the installed NeMo Relay CLI release.",
     )
     skill_group = parser.add_mutually_exclusive_group()
     skill_group.add_argument(
@@ -162,11 +187,26 @@ async def main() -> None:
         parser.error("--stream requires --relay")
     if args.stream and args.plan:
         parser.error("--stream cannot be combined with --plan")
-    if args.variant in {"cline", "droid", "kilo", "openclaw", "openhands", "qwen"} and args.relay:
+    if (
+        args.variant
+        in {
+            "cline",
+            "droid",
+            "kilo",
+            "kiro",
+            "strands",
+            "openclaw",
+            "openhands",
+            "qwen",
+        }
+        and args.relay
+    ):
         display_name = {
             "cline": "Cline",
             "droid": "Factory Droid",
             "kilo": "Kilo Code",
+            "kiro": "Kiro",
+            "strands": "Strands",
             "openclaw": "OpenClaw",
             "openhands": "OpenHands",
             "qwen": "Qwen Code",
@@ -214,9 +254,42 @@ async def main() -> None:
     ):
         parser.error("Pi Relay runs require --pi-relay-extension-path")
 
+    if args.variant == "kiro":
+        if args.base_url is not None:
+            parser.error("--base-url is not supported by the Kiro adapter")
+        if args.api_key_env is not None:
+            parser.error(
+                "--api-key-env is not supported by the Kiro adapter; use KIRO_API_KEY"
+            )
+
     config = CONFIG_BUILDERS[args.variant]()
+    if (
+        args.stats_interval_ms is not None or args.stats_max_samples is not None
+    ) and args.stats != "sampled":
+        parser.error(
+            "--stats-interval-ms and --stats-max-samples require --stats sampled"
+        )
+    if args.stats == "off":
+        config.system_stats = None
+    elif args.stats == "before-after":
+        config.system_stats = SystemStatsConfig()
+    elif args.stats == "sampled":
+        sampling_options = {}
+        if args.stats_interval_ms is not None:
+            sampling_options["interval_ms"] = args.stats_interval_ms
+        if args.stats_max_samples is not None:
+            sampling_options["max_samples"] = args.stats_max_samples
+        try:
+            config.system_stats = SystemStatsConfig(
+                sampling=SystemStatsSamplingConfig(**sampling_options)
+            )
+        except ValueError as error:
+            parser.error(str(error))
     if args.model is not None:
-        config.models["default"].model = args.model
+        if args.variant == "kiro":
+            config.models["default"] = ModelConfig(provider="kiro", model=args.model)
+        else:
+            config.models["default"].model = args.model
     if args.base_url is not None:
         config.models["default"].base_url = args.base_url
     if args.api_key_env is not None:

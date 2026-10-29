@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { OpenCodeAdapterRuntime } from "../dist/runtime.js";
+import { OpenCodeAdapterRuntime, OpenCodePromptFailure } from "../dist/runtime.js";
 import { LifecycleError } from "nemo-fabric-adapters-common";
 
 function startInput(runtimeId = "runtime-1") {
@@ -32,6 +32,24 @@ function startInput(runtimeId = "runtime-1") {
 }
 
 const context = startInput().runtimeContext;
+
+test("retains observed usage after a transport failure and invalidates the session", async () => {
+  const usage = { extensions: { "nvidia.fabric.opencode.usage_evidence.v1": {
+    observed: { input_tokens: 12 }, gaps: ["scope_unverified", "unfinished_work"],
+  } } };
+  let stopped = false;
+  const runtime = new OpenCodeAdapterRuntime({ async create() {
+    return { id: "session", async prompt() { throw new OpenCodePromptFailure(usage); }, async stop() { stopped = true; } };
+  } });
+  await runtime.start(startInput());
+  const result = await runtime.invoke({ input: "run" }, context);
+  assert.equal(result.status, "failed");
+  assert.equal(result.error.code, "opencode_session_failed");
+  assert.equal(result.error.retryable, false);
+  assert.deepEqual(result.usage, usage);
+  assert.equal(stopped, true);
+  await assert.rejects(runtime.invoke({ input: "again" }, context), (error) => error.code === "opencode_not_started");
+});
 
 test("enforces the runtime start and invoke lifecycle guards", async () => {
   const runtime = new OpenCodeAdapterRuntime({

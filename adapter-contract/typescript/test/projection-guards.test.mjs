@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   assertAdapterSchemaInventory,
+  assertEvidenceConditionals,
   assertRunResultConditionals,
 } from "../scripts/projection-guards.mjs";
 
@@ -24,6 +25,22 @@ const runResultSchema = JSON.parse(
   ),
 );
 const currentConditionals = runResultSchema.allOf;
+
+const evidenceSchema = JSON.parse(await readFile(
+  resolve(packageRoot, "../..", "schemas/evidence/execution-evidence.schema.json"), "utf8",
+));
+
+test("software projection accepts the canonical observation and coverage conditions", () => {
+  assert.doesNotThrow(() => assertEvidenceConditionals(evidenceSchema.$defs));
+});
+
+test("software projection rejects unhandled observation or coverage constraints", () => {
+  for (const name of ["VersionObservation", "SoftwareEnvironment"]) {
+    const changed = structuredClone(evidenceSchema.$defs);
+    changed[name].allOf.push({ required: ["new_evidence"] });
+    assert.throws(() => assertEvidenceConditionals(changed), /ExecutionEvidence conditionals changed/);
+  }
+});
 
 test("result projection rejects an unhandled conditional constraint", () => {
   const changed = structuredClone(currentConditionals);

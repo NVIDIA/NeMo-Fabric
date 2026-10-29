@@ -12,9 +12,9 @@ ref_name := ""
 # Linux wheel artifacts target this minimum glibc version for compatibility.
 linux_glibc_version := "2.17"
 
-python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector sdk/python/nemo-fabric-adapter-catalog adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/openclaw adapters/python/openhands adapters/python/remote-agent"
+python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector sdk/python/nemo-fabric-adapter-catalog sdk/python/nemo-fabric-evidence adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/openclaw adapters/python/openhands adapters/python/remote-agent"
 
-python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector sdk/python/nemo-fabric-adapter-catalog adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/openclaw adapters/python/openhands adapters/python/remote-agent"
+python_packages := "sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector sdk/python/nemo-fabric-adapter-catalog sdk/python/nemo-fabric-evidence adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/openclaw adapters/python/openhands adapters/python/remote-agent"
 
 # List Python package paths, one per line.
 python-package-paths:
@@ -280,6 +280,8 @@ clean:
         .coverage \
         build \
         dist \
+        sdk/python/nemo-fabric-evidence/build \
+        sdk/python/nemo-fabric-evidence/dist \
         adapter-contract/python/build \
         adapter-contract/python/dist \
         docs/node_modules \
@@ -293,6 +295,8 @@ clean:
         adapters/typescript/opencode/dist \
         adapters/typescript/qwen/dist \
         adapters/typescript/kilo/dist \
+        adapters/typescript/kiro/dist \
+        adapters/typescript/strands/dist \
         adapters/python/*/build \
         adapters/python/*/dist \
         sdk/python/*/build \
@@ -304,7 +308,9 @@ clean:
         adapters/typescript/pi/*.tgz \
         adapters/typescript/opencode/*.tgz \
         adapters/typescript/qwen/*.tgz \
-        adapters/typescript/kilo/*.tgz
+        adapters/typescript/kilo/*.tgz \
+        adapters/typescript/kiro/*.tgz \
+        adapters/typescript/strands/*.tgz
     find . \
         \( -path './.venv' -o -path './.git' \) -prune -o \
         -type d \( \
@@ -377,6 +383,13 @@ install-typescript-qwen: install-typescript-contract
 install-typescript-kilo: install-typescript-contract
     npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-kilo --include-workspace-root --ignore-scripts
 
+# Install the Kiro ACP adapter for source development. The Kiro CLI is caller-managed.
+install-typescript-kiro: install-typescript-contract
+    npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro --include-workspace-root --ignore-scripts
+
+install-typescript-strands: install-typescript-contract
+    npm ci --prefix adapters/typescript --workspace nemo-fabric-adapters-strands --include-workspace-root --ignore-scripts
+
 # Install every maintained TypeScript package.
 install-typescript: install-typescript-contract install-typescript-adapters
 
@@ -426,6 +439,7 @@ install-hermes-agent:
         uv venv --python 3.14 --clear "$REPO_ROOT/.venv-hermes"
     fi
     uv pip install --python "$REPO_ROOT/.venv-hermes/bin/python" \
+        --editable "$REPO_ROOT/sdk/python/nemo-fabric-evidence" \
         --editable "$REPO_ROOT/adapter-contract/python" \
         --editable "$REPO_ROOT/adapters/python/common" \
         --editable "$REPO_ROOT/adapters/python/hermes[relay]" \
@@ -436,7 +450,7 @@ install-hermes-agent:
         --editable "$hermes_checkout[mcp]" pytest pytest-asyncio pyyaml
 
 test-hermes: install-hermes-agent
-    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py tests/adapters/test_hermes_config_builder.py tests/adapters/test_hermes_streaming.py tests/e2e/test_hermes_e2e.py -q
+    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py tests/adapters/test_hermes_config_builder.py tests/adapters/test_hermes_streaming.py tests/adapters/test_hermes_health.py tests/e2e/test_hermes_e2e.py tests/e2e/test_hermes_checks.py -q
 
 # Build the TypeScript contract and adapter packages using their locked dependencies.
 build-typescript: install-typescript

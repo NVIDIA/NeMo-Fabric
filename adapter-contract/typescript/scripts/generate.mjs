@@ -9,6 +9,7 @@ import { compile } from "json-schema-to-typescript";
 
 import {
   assertAdapterSchemaInventory,
+  assertEvidenceConditionals,
   assertRunResultConditionals,
 } from "./projection-guards.mjs";
 
@@ -28,10 +29,18 @@ const currentYear = new Date().getFullYear();
 const banner = `// SPDX-FileCopyrightText: Copyright (c) ${currentYear}, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// This file is generated from the canonical adapter-contract JSON Schemas.
+// This file is generated from the canonical NeMo Fabric JSON Schemas.
 // Do not edit it directly; run \`npm run generate\` instead.`;
 
 const schemaSpecs = [
+  {
+    name: "execution-evidence",
+    directory: resolve(repositoryRoot, "schemas/evidence"),
+    output: "execution-evidence.ts",
+    project: projectExecutionEvidence,
+  },
+  { name: "adapter-check-request", output: "adapter-check-request.ts" },
+  { name: "adapter-check-result", output: "adapter-check-result.ts" },
   {
     name: "adapter-descriptor",
     output: "adapter-descriptor.ts",
@@ -76,13 +85,18 @@ const schemaInventory = (await readdir(schemaDirectory, { withFileTypes: true })
 assertAdapterSchemaInventory(
   schemaInventory,
   [
-    ...schemaSpecs.map((spec) => `${spec.name}.schema.json`),
+    ...schemaSpecs
+      .filter((spec) => spec.directory === undefined)
+      .map((spec) => `${spec.name}.schema.json`),
     ...transportSchemaNames,
   ],
 );
 
 for (const spec of schemaSpecs) {
-  const sourcePath = resolve(schemaDirectory, `${spec.name}.schema.json`);
+  const sourcePath = resolve(
+    spec.directory ?? schemaDirectory,
+    `${spec.name}.schema.json`,
+  );
   const schemaBytes = await readFile(sourcePath);
   const schema = JSON.parse(schemaBytes.toString("utf8"));
 
@@ -265,6 +279,61 @@ function projectRunRequest(original) {
     );
   }
   input.tsType = "JsonValue";
+  return schema;
+}
+
+function projectExecutionEvidence(original) {
+  const schema = deepClone(original);
+  const definitions = schema.$defs;
+  assertEvidenceConditionals(definitions);
+  // The generator interprets if/then/else as open object intersections. Map
+  // these closed variants explicitly, retaining the canonical runtime schema.
+  const observation = definitions.VersionObservation;
+  const inventory = definitions.SoftwareEnvironment;
+  const versionRule = observation.allOf[0];
+  const coverageRule = inventory.allOf[1].then;
+  const statuses = (name) => requireStringEnum(
+    definitions[name].oneOf.map((choice) => choice.const), `${name} variants`,
+  );
+  const variant = (base, properties, required = []) => {
+    const copy = deepClone(base);
+    delete copy.allOf;
+    copy.properties = { ...copy.properties, ...properties };
+    copy.required = [...new Set([...copy.required, ...required])];
+    return copy;
+  };
+  const status = (values) => ({ type: "string", enum: values });
+  definitions.VersionObservation = {
+    title: "VersionObservation",
+    description: observation.description,
+    oneOf: [
+      variant(observation, {
+        ...versionRule.then.properties,
+        status: status(["available"]),
+      }, versionRule.then.required),
+      variant(observation, {
+        ...versionRule.else.properties,
+        status: status(statuses("EvidenceStatus").filter((value) => value !== "available")),
+      }, versionRule.else.required),
+    ],
+  };
+  definitions.SoftwareEnvironment = {
+    title: "SoftwareEnvironment",
+    description: inventory.description,
+    oneOf: [
+      variant(inventory, { status: status(["available"]), complete: { const: true } }),
+      variant(inventory, {
+        ...coverageRule.properties,
+        status: status(["available"]), complete: { const: false },
+      }, coverageRule.required),
+      variant(inventory, {
+        ...coverageRule.properties,
+        status: status(statuses("InventoryStatus").filter((value) => value !== "available")),
+        complete: inventory.allOf[0].else.properties.complete,
+        entries: { ...inventory.properties.entries, ...inventory.allOf[0].else.properties.entries },
+      }, coverageRule.required),
+    ],
+  };
   return schema;
 }
 

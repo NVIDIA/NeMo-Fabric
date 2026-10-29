@@ -15,6 +15,7 @@
   },
   "files": [
     "dist",
+    "acp-runner.md",
     "README.md",
     "LICENSE"
   ],
@@ -42,8 +43,10 @@
     "node": ">=20.18.3"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "1.5.1",
     "ajv": "8.20.0",
-    "nemo-fabric-adapter-contract": "0.6.0"
+    "nemo-fabric-adapter-contract": "0.6.0",
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@types/node": "22.19.19",
