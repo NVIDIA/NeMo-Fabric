@@ -10,26 +10,57 @@
     "binaries": ["node", "kiro-cli"]
   },
   "config": {
-    "accepts": ["models", "mcp"]
+    "accepts": ["models", "models.base_url", "mcp"]
   },
   "settings_schema": {
     "type": "object",
     "properties": {
-      "mode_id": {"type": "string", "minLength": 1},
-      "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max"]},
-      "permission_mode": {"type": "string", "enum": ["deny", "allow_once"]}
+      "mode_id": { "type": "string", "minLength": 1 },
+      "effort": {
+        "type": "string",
+        "enum": ["low", "medium", "high", "xhigh", "max"]
+      },
+      "permission_mode": { "type": "string", "enum": ["deny", "allow_once"] },
+      "experimental_byom": {
+        "type": "boolean",
+        "default": false,
+        "description": "Opt in to the adapter-owned experimental OpenAI-compatible bridge using the private Kiro CLI 2.34.2 service protocol."
+      },
+      "insecure_http_model_hosts": {
+        "type": "array",
+        "items": { "type": "string", "minLength": 1 },
+        "uniqueItems": true,
+        "description": "Explicitly trusted HTTP model endpoint hostnames without schemes, ports, paths, or wildcards."
+      }
     },
     "additionalProperties": false
   },
   "model_schema": {
     "type": "object",
     "properties": {
-      "provider": {"const": "kiro"},
-      "model": {"type": "string", "minLength": 1},
-      "api_key_env": {"const": "KIRO_API_KEY"}
+      "provider": { "enum": ["kiro", "openai"] },
+      "model": { "type": "string", "minLength": 1 },
+      "api_key_env": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "base_url": { "type": "string", "minLength": 1 }
     },
     "required": ["provider", "model"],
-    "additionalProperties": false
+    "additionalProperties": false,
+    "oneOf": [
+      {
+        "properties": {
+          "provider": { "const": "kiro" },
+          "api_key_env": { "const": "KIRO_API_KEY" },
+          "base_url": false
+        }
+      },
+      {
+        "properties": { "provider": { "const": "openai" } },
+        "required": ["base_url"]
+      }
+    ]
   },
   "extension_schemas": {
     "run_result": {

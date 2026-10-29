@@ -79,9 +79,38 @@ The settings schema is closed:
 | `mode_id` | Selects an ACP session mode advertised by Kiro. |
 | `effort` | Selects `low`, `medium`, `high`, `xhigh`, or `max` when the chosen model advertises it. |
 | `permission_mode` | `deny` rejects tool permission requests. `allow_once` chooses only a one-time allow option offered by Kiro. The default is `deny`. |
+| `experimental_byom` | Opts in to the adapter-owned OpenAI-compatible bridge for Kiro CLI 2.34.2. The default is `false`. |
+| `insecure_http_model_hosts` | Explicitly trusts HTTP model endpoint hostnames or IP addresses, without schemes, ports, paths, or wildcards. |
 
 The adapter never selects a persistent allow option. `permission_mode` controls
 ACP permission responses; it is not a normalized NeMo Fabric tool allowlist.
+
+## Experimental Model Endpoint
+
+For Kiro CLI **2.34.2**, `harness.settings.experimental_byom=true` enables an
+adapter-owned bridge using the CLI's private service protocol. This is
+experimental and does not claim official Kiro BYOM support. Other CLI versions
+are rejected for this mode. The bridge runs with an isolated HOME and does not
+change native Kiro authentication.
+
+Select `models.default.provider="openai"`, set an explicit `base_url`, and pass
+the full endpoint model ID in `model`, including any namespace. The bridge
+uses OpenAI Chat Completions. `api_key_env` optionally names an endpoint
+credential; runtime-configured environment values take priority over inherited
+values, and an empty configured value does not fall back to an inherited key.
+
+Model endpoints require HTTPS except for loopback HTTP or hosts explicitly
+listed in `harness.settings.insecure_http_model_hosts`. URLs must not contain
+credentials, queries, or fragments. The opt-in is invalid for native `kiro`
+models. The bridge sums usage across forwarded requests within an invocation;
+missing usage or provider errors leave complete totals unknown. Background shell
+or subagent work leaves totals unknown for that session. Requests outside an
+active invocation are rejected. Cache reads stay included in OpenAI prompt counts.
+
+The experimental profile advertises input and output budgets of 131,072 and
+16,384 tokens respectively; the endpoint must support these budgets. Only text
+and tool calls are supported. Kiro telemetry and content sharing are disabled
+through CLI settings in the isolated home; network containment is not claimed.
 
 ## MCP Servers
 
@@ -104,13 +133,13 @@ server as connected before accepting the first invocation.
 
 ## Supported Surface
 
-The initial adapter accepts `models` and `mcp`. Kiro model, mode, and effort
+The adapter accepts `models`, experimental `models.base_url`, and `mcp`. Native Kiro model, mode, and effort
 selection use advertised ACP session configuration. Successful assistant text,
 terminal stop reasons, session identifiers, and reported token usage are
 normalized into NeMo Fabric results.
 
-NeMo Fabric system instructions, skill paths, built-in tool policy, arbitrary model
-endpoints, Relay telemetry, and streaming are not advertised. Kiro may support
+NeMo Fabric system instructions, skill paths, built-in tool policy, Relay telemetry,
+and streaming are not advertised. Kiro may support
 related native features, but this adapter does not claim them until NeMo Fabric can
 configure and verify them through a stable Kiro interface.
 

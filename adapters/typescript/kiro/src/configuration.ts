@@ -4,9 +4,11 @@
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 
-import type { AgentConfig } from "nemo-fabric-adapter-contract";
+import type { AgentConfig, AgentModelConfig } from "nemo-fabric-adapter-contract";
 import {
   LifecycleError,
+  insecureHttpModelHosts,
+  modelEndpointAllowed,
   type AcpMcpServer,
   type AdapterStartInput,
 } from "nemo-fabric-adapters-common";
@@ -15,6 +17,12 @@ export interface KiroSettings {
   modeId?: string;
   effort?: "low" | "medium" | "high" | "xhigh" | "max";
   permissionMode: "deny" | "allow_once";
+}
+
+export interface KiroByomModel {
+  model: string;
+  baseUrl: string;
+  apiKey?: string;
 }
 
 const ENV_REFERENCE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/gu;
@@ -32,6 +40,10 @@ export function selectSettings(config: AgentConfig): KiroSettings {
   const modeId = value.mode_id;
   const effort = value.effort;
   const permissionMode = value.permission_mode ?? "deny";
+  if (value.experimental_byom !== undefined && typeof value.experimental_byom !== "boolean") {
+    throw new LifecycleError("kiro_settings_invalid", "Kiro experimental_byom must be a boolean");
+  }
+  insecureHttpModelHosts(value, "kiro_settings_invalid");
   if (modeId !== undefined && (typeof modeId !== "string" || modeId.length === 0)) {
     throw new LifecycleError("kiro_settings_invalid", "Kiro mode_id must be a non-empty string");
   }
@@ -48,20 +60,104 @@ export function selectSettings(config: AgentConfig): KiroSettings {
   };
 }
 
-export function selectModel(config: AgentConfig): string | undefined {
+function selectedModel(config: AgentConfig): AgentModelConfig | undefined {
   const models = Object.entries(config.models ?? {});
   if (models.length === 0) return undefined;
   if (models.length !== 1 || models[0]?.[0] !== "default") {
     throw new LifecycleError("kiro_model_roles_unsupported", "Kiro accepts only the default model role");
   }
-  const model = models[0][1];
-  if (model.provider !== "kiro" || model.model.trim().length === 0) {
+  return models[0][1];
+}
+
+export function selectModel(config: AgentConfig): string | undefined {
+  const model = selectedModel(config);
+  const experimental = config.harness?.settings?.experimental_byom;
+  if (experimental !== undefined && typeof experimental !== "boolean") {
+    throw new LifecycleError("kiro_settings_invalid", "Kiro experimental_byom must be a boolean");
+  }
+  if (experimental === true && model?.provider !== "openai") {
+    throw new LifecycleError("kiro_byom_model_required", "Kiro experimental BYOM requires an OpenAI-compatible model");
+  }
+  if (model === undefined) return undefined;
+  if (model.provider === "openai") {
+    if (experimental !== true) {
+      throw new LifecycleError(
+        "kiro_byom_opt_in_required",
+        "Kiro OpenAI-compatible models require experimental_byom=true",
+      );
+    }
+    let endpoint: URL;
+    try {
+      if (
+        typeof model.base_url !== "string" ||
+        model.base_url.trim() !== model.base_url ||
+        /[\r\n\0]/u.test(model.base_url)
+      ) {
+        throw new Error("invalid endpoint");
+      }
+      endpoint = new URL(model.base_url);
+    } catch {
+      throw new LifecycleError(
+        "kiro_byom_endpoint_invalid",
+        "Kiro experimental BYOM requires an explicit valid model base URL",
+      );
+    }
+    if (
+      !modelEndpointAllowed(
+        model.base_url ?? "",
+        insecureHttpModelHosts(config.harness?.settings, "kiro_settings_invalid"),
+      ) ||
+      endpoint.username !== "" ||
+      endpoint.password !== "" ||
+      endpoint.search !== "" ||
+      endpoint.hash !== ""
+    ) {
+      throw new LifecycleError(
+        "kiro_byom_endpoint_invalid",
+        "Kiro experimental BYOM requires HTTPS or explicitly trusted HTTP without URL credentials, query, or fragment",
+      );
+    }
+    if (model.model.trim().length === 0 || model.model.trim() !== model.model) {
+      throw new LifecycleError(
+        "kiro_model_invalid",
+        "Kiro experimental BYOM requires a non-empty model identifier without surrounding whitespace",
+      );
+    }
+    return model.model;
+  }
+  if (model.provider !== "kiro" || model.model.trim().length === 0 || model.base_url != null) {
     throw new LifecycleError("kiro_model_invalid", "Kiro requires a non-empty model from provider kiro");
   }
   if (model.api_key_env !== undefined && model.api_key_env !== null && model.api_key_env !== "KIRO_API_KEY") {
     throw new LifecycleError("kiro_credential_unsupported", "Kiro accepts only KIRO_API_KEY as api_key_env");
   }
   return model.model;
+}
+
+export function selectByomModel(
+  config: AgentConfig,
+  environment: Record<string, string>,
+  parent: NodeJS.ProcessEnv,
+): KiroByomModel | undefined {
+  selectModel(config);
+  const model = selectedModel(config);
+  if (model?.provider !== "openai") return undefined;
+  const credential = model.api_key_env;
+  if (credential == null) return { model: model.model, baseUrl: model.base_url as string };
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(credential)) {
+    throw new LifecycleError(
+      "kiro_byom_credential_invalid",
+      "Kiro experimental BYOM requires a valid credential environment variable name",
+    );
+  }
+  const apiKey = Object.hasOwn(environment, credential) ? environment[credential] : parent[credential];
+  if (typeof apiKey !== "string" || apiKey.length === 0 || /[\r\n\0]/u.test(apiKey)) {
+    throw new LifecycleError(
+      "kiro_byom_credential_missing",
+      "The configured Kiro experimental BYOM credential is unavailable or invalid",
+    );
+  }
+  return { model: model.model, baseUrl: model.base_url as string, apiKey };
 }
 
 export async function workspacePath(input: AdapterStartInput): Promise<string> {

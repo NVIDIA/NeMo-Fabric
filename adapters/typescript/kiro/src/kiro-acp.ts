@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import type {
-  AdapterCheckResult,
-  CheckLevel,
-  AgentUsage,
-} from "nemo-fabric-adapter-contract";
+import type { AdapterCheckResult, CheckLevel, AgentUsage } from "nemo-fabric-adapter-contract";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import {
   AcpRunnerError,
   LifecycleError,
@@ -16,7 +17,10 @@ import {
   type AdapterStartInput,
 } from "nemo-fabric-adapters-common";
 
-import { selectMcpServers, selectModel, selectSettings, workspacePath } from "./configuration.js";
+import { selectByomModel, selectMcpServers, selectModel, selectSettings, workspacePath } from "./configuration.js";
+import { startKiroByomBridge, type KiroByomBridge } from "./byom.js";
+
+const runCli = promisify(execFile);
 
 export interface KiroPromptOutcome {
   text: string;
@@ -149,7 +153,11 @@ class KiroAcpSession implements KiroSessionHandle {
   private previousUsage?: AcpPromptResult["usage"];
   private usageContinuityLost = false;
 
-  constructor(session: AcpSession) {
+  constructor(
+    session: AcpSession,
+    private readonly byom?: KiroByomBridge,
+    private readonly home?: string,
+  ) {
     this.session = session;
     this.id = session.sessionId;
   }
@@ -187,11 +195,21 @@ class KiroAcpSession implements KiroSessionHandle {
 
   async prompt(text: string, timeoutMs?: number): Promise<KiroPromptOutcome> {
     let result: AcpPromptResult;
+    this.byom?.beginInvocation();
     try {
       result = await this.session.prompt(text, timeoutMs);
     } catch (error) {
+      this.byom?.endInvocation();
       if (error instanceof AcpRunnerError) throw translateRunnerError(error, "prompt");
       throw new LifecycleError("kiro_session_failed", "Kiro ACP session communication failed");
+    }
+    if (this.byom !== undefined) {
+      const usage = this.byom.endInvocation();
+      return {
+        text: result.text,
+        stopReason: result.stopReason,
+        ...(usage === undefined ? {} : { usage }),
+      };
     }
     let usage: AgentUsage | undefined;
     try {
@@ -220,8 +238,17 @@ class KiroAcpSession implements KiroSessionHandle {
   }
 
   async stop(): Promise<void> {
+    if (this.stopped) return;
     this.stopped = true;
-    await this.session.stop();
+    try {
+      await this.session.stop();
+    } finally {
+      try {
+        await this.byom?.stop();
+      } finally {
+        if (this.home !== undefined) await rm(this.home, { recursive: true, force: true });
+      }
+    }
   }
 }
 
@@ -231,17 +258,62 @@ export class KiroAcpSessionFactory implements KiroSessionFactory {
     const settings = selectSettings(input.config);
     const model = selectModel(input.config);
     const configuredEnvironment = input.runtimeContext.environment.env ?? {};
+    const byomModel = selectByomModel(input.config, configuredEnvironment, process.env);
     const mcpServers = selectMcpServers(input.config, configuredEnvironment, process.env);
     const configOptions = [
       ...(model === undefined ? [] : [{ id: "model", value: model }]),
       ...(settings.effort === undefined ? [] : [{ id: "effortLevel", value: settings.effort }]),
     ];
+    let byom: KiroByomBridge | undefined;
+    let home: string | undefined;
     try {
+      const environment = childEnvironment(input);
+      if (byomModel !== undefined) {
+        home = await mkdtemp(join(tmpdir(), "fabric-kiro-byom-"));
+        byom = await startKiroByomBridge(byomModel);
+        // The real provider credential stays in the adapter process. The CLI
+        // receives only an ephemeral credential for its owned loopback service.
+        if (input.config.models?.default?.api_key_env) delete environment[input.config.models.default.api_key_env];
+        Object.assign(environment, {
+          HOME: home,
+          USERPROFILE: home,
+          KIRO_HOME: join(home, ".kiro"),
+          XDG_CONFIG_HOME: join(home, ".config"),
+          XDG_DATA_HOME: join(home, ".local", "share"),
+          XDG_CACHE_HOME: join(home, ".cache"),
+          XDG_RUNTIME_DIR: home,
+          KIRO_API_KEY: byom.token,
+          KIRO_KAS_ENDPOINT: byom.url,
+          KIRO_KAS_CONTROL_PLANE_ENDPOINT: byom.url,
+          KIRO_KAS_REGION: "us-east-1",
+          CLOUD_CONFIG_ENDPOINT: byom.url,
+          KIRO_DISABLE_EXPERIMENT_CONFIG: "true",
+          KIRO_DISABLE_SESSION_TITLE_LLM: "true",
+          OTEL_SDK_DISABLED: "true",
+        });
+        const execute = (args: string[]) =>
+          runCli("kiro-cli", args, {
+            cwd: workspace,
+            env: environment,
+            timeout: 10_000,
+            maxBuffer: 64 * 1024,
+          });
+        const version = await execute(["--version"]);
+        if (version.stdout.trim() !== "kiro-cli 2.34.2") {
+          throw new LifecycleError("kiro_byom_version_unsupported", "Experimental Kiro BYOM requires kiro-cli 2.34.2");
+        }
+        // Verified native 2.34.2 settings format. Seed the owned home before
+        // starting ACP, without launching another service-enabled CLI process.
+        await mkdir(join(home, ".kiro", "settings"), { recursive: true });
+        await writeFile(join(home, ".kiro", "settings", "cli.json"), JSON.stringify({
+          "telemetry.enabled": false, "codeWhisperer.shareCodeWhispererContentWithAWS": false,
+        }), { mode: 0o600 });
+      }
       const session = await startAcpSession({
         command: "kiro-cli",
         args: ["acp", "--agent-engine=v3"],
         cwd: workspace,
-        env: childEnvironment(input),
+        env: environment,
         mcpServers,
         ...(mcpServers.length === 0
           ? {}
@@ -262,8 +334,13 @@ export class KiroAcpSessionFactory implements KiroSessionFactory {
         clientName: "nemo-fabric-kiro",
         clientVersion: "0.6.0",
       });
-      return new KiroAcpSession(session);
+      return new KiroAcpSession(session, byom, home);
     } catch (error) {
+      try {
+        await byom?.stop();
+      } finally {
+        if (home !== undefined) await rm(home, { recursive: true, force: true });
+      }
       if (error instanceof AcpRunnerError) throw translateRunnerError(error, "start");
       if (error instanceof LifecycleError) throw error;
       throw new LifecycleError("kiro_start_failed", "Kiro ACP initialization failed", { retryable: true });

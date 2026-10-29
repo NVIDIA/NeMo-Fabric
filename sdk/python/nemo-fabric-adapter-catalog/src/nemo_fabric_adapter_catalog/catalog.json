@@ -1149,6 +1149,7 @@
         "config": {
           "accepts": [
             "models",
+            "models.base_url",
             "mcp"
           ]
         },
@@ -1182,16 +1183,47 @@
         },
         "model_schema": {
           "additionalProperties": false,
+          "oneOf": [
+            {
+              "properties": {
+                "api_key_env": {
+                  "const": "KIRO_API_KEY"
+                },
+                "base_url": false,
+                "provider": {
+                  "const": "kiro"
+                }
+              }
+            },
+            {
+              "properties": {
+                "provider": {
+                  "const": "openai"
+                }
+              },
+              "required": [
+                "base_url"
+              ]
+            }
+          ],
           "properties": {
             "api_key_env": {
-              "const": "KIRO_API_KEY"
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "type": "string"
+            },
+            "base_url": {
+              "minLength": 1,
+              "type": "string"
             },
             "model": {
               "minLength": 1,
               "type": "string"
             },
             "provider": {
-              "const": "kiro"
+              "enum": [
+                "kiro",
+                "openai"
+              ]
             }
           },
           "required": [
@@ -1223,6 +1255,20 @@
               ],
               "type": "string"
             },
+            "experimental_byom": {
+              "default": false,
+              "description": "Opt in to the adapter-owned experimental OpenAI-compatible bridge using the private Kiro CLI 2.34.2 service protocol.",
+              "type": "boolean"
+            },
+            "insecure_http_model_hosts": {
+              "description": "Explicitly trusted HTTP model endpoint hostnames without schemes, ports, paths, or wildcards.",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
             "mode_id": {
               "minLength": 1,
               "type": "string"
@@ -1243,7 +1289,7 @@
         "name": "nemo-fabric-adapters-kiro",
         "version": "0.6.0"
       },
-      "sha256": "e7393a07550505f23a3396128a29f5b078492ce7f1580f6f3b79d5872e4587a2",
+      "sha256": "db3b8cf2cb1b298f0cb66523837bb6c5a17125b713aeb836bfd08707052c5c15",
       "source": "adapters/typescript/kiro/kiro.fabric-adapter.json"
     },
     "nvidia.fabric.langchain.deepagents": {

@@ -38,7 +38,7 @@ checkouts can register `adapters/typescript/kiro/kiro.fabric-adapter.json`.
 
 ## Supported Configuration
 
-The initial adapter maps only configuration Kiro V3 exposes through ACP:
+Native mode maps configuration Kiro V3 exposes through ACP:
 
 - The optional `default` NeMo Fabric model role selects an advertised Kiro model.
   Its provider is `kiro`; `api_key_env`, when present, must be
@@ -57,11 +57,62 @@ The initial adapter maps only configuration Kiro V3 exposes through ACP:
 Kiro's advertised modes, models, effort values, and MCP transport capabilities
 are authoritative. Startup fails instead of silently ignoring an unsupported
 selection. NeMo Fabric system instructions, skill paths, normalized built-in tool
-policy, arbitrary model endpoints, telemetry, and streaming are not advertised
-by this initial adapter.
+policy, telemetry, and streaming are not advertised. Model endpoints are
+available only through the experimental bridge described below.
 
 See the [Kiro integration guide](../../../docs/integrations/harness/kiro.mdx)
 for a complete configuration example.
+
+## Experimental OpenAI-Compatible Bridge
+
+The adapter can run Kiro CLI **2.34.2** against an explicit OpenAI Chat
+Completions endpoint. This adapter-owned bridge uses Kiro's private service
+protocol; it is experimental and does not claim official Kiro BYOM support.
+Other CLI versions are rejected for this mode. Native `provider="kiro"`
+authentication and session selection remain separate.
+
+Opt in with `harness.settings.experimental_byom=true`, select the `openai`
+provider, and supply `base_url`. The model ID is forwarded in full, including
+namespaces such as `nvidia/`. For example:
+
+```json
+{
+  "harness": {
+    "adapter_id": "nvidia.fabric.kiro",
+    "settings": {"experimental_byom": true, "permission_mode": "allow_once"}
+  },
+  "models": {
+    "default": {
+      "provider": "openai",
+      "model": "nvidia/nemotron-model",
+      "base_url": "http://127.0.0.1:8000/v1",
+      "api_key_env": "MODEL_API_KEY"
+    }
+  }
+}
+```
+
+`api_key_env` is optional for an endpoint that requires no authentication.
+When supplied, the configured runtime environment takes priority over the
+parent environment. A missing or empty configured credential fails startup.
+The adapter uses an isolated HOME and owns the bridge lifecycle; credentials
+are not supplied through model IDs or URLs. URL credentials, queries, and
+fragments are rejected.
+
+HTTPS and loopback HTTP are accepted. Other HTTP model endpoints require
+explicit trust through `harness.settings.insecure_http_model_hosts`, containing
+hostnames or IP addresses without schemes, ports, paths, or wildcards.
+The bridge sums input and output tokens across every forwarded model request in
+one invocation. OpenAI prompt counts include cache reads; those tokens are not
+added twice. Missing or failed-request usage leaves the complete totals unknown.
+Background shell or subagent work also leaves totals unknown for that session.
+Requests outside an active invocation are rejected.
+
+The experimental model advertisement uses a 131,072-token input budget and a
+16,384-token output budget. The endpoint must support those budgets. This is a
+text and tool-call bridge; image and document inputs are rejected. Both Kiro
+telemetry and content sharing are disabled through its CLI settings in the
+isolated home. This does not establish operating-system network containment.
 
 ## Runtime health
 

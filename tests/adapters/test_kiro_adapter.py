@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DESCRIPTOR = ROOT / "adapters" / "typescript" / "kiro" / "kiro.fabric-adapter.json"
 
 
-def config(*, settings=None, base_url=None) -> FabricConfig:
+def config(*, settings=None, base_url=None, provider="kiro") -> FabricConfig:
     return FabricConfig(
         metadata=MetadataConfig(name="kiro-adapter-test"),
         discovery=DiscoveryConfig(local_paths=[DESCRIPTOR]),
@@ -37,7 +37,7 @@ def config(*, settings=None, base_url=None) -> FabricConfig:
         ),
         models={
             "default": ModelConfig(
-                provider="kiro",
+                provider=provider,
                 model="claude-sonnet",
                 api_key_env="KIRO_API_KEY",
                 base_url=base_url,
@@ -54,11 +54,32 @@ def test_kiro_descriptor_declares_only_the_supported_surface():
     assert descriptor["adapter_kind"] == "process"
     assert descriptor["runner"] == {"command": "node", "script": "dist/cli.js"}
     assert descriptor["requirements"] == {"binaries": ["node", "kiro-cli"]}
-    assert descriptor["config"] == {"accepts": ["models", "mcp"]}
-    assert descriptor["model_schema"]["properties"]["provider"] == {"const": "kiro"}
-    assert descriptor["model_schema"]["properties"]["api_key_env"] == {
-        "const": "KIRO_API_KEY"
+    assert descriptor["config"] == {"accepts": ["models", "models.base_url", "mcp"]}
+    assert descriptor["model_schema"]["properties"]["provider"] == {
+        "enum": ["kiro", "openai"]
     }
+    assert descriptor["model_schema"]["properties"]["api_key_env"] == {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+    }
+    native, byom = descriptor["model_schema"]["oneOf"]
+    assert native["properties"] == {
+        "provider": {"const": "kiro"},
+        "api_key_env": {"const": "KIRO_API_KEY"},
+        "base_url": False,
+    }
+    assert byom == {
+        "properties": {"provider": {"const": "openai"}},
+        "required": ["base_url"],
+    }
+    assert (
+        descriptor["settings_schema"]["properties"]["experimental_byom"]["default"]
+        is False
+    )
+    assert (
+        descriptor["settings_schema"]["properties"]["experimental_byom"]["type"]
+        == "boolean"
+    )
     assert descriptor["model_schema"]["additionalProperties"] is False
     assert descriptor["settings_schema"]["additionalProperties"] is False
     assert descriptor["capabilities"] == {
@@ -109,6 +130,8 @@ def test_kiro_descriptor_plans_model_settings_and_mcp():
     [
         config(settings={"unknown": True}),
         config(base_url="https://example.test/v1"),
+        config(settings={"experimental_byom": True}, provider="openai"),
+        config(settings={"experimental_byom": "true"}),
     ],
 )
 def test_kiro_descriptor_rejects_unknown_settings_and_model_endpoint(adapter_config):
@@ -168,3 +191,28 @@ async def test_kiro_descriptor_doctor_reports_missing_binaries(monkeypatch):
     }
     assert any("node" in message for message in checks)
     assert any("kiro-cli" in message for message in checks)
+
+
+def test_kiro_descriptor_plans_explicit_experimental_openai_bridge():
+    adapter_config = config(
+        settings={"experimental_byom": True, "permission_mode": "deny"},
+        provider="openai",
+        base_url="https://example.test/v1",
+    )
+    adapter_config.models["default"].api_key_env = "LOCAL_MODEL_KEY"
+
+    plan = Fabric().plan(adapter_config, base_dir=ROOT)
+    agent = plan.to_mapping()["agent_config"]
+
+    assert agent["models"]["default"] == {
+        "provider": "openai",
+        "model": "claude-sonnet",
+        "api_key_env": "LOCAL_MODEL_KEY",
+        "base_url": "https://example.test/v1",
+    }
+    assert agent["harness"]["settings"] == {
+        "experimental_byom": True,
+        "permission_mode": "deny",
+    }
+    # The descriptor validates each block independently. The direct adapter
+    # enforces the cross-block requirement for the explicit BYOM opt-in.
