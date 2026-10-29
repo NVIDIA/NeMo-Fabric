@@ -3,7 +3,7 @@
 
 ARG TASK_IMAGE=python:3.12-slim-bookworm
 FROM ${TASK_IMAGE}
-COPY --from=node:24.16.0-bookworm-slim /usr/local /usr/local
+COPY --from=node:24.22.1-bookworm-slim /usr/local /usr/local
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential curl git pkg-config libssl-dev unzip ripgrep \
     && rm -rf /var/lib/apt/lists/*
 ENV CARGO_BUILD_JOBS=4
