@@ -1007,7 +1007,7 @@ async def test_registered_workflow_round_trip_and_target_drift(tmp_path, monkeyp
         adapter_id="nvidia.fabric.nooa",
         workspace=str(tmp_path),
         workflow_target_id="nvidia.tests.nooa.echo",
-        workflow_settings={},
+        workflow_settings={"prefix": "test: "},
         discovery_paths=(adapter_path, target_path),
     )
     config.runtime.artifacts = str(tmp_path / "artifacts")
@@ -1023,7 +1023,7 @@ async def test_registered_workflow_round_trip_and_target_drift(tmp_path, monkeyp
     )
     result = await runner.run(payload)
     assert result.status == "succeeded", result.to_mapping()
-    assert result.output["response"] == "reply-1: hello"
+    assert result.output["response"] == "test: reply-1: hello"
 
     target["spec"]["entrypoint"]["ref"] = "not_imported.factory:create_agent"
     target_path.write_text(json.dumps(target))
