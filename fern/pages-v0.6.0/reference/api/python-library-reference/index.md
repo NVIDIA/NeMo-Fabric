@@ -45,6 +45,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`models.McpServerConfig`](./nemo_fabric.models.md#class-mcpserverconfig): MCP server configuration.
 - [`models.MetadataConfig`](./nemo_fabric.models.md#class-metadataconfig): Human-readable agent identity.
 - [`models.ModelConfig`](./nemo_fabric.models.md#class-modelconfig): Configuration for one model role.
+- [`models.ProvenanceConfig`](./nemo_fabric.models.md#class-provenanceconfig): Default-on software collection and explicitly forwarded owner reports.
 - [`models.RelayAtifConfig`](./nemo_fabric.models.md#class-relayatifconfig): NeMo Relay ATIF export configuration.
 - [`models.RelayAtofConfig`](./nemo_fabric.models.md#class-relayatofconfig): NeMo Relay ATOF export configuration.
 - [`models.RelayAtofFileSinkConfig`](./nemo_fabric.models.md#class-relayatoffilesinkconfig): NeMo Relay ATOF file sink configuration.
@@ -78,6 +79,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`types.EnvironmentHandle`](./nemo_fabric.types.md#class-environmenthandle): Durable identity and provider binding for a prepared or attached environment.
 - [`types.EnvironmentReference`](./nemo_fabric.types.md#class-environmentreference): Provider-specific identity for an existing execution environment.
 - [`types.ErrorInfo`](./nemo_fabric.types.md#class-errorinfo): Structured failure returned inside a normalized ``RunResult``.
+- [`types.ExecutionEvidence`](./nemo_fabric.types.md#class-executionevidence): Selected software evidence; malformed reports become explicit coverage gaps.
 - [`types.FabricEvent`](./nemo_fabric.types.md#class-fabricevent): One normalized lifecycle or invocation event.
 - [`types.GaugeSummary`](./nemo_fabric.types.md#class-gaugesummary): Sampled gauge extrema, hold-last-value mean, and covered time.
 - [`types.InvocationSystemStats`](./nemo_fabric.types.md#class-invocationsystemstats): System measurements for one invocation in its executing runner.
@@ -93,7 +95,10 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`types.SampleSummary`](./nemo_fabric.types.md#class-samplesummary): Retained native series, reductions, and collection-quality diagnostics.
 - [`types.ServiceHandle`](./nemo_fabric.types.md#class-servicehandle): Opaque identity and binding for one prepared or attached service.
 - [`types.ServiceReference`](./nemo_fabric.types.md#class-servicereference): Reference to an already-running caller-owned service.
+- [`types.SoftwareEntry`](./nemo_fabric.types.md#class-softwareentry): One selected software component.
+- [`types.SoftwareEnvironment`](./nemo_fabric.types.md#class-softwareenvironment): Observed installation context and selected coverage.
 - [`types.TelemetryRef`](./nemo_fabric.types.md#class-telemetryref): Reference to external or persisted telemetry for a run.
+- [`types.VersionObservation`](./nemo_fabric.types.md#class-versionobservation): Read-only version observation with source, origin and original capture time.
 - [`errors.FabricCapabilityError`](./nemo_fabric.errors.md#class-fabriccapabilityerror): Operation rejected by resolved runtime capabilities or implementation status.
 - [`errors.FabricConfigError`](./nemo_fabric.errors.md#class-fabricconfigerror): Invalid SDK input, request shape, factory, or resolved config.
 - [`errors.FabricError`](./nemo_fabric.errors.md#class-fabricerror): Base class for structured SDK-level NeMo Fabric errors.

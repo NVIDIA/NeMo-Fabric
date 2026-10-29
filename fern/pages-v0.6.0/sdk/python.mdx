@@ -1212,11 +1212,9 @@ Streaming has the following v0.1 constraints:
   when it is deployed beyond a trusted local boundary.
 
 Claude and Codex streaming use the NeMo Relay `nemo-relay` gateway CLI and
-require a release in the `>=0.9,<0.11` range. Their adapter `harness` and
+require a release in the `>=0.9,<0.12` range. Their adapter `harness` and
 `full` extras install the supported CLI. Deep Agents uses its in-process NeMo
-Relay integration. Hermes Agent uses its in-process Relay integration when
-installed from the merged Relay 0.10 Hermes revision in a separate Python 3.14
-environment.
+Relay integration with Relay 0.11. Hermes Agent keeps Relay 0.10 with the pinned Hermes source in a separate Python 3.14 environment.
 Remote Agent services own their Relay installation and publish to the same
 configured `nemo-fabric-stream` collector
 base URL. The local adapter does not install or start Relay for the service.
@@ -1523,3 +1521,35 @@ backpressure. The consumer decides whether to wait, retry, scale out, or fail.
 
 ## Next Steps
 - Review the examples in the GitHub repo [`examples/`](https://github.com/NVIDIA/NeMo-Fabric/tree/v0.6.0/examples).
+
+## Selected Software Evidence
+
+`RunResult.execution` optionally contains selected software inventories and existing infrastructure software reports. Each inventory has an opaque result-local `context_ref`, `participants`, availability, coverage, and component `entries`. Component roles belong in `entries[].role`. Equal versions do not establish a shared installation. Version observations retain the full value, observer/method in `source`, `origin`, and original UTC `observed_at`; missing values carry a status and reason. An unavailable version can still be represented in a complete selected inventory.
+
+`FabricConfig.provenance` defaults to `ProvenanceConfig(enabled=True)`. Set `provenance=ProvenanceConfig(enabled=False)` (JSON: `"provenance": {"enabled": false}`) before runtime initialization to skip collector work on both sides of dispatch. `provenance.reports` accepts a typed `nemo_fabric_evidence.evidence.ExecutionEvidence` snapshot from the caller or environment owner. Supply it in the existing configuration dispatch; the guest collects its own snapshot. No callback or additional network service is involved. Reports are bounded to 16 contexts, 128 total entries and 64 KiB of compact UTF-8 JSON. Over-budget or malformed optional reports become explicit incomplete evidence without changing the invocation outcome.
+
+`nemo-fabric-runtime` and `nemo-fabric-adapter-contract` both use the version-matched `nemo-fabric-evidence` package for shared software evidence and validation. The shared package uses only the standard library and owns the bounded metadata primitives used by both layers. Package selection and snapshot caching remain in the SDK and adapters. The SDK does not depend on the southbound adapter contract. Existing adapter-contract evidence imports remain compatible re-exports; the `nemo_fabric` SDK facade is unchanged.
+
+Old saved results may omit `execution`. A receiving boundary expecting guest/adapter evidence records missing reports explicitly. Compare participants, component kind/name, full versions, topology and coverage separately; exclude capture times, random context/invocation IDs and artifact roots. Unknown values do not establish equality. This API provides observations, not a dependency inventory, reproducibility guarantee or attestation. Inputs/configuration capture is a follow-up.
+
+### Snapshot Lifetime And Collection Bounds
+
+The Python SDK captures its selected distribution and executing interpreter when a `Fabric` instance first initializes an enabled runtime, service, or environment. It reuses that snapshot for that SDK instance. Construct a new `Fabric` after a known installation change or SDK process restart. Each adapter host captures its own selected packages after startup; replacing/restarting the host creates a fresh snapshot. The compiled core reports its executing version independently. Inventories stay separate when no shared resolution context is established; equal versions or interpreter paths are insufficient evidence for joining installations.
+
+Python package selection is adapter-owned. Loaded-module attribution checks prevent installed metadata from identifying a shadowing source tree. Missing metadata or an unattributed editable checkout produces an explicit unavailable version. Collector work uses at most 32 selected package lookups and 4,096 candidate metadata files per target, with at most 64 KiB of metadata headers and 512 KiB of RECORD bytes per target, a 250 ms initialization deadline and at most one outstanding daemon worker per process. Unsupported metadata backends remain explicit unknowns. TypeScript uses asynchronous selected manifest reads through at most eight node_modules ancestor levels, a 64 KiB manifest read limit, 32 selected package targets and a 250 ms deadline. Shared host and contract metadata use the executing common host's resolution context; selected harness packages use the adapter's context. Report limits apply after composition too: entries are dropped whole with incomplete coverage rather than shortening version values. Lookup failures preserve invocation output, errors and status. The escape hatch skips the collectors before lookup work begins.
+
+Claude initialization messages and Relay's existing startup version check can supply passive observations. Receiving and forwarding these reports preserves their source, origin and first capture time. Installed packages are included for telemetry only when the selected component enables that integration; package presence alone does not establish use.
+
+### Dispatch And Shared Services
+
+OpenShell forwards the caller snapshot in `FabricConfig.provenance.reports` through the existing task start command. The guest SDK and adapter initialize their own snapshots. The host retains its copy independently, including when an older intermediary drops `execution`; that case produces a `guest_sdk` coverage gap while preserving the invocation outcome. Context refs are rebased when reports are composed. The host reuses its own forwarded prefix only when it is an exact copy of its request, including original capture times; matching versions never merge installations.
+
+Existing OpenShell gateway health responses supply provider versions and capture times. Older provider reports without capture times are observed once at host runtime initialization with source `host:provider_report_at_runtime_start`. Provider reports reference guest contexts. NeMo Fabric does not infer a container engine. Explicit container-owner reports can use `provenance.reports` with `infrastructure.container.engine_version`, which means the engine server version.
+
+OpenClaw service startup reports retain their original source and capture time when multiple runtimes connect to the same service. A separate service inventory contains the reported OpenClaw version without inventing the remote interpreter or package inventory. Existing startup checks can refresh a changed version; a newly prepared or attached service creates a new snapshot. Software observations and their timestamps do not participate in runtime/service binding hashes. Runtime bindings retain the collection control chosen at initialization; service bindings allow a connecting runtime to choose its own collection control. A runtime can disable collection while connecting to a previously initialized service.
+
+### Calling Application Reports
+
+Calling applications and environment owners supply typed `ProvenanceConfig.reports` snapshots through the configuration already sent to NeMo Fabric. Capture them at application initialization and preserve their original `source`, `origin`, availability and `observed_at`. A guest never inspects its caller. Harbor implements this seam with `fabric_provenance`, whose shape matches the SDK control; `--ak 'fabric_provenance={"enabled":false}'` disables collection before host initialization and propagates to the guest.
+
+The [software evidence example](https://github.com/NVIDIA/NeMo-Fabric/tree/v0.6.0/examples/provenance) provides six execution-path checks, separate-venv runs, saved RunResults and private comparison fixtures. Its local provider/service fixtures are labeled separately from live deployments. Safe configuration capture is the P0 follow-up and is outside this software-version contract.

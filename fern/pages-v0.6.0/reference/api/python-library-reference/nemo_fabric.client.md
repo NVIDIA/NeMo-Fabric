@@ -21,6 +21,8 @@ Primary Python entrypoint for NeMo Fabric.
 
 Every config-dependent lifecycle method accepts a complete, typed ``FabricConfig`` plus an optional ``base_dir`` used to resolve relative paths. Compose variants in Python before calling the SDK. The ``doctor()``, ``plan()``, and ``run()`` results are typed, read-only mapping models. ``start_runtime()`` returns an active local ``Runtime`` handle. Explicit environment users call either ``prepare_environment()`` or ``attach_environment()``, then ``start_runtime_in()`` and ``release_environment()`` separately.
 
+Software capture is deferred until enabled initialization so configuration can disable all lookups. A new Fabric instance refreshes the SDK snapshot. Embedded guest servers label their own SDK observations ``guest_sdk``.
+
 ``Fabric`` uses the native Rust extension. SDK calls raise ``FabricNativeUnavailableError`` when the native extension is not installed.
 
 See the Getting Started overview for runnable single-invocation, typed-config, and multi-turn examples.

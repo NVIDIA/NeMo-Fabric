@@ -196,7 +196,9 @@ NeMo Fabric supplies runtime-scoped Relay configuration to the SDK. It does not
 copy the Codex credential store into Relay configuration or persist credentials
 in Relay artifacts.
 
-NeMo Fabric supports the external NeMo Relay CLI in the `>=0.9,<0.11` range.
+NeMo Fabric wraps Codex `PreToolUse` checks so Relay launch errors, timeouts, and nonzero exits return exit code 2 with a blocking reason. This includes the exit code 1 used by Relay 0.9.x and 0.10.0. The wrapper allows 35 seconds for Relay, within the harness timeout of 45 seconds. Codex 0.154.0 can still continue if the wrapper itself fails to start or reaches the harness timeout.
+
+NeMo Fabric supports the external NeMo Relay CLI in the `>=0.9,<0.12` range.
 NeMo Fabric's `relay` extra installs only the Relay Python library and does not
 install the CLI. NeMo Fabric owns sidecar supervision and runtime-scoped SDK
 configuration. Relay owns gateway transport behavior,
@@ -238,3 +240,21 @@ app-server trace is the required diagnostic surface.
 `Fabric.check()` supports `live`, `active`, and `ready`. Liveness observes the owned app-server process. Active reads the selected loaded thread; ready requires a fresh thread status of `idle` or `active`.
 
 Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+
+## Private HTTP model gateways with Relay
+
+Relay-enabled runs can set `harness.settings.insecure_http_model_hosts` to an
+explicit list of hostnames or IP addresses, for example
+`["inference.internal", "10.0.0.10"]`. This requires NeMo Relay CLI 0.11.x.
+Entries have no scheme, port, path, or wildcard; matching ignores DNS case and a
+trailing dot and permits any port or path on the listed host. An explicit empty
+list clears inherited HTTP trust. Omitting the setting preserves existing Relay
+configuration behavior. System Relay configuration takes precedence and can
+enforce an empty list.
+
+Use this for unauthenticated inference gateways. Relay strips authorization,
+API-key, cookie, and other credential headers before remote HTTP forwarding,
+including credentials provided to the harness, and rejects conflicting upstream
+authorization configuration. Prompts and responses travel unencrypted. HTTPS
+remains the default, and MCP policy is unchanged. This option applies to
+Relay-enabled Codex, Claude, and Pi runs.
