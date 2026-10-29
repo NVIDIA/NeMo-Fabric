@@ -35,6 +35,8 @@ NeMo Fabric includes adapters for the following harnesses and execution targets.
 | [Factory Droid](adapters/typescript/droid/README.md) | ✅ | ✅ | ✅ | — |
 | [Hermes Agent](adapters/python/hermes/README.md) | ✅ | ✅ | ✅ | ✅ |
 | [Kilo Code](adapters/typescript/kilo/README.md) | ✅ | ✅ | ✅ | — |
+| [AWS Kiro](adapters/typescript/kiro/README.md) | — | ✅ | — | — |
+| [AWS Strands](adapters/typescript/strands/README.md) | — | ✅ | — | — |
 | [LangChain Deep Agents](adapters/python/deepagents/README.md) | ✅ | ✅ | ✅ | ✅ |
 | [mini-SWE-agent](adapters/python/mini-swe-agent/README.md) | — | — | — | ✅ |
 | [NOOA](adapters/python/nooa/README.md) | — | ✅ | ✅ | ✅ |
@@ -56,16 +58,20 @@ NeMo Fabric is an execution layer for NVIDIA products that build, evaluate, depl
 NeMo Fabric separates consumers from execution targets through a stable, versioned contract. This makes it extensible in two directions:
 
 - **Integrate a consumer:** Applications, evaluation systems, and rollout platforms use the Python SDK and typed `FabricConfig` to run different harnesses without implementing each harness integration. Start with the [consumer integration overview](docs/integrations/consumer/overview.mdx) or [consumer integration skills](skills/README.md).
+- **Shared Python contracts:** The SDK and adapter contract consume the standard-library [shared contract package](sdk/python/nemo-fabric-evidence/README.md) for software evidence and validation.
 - **Add an execution target:** Adapters translate the NeMo Fabric contract into the native behavior of a harness, framework, custom agent, or remote service. Start with the [adapter contract](docs/adapter-contract/README.md) and [adapter examples](docs/adapter-contract/examples.md).
 
 ## Documentation
 
 - [Quickstart](docs/getting-started/quickstart.mdx): Run a first agent through the Python SDK.
+- [Invocation system stats](docs/sdk/python.mdx#invocation-system-stats): Select per-invocation metric groups, sampled peaks, and cgroup conditions; disable collection independently of sampling.
+- [Selected software evidence](docs/sdk/python.mdx#selected-software-evidence): Inspect versions in optional `RunResult.execution` and control collection before initialization.
 - [Conversation telemetry](docs/sdk/python.mdx): Use `RunRequest.relay_session_root` to group Deep Agents and mini-SWE-agent turns under one NeMo Relay session.
 - [Installation](docs/getting-started/install.mdx): Install the runtime, adapters, harness dependencies, and telemetry components, and choose a deployment scenario.
 - [Adapter catalog](sdk/python/nemo-fabric-adapter-catalog/README.md): Inspect bundled adapter metadata on a host without installing harness SDKs.
 - [Host admission](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host): Validate requested capabilities and reject host/task descriptor drift before execution.
-- [NeMo Fabric runtime server](sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md): Control multiple SDK runtimes inside one sandbox through `fabric-agent-ctl` and one private local socket. Unconfirmed cleanup retains sandbox ownership and blocks replacement servers.
+- [NeMo Fabric runtime server](sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md): Manage runtimes and check server responsiveness inside one sandbox through `fabric-agent-ctl` and one private local socket. Unconfirmed cleanup retains sandbox ownership and blocks replacement servers.
+- [Health checks](docs/sdk/health-checks.mdx): Use `Fabric.check()` for OpenShell runtime-server checks, agent runtime checks, and prepared or attached OpenClaw Gateway service checks. Refer to the [adapter support table](docs/sdk/health-checks.mdx#native-evidence-by-adapter) for supported levels and native evidence. OpenShell server and runtime requests map to `fabric-agent-ctl check`; service checks use the local SDK.
 - [Documentation overview](docs/about-nemo-fabric/overview.mdx): Understand the execution model and choose an interface.
 - [Adapter reference](adapters/README.md): Compare adapter configuration, runtime, and observability support.
 - [Contribution guide](CONTRIBUTING.md): Build, test, and contribute to the project.
@@ -80,3 +86,4 @@ Planned areas of development include:
 - **Sandbox execution:** Support additional sandbox providers, configurable access boundaries, provider-supported sudo, and judge-code isolation.
 - **Environment bootstate:** Capture files, configuration, dependencies, and supported image snapshots for restoration and branching evaluations.
 - **System statistics:** Correlate CPU, memory, elapsed time, available GPU usage, and available token/cost metrics with Fabric execution IDs; identify unavailable measurements.
+

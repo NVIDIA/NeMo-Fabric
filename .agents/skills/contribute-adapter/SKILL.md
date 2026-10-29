@@ -64,6 +64,14 @@ behavior, direct adapter validation, and target-native composition synchronized.
 New descriptors must declare their exact `replace` and `append` support rather
 than relying on the legacy omitted-value behavior.
 
+For software evidence, declare selected Python packages in the adapter's
+`PROVENANCE_PACKAGES` or configure the TypeScript lifecycle host's `software`
+selection. Keep this list specific to the executing adapter, harness and
+framework. Forward versions already observed at startup with the shared passive
+capture helper. Do not add version probes or infer a remote service's packages
+from its local client. Test disabled collection, original capture times and
+missing metadata without changing the invocation outcome.
+
 ## Repository Evidence
 
 In addition to the evidence required by the public skill, include:

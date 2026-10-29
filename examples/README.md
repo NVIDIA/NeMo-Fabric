@@ -38,7 +38,7 @@ just build-all
   --input "Reply with exactly: NeMo Fabric works"
 ```
 
-The Pi variant supports Relay telemetry with `nemo-relay>=0.9.0,<0.11.0` and an
+The Pi variant supports Relay telemetry with `nemo-relay-cli-bin>=0.9.0,<0.12.0` and an
 explicit extension path. Pass
 `--variant pi --relay --stream --pi-relay-extension-path <PATH>` to collect
 per-invocation model-turn ATOF records for successful Relay redirects, then
@@ -87,3 +87,11 @@ The walkthroughs include:
 
 Start with the shared setup and execution model in the
 [Harbor guide](harbor/README.md).
+
+## Native System Stats
+
+[`system_stats`](system_stats/README.md) demonstrates a real temporary worker-memory spike, native sampled peak/mean/range, retained per-invocation artifacts, and Linux cgroup constraints without a model endpoint or Relay collector.
+
+## Software Evidence
+
+[Selected software evidence](provenance/README.md) reproduces six execution paths, separate venvs, disabled collection and stable version comparison with explicit coverage limits.

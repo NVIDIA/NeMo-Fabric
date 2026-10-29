@@ -9,6 +9,7 @@ COPY vendor/nemo-fabric-source.tar.gz /tmp/nemo-fabric-source.tar.gz
 RUN mkdir /src /packages \
     && tar -xzf /tmp/nemo-fabric-source.tar.gz -C /src \
     && uv build --wheel --out-dir /packages /src/sdk/python/nemo-fabric \
+    && uv build --wheel --out-dir /packages /src/sdk/python/nemo-fabric-evidence \
     && cd /src/sdk/python/nemo-fabric-runtime \
     && uvx --from 'maturin[zig]>=1.9.3,<2.0' maturin build \
         --release \

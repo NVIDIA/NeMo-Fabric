@@ -65,13 +65,36 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "cache_read_tokens": {"type": "integer", "minimum": 0},
-        "cache_write_tokens": {"type": "integer", "minimum": 0}
+        "nvidia.fabric.cline.usage_evidence.v1": {
+          "type": "object",
+          "properties": {
+            "observed": {
+              "type": "object",
+              "properties": {
+                "input_tokens": {"type": "integer", "minimum": 1},
+                "output_tokens": {"type": "integer", "minimum": 1},
+                "cached_input_tokens": {"type": "integer", "minimum": 1},
+                "cache_write_input_tokens": {"type": "integer", "minimum": 1}
+              },
+              "additionalProperties": false
+            },
+            "gaps": {
+              "type": "array",
+              "items": {"enum": ["scope_unverified", "missing_usage", "zero_unverified", "cache_relationship_unverified", "cache_breakdown_unreported", "cache_write_unreported"]},
+              "uniqueItems": true
+            },
+            "complete_source": {"enum": ["nvidia_openai_compatible_http"]}
+          },
+          "required": ["observed", "gaps"],
+          "additionalProperties": false
+        }
       },
+      "required": ["nvidia.fabric.cline.usage_evidence.v1"],
       "additionalProperties": false
     }
   },
   "capabilities": {
+    "metadata": {"health_checks": ["live", "active", "ready"]},
     "streaming": false,
     "cancellation": false,
     "updates": false,

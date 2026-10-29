@@ -20,7 +20,7 @@ The following table shows which components each installation provides:
 | `pip install "nemo-fabric-adapters-codex[harness]"` | No | Yes | Yes | Yes |
 | `pip install nemo-fabric-adapters-codex` | No | Yes | No | No |
 
-For an environment-managed SDK, use `openai-codex==0.144.4`. For split runtime
+For an environment-managed SDK, use `openai-codex==0.154.0`. For split runtime
 and adapter environments, configure `ADAPTER_PYTHON` and use matching NeMo
 Fabric release versions. Refer to the
 [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
@@ -81,6 +81,20 @@ return codes, stdout, or stderr.
 
 Normalized `usage` contains invocation-local token counts from the SDK's cumulative thread totals, including cached input tokens. Input tokens already include cached tokens (`input_tokens_include_cache=True`). Reused threads report the difference from the previous invocation rather than counting the thread total again. Missing, invalid, or reset counters remain unknown; a missing snapshot requires a new baseline before differences can be reported. The adapter preserves native usage in `output.usage`, does not infer cost, and retains available usage on unsuccessful results. If the SDK raises before returning usage, normalized usage remains unavailable.
 
+## Runtime Health
+
+Use `Fabric.check(environment=..., request=...)` with a runtime ID and `live`, `active`, or `ready`. Checks run during an invocation and report `busy` or `idle` for NeMo Fabric activity.
+
+- `live` checks whether the owned Codex app-server process has exited.
+- `active` reads the selected native thread through the app-server request interface and confirms the thread is loaded.
+- `ready` uses the same fresh native response as a readiness equivalent: the initialized thread must report `idle` or `active`. Native `systemError` fails readiness; `notLoaded` reports a closed session.
+
+Each check uses the caller's deadline. A pending native health request remains the only request in flight after a caller timeout. Later checks wait within their own deadlines, then obtain a fresh response after the pending request completes.
+
+Run the credential-free native qualification with `uv run --no-sync pytest tests/e2e/test_codex_checks.py -q`. The tests use the SDK-pinned app-server and a local mock provider before, during, and after an invocation.
+
+Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+
 ## Configuration
 
 Use normalized `FabricConfig` fields for portable configuration:
@@ -117,10 +131,13 @@ Only Codex-specific controls belong in `harness.settings`:
 | `approval_mode` | One of `auto_review` or `deny_all` | No | `auto_review` |
 | `developer_instructions` | Nonempty string | No | No default |
 | `personality` | One of `none`, `friendly`, or `pragmatic` | No | No default |
-| `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh` | No | No default |
+| `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra` | No | No default |
 | `service_tier` | Nonempty string | No | No default |
 | `output_schema` | JSON Schema object for the final assistant message | No | No default |
 | `config_overrides` | Object that maps nonempty dotted Codex configuration keys to JSON-compatible values | No | `{}` |
+
+`ultra` uses Codex's model-specific effort selection. Codex resolves it to a
+supported provider effort; models without effort metadata fall back to `medium`.
 
 Planning validates these settings against the schema in the resolved Codex
 descriptor. Unknown keys, empty dotted-key segments, invalid types, and invalid
@@ -147,17 +164,47 @@ while clearing unrelated parent-process secrets.
 
 ## Relay Integration
 
-Relay requires a NeMo Relay CLI in the `>=0.9,<0.11` range on `PATH`. The
+Relay requires a NeMo Relay CLI in the `>=0.9,<0.12` range on `PATH`. The
 Codex adapter does not provide a separate `relay` extra; its `harness` and
 `full` extras install the compatible CLI through `nemo-relay-cli-bin`. The root
 `nemo-fabric[relay]` extra installs only the Relay Python package.
 
+NeMo Fabric wraps Codex `PreToolUse` checks so Relay launch errors, timeouts, and nonzero exits return exit code 2 with a blocking reason. This includes the exit code 1 used by Relay 0.9.x and 0.10.0. The wrapper allows 35 seconds for Relay, within the harness timeout of 45 seconds. Codex 0.154.0 can still continue if the wrapper itself fails to start or reaches the harness timeout.
+
 Enable Relay with `FabricConfig.enable_relay(...)`. The adapter starts the
 installed `nemo-relay` CLI as a supervised sidecar; do not start the gateway
-separately.
+separately. The 30-second readiness wait starts after gateway launch and covers
+required worker initialization. The Relay CLI check and plugin configuration
+writing happen before launch and are outside this wait. Startup fails on early
+process exit or an expired budget, and the gateway log is retained for diagnosis.
 NeMo Fabric routes the selected Responses-compatible provider through the
 gateway and passes its explicit `base_url` to Relay as the upstream endpoint.
 
+
+### Credential-free HTTP model gateways
+
+For Relay-enabled runs, NeMo Relay CLI 0.11.x supports explicit trust for
+HTTP model hosts. Set `harness.settings.insecure_http_model_hosts` to the exact
+hostnames or IP addresses of your private inference gateways:
+
+```python
+config.harness.settings["insecure_http_model_hosts"] = ["inference.internal", "10.0.0.10"]
+```
+
+Entries contain no scheme, port, path, or wildcard. Matching ignores DNS case
+and a trailing dot, permits any port or path on that host, and does not infer
+trust from DNS resolution. The adapter passes this list to Relay's runtime
+`[upstream]` configuration. An explicit empty list clears inherited HTTP trust;
+omitting the setting preserves Relay's existing configuration behavior. System
+Relay configuration takes precedence and can enforce an empty list.
+
+This path is for unauthenticated model endpoints: Relay strips authorization,
+API-key, cookie, and other credential headers before remote HTTP forwarding,
+including model credentials supplied to the harness. Relay rejects conflicting
+upstream authorization configuration. Prompts and responses still travel over
+plaintext HTTP. HTTPS remains the default. This setting affects Relay-enabled
+Codex, Claude, and Pi model forwarding; MCP policy is unchanged. Older Relay CLIs
+reject the setting with an upgrade message.
 
 ## Testing
 

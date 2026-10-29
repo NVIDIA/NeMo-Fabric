@@ -85,6 +85,7 @@ def test_cline_descriptor_declares_only_the_supported_surface():
     assert descriptor["extension_schemas"]["usage"]["additionalProperties"] is False
     assert "telemetry" not in descriptor
     assert descriptor["capabilities"] == {
+        "metadata": {"health_checks": ["live", "active", "ready"]},
         "streaming": False,
         "cancellation": False,
         "updates": False,
@@ -177,9 +178,7 @@ async def test_cline_descriptor_doctor_reports_node(tmp_path, monkeypatch):
     node.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     if os.name != "nt":
         node.chmod(0o755)
-    monkeypatch.setenv(
-        "PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}"
-    )
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}")
 
     report = await Fabric().doctor(config(), base_dir=ROOT)
 

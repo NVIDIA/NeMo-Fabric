@@ -22,6 +22,25 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use agent_execution::AgentRunResultValidationError;`
 - `pub use agent_execution::AgentRunStatus;`
 - `pub use agent_execution::AgentUsage;`
+- `pub use check::AdapterCheckRequest;`
+- `pub use check::AdapterCheckResult;`
+- `pub use check::CheckLevel;`
+- `pub use check::CheckObservation;`
+- `pub use check::CheckOutcome;`
+- `pub use check::CheckReason;`
+- `pub use check::CheckReport;`
+- `pub use check::CheckRequest;`
+- `pub use check::CheckRuntimeState;`
+- `pub use check::CheckScope;`
+- `pub use check::CheckSource;`
+- `pub use check::CheckStage;`
+- `pub use check::CheckVersion;`
+- `pub use check::RuntimeActivity;`
+- `pub use check::RuntimeObservation;`
+- `pub use check::ServerObservation;`
+- `pub use check::ServerState;`
+- `pub use check::check_environment;`
+- `pub use check::check_service;`
 - `pub use config::AdapterConfigField;`
 - `pub use config::AdapterConfigSupport;`
 - `pub use config::AdapterDescriptor;`
@@ -92,6 +111,9 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use doctor::doctor_plan;`
 - `pub use error::FabricError;`
 - `pub use error::Result;`
+- `pub use provenance::ExecutionEvidence;`
+- `pub use provenance::ProvenanceConfig;`
+- `pub use resource_snapshot::RuntimeResourceSnapshot;`
 - `pub use runtime::AdapterInvocation;`
 - `pub use runtime::ArtifactManifest;`
 - `pub use runtime::ArtifactRef;`
@@ -132,6 +154,7 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use runtime::release_environment;`
 - `pub use runtime::release_service;`
 - `pub use runtime::run_plan;`
+- `pub use runtime::runtime_resource_snapshot;`
 - `pub use runtime::start_runtime;`
 - `pub use runtime::start_runtime_in;`
 - `pub use runtime::start_runtime_with_service;`
@@ -141,17 +164,32 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use schema::generate_schema;`
 - `pub use schema::generate_schema_json;`
 - `pub use schema::write_schema_snapshots;`
+- `pub use system_stats::CgroupObservation;`
+- `pub use system_stats::CgroupSnapshot;`
+- `pub use system_stats::CgroupStats;`
+- `pub use system_stats::GaugeSummary;`
+- `pub use system_stats::InvocationSystemStats;`
+- `pub use system_stats::Measurement;`
+- `pub use system_stats::ResourceObservation;`
+- `pub use system_stats::SampleSummary;`
+- `pub use system_stats::SystemStatsConfig;`
+- `pub use system_stats::SystemStatsMetricGroup;`
+- `pub use system_stats::SystemStatsSamplingConfig;`
 
 ## Modules
 
 - [adapter_contract](adapter-contract/index.mdx): Shared southbound adapter contract metadata.
 - [agent_config](agent-config/index.mdx): Configuration projected southbound to an adapter target.
 - [agent_execution](agent-execution/index.mdx): Request and result structures exchanged with an adapter target.
+- [check](check/index.mdx): Runtime health checks and shared contracts.
 - [config](config/index.mdx): NeMo Fabric config models and loading helpers.
 - [doctor](doctor/index.mdx): Plan diagnostics for NeMo Fabric.
 - [error](error/index.mdx): Error types for NeMo Fabric core.
+- [provenance](provenance/index.mdx): Selected software evidence. Optional evidence never controls invocation success.
+- [resource_snapshot](resource-snapshot/index.mdx): Resource snapshots of a runtime's local adapter host and its descendants.
 - [runtime](runtime/index.mdx): Runtime invocation helpers.
 - [schema](schema/index.mdx): JSON Schema generation for the public NeMo Fabric contract.
+- [system_stats](system-stats/index.mdx): Invocation measurements collected by NeMo Fabric in the executing runtime.
 
 ## Functions
 

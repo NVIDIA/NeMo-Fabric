@@ -24,6 +24,7 @@ from examples.code_review_agent import deepagents_config
 from examples.code_review_agent import droid_config
 from examples.code_review_agent import hermes_config
 from examples.code_review_agent import kilo_config
+from examples.code_review_agent import kiro_config
 from examples.code_review_agent import nooa_config
 from examples.code_review_agent import openclaw_config
 from examples.code_review_agent import openhands_config
@@ -45,6 +46,7 @@ def test_variant_builders_return_independent_complete_configs():
     base = base_config()
     hermes = hermes_config()
     kilo = kilo_config()
+    kiro = kiro_config()
     codex = codex_config()
     claude = claude_config()
     cline = cline_config()
@@ -60,6 +62,7 @@ def test_variant_builders_return_independent_complete_configs():
         base,
         hermes,
         kilo,
+        kiro,
         codex,
         claude,
         cline,
@@ -74,7 +77,8 @@ def test_variant_builders_return_independent_complete_configs():
         assert isinstance(config, FabricConfig)
         assert config.metadata.name == "code-review-agent"
         assert config.environment is not None
-        assert "default" in config.models
+        if config is not kiro:
+            assert "default" in config.models
 
     assert hermes is not base
     assert hermes.harness is not base.harness
@@ -116,6 +120,11 @@ def test_variant_builders_return_independent_complete_configs():
     assert kilo.tools is not None
     assert kilo.tools.enabled == ["read", "glob", "grep", "skill"]
     assert kilo.runtime.max_turns == 20
+    assert kiro.harness.adapter_id == "nvidia.fabric.kiro"
+    assert kiro.models == {}
+    assert kiro.instructions is None
+    assert kiro.skills is None
+    assert kiro.tools is None
     assert qwen.harness.adapter_id == "nvidia.fabric.qwen"
     assert qwen.models["default"].provider == "openai"
     assert qwen.models["default"].api_key_env == "NVIDIA_API_KEY"
@@ -285,6 +294,7 @@ def test_variants_plan_from_complete_configs():
     for config in (
         hermes_config(),
         kilo_config(),
+        kiro_config(),
         codex_config(),
         claude_config(),
         cline_config(),
@@ -317,6 +327,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
     variants = (
         ("hermes", "nvidia.fabric.hermes"),
         ("kilo", "nvidia.fabric.kilo"),
+        ("kiro", "nvidia.fabric.kiro"),
         ("codex", "nvidia.fabric.codex"),
         ("claude", "nvidia.fabric.claude"),
         ("cline", "nvidia.fabric.cline"),
@@ -335,7 +346,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         )
         for variant, adapter_id in variants
         for relay_enabled in (False, True)
-        if variant not in {"cline", "kilo", "openclaw", "openhands", "qwen"}
+        if variant not in {"cline", "kilo", "kiro", "openclaw", "openhands", "qwen"}
         or not relay_enabled
     )
 
@@ -363,6 +374,98 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
             assert telemetry_plan["relay_enabled"] is True
         else:
             assert telemetry_plan is None
+
+
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        (
+            [],
+            {"collect": ["process", "cgroup.cpu", "cgroup.memory", "cgroup.pressure"]},
+        ),
+        (["--stats", "off"], None),
+        (
+            ["--stats", "before-after"],
+            {"collect": ["process", "cgroup.cpu", "cgroup.memory", "cgroup.pressure"]},
+        ),
+        (
+            ["--stats", "sampled"],
+            {
+                "collect": [
+                    "process",
+                    "cgroup.cpu",
+                    "cgroup.memory",
+                    "cgroup.pressure",
+                ],
+                "sampling": {"interval_ms": 1000, "max_samples": 10000},
+            },
+        ),
+        (
+            [
+                "--stats",
+                "sampled",
+                "--stats-interval-ms",
+                "100",
+                "--stats-max-samples",
+                "2",
+            ],
+            {
+                "collect": [
+                    "process",
+                    "cgroup.cpu",
+                    "cgroup.memory",
+                    "cgroup.pressure",
+                ],
+                "sampling": {"interval_ms": 100, "max_samples": 2},
+            },
+        ),
+    ],
+)
+def test_stats_options_survive_example_planning(options, expected):
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            "--variant",
+            "deepagents",
+            *options,
+            "--plan",
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    plan = json.loads(completed.stdout)
+    assert plan["config"]["system_stats"] == expected
+    assert "system_stats" not in plan["agent_config"]
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--stats-interval-ms", "100"],
+        ["--stats", "off", "--stats-max-samples", "2"],
+        ["--stats", "before-after", "--stats-interval-ms", "1000"],
+        ["--stats", "sampled", "--stats-interval-ms", "99"],
+        ["--stats", "sampled", "--stats-interval-ms", "60001"],
+        ["--stats", "sampled", "--stats-max-samples", "1"],
+        ["--stats", "sampled", "--stats-max-samples", "100001"],
+    ],
+)
+def test_stats_options_reject_invalid_sampling_before_execution(options):
+    completed = subprocess.run(
+        [sys.executable, "-m", "examples.code_review_agent", *options, "--plan"],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 2
+    assert "error:" in completed.stderr
+    assert "Traceback" not in completed.stderr
 
 
 def test_kilo_model_endpoint_overrides_project_into_plan():
@@ -398,6 +501,53 @@ def test_kilo_model_endpoint_overrides_project_into_plan():
     assert agent_config["harness"]["settings"] == {
         "allow_insecure_http_model_endpoint": True
     }
+
+
+def test_kiro_model_override_projects_into_plan():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            "--variant",
+            "kiro",
+            "--model",
+            "model-b",
+            "--plan",
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    agent_config = json.loads(completed.stdout)["agent_config"]
+    assert agent_config["models"]["default"] == {"provider": "kiro", "model": "model-b"}
+
+
+@pytest.mark.parametrize(
+    ("flag", "value"),
+    [("--base-url", "https://example.test/v1"), ("--api-key-env", "CUSTOM_KEY")],
+)
+def test_kiro_rejects_unsupported_model_flags(flag, value):
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.code_review_agent",
+            "--variant",
+            "kiro",
+            flag,
+            value,
+            "--plan",
+        ],
+        cwd=BASE_DIR.parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 2
+    assert f"{flag} is not supported by the Kiro adapter" in completed.stderr
 
 
 @pytest.mark.parametrize(
@@ -551,9 +701,7 @@ def test_kilo_variant_projects_normalized_configuration():
     assert agent_config["skills"] == {
         "paths": [str((BASE_DIR / "skills/code-review").resolve())]
     }
-    assert agent_config["tools"] == {
-        "enabled": ["read", "glob", "grep", "skill"]
-    }
+    assert agent_config["tools"] == {"enabled": ["read", "glob", "grep", "skill"]}
     assert agent_config["runtime"]["max_turns"] == 20
 
 
@@ -963,3 +1111,14 @@ async def test_example_entrypoint_streams_relay_records_and_terminal_result(
     runtime.invoke_stream.assert_called_once_with(input="review this")
     stream.result.assert_awaited_once_with()
     runtime_context.__aexit__.assert_awaited_once()
+
+
+def test_strands_variant_projects_read_only_harness_tools():
+    from examples.code_review_agent import strands_config
+
+    plan = Fabric().plan(strands_config(), base_dir=BASE_DIR)
+    agent_config = plan.to_mapping()["agent_config"]
+    assert agent_config["harness"]["settings"]["builtin_tools"] == ["read"]
+    assert agent_config["instructions"]["system"]["mode"] == "append"
+    assert agent_config.get("tools") is None
+    assert agent_config.get("skills") is None

@@ -9,6 +9,11 @@ import test from "node:test";
 
 import { ClineSdkSessionFactory } from "../dist/cline-sdk.js";
 
+const usageKey = "nvidia.fabric.cline.usage_evidence.v1";
+const observedUsage = (observed, gaps = ["scope_unverified"]) => ({
+  extensions: { [usageKey]: { observed, gaps } },
+});
+
 function input(overrides = {}) {
   return {
     agentName: "cline-test",
@@ -52,26 +57,35 @@ function fakeSdk(options = {}) {
   const core = {
     async start(value) {
       calls.start.push(value);
-      return { sessionId: "cline-session-1", result: results.shift() };
+      return { sessionId: "cline-session-1" };
     },
     async send(value) {
       calls.send.push(value);
-      if (options.sendError !== undefined) throw options.sendError;
+      if (options.sendError !== undefined && calls.send.length > 1) throw options.sendError;
       return results.shift();
     },
-    async stop(value) { calls.stop.push(value); },
-    async dispose(value) { calls.dispose.push(value); },
+    async stop(value) {
+      calls.stop.push(value);
+    },
+    async dispose(value) {
+      calls.dispose.push(value);
+    },
   };
   return {
     calls,
     loader: async () => ({
       ALL_DEFAULT_TOOL_NAMES: ["read_files", "search_codebase", "run_commands"],
-      ClineCore: { async create(value) {
-        calls.create.push(value);
-        await options.onCreate?.(process.env.CLINE_DATA_DIR);
-        return core;
-      } },
-      getClineDefaultSystemPrompt(value) { calls.prompts.push(value); return `system:${value.overridePrompt ?? "default"}`; },
+      ClineCore: {
+        async create(value) {
+          calls.create.push(value);
+          await options.onCreate?.(process.env.CLINE_DATA_DIR);
+          return core;
+        },
+      },
+      getClineDefaultSystemPrompt(value) {
+        calls.prompts.push(value);
+        return `system:${value.overridePrompt ?? "default"}`;
+      },
       async loadAgentPluginPackages(value) {
         calls.plugins.push(value);
         return { skills: [], mcpServers: [], diagnostics: [] };
@@ -87,15 +101,17 @@ test("maps model, endpoint, credential, system instruction, and built-in tool po
   const first = await handle.prompt("one");
   const second = await handle.prompt("two");
 
-  assert.deepEqual(sdk.calls.create, [{
-    clientName: "nemo-fabric",
-    backendMode: "local",
-    toolPolicies: {
-      read_files: { enabled: true, autoApprove: true },
-      search_codebase: { enabled: false, autoApprove: true },
-      run_commands: { enabled: false, autoApprove: true },
+  assert.deepEqual(sdk.calls.create, [
+    {
+      clientName: "nemo-fabric",
+      backendMode: "local",
+      toolPolicies: {
+        read_files: { enabled: true, autoApprove: true },
+        search_codebase: { enabled: false, autoApprove: true },
+        run_commands: { enabled: false, autoApprove: true },
+      },
     },
-  }]);
+  ]);
   assert.deepEqual(sdk.calls.prompts, []);
   assert.deepEqual(sdk.calls.start[0], {
     config: {
@@ -119,11 +135,13 @@ test("maps model, endpoint, credential, system instruction, and built-in tool po
       run_commands: { enabled: false, autoApprove: true },
     },
     localRuntime: { configExtensions: [] },
-    prompt: "one",
   });
-  assert.deepEqual(sdk.calls.send, [{ sessionId: "cline-session-1", prompt: "two" }]);
-  assert.deepEqual(first.usage, { input_tokens: 2, output_tokens: 3, total_tokens: 5, cost_usd: 0.5 });
-  assert.deepEqual(second.usage, { input_tokens: 4, output_tokens: 1, total_tokens: 5 });
+  assert.deepEqual(sdk.calls.send, [
+    { sessionId: "cline-session-1", prompt: "one" },
+    { sessionId: "cline-session-1", prompt: "two" },
+  ]);
+  assert.deepEqual(first.usage, observedUsage({ input_tokens: 2, output_tokens: 3 }));
+  assert.deepEqual(second.usage, observedUsage({ input_tokens: 4, output_tokens: 1 }));
   await handle.stop();
 });
 
@@ -154,11 +172,11 @@ test("stops the retained Cline session and disposes its core", async () => {
   assert.deepEqual(sdk.calls.dispose, ["NeMo Fabric runtime stopped"]);
 });
 
-test("disposes Cline even when no invocation started a session", async () => {
+test("stops the initialized Cline session even before the first invocation", async () => {
   const sdk = fakeSdk();
   const handle = await new ClineSdkSessionFactory(sdk.loader).create(input());
   await handle.stop();
-  assert.deepEqual(sdk.calls.stop, []);
+  assert.deepEqual(sdk.calls.stop, ["cline-session-1"]);
   assert.deepEqual(sdk.calls.dispose, ["NeMo Fabric runtime stopped"]);
 });
 
@@ -280,20 +298,21 @@ test("maps Cline terminal finish reasons", async () => {
   assert.deepEqual(await handle.prompt("one"), {
     status: "aborted",
     text: "stopped",
-    usage: { input_tokens: 1, output_tokens: 0, total_tokens: 1 },
+    usage: observedUsage({ input_tokens: 1 }, ["scope_unverified", "zero_unverified"]),
     extensions: { session_id: "cline-session-1", finish_reason: "aborted" },
   });
   assert.deepEqual(await handle.prompt("two"), {
     status: "failed",
     text: "provider failed",
     errorMessage: "provider failed",
-    usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 },
+    usage: observedUsage({ input_tokens: 2, output_tokens: 1 }),
     extensions: { session_id: "cline-session-1", finish_reason: "error" },
   });
   assert.deepEqual(await handle.prompt("three"), {
     status: "failed",
     text: "iteration limit reached",
     errorMessage: "iteration limit reached",
+    usage: observedUsage({}, ["scope_unverified", "missing_usage"]),
     extensions: { session_id: "cline-session-1", finish_reason: "max_iterations" },
   });
   await handle.stop();
@@ -318,13 +337,12 @@ test("normalizes Cline usage and result metadata", async () => {
   assert.deepEqual(await handle.prompt("one"), {
     status: "completed",
     text: "done",
-    usage: {
+    usage: observedUsage({
       input_tokens: 7,
       output_tokens: 3,
-      total_tokens: 10,
-      cost_usd: 0.25,
-      extensions: { cache_read_tokens: 4, cache_write_tokens: 1 },
-    },
+      cached_input_tokens: 4,
+      cache_write_input_tokens: 1,
+    }, ["scope_unverified", "cache_relationship_unverified"]),
     extensions: {
       session_id: "cline-session-1",
       finish_reason: "completed",
@@ -333,6 +351,53 @@ test("normalizes Cline usage and result metadata", async () => {
     },
   });
   await handle.stop();
+});
+
+test("uses complete raw NVIDIA stream usage across model attempts", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (_resource, init) => {
+    requests.push(JSON.parse(init.body));
+    const body = [
+      'data: {"choices":[{"finish_reason":"stop"}]}\n\n',
+      'data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":1}}}\n\n',
+      'data: [DONE]\n\n',
+    ];
+    return new Response(new ReadableStream({ start(controller) {
+      for (const chunk of body) controller.enqueue(new TextEncoder().encode(chunk));
+      controller.close();
+    } }), { status: 200, headers: { "content-type": "text/event-stream" } });
+  };
+  const sdk = fakeSdk({ results: [{ finishReason: "completed", text: "done", usage: { inputTokens: 14, outputTokens: 6 } }] });
+  const module = await sdk.loader();
+  sdk.loader = async () => ({ ...module, ClineCore: { async create(options) {
+    const core = await module.ClineCore.create(options);
+    return { ...core, async send(value) {
+      for (let i = 0; i < 2; i++) {
+        const response = await options.fetch("https://example.test/v1/chat/completions", {
+          method: "POST", body: JSON.stringify({ stream: true, stream_options: { include_usage: true } }),
+        });
+        await response.text();
+      }
+      return core.send(value);
+    } };
+  } } });
+  const configured = input();
+  configured.config.models.default.provider = "nvidia";
+  let handle;
+  try {
+    handle = await new ClineSdkSessionFactory(sdk.loader).create(configured);
+    const result = await handle.prompt("one");
+    assert.deepEqual([result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens], [14, 6, 20]);
+    assert.equal(result.usage.cached_input_tokens, 4);
+    assert.equal(result.usage.input_tokens_include_cache, true);
+    assert.deepEqual(result.usage.extensions[usageKey].gaps, []);
+    assert.equal(result.usage.extensions[usageKey].complete_source, "nvidia_openai_compatible_http");
+    assert.equal(requests.length, 2);
+  } finally {
+    await handle?.stop();
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("stages NeMo Fabric skills and MCP servers as one runtime-scoped native Cline plugin", async () => {

@@ -114,6 +114,18 @@ test("buildCatalogModel overrides only the explicitly supplied fields of a known
   assert.equal(entry.contextWindow, NATIVE_MODEL.contextWindow);
 });
 
+for (const input of [["audio"], ["text", "audio"]]) {
+  test(`buildCatalogModel rejects unsupported input modalities for a known model: ${input.join(", ")}`, () => {
+    assert.throws(
+      () => buildCatalogModel(
+        { provider: "openai", model: "gpt-4.1-mini", api_key_env: "K", extensions: { input } },
+        NATIVE_MODEL,
+      ),
+      (error) => error.code === "pi_model_extensions_invalid" && error.message.includes("input"),
+    );
+  });
+}
+
 test("buildCatalogModel requires context_window and max_tokens for an unknown model", () => {
   // No base (Pi does not know the model) and only api/base_url supplied: context_window and
   // max_tokens have no usable Pi default, so a complete definition is required rather than
@@ -132,15 +144,20 @@ test("buildCatalogModel requires context_window and max_tokens for an unknown mo
 });
 
 test("buildCatalogModel accepts a complete unknown-model definition and invents no optional defaults", () => {
-  // api + base_url + context_window + max_tokens is complete; optional fields (cost, reasoning,
-  // input) stay unset so Pi defaults them — the adapter adds none.
+  // Required metadata is passed through, including zero cost rates; optional reasoning stays unset.
   const entry = buildCatalogModel(
     {
       provider: "gw",
       model: "gw/model",
       api_key_env: "K",
       base_url: "https://gw/v1",
-      extensions: { api: "openai-completions", context_window: 32_000, max_tokens: 4_096 },
+      extensions: {
+        api: "openai-completions",
+        context_window: 32_000,
+        max_tokens: 4_096,
+        input: ["text", "image"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
     },
     undefined,
   );
@@ -148,9 +165,9 @@ test("buildCatalogModel accepts a complete unknown-model definition and invents 
   assert.equal(entry.baseUrl, "https://gw/v1");
   assert.equal(entry.contextWindow, 32_000);
   assert.equal(entry.maxTokens, 4_096);
-  assert.equal(entry.cost, undefined);
+  assert.deepEqual(entry.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
   assert.equal(entry.reasoning, undefined);
-  assert.equal(entry.input, undefined);
+  assert.deepEqual(entry.input, ["text", "image"]);
 });
 
 test("maps normalized MCP servers and tool filters to native Pi MCP configuration", () => {
@@ -882,7 +899,7 @@ test("reports an adapter-injected Relay extension load failure separately", asyn
       }),
       (error) =>
         error.code === "pi_relay_extension_load_failed" &&
-        error.message.includes("NeMo Relay 0.9 or 0.10 release") &&
+        error.message.includes("installed NeMo Relay CLI release") &&
         error.metadata.relay_error.length > 0,
     );
     assert.equal(relayStopped, true);
@@ -1073,6 +1090,50 @@ function makeRuntimeContext(workspace) {
   };
 }
 
+test("rejects unsupported remote HTTP APIs before the model endpoint receives credentials", { skip: !supportsPi }, async () => {
+  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-http-reject-")));
+  let requests = 0;
+  const endpoint = createServer((_request, response) => {
+    requests += 1;
+    response.writeHead(500).end();
+  });
+  try {
+    const endpointUrl = await listen(endpoint);
+    // The wildcard destination is outside the loopback exception.
+    const host = "0.0.0.0";
+    for (const hosts of [undefined, [], [host]]) {
+      const settings = hosts === undefined ? {} : { insecure_http_model_hosts: hosts };
+      const runtime = new PiAdapterRuntime(new PiSdkSessionFactory());
+      try {
+        await assert.rejects(runtime.start({
+          agentName: "pi-unsupported-http",
+          baseDir: workspace,
+          config: {
+            harness: { settings },
+            models: {
+              default: {
+                provider: "http-regression",
+                model: "mistral-http-regression",
+                api_key_env: "TEST_API_KEY",
+                base_url: `${endpointUrl.replace("127.0.0.1", host)}/v1`,
+                extensions: { ...GATEWAY_EXTENSIONS, api: "mistral-conversations" },
+              },
+            },
+            tools: { enabled: [] },
+          },
+          runtimeContext: makeRuntimeContext(workspace),
+        }), { code: "pi_relay_unsupported_http_model_api" });
+        assert.equal(requests, 0);
+      } finally {
+        await runtime.stop();
+      }
+    }
+  } finally {
+    await close(endpoint);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 function captureModelFactory(capture) {
   return new PiSdkSessionFactory({
     async start(input, model) {
@@ -1157,43 +1218,48 @@ test("resolves a gateway model's api from extensions.api", async () => {
   }
 });
 
-test("rejects an unknown gateway model that omits context_window/max_tokens", async () => {
-  const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-minimal-")));
-  const extensionPath = join(workspace, "relay-extension.js");
-  await writeFile(extensionPath, "export default function () {}\n", "utf8");
-  const factory = captureModelFactory({});
-  try {
-    await assert.rejects(
-      factory.create({
-        agentName: "pi-catalog-minimal",
-        baseDir: workspace,
-        config: {
-          harness: { settings: { relay_extension_path: extensionPath } },
-          models: {
-            default: {
-              api_key_env: "TEST_API_KEY",
-              base_url: "https://gateway.example.test/v1",
-              model: "custom-gateway-model",
-              provider: "custom-gateway-provider",
-              // Only the wire protocol is supplied. context_window/max_tokens have no usable Pi
-              // default, so an incomplete gateway definition must be rejected (not registered
-              // with undefined limits that break compaction).
-              extensions: { api: "openai-completions" },
+for (const [description, missingFields, extensions] of [
+  ["missing context_window/max_tokens", ["context_window", "max_tokens"], { api: "openai-completions" }],
+  ["missing input/cost", ["input", "cost"], { api: "openai-completions", context_window: 32000, max_tokens: 4096 }],
+  ["missing input", ["input"], { ...GATEWAY_EXTENSIONS, input: undefined }],
+  ["missing cost", ["cost"], { ...GATEWAY_EXTENSIONS, cost: undefined }],
+  ["empty input", ["input"], { ...GATEWAY_EXTENSIONS, input: [] }],
+  ["unsupported input modality", ["input"], { ...GATEWAY_EXTENSIONS, input: ["text", "audio"] }],
+]) {
+  test(`rejects an unknown gateway model with ${description}`, async () => {
+    const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-minimal-")));
+    const extensionPath = join(workspace, "relay-extension.js");
+    await writeFile(extensionPath, "export default function () {}\n", "utf8");
+    const factory = captureModelFactory({});
+    try {
+      await assert.rejects(
+        factory.create({
+          agentName: "pi-catalog-minimal",
+          baseDir: workspace,
+          config: {
+            harness: { settings: { relay_extension_path: extensionPath } },
+            models: {
+              default: {
+                api_key_env: "TEST_API_KEY",
+                base_url: "https://gateway.example.test/v1",
+                model: "custom-gateway-model",
+                provider: "custom-gateway-provider",
+                extensions,
+              },
             },
+            tools: { enabled: [] },
           },
-          tools: { enabled: [] },
-        },
-        runtimeContext: makeRuntimeContext(workspace),
-      }),
-      (error) =>
-        error.code === "pi_model_extensions_invalid" &&
-        error.message.includes("context_window") &&
-        error.message.includes("max_tokens"),
-    );
-  } finally {
-    await rm(workspace, { recursive: true, force: true });
-  }
-});
+          runtimeContext: makeRuntimeContext(workspace),
+        }),
+        (error) =>
+          error.code === "pi_model_extensions_invalid" &&
+          missingFields.every((field) => error.message.includes(field)),
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+}
 
 test("rejects an unknown gateway model with no extensions.api", async () => {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-catalog-noapi-")));

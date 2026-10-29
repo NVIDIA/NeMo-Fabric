@@ -9,6 +9,10 @@ Dependency-free TypeScript types for implementing adapters against the NVIDIA
 NeMo Fabric adapter contract. The package is generated from the versioned JSON
 Schemas maintained in the NeMo Fabric repository.
 
+`AdapterCheckRequest` and `AdapterCheckResult` describe health-probe requests and results. Results preserve required null fields and use fixed reason codes and evidence-source IDs.
+
+Evidence sources include Pi session, interface, and setup observations, plus OpenClaw Gateway liveness, authenticated interface, and native readiness observations. Gateway readiness includes configured channel health. A service host uses its service ID as the internal probe's `runtime_id`; service and agent-runtime targets remain distinct in the northbound SDK.
+
 ## Install
 
 Install the package from the public npm registry:
@@ -76,8 +80,11 @@ values but are represented as JavaScript `number`; values greater than
 
 ## JSON Schemas
 
-The package bundles byte-identical copies of the canonical schemas. Consumers
-that need runtime validation can use their validator of choice, for example:
+The package bundles byte-identical copies of the canonical adapter schemas in
+`schemas/adapter-contract/` and the shared evidence schema in
+`schemas/evidence/`. Its bundled `schemas/execution-evidence` export remains
+available as a consumer of the shared schema. Consumers that need runtime
+validation can use their validator of choice, for example:
 
 ```typescript
 import agentConfigSchema from "nemo-fabric-adapter-contract/schemas/agent-config" with { type: "json" };

@@ -79,7 +79,7 @@ For another agent, adapt the example workload hooks and provide:
   access; and
 - a normal SDK consumer that starts, invokes, and stops the runtime.
 
-The SDK echo example exercises state across two turns, normalized results,
+The SDK echo example checks server health before starting a runtime and exercises state across two turns, normalized results,
 declared artifact collection, and both environment ownership modes. The Code
 Review example exercises a packaged third-party harness, model endpoint policy,
 and optional Hermes Relay evidence.

@@ -122,6 +122,29 @@ state during `start`. Adapter stdout is reserved for the protocol; diagnostics
 are redirected to stderr. A host crash or protocol timeout terminates that
 runtime.
 
+## Relay Gateway Readiness
+
+The Claude and Codex adapters wait up to 30 seconds for the supervised Relay
+gateway's HTTP health endpoint after launch, including required worker initialization.
+The Relay CLI check and plugin configuration writing happen before launch and
+are outside this readiness wait. Process exit is checked before each health
+probe and again before accepting a successful response. An exit during an
+unsuccessful probe is detected at the next poll. A gateway that never becomes
+healthy fails when the budget expires and is stopped.
+The adapters retain its log for diagnosis. Local Python hosts separately enforce
+a 90-second adapter startup limit.
+
+Relay 0.11 includes the
+[upstream startup-memory fix](https://github.com/NVIDIA/NeMo-Relay/pull/1375)
+introduced in Relay 0.10.3. NeMo Fabric supports the `>=0.9,<0.12` CLI range.
+
+## Runtime Health
+
+An optional `AdapterRuntime.check(level)` method returns native health evidence
+through the shared `AdapterCheckResult` contract. The host serves checks through
+an authenticated loopback channel and applies the remaining request deadline.
+Refer to the [SDK health transport diagram](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#runtime-health) for lifecycle and health request routing.
+
 ## Relay Request Correlation
 
 In-process Relay SDK adapters that own their Agent scope can use
@@ -214,3 +237,5 @@ Relay promotes the keys onto the invocation's root Agent span; child spans
 share that span's trace. Refer to "Event Metadata Promotion" in the
 [NeMo Relay OpenTelemetry documentation](https://github.com/NVIDIA/NeMo-Relay/blob/0.9.3/docs/configure-plugins/observability/opentelemetry.mdx)
 for prefix syntax and collision rules.
+
+The lifecycle host carries optional typed software evidence beside its outcome, leaving `AgentRunResult` unchanged. It collects selected metadata after successful startup and reuses that snapshot across invocations. The start payload's `provenance.enabled=false` skips collectors and passive version capture. Missing reports from older hosts remain explicit gaps at the core receiver. Metadata helpers adapt selected code from NVIDIA/NeMo-Fabric#458 at `2bfd53321fa8d541d42abc195be5e9dd9db4350f`; the current report model, bounds and timestamps are independent of that PR's versioned extension envelope.

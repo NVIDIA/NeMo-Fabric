@@ -5,7 +5,7 @@
 // one native session, and the temporary credential environment required by the
 // upstream SDK.
 
-import type { AgentUsage } from "nemo-fabric-adapter-contract";
+import type { AdapterCheckResult, CheckLevel, AgentUsage } from "nemo-fabric-adapter-contract";
 import type { AdapterStartInput } from "nemo-fabric-adapters-common";
 import { LifecycleError } from "nemo-fabric-adapters-common";
 import { randomUUID } from "node:crypto";
@@ -16,6 +16,9 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { selectModel, selectSystemInstruction } from "./configuration.js";
 import { ModelEndpointProxy } from "./model-endpoint-proxy.js";
 import type { OpenCodePromptOutcome, OpenCodeSessionFactory, OpenCodeSessionHandle } from "./runtime.js";
+import { OpenCodePromptFailure } from "./runtime.js";
+import { OpenCodeUsageCollector } from "./usage.js";
+import type { OpenCodeInvocationUsage, ScopeReason } from "./usage.js";
 
 type OpenCodeClient = Awaited<ReturnType<(typeof import("@opencode/sdk"))["OpenCode"]["create"]>>;
 type OpenCodeEmbedOptions = { overrides?: unknown[] };
@@ -61,6 +64,7 @@ const MCP_CONNECTION_POLL_INTERVAL_MS = 50;
 const SKILL_DISCOVERY_TIMEOUT_MS = 5_000;
 const SKILL_DISCOVERY_POLL_INTERVAL_MS = 50;
 const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
+const ACCOUNTING_WAIT_LIMIT_MS = 2_000;
 
 function loopbackHostname(hostname: string): boolean {
   return hostname === "localhost" || hostname === "::1" || hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/u.test(hostname);
@@ -544,63 +548,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function usage(message: Record<string, unknown>): AgentUsage | undefined {
-  const tokens = isRecord(message.tokens) ? message.tokens : undefined;
-  const input = tokens?.input;
-  const output = tokens?.output;
-  const cost = message.cost;
-  if (typeof input !== "number" && typeof output !== "number" && typeof cost !== "number") {
-    return undefined;
-  }
-  const result: AgentUsage = {};
-  if (typeof input === "number") {
-    result.input_tokens = input;
-  }
-  if (typeof output === "number") {
-    result.output_tokens = output;
-  }
-  if (typeof input === "number" && typeof output === "number") {
-    result.total_tokens = input + output;
-  }
-  if (typeof cost === "number") {
-    result.cost_usd = cost;
-  }
-  return result;
-}
-
-function totalUsage(messages: Record<string, unknown>[]): AgentUsage | undefined {
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let costUsd = 0;
-  let hasInputTokens = false;
-  let hasOutputTokens = false;
-  let hasCostUsd = false;
-  for (const message of messages) {
-    const current = usage(message);
-    if (current?.input_tokens !== undefined && current.input_tokens !== null) {
-      inputTokens += current.input_tokens;
-      hasInputTokens = true;
-    }
-    if (current?.output_tokens !== undefined && current.output_tokens !== null) {
-      outputTokens += current.output_tokens;
-      hasOutputTokens = true;
-    }
-    if (current?.cost_usd !== undefined && current.cost_usd !== null) {
-      costUsd += current.cost_usd;
-      hasCostUsd = true;
-    }
-  }
-  if (!hasInputTokens && !hasOutputTokens && !hasCostUsd) {
-    return undefined;
-  }
-  return {
-    ...(hasInputTokens ? { input_tokens: inputTokens } : {}),
-    ...(hasOutputTokens ? { output_tokens: outputTokens } : {}),
-    ...(hasInputTokens && hasOutputTokens ? { total_tokens: inputTokens + outputTokens } : {}),
-    ...(hasCostUsd ? { cost_usd: costUsd } : {}),
-  };
-}
-
 function patch(diffs: unknown): string | undefined {
   if (!Array.isArray(diffs)) {
     return undefined;
@@ -625,6 +572,7 @@ function messageIds(messages: unknown[]): Set<string> {
 export function extractOpenCodePromptOutcome(
   messages: unknown[],
   existingMessageIds?: ReadonlySet<string>,
+  invocationUsage?: AgentUsage,
 ): OpenCodePromptOutcome {
   const assistantMessages: Record<string, unknown>[] = [];
   for (const message of messages) {
@@ -641,9 +589,8 @@ export function extractOpenCodePromptOutcome(
   }
   const terminal = assistantMessages.at(-1);
   if (terminal === undefined) {
-    return {};
+    return invocationUsage === undefined ? {} : { usage: invocationUsage };
   }
-  const invocationUsage = totalUsage(assistantMessages);
   if (terminal.finish === "error" || terminal.error !== undefined) {
     return {
       errorMessage: "OpenCode model invocation failed",
@@ -651,7 +598,7 @@ export function extractOpenCodePromptOutcome(
     };
   }
   if (!Array.isArray(terminal.content)) {
-    return {};
+    return invocationUsage === undefined ? {} : { usage: invocationUsage };
   }
   const text = terminal.content
     .filter((part): part is Record<string, unknown> => isRecord(part) && part.type === "text")
@@ -774,12 +721,179 @@ function leaseEnvironment(input: AdapterStartInput, credentialName: string): Env
   return { release: () => replaceEnvironment(original) };
 }
 
+interface AccountingScope {
+  renames: number;
+  terminals: number;
+  needsTitle: boolean;
+  supported: boolean;
+}
+
+/** Join the SDK's independent title worker without changing its behavior. */
+class OpenCodeAccountingBoundary {
+  private readonly controller = new AbortController();
+  private readonly waiters = new Set<() => void>();
+  private running = false;
+  private connected = false;
+  private watching = false;
+  private uncertain = false;
+  private prepareFailure: ScopeReason = "observer_unavailable";
+  private renames = 0;
+  private terminals = 0;
+
+  constructor(
+    private readonly id: string,
+    private readonly client: OpenCodeClient,
+    private readonly workspace: string,
+    private readonly collector: OpenCodeUsageCollector,
+  ) {
+    // Older injected clients still return useful partial evidence.
+    if (typeof client.events?.subscribe !== "function" || typeof client.config?.get !== "function" || typeof client.sessions.get !== "function") return;
+    this.running = true;
+    void this.observe();
+  }
+
+  private changed(): void {
+    for (const waiter of this.waiters) waiter();
+  }
+
+  private invalidate(reason: ScopeReason): void {
+    this.uncertain = true;
+    this.collector.markUncertain(reason);
+    this.changed();
+  }
+
+  private async observe(): Promise<void> {
+    try {
+      for await (const event of this.client.events.subscribe({ signal: this.controller.signal })) {
+        if (event.type === "server.connected") this.connected = true;
+        if (this.watching && (event.type === "config.updated" || event.type === "wellknown.updated")) this.invalidate("configuration_changed");
+        if (isRecord(event.data) && event.data.sessionID === this.id) {
+          if (event.type === "session.renamed") this.renames++;
+          if (event.type === "session.execution.succeeded" || event.type === "session.execution.failed" || event.type === "session.execution.interrupted") this.terminals++;
+        }
+        this.changed();
+      }
+    } catch {
+      // Losing the lifecycle stream loses the title completion proof.
+    } finally {
+      this.running = false;
+      if (!this.controller.signal.aborted) this.invalidate("observer_lost");
+      this.changed();
+    }
+  }
+
+  private limit(deadlineMillis?: number | null): number {
+    const limit = Date.now() + ACCOUNTING_WAIT_LIMIT_MS;
+    return typeof deadlineMillis === "number" && Number.isFinite(deadlineMillis) ? Math.min(deadlineMillis, limit) : limit;
+  }
+
+  private async waitFor(predicate: () => boolean, deadline: number): Promise<boolean> {
+    if (predicate()) return true;
+    if (!this.running || this.uncertain || deadline <= Date.now()) return false;
+    return new Promise(resolve => {
+      const finish = (result: boolean): void => {
+        clearTimeout(timer);
+        this.waiters.delete(check);
+        resolve(result);
+      };
+      const check = (): void => {
+        if (!this.running || this.uncertain) finish(false);
+        else if (predicate()) finish(true);
+      };
+      const timer = setTimeout(() => finish(false), Math.max(0, deadline - Date.now()));
+      this.waiters.add(check);
+      check();
+    });
+  }
+
+  private async readScope(deadline: number): Promise<{ entries: unknown; title: unknown } | undefined> {
+    if (deadline <= Date.now()) return undefined;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = Promise.all([
+        this.client.config.get({ location: { directory: this.workspace } }, { signal: controller.signal }),
+        this.client.sessions.get({ sessionID: this.id }, { signal: controller.signal }),
+      ]).then(([entries, session]) => session.id === this.id ? { entries, title: session.title } : undefined).catch(() => undefined);
+      return await Promise.race([result, new Promise<undefined>(resolve => {
+        timer = setTimeout(() => resolve(undefined), Math.max(0, deadline - Date.now()));
+      })]);
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+    }
+  }
+
+  private supported(entries: unknown): boolean {
+    // Remote WellKnown documents still load when project/global discovery is off.
+    // Additional configuration can install unjoined model work or custom plugins.
+    if (!Array.isArray(entries) || entries.length !== 1) return false;
+    const entry: unknown = entries[0];
+    if (!isRecord(entry) || entry.type !== "document" || !isRecord(entry.info)) return false;
+    const { warming, plugins } = entry.info;
+    return (warming === undefined || warming === false) && (plugins === undefined || Array.isArray(plugins) && plugins.length === 0);
+  }
+
+  async prepare(deadlineMillis?: number | null): Promise<AccountingScope | undefined> {
+    const limit = this.limit(deadlineMillis);
+    if (!await this.waitFor(() => this.connected, limit)) {
+      this.prepareFailure = "observer_unavailable";
+      return undefined;
+    }
+    this.watching = true;
+    const scope = await this.readScope(limit);
+    if (scope === undefined) {
+      this.prepareFailure = "prepare_scope_read_failed";
+      return undefined;
+    }
+    if (!this.running || this.uncertain) return undefined;
+    const supported = this.supported(scope.entries);
+    return {
+      renames: this.renames,
+      terminals: this.terminals,
+      supported,
+      // This conservative check also covers the SDK's legacy timestamped fallback.
+      needsTitle: typeof scope.title !== "string" || scope.title.length === 0 || scope.title.startsWith("New session -"),
+    };
+  }
+
+  async finish(scope: AccountingScope | undefined, deadlineMillis?: number | null): Promise<boolean> {
+    if (scope === undefined) {
+      this.invalidate(this.prepareFailure);
+      return false;
+    }
+    if (!scope.supported) {
+      this.invalidate("unsupported_configuration");
+      return false;
+    }
+    const limit = this.limit(deadlineMillis);
+    const settled = await this.waitFor(() => this.terminals > scope.terminals && (!scope.needsTitle || this.renames > scope.renames), limit);
+    if (!settled) {
+      this.invalidate(this.terminals <= scope.terminals ? "root_execution_unconfirmed" : "title_completion_unconfirmed");
+      return false;
+    }
+    const current = await this.readScope(limit);
+    if (current === undefined) this.invalidate("final_scope_read_failed");
+    else if (!this.supported(current.entries)) this.invalidate("unsupported_configuration");
+    return current !== undefined && this.supported(current.entries) && this.running && !this.uncertain;
+  }
+
+  close(): void {
+    this.controller.abort();
+    this.running = false;
+    this.changed();
+  }
+}
+
 class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
+  private healthObservation?: Promise<boolean>;
   readonly id: string;
   private readonly client: OpenCodeClient;
   private readonly environment: EnvironmentLease;
   private readonly endpointProxy?: EndpointProxy;
   private readonly skillsRoot?: string;
+  private readonly usageCollector: OpenCodeUsageCollector;
+  private readonly accountingBoundary: OpenCodeAccountingBoundary;
   private stopped = false;
 
   constructor(
@@ -788,24 +902,51 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
     environment: EnvironmentLease,
     endpointProxy?: EndpointProxy,
     skillsRoot?: string,
+    usageCollector = new OpenCodeUsageCollector(),
+    workspace = "",
   ) {
     this.id = id;
     this.client = client;
     this.environment = environment;
     this.endpointProxy = endpointProxy;
     this.skillsRoot = skillsRoot;
+    this.usageCollector = usageCollector;
+    this.accountingBoundary = new OpenCodeAccountingBoundary(id, client, workspace, usageCollector);
   }
 
-  async prompt(text: string): Promise<OpenCodePromptOutcome> {
+  async check(level: CheckLevel): Promise<AdapterCheckResult> {
+    const source = level === "live" ? "fabric.adapter.liveness" : level === "active" ? "fabric.adapter.interface" : "fabric.adapter.readiness";
+    if (this.stopped) return { outcome: "failed", reason_code: "session_closed", source, observed_at: new Date().toISOString(), activity: "stopped" };
+    if (this.healthObservation !== undefined) return { outcome: "unknown", reason_code: "probe_timeout", source, observed_at: null, activity: "unknown" };
+    const sessionId = this.id;
+    try {
+      const observation: Promise<boolean> = Promise.resolve(this.client.sessions.get({ sessionID: sessionId })).then((value: unknown) => typeof value === "object" && value !== null && "id" in value && value.id === sessionId && "time" in value && typeof value.time === "object" && value.time !== null && !("archived" in value.time));
+      this.healthObservation = observation;
+      void observation.finally(() => { if (this.healthObservation === observation) this.healthObservation = undefined; }).catch(() => { });
+      const valid = await observation;
+      if (this.stopped || this.id !== sessionId) return { outcome: "unknown", reason_code: "observation_changed", source, observed_at: null, activity: "unknown" };
+      return valid
+        ? { outcome: "passed", reason_code: null, source, observed_at: new Date().toISOString(), activity: "idle" }
+        : { outcome: "unknown", reason_code: "probe_error", source, observed_at: new Date().toISOString(), activity: "unknown" };
+    } catch {
+      return { outcome: "unknown", reason_code: this.stopped || this.id !== sessionId ? "observation_changed" : "probe_error", source, observed_at: null, activity: "unknown" };
+    }
+  }
+
+  async prompt(text: string, deadlineMillis?: number | null): Promise<OpenCodePromptOutcome> {
     let promptMayHaveBeenSubmitted = false;
+    let evidence: OpenCodeInvocationUsage | undefined;
     try {
       const historyBeforePrompt = await this.client.sessions.context({ sessionID: this.id });
       const existingMessageIds = messageIds(historyBeforePrompt);
+      evidence = this.usageCollector.begin(this.id);
+      const scope = await this.accountingBoundary.prepare(deadlineMillis);
       promptMayHaveBeenSubmitted = true;
       await this.client.sessions.prompt({ sessionID: this.id, text });
       await this.client.sessions.wait({ sessionID: this.id });
       const historyAfterPrompt = await this.client.sessions.context({ sessionID: this.id });
-      const outcome = extractOpenCodePromptOutcome(historyAfterPrompt, existingMessageIds);
+      const scopeProven = await this.accountingBoundary.finish(scope, deadlineMillis);
+      const outcome = extractOpenCodePromptOutcome(historyAfterPrompt, existingMessageIds, this.usageCollector.end(evidence, scopeProven));
       try {
         const sessionPatch = patch(await this.client.sessions.diff({ sessionID: this.id }));
         return { ...outcome, ...(sessionPatch === undefined ? {} : { patch: sessionPatch }) };
@@ -813,6 +954,10 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
         return outcome;
       }
     } catch {
+      if (evidence !== undefined) {
+        this.usageCollector.markUncertain("prompt_failed");
+        throw new OpenCodePromptFailure(this.usageCollector.end(evidence));
+      }
       throw new LifecycleError("opencode_session_failed", "OpenCode session communication failed", {
         retryable: !promptMayHaveBeenSubmitted,
       });
@@ -824,6 +969,7 @@ class OpenCodeSdkSessionHandle implements OpenCodeSessionHandle {
       return;
     }
     this.stopped = true;
+    this.accountingBoundary.close();
     try {
       await this.client.sessions.remove({ sessionID: this.id });
     } finally {
@@ -895,7 +1041,9 @@ export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
         this.sdkLoader === loadOpenCodeSdk
           ? await loadEmbeddedOpenCodeCreate()
           : (sdk.OpenCode.create as EmbeddedOpenCodeCreate);
+      const usageCollector = new OpenCodeUsageCollector();
       client = await createEmbeddedClient({
+        plugins: [usageCollector.plugin()],
         config: { directory: workspace, project: false, content: configContent },
         fs: { filewatcher: false },
         models: { fetch: false },
@@ -908,7 +1056,7 @@ export class OpenCodeSdkSessionFactory implements OpenCodeSessionFactory {
       });
       sessionId = session.id;
       await waitForMcpConnections(client, workspace, Object.keys(mcpServers));
-      return new OpenCodeSdkSessionHandle(session.id, client, environment, endpointProxy, runtimeSkills.root);
+      return new OpenCodeSdkSessionHandle(session.id, client, environment, endpointProxy, runtimeSkills.root, usageCollector, workspace);
     } catch (error) {
       if (client !== undefined) {
         if (sessionId !== undefined) {

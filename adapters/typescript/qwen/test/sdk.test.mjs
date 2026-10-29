@@ -9,6 +9,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { QwenAdapterRuntime } from "../dist/runtime.js";
 import { QwenSdkSessionFactory } from "../dist/qwen-sdk.js";
 
 const mcpServerPath = fileURLToPath(new URL("./fixtures/mcp-server.mjs", import.meta.url));
@@ -240,4 +241,49 @@ test("Qwen SDK reports an unavailable configured MCP server", { timeout: 45_000 
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("native Qwen read-only control health passes before during and after a blocked model response", { timeout: 45_000 }, async () => {
+  let entered;
+  const enteredModel = new Promise(resolve => { entered = resolve; });
+  let finish;
+  const blocked = new Promise(resolve => { finish = resolve; });
+  let requests = 0;
+  const server = createServer(async (request, response) => {
+    for await (const chunk of request) { void chunk; }
+    requests++;
+    entered();
+    await blocked;
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    const common = { id: "chatcmpl-health", object: "chat.completion.chunk", created: 0, model: "fabric-test-model" };
+    response.write(`data: ${JSON.stringify({ ...common, choices: [{ index: 0, delta: { role: "assistant", content: "answer" }, finish_reason: null }] })}\n\n`);
+    response.write(`data: ${JSON.stringify({ ...common, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } })}\n\n`);
+    response.end("data: [DONE]\n\n");
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const runtime = new QwenAdapterRuntime(new QwenSdkSessionFactory());
+  const context = { artifacts: {}, environment: { control_location: "external_control", env: { FABRIC_QWEN_TEST_KEY: "local-test-key" }, environment_id: "env-health", ownership: "caller_owned", provider: "local", workspace: process.cwd() }, invocation_id: "invoke", request_id: "request", runtime_id: "runtime-health" };
+  try {
+    await runtime.start({ agentName: "health", baseDir: process.cwd(), config: { models: { default: { provider: "openai", model: "fabric-test-model", api_key_env: "FABRIC_QWEN_TEST_KEY", base_url: `http://127.0.0.1:${server.address().port}/v1` } } }, runtimeContext: context });
+    for (const level of ["live", "active", "ready"]) assert.equal((await runtime.check(level)).outcome, "passed", level);
+    assert.equal(requests, 0);
+    const invocation = runtime.invoke({ input: "private prompt" }, context);
+    await enteredModel;
+    for (const level of ["live", "active", "ready"]) {
+      const result = await runtime.check(level);
+      assert.equal(result.outcome, "passed", level);
+      assert.equal(result.activity, "busy");
+      assert.doesNotMatch(JSON.stringify(result), /private prompt|local-test-key|commands/);
+    }
+    assert.equal(requests, 1);
+    finish();
+    assert.equal((await invocation).status, "succeeded");
+    assert.equal((await runtime.check("ready")).activity, "idle");
+  } finally {
+    finish();
+    await runtime.stop();
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+  assert.equal((await runtime.check("live")).reason_code, "runtime_unavailable");
 });

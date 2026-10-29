@@ -98,6 +98,7 @@ function fakeSdk(options = {}) {
   };
   return {
     calls,
+    session,
     loader: async () => ({
       async createSession(value) {
         calls.create.push(value);
@@ -505,5 +506,44 @@ test("rejects invalid startup inputs and missing or malformed terminal results",
   const malformed = fakeSdk({ results: [{ type: "result", text: "not terminal" }] });
   const handle = await new DroidSdkSessionFactory(malformed.loader).create(input({ tools: undefined }));
   await assert.rejects(handle.prompt("one"), (error) => error.code === "droid_malformed_result");
+  await handle.stop();
+});
+
+test("live observes a fresh native tools response and bounds pending native requests", async () => {
+  const sdk = fakeSdk();
+  const handle = await new DroidSdkSessionFactory(sdk.loader).create(input());
+  const baseline = sdk.calls.listTools;
+  assert.equal((await handle.check("live")).outcome, "passed");
+  assert.equal(sdk.calls.listTools, baseline + 1);
+  assert.equal((await handle.check("active")).outcome, "unsupported");
+  assert.equal((await handle.check("ready")).outcome, "unsupported");
+  const release = Promise.withResolvers();
+  let requests = 0;
+  sdk.session.listTools = async () => {
+    requests += 1;
+    return release.promise;
+  };
+  const pending = handle.check("live");
+  assert.equal((await handle.check("live")).reason_code, "probe_timeout");
+  assert.equal((await handle.check("live")).reason_code, "probe_timeout");
+  assert.equal(requests, 1);
+  await handle.stop();
+  release.resolve([]);
+  assert.equal((await pending).reason_code, "observation_changed");
+  assert.equal((await handle.check("live")).reason_code, "session_closed");
+});
+
+test("native health failures remain unknown and never close a session", async () => {
+  const sdk = fakeSdk();
+  const handle = await new DroidSdkSessionFactory(sdk.loader).create(input());
+  sdk.session.listTools = async () => {
+    throw new Error("PRIVATE-CREDENTIAL");
+  };
+  const result = await handle.check("live");
+  assert.equal(result.outcome, "unknown");
+  assert.equal(result.reason_code, "probe_error");
+  assert.equal(JSON.stringify(result).includes("PRIVATE"), false);
+  assert.equal(sdk.calls.close, 0);
+  assert.equal((await handle.prompt("one")).status, "completed");
   await handle.stop();
 });

@@ -24,7 +24,9 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 readme = "pypi.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+  "nemo-fabric-evidence == 0.6.0",
+]
 
 [project.optional-dependencies]
 pydantic = [
@@ -40,3 +42,6 @@ Documentation = "https://docs.nvidia.com/nemo/fabric"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["nemo_fabric_adapter_contract*"]
+
+[tool.uv.sources]
+nemo-fabric-evidence = { path = "../../sdk/python/nemo-fabric-evidence", editable = true }

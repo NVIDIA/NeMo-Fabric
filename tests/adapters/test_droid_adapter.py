@@ -76,6 +76,7 @@ def test_droid_descriptor_declares_only_the_supported_surface():
     assert descriptor["model_schema"]["additionalProperties"] is False
     assert "telemetry" not in descriptor
     assert descriptor["capabilities"] == {
+        "metadata": {"health_checks": ["live"]},
         "streaming": False,
         "cancellation": False,
         "updates": False,
