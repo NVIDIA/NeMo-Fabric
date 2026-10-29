@@ -1197,9 +1197,12 @@ def test_provider_override_preserves_model_in_command_selection_and_report(
 
 
 @pytest.mark.usefixtures("clean_qualification_checkout")
-@pytest.mark.parametrize("termination_phase", ["cleanup", "scrub", "report"])
-def test_termination_finishes_cleanup_scrubbing_and_cancellation_report(
-    tmp_path, qualification_plan, monkeypatch, termination_phase, restore_environ
+@pytest.mark.parametrize(
+    "failure_phase",
+    ["cleanup", "scrub", "report", "preflight", "staging", "staging_error"],
+)
+def test_trial_finalizes_cleanup_scrubbing_and_report(
+    tmp_path, qualification_plan, monkeypatch, failure_phase, restore_environ
 ):
     row = next(r for r in qualification_plan["adapters"] if r["action"] == "run")
     restore_environ[row["api_key_env"]] = "private-test-credential"
@@ -1219,7 +1222,13 @@ def test_termination_finishes_cleanup_scrubbing_and_cancellation_report(
         "adapters": {row["adapter_id"]: {"status": "ready", "image": "owned-image"}},
     }
     monkeypatch.setattr(qualify, "execute", lambda *args, **kwargs: 0)
-    monkeypatch.setattr(qualify, "stage_task", lambda *args, **kwargs: None)
+
+    def stage(*args, **kwargs):
+        if failure_phase == "staging_error":
+            raise OSError("Cannot stage task")
+        terminate("staging")
+
+    monkeypatch.setattr(qualify, "stage_task", stage)
     output_calls = iter([json.dumps(identity), ValueError("preflight failure")])
 
     original_check_output = qualify.subprocess.check_output
@@ -1229,6 +1238,8 @@ def test_termination_finishes_cleanup_scrubbing_and_cancellation_report(
             return original_check_output(command, *args, **kwargs)
         value = next(output_calls)
         if isinstance(value, Exception):
+            terminate("preflight")
+        if isinstance(value, Exception):
             raise value
         return value
 
@@ -1237,7 +1248,7 @@ def test_termination_finishes_cleanup_scrubbing_and_cancellation_report(
     signalled = []
 
     def terminate(phase):
-        if phase == termination_phase and not signalled:
+        if phase == failure_phase and not signalled:
             signalled.append(phase)
             qualify.signal.raise_signal(qualify.signal.SIGTERM)
 
@@ -1274,10 +1285,18 @@ def test_termination_finishes_cleanup_scrubbing_and_cancellation_report(
     finally:
         qualify.signal.signal(qualify.signal.SIGTERM, previous)
     report = qualify.load(output / "report.json")
-    assert signalled == [termination_phase]
+    assert signalled == ([] if failure_phase == "staging_error" else [failure_phase])
     assert cleanup_finished == [True]
-    assert report["state"] == "cancelled"
+    assert report["state"] == (
+        "completed" if failure_phase == "staging_error" else "cancelled"
+    )
     assert report["finished_at"]
     assert len(report["adapters"]) == len(qualification_plan["adapters"])
+    result = next(r for r in report["adapters"] if r["adapter_id"] == row["adapter_id"])
+    assert result["outcome"] == "failed"
+    if failure_phase == "staging_error":
+        assert result["reason"] == "Cannot stage task"
+    else:
+        assert any(f["category"] == "cancelled" for f in result["failures"])
     artifact = next(output.glob("*/artifact.txt"))
     assert "private-test-credential" not in artifact.read_text()

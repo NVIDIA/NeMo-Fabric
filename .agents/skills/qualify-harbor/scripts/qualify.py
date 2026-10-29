@@ -1316,21 +1316,21 @@ def run(plan: dict, environment: dict, output: Path, selected: list[str]) -> int
             write_report(output, report)
             continue
         directory = output / str(index)
-        directory.mkdir()
-        task = directory / f"{prefix}-{index}"
-        image = install["image"]
-        stage_task(plan, task, image, row.get("task_python", "python3"))
-        jobs = directory / "jobs"
-        name = f"qualification-{index}"
-        command = harbor_command(plan, row, host_python, task, jobs, name)
-        result.update(
-            reason="Running",
-            started_at=now(),
-            command=shlex.join(command),
-            artifact_directory=str(directory),
-        )
-        write_report(output, report)
         try:
+            directory.mkdir()
+            task = directory / f"{prefix}-{index}"
+            image = install["image"]
+            stage_task(plan, task, image, row.get("task_python", "python3"))
+            jobs = directory / "jobs"
+            name = f"qualification-{index}"
+            command = harbor_command(plan, row, host_python, task, jobs, name)
+            result.update(
+                reason="Running",
+                started_at=now(),
+                command=shlex.join(command),
+                artifact_directory=str(directory),
+            )
+            write_report(output, report)
             task_identity = json.loads(
                 subprocess.check_output(
                     [
@@ -1450,6 +1450,17 @@ def run(plan: dict, environment: dict, output: Path, selected: list[str]) -> int
                 )
             result.update(
                 outcome="failed" if result["failures"] else "passed", reason=""
+            )
+        except KeyboardInterrupt:
+            code = 130
+            report["state"] = "cancelled"
+            result.update(
+                outcome="failed",
+                reason="Qualification cancelled",
+                exit_code=130,
+                failures=[
+                    {"category": "cancelled", "reason": "Qualification cancelled"}
+                ],
             )
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             result.update(
