@@ -21,6 +21,7 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.mini_swe_agent import adapter
 from nemo_fabric_adapters.mini_swe_agent.agents import RelayRetainingDefaultAgent
 from nemo_fabric_adapters.mini_swe_agent.agents import RetainingDefaultAgent
+from nemo_fabric_adapters.mini_swe_agent.agents import _relay_response
 from nemo_fabric_adapters.mini_swe_agent.agents import _submitted_output
 from minisweagent.exceptions import Submitted
 
@@ -316,6 +317,7 @@ async def test_mini_swe_agent_maps_config_and_returns_normalized_output(
             "top_p": 0.8,
             "max_tokens": 256,
         },
+        cost_tracking="ignore_errors",
     )
     mock_mini["environment_factory"].assert_called_once_with(timeout=45)
 
@@ -591,6 +593,22 @@ def test_submitted_output_handles_missing_content(error):
         "returncode": 0,
         "exception_info": "",
     }
+
+
+@pytest.mark.parametrize(
+    ("cost", "usage"),
+    [
+        (0.25, {"prompt_tokens": 8, "cost": 0.25}),
+        (0.0, {"prompt_tokens": 8}),
+    ],
+)
+def test_relay_response_reports_only_a_known_cost(cost, usage):
+    message = {
+        "role": "assistant",
+        "extra": {"cost": cost, "response": {"usage": {"prompt_tokens": 8}}},
+    }
+
+    assert _relay_response(message)["usage"] == usage
 
 
 async def test_stop_resets_relay_quarantine():

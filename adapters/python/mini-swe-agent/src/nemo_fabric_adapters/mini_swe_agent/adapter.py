@@ -105,6 +105,9 @@ class MiniSweAgentRuntime:
                 model.model if "/" in model.model else f"{model.provider}/{model.model}"
             ),
             model_kwargs=model_kwargs,
+            # The default mode fails every call to a model without a LiteLLM
+            # price, such as a self-hosted endpoint; the cost is then unknown.
+            cost_tracking="ignore_errors",
         )
         self._environment = LocalEnvironment(
             **(config.harness.settings if config.harness else {})

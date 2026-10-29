@@ -75,7 +75,6 @@ async def test_mini_swe_agent_plans_diagnoses_and_runs(
     )
     response.raise_for_status()
     monkeypatch.setenv("MSWEA_SILENT_STARTUP", "1")
-    monkeypatch.setenv("MSWEA_COST_TRACKING", "ignore_errors")
     monkeypatch.setenv("MSWEA_GLOBAL_CONFIG_DIR", str(tmp_path / "mini-config"))
     monkeypatch.setenv("ADAPTER_PYTHON", sys.executable)
     config = mini_config(api_server, tmp_path)
@@ -116,7 +115,6 @@ async def test_mini_swe_agent_streams_relay_telemetry(
     )
     response.raise_for_status()
     monkeypatch.setenv("MSWEA_SILENT_STARTUP", "1")
-    monkeypatch.setenv("MSWEA_COST_TRACKING", "ignore_errors")
     monkeypatch.setenv("MSWEA_GLOBAL_CONFIG_DIR", str(tmp_path / "mini-config"))
     monkeypatch.setenv("ADAPTER_PYTHON", sys.executable)
     config = mini_config(api_server, tmp_path)
@@ -169,11 +167,17 @@ async def test_mini_swe_agent_streams_relay_telemetry(
         for record in persisted_records
         if record["category"] == "llm" and record["scope_category"] == "start"
     )
+    llm_end = next(
+        record
+        for record in persisted_records
+        if record["category"] == "llm" and record["scope_category"] == "end"
+    )
     tool_start = next(
         record
         for record in persisted_records
         if record["category"] == "tool" and record["scope_category"] == "start"
     )
     assert llm_start["data"]["content"]["model"] == "openai/gpt-4o-mini"
+    assert "cost" not in llm_end["data"]["usage"]
     assert tool_start["name"] == "bash"
     assert tool_start["data"]["command"].startswith("printf ")
