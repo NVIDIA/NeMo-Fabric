@@ -890,14 +890,16 @@ def _protocol_stdout(output_stream: TextIO) -> Iterator[TextIO]:
         yield output_stream
         return
     protocol = os.fdopen(os.dup(1), "w", encoding=output_stream.encoding)
-    os.dup2(2, 1)
-    output_stream.flush()
     try:
+        os.dup2(2, 1)
+        output_stream.flush()
         yield protocol
     finally:
-        output_stream.flush()
-        os.dup2(protocol.fileno(), 1)
-        protocol.close()
+        try:
+            output_stream.flush()
+        finally:
+            os.dup2(protocol.fileno(), 1)
+            protocol.close()
 
 
 def serve(

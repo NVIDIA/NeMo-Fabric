@@ -903,9 +903,13 @@ def test_lifecycle_host_keeps_process_stdout_out_of_protocol():
 
         print("startup output")
         lifecycle.serve(Runtime)
+        os.write(1, b"after serve\\n")
         """
     )
 
+    # Output written before serve() reaches stderr only while it is still buffered.
+    environment = dict(os.environ)
+    environment.pop("PYTHONUNBUFFERED", None)
     host_process = subprocess.run(
         [sys.executable, "-c", host],
         input="".join(f"{json.dumps(item)}\n" for item in requests),
@@ -913,14 +917,16 @@ def test_lifecycle_host_keeps_process_stdout_out_of_protocol():
         text=True,
         timeout=60,
         check=True,
+        env=environment,
     )
 
-    responses = [json.loads(line) for line in host_process.stdout.splitlines()]
-    assert [response["operation"] for response in responses] == [
+    *responses, after_serve = host_process.stdout.splitlines()
+    assert [json.loads(line)["operation"] for line in responses] == [
         "start",
         "invoke",
         "stop",
     ]
+    assert after_serve == "after serve"
     assert "startup output" in host_process.stderr
     assert "child output" in host_process.stderr
     assert "native output" in host_process.stderr
