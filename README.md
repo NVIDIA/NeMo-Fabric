@@ -80,10 +80,9 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 
 Planned areas of development include:
 
-- **Harness coverage:** Expand supported harnesses and adapter capabilities.
-- **Configuration explainability:** Explain native configuration, mappings, precedence, and unsupported fields; redact secrets without launching harnesses or modifying workspaces.
-- **ACP integration:** Support negotiated sessions, streaming, cancellation, permissions, and capability-dependent resume through Agent Client Protocol.
-- **Sandbox execution:** Support additional sandbox providers, configurable access boundaries, provider-supported sudo, and judge-code isolation.
-- **Environment bootstate:** Capture files, configuration, dependencies, and supported image snapshots for restoration and branching evaluations.
-- **System statistics:** Correlate CPU, memory, elapsed time, available GPU usage, and available token/cost metrics with Fabric execution IDs; identify unavailable measurements.
+- **Refine runtime resource measurements:** Improve CPU, memory, elapsed-time, and available GPU measurements through broader benchmark validation.
+- **Support long-running, artifact-heavy workloads:** Make OpenShell timeouts and response/artifact limits configurable, including unlimited task duration, with clear limit errors and guidance for retrieving large screenshots.
+- **Expose task progress and recoverable results:** Provide task state, step progress, plans, pending requests, sandbox task listings, and paginated events, with final results retrievable after invocation ends or the caller disconnects.
+- **Standardize model usage accounting:** Report input, cached, output, and reasoning tokens consistently, distinguish complete, partial, and unknown usage, and attribute delegated work to the correct invocation.
+- **Capture execution provenance:** Record NeMo Fabric and adapter versions, requested models, sanitized MCP configuration, and execution environment, with explicit sources and unknowns.
 
