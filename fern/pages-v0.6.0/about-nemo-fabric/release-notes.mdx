@@ -19,71 +19,79 @@ This is the Release Notes template. Document one release version per page and us
 - Use callouts for upgrade blockers, breaking changes, and security advisories.
 */}
 
-This page summarizes the current documentation-visible release state. GitHub
-Releases remain the source of truth for complete release history and
-tag-specific notes.
+This page summarizes NVIDIA NeMo Fabric 0.6.0. [GitHub Releases](https://github.com/NVIDIA/NeMo-Fabric/releases) remain the source of truth for complete release history and tag-specific notes.
 
 ## Current Release
 
-NVIDIA NeMo Fabric 0.5 adds adapters for Factory Droid, OpenHands, and Kilo Code, host-side capability inspection, a metadata-only adapter catalog, and a sandbox command bridge. It extends Harbor integration, updates Pi to its 1.0 SDK with native MCP support, and supports NeMo Relay 0.10 with observability configuration version 4.
+NeMo Fabric 0.6.0 makes agent execution easier to compare and operate. Key features and ecosystem updates include:
 
-For release artifacts and the complete change history, refer to [GitHub Releases](https://github.com/NVIDIA/NeMo-Fabric/releases).
+- **Benchmark where you work.** Harbor now ships `FabricAgent` upstream, bringing NeMo Fabric into the benchmarking workflows teams already use.
+- **Compare results with better evidence.** Software provenance identifies selected software versions, while system statistics show the agent's local resource use.
+- **Choose where agents run.** Select local execution or OpenShell sandboxes through a consistent SDK workflow.
+- **Monitor agent health.** Shared health checks help applications make monitoring and recovery decisions across supported harnesses.
+- **Expand your harness choices.** Lightweight ACP integrations add Kiro and AWS Strands.
+
 
 ## Upgrade Notes
 
 <Warning>
 
-NeMo Fabric 0.5 writes and accepts **Relay observability configuration version 4** and rejects version 3. Set `relay.components[].config.version` or `RelayObservabilityConfig.version` to `4`. The outer plugin configuration remains `version = 1`; existing typed OpenTelemetry endpoints keep their shape. Omitting the observability version selects version 4.
+The `nemo-fabric[relay]` extra and the Deep Agents, mini-SWE-agent, and NOOA Relay integrations now require `nemo-relay>=0.11,<0.12`. Keep Hermes Agent on `nemo-relay>=0.10,<0.11` in its separate environment. Claude, Codex, and Pi support Relay CLI releases `>=0.9,<0.12`; the Pi extension must match the CLI release. Remote HTTP model trust requires Relay CLI 0.11.
 
 </Warning>
 
-Relay-enabled integrations support NeMo Relay `>=0.9,<0.11`. The release lockfiles resolve the Python package and CLI to 0.10.0. Match the Pi extension to the installed Relay CLI release. Hermes Relay integration uses the pinned upstream Relay 0.10-compatible source revision in its separate Python 3.14 environment; Hermes Agent is installed separately from the adapter.
+Relay 0.11 requires HTTPS for remote model endpoints by default, including private-network addresses. For a trusted, credential-free HTTP model endpoint, set `harness.settings.insecure_http_model_hosts` to its exact hostname or IP address. Requests and responses travel unencrypted, and Relay removes credential headers before forwarding. Remote telemetry collectors also require HTTPS by default. Restart existing runtimes after changing Relay versions. Refer to [Install NeMo Relay](../getting-started/install.mdx#install-nemo-relay) for migration details and collector trust configuration. Observability configuration remains version 4.
 
-Relay 0.10 enables automatic OTLP export when OTLP endpoint environment variables are set. Automatic traces use the `gen_ai` projection, which includes prompt and response content. Review existing endpoint and header variables before upgrading. Refer to [Install NeMo Relay](../getting-started/install.mdx#install-nemo-relay) for the configuration migration and the linked Relay migration guide for other 0.10 changes.
+Two collection features are enabled by default:
 
-Rust callers using explicit struct literals must account for new fields, including `RunRequest.relay_session_root`, `AgentRunRequest.relay_session_root`, `EnvironmentConfig.env_names`, `EnvironmentPlan.env_names`, `RuntimeContext.deadline_millis`, and the cache-accounting fields on `AgentUsage` and `RunUsage`. Use supported constructors or defaults where available. Python and serialized configurations can omit optional fields. Use matching runtime and adapter-contract versions when sending new request fields.
+- Invocation resource statistics collect before/after readings. Set `FabricConfig.system_stats=None` to disable them; periodic sampling remains opt-in. The independent final `resource_snapshot` is not disabled by this setting.
+- Selected software evidence is enabled through `FabricConfig.provenance`. Set `ProvenanceConfig(enabled=False)` before initialization to skip collection. Old saved results can omit the optional `execution` field.
 
-The sandbox command bridge uses interface version 2 with `serve`, `start`, `invoke`, and `stop`. Clients using the earlier prototype `validate/prepare/configure` interface must migrate and rebuild their sandbox images. Direct SDK lifecycle and streaming APIs retain their existing behavior.
+Upgrade the runtime, adapters, adapter contract, and the new `nemo-fabric-evidence` package together. The runtime and adapter contract use the same version-matched evidence package; the SDK does not depend on the southbound adapter contract.
+
+Rust callers constructing `FabricConfig` or `RunResult` with complete struct literals must account for the added collection controls and optional result fields. Prefer defaults where available. The NeMo Fabric 0.6 Harbor extra selects `harbor>=0.24,<0.25`. Harbor 0.25.0’s upstream `fabric` extra targets NeMo Fabric 0.5.x; use the [Harbor integration guide](../integrations/consumer/harbor.mdx) to select the appropriate integration.
 
 ## Release Highlights
 
-### Three New Harness Integrations
+### Benchmark Where You Work
 
-- [Factory Droid](../integrations/harness/droid.mdx) runs a persistent Droid SDK session with tool policy, skills, and supported MCP servers. Install the caller-owned Droid CLI and SDK separately.
-- [OpenHands](../integrations/harness/openhands.mdx) keeps one SDK conversation per runtime and maps model settings, instructions, tools, skills, MCP servers, and turn limits. Its default summarizing condenser handles long histories; use `harness.settings.condenser = "none"` to disable it. Install the compatible OpenHands SDK and tools separately.
-- [Kilo Code](../integrations/harness/kilo.mdx) runs an isolated `kilo serve` child process and reuses one session across ordered invocations, with supported model settings, tool policy, skills, and MCP servers. Its CLI and SDK are consumer-managed dependencies.
+Harbor now ships `FabricAgent` upstream in [Harbor 0.25.0](https://github.com/harbor-framework/harbor/releases/tag/v0.25.0). Alongside the existing NeMo Gym integration, this brings supported NeMo Fabric harnesses into the frameworks teams already use to evaluate and improve agents.
 
-The [Pi adapter](../integrations/harness/pi.mdx) moves to Pi 1.0 and adds normalized stdio and streamable HTTP MCP configuration, custom headers, and per-server tool filters. It also resolves gateway-served models without requiring them to exist in Pi's built-in catalog.
+Harbor's upstream integration uses NeMo Fabric 0.5.x. To inspect 0.6 provenance and resource statistics alongside Harbor's benchmark results, use the separate [NeMo Fabric 0.6 Harbor bridge](../integrations/consumer/harbor.mdx) with Harbor 0.24. The bridge saves this evidence in a separate NeMo Fabric result artifact.
 
-### Host Inspection And Sandbox Execution
+### Compare Runs With Software Provenance
 
-The dependency-free `nemo-fabric-adapter-catalog` package provides bundled adapter and target descriptor snapshots without importing harness SDKs. The [host inspection API](../sdk/python.mdx#inspect-metadata-on-a-separate-host), `inspect_adapter()`, derives declared capability profiles and validates requested configuration. Pass `expected_descriptor_sha256` to task-side execution to reject descriptor drift before startup. Catalog metadata does not register executable adapters or prove that an artifact was produced.
+A benchmark score is more useful when you know which software produced it. NeMo Fabric 0.6 records selected harness, adapter, runtime, and reported infrastructure versions alongside execution results. Teams can spot software differences between runs, interpret changes in performance, and investigate unexpected results. See [Selected Software Evidence](../sdk/python.mdx#selected-software-evidence).
 
-The [sandbox command bridge](../sdk/python.mdx#sandbox-command-bridge), `fabric-agent-ctl`, controls one SDK runtime through a private Unix socket. The repository's OpenShell code-review example demonstrates multiple invocations through separate sandbox exec calls. Callers retain responsibility for sandbox provisioning and descendant cleanup.
+### Understand the Resources Behind Each Result
 
-### Harbor Evaluation Reliability
+System statistics show CPU, memory, and process usage for the agent's local process tree. Teams can compare resource demand across harnesses and configurations, while optional sampling helps reveal transient peaks. See [Resource Usage and Stats](../sdk/system-stats.mdx) for measurement scope and collection options.
 
-The [Harbor integration](../integrations/consumer/harbor.mdx) supports Harbor 0.23, derives skills, MCP, and ATIF admission from the selected adapter metadata, and checks the task descriptor before execution. It preserves invocation usage, outcomes, and deadlines, expands requested skill collections, keeps credential values out of retained transport specifications, and collects finalized Relay trajectory artifacts. Calculator examples cover Pi and Codex alongside the existing harness workflows.
+### Choose Where Agents Run With OpenShell
 
-### Telemetry, Usage, And Environment Controls
+**Choose where agents run without rewriting the application.** NeMo Fabric keeps the application's SDK workflow consistent across local execution and OpenShell sandboxes. Select the execution environment through configuration to control where the agent or harness loop runs, while retaining the same interface for running agents and collecting results and evidence.
 
-Set `RunRequest.relay_session_root` to the same Relay-accepted UUID string on each invocation to group Deep Agents and mini-SWE-agent turns under one Relay session while preserving a separate ATIF trajectory per invocation. Invalid UUIDs fall back to per-request roots instead of grouping turns. Adapter-owned Relay root scopes carry standardized NeMo Fabric correlation IDs.
+The optional [OpenShell provider](https://github.com/NVIDIA/NeMo-Fabric/tree/v0.6.0/environment-providers/openshell) supports new or existing sandboxes with explicit lifecycle and cleanup controls. One sandbox can host multiple agent runtimes independently, and declared artifacts are transferred back to the host.
 
-Usage includes optional cached-input counts and explicit cache-inclusion semantics. Adapters can also supply cache-write, reasoning, peak-request, and per-model details through `nemo_fabric.detailed_token_usage.v1`. Missing counters remain unknown, and inclusive input counts must not be counted twice. Refer to [Run Results](../sdk/python.mdx#unified-run-results).
+The [Hermes Code Review](https://github.com/NVIDIA/NeMo-Fabric/tree/v0.6.0/examples/code_review_agent) and [custom LangGraph agent](https://github.com/NVIDIA/NeMo-Fabric/tree/v0.6.0/examples/langgraph_custom_agent) examples demonstrate this workflow, including optional Relay integration. See the [sandbox execution guide](../sdk/python.mdx#sandbox-command-bridge) for setup and lifecycle details.
 
-Use [environment forwarding by name](../sdk/python.mdx#set-environment-values-or-forward-them-by-name), `environment.env_names`, to supply existing process variables to adapters while retaining only their names in core configurations and run plans. Unset names or changed values on an active runtime fail explicitly. Harbor still owns delivery into the task environment.
+OpenShell is the first supported sandbox provider, with additional providers planned.
 
-Claude and Codex now honor configured invocation timeouts, and Claude child processes receive Relay logging variables. Harnesses supporting `insecure_http_model_hosts` can explicitly trust HTTP model-provider hosts; HTTPS remains the default for remote model endpoints, and MCP restrictions are unchanged.
+### Understand Agent Health Across Harnesses
 
-### Dependency Security Updates
+**Monitor agent health through one consistent interface.** NeMo Fabric checks native agent state to help applications understand whether a runtime is alive, active, or ready, including while an invocation is running. Applications can use the same health-reporting interface across supported harnesses, local execution, and OpenShell sandboxes.
 
-The release requires `langgraph-sdk>=0.4.4` and `fsspec>=2026.6.0` at the affected dependency-owning surfaces, excluding versions affected by CVE-2026-104873 and CVE-2026-104851. TypeScript dependency updates also address audit findings.
+Systems such as NVIDIA NemoClaw can use these observations to inform monitoring and recovery decisions without building separate probes for each harness. Reports make unsupported checks and uncertain observations explicit, helping applications distinguish limited visibility from a confirmed failure. See [Health Checks](../sdk/health-checks.mdx) for supported checks and their interpretation.
+
+### New Harness Integrations: Kiro and AWS Strands
+
+The shared ACP runner supports [Kiro CLI V3](../integrations/harness/kiro.mdx) and [AWS Strands](../integrations/harness/strands.mdx). Each runtime owns a harness process and persistent conversation, with supported MCP configuration, invocation-local usage, and deadline cleanup. Install and authenticate the corresponding harness separately; consult each guide for supported configuration and limits.
 
 ## Current Limitations
 
-- Provider-backed third-party adapter registries and an automated adapter conformance suite are not included. The adapter catalog supplies metadata snapshots, not executable discovery.
-- Cancellation, live updates, and cold resume are not exposed as supported adapter lifecycle operations. Shared service handles remain process-local.
-- The sandbox command bridge supports one runtime lifecycle per sandbox, including after stop. Replace the sandbox to start another lifecycle. It requires Unix sockets and does not expose SDK streaming; direct SDK consumers retain their existing multi-runtime and streaming capabilities.
-- Factory Droid, OpenHands, Kilo Code, Cline, OpenCode, and Qwen Code do not support Relay telemetry or native NeMo Fabric streaming. Consult each adapter guide for other limits.
-- Harbor trace export requires a Harbor build containing [PR #3596](https://github.com/harbor-framework/harbor/pull/3596) or a release including that fix. Recorded trajectory artifacts remain available independently of Harbor's exporter.
-- The [Remote Agent adapter](../integrations/harness/remote-agent.mdx) does not normalize the remote service's MCP, skills, tool policy, or subagents. Relay streaming requires a separately instrumented remote service and a collector reachable by that service and NeMo Fabric.
+- Initial OpenShell provider support is qualified on Linux with matched OpenShell 0.1.2 components. The command bridge returns buffered results and rejects streaming requests. Service hosting remains a local SDK capability. Artifact collection is bounded and does not copy an entire workspace.
+- Health levels are adapter-specific observations, not interchangeable guarantees of model availability or prompt acceptance. Unsupported levels remain explicit.
+- Resource statistics do not measure remote model-server or tool-server resources. Shared cgroup measurements cannot be attributed exclusively to one invocation, and GPU usage is not collected by this resource API.
+- Software execution evidence is a selected inventory, not a full dependency inventory, reproducibility guarantee, or attestation. Input and configuration capture remain outside this contract.
+- Kiro and AWS Strands use lightweight integrations through the shared ACP runner, without Relay telemetry or native NeMo Fabric streaming.
+- The adapter catalog contains metadata snapshots; it does not provide provider-backed executable registries or an automated adapter conformance suite.
