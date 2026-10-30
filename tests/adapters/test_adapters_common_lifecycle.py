@@ -7,6 +7,9 @@ import asyncio
 import io
 import json
 import os
+import subprocess
+import sys
+import textwrap
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
@@ -858,6 +861,70 @@ def test_lifecycle_host_keeps_adapter_stdout_out_of_protocol(capsys):
 
     assert "adapter diagnostic" not in output_stream.getvalue()
     assert "adapter diagnostic" in capsys.readouterr().err
+
+
+def test_lifecycle_host_keeps_process_stdout_out_of_protocol():
+    runtime_id = "runtime-1"
+    requests = [
+        _request("start", {"runtime_context": {"runtime_id": runtime_id}}),
+        _request(
+            "invoke",
+            {
+                "runtime_context": {"runtime_id": runtime_id},
+                "request": {"input": "hello"},
+            },
+        ),
+        _request("stop", {"runtime_id": runtime_id}),
+    ]
+    host = textwrap.dedent(
+        """
+        import os
+        import subprocess
+        import sys
+
+        from nemo_fabric_adapter_contract.models import AgentRunResult
+        from nemo_fabric_adapter_contract.models import AgentRunStatus
+        from nemo_fabric_adapters.common import lifecycle
+
+
+        class Runtime:
+            async def start(self, _payload):
+                pass
+
+            async def invoke(self, _request, _context):
+                subprocess.run([sys.executable, "-c", "print('child output')"], check=True)
+                os.write(1, b"native output\\n")
+                print("unflushed output", file=sys.__stdout__)
+                return AgentRunResult(status=AgentRunStatus.SUCCEEDED, output={})
+
+            async def stop(self):
+                pass
+
+
+        print("startup output")
+        lifecycle.serve(Runtime)
+        """
+    )
+
+    host_process = subprocess.run(
+        [sys.executable, "-c", host],
+        input="".join(f"{json.dumps(item)}\n" for item in requests),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+
+    responses = [json.loads(line) for line in host_process.stdout.splitlines()]
+    assert [response["operation"] for response in responses] == [
+        "start",
+        "invoke",
+        "stop",
+    ]
+    assert "startup output" in host_process.stderr
+    assert "child output" in host_process.stderr
+    assert "native output" in host_process.stderr
+    assert "unflushed output" in host_process.stderr
 
 
 def test_lifecycle_host_scopes_invocation_telemetry_environment():

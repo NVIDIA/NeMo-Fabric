@@ -877,6 +877,29 @@ async def _serve(
                 await _stop_after_eof(state.runtime)
 
 
+@contextmanager
+def _protocol_stdout(output_stream: TextIO) -> Iterator[TextIO]:
+    # Child processes and native code write to file descriptor 1 directly, past
+    # redirect_stdout. Keep the protocol on a private duplicate and point the
+    # process stdout at stderr while serving.
+    try:
+        descriptor = output_stream.fileno()
+    except (AttributeError, OSError, ValueError):
+        descriptor = None
+    if descriptor != 1:
+        yield output_stream
+        return
+    protocol = os.fdopen(os.dup(1), "w", encoding=output_stream.encoding)
+    os.dup2(2, 1)
+    output_stream.flush()
+    try:
+        yield protocol
+    finally:
+        output_stream.flush()
+        os.dup2(protocol.fileno(), 1)
+        protocol.close()
+
+
 def serve(
     runtime_factory: RuntimeFactory,
     *,
@@ -895,14 +918,14 @@ def serve(
 
     # Reserve process stdout for the protocol for the entire host lifetime,
     # including SDK background tasks running while the host is idle.
-    with redirect_stdout(sys.stderr):
+    with _protocol_stdout(output_stream) as protocol, redirect_stdout(sys.stderr):
         try:
             asyncio.run(
                 _serve(
                     runtime_factory,
                     config_loader=config_loader,
                     input_stream=input_stream,
-                    output_stream=output_stream,
+                    output_stream=protocol,
                 )
             )
         except KeyboardInterrupt:
