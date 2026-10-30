@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import runpy
 import subprocess
 import sys
 import types
@@ -38,6 +39,7 @@ NOOA_ROOT = ROOT / "adapters" / "python" / "nooa"
 if not ((3, 12) <= sys.version_info[:2] < (3, 14)):
     pytest.skip("NOOA supports Python 3.12 and 3.13", allow_module_level=True)
 
+from nemo_fabric_adapters.nooa import InteractiveAgentTarget
 from nemo_fabric_adapters.nooa import adapter
 from nemo_fabric_adapters.nooa import model_support
 from nemo_fabric_adapters.nooa import telemetry as nooa_telemetry
@@ -488,6 +490,28 @@ def test_main_opts_into_typed_agent_config(monkeypatch: pytest.MonkeyPatch):
     serve.assert_called_once_with(
         adapter.NooaRuntime, config_loader=AgentConfig.from_mapping
     )
+
+
+def test_host_module_runs_once_and_accepts_the_public_target_wrapper():
+    # Fabric starts the host with `python -m`, which runs adapter.py as __main__.
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-W",
+            "error::RuntimeWarning",
+            "-m",
+            "nemo_fabric_adapters.nooa.adapter",
+        ],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+    host = runpy.run_path(adapter.__file__)
+    target = InteractiveAgentTarget(agent=MagicMock())
+    assert host["_unwrap_target"](target) is target
 
 
 async def test_runtime_builds_once_and_preserves_agent_state(

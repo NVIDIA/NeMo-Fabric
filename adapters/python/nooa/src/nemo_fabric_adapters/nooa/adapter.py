@@ -11,10 +11,8 @@ import importlib
 import inspect
 import logging
 import os
-from collections.abc import Awaitable
 from collections.abc import Callable
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -27,6 +25,8 @@ from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
+from nemo_fabric_adapters.nooa.interactive import InteractiveAgentBuildContext
+from nemo_fabric_adapters.nooa.interactive import InteractiveAgentTarget
 from nemo_fabric_adapters.nooa.model_support import build_models
 from nemo_fabric_adapters.nooa.model_support import close_models
 from nemo_fabric_adapters.nooa.telemetry import RelayReport
@@ -39,30 +39,6 @@ WORKFLOW_FACTORY_KIND = "interactive_agent_factory"
 _TERMINAL_REASONS = frozenset({"DONE", "NEED_INPUT", "GET_USER_INPUT"})
 
 LOGGER = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True, slots=True)
-class InteractiveAgentBuildContext:
-    """Fabric-owned values supplied to one registered target factory."""
-
-    config: AgentConfig
-    models: Mapping[str, Any]
-    system_instruction: str | None
-    settings: Mapping[str, Any]
-    skill_paths: tuple[Path, ...]
-    runtime_id: str
-    base_dir: Path
-    workspace: Path
-    artifact_root: Path | None
-
-
-@dataclass(slots=True)
-class InteractiveAgentTarget:
-    """An interactive agent with optional target-owned lifecycle policy."""
-
-    agent: Any
-    close: Callable[[], Awaitable[None] | None] | None = None
-    continue_after: Callable[[Any, str, str], Awaitable[bool] | bool] | None = None
 
 
 class _InvalidRespondResult(Exception):
