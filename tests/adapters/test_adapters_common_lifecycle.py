@@ -7,6 +7,9 @@ import asyncio
 import io
 import json
 import os
+import subprocess
+import sys
+import textwrap
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
@@ -858,6 +861,116 @@ def test_lifecycle_host_keeps_adapter_stdout_out_of_protocol(capsys):
 
     assert "adapter diagnostic" not in output_stream.getvalue()
     assert "adapter diagnostic" in capsys.readouterr().err
+
+
+def test_lifecycle_host_keeps_process_stdout_out_of_protocol():
+    runtime_id = "runtime-1"
+    requests = [
+        _request("start", {"runtime_context": {"runtime_id": runtime_id}}),
+        _request(
+            "invoke",
+            {
+                "runtime_context": {"runtime_id": runtime_id},
+                "request": {"input": "hello"},
+            },
+        ),
+        _request("stop", {"runtime_id": runtime_id}),
+    ]
+    host = textwrap.dedent(
+        """
+        import ctypes
+        import os
+        import subprocess
+        import sys
+
+        from nemo_fabric_adapter_contract.models import AgentRunResult
+        from nemo_fabric_adapter_contract.models import AgentRunStatus
+        from nemo_fabric_adapters.common import lifecycle
+
+
+        class Runtime:
+            async def start(self, _payload):
+                pass
+
+            async def invoke(self, _request, _context):
+                subprocess.run([sys.executable, "-c", "print('child output')"], check=True)
+                os.write(1, b"native output\\n")
+                print("unflushed output", file=sys.__stdout__)
+                if os.name == "posix":
+                    ctypes.CDLL(None).printf(b"buffered native output\\n")
+                return AgentRunResult(status=AgentRunStatus.SUCCEEDED, output={})
+
+            async def stop(self):
+                pass
+
+
+        print("startup output")
+        lifecycle.serve(Runtime)
+        os.write(1, b"after serve\\n")
+        """
+    )
+
+    # Output written before serve() reaches stderr only while it is still buffered.
+    environment = dict(os.environ)
+    environment.pop("PYTHONUNBUFFERED", None)
+    host_process = subprocess.run(
+        [sys.executable, "-c", host],
+        input="".join(f"{json.dumps(item)}\n" for item in requests),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+        env=environment,
+    )
+
+    *responses, after_serve = host_process.stdout.splitlines()
+    assert [json.loads(line)["operation"] for line in responses] == [
+        "start",
+        "invoke",
+        "stop",
+    ]
+    assert after_serve == "after serve"
+    assert "startup output" in host_process.stderr
+    assert "child output" in host_process.stderr
+    assert "native output" in host_process.stderr
+    assert "unflushed output" in host_process.stderr
+    if os.name == "posix":
+        assert "buffered native output" in host_process.stderr
+
+
+@pytest.mark.parametrize("failing_flush", [1, 2])
+def test_lifecycle_host_restores_stdout_when_a_flush_fails(monkeypatch, failing_flush):
+    class Stdout(io.StringIO):
+        flushes = 0
+
+        def fileno(self):
+            return 1
+
+        def flush(self):
+            self.flushes += 1
+            if self.flushes == failing_flush:
+                raise OSError("flush failed")
+
+    duplicates = []
+    fdopen = os.fdopen
+
+    def record_duplicate(*args, **kwargs):
+        duplicates.append(fdopen(*args, **kwargs))
+        return duplicates[-1]
+
+    monkeypatch.setattr(lifecycle.os, "fdopen", record_duplicate)
+    stdout_before = os.fstat(1)
+
+    with pytest.raises(OSError, match="flush failed"):
+        with lifecycle._protocol_stdout(Stdout()):
+            pass
+
+    stdout_after = os.fstat(1)
+    assert (stdout_after.st_dev, stdout_after.st_ino) == (
+        stdout_before.st_dev,
+        stdout_before.st_ino,
+    )
+    assert duplicates[0].closed
 
 
 def test_lifecycle_host_scopes_invocation_telemetry_environment():
