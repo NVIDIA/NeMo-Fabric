@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import json
 import os
 import sys
@@ -897,6 +898,9 @@ def _protocol_stdout(output_stream: TextIO) -> Iterator[TextIO]:
     finally:
         try:
             output_stream.flush()
+            if os.name == "posix":
+                # Native code buffers stdout in the C runtime.
+                ctypes.CDLL(None).fflush(None)
         finally:
             os.dup2(protocol.fileno(), 1)
             protocol.close()

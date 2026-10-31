@@ -878,6 +878,7 @@ def test_lifecycle_host_keeps_process_stdout_out_of_protocol():
     ]
     host = textwrap.dedent(
         """
+        import ctypes
         import os
         import subprocess
         import sys
@@ -895,6 +896,8 @@ def test_lifecycle_host_keeps_process_stdout_out_of_protocol():
                 subprocess.run([sys.executable, "-c", "print('child output')"], check=True)
                 os.write(1, b"native output\\n")
                 print("unflushed output", file=sys.__stdout__)
+                if os.name == "posix":
+                    ctypes.CDLL(None).printf(b"buffered native output\\n")
                 return AgentRunResult(status=AgentRunStatus.SUCCEEDED, output={})
 
             async def stop(self):
@@ -931,6 +934,43 @@ def test_lifecycle_host_keeps_process_stdout_out_of_protocol():
     assert "child output" in host_process.stderr
     assert "native output" in host_process.stderr
     assert "unflushed output" in host_process.stderr
+    if os.name == "posix":
+        assert "buffered native output" in host_process.stderr
+
+
+@pytest.mark.parametrize("failing_flush", [1, 2])
+def test_lifecycle_host_restores_stdout_when_a_flush_fails(monkeypatch, failing_flush):
+    class Stdout(io.StringIO):
+        flushes = 0
+
+        def fileno(self):
+            return 1
+
+        def flush(self):
+            self.flushes += 1
+            if self.flushes == failing_flush:
+                raise OSError("flush failed")
+
+    duplicates = []
+    fdopen = os.fdopen
+
+    def record_duplicate(*args, **kwargs):
+        duplicates.append(fdopen(*args, **kwargs))
+        return duplicates[-1]
+
+    monkeypatch.setattr(lifecycle.os, "fdopen", record_duplicate)
+    stdout_before = os.fstat(1)
+
+    with pytest.raises(OSError, match="flush failed"):
+        with lifecycle._protocol_stdout(Stdout()):
+            pass
+
+    stdout_after = os.fstat(1)
+    assert (stdout_after.st_dev, stdout_after.st_ino) == (
+        stdout_before.st_dev,
+        stdout_before.st_ino,
+    )
+    assert duplicates[0].closed
 
 
 def test_lifecycle_host_scopes_invocation_telemetry_environment():
