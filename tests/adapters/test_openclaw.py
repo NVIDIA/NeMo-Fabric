@@ -1426,6 +1426,7 @@ async def test_openclaw_dashboard_serves_control_ui_with_a_token_file(
     assert not token_path.exists()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock openclaw script directly")
 @pytest.mark.parametrize("offset", [0, 2])
 async def test_openclaw_dashboard_port_in_use_fails_start(
     mock_openclaw: Path, tmp_path: Path, dashboard_port: int, offset: int
