@@ -8,10 +8,13 @@ import json
 import os
 import signal
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 args = sys.argv[1:]
+if args[:1] != ["gateway"] and (delay := os.environ.get("FAKE_OPENCLAW_COMMAND_DELAY")):
+    time.sleep(float(delay))
 if args == ["--version"]:
     print("OpenClaw 2026.9.34 (fabric test)")
     raise SystemExit(0)

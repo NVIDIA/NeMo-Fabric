@@ -481,6 +481,8 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     assert generated["mcp"]["servers"]["local"]["command"] == "python"
     assert generated["mcp"]["servers"]["remote"]["transport"] == ("streamable-http")
     assert "auth" not in generated["mcp"]["servers"]["remote"]
+    # The sandbox would deny OpenClaw's model catalog lookup anyway.
+    assert generated["models"]["catalogRefresh"] == {"enabled": False}
     assert not state_root.exists()
 
 
@@ -1321,6 +1323,30 @@ async def test_openclaw_stop_continues_after_cleanup_failures(
     assert runtime._windows_job is None
     assert runtime._log_tasks == []
     assert runtime._temp_dir is None
+
+
+async def test_openclaw_startup_timeout_bounds_all_of_start(
+    mock_openclaw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # Each command finishes within the timeout, but the two together don't.
+    monkeypatch.setenv("FAKE_OPENCLAW_COMMAND_DELAY", "0.6")
+    monkeypatch.setenv("FAKE_OPENCLAW_CAPTURE", str(tmp_path / "config.json"))
+    config = _config(mock_openclaw)
+    assert config.harness is not None
+    config.harness.settings["startup_timeout_seconds"] = 1
+    runtime = adapter.OpenClawRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(
+            {
+                "config": config,
+                "runtime_context": _context(tmp_path).to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+
+    assert caught.value.code == "openclaw_command_timeout"
+    assert runtime._process is None
 
 
 @pytest.mark.parametrize("phase", ["client", "process", "logs"])
