@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import asyncio
 import json
 import threading
 import time
@@ -18,7 +19,8 @@ def mock_api_server(port: int) -> Iterator[str]:
     Context manager for a mock API server.
 
     Use the /_requests endpoint to inspect captured chat-completion payloads after a test action.
-    Use the /_scenario endpoint to configure a status code or ordered tool calls for subsequent requests.
+    Use the /_scenario endpoint to configure a status code, a response delay, or ordered tool calls for subsequent requests.
+    Use the /_chat_authorization_headers endpoint to inspect the Authorization header of each chat-completion request.
     Use the /_reset endpoint to clear all retained request and scenario state.
 
     Args:
@@ -33,6 +35,8 @@ def mock_api_server(port: int) -> Iterator[str]:
     def reset_state() -> None:
         app.state.requests = []
         app.state.status_code = 200
+        app.state.delay_seconds = 0.0
+        app.state.chat_authorization_headers = []
         app.state.tool_calls = []
         app.state.tool_call_index = 0
         app.state.mcp_authorization_headers = []
@@ -69,6 +73,7 @@ def mock_api_server(port: int) -> Iterator[str]:
 
         payload = await request.json()
         app.state.status_code = int(payload.get("status_code", 200))
+        app.state.delay_seconds = float(payload.get("delay_seconds", 0.0))
         tool_call = payload.get("tool_call")
         app.state.tool_calls = payload.get("tool_calls") or (
             [tool_call] if tool_call is not None else []
@@ -96,6 +101,10 @@ def mock_api_server(port: int) -> Iterator[str]:
 
         reset_state()
         return {"status": "ok"}
+
+    @app.get("/_chat_authorization_headers")
+    def chat_authorization_headers() -> list[str | None]:
+        return list(app.state.chat_authorization_headers)
 
     @app.get("/_mcp_authorization_headers")
     def mcp_authorization_headers() -> list[str | None]:
@@ -149,6 +158,11 @@ def mock_api_server(port: int) -> Iterator[str]:
     async def chat_completions(request: Request):
         payload = await request.json()
         app.state.requests.append(payload)
+        app.state.chat_authorization_headers.append(
+            request.headers.get("authorization")
+        )
+        if app.state.delay_seconds:
+            await asyncio.sleep(app.state.delay_seconds)
         if app.state.status_code != 200:
             return JSONResponse(
                 status_code=app.state.status_code,
