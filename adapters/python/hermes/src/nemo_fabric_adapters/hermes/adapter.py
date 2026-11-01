@@ -132,12 +132,8 @@ class HermesRuntime:
             model_config = configuration._selected_model(agent_config)
             self._model_config = model_config
             self._runtime_id = runtime_context.runtime_id
-            self._hermes_home = (
-                _artifact_root(runtime_context, common_utils.base_dir(payload))
-                / ".fabric"
-                / "hermes"
-                / "runtimes"
-                / runtime_context.runtime_id
+            self._hermes_home = _hermes_home(
+                runtime_context, common_utils.base_dir(payload)
             )
             self._hermes_home.mkdir(parents=True, exist_ok=True)
             os.environ["HOME"] = str(self._hermes_home)
@@ -829,6 +825,20 @@ class HermesRuntime:
                 "hermes_runtime_stop_failed",
                 "Hermes runtime failed to stop cleanly",
             ) from errors[0]
+
+
+def _hermes_home(runtime_context: RuntimeContext, base_dir: str) -> Path:
+    """Return the agent's state folder when Fabric keeps state across runtimes,
+    otherwise this runtime's own folder."""
+    if runtime_context.state_dir:
+        return Path(runtime_context.state_dir)
+    return (
+        _artifact_root(runtime_context, base_dir)
+        / ".fabric"
+        / "hermes"
+        / "runtimes"
+        / runtime_context.runtime_id
+    )
 
 
 def _artifact_root(runtime_context: RuntimeContext, base_dir: str) -> Path:

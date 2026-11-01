@@ -120,7 +120,7 @@ Model credentials are supplied through child process environments, not public at
 
 ### Shared Runtime Home
 
-The runtime home is `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. Agents share persisted resources in this directory while retaining separate live conversations. Keeping these files does not establish cross-runtime resume.
+The default Hermes home is `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. With `runtime.keep_state`, the Hermes home is `<artifact root>/.fabric/state/nvidia.fabric.hermes/<agent name>`, so runtimes of the agent share the session database, memory, skills, and logs. The SDK starts a new conversation for each runtime, and earlier sessions remain in the database. The adapter rewrites `config.yaml` at each start.
 
 ### Process Ownership
 
