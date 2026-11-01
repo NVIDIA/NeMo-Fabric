@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from nemo_fabric_adapter_contract.models import AgentModelConfig
 from nemo_fabric_adapter_contract.models import McpOAuth2Config
 from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 import nemo_fabric_adapters.common.utils as common_utils
+from nemo_fabric_adapters.hermes.interfaces import GATEWAY_DRAIN_TIMEOUT_SECONDS
 
 
 PROVIDER_DEFAULT_API_KEY_ENV = {
@@ -74,11 +76,37 @@ def disabled_toolsets(config: AgentConfig) -> list[str]:
     return config.tools.blocked if config.tools is not None else []
 
 
+def _interface_model(model_config: AgentModelConfig) -> dict[str, Any]:
+    """Return the model section Hermes's own processes read from config.yaml.
+
+    Fabric's embedded agent receives the endpoint and key as arguments; the
+    gateway and dashboard read them from config.yaml, where Hermes's ``openai``
+    provider ignores ``base_url``. The key stays in the environment.
+    """
+
+    provider = str(model_config.provider or "").lower()
+    if model_config.base_url and provider in {"openai", "custom"}:
+        return {
+            "provider": "custom",
+            "default": model_config.model,
+            "base_url": model_config.base_url,
+            "api_key": f"${{{_api_key_env(model_config)}}}",
+        }
+    return common_utils.without_none(
+        {
+            "provider": model_config.provider,
+            "default": model_config.model,
+            "base_url": model_config.base_url,
+        }
+    )
+
+
 def build_hermes_config(
     agent_config: AgentConfig,
     *,
     workspace: str,
     relay_enabled: bool = False,
+    interfaces: Collection[str] = (),
 ) -> dict[str, Any]:
     settings = _settings(agent_config)
     model_config = _selected_model(agent_config)
@@ -109,6 +137,12 @@ def build_hermes_config(
             }
         ),
     }
+
+    if interfaces:
+        config["model"] = _interface_model(model_config)
+    if "api" in interfaces:
+        config["agent"]["cron_drain_timeout"] = GATEWAY_DRAIN_TIMEOUT_SECONDS
+        config["agent"]["restart_drain_timeout"] = 0
 
     if relay_enabled:
         # Hermes makes an extra model call for titles, which skews Relay telemetry.
@@ -145,12 +179,14 @@ def write_hermes_config(
     *,
     workspace: str,
     relay_enabled: bool = False,
+    interfaces: Collection[str] = (),
 ) -> tuple[Path, dict[str, Any]]:
     hermes_home.mkdir(parents=True, exist_ok=True)
     config = build_hermes_config(
         agent_config,
         workspace=workspace,
         relay_enabled=relay_enabled,
+        interfaces=interfaces,
     )
     config_path = hermes_home / "config.yaml"
     config_path.write_text(common_utils.dump_yaml(config), encoding="utf-8")

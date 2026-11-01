@@ -843,6 +843,55 @@
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
+            "interfaces": {
+              "additionalProperties": false,
+              "description": "Native interfaces served by the runtime as child processes.",
+              "properties": {
+                "api": {
+                  "additionalProperties": false,
+                  "description": "Hermes's API server, run by a gateway child. After every enabled interface starts, the adapter writes its bearer token to <artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/api.token.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Serve Hermes's OpenAI-compatible API server. A present api interface is on unless this is false.",
+                      "type": "boolean"
+                    },
+                    "port": {
+                      "description": "Exact loopback port for the API server. Start fails if it is in use.",
+                      "maximum": 65535,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "port"
+                  ],
+                  "type": "object"
+                },
+                "dashboard": {
+                  "additionalProperties": false,
+                  "description": "Hermes's dashboard, which has no sign-in when bound to loopback. It needs a built frontend at HERMES_WEB_DIST.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Serve Hermes's dashboard and browser chat. A present dashboard is on unless this is false.",
+                      "type": "boolean"
+                    },
+                    "port": {
+                      "description": "Exact loopback port for the dashboard. Start fails if it is in use.",
+                      "maximum": 65535,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "port"
+                  ],
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
             "max_tokens": {
               "default": 512,
               "description": "Maximum number of tokens in each Hermes model response.",
@@ -890,6 +939,13 @@
               "description": "Whether Hermes saves its native conversation trajectories as JSONL.",
               "type": "boolean"
             },
+            "startup_timeout_seconds": {
+              "default": 60,
+              "description": "Time for every enabled interface to pass its health check, within NeMo Fabric's 90-second start limit.",
+              "exclusiveMinimum": 0,
+              "maximum": 75,
+              "type": "number"
+            },
             "terminal_timeout": {
               "default": 60,
               "description": "Maximum number of seconds for a Hermes terminal operation.",
@@ -917,7 +973,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.7.0"
       },
-      "sha256": "6539b80cd3dbc76f2db58640bb957dcbe5f9e45421a2d7f9a45785325f354f38",
+      "sha256": "8ed091b3214e34c21757fd0e2fbd24d843006ebb596490f4924a81207a896099",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {

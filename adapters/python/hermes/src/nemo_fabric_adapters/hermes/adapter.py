@@ -32,6 +32,7 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.hermes import configuration
+from nemo_fabric_adapters.hermes import interfaces
 from nemo_fabric_adapters.hermes import telemetry
 
 # Default agent loop budget when FabricConfig.runtime.max_turns is unset.
@@ -70,6 +71,7 @@ class HermesRuntime:
         self._relay_plugin_config: dict[str, Any] | None = None
         self._relay_plugin_config_path: Path | None = None
         self._active_invoke_task: asyncio.Task[tuple[dict[str, Any], str]] | None = None
+        self._interfaces = interfaces.InterfaceChildren()
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -102,6 +104,7 @@ class HermesRuntime:
                 telemetry.validate_hermes_relay_compatibility()
             self._agent_config = agent_config
             self._settings = configuration._settings(agent_config)
+            interface_ports = interfaces.interface_ports(self._settings)
             model_config = configuration._selected_model(agent_config)
             self._model_config = model_config
             self._runtime_id = runtime_context.runtime_id
@@ -145,6 +148,7 @@ class HermesRuntime:
                 # Workspace belongs to the per-runtime context, not AgentConfig.
                 workspace=str(runtime_context.environment.workspace or "."),
                 relay_enabled=relay_enabled,
+                interfaces=interface_ports,
             )
             api_key_env = configuration._api_key_env(model_config)
             api_key = os.environ.get(api_key_env)
@@ -221,6 +225,22 @@ class HermesRuntime:
                         session_id=self._runtime_id,
                         session_db=self._session_db,
                     )
+                )
+            if interface_ports:
+                environment = dict(os.environ)
+                provider_key_env = configuration.PROVIDER_DEFAULT_API_KEY_ENV.get(
+                    str(model_config.provider or "").lower()
+                )
+                if provider_key_env:
+                    # Hermes's own processes read a provider's key from its
+                    # default variable, not from api_key_env.
+                    environment[provider_key_env] = api_key
+                await self._interfaces.start(
+                    interface_ports,
+                    hermes_home=self._hermes_home,
+                    token_path=self._hermes_home / "interfaces" / "api.token",
+                    timeout=interfaces.startup_timeout(self._settings),
+                    environment=environment,
                 )
             self._agent_config = agent_config
             self._started = True
@@ -596,6 +616,10 @@ class HermesRuntime:
         self._stopping = True
         active_invoke_task = self._active_invoke_task
         errors: list[BaseException] = []
+        try:
+            await self._interfaces.stop()
+        except BaseException as error:
+            errors.append(error)
         if active_invoke_task is not None:
             try:
                 await asyncio.shield(active_invoke_task)

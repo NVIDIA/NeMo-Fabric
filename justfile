@@ -439,8 +439,12 @@ install-hermes-agent:
         uv venv --python 3.14 --clear "$REPO_ROOT/.venv-hermes"
     fi
     # Use the release lockfile, including upstream's security dependency overrides.
+    # From the messaging extra, install only aiohttp, which Hermes's API server needs.
     UV_PROJECT_ENVIRONMENT="$REPO_ROOT/.venv-hermes" uv sync \
-        --project "$hermes_checkout" --frozen --no-default-groups --extra mcp \
+        --project "$hermes_checkout" --frozen --no-default-groups --extra mcp --extra messaging \
+        --no-install-package discord-py --no-install-package python-telegram-bot \
+        --no-install-package slack-bolt --no-install-package slack-sdk \
+        --no-install-package qrcode --no-install-package brotlicffi \
         --config-settings-package hermes-agent:editable_mode=compat
     uv pip install --python "$REPO_ROOT/.venv-hermes/bin/python" \
         --editable "$REPO_ROOT/sdk/python/nemo-fabric-evidence" \
@@ -453,7 +457,7 @@ install-hermes-agent:
         pytest pytest-asyncio pyyaml
 
 test-hermes: install-hermes-agent
-    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py tests/adapters/test_hermes_config_builder.py tests/adapters/test_hermes_streaming.py tests/adapters/test_hermes_health.py tests/e2e/test_hermes_e2e.py tests/e2e/test_hermes_checks.py -q
+    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py tests/adapters/test_hermes_config_builder.py tests/adapters/test_hermes_interfaces.py tests/adapters/test_hermes_streaming.py tests/adapters/test_hermes_health.py tests/e2e/test_hermes_e2e.py tests/e2e/test_hermes_checks.py -q
 
 # Build the TypeScript contract and adapter packages using their locked dependencies.
 build-typescript: install-typescript

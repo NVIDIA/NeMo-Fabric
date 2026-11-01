@@ -6,8 +6,22 @@
 from __future__ import annotations
 
 import os
+import socket
 import tempfile
 from pathlib import Path
+
+
+def port_available(port: int) -> bool:
+    """Return whether one loopback TCP port is available."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("127.0.0.1", port))
+        return True
+    except (OSError, OverflowError):
+        return False
+    finally:
+        sock.close()
 
 
 def write_private_file(path: Path, payload: str) -> None:
