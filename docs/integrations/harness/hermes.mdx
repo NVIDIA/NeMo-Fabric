@@ -94,6 +94,14 @@ Use `runtime.max_turns` to set the Hermes agent-loop budget. The adapter maps
 that normalized field to `AIAgent.max_iterations`; `max_iterations` is not a
 Hermes harness setting.
 
+By default, the Hermes home is
+`<artifact root>/.fabric/hermes/runtimes/<runtime_id>`, so runtimes don't share
+config or the session database. With `runtime.keep_state`, it is the agent's
+state folder, `<artifact root>/.fabric/state/nvidia.fabric.hermes/<agent name>`:
+every runtime of the agent then uses the same session database, memory, skills
+and logs. Each runtime starts a new session, and earlier sessions stay in the
+database. The adapter rewrites `config.yaml` at each start.
+
 ## Understand the Runtime Lifecycle
 
 Each NeMo Fabric runtime creates one Hermes Agent `AIAgent` and one `SessionDB`.
@@ -131,9 +139,8 @@ harness = HarnessConfig(
   start stops the children it started and leaves no token. Set `enabled` to
   `false` to keep a configured interface off.
 - Once every enabled interface passes, the adapter writes the API server's
-  bearer token, generated at each start, to
-  `<artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/api.token`
-  with mode `0600`. Send it as `Authorization: Bearer <token>`. Only the
+  bearer token, generated at each start, to `interfaces/api.token` in the
+  Hermes home with mode `0600`. Send it as `Authorization: Bearer <token>`. Only the
   gateway child receives it. Processes that run as the runtime's user,
   including the agent's own tools, can read it.
 - The dashboard has no sign-in. On loopback, Hermes embeds its session token in
