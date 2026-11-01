@@ -4,6 +4,7 @@
 """Versioned local requests and safe command responses."""
 
 import json
+import re
 import sys
 from typing import Any
 
@@ -18,6 +19,8 @@ READ_SECONDS = 10.0
 SHUTDOWN_SECONDS = 4.0
 SOCKET_PATH = "/sandbox/fabric.sock"
 OPERATIONS = ("start", "invoke", "stop", "serve", "check")
+# A cause is an SDK or adapter error code, never its message or other values.
+CAUSE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 CONFIG_OPERATIONS = ("start",)
 LIFECYCLE_OPERATIONS = ("start", "stop")
 
@@ -70,11 +73,15 @@ class ProtocolError(ValueError):
         stage: str = "request",
         *,
         unsupported: bool = False,
+        cause: str | None = None,
     ):
         self.code = code
         self.stage = stage
         self.unsupported = unsupported
-        super().__init__(MESSAGES[code])
+        message = MESSAGES[code]
+        if isinstance(cause, str) and CAUSE.fullmatch(cause):
+            message = f"{message} Cause: {cause}."
+        super().__init__(message)
 
 
 def envelope(

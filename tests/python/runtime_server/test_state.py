@@ -7,6 +7,7 @@ import asyncio
 
 import pytest
 from nemo_fabric import FabricConfigError, RunRequest, RuntimeStatus
+from nemo_fabric.errors import FabricRuntimeError
 from nemo_fabric.runtime_server.protocol import ProtocolError
 
 
@@ -173,6 +174,36 @@ async def test_sdk_preflight_rejection_does_not_consume_lifecycle(
     assert response["error"]["effects"] == "none"
     assert not host.has_used_runtime
     assert "PRIVATE" not in str(response)
+
+
+async def test_failed_start_names_the_runtime_error_code_without_its_message(
+    host, host_request, mock_fabric
+):
+    mock_fabric.start_runtime.side_effect = FabricRuntimeError(
+        "adapter lifecycle start failed: PRIVATE",
+        stage="start",
+        code="openclaw_gateway_start_timeout",
+    )
+    response = await host.handle(host_request("start"))
+    assert response["error"]["code"] == "start_failed"
+    assert response["error"]["message"] == (
+        "Fabric could not establish an active runtime. "
+        "Cause: openclaw_gateway_start_timeout."
+    )
+    assert "PRIVATE" not in str(response)
+
+
+@pytest.mark.parametrize("code", ["PRIVATE value", "x" * 65])
+async def test_failed_start_omits_a_cause_that_is_not_an_identifier(
+    host, host_request, mock_fabric, code
+):
+    mock_fabric.start_runtime.side_effect = FabricRuntimeError(
+        "failed", stage="start", code=code
+    )
+    response = await host.handle(host_request("start"))
+    assert response["error"]["message"] == (
+        "Fabric could not establish an active runtime."
+    )
 
 
 async def test_uncertain_start_consumes_lifecycle_without_replay(

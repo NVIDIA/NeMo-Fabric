@@ -118,6 +118,27 @@ async def test_real_sdk_supports_multiple_independent_runtimes_per_sandbox(
             await host.shutdown()
 
 
+async def test_real_sdk_start_failure_names_the_adapter_error_code(
+    blocking_adapter_config, tmp_path
+):
+    (tmp_path / "fail-start").write_text("test_gateway_start_timeout")
+    host = RuntimeServer(directory=tmp_path)
+    response = await host.handle(
+        {
+            "interface_version": 2,
+            "operation": "start",
+            "agent": "blocking",
+            "config": blocking_adapter_config.to_mapping(),
+        }
+    )
+    assert response["status"] == "failed", response
+    assert response["error"]["message"] == (
+        "Fabric could not establish an active runtime. "
+        "Cause: test_gateway_start_timeout."
+    )
+    assert "PRIVATE" not in str(response)
+
+
 @pytest.mark.parametrize("invalid_config", ["missing_adapter", "unsupported_setting"])
 async def test_real_sdk_rejects_start_before_native_runtime_creation(
     hermes_shim_agent_dir, monkeypatch, invalid_config
