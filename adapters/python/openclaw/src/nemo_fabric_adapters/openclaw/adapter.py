@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
 import ipaddress
 import json
@@ -33,6 +34,7 @@ import httpx
 from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import local_interfaces
 from nemo_fabric_adapters.common import openai_chat
 from nemo_fabric_adapters.common import utils as common_utils
 from nemo_fabric_adapters.openclaw import _windows_job
@@ -158,6 +160,31 @@ def _positive_setting(settings: dict[str, Any], name: str, default: float) -> fl
             metadata={"field": f"harness.settings.{name}"},
         )
     return float(value)
+
+
+def _dashboard_port(settings: dict[str, Any]) -> int | None:
+    """Return the Control UI's port when the settings enable it.
+
+    The descriptor's schema has already checked the settings.
+    """
+    dashboard = settings.get("interfaces", {}).get("dashboard")
+    if dashboard is None or not dashboard.get("enabled", True):
+        return None
+    return dashboard["port"]
+
+
+def _dashboard_token_path(context: contract.RuntimeContext, base_dir: Path) -> Path:
+    root = context.artifacts.root
+    artifact_root = (base_dir / str(root)).resolve() if root else base_dir / "artifacts"
+    return (
+        artifact_root
+        / ".fabric"
+        / "openclaw"
+        / "runtimes"
+        / context.runtime_id
+        / "interfaces"
+        / "dashboard.token"
+    )
 
 
 def _agent_id(settings: dict[str, Any]) -> str:
@@ -461,6 +488,7 @@ def _openclaw_config(
     port: int,
     token_env: str,
     service_mode: bool = False,
+    dashboard: bool = False,
 ) -> dict[str, Any]:
     model = _selected_model(config)
     model_id = _model_id(model)
@@ -493,7 +521,15 @@ def _openclaw_config(
                 "mode": "token",
                 "token": {"source": "env", "provider": "default", "id": token_env},
             },
-            "controlUi": {"enabled": False},
+            "controlUi": {
+                "enabled": True,
+                "allowedOrigins": [
+                    f"http://127.0.0.1:{port}",
+                    f"http://localhost:{port}",
+                ],
+            }
+            if dashboard
+            else {"enabled": False},
             "http": {"endpoints": {"chatCompletions": {"enabled": True}}},
         },
         "agents": {
@@ -782,8 +818,6 @@ def _write_service_connection(
     token: str,
     agent_id: str,
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(path.parent, 0o700)
     payload = (
         json.dumps(
             {
@@ -794,25 +828,7 @@ def _write_service_connection(
         )
         + "\n"
     )
-    descriptor, temporary_name = tempfile.mkstemp(
-        dir=path.parent,
-        prefix=f".{path.name}.",
-    )
-    try:
-        if hasattr(os, "fchmod"):
-            os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            descriptor = -1
-            stream.write(payload)
-        os.replace(temporary_name, path)
-    except BaseException:
-        if descriptor >= 0:
-            os.close(descriptor)
-        try:
-            os.unlink(temporary_name)
-        except FileNotFoundError:
-            pass
-        raise
+    local_interfaces.write_private_file(path, payload)
 
 
 def _read_service_connection(path: Path) -> tuple[str, str, str]:
@@ -857,6 +873,7 @@ class OpenClawRuntime:
         self._temp_dir: tempfile.TemporaryDirectory[str] | None = None
         self._port: int | None = None
         self._token: str | None = None
+        self._dashboard_token_path: Path | None = None
         self._gateway_url: str | None = None
         self._agent_id = "default"
         self._shutdown_timeout = DEFAULT_SHUTDOWN_TIMEOUT_SECONDS
@@ -1050,6 +1067,13 @@ class OpenClawRuntime:
                 "openclaw_invalid_service_context",
                 "OpenClaw service context must be an object",
             )
+        if service is not None and "interfaces" in settings:
+            raise lifecycle.LifecycleError(
+                "openclaw_interfaces_require_managed_runtime",
+                "OpenClaw interfaces require a managed runtime",
+                metadata={"field": "harness.settings.interfaces"},
+            )
+        dashboard_port = _dashboard_port(settings)
         self._service_host = service is not None and service.get("operation") in {
             "prepare",
             "attach",
@@ -1106,7 +1130,20 @@ class OpenClawRuntime:
             kind="component",
         )
 
-        port = _select_port(settings)
+        if dashboard_port is None:
+            port = _select_port(settings)
+        else:
+            port = dashboard_port
+            for candidate in (port, port + 2):
+                if not _port_available(candidate):
+                    raise lifecycle.LifecycleError(
+                        "openclaw_interface_port_unavailable",
+                        f"OpenClaw dashboard port {candidate} is already in use",
+                        metadata={
+                            "field": "harness.settings.interfaces.dashboard.port",
+                            "port": candidate,
+                        },
+                    )
 
         # Generate a one-time use token for the OpenClaw gateway
         token = secrets.token_urlsafe(48)
@@ -1123,6 +1160,7 @@ class OpenClawRuntime:
             port=port,
             token_env=token_env,
             service_mode=service is not None and service.get("operation") == "prepare",
+            dashboard=dashboard_port is not None,
         )
         config_path.write_text(json.dumps(generated, indent=2) + "\n", encoding="utf-8")
         config_path.chmod(0o600)
@@ -1187,6 +1225,10 @@ class OpenClawRuntime:
             ]
             self._install_signal_handlers()
             await self._wait_started(port, token, startup_remaining())
+            if dashboard_port is not None:
+                token_path = _dashboard_token_path(context, base_dir)
+                local_interfaces.write_private_file(token_path, token)
+                self._dashboard_token_path = token_path
             self._client = httpx.AsyncClient(
                 headers={"authorization": f"Bearer {token}"},
                 http2=True,
@@ -1712,6 +1754,10 @@ class OpenClawRuntime:
     async def stop(self) -> None:
         cancellation: asyncio.CancelledError | None = None
         self._stopping = True
+        token_path, self._dashboard_token_path = self._dashboard_token_path, None
+        if token_path is not None:
+            with contextlib.suppress(OSError):
+                token_path.unlink(missing_ok=True)
         try:
             self._restore_signal_handlers()
         except Exception:

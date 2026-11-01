@@ -120,6 +120,43 @@ By default, the adapter chooses an available local port range. Set `port_range`
 to an inclusive consumer-allocated range with `start` and `end` fields. The
 range must span at least 111 ports. OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses `base_port + 2` for browser control and allocates browser CDP ports from `base_port + 11` through `base_port + 110`. The adapter verifies only that `base_port` and `base_port + 2` are available before startup. OpenClaw allocates the CDP ports on demand instead of reserving the complete range, so the adapter cannot guarantee that those ports will still be available when OpenClaw needs them. Keep the configured range reserved for the lifetime of the runtime or service when using OpenClaw browser features.
 
+## Serve the Control UI
+
+OpenClaw's Control UI is its browser dashboard and chat. A managed runtime
+serves it when `harness.settings.interfaces.dashboard` is present:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.openclaw",
+    settings={"interfaces": {"dashboard": {"port": 18789}}},
+)
+```
+
+- The Gateway listens on `127.0.0.1` at the dashboard `port`, which serves the
+  Control UI. `start` fails with `openclaw_interface_port_unavailable` if
+  `port` or `port + 2` is in use. OpenClaw also uses `port + 10` for its
+  browser relay and allocates browser CDP ports from `port + 11` through
+  `port + 110`, so reserve the whole range from `port` through `port + 110`.
+  `port` can't be combined with `port_range`; set `enabled` to `false` to keep
+  a configured dashboard off.
+- After the Gateway starts, the adapter writes the sign-in token, generated at
+  each start, to
+  `<artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token`
+  with mode `0600`. `stop` removes it; if the adapter host is killed, the file
+  can remain.
+- Open `http://127.0.0.1:<port>/#token=<token>` through a forward to that
+  port to sign in. The Control UI removes the token from the address bar.
+  OpenClaw 2026.9.34 accepts any loopback origin, such as a forward to a
+  different local port; the token is still required.
+- Processes that run as the runtime's user, including the agent's own tools,
+  can read the token and reach the port.
+- The adapter regenerates OpenClaw's configuration at each start and marks it
+  read-only, so changes made through the Control UI don't survive a restart.
+- Prepared and attached services reject `interfaces` with
+  `openclaw_interfaces_require_managed_runtime`.
+
 ## Use a Shared Service
 
 Call `prepare_service()` to map the normalized `FabricConfig` to
