@@ -38,6 +38,7 @@ NeMo Fabric includes adapters for the following harnesses and execution targets.
 | [AWS Kiro](adapters/typescript/kiro/README.md) | — | ✅ | — | — |
 | [AWS Strands](adapters/typescript/strands/README.md) | — | ✅ | — | — |
 | [LangChain Deep Agents](adapters/python/deepagents/README.md) | ✅ | ✅ | ✅ | ✅ |
+| [LangChain Deep Agents Code](adapters/typescript/deepagents-code/README.md) | — | — | — | — |
 | [mini-SWE-agent](adapters/python/mini-swe-agent/README.md) | — | — | — | ✅ |
 | [NOOA](adapters/python/nooa/README.md) | — | ✅ | ✅ | ✅ |
 | [OpenClaw](adapters/python/openclaw/README.md) | ✅ | ✅ | ✅ | — |

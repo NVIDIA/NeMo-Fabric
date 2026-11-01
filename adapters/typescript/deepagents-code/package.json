@@ -1,0 +1,52 @@
+{
+  "name": "nemo-fabric-adapters-deepagents-code",
+  "version": "0.7.0",
+  "description": "Deep Agents Code ACP harness adapter for NVIDIA NeMo Fabric.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./descriptor": "./deepagents-code.fabric-adapter.json",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "nemo-fabric-adapters-deepagents-code": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "deepagents-code.fabric-adapter.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "pack:check": "npm run build && node ../scripts/check-package.mjs",
+    "prepack": "npm run build",
+    "test": "npm run clean && npm run build && node --test test/*.test.mjs"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NVIDIA/NeMo-Fabric.git",
+    "directory": "adapters/typescript/deepagents-code"
+  },
+  "bugs": {
+    "url": "https://github.com/NVIDIA/NeMo-Fabric/issues"
+  },
+  "homepage": "https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/typescript/deepagents-code#readme",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "nemo-fabric-adapter-contract": "0.7.0",
+    "nemo-fabric-adapters-common": "0.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.12.4",
+    "typescript": "5.9.3"
+  }
+}

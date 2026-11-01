@@ -30,6 +30,7 @@ QWEN_PACKAGE = "nemo-fabric-adapters-qwen"
 KILO_PACKAGE = "nemo-fabric-adapters-kilo"
 KIRO_PACKAGE = "nemo-fabric-adapters-kiro"
 STRANDS_PACKAGE = "nemo-fabric-adapters-strands"
+DEEPAGENTS_CODE_PACKAGE = "nemo-fabric-adapters-deepagents-code"
 
 
 def _read_json_object(path: Path) -> dict[str, Any]:
@@ -86,6 +87,9 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     kilo_package_path = root / ADAPTERS_DIRECTORY / "kilo" / "package.json"
     kiro_package_path = root / ADAPTERS_DIRECTORY / "kiro" / "package.json"
     strands_package_path = root / ADAPTERS_DIRECTORY / "strands" / "package.json"
+    deepagents_code_package_path = (
+        root / ADAPTERS_DIRECTORY / "deepagents-code" / "package.json"
+    )
 
     contract_package = _read_json_object(contract_package_path)
     contract_lock = _read_json_object(contract_lock_path)
@@ -100,6 +104,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     kilo_package = _read_json_object(kilo_package_path)
     kiro_package = _read_json_object(kiro_package_path)
     strands_package = _read_json_object(strands_package_path)
+    deepagents_code_package = _read_json_object(deepagents_code_package_path)
 
     contract_lock_packages = _require_object(
         contract_lock.get("packages"), f"a packages object in {contract_lock_path}"
@@ -152,6 +157,10 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     adapters_lock_strands = _require_object(
         adapters_lock_packages.get("strands"),
         f"{STRANDS_PACKAGE} metadata in {adapters_lock_path}",
+    )
+    adapters_lock_deepagents_code = _require_object(
+        adapters_lock_packages.get("deepagents-code"),
+        f"{DEEPAGENTS_CODE_PACKAGE} metadata in {adapters_lock_path}",
     )
 
     _require_named_package(
@@ -214,6 +223,16 @@ def set_typescript_project_version(root: Path, version: str) -> None:
     _require_named_package(
         adapters_lock_strands, STRANDS_PACKAGE, f"strands entry of {adapters_lock_path}"
     )
+    _require_named_package(
+        deepagents_code_package,
+        DEEPAGENTS_CODE_PACKAGE,
+        str(deepagents_code_package_path),
+    )
+    _require_named_package(
+        adapters_lock_deepagents_code,
+        DEEPAGENTS_CODE_PACKAGE,
+        f"deepagents-code entry of {adapters_lock_path}",
+    )
 
     source_values = {
         path: json.dumps(value, sort_keys=True)
@@ -231,6 +250,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
             (kilo_package_path, kilo_package),
             (kiro_package_path, kiro_package),
             (strands_package_path, strands_package),
+            (deepagents_code_package_path, deepagents_code_package),
         )
     }
 
@@ -260,6 +280,8 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         strands_package,
         adapters_lock_kiro,
         adapters_lock_strands,
+        deepagents_code_package,
+        adapters_lock_deepagents_code,
     ):
         package["version"] = version
 
@@ -282,6 +304,11 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         (strands_package, str(strands_package_path)),
         (adapters_lock_kiro, f"kiro entry of {adapters_lock_path}"),
         (adapters_lock_strands, f"strands entry of {adapters_lock_path}"),
+        (deepagents_code_package, str(deepagents_code_package_path)),
+        (
+            adapters_lock_deepagents_code,
+            f"deepagents-code entry of {adapters_lock_path}",
+        ),
     ):
         _set_exact_dependency(package, CONTRACT_PACKAGE, version, description)
     for package, description in (
@@ -301,6 +328,11 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         (strands_package, str(strands_package_path)),
         (adapters_lock_kiro, f"kiro entry of {adapters_lock_path}"),
         (adapters_lock_strands, f"strands entry of {adapters_lock_path}"),
+        (deepagents_code_package, str(deepagents_code_package_path)),
+        (
+            adapters_lock_deepagents_code,
+            f"deepagents-code entry of {adapters_lock_path}",
+        ),
     ):
         _set_exact_dependency(package, COMMON_PACKAGE, version, description)
 
@@ -318,6 +350,7 @@ def set_typescript_project_version(root: Path, version: str) -> None:
         kilo_package_path: kilo_package,
         kiro_package_path: kiro_package,
         strands_package_path: strands_package,
+        deepagents_code_package_path: deepagents_code_package,
     }
     changed_paths = [
         path

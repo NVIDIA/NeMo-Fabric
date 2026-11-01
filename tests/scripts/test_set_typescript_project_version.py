@@ -150,6 +150,17 @@ def typescript_project_fixture(tmp_path: Path) -> Path:
         },
     )
     _write_json(
+        tmp_path / "adapters/typescript/deepagents-code/package.json",
+        {
+            "name": "nemo-fabric-adapters-deepagents-code",
+            "version": "0.2.0",
+            "dependencies": {
+                "nemo-fabric-adapter-contract": "0.2.0",
+                "nemo-fabric-adapters-common": "0.2.0",
+            },
+        },
+    )
+    _write_json(
         tmp_path / "adapters/typescript/package-lock.json",
         {
             "name": "nemo-fabric-typescript-adapters",
@@ -232,6 +243,14 @@ def typescript_project_fixture(tmp_path: Path) -> Path:
                         "nemo-fabric-adapters-common": "0.2.0",
                     },
                 },
+                "deepagents-code": {
+                    "name": "nemo-fabric-adapters-deepagents-code",
+                    "version": "0.2.0",
+                    "dependencies": {
+                        "nemo-fabric-adapter-contract": "0.2.0",
+                        "nemo-fabric-adapters-common": "0.2.0",
+                    },
+                },
                 "node_modules/ajv": {"version": "8.20.0"},
             },
         },
@@ -296,6 +315,11 @@ def test_updates_the_complete_typescript_package_graph(
     strands = json.loads(
         (typescript_project / "adapters/typescript/strands/package.json").read_text()
     )
+    deepagents_code = json.loads(
+        (
+            typescript_project / "adapters/typescript/deepagents-code/package.json"
+        ).read_text()
+    )
 
     assert contract["version"] == version
     assert contract_lock["version"] == version
@@ -314,6 +338,7 @@ def test_updates_the_complete_typescript_package_graph(
         "kilo",
         "kiro",
         "strands",
+        "deepagents-code",
     ):
         assert adapters_lock["packages"][workspace]["version"] == version
     assert common["version"] == version
@@ -342,6 +367,11 @@ def test_updates_the_complete_typescript_package_graph(
     assert strands["version"] == version
     assert strands["dependencies"]["nemo-fabric-adapter-contract"] == version
     assert strands["dependencies"]["nemo-fabric-adapters-common"] == version
+    assert deepagents_code["version"] == version
+    assert deepagents_code["dependencies"] == {
+        "nemo-fabric-adapter-contract": version,
+        "nemo-fabric-adapters-common": version,
+    }
     assert (
         adapters_lock["packages"]["common"]["dependencies"][
             "nemo-fabric-adapter-contract"
@@ -377,6 +407,10 @@ def test_updates_the_complete_typescript_package_graph(
         "nemo-fabric-adapters-common": version,
     }
     assert adapters_lock["packages"]["strands"]["dependencies"] == {
+        "nemo-fabric-adapter-contract": version,
+        "nemo-fabric-adapters-common": version,
+    }
+    assert adapters_lock["packages"]["deepagents-code"]["dependencies"] == {
         "nemo-fabric-adapter-contract": version,
         "nemo-fabric-adapters-common": version,
     }

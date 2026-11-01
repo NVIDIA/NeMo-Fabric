@@ -1,0 +1,70 @@
+{
+  "contract_version": "fabric.adapter/v1alpha2",
+  "adapter_id": "nvidia.fabric.langchain.deepagents-code",
+  "adapter_kind": "process",
+  "runner": {
+    "command": "node",
+    "script": "dist/cli.js"
+  },
+  "requirements": {
+    "binaries": ["node"]
+  },
+  "config": {
+    "accepts": ["models", "models.base_url"]
+  },
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "approval_mode": {
+        "type": "string",
+        "enum": ["auto", "yolo"],
+        "description": "How Deep Agents Code approves gated actions during invocations, which no person can answer: auto uses its classifier, with the default model, and denies what it escalates; yolo allows every gated action."
+      },
+      "insecure_http_model_hosts": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$"
+        },
+        "uniqueItems": true,
+        "description": "Explicitly trusted HTTP model endpoint hostnames, without schemes, ports, paths, or wildcards."
+      }
+    },
+    "required": ["approval_mode"],
+    "additionalProperties": false
+  },
+  "model_schema": {
+    "type": "object",
+    "properties": {
+      "provider": {"const": "openai"},
+      "model": {"type": "string", "minLength": 1},
+      "api_key_env": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+      "base_url": {"type": ["string", "null"], "format": "uri", "pattern": "^https?://"}
+    },
+    "required": ["provider", "model"],
+    "additionalProperties": false
+  },
+  "extension_schemas": {
+    "run_result": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "session_id": {"type": "string", "minLength": 1},
+        "stop_reason": {
+          "type": "string",
+          "enum": ["end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled"]
+        }
+      },
+      "required": ["session_id", "stop_reason"],
+      "additionalProperties": false
+    }
+  },
+  "capabilities": {
+    "metadata": {"health_checks": ["live", "active", "ready"]},
+    "streaming": false,
+    "cancellation": false,
+    "updates": false,
+    "service": false
+  }
+}

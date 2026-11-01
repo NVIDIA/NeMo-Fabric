@@ -1,0 +1,39 @@
+---
+title: "Use the Deep Agents Code Adapter"
+description: "Run LangChain's Deep Agents Code over ACP with NVIDIA NeMo Fabric."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use the `nvidia.fabric.langchain.deepagents-code` adapter to run LangChain's
+Deep Agents Code (`dcode`) as an ACP agent. Each NeMo Fabric runtime starts one
+`dcode --acp` process and reuses one ACP session across ordered invocations.
+
+## Install the Adapter
+
+Install Node.js 22.19.0 or newer, the adapter, and `dcode` in its own Python
+3.14 environment. The adapter runs `dcode` from `PATH`.
+
+```bash
+npm install nemo-fabric-adapters-deepagents-code
+uv tool install deepagents-code==0.2.2
+```
+
+## Configure the Adapter
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.langchain.deepagents-code",
+    settings={"approval_mode": "auto"},
+)
+```
+
+The model uses provider `openai`, optionally with an OpenAI-compatible
+`base_url` and an `api_key_env`. `approval_mode` is required: `auto` uses
+`dcode`'s classifier and denies what it escalates, and `yolo` allows every
+gated action.
+
+For state locations, outbound requests, and health checks, refer to the
+[Deep Agents Code adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/typescript/deepagents-code).

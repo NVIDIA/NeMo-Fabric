@@ -82,6 +82,8 @@ navigation:
             path: ./integrations/harness/kilo.mdx
           - page: Kiro
             path: ./integrations/harness/kiro.mdx
+          - page: Deep Agents Code
+            path: ./integrations/harness/deepagents-code.mdx
           - page: AWS Strands
             path: ./integrations/harness/strands.mdx
           - page: mini-SWE-agent

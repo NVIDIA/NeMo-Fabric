@@ -519,6 +519,7 @@ def make_plan(args: argparse.Namespace) -> dict:
         "nvidia.fabric.remote-agent": "Requires an explicitly configured compatible HTTP endpoint/profile; workspace/tool execution is separate coverage.",
         "nvidia.fabric.kiro": "Requires Kiro CLI, KIRO_API_KEY, and a Kiro-advertised provider/model. Skip when KIRO_API_KEY is absent; BYOM is unsupported.",
         "nvidia.fabric.droid": "Requires Factory authentication or a prepared native Droid BYOK profile/image; custom endpoints use native settings, not model base_url.",
+        "nvidia.fabric.langchain.deepagents-code": "Requires dcode (deepagents-code 0.2.2, Python 3.14) on PATH and a chosen approval_mode.",
     }
     for adapter_id, record in sorted(catalog["adapters"].items()):
         reason = prerequisites.get(adapter_id, "")

@@ -1550,6 +1550,132 @@
       "sha256": "d4394a8dd328bd1b1f89386a75f176cfc83755e0c6714c3c9839468510deb181",
       "source": "adapters/python/deepagents/deepagents.fabric-adapter.json"
     },
+    "nvidia.fabric.langchain.deepagents-code": {
+      "descriptor": {
+        "adapter_id": "nvidia.fabric.langchain.deepagents-code",
+        "adapter_kind": "process",
+        "capabilities": {
+          "cancellation": false,
+          "metadata": {
+            "health_checks": [
+              "live",
+              "active",
+              "ready"
+            ]
+          },
+          "service": false,
+          "streaming": false,
+          "updates": false
+        },
+        "config": {
+          "accepts": [
+            "models",
+            "models.base_url"
+          ]
+        },
+        "contract_version": "fabric.adapter/v1alpha2",
+        "extension_schemas": {
+          "run_result": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "session_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "stop_reason": {
+                "enum": [
+                  "end_turn",
+                  "max_tokens",
+                  "max_turn_requests",
+                  "refusal",
+                  "cancelled"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "session_id",
+              "stop_reason"
+            ],
+            "type": "object"
+          }
+        },
+        "model_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "api_key_env": {
+              "minLength": 1,
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "type": "string"
+            },
+            "base_url": {
+              "format": "uri",
+              "pattern": "^https?://",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "model": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "provider": {
+              "const": "openai"
+            }
+          },
+          "required": [
+            "provider",
+            "model"
+          ],
+          "type": "object"
+        },
+        "requirements": {
+          "binaries": [
+            "node"
+          ]
+        },
+        "runner": {
+          "command": "node",
+          "script": "dist/cli.js"
+        },
+        "settings_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "approval_mode": {
+              "description": "How Deep Agents Code approves gated actions during invocations, which no person can answer: auto uses its classifier, with the default model, and denies what it escalates; yolo allows every gated action.",
+              "enum": [
+                "auto",
+                "yolo"
+              ],
+              "type": "string"
+            },
+            "insecure_http_model_hosts": {
+              "description": "Explicitly trusted HTTP model endpoint hostnames, without schemes, ports, paths, or wildcards.",
+              "items": {
+                "maxLength": 253,
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?$",
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "approval_mode"
+          ],
+          "type": "object"
+        }
+      },
+      "ecosystem": "typescript",
+      "package": {
+        "name": "nemo-fabric-adapters-deepagents-code",
+        "version": "0.7.0"
+      },
+      "sha256": "7a459319645a7c07ba0da2f23e968ac512d44d1006634d0b1737643829f92e6a",
+      "source": "adapters/typescript/deepagents-code/deepagents-code.fabric-adapter.json"
+    },
     "nvidia.fabric.mini-swe-agent": {
       "descriptor": {
         "adapter_id": "nvidia.fabric.mini-swe-agent",

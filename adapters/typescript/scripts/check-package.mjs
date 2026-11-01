@@ -167,6 +167,20 @@ const expectedByPackage = {
     "strands.fabric-adapter.json",
     "package.json",
   ],
+  "nemo-fabric-adapters-deepagents-code": [
+    "LICENSE",
+    "README.md",
+    "deepagents-code.fabric-adapter.json",
+    "dist/cli.d.ts",
+    "dist/cli.js",
+    "dist/configuration.d.ts",
+    "dist/configuration.js",
+    "dist/deepagents-code-acp.d.ts",
+    "dist/deepagents-code-acp.js",
+    "dist/runtime.d.ts",
+    "dist/runtime.js",
+    "package.json",
+  ],
 };
 const expectedFiles = expectedByPackage[manifest.name];
 if (expectedFiles === undefined) {
@@ -249,6 +263,17 @@ if (manifest.name === "nemo-fabric-adapters-kiro") {
   );
   if (descriptor.runner?.command !== "node" || descriptor.runner?.script !== "dist/cli.js") {
     throw new Error("The Kiro descriptor runner must resolve inside the npm package");
+  }
+}
+if (manifest.name === "nemo-fabric-adapters-deepagents-code") {
+  if (manifest.exports?.["./descriptor"] !== "./deepagents-code.fabric-adapter.json") {
+    throw new Error("The Deep Agents Code package must export its adapter descriptor");
+  }
+  const descriptor = JSON.parse(
+    await readFile(join(packageRoot, "deepagents-code.fabric-adapter.json"), "utf8"),
+  );
+  if (descriptor.runner?.command !== "node" || descriptor.runner?.script !== "dist/cli.js") {
+    throw new Error("The Deep Agents Code descriptor runner must resolve inside the npm package");
   }
 }
 if (manifest.name === "nemo-fabric-adapters-opencode") {
