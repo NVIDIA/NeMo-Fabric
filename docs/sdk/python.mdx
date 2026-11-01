@@ -867,7 +867,7 @@ mapping to give every runtime of the agent one folder instead:
 artifact directory, and `metadata.name` must be usable as one folder name.
 Only one runtime can use the folder at a time: `start_runtime(...)` fails while
 another runtime of the agent runs. Planning fails for an adapter that doesn't
-declare `runtime.keep_state`.
+declare `runtime.keep_state`; Hermes Agent's adapter declares it.
 
 ## Runtime Resource Snapshots
 
