@@ -1323,7 +1323,10 @@ async def test_openclaw_stop_continues_after_cleanup_failures(
     assert runtime._temp_dir is None
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Requires POSIX process groups")
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "win32"},
+    reason="Starts the mock Gateway, which CI runs only on Linux",
+)
 async def test_openclaw_stop_ends_the_gateway_where_group_signals_are_denied(
     mock_openclaw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
