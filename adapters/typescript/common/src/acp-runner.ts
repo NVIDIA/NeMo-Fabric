@@ -141,7 +141,15 @@ async function terminateProcessTree(child: ChildProcessWithoutNullStreams, timeo
     try {
       process.kill(-pid, signal);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ESRCH") return;
+      // OpenShell's sandbox denies signals to a process group; signal the agent itself.
+      if (code !== "EPERM") throw error;
+      try {
+        process.kill(pid, signal);
+      } catch (fallbackError) {
+        if ((fallbackError as NodeJS.ErrnoException).code !== "ESRCH") throw fallbackError;
+      }
     }
   };
   // Each agent has its own process group, including tool and MCP children.

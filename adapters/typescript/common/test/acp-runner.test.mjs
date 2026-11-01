@@ -213,10 +213,11 @@ test("retries process-group termination after a failed stop", { skip: process.pl
   });
   const pids = JSON.parse(await readFile(marker, "utf8"));
   const originalKill = process.kill.bind(process);
-  let failTermination = true;
+  // Deny the first stop's group signal and its fallback to the agent itself.
+  let deniedTerminations = 2;
   const kill = t.mock.method(process, "kill", (pid, signal) => {
-    if (pid === -pids.parent && signal === "SIGTERM" && failTermination) {
-      failTermination = false;
+    if (Math.abs(pid) === pids.parent && signal === "SIGTERM" && deniedTerminations > 0) {
+      deniedTerminations -= 1;
       throw Object.assign(new Error("termination denied"), { code: "EPERM" });
     }
     return originalKill(pid, signal);
@@ -251,4 +252,34 @@ test("retries process-group termination after a failed stop", { skip: process.pl
     }
   }
   if (cleanupError !== undefined) throw cleanupError;
+});
+
+test("stops the agent where process-group signals are denied", { skip: process.platform === "win32" }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "fabric-acp-denied-"));
+  const marker = join(directory, "pids.json");
+  const session = await startAcpSession({
+    command: process.execPath,
+    args: [fixture],
+    cwd: process.cwd(),
+    env: { ...process.env, TEST_DESCENDANT_MARKER: marker },
+    shutdownTimeoutMs: 1_000,
+  });
+  const pids = JSON.parse(await readFile(marker, "utf8"));
+  const originalKill = process.kill.bind(process);
+  // OpenShell's sandbox denies every signal to a process group.
+  const kill = t.mock.method(process, "kill", (pid, signal) => {
+    if (pid < 0) throw Object.assign(new Error("group signals denied"), { code: "EPERM" });
+    return originalKill(pid, signal);
+  });
+  try {
+    await session.stop();
+    await waitForProcessToStop(pids.parent);
+  } finally {
+    kill.mock.restore();
+    for (const pid of [pids.parent, pids.child]) {
+      try { originalKill(pid, "SIGKILL"); } catch (error) {
+        if (error.code !== "ESRCH") throw error;
+      }
+    }
+  }
 });

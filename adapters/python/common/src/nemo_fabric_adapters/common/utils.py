@@ -9,6 +9,7 @@ import glob
 import json
 import os
 import re
+import signal
 import sys
 import uuid
 from contextlib import nullcontext
@@ -790,3 +791,19 @@ def write_relay_configs(
 
 def relay_model_name(payload: dict[str, Any]) -> str:
     return selected_model_config(payload).get("model") or "unknown"
+
+
+def signal_process_group(pid: int, signum: signal.Signals) -> None:
+    """Signal a child's process group, or only the child where that's denied.
+
+    OpenShell's sandbox denies signals to a process group with EPERM.
+    """
+    try:
+        os.killpg(pid, signum)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        try:
+            os.kill(pid, signum)
+        except ProcessLookupError:
+            pass
