@@ -1325,6 +1325,7 @@ async def test_openclaw_stop_continues_after_cleanup_failures(
     assert runtime._temp_dir is None
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock openclaw script directly")
 async def test_openclaw_startup_timeout_bounds_all_of_start(
     mock_openclaw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
