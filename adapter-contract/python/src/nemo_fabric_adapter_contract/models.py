@@ -647,6 +647,7 @@ class RuntimeContext(ContractModel):
     artifacts: ArtifactManifest
     telemetry: RuntimeTelemetryContext | None = _optional()
     deadline_millis: int | None = _optional()
+    state_dir: str | Path | None = _optional()
 
     def _validate(self) -> None:
         _nonblank(self.runtime_id, "runtime_id")
