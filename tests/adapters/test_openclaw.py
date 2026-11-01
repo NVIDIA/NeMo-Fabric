@@ -1426,6 +1426,7 @@ async def test_openclaw_dashboard_serves_control_ui_with_a_token_file(
     assert not token_path.exists()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock openclaw script directly")
 @pytest.mark.parametrize("offset", [0, 2])
 async def test_openclaw_dashboard_port_in_use_fails_start(
     mock_openclaw: Path, tmp_path: Path, dashboard_port: int, offset: int
@@ -1473,6 +1474,7 @@ async def test_openclaw_services_reject_interfaces(
     assert runtime._process is None
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock openclaw script directly")
 async def test_openclaw_startup_timeout_bounds_all_of_start(
     mock_openclaw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -1497,7 +1499,10 @@ async def test_openclaw_startup_timeout_bounds_all_of_start(
     assert runtime._process is None
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Requires POSIX process groups")
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "win32"},
+    reason="Starts the mock Gateway, which CI runs only on Linux",
+)
 async def test_openclaw_stop_ends_the_gateway_where_group_signals_are_denied(
     mock_openclaw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
