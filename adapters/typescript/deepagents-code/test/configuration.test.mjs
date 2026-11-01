@@ -4,11 +4,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { configToml, selectModel } from "../dist/configuration.js";
+import { configToml, selectModel, selectSettings } from "../dist/configuration.js";
 
 function config(settings, model = { provider: "openai", model: "fabric-echo" }) {
   return { models: { default: model }, harness: { settings } };
 }
+
+test("turns the terminal on when it is present and not disabled", () => {
+  for (const [interfaces, terminal] of [[undefined, false], [{}, false], [{ terminal: {} }, true], [{ terminal: { enabled: false } }, false]]) {
+    assert.equal(selectSettings(config({ approval_mode: "auto", interfaces })).terminal, terminal);
+  }
+});
 
 test("maps an OpenAI-compatible endpoint to Chat Completions", () => {
   const model = selectModel(

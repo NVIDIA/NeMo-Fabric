@@ -29,6 +29,25 @@
         },
         "uniqueItems": true,
         "description": "Explicitly trusted HTTP model endpoint hostnames, without schemes, ports, paths, or wildcards."
+      },
+      "interfaces": {
+        "type": "object",
+        "properties": {
+          "terminal": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Write a launcher for Deep Agents Code's terminal UI. A present terminal is on unless this is false."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Deep Agents Code's terminal UI, opened by <artifact root>/.fabric/deepagents-code/runtimes/<runtime-id>/interfaces/terminal in a separate session that shares the runtime's configuration and session store."
+          }
+        },
+        "additionalProperties": false,
+        "description": "Native interfaces offered by the runtime."
       }
     },
     "required": ["approval_mode"],

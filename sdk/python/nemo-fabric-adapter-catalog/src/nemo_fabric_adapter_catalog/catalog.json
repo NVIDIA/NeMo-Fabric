@@ -1660,6 +1660,25 @@
               },
               "type": "array",
               "uniqueItems": true
+            },
+            "interfaces": {
+              "additionalProperties": false,
+              "description": "Native interfaces offered by the runtime.",
+              "properties": {
+                "terminal": {
+                  "additionalProperties": false,
+                  "description": "Deep Agents Code's terminal UI, opened by <artifact root>/.fabric/deepagents-code/runtimes/<runtime-id>/interfaces/terminal in a separate session that shares the runtime's configuration and session store.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Write a launcher for Deep Agents Code's terminal UI. A present terminal is on unless this is false.",
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
             }
           },
           "required": [
@@ -1673,7 +1692,7 @@
         "name": "nemo-fabric-adapters-deepagents-code",
         "version": "0.7.0"
       },
-      "sha256": "7a459319645a7c07ba0da2f23e968ac512d44d1006634d0b1737643829f92e6a",
+      "sha256": "81747449b1260d20d4a23d349a0ff3994ac31025d0c4b59f53234f9b5a3732e8",
       "source": "adapters/typescript/deepagents-code/deepagents-code.fabric-adapter.json"
     },
     "nvidia.fabric.mini-swe-agent": {

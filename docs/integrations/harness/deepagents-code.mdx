@@ -26,14 +26,17 @@ from nemo_fabric import HarnessConfig
 
 harness = HarnessConfig(
     adapter_id="nvidia.fabric.langchain.deepagents-code",
-    settings={"approval_mode": "auto"},
+    settings={"approval_mode": "auto", "interfaces": {"terminal": {}}},
 )
 ```
 
 The model uses provider `openai`, optionally with an OpenAI-compatible
 `base_url` and an `api_key_env`. `approval_mode` is required: `auto` uses
 `dcode`'s classifier and denies what it escalates, and `yolo` allows every
-gated action.
+gated action. With `interfaces.terminal`, the adapter writes a launcher that
+opens `dcode`'s terminal UI in a separate session with the runtime's
+configuration while the runtime runs.
 
-For state locations, outbound requests, and health checks, refer to the
+For state locations, outbound requests, the terminal UI, and health checks,
+refer to the
 [Deep Agents Code adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/typescript/deepagents-code).

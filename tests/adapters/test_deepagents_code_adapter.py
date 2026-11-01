@@ -36,16 +36,28 @@ def config(settings: dict) -> FabricConfig:
     )
 
 
-def test_deepagents_code_plans_with_an_approval_mode():
-    plan = Fabric().plan(config({"approval_mode": "auto"}), base_dir=ROOT)
-    assert plan.to_mapping()["agent_config"]["harness"]["settings"] == {
-        "approval_mode": "auto"
-    }
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"approval_mode": "auto"},
+        {"approval_mode": "yolo", "interfaces": {"terminal": {}}},
+    ],
+)
+def test_deepagents_code_plans_valid_settings(settings):
+    plan = Fabric().plan(config(settings), base_dir=ROOT)
+    assert plan.to_mapping()["agent_config"]["harness"]["settings"] == settings
 
 
 @pytest.mark.parametrize(
     "settings",
-    [{}, {"approval_mode": "manual"}, {"approval_mode": "auto", "unknown": True}],
+    [
+        {},
+        {"approval_mode": "manual"},
+        {"approval_mode": "auto", "unknown": True},
+        {"approval_mode": "auto", "interfaces": {"api": {}}},
+        {"approval_mode": "auto", "interfaces": {"terminal": {"port": 1}}},
+        {"approval_mode": "auto", "interfaces": {"terminal": {"enabled": "yes"}}},
+    ],
 )
 def test_deepagents_code_rejects_invalid_settings(settings):
     with pytest.raises(FabricConfigError):

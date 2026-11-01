@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { realpath, stat } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { constants } from "node:fs";
+import { access, realpath, stat } from "node:fs/promises";
+import { delimiter, isAbsolute, join, resolve } from "node:path";
 
 import type { AgentConfig } from "nemo-fabric-adapter-contract";
 import {
@@ -25,6 +26,7 @@ export const QUIET_ENVIRONMENT: Readonly<Record<string, string>> = {
 
 export interface DeepAgentsCodeSettings {
   approvalMode: "auto" | "yolo";
+  terminal: boolean;
 }
 
 export interface DeepAgentsCodeModel {
@@ -37,8 +39,13 @@ const ENVIRONMENT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
 /** Read the settings, which Fabric has already checked against the descriptor's settings_schema. */
 export function selectSettings(config: AgentConfig): DeepAgentsCodeSettings {
-  const settings = config.harness?.settings ?? {};
-  return { approvalMode: settings.approval_mode === "yolo" ? "yolo" : "auto" };
+  const settings: { approval_mode?: unknown; interfaces?: { terminal?: { enabled?: boolean } } } =
+    config.harness?.settings ?? {};
+  const terminal = settings.interfaces?.terminal;
+  return {
+    approvalMode: settings.approval_mode === "yolo" ? "yolo" : "auto",
+    terminal: terminal !== undefined && terminal.enabled !== false,
+  };
 }
 
 export function selectModel(config: AgentConfig): DeepAgentsCodeModel {
@@ -106,4 +113,43 @@ export function runtimeDirectory(input: AdapterStartInput): string {
       ? resolve(input.baseDir, "artifacts")
       : resolve(input.baseDir, String(root));
   return join(artifactRoot, ".fabric", "deepagents-code", "runtimes", input.runtimeContext.runtime_id);
+}
+
+/** Find dcode on PATH, as a shell would, for the launcher's absolute path. */
+export async function resolveCommand(path: string | undefined): Promise<string> {
+  for (const directory of (path ?? "").split(delimiter)) {
+    if (directory.length === 0) continue;
+    const candidate = join(directory, "dcode");
+    try {
+      await access(candidate, constants.X_OK);
+      if ((await stat(candidate)).isFile()) return candidate;
+    } catch {
+      // Try the next directory.
+    }
+  }
+  throw new LifecycleError("deepagents_code_harness_unavailable", "dcode was not found on PATH or is not executable");
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+/** Return the terminal launcher, which holds paths and switches but no secrets. */
+export function launcherScript(options: { home: string; workspace: string; command: string; marker: string }): string {
+  const exports = Object.entries({ DEEPAGENTS_HOME: options.home, ...QUIET_ENVIRONMENT })
+    .map(([name, value]) => `export ${name}=${shellQuote(value)}`);
+  return [
+    "#!/bin/sh",
+    "# Opens Deep Agents Code's terminal UI in a separate session with this NeMo Fabric",
+    "# runtime's configuration. The runtime holds its own thread while it runs, so",
+    "# `threads list` shows that thread but `-r` can't open it.",
+    `if [ ! -e ${shellQuote(options.marker)} ]; then`,
+    "  echo 'This NeMo Fabric runtime is not running.' >&2",
+    "  exit 1",
+    "fi",
+    ...exports,
+    `cd ${shellQuote(options.workspace)} || exit 1`,
+    `exec ${shellQuote(options.command)} --no-tracing "$@"`,
+    "",
+  ].join("\n");
 }

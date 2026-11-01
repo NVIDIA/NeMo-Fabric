@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { AdapterCheckResult, CheckLevel } from "nemo-fabric-adapter-contract";
@@ -18,6 +18,8 @@ import {
 import {
   QUIET_ENVIRONMENT,
   configToml,
+  launcherScript,
+  resolveCommand,
   runtimeDirectory,
   selectModel,
   selectSettings,
@@ -91,10 +93,12 @@ class DeepAgentsCodeAcpSession implements DeepAgentsCodeSessionHandle {
   private stopped = false;
   readonly id: string;
   private readonly session: AcpSession;
+  private readonly marker: string | undefined;
 
-  constructor(session: AcpSession) {
+  constructor(session: AcpSession, marker: string | undefined) {
     this.session = session;
     this.id = session.sessionId;
+    this.marker = marker;
   }
 
   async check(level: CheckLevel): Promise<AdapterCheckResult> {
@@ -122,6 +126,7 @@ class DeepAgentsCodeAcpSession implements DeepAgentsCodeSessionHandle {
 
   async stop(): Promise<void> {
     this.stopped = true;
+    if (this.marker !== undefined) await rm(this.marker, { force: true });
     await this.session.stop();
   }
 }
@@ -136,6 +141,13 @@ export class DeepAgentsCodeAcpSessionFactory implements DeepAgentsCodeSessionFac
     await mkdir(home, { recursive: true, mode: 0o700 });
     await writeFile(join(home, "config.toml"), configToml(model), { mode: 0o600 });
     const environment = childEnvironment(input, home, model);
+    const interfaces = join(directory, "interfaces");
+    const marker = settings.terminal ? join(interfaces, "terminal.running") : undefined;
+    if (marker !== undefined) {
+      const command = await resolveCommand(environment.PATH);
+      await mkdir(interfaces, { recursive: true, mode: 0o700 });
+      await writeFile(join(interfaces, "terminal"), launcherScript({ home, workspace, command, marker }), { mode: 0o700 });
+    }
     let session: AcpSession;
     try {
       session = await startAcpSession({
@@ -155,6 +167,14 @@ export class DeepAgentsCodeAcpSessionFactory implements DeepAgentsCodeSessionFac
       if (error instanceof LifecycleError) throw error;
       throw new LifecycleError("deepagents_code_start_failed", "Deep Agents Code ACP initialization failed", { retryable: true });
     }
-    return new DeepAgentsCodeAcpSession(session);
+    if (marker !== undefined) {
+      try {
+        await writeFile(marker, `${session.sessionId}\n`, { mode: 0o600 });
+      } catch (error) {
+        await session.stop();
+        throw error;
+      }
+    }
+    return new DeepAgentsCodeAcpSession(session, marker);
   }
 }
