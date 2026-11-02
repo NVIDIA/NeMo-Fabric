@@ -100,7 +100,8 @@ config or the session database. With `runtime.keep_state`, it is the agent's
 state folder, `<artifact root>/.fabric/state/nvidia.fabric.hermes/<agent name>`:
 every runtime of the agent then uses the same session database, memory, skills
 and logs. Each runtime starts a new session, and earlier sessions stay in the
-database. The adapter rewrites `config.yaml` at each start.
+database. At each start, the adapter rewrites `config.yaml` and removes an
+API token that an earlier runtime left in the Hermes home.
 
 ## Understand the Runtime Lifecycle
 
