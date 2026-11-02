@@ -79,7 +79,7 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 65425,
-                "description": "Exact loopback Gateway base port, which serves the Control UI. Start fails if it or port + 2 is in use, and OpenClaw reserves ports through port + 110. Can't be combined with port_range."
+                "description": "Exact loopback Gateway base port, which serves the Control UI. Start fails if it or port + 2 is in use. OpenClaw allocates browser ports through port + 110 on demand, so keep that range free. Can't be combined with port_range."
               }
             },
             "required": ["port"],
