@@ -1426,6 +1426,74 @@ async def test_openclaw_dashboard_serves_control_ui_with_a_token_file(
     assert not token_path.exists()
 
 
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "win32"},
+    reason="Starts the mock Gateway, which CI runs only on Linux",
+)
+async def test_openclaw_dashboard_disabled_serves_no_control_ui(
+    mock_openclaw: Path, tmp_path: Path, dashboard_port: int
+):
+    capture = tmp_path / "config.json"
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(capture)
+    runtime = adapter.OpenClawRuntime()
+
+    await runtime.start(
+        {
+            "config": _dashboard_config(
+                mock_openclaw, {"port": dashboard_port, "enabled": False}
+            ),
+            "runtime_context": _context(tmp_path).to_mapping(),
+            "base_dir": str(tmp_path),
+        }
+    )
+    try:
+        gateway_port = runtime._port
+        token_exists = _dashboard_token(tmp_path).exists()
+    finally:
+        await runtime.stop()
+
+    generated = json.loads(capture.read_text(encoding="utf-8"))
+    assert generated["gateway"]["controlUi"] == {"enabled": False}
+    assert gateway_port != dashboard_port
+    assert not token_exists
+
+
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "win32"},
+    reason="Starts the mock Gateway, which CI runs only on Linux",
+)
+async def test_openclaw_dashboard_removes_the_token_when_start_fails_after_writing_it(
+    mock_openclaw: Path,
+    tmp_path: Path,
+    dashboard_port: int,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    token_path = _dashboard_token(tmp_path)
+    token_written: list[bool] = []
+
+    # Start reads the HTTP read timeout only after it writes the token.
+    def fail_after_token_write(_settings):
+        token_written.append(token_path.exists())
+        raise RuntimeError("start failed after writing the token")
+
+    monkeypatch.setattr(adapter, "_read_timeout", fail_after_token_write)
+    runtime = adapter.OpenClawRuntime()
+
+    with pytest.raises(RuntimeError, match="after writing the token"):
+        await runtime.start(
+            {
+                "config": _dashboard_config(mock_openclaw, {"port": dashboard_port}),
+                "runtime_context": _context(tmp_path).to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+
+    assert token_written == [True]
+    assert not token_path.exists()
+    assert runtime._process is None
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock openclaw script directly")
 @pytest.mark.parametrize("offset", [0, 2])
 async def test_openclaw_dashboard_port_in_use_fails_start(
@@ -1476,12 +1544,15 @@ async def test_openclaw_services_reject_interfaces(
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock openclaw script directly")
 async def test_openclaw_startup_timeout_bounds_all_of_start(
-    mock_openclaw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    mock_openclaw: Path,
+    tmp_path: Path,
+    dashboard_port: int,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     # Each command finishes within the timeout, but the two together don't.
     monkeypatch.setenv("FAKE_OPENCLAW_COMMAND_DELAY", "0.6")
     monkeypatch.setenv("FAKE_OPENCLAW_CAPTURE", str(tmp_path / "config.json"))
-    config = _config(mock_openclaw)
+    config = _dashboard_config(mock_openclaw, {"port": dashboard_port})
     assert config.harness is not None
     config.harness.settings["startup_timeout_seconds"] = 1
     runtime = adapter.OpenClawRuntime()
@@ -1497,6 +1568,7 @@ async def test_openclaw_startup_timeout_bounds_all_of_start(
 
     assert caught.value.code == "openclaw_command_timeout"
     assert runtime._process is None
+    assert not (tmp_path / "artifacts").exists()
 
 
 @pytest.mark.skipif(
