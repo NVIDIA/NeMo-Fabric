@@ -81,7 +81,8 @@ and sets `DEEPAGENTS_CODE_NO_UPDATE_CHECK=1`, `DEEPAGENTS_CODE_AUTO_UPDATE=0`,
 updates, and price and plugin refreshes. It also sets
 `DEEPAGENTS_CODE_READ_PROJECT_DOTENV=0`, so a `.env` file in the workspace
 can't add variables: configuration comes from `FabricConfig`. The terminal
-launcher sets the same variables.
+launcher sets the same `DEEPAGENTS_CODE_*` switches but doesn't pass on the
+runtime environment's variables; see below.
 
 In a run of `deepagents-code` 0.2.2 against a loopback model, invocations
 contacted only the model endpoint, apart from what the agent's own tools
