@@ -1665,6 +1665,29 @@ async def test_openclaw_stop_does_not_kill_a_gateway_that_exited_during_cancella
     assert signals == [(1234, signal.SIGTERM)]
 
 
+async def test_openclaw_startup_deadline_bounds_a_pending_readiness_request():
+    async def never_respond(reader, _writer):
+        await reader.read()
+
+    server = await asyncio.start_server(never_respond, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = None
+    runtime._process = mock_process
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime._wait_started(port, "token", 0.2)
+    finally:
+        server.close()
+
+    assert caught.value.code == "openclaw_gateway_start_timeout"
+    # Each readiness request otherwise waits up to 1 second for a response.
+    assert loop.time() - started < 0.8
+
+
 @pytest.mark.parametrize("phase", ["client", "process", "logs"])
 async def test_openclaw_stop_completes_cleanup_before_propagating_cancellation(
     monkeypatch: pytest.MonkeyPatch, phase: str
