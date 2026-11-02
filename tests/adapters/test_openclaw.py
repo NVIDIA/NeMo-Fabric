@@ -1346,9 +1346,75 @@ async def test_openclaw_stop_ends_the_gateway_where_group_signals_are_denied(
         raise PermissionError(1, "Operation not permitted")
 
     monkeypatch.setattr(os, "killpg", deny_group_signals)
+    try:
+        await runtime.stop()
+
+        assert gateway.returncode is not None
+    finally:
+        if gateway.returncode is None:
+            gateway.kill()
+            await gateway.wait()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+async def test_openclaw_stop_kills_a_gateway_that_ignores_sigterm_where_group_signals_are_denied(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = adapter.OpenClawRuntime()
+    runtime._shutdown_timeout = 0.01
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.pid = 1234
+    mock_process.returncode = None
+    wait_calls = 0
+
+    async def wait_for_process():
+        nonlocal wait_calls
+        wait_calls += 1
+        if wait_calls == 1:
+            await asyncio.Event().wait()
+
+    mock_process.wait = AsyncMock(side_effect=wait_for_process)
+    runtime._process = mock_process
+    signals: list[tuple[int, int]] = []
+
+    def deny_group_signals(_pgid: int, _signum: int) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(adapter.os, "killpg", deny_group_signals)
+    monkeypatch.setattr(
+        adapter.os, "kill", lambda pid, signum: signals.append((pid, signum))
+    )
+
     await runtime.stop()
 
-    assert gateway.returncode is not None
+    assert signals == [(1234, signal.SIGTERM), (1234, signal.SIGKILL)]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+async def test_openclaw_stop_does_not_kill_a_gateway_that_exited_during_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.pid = 1234
+    mock_process.returncode = None
+
+    async def exit_then_cancel():
+        mock_process.returncode = 0
+        raise asyncio.CancelledError
+
+    mock_process.wait = AsyncMock(side_effect=exit_then_cancel)
+    runtime._process = mock_process
+    signals: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        adapter.os, "killpg", lambda pid, signum: signals.append((pid, signum))
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await runtime.stop()
+
+    # Once the Gateway is reaped, its PID can belong to another process.
+    assert signals == [(1234, signal.SIGTERM)]
 
 
 @pytest.mark.parametrize("phase", ["client", "process", "logs"])
@@ -1598,6 +1664,35 @@ def test_openclaw_signal_handler_forwards_to_gateway_process_group(
         runtime._restore_signal_handlers()
 
     assert caught.value.code == 128 + signal.SIGTERM
+    assert forwarded == [(1234, signal.SIGTERM)]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX signal forwarding")
+def test_openclaw_signal_handler_forwards_to_gateway_where_group_signals_are_denied(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.pid = 1234
+    mock_process.returncode = None
+    runtime._process = mock_process
+    forwarded: list[tuple[int, int]] = []
+
+    def deny_group_signals(_pgid: int, _signum: int) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(adapter.os, "killpg", deny_group_signals)
+    monkeypatch.setattr(
+        adapter.os, "kill", lambda pid, signum: forwarded.append((pid, signum))
+    )
+
+    runtime._install_signal_handlers()
+    try:
+        with pytest.raises(SystemExit):
+            runtime._signal_handler(signal.SIGTERM, None)
+    finally:
+        runtime._restore_signal_handlers()
+
     assert forwarded == [(1234, signal.SIGTERM)]
 
 
