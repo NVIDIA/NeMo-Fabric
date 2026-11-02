@@ -1633,7 +1633,8 @@
         },
         "requirements": {
           "binaries": [
-            "node"
+            "node",
+            "dcode"
           ]
         },
         "runner": {
@@ -1673,7 +1674,7 @@
         "name": "nemo-fabric-adapters-deepagents-code",
         "version": "0.7.0"
       },
-      "sha256": "7a459319645a7c07ba0da2f23e968ac512d44d1006634d0b1737643829f92e6a",
+      "sha256": "c60c0510ad3af336fe8bcdf04f77c87b55083123d87370b163aaac89a89fed74",
       "source": "adapters/typescript/deepagents-code/deepagents-code.fabric-adapter.json"
     },
     "nvidia.fabric.mini-swe-agent": {

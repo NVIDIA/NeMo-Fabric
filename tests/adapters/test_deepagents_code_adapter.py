@@ -36,10 +36,11 @@ def config(settings: dict) -> FabricConfig:
     )
 
 
-def test_deepagents_code_plans_with_an_approval_mode():
-    plan = Fabric().plan(config({"approval_mode": "auto"}), base_dir=ROOT)
+@pytest.mark.parametrize("approval_mode", ["auto", "yolo"])
+def test_deepagents_code_plans_with_an_approval_mode(approval_mode):
+    plan = Fabric().plan(config({"approval_mode": approval_mode}), base_dir=ROOT)
     assert plan.to_mapping()["agent_config"]["harness"]["settings"] == {
-        "approval_mode": "auto"
+        "approval_mode": approval_mode
     }
 
 
