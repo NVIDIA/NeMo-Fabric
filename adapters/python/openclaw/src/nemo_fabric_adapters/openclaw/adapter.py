@@ -1610,10 +1610,14 @@ class OpenClawRuntime:
                         metadata={"detail": detail[-2000:]},
                     )
                 try:
-                    response = await client.get(f"http://127.0.0.1:{port}/startupz")
+                    # A request can't outlast the startup deadline.
+                    response = await asyncio.wait_for(
+                        client.get(f"http://127.0.0.1:{port}/startupz"),
+                        timeout=deadline - asyncio.get_running_loop().time(),
+                    )
                     if response.status_code == 200:
                         return
-                except httpx.RequestError:
+                except (httpx.RequestError, TimeoutError):
                     pass
                 await asyncio.sleep(0.05)
         raise lifecycle.LifecycleError(
