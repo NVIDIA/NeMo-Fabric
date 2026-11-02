@@ -110,9 +110,11 @@ live. It can list the runtime's thread, whose ID is in
 open it: the ACP session holds that thread while the runtime runs, and `dcode`
 refuses to resume a thread open elsewhere.
 
-- The launcher holds paths and switches, never secrets. The terminal UI reads
-  the model key from the launching environment under the configured variable
-  name, unless the endpoint needs no key.
+- The launcher holds paths and switches, never secrets, and doesn't pass on
+  the runtime environment's variables. Set the model key, under the configured
+  variable name unless the endpoint needs no key, and any proxy or certificate
+  variables, such as `HTTPS_PROXY` and `SSL_CERT_FILE`, in the environment that
+  runs the launcher.
 - The terminal UI uses `dcode`'s own approval behavior, not `approval_mode`.
 - After the ACP session starts, the adapter writes `interfaces/terminal.running`;
   `stop` removes it before stopping `dcode`. The launcher refuses to start
