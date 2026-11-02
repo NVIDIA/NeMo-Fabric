@@ -2403,7 +2403,7 @@ fn validate_names(field: &str, names: &[String]) -> Result<()> {
 }
 
 /// Whether a name can be one path component on every platform Fabric runs on.
-fn is_one_folder_name(name: &str) -> bool {
+pub(crate) fn is_one_folder_name(name: &str) -> bool {
     !name.trim().is_empty() && name != "." && name != ".." && !name.contains(['/', '\\'])
 }
 
@@ -2654,6 +2654,17 @@ fn resolve_selected_descriptors(
     )?;
     let resolution = resolve_resolution(&config, descriptor)?;
     let environment_plan = resolve_environment_plan(&config, &base_dir);
+    if config.runtime.keep_state
+        && config.runtime.artifacts.is_none()
+        && environment_plan
+            .as_ref()
+            .is_none_or(|environment| environment.artifacts.is_none())
+    {
+        return invalid_config(
+            "runtime.keep_state",
+            "requires an artifact directory, from runtime.artifacts or environment.artifacts",
+        );
+    }
     validate_control_location(descriptor, environment_plan.as_ref())?;
     let capability_plan = resolve_capability_plan(&config, &base_dir, adapter_descriptor.as_ref());
     if enforce_compatibility {

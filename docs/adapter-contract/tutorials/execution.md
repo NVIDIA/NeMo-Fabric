@@ -131,7 +131,7 @@ value:
 | `artifacts` | Lists artifacts visible when the operation begins. |
 | `telemetry` | Supplies invocation telemetry context, including generated Relay configuration when enabled. |
 | `deadline_millis` | Gives the Unix time in milliseconds by which an invocation should return. NeMo Fabric's own invocation timeout fires shortly after and kills the host with its descendant processes; the gap is shorter for very short timeouts. Keep cleanup after the deadline brief, or the invocation fails with `host_timeout` instead of returning the adapter's result. |
-| `state_dir` | Present when the config sets `runtime.keep_state` and the adapter accepts it. Gives an absolute folder, `<artifact root>/.fabric/state/<adapter id>/<agent name>`, that every runtime of the agent receives. Keep the harness's native state there instead of in a per-runtime folder. NeMo Fabric creates the folder, fails `start` while another runtime holds it, and never deletes it. |
+| `state_dir` | Present when the config sets `runtime.keep_state` and the adapter accepts it. Gives an absolute folder, `<artifact root>/.fabric/state/<adapter id>/<agent name>`, that every runtime of the agent receives. Keep the harness's native state there instead of in a per-runtime folder. A service and the one runtime connected to it at a time receive the same folder. NeMo Fabric creates the folder, fails `start` while another runtime holds it, and never deletes it. |
 
 Use the canonical
 [`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/runtime-context.schema.json)

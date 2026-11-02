@@ -25,10 +25,10 @@ use crate::agent_execution::{
 };
 use crate::config::{
     AdapterKind, AgentConfig, CapabilityPlan, CapabilityTarget, ControlLocation,
-    EnvironmentOwnership, RunPlan, TelemetryPlan, validate_adapter_config_compatibility,
-    validate_agent_config_extensions, validate_agent_run_request_extensions,
-    validate_agent_run_result_extensions, validate_config, validate_harness_settings,
-    validate_tool_definitions, validate_workflow,
+    EnvironmentOwnership, RunPlan, TelemetryPlan, is_one_folder_name,
+    validate_adapter_config_compatibility, validate_agent_config_extensions,
+    validate_agent_run_request_extensions, validate_agent_run_result_extensions, validate_config,
+    validate_harness_settings, validate_tool_definitions, validate_workflow,
 };
 use crate::environment::resolve_environment_provider;
 use crate::error::{FabricError, Result};
@@ -898,6 +898,7 @@ struct LocalAdapterHost {
     // Adapter startup values stay in memory, never in a serialized handle or plan.
     environment_env: BTreeMap<String, String>,
     // Held while the host runs; dropping the host releases the agent's state folder.
+    // A service host holds it for the runtimes connected to the service.
     _state_lock: Option<File>,
 }
 
@@ -1039,6 +1040,13 @@ pub fn start_runtime_with_service(
         return Err(FabricError::ServiceNotActive {
             service_id: service.service_id.clone(),
         });
+    }
+    // The service host holds the agent's state lock for its connected
+    // runtimes, so only one of them may run at a time.
+    if !record.active_runtime_ids.is_empty()
+        && let Some(path) = agent_state_dir(plan, &record.host.artifacts)?
+    {
+        return Err(FabricError::StateInUse { path });
     }
     let mut current_env = record.host.environment_env.clone();
     resolve_named_environment(plan, &mut current_env)?;
@@ -2657,7 +2665,12 @@ fn spawn_local_host(
     relay_config: Option<RelayRuntimeConfig>,
     environment_env: BTreeMap<String, String>,
 ) -> Result<LocalAdapterHost> {
-    let state_lock = lock_agent_state(plan, &artifacts)?;
+    // A runtime connected to a service uses the lock its service host holds.
+    let state_lock = if runtime.service_id.is_none() {
+        lock_agent_state(plan, &artifacts)?
+    } else {
+        None
+    };
     let runtime_dir = local_host_directory(&runtime.runtime_id);
     std::fs::create_dir_all(&runtime_dir).map_err(|source| FabricError::Write {
         path: runtime_dir.clone(),
@@ -3507,6 +3520,13 @@ fn agent_state_dir(plan: &RunPlan, artifacts: &ArtifactManifest) -> Result<Optio
                 .to_string(),
         });
     };
+    // A deserialized plan can carry any agent name, so check it again here.
+    if !is_one_folder_name(&plan.agent_name) {
+        return Err(FabricError::InvalidConfig {
+            field: "agent_name".to_string(),
+            reason: "must be one folder name when runtime.keep_state is set".to_string(),
+        });
+    }
     let adapter = adapter_id(plan).unwrap_or_else(|| harness(plan));
     absolute_path(
         root.join(".fabric")
@@ -4939,6 +4959,9 @@ for line in sys.stdin:
         let mut not_accepted = plain.config;
         not_accepted.runtime.keep_state = true;
         let mut cases = vec![(&plain_root, not_accepted, "runtime.keep_state")];
+        let mut without_artifacts = accepting.config.clone();
+        without_artifacts.runtime.artifacts = None;
+        cases.push((&root, without_artifacts, "runtime.keep_state"));
         for name in ["..", "a/b", "a\\b"] {
             let mut config = accepting.config.clone();
             config.metadata.name = name.to_string();
@@ -4952,6 +4975,41 @@ for line in sys.stdin:
         }
         let _ = fs::remove_dir_all(root);
         let _ = fs::remove_dir_all(plain_root);
+    }
+
+    #[test]
+    fn keep_state_rejects_a_run_plan_whose_agent_name_leaves_the_state_folder() {
+        let (root, mut plan) = local_host_plan_keeping_state();
+        plan.agent_name = "../../outside".to_string();
+
+        let error = start_runtime(&plan).expect_err("an agent name with .. must not start");
+        assert!(
+            matches!(&error, FabricError::InvalidConfig { field, .. } if field == "agent_name"),
+            "{error}"
+        );
+        assert!(!root.join("artifacts/.fabric/outside").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn keep_state_lets_a_service_and_one_connected_runtime_use_the_state_folder() {
+        let (root, plan) = local_host_plan_keeping_state();
+        let service = prepare_service(&plan).expect("prepare service");
+
+        let first = start_runtime_with_service(&plan, &service).expect("first connected runtime");
+        let error = start_runtime_with_service(&plan, &service)
+            .expect_err("a second connected runtime must not share the folder");
+        assert!(matches!(error, FabricError::StateInUse { .. }), "{error}");
+        let error = start_runtime(&plan).expect_err("an independent runtime must not share it");
+        assert!(matches!(error, FabricError::StateInUse { .. }), "{error}");
+        stop_runtime(&plan, &first).expect("stop first runtime");
+        let second = start_runtime_with_service(&plan, &service)
+            .expect("connect once the first runtime stopped");
+        stop_runtime(&plan, &second).expect("stop second runtime");
+        release_service(&plan, &service).expect("release service");
+        let independent = start_runtime(&plan).expect("start once the service is released");
+        stop_runtime(&plan, &independent).expect("stop independent runtime");
+        let _ = fs::remove_dir_all(root);
     }
 
     fn local_host_plan_with_env_name(name: &str) -> (PathBuf, RunPlan) {
