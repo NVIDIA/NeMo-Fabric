@@ -112,6 +112,10 @@ class HermesRuntime:
                 runtime_context, common_utils.base_dir(payload)
             )
             self._hermes_home.mkdir(parents=True, exist_ok=True)
+            # A runtime that ended without stop can leave its API token in a
+            # kept Hermes home, for a server that no longer runs.
+            token_path = self._hermes_home / "interfaces" / "api.token"
+            token_path.unlink(missing_ok=True)
             os.environ["HOME"] = str(self._hermes_home)
             os.environ["HERMES_HOME"] = str(self._hermes_home)
             os.environ.setdefault("HERMES_YOLO_MODE", "1")
@@ -234,7 +238,7 @@ class HermesRuntime:
                 await self._interfaces.start(
                     interface_ports,
                     hermes_home=self._hermes_home,
-                    token_path=self._hermes_home / "interfaces" / "api.token",
+                    token_path=token_path,
                     timeout=interfaces.startup_timeout(self._settings),
                     environment=environment,
                 )
