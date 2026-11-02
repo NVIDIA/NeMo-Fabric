@@ -176,34 +176,56 @@ async def test_sdk_preflight_rejection_does_not_consume_lifecycle(
     assert "PRIVATE" not in str(response)
 
 
-async def test_failed_start_names_the_runtime_error_code_without_its_message(
-    host, host_request, mock_fabric
+FAILURE_MESSAGES = {
+    "start": "Fabric could not establish an active runtime.",
+    "invoke": "Fabric did not report a successful invocation.",
+    "stop": "Fabric could not complete the stop operation.",
+}
+
+
+async def fail_operation(
+    host, host_request, mock_fabric, mock_runtime, operation, error
 ):
-    mock_fabric.start_runtime.side_effect = FabricRuntimeError(
-        "adapter lifecycle start failed: PRIVATE",
-        stage="start",
+    if operation == "start":
+        mock_fabric.start_runtime.side_effect = error
+        return await host.handle(host_request("start"))
+    await host.handle(host_request("start"))
+    getattr(mock_runtime, operation).side_effect = error
+    fields = {"input": {}} if operation == "invoke" else {}
+    return await host.handle(host_request(operation, **fields))
+
+
+@pytest.mark.parametrize("operation", ["start", "invoke", "stop"])
+async def test_failed_operation_names_the_runtime_error_code_without_its_message(
+    host, host_request, mock_fabric, mock_runtime, operation
+):
+    error = FabricRuntimeError(
+        f"adapter lifecycle {operation} failed: PRIVATE",
+        stage=operation,
         code="openclaw_gateway_start_timeout",
     )
-    response = await host.handle(host_request("start"))
-    assert response["error"]["code"] == "start_failed"
+    response = await fail_operation(
+        host, host_request, mock_fabric, mock_runtime, operation, error
+    )
+    assert response["error"]["code"] == f"{operation}_failed"
     assert response["error"]["message"] == (
-        "Fabric could not establish an active runtime. "
-        "Cause: openclaw_gateway_start_timeout."
+        f"{FAILURE_MESSAGES[operation]} Cause: openclaw_gateway_start_timeout."
     )
     assert "PRIVATE" not in str(response)
 
 
+@pytest.mark.parametrize("operation", ["start", "invoke", "stop"])
 @pytest.mark.parametrize("code", ["PRIVATE value", "x" * 65])
-async def test_failed_start_omits_a_cause_that_is_not_an_identifier(
-    host, host_request, mock_fabric, code
+async def test_failed_operation_omits_a_cause_that_is_not_an_identifier(
+    host, host_request, mock_fabric, mock_runtime, operation, code
 ):
-    mock_fabric.start_runtime.side_effect = FabricRuntimeError(
-        "failed", stage="start", code=code
+    error = FabricRuntimeError("failed", stage=operation, code=code)
+    response = await fail_operation(
+        host, host_request, mock_fabric, mock_runtime, operation, error
     )
-    response = await host.handle(host_request("start"))
-    assert response["error"]["message"] == (
-        "Fabric could not establish an active runtime."
-    )
+    assert response["error"]["code"] == f"{operation}_failed"
+    assert response["error"]["message"] == FAILURE_MESSAGES[operation]
+    assert "PRIVATE" not in str(response)
 
 
 async def test_uncertain_start_consumes_lifecycle_without_replay(
