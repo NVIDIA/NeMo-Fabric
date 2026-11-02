@@ -48,6 +48,8 @@ The API server binds to `127.0.0.1` at its configured port. After every enabled 
 <Hermes home>/interfaces/api.token
 ```
 
+Before starting Hermes, the adapter removes any API token left by an earlier runtime.
+
 Clients calling the native API must read the generated token file and include `Authorization: Bearer <token>` in each HTTP request. Only the API gateway child receives it in its environment. Processes running as the runtime's user, including agent tools, can read the token file.
 
 This token authenticates access to the API gateway. It is distinct from the model-provider API key and the TUI backend credential used by dashboard and terminal clients. API clients share the per-start token; it does not provide per-user isolation.

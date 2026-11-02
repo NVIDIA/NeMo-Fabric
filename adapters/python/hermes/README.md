@@ -151,7 +151,7 @@ harness = HarnessConfig(
 
 Managed native processes use the adapter's launcher to apply explicit instructions and behavioral settings before constructing agents. Explicit enabled tools, including an empty list, override native selection; a nonempty blocked list overrides native exclusions. Unspecified tool policies can differ between SDK and native paths.
 
-The runtime home is `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. The adapter writes native configuration and optional NeMo Relay plugin configuration there. When native interfaces are enabled, an owner-only `interfaces/agent-config.json` snapshot supplies the constructor mapping and is removed on stop. Model credentials are provided through child environments rather than public attachment metadata.
+The default Hermes home is `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. With `runtime.keep_state`, the adapter uses the agent state folder described in the [Hermes guide](../../../docs/integrations/harness/hermes/hermes.mdx#state-and-session-boundaries). The adapter writes native configuration and optional NeMo Relay plugin configuration there. When native interfaces are enabled, an owner-only `interfaces/agent-config.json` snapshot supplies the constructor mapping and is removed on stop. Model credentials are provided through child environments rather than public attachment metadata.
 
 The adapter leaves the installed Hermes source unchanged. Independently started processes do not automatically receive its mapping. Refer to [Shared Configuration and Ownership](../../../docs/integrations/harness/hermes/hermes.mdx#shared-configuration-and-ownership) for precedence and managed API gateway scope.
 
