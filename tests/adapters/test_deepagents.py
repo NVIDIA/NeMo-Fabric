@@ -25,6 +25,9 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
+from langchain_core.messages import ToolMessage
+from langchain_core.tools import StructuredTool
+from langchain_core.tools import ToolException
 from langchain_openai import ChatOpenAI as InstalledChatOpenAI
 from langgraph.errors import GraphRecursionError
 from nemo_fabric_adapter_contract.codec import ContractValidationError
@@ -37,6 +40,7 @@ from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import McpOAuth2Config
 from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
+from pydantic import create_model
 from nemo_fabric_adapters.deepagents import adapter  # noqa: E402
 
 
@@ -2072,6 +2076,65 @@ async def test_mcp_servers_become_adapter_tools(
     }
     tool_names = [tool.name for tool in fake_sdks["create_kwargs"]["tools"]]
     assert tool_names == ["read_file", "write_file"]
+    assert tool_read.handle_tool_error is True
+    assert tool_write.handle_validation_error is True
+
+
+@pytest.mark.parametrize("failure", ["mcp", "validation", "transport"])
+async def test_mcp_tool_errors_are_feedback_without_automatic_retries(
+    tmp_path, make_payload, monkeypatch, failure
+):
+    mock_call = AsyncMock(return_value=("corrected", None))
+    if failure == "mcp":
+        mock_call.side_effect = ToolException("Missing required command argument")
+    elif failure == "transport":
+        mock_call.side_effect = RuntimeError("Connection lost")
+    schema = (
+        create_model("CommandArguments", command=(str, ...))
+        if failure == "validation"
+        else {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"],
+        }
+    )
+    tool = StructuredTool(
+        name="run_command",
+        description="Test command tool",
+        args_schema=schema,
+        coroutine=mock_call,
+        response_format="content_and_artifact",
+    )
+    mock_client = MagicMock()
+    mock_client.get_tools = AsyncMock(return_value=[tool])
+    monkeypatch.setattr(
+        "langchain_mcp_adapters.client.MultiServerMCPClient",
+        MagicMock(return_value=mock_client),
+    )
+    config = make_payload(tmp_path)["config"]
+    config["mcp"] = {"servers": {"commands": {"transport": "stdio", "url": "unused"}}}
+    tools = await adapter.resolve_tools(AgentConfig.from_mapping(config))
+    call = {"name": "run_command", "args": {}, "id": "invalid", "type": "tool_call"}
+    if failure == "transport":
+        with pytest.raises(RuntimeError, match="Connection lost"):
+            await tools[0].ainvoke(call)
+        mock_call.assert_awaited_once()
+        return
+    feedback = await tools[0].ainvoke(call)
+    assert isinstance(feedback, ToolMessage)
+    assert feedback.status == "error"
+    assert feedback.tool_call_id == "invalid"
+    if failure == "validation":
+        mock_call.assert_not_awaited()
+    else:
+        mock_call.assert_awaited_once()
+    mock_call.side_effect = None
+    corrected = await tools[0].ainvoke(
+        {**call, "args": {"command": "printf corrected"}, "id": "corrected"}
+    )
+    assert corrected.status == "success"
+    assert corrected.content == "corrected"
+    assert mock_call.await_count == (1 if failure == "validation" else 2)
 
 
 @pytest.mark.parametrize(

@@ -387,7 +387,13 @@ async def _mcp_tools(config: AgentConfig) -> list[Any]:
     from langchain_mcp_adapters.client import MultiServerMCPClient
 
     client = MultiServerMCPClient(connections)
-    return list(await client.get_tools())
+    tools = list(await client.get_tools())
+    for tool in tools:
+        # MCP isError results become ToolException, not graph-fatal failures.
+        # Return them as tool feedback; never replay a call automatically.
+        tool.handle_tool_error = True
+        tool.handle_validation_error = True
+    return tools
 
 
 def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
