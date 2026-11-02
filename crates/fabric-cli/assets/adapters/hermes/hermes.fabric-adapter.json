@@ -106,7 +106,7 @@
         "exclusiveMinimum": 0,
         "maximum": 75,
         "default": 60,
-        "description": "Time for every enabled interface to pass its health check, within NeMo Fabric's 90-second start limit."
+        "description": "Time from the start of the runtime for every enabled interface to pass its health check, within NeMo Fabric's 90-second start limit."
       }
     },
     "required": [],

@@ -81,6 +81,9 @@ class HermesRuntime:
             )
 
         self._stopping = False
+        # startup_timeout_seconds bounds all of start, so Fabric's start limit
+        # can't expire first.
+        started_at = asyncio.get_running_loop().time()
         try:
             agent_config = payload.get("config")
             if not isinstance(agent_config, AgentConfig):
@@ -239,7 +242,11 @@ class HermesRuntime:
                     interface_ports,
                     hermes_home=self._hermes_home,
                     token_path=self._hermes_home / "interfaces" / "api.token",
-                    timeout=interfaces.startup_timeout(self._settings),
+                    timeout=max(
+                        interfaces.startup_timeout(self._settings)
+                        - (asyncio.get_running_loop().time() - started_at),
+                        0.0,
+                    ),
                     environment=environment,
                 )
             self._agent_config = agent_config

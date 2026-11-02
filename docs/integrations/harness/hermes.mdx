@@ -122,14 +122,18 @@ harness = HarnessConfig(
 )
 ```
 
-- The adapter starts `python -m hermes_cli.main gateway run`, with only the API
-  server enabled, and `python -m hermes_cli.main dashboard --skip-build
-  --isolated`, on the adapter's interpreter and the runtime's Hermes home, each
-  on `127.0.0.1` at its port. Each must pass its health check, `GET /health` or
+- The adapter starts `python -m hermes_cli.main gateway run` for the API server
+  and `python -m hermes_cli.main dashboard --skip-build --isolated`, on the
+  adapter's interpreter and the runtime's Hermes home, each on `127.0.0.1` at
+  its port. Each must pass its health check, `GET /health` or
   `GET /api/status`, within `startup_timeout_seconds` (60 by default, at most
-  75). `start` fails if a port is in use or a child exits first; a failed
+  75) of the runtime's start. `start` fails if a port is in use or a child exits first; a failed
   start stops the children it started and leaves no token. Set `enabled` to
   `false` to keep a configured interface off.
+- The children inherit the adapter host's environment without its
+  `API_SERVER_*` variables. The gateway also starts any other Hermes platform
+  that this environment configures, such as Telegram with `TELEGRAM_BOT_TOKEN`
+  or webhooks with `WEBHOOK_ENABLED`.
 - Once every enabled interface passes, the adapter writes the API server's
   bearer token, generated at each start, to
   `<artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/api.token`
