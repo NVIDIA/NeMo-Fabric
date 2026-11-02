@@ -139,7 +139,8 @@ harness = HarnessConfig(
 - After the Gateway starts, the adapter writes the sign-in token, generated at
   each start, to
   `<artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token`
-  with mode `0600`. `stop` removes it; if the adapter host is killed, the file
+  with mode `0600` on POSIX hosts; on Windows, the file inherits the artifact
+  root's permissions. `stop` removes it; if the adapter host is killed, the file
   can remain.
 - Open `http://127.0.0.1:<port>/#token=<token>` through a forward to that
   port to sign in. The Control UI removes the token from the address bar.

@@ -11,7 +11,11 @@ from pathlib import Path
 
 
 def write_private_file(path: Path, payload: str) -> None:
-    """Atomically write an owner-only file in an owner-only directory."""
+    """Atomically write an owner-only file in an owner-only directory.
+
+    On Windows, chmod sets only the read-only flag, so the file inherits the
+    directory's permissions.
+    """
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(path.parent, 0o700)
     descriptor, temporary_name = tempfile.mkstemp(
