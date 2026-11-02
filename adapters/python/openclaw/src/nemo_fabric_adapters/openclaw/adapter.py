@@ -1793,12 +1793,14 @@ class OpenClawRuntime:
                 except (TimeoutError, asyncio.CancelledError) as error:
                     if isinstance(error, asyncio.CancelledError):
                         cancellation = cancellation or error
-                    if os.name == "nt":
-                        process.kill()
-                    else:
-                        common_utils.signal_process_group(
-                            process.pid, signal.SIGKILL
-                        )
+                    # A reaped Gateway's PID can belong to another process.
+                    if process.returncode is None:
+                        if os.name == "nt":
+                            process.kill()
+                        else:
+                            common_utils.signal_process_group(
+                                process.pid, signal.SIGKILL
+                            )
                     try:
                         await process.wait()
                     except asyncio.CancelledError as error:
