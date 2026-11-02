@@ -942,7 +942,7 @@
             },
             "startup_timeout_seconds": {
               "default": 60,
-              "description": "Time for every enabled interface to pass its health check, within NeMo Fabric's 90-second start limit.",
+              "description": "Time from the start of the runtime for every enabled interface to pass its health check, within NeMo Fabric's 90-second start limit.",
               "exclusiveMinimum": 0,
               "maximum": 75,
               "type": "number"
@@ -974,7 +974,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.7.0"
       },
-      "sha256": "25e791ea0eaa1fc38120afb1dfe874e7627a0316e44f10bc4c979d4890d4e9a0",
+      "sha256": "4f5a4c237d9f1da355b1288d90b4749ac48ba67d14e795eab4e079ff917acc6e",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {

@@ -161,20 +161,23 @@ def mock_api_server(port: int) -> Iterator[str]:
         app.state.chat_authorization_headers.append(
             request.headers.get("authorization")
         )
+        # Read the scenario before the delay, so a later /_scenario or /_reset
+        # doesn't change this response.
+        status_code = app.state.status_code
+        tool_call = next_tool_call(payload) if status_code == 200 else None
         if app.state.delay_seconds:
             await asyncio.sleep(app.state.delay_seconds)
-        if app.state.status_code != 200:
+        if status_code != 200:
             return JSONResponse(
-                status_code=app.state.status_code,
+                status_code=status_code,
                 content={
                     "error": {
-                        "message": f"configured status {app.state.status_code}",
+                        "message": f"configured status {status_code}",
                         "type": "api_error",
                     }
                 },
             )
 
-        tool_call = next_tool_call(payload)
         if tool_call is not None:
             if payload.get("stream") is True:
                 return StreamingResponse(

@@ -118,17 +118,25 @@ class InterfaceChildren:
         token_path, self._token_path = self._token_path, None
         if token_path is not None:
             token_path.unlink(missing_ok=True)
-        children, self._children = self._children, []
-        running = [child for child in children if child.process.returncode is None]
-        for child in running:
-            common_utils.signal_process_group(child.process.pid, signal.SIGTERM)
-        if running:
-            waits = [asyncio.ensure_future(child.process.wait()) for child in running]
-            _, pending = await asyncio.wait(waits, timeout=STOP_GRACE_SECONDS)
+        running = [
+            child for child in self._children if child.process.returncode is None
+        ]
+        pending: set[asyncio.Future[int]] = set()
+        try:
+            for child in running:
+                common_utils.signal_process_group(child.process.pid, signal.SIGTERM)
+            if running:
+                waits = [
+                    asyncio.ensure_future(child.process.wait()) for child in running
+                ]
+                _, pending = await asyncio.wait(waits, timeout=STOP_GRACE_SECONDS)
+        finally:
+            # Runs even when stop is cancelled, so no child outlives the runtime.
             for child in running:
                 common_utils.signal_process_group(child.process.pid, signal.SIGKILL)
-            if pending:
-                await asyncio.wait(pending)
+            self._children = []
+        if pending:
+            await asyncio.wait(pending)
 
 
 def _web_dist() -> Path:

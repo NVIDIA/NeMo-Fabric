@@ -235,8 +235,17 @@ async def test_hermes_stop_cuts_off_an_in_flight_api_request(
             timeout=90,
         )
     )
-    while not requests.get(f"{api_server}/_requests", timeout=5).json():
-        await asyncio.sleep(0.1)
+    try:
+        deadline = time.monotonic() + 30
+        while not requests.get(f"{api_server}/_requests", timeout=5).json():
+            assert time.monotonic() < deadline, (
+                "the API request never reached the model"
+            )
+            await asyncio.sleep(0.1)
+    except BaseException:
+        await runtime.stop()
+        in_flight.cancel()
+        raise
 
     started = time.monotonic()
     await runtime.stop()
@@ -290,6 +299,109 @@ async def test_hermes_failed_interface_start_removes_a_token_left_in_kept_state(
 
     assert caught.value.code == "hermes_interface_port_unavailable"
     assert not stale_token.exists()
+
+
+def test_hermes_disabled_interface_is_not_started():
+    settings = {
+        "interfaces": {
+            "api": {"port": 8642, "enabled": False},
+            "dashboard": {"port": 9119},
+        }
+    }
+
+    assert interfaces.interface_ports(settings) == {"dashboard": 9119}
+
+
+async def test_hermes_interface_startup_timeout_counts_from_the_start_of_start(
+    tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch
+):
+    write_hermes_config = configuration.write_hermes_config
+    timeouts: list[float] = []
+
+    def slow_write_hermes_config(*args, **kwargs):
+        time.sleep(0.5)
+        return write_hermes_config(*args, **kwargs)
+
+    async def record_start(self, ports, *, timeout, **kwargs):
+        timeouts.append(timeout)
+
+    monkeypatch.setattr(configuration, "write_hermes_config", slow_write_hermes_config)
+    monkeypatch.setattr(interfaces.InterfaceChildren, "start", record_start)
+    runtime = adapter.HermesRuntime()
+    await runtime.start(
+        _payload(
+            tmp_path,
+            {"startup_timeout_seconds": 5, "interfaces": {"api": {"port": 8642}}},
+            base_url=f"{api_server}/v1",
+        )
+    )
+    await runtime.stop()
+
+    assert len(timeouts) == 1
+    assert timeouts[0] <= 4.5
+
+
+async def test_hermes_interface_start_timeout_stops_the_started_child(
+    tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch
+):
+    create_subprocess_exec = asyncio.create_subprocess_exec
+    processes: list[asyncio.subprocess.Process] = []
+
+    async def record_process(*args, **kwargs):
+        process = await create_subprocess_exec(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(interfaces.asyncio, "create_subprocess_exec", record_process)
+    runtime = adapter.HermesRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(
+            _payload(
+                tmp_path,
+                {
+                    "startup_timeout_seconds": 0.001,
+                    "interfaces": {"api": {"port": _free_port()}},
+                },
+                base_url=f"{api_server}/v1",
+            )
+        )
+
+    assert caught.value.code == "hermes_interface_start_timeout"
+    assert len(processes) == 1
+    assert processes[0].returncode is not None
+    assert not runtime._interfaces._children
+    assert not _token_path(tmp_path).exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Uses POSIX process groups")
+async def test_hermes_cancelled_interface_stop_still_kills_a_child_that_ignores_sigterm():
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        "import signal, time\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        "print('ready', flush=True)\n"
+        "time.sleep(60)\n",
+        stdout=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        assert await process.stdout.readline() == b"ready\n"
+        children = interfaces.InterfaceChildren()
+        children._children.append(interfaces._Child("api", 0, process))
+
+        stopping = asyncio.create_task(children.stop())
+        await asyncio.sleep(0.5)
+        stopping.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await stopping
+
+        assert await asyncio.wait_for(process.wait(), timeout=2) is not None
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
 
 
 async def test_hermes_dashboard_without_a_built_frontend_fails_start(
