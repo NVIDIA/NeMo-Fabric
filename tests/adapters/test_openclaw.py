@@ -1426,6 +1426,74 @@ async def test_openclaw_dashboard_serves_control_ui_with_a_token_file(
     assert not token_path.exists()
 
 
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "win32"},
+    reason="Starts the mock Gateway, which CI runs only on Linux",
+)
+async def test_openclaw_dashboard_disabled_serves_no_control_ui(
+    mock_openclaw: Path, tmp_path: Path, dashboard_port: int
+):
+    capture = tmp_path / "config.json"
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(capture)
+    runtime = adapter.OpenClawRuntime()
+
+    await runtime.start(
+        {
+            "config": _dashboard_config(
+                mock_openclaw, {"port": dashboard_port, "enabled": False}
+            ),
+            "runtime_context": _context(tmp_path).to_mapping(),
+            "base_dir": str(tmp_path),
+        }
+    )
+    try:
+        gateway_port = runtime._port
+        token_exists = _dashboard_token(tmp_path).exists()
+    finally:
+        await runtime.stop()
+
+    generated = json.loads(capture.read_text(encoding="utf-8"))
+    assert generated["gateway"]["controlUi"] == {"enabled": False}
+    assert gateway_port != dashboard_port
+    assert not token_exists
+
+
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "win32"},
+    reason="Starts the mock Gateway, which CI runs only on Linux",
+)
+async def test_openclaw_dashboard_removes_the_token_when_start_fails_after_writing_it(
+    mock_openclaw: Path,
+    tmp_path: Path,
+    dashboard_port: int,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    token_path = _dashboard_token(tmp_path)
+    token_written: list[bool] = []
+
+    # Start reads the HTTP read timeout only after it writes the token.
+    def fail_after_token_write(_settings):
+        token_written.append(token_path.exists())
+        raise RuntimeError("start failed after writing the token")
+
+    monkeypatch.setattr(adapter, "_read_timeout", fail_after_token_write)
+    runtime = adapter.OpenClawRuntime()
+
+    with pytest.raises(RuntimeError, match="after writing the token"):
+        await runtime.start(
+            {
+                "config": _dashboard_config(mock_openclaw, {"port": dashboard_port}),
+                "runtime_context": _context(tmp_path).to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+
+    assert token_written == [True]
+    assert not token_path.exists()
+    assert runtime._process is None
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock openclaw script directly")
 @pytest.mark.parametrize("offset", [0, 2])
 async def test_openclaw_dashboard_port_in_use_fails_start(
@@ -1476,12 +1544,15 @@ async def test_openclaw_services_reject_interfaces(
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock openclaw script directly")
 async def test_openclaw_startup_timeout_bounds_all_of_start(
-    mock_openclaw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    mock_openclaw: Path,
+    tmp_path: Path,
+    dashboard_port: int,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     # Each command finishes within the timeout, but the two together don't.
     monkeypatch.setenv("FAKE_OPENCLAW_COMMAND_DELAY", "0.6")
     monkeypatch.setenv("FAKE_OPENCLAW_CAPTURE", str(tmp_path / "config.json"))
-    config = _config(mock_openclaw)
+    config = _dashboard_config(mock_openclaw, {"port": dashboard_port})
     assert config.harness is not None
     config.harness.settings["startup_timeout_seconds"] = 1
     runtime = adapter.OpenClawRuntime()
@@ -1497,6 +1568,7 @@ async def test_openclaw_startup_timeout_bounds_all_of_start(
 
     assert caught.value.code == "openclaw_command_timeout"
     assert runtime._process is None
+    assert not (tmp_path / "artifacts").exists()
 
 
 @pytest.mark.skipif(
@@ -1522,9 +1594,98 @@ async def test_openclaw_stop_ends_the_gateway_where_group_signals_are_denied(
         raise PermissionError(1, "Operation not permitted")
 
     monkeypatch.setattr(os, "killpg", deny_group_signals)
+    try:
+        await runtime.stop()
+
+        assert gateway.returncode is not None
+    finally:
+        if gateway.returncode is None:
+            gateway.kill()
+            await gateway.wait()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+async def test_openclaw_stop_kills_a_gateway_that_ignores_sigterm_where_group_signals_are_denied(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = adapter.OpenClawRuntime()
+    runtime._shutdown_timeout = 0.01
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.pid = 1234
+    mock_process.returncode = None
+    wait_calls = 0
+
+    async def wait_for_process():
+        nonlocal wait_calls
+        wait_calls += 1
+        if wait_calls == 1:
+            await asyncio.Event().wait()
+
+    mock_process.wait = AsyncMock(side_effect=wait_for_process)
+    runtime._process = mock_process
+    signals: list[tuple[int, int]] = []
+
+    def deny_group_signals(_pgid: int, _signum: int) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(adapter.os, "killpg", deny_group_signals)
+    monkeypatch.setattr(
+        adapter.os, "kill", lambda pid, signum: signals.append((pid, signum))
+    )
+
     await runtime.stop()
 
-    assert gateway.returncode is not None
+    assert signals == [(1234, signal.SIGTERM), (1234, signal.SIGKILL)]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+async def test_openclaw_stop_does_not_kill_a_gateway_that_exited_during_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.pid = 1234
+    mock_process.returncode = None
+
+    async def exit_then_cancel():
+        mock_process.returncode = 0
+        raise asyncio.CancelledError
+
+    mock_process.wait = AsyncMock(side_effect=exit_then_cancel)
+    runtime._process = mock_process
+    signals: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        adapter.os, "killpg", lambda pid, signum: signals.append((pid, signum))
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await runtime.stop()
+
+    # Once the Gateway is reaped, its PID can belong to another process.
+    assert signals == [(1234, signal.SIGTERM)]
+
+
+async def test_openclaw_startup_deadline_bounds_a_pending_readiness_request():
+    async def never_respond(reader, _writer):
+        await reader.read()
+
+    server = await asyncio.start_server(never_respond, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = None
+    runtime._process = mock_process
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime._wait_started(port, "token", 0.2)
+    finally:
+        server.close()
+
+    assert caught.value.code == "openclaw_gateway_start_timeout"
+    # Each readiness request otherwise waits up to 1 second for a response.
+    assert loop.time() - started < 0.8
 
 
 @pytest.mark.parametrize("phase", ["client", "process", "logs"])
@@ -1774,6 +1935,35 @@ def test_openclaw_signal_handler_forwards_to_gateway_process_group(
         runtime._restore_signal_handlers()
 
     assert caught.value.code == 128 + signal.SIGTERM
+    assert forwarded == [(1234, signal.SIGTERM)]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX signal forwarding")
+def test_openclaw_signal_handler_forwards_to_gateway_where_group_signals_are_denied(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.pid = 1234
+    mock_process.returncode = None
+    runtime._process = mock_process
+    forwarded: list[tuple[int, int]] = []
+
+    def deny_group_signals(_pgid: int, _signum: int) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(adapter.os, "killpg", deny_group_signals)
+    monkeypatch.setattr(
+        adapter.os, "kill", lambda pid, signum: forwarded.append((pid, signum))
+    )
+
+    runtime._install_signal_handlers()
+    try:
+        with pytest.raises(SystemExit):
+            runtime._signal_handler(signal.SIGTERM, None)
+    finally:
+        runtime._restore_signal_handlers()
+
     assert forwarded == [(1234, signal.SIGTERM)]
 
 

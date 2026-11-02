@@ -145,6 +145,8 @@ async function terminateProcessTree(child: ChildProcessWithoutNullStreams, timeo
       if (code === "ESRCH") return;
       // OpenShell's sandbox denies signals to a process group; signal the agent itself.
       if (code !== "EPERM") throw error;
+      // Node reaps an exited agent, so its PID can belong to another process.
+      if (child.exitCode !== null || child.signalCode !== null) return;
       try {
         process.kill(pid, signal);
       } catch (fallbackError) {
