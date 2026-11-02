@@ -1442,11 +1442,13 @@ pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<Fabri
     validate_runtime_handle(plan, runtime)?;
     crate::check::invalidate_runtime(runtime);
     if uses_local_host(plan) {
-        let events = if runtime.environment.provider == "openshell" {
-            OpenShellRuntimeAdapter.stop(runtime)?
+        let stopped = if runtime.environment.provider == "openshell" {
+            OpenShellRuntimeAdapter.stop(runtime)
         } else {
-            LocalHostAdapter.stop(runtime)?
+            LocalHostAdapter.stop(runtime)
         };
+        // A failed stop still releases the runtime's host, so the service
+        // forgets the runtime either way.
         if let Some(service_id) = runtime.service_id.as_ref()
             && let Some(record) = local_services().get(service_id).cloned()
         {
@@ -1456,7 +1458,7 @@ pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<Fabri
                 .active_runtime_ids
                 .remove(&runtime.runtime_id);
         }
-        return Ok(events);
+        return stopped;
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
         harness: runtime.harness.clone(),
@@ -4952,7 +4954,11 @@ for line in sys.stdin:
     }
 
     fn local_host_plan_keeping_state() -> (PathBuf, RunPlan) {
-        let (root, plan) = local_host_plan("success");
+        local_host_plan_keeping_state_in("success")
+    }
+
+    fn local_host_plan_keeping_state_in(mode: &str) -> (PathBuf, RunPlan) {
+        let (root, plan) = local_host_plan(mode);
         let descriptor_path = root.join("adapters/local-host/local-host.fabric-adapter.json");
         let mut descriptor: Value = serde_json::from_str(
             &fs::read_to_string(&descriptor_path).expect("read adapter descriptor"),
@@ -5054,6 +5060,20 @@ for line in sys.stdin:
         release_service(&plan, &service).expect("release service");
         let independent = start_runtime(&plan).expect("start once the service is released");
         stop_runtime(&plan, &independent).expect("stop independent runtime");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn keep_state_lets_a_runtime_connect_after_another_failed_to_stop() {
+        let (root, plan) = local_host_plan_keeping_state_in("stop_failure");
+        let service = prepare_service(&plan).expect("prepare service");
+
+        let first = start_runtime_with_service(&plan, &service).expect("first connected runtime");
+        stop_runtime(&plan, &first).expect_err("the adapter fails its stop");
+        let second = start_runtime_with_service(&plan, &service)
+            .expect("connect once the first runtime's host is gone");
+        let _ = stop_runtime(&plan, &second);
+        let _ = release_service(&plan, &service);
         let _ = fs::remove_dir_all(root);
     }
 
