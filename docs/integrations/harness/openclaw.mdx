@@ -81,6 +81,11 @@ contains a directory is resolved from the NeMo Fabric base directory. The adapte
 uses the resolved executable for its version check, configuration validation,
 and Gateway startup.
 
+`startup_timeout_seconds` sets one deadline for all of start, from checking the
+`openclaw` command to the Gateway becoming ready. It defaults to 60 seconds and
+can be at most 75 seconds, which keeps start within NeMo Fabric's 90-second
+start limit.
+
 The adapter supports only OpenClaw's default `openclaw` agent runtime.
 
 The adapter accepts normalized model provider, model, base URL, temperature,
@@ -139,7 +144,8 @@ harness = HarnessConfig(
 - After the Gateway starts, the adapter writes the sign-in token, generated at
   each start, to
   `<artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token`
-  with mode `0600`. `stop` removes it; if the adapter host is killed, the file
+  with mode `0600` on POSIX hosts; on Windows, the file inherits the artifact
+  root's permissions. `stop` removes it; if the adapter host is killed, the file
   can remain.
 - Open `http://127.0.0.1:<port>/#token=<token>` through a forward to that
   port to sign in. The Control UI removes the token from the address bar.
