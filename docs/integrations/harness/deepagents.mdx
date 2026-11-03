@@ -99,10 +99,7 @@ the endpoint must support the selected value. Omit the setting to preserve the
 model default. Subagents inherit the setting when they inherit the main model;
 a subagent with its own `model` override uses that model's defaults.
 
-MCP-reported tool errors (`ToolException`) and argument validation failures return
-error tool messages to the model rather than aborting the invocation. The model
-can then correct a call. The adapter does not automatically retry or replay
-commands, and other exceptions still propagate.
+MCP-reported tool errors (`ToolException`) and argument validation failures return error tool messages to the model rather than aborting the invocation. Local argument-validation feedback includes field paths and reasons, such as `command: Field required`, without dumping argument payloads. The model can then correct a call. The adapter does not automatically retry or replay commands, and other exceptions still propagate.
 
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, replacement system instructions, blocked tools, and telemetry.

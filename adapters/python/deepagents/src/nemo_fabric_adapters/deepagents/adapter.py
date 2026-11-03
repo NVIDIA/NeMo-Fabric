@@ -382,6 +382,17 @@ def resolve_skills(config: AgentConfig) -> list[str] | None:
     return skills or None
 
 
+def _mcp_validation_feedback(error: ValidationError) -> str:
+    """Report field paths and validation reasons, not argument payloads."""
+    details = []
+    for detail in error.errors(
+        include_input=False, include_context=False, include_url=False
+    ):
+        path = ".".join(str(part) for part in detail["loc"]) or "arguments"
+        details.append(f"{path}: {detail['msg']}")
+    return "Tool input validation error: " + "; ".join(details)
+
+
 def _mcp_tool_coroutine(
     coroutine: Callable[..., Awaitable[Any]],
 ) -> Callable[..., Awaitable[Any]]:
@@ -414,7 +425,7 @@ async def _mcp_tools(config: AgentConfig) -> list[Any]:
         # Return them as tool feedback; never replay a call automatically.
         tool.coroutine = _mcp_tool_coroutine(tool.coroutine)
         tool.handle_tool_error = True
-        tool.handle_validation_error = True
+        tool.handle_validation_error = _mcp_validation_feedback
     return tools
 
 

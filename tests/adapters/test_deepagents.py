@@ -2084,10 +2084,12 @@ async def test_mcp_servers_become_adapter_tools(
     tool_names = [tool.name for tool in fake_sdks["create_kwargs"]["tools"]]
     assert tool_names == ["read_file", "write_file"]
     assert tool_read.handle_tool_error is True
-    assert tool_write.handle_validation_error is True
+    assert callable(tool_write.handle_validation_error)
 
 
-@pytest.mark.parametrize("failure", ["mcp", "validation", "transport"])
+@pytest.mark.parametrize(
+    "failure", ["mcp", "validation", "validation_type", "transport"]
+)
 async def test_mcp_tool_errors_are_feedback_without_automatic_retries(
     tmp_path, make_payload, monkeypatch, failure
 ):
@@ -2097,9 +2099,10 @@ async def test_mcp_tool_errors_are_feedback_without_automatic_retries(
         mock_call.side_effect = ToolException("Missing required command argument")
     elif failure == "transport":
         mock_call.side_effect = RuntimeError("Connection lost")
+    local_validation = failure in {"validation", "validation_type"}
     schema = (
         create_model("CommandArguments", command=(str, ...))
-        if failure == "validation"
+        if local_validation
         else {
             "type": "object",
             "properties": {"command": {"type": "string"}},
@@ -2123,6 +2126,8 @@ async def test_mcp_tool_errors_are_feedback_without_automatic_retries(
     config["mcp"] = {"servers": {"commands": {"transport": "stdio", "url": "unused"}}}
     tools = await adapter.resolve_tools(AgentConfig.from_mapping(config))
     call = {"name": "run_command", "args": {}, "id": "invalid", "type": "tool_call"}
+    if failure == "validation_type":
+        call["args"] = {"command": {"private": "do-not-echo-this-input"}}
     if failure == "transport":
         with pytest.raises(RuntimeError, match="Connection lost"):
             await tools[0].ainvoke(call)
@@ -2132,7 +2137,14 @@ async def test_mcp_tool_errors_are_feedback_without_automatic_retries(
     assert isinstance(feedback, ToolMessage)
     assert feedback.status == "error"
     assert feedback.tool_call_id == "invalid"
-    if failure == "validation":
+    if local_validation:
+        reason = (
+            "Field required"
+            if failure == "validation"
+            else "Input should be a valid string"
+        )
+        assert f"command: {reason}" in feedback.content
+        assert "do-not-echo-this-input" not in feedback.content
         mock_call.assert_not_awaited()
     else:
         mock_call.assert_awaited_once()
@@ -2142,7 +2154,7 @@ async def test_mcp_tool_errors_are_feedback_without_automatic_retries(
     )
     assert corrected.status == "success"
     assert corrected.content == "corrected"
-    assert mock_call.await_count == (1 if failure == "validation" else 2)
+    assert mock_call.await_count == (1 if local_validation else 2)
 
 
 @pytest.mark.parametrize("failure", ["mcp", "response_validation"])
