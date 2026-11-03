@@ -102,7 +102,8 @@ for (const [approvalMode, flags, permission] of [
     assert.match(first.output.response, new RegExp(`^permission:1:.*:permission=${permission}:`, "u"));
     assert.match(second.output.response, /^again:2:/u);
     assert.equal(first.extensions.session_id, second.extensions.session_id);
-    assert.deepEqual(checks.map((check) => check.outcome), ["passed", "passed", "passed"]);
+    // Only process liveness is observable, so only live is claimed.
+    assert.deepEqual(checks.map((check) => check.outcome), ["passed", "unsupported", "unsupported"]);
     assert.deepEqual((await readFile(join(directory, "arguments"), "utf8")).trim().split("\n"), flags);
     assert.equal(
       await readFile(join(directory, "environment"), "utf8"),

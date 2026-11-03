@@ -52,8 +52,6 @@ const INHERITED_ENVIRONMENT_NAMES = new Set([
 
 const HEALTH_SOURCES: Partial<Record<CheckLevel, AdapterCheckResult["source"]>> = {
   live: "fabric.adapter.liveness",
-  active: "fabric.adapter.interface",
-  ready: "fabric.adapter.readiness",
 };
 
 function childEnvironment(input: AdapterStartInput, home: string, model: DeepAgentsCodeModel): NodeJS.ProcessEnv {
@@ -102,7 +100,7 @@ class DeepAgentsCodeAcpSession implements DeepAgentsCodeSessionHandle {
     const source = HEALTH_SOURCES[level];
     if (source === undefined) return { ...unobservedHealth("unsupported_level"), outcome: "unsupported" };
     // The ACP process runs the agent in-process and keeps one open session;
-    // every level observes that the process still serves it.
+    // live observes that the process is still running.
     const { alive } = this.session.observeProcess();
     const observed_at = new Date().toISOString();
     return alive

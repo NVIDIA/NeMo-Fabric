@@ -61,7 +61,7 @@
     }
   },
   "capabilities": {
-    "metadata": {"health_checks": ["live", "active", "ready"]},
+    "metadata": {"health_checks": ["live"]},
     "streaming": false,
     "cancellation": false,
     "updates": false,

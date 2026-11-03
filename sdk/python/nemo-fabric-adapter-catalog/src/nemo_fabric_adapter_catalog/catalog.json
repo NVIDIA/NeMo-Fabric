@@ -1558,9 +1558,7 @@
           "cancellation": false,
           "metadata": {
             "health_checks": [
-              "live",
-              "active",
-              "ready"
+              "live"
             ]
           },
           "service": false,
@@ -1674,7 +1672,7 @@
         "name": "nemo-fabric-adapters-deepagents-code",
         "version": "0.7.0"
       },
-      "sha256": "c60c0510ad3af336fe8bcdf04f77c87b55083123d87370b163aaac89a89fed74",
+      "sha256": "febdb4d01042548abaed8addac7ef0b676383353d297956f17427dd5b62d6162",
       "source": "adapters/typescript/deepagents-code/deepagents-code.fabric-adapter.json"
     },
     "nvidia.fabric.mini-swe-agent": {
