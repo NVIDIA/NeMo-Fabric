@@ -114,12 +114,17 @@ def main() -> None:
             ),
             retryable=error.retryable if isinstance(error, FabricError) else False,
         )
-        args.result.write_text(
-            FabricRunnerFailure(
+        try:
+            document = FabricRunnerFailure(
                 runner_error=diagnostic, evidence=failure_evidence(error, payload)
-            ).model_dump_json(indent=2),
-            encoding="utf-8",
-        )
+            ).model_dump_json(indent=2)
+        except Exception:
+            # Optional observation failures must not replace the original error
+            # or prevent legacy consumers from receiving its diagnostic.
+            document = FabricRunnerFailure(runner_error=diagnostic).model_dump_json(
+                indent=2, exclude={"evidence"}
+            )
+        args.result.write_text(document, encoding="utf-8")
         if isinstance(error, asyncio.CancelledError):
             raise
         raise SystemExit(1) from None

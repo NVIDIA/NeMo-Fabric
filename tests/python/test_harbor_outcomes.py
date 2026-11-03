@@ -855,3 +855,61 @@ def test_malformed_identity_does_not_drop_valid_observations():
     assert failure.evidence.runtime_id is None
     assert failure.evidence.usage["output_tokens"] == 7
     assert failure.evidence.coverage["identity"] == "invalid"
+
+
+@pytest.mark.parametrize("message", ["", "progress"])
+def test_failure_evidence_preserves_valid_event_messages(message):
+    from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
+    from nemo_fabric.types import FabricEvent
+
+    event = {
+        "event_id": "event-test",
+        "kind": "runtime_stop",
+        "timestamp_millis": 1,
+        "message": message,
+    }
+    FabricEvent.from_mapping(event)
+    failure = FabricRunnerFailure.model_validate(
+        {"runner_error": {"message": "original"}, "evidence": {"events": [event]}}
+    )
+    assert failure.evidence.events[0]["message"] == message
+    assert failure.evidence.coverage["events"] == "partial"
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+@pytest.mark.parametrize("collection_error", [OSError, RuntimeError])
+def test_optional_evidence_collection_failure_preserves_primary_diagnostic(
+    runner_cli, monkeypatch, cancelled, collection_error
+):
+    from nemo_fabric import FabricRuntimeError
+    from nemo_fabric.integrations.harbor import runner
+
+    original = (
+        asyncio.CancelledError("cancelled")
+        if cancelled
+        else FabricRuntimeError("original", stage="invoke", code="timeout")
+    )
+    monkeypatch.setattr(runner, "run", AsyncMock(side_effect=original))
+    monkeypatch.setattr(
+        runner,
+        "failure_evidence",
+        MagicMock(side_effect=collection_error("secret sentinel")),
+    )
+    expected = asyncio.CancelledError if cancelled else SystemExit
+    with pytest.raises(expected) as caught:
+        runner.main()
+    if cancelled:
+        assert caught.value is original
+    else:
+        assert caught.value.code == 1
+    document = json.loads(runner_cli.read_text())
+    assert "secret sentinel" not in json.dumps(document)
+    assert "status" not in document
+    if not cancelled:
+        assert document["runner_error"] == {
+            "stage": "invoke",
+            "code": "timeout",
+            "message": "original",
+            "retryable": False,
+        }
+    assert "evidence" not in document

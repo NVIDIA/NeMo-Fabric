@@ -211,13 +211,17 @@ class FabricFailureEvidence(BaseModel):
                             required = {
                                 "artifacts": ("name", "kind", "path"),
                                 "telemetry": ("provider", "kind"),
-                                "events": ("event_id", "kind", "message"),
+                                "events": ("event_id", "kind"),
                             }[name]
                             if not isinstance(entry, dict) or any(
                                 not isinstance(entry.get(key), str) or not entry[key]
                                 for key in required
                             ):
                                 raise ValueError("invalid evidence reference")
+                            if name == "events" and not isinstance(
+                                entry.get("message"), str
+                            ):
+                                raise ValueError("invalid event message")
                             if name == "events" and (
                                 type(entry.get("timestamp_millis")) is not int
                                 or entry["timestamp_millis"] < 0
