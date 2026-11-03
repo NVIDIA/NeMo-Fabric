@@ -1510,6 +1510,183 @@ async def test_claude_runtime_removes_mcp_config_after_failed_sdk_connect(
     assert not staged_paths[0].exists()
 
 
+@pytest.mark.parametrize(
+    ("stderr_lines", "expected_reason"),
+    [
+        (
+            [
+                "Authorization: Bearer credential-canary",
+                "ANTHROPIC_API_KEY=credential-canary",
+                '{"prompt": "private prompt", "environment": {"TOKEN": "credential-canary"}}',
+                "x" * 200_000,
+                "--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons",
+            ],
+            "root/sudo",
+        ),
+        (["Invalid model name: credential-canary"], "model"),
+        (["The model credential-canary does not exist"], "model"),
+        (
+            [
+                "Invalid model name: credential-canary",
+                "Unsupported reasoning effort: credential-canary",
+                "--dangerously-skip-permissions cannot be used with root/sudo privileges",
+            ]
+            * 1000,
+            "root/sudo",
+        ),
+        (["Unsupported reasoning effort: credential-canary"], "effort"),
+        (["unrecognized credential-canary private prompt"], "omitted"),
+        ([], None),
+    ],
+    ids=[
+        "permission-with-secrets-and-large-output",
+        "model",
+        "model-not-found",
+        "repeated-reasons",
+        "effort",
+        "unknown",
+        "no-stderr",
+    ],
+)
+async def test_claude_startup_diagnostics_are_safe_and_keep_sdk_failure(
+    claude_payload, monkeypatch, stderr_lines, expected_reason
+):
+    client = MagicMock(spec=adapter.ClaudeSDKClient)
+    client.disconnect = AsyncMock()
+    native_error = CLIConnectionError("Check stderr")
+    options_seen = []
+
+    def build_client(options):
+        options_seen.append(options)
+        assert options.mcp_servers.exists()
+
+        async def fail_connect():
+            for line in stderr_lines:
+                options.stderr(line)
+            raise native_error
+
+        client.connect = AsyncMock(side_effect=fail_connect)
+        return client
+
+    monkeypatch.setattr(adapter, "ClaudeSDKClient", build_client)
+    runtime = adapter.ClaudeRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(lifecycle_start(claude_payload))
+
+    assert caught.value.code == "claude_connection_failed"
+    assert caught.value.__cause__ is native_error
+    metadata = dict(caught.value.metadata)
+    response = adapter.lifecycle._failure_response("start", caught.value)
+    if metadata:
+        assert response["outcome"]["error"]["metadata"] == metadata
+    else:
+        assert "metadata" not in response["outcome"]["error"]
+    serialized = json.dumps(response)
+    assert "credential-canary" not in serialized
+    assert "private prompt" not in serialized
+    assert len(serialized) < 2048
+    if expected_reason is None:
+        assert metadata == {}
+    else:
+        assert expected_reason in " ".join(metadata["startup_diagnostics"])
+    assert not options_seen[0].mcp_servers.parent.exists()
+    assert runtime._client is None
+    await runtime.stop()
+    # A retained SDK callback must not accumulate diagnostics after startup.
+    options_seen[0].stderr("Invalid model name: late-credential-canary")
+    assert caught.value.metadata == metadata
+
+
+async def test_claude_startup_diagnostics_do_not_capture_invocation_stderr(
+    claude_payload, monkeypatch
+):
+    client = MagicMock(spec=adapter.ClaudeSDKClient)
+    client.connect = AsyncMock()
+    client.disconnect = AsyncMock()
+    options_seen = []
+
+    def build_client(options):
+        options_seen.append(options)
+        options.stderr("Invalid model name: startup-canary")
+        return client
+
+    monkeypatch.setattr(adapter, "ClaudeSDKClient", build_client)
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(lifecycle_start(claude_payload))
+    capture = options_seen[0].stderr
+    for _ in range(1000):
+        capture("Invalid model name: invocation-canary")
+    assert capture.__self__.metadata() == {}
+    await runtime.stop()
+    client.disconnect.assert_awaited_once()
+
+
+async def test_claude_startup_cancellation_keeps_exception_and_cleans_up(
+    claude_payload, monkeypatch
+):
+    client = MagicMock(spec=adapter.ClaudeSDKClient)
+    cancelled = asyncio.CancelledError()
+    options_seen = []
+
+    def build_client(options):
+        options_seen.append(options)
+        options.stderr("Invalid model name: credential-canary")
+        client.connect = AsyncMock(side_effect=cancelled)
+        return client
+
+    monkeypatch.setattr(adapter, "ClaudeSDKClient", build_client)
+    runtime = adapter.ClaudeRuntime()
+    with pytest.raises(asyncio.CancelledError) as caught:
+        await runtime.start(lifecycle_start(claude_payload))
+    assert caught.value is cancelled
+    assert not options_seen[0].mcp_servers.parent.exists()
+    assert runtime._client is None
+    assert options_seen[0].stderr.__self__.metadata() == {}
+    await runtime.stop()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="uses an executable POSIX fixture")
+async def test_claude_native_startup_failure_retains_permission_reason(
+    claude_payload, tmp_path, monkeypatch
+):
+    cli = tmp_path / "failing-claude"
+    cli.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "if '--version' in sys.argv:\n"
+        "    print('2.1.299 (Claude Code)')\n"
+        "    raise SystemExit(0)\n"
+        "sys.stderr.write('Authorization: Bearer credential-canary\\n')\n"
+        "sys.stderr.write('x' * 200_000 + '\\n')\n"
+        "sys.stderr.write('--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons\\n')\n"
+        "sys.stderr.flush()\n"
+        "raise SystemExit(23)\n",
+        encoding="utf-8",
+    )
+    cli.chmod(0o755)
+    os.environ["FABRIC_TEST_CLAUDE_CLI_PATH"] = str(cli)
+    cleanup = MagicMock(wraps=adapter._cleanup_mcp_config)
+    monkeypatch.setattr(adapter, "_cleanup_mcp_config", cleanup)
+    runtime = adapter.ClaudeRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await asyncio.wait_for(runtime.start(lifecycle_start(claude_payload)), 15)
+
+    assert caught.value.code == "claude_process_failed"
+    assert isinstance(caught.value.__cause__, ProcessError)
+    assert caught.value.__cause__.exit_code == 23
+    assert caught.value.metadata["exit_code"] == 23
+    staged_path = cleanup.call_args.args[0]
+    assert isinstance(staged_path, Path)
+    assert not staged_path.parent.exists()
+    diagnostics = " ".join(caught.value.metadata["startup_diagnostics"])
+    assert "root/sudo" in diagnostics
+    assert "credential-canary" not in json.dumps(caught.value.metadata)
+    assert len(json.dumps(caught.value.metadata)) < 2048
+    assert runtime._mcp_config_path is None
+    assert runtime._client is None
+    await runtime.stop()
+
+
 def test_cleanup_mcp_config_removes_runtime_directory(tmp_path):
     config_root = tmp_path / "mcp"
     config_root.mkdir()
