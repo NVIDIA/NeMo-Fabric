@@ -607,7 +607,15 @@ class KiloSdkSessionHandle implements KiloSessionHandle {
     } catch {
       if (timedOut) {
         await abortPromise;
-        throw new LifecycleError("kilo_prompt_timeout", "Timed out while waiting for Kilo Code to complete the prompt", {retryable: false});
+        throw new LifecycleError(
+          "timeout",
+          `Kilo adapter invocation timed out after ${this.promptTimeoutMs / 1000} seconds`,
+          {metadata: {
+            owner: "adapter",
+            timeout_seconds: this.promptTimeoutMs / 1000,
+            cause_code: "kilo_prompt_timeout",
+          }},
+        );
       }
       throw new LifecycleError("kilo_session_failed", "Kilo Code session communication failed", {retryable: false});
     } finally {

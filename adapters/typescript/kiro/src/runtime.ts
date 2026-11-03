@@ -89,9 +89,14 @@ export class KiroAdapterRuntime implements AdapterRuntime {
         status: "failed",
         output: null,
         error: {
-          code: "kiro_deadline_exceeded",
+          code: "timeout",
           message: "The Kiro invocation deadline has already elapsed",
           retryable: false,
+          extensions: {
+            owner: "adapter",
+            deadline_millis: context.deadline_millis,
+            cause_code: "kiro_deadline_exceeded",
+          },
         },
       };
     }

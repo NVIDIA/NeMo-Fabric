@@ -155,3 +155,8 @@ credentials, or MCP connectivity. Checks never send prompts or abort a turn.
 At most one native health request remains outstanding after a caller timeout.
 
 Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+
+
+## Invocation deadlines
+
+Kilo invocation deadlines use canonical error code `timeout`. Error metadata retains `owner: "adapter"`, the native cause, and the enforced timeout in seconds or absolute `deadline_millis`. Setup and transport failures retain their existing classifications.

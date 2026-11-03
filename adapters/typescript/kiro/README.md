@@ -73,3 +73,8 @@ live, and a stopped or exited process fails the liveness observation.
 `active` and `ready` are unsupported. Checks do not send prompts, change session settings, or cancel invocations.
 
 Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+
+
+## Invocation deadlines
+
+Kiro invocation deadlines use canonical error code `timeout`. Error metadata retains `owner: "adapter"`, the native cause, and the enforced timeout in seconds or absolute `deadline_millis`. Setup and transport failures retain their existing classifications.

@@ -108,6 +108,15 @@ for (const fixtureType of process.platform === "win32" ? ["executable"] : ["shel
           total_tokens: 5,
         });
       }
+      await assert.rejects(session.prompt("hang", 0), {
+        code: "timeout",
+        metadata: {
+          owner: "adapter",
+          timeout_seconds: 0,
+          cause_code: "kiro_prompt_timeout",
+          native_code: "acp_prompt_timeout",
+        },
+      });
     } finally {
       await session.stop();
       assert.equal((await session.check("live")).reason_code, "session_closed");
