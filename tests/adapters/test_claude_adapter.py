@@ -1653,7 +1653,7 @@ async def test_claude_native_startup_failure_retains_permission_reason(
     cli.write_text(
         f"#!{sys.executable}\n"
         "import sys\n"
-        "if '--version' in sys.argv:\n"
+        "if '-v' in sys.argv:\n"
         "    print('2.1.299 (Claude Code)')\n"
         "    raise SystemExit(0)\n"
         "sys.stderr.write('Authorization: Bearer credential-canary\\n')\n"

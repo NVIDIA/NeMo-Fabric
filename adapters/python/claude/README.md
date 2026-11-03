@@ -128,7 +128,7 @@ It retains portable OS/config variables, NeMo Relay logging variables
 (`NEMO_RELAY_LOG`, `NEMO_RELAY_LOG_CONFIG_PATH`, `NEMO_RELAY_LOG_STDERR`, and
 `NEMO_RELAY_LOG_STDERR_FORMAT`), the selected model's `api_key_env`,
 explicitly configured `environment.env` values, and variables named by
-`environment.env_names`. On SDK startup failure, the existing lifecycle error metadata includes bounded `startup_diagnostics` summaries for recognized native permission, model, and reasoning-effort rejections. The adapter scans at most 8,192 characters per stderr callback and retains only fixed summaries, without model IDs, credential values, prompts, or environment maps. Unrecognized stderr produces an omission notice; no stderr leaves the error metadata unchanged. Capture ends after startup. Raw Claude stderr is not persisted as a NeMo Fabric artifact, and runtime journal handling is unchanged.
+`environment.env_names`. On SDK startup failure, the existing lifecycle error metadata includes bounded `startup_diagnostics` summaries for recognized native permission, model, and reasoning-effort rejections. The adapter scans at most 8,192 characters per stderr callback and retains only fixed summaries, without model IDs, credential values, prompts, or environment maps. If stderr has no recognized reason, the metadata contains an omission notice; no stderr leaves the error metadata unchanged. Capture ends after startup. Raw Claude stderr is not persisted as a NeMo Fabric artifact, and runtime journal handling is unchanged.
 
 ## Token Usage
 
