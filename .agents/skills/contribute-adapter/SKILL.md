@@ -53,6 +53,8 @@ Follow these repository-specific requirements after applying the public skill:
 7. Regenerate lockfiles and inspect the root and leaf wheel metadata. Verify
    root-to-leaf delegation and every published leaf extra.
 
+Use descriptor `config_schema` for static requirements across normalized configuration blocks, and test both execution planning and metadata-only admission without harness SDK imports. Keep native catalog membership and installed-provider availability checks at startup.
+
 Keep descriptor claims, implementation, focused tests, public documentation,
 catalog entries, and packaged metadata synchronized. Start with the narrowest
 truthful capability set.

@@ -15,6 +15,7 @@ import pytest
 from _utils.configs import minimal_config
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfigError
+from nemo_fabric import ToolsConfig
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -185,10 +186,10 @@ def test_repository_settings_are_validated_and_preserved(
     adapter_id: str,
     settings: dict[str, Any],
 ):
-    plan = Fabric().plan(
-        _config(settings, adapter_id=adapter_id),
-        base_dir=tmp_path,
-    )
+    config = _config(settings, adapter_id=adapter_id)
+    if adapter_id == "nvidia.fabric.langchain.deepagents":
+        config.tools = ToolsConfig(blocked=["execute"])
+    plan = Fabric().plan(config, base_dir=tmp_path)
 
     assert plan.config.harness.settings == settings
     assert plan["adapter_descriptor"]["provenance"][0]["source"] == "bundled"

@@ -36,6 +36,17 @@
     "additionalProperties": false
   },
   "requirements": {},
+  "config_schema": {
+    "type": "object",
+    "description": "The shared NOOA adapter requires a registered workflow target.",
+    "required": ["workflow"],
+    "properties": {
+      "workflow": {
+        "type": "object",
+        "required": ["target_id"]
+      }
+    }
+  },
   "config": {
     "accepts": [
       "models",

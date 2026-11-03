@@ -75,6 +75,10 @@ export type AdapterDescriptor = {
   capabilities?: RuntimeCapabilities;
   config?: AdapterConfigSupport;
   /**
+   * JSON Schema for static cross-field constraints on the serialized `FabricConfig`.
+   */
+  config_schema?: JsonObject | null;
+  /**
    * Adapter descriptor contract version.
    */
   contract_version: "fabric.adapter/v1alpha2";

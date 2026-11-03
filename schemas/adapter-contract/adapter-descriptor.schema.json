@@ -307,6 +307,14 @@
       "default": {},
       "description": "NeMo Fabric config areas this adapter consumes or generates."
     },
+    "config_schema": {
+      "additionalProperties": true,
+      "description": "JSON Schema for static cross-field constraints on the serialized `FabricConfig`.",
+      "type": [
+        "object",
+        "null"
+      ]
+    },
     "contract_version": {
       "const": "fabric.adapter/v1alpha2",
       "description": "Adapter descriptor contract version.",
