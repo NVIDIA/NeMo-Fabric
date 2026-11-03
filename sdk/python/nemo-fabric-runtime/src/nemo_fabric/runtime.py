@@ -1017,6 +1017,7 @@ async def _run_native_lifecycle(
                             or "runtime_stop_failed",
                             "message": str(error) or "runtime shutdown failed",
                             "retryable": False,
+                            "metadata": _runtime_error(error, stage="stop").details,
                         }
                 stop_events = []
             if result is not None and isinstance(stop_events, list):

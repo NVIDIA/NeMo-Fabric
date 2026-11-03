@@ -401,8 +401,20 @@ where
 
 fn to_py_error(error: nemo_fabric_core::FabricError) -> PyErr {
     match &error {
-        FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout" => {
-            PyTimeoutError::new_err(error.to_string())
+        FabricError::AdapterLifecycleOperation { code, metadata, .. }
+            if code == "host_timeout" || code == "timeout" =>
+        {
+            Python::attach(|py| {
+                let timeout = PyTimeoutError::new_err(error.to_string());
+                let details = py.import("json")?.call_method1(
+                    "loads",
+                    (serde_json::to_string(metadata)
+                        .map_err(|error| PyRuntimeError::new_err(error.to_string()))?,),
+                )?;
+                timeout.value(py).setattr("details", details)?;
+                Ok::<_, PyErr>(timeout)
+            })
+            .unwrap_or_else(|error| error)
         }
         FabricError::ResourceObservationUnavailable { .. } => {
             ResourceObservationUnavailableError::new_err(error.to_string())

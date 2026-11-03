@@ -107,6 +107,7 @@ def main() -> None:
                 else f"Fabric runner failed ({type(error).__name__})"
             ),
             retryable=error.retryable if isinstance(error, FabricError) else False,
+            details=error.details if isinstance(error, FabricError) else {},
         )
         args.result.write_text(
             FabricRunnerFailure(runner_error=diagnostic).model_dump_json(indent=2),

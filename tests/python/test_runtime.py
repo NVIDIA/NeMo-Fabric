@@ -205,15 +205,24 @@ async def test_one_shot_deadline_preserves_stage_and_cleanup(
 async def test_one_shot_stop_deadline_has_canonical_result_error(
     native_client, mock_native, structured
 ):
-    mock_native.stop_runtime.side_effect = (
-        FabricRuntimeError("deadline", stage="stop", code="timeout")
+    details = {
+        "owner": "fabric_runtime",
+        "timeout_seconds": 300,
+        "cause_code": "host_timeout",
+    }
+    error = (
+        FabricRuntimeError("deadline", stage="stop", code="timeout", details=details)
         if structured
         else TimeoutError("deadline")
     )
+    error.details = details
+    mock_native.stop_runtime.side_effect = error
     result = await native_client.run(_config(), input="test")
     assert result.status == "failed"
     assert result.error.stage == "stop"
     assert result.error.code == "timeout"
+
+    assert result.error.metadata == details
 
 
 @pytest.mark.parametrize("stage", ["start", "invoke"])
@@ -1158,3 +1167,20 @@ async def test_native_unavailable_uses_typed_error(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(FabricNativeUnavailableError, match="native extension"):
         Fabric().plan(_config())
+
+
+async def test_native_deadline_details_survive_sdk_and_cleanup(
+    native_client, mock_native
+):
+    native_error = TimeoutError("host invocation exceeded 300 seconds")
+    native_error.details = {
+        "owner": "fabric_runtime",
+        "timeout_seconds": 300,
+        "cause_code": "host_timeout",
+    }
+    mock_native.invoke_runtime.side_effect = native_error
+    with pytest.raises(FabricRuntimeError) as caught:
+        await native_client.run(_config(), input="test")
+    assert caught.value.details == native_error.details
+    assert caught.value.__cause__ is native_error
+    mock_native.stop_runtime.assert_called_once()

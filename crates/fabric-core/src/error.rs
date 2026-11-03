@@ -226,6 +226,8 @@ pub enum FabricError {
         message: String,
         /// Bounded adapter-host diagnostics.
         diagnostics: String,
+        /// Structured adapter or runtime failure evidence.
+        metadata: std::collections::BTreeMap<String, serde_json::Value>,
     },
     /// A runtime handle was used with a different run plan than the one that created it.
     #[error(

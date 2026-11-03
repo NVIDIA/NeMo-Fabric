@@ -2900,17 +2900,25 @@ fn exchange_lifecycle_message(
     let line = match host.responses.recv_timeout(timeout) {
         Ok(line) => line,
         Err(RecvTimeoutError::Timeout) => {
-            return Err(lifecycle_error(
-                operation,
-                runtime_id,
-                "host_timeout",
-                format!(
-                    "persistent local adapter host did not complete {} within {} ms",
+            return Err(FabricError::AdapterLifecycleOperation {
+                operation: operation.as_str(),
+                runtime_id: runtime_id.to_string(),
+                code: "host_timeout".to_string(),
+                message: format!(
+                    "Fabric runtime did not complete {} within {} seconds",
                     operation.as_str(),
-                    timeout.as_millis()
+                    timeout.as_secs_f64()
                 ),
-                local_host_diagnostics(host),
-            ));
+                diagnostics: local_host_diagnostics(host),
+                metadata: BTreeMap::from([
+                    ("owner".to_string(), serde_json::json!("fabric_runtime")),
+                    (
+                        "timeout_seconds".to_string(),
+                        serde_json::json!(timeout.as_secs_f64()),
+                    ),
+                    ("cause_code".to_string(), serde_json::json!("host_timeout")),
+                ]),
+            });
         }
         Err(RecvTimeoutError::Disconnected) => {
             return Err(lifecycle_error(
@@ -2999,13 +3007,14 @@ fn exchange_lifecycle_message(
                 diagnostics.push_str("adapter metadata: ");
                 diagnostics.push_str(&metadata);
             }
-            Err(lifecycle_error(
-                operation,
-                runtime_id,
-                error.code,
-                error.message,
+            Err(FabricError::AdapterLifecycleOperation {
+                operation: operation.as_str(),
+                runtime_id: runtime_id.to_string(),
+                code: error.code,
+                message: error.message,
                 diagnostics,
-            ))
+                metadata: error.metadata,
+            })
         }
     }
 }
@@ -3023,6 +3032,7 @@ fn lifecycle_error(
         code: code.into(),
         message: message.into(),
         diagnostics: diagnostics.into(),
+        metadata: BTreeMap::new(),
     }
 }
 
@@ -5791,6 +5801,12 @@ for line in sys.stdin:
                 ..
             } if code == "host_timeout" && diagnostics.contains("invoke accepted without response")
         ));
+        let FabricError::AdapterLifecycleOperation { metadata, .. } = &error else {
+            panic!("expected lifecycle deadline error");
+        };
+        assert_eq!(metadata["owner"], "fabric_runtime");
+        assert_eq!(metadata["timeout_seconds"], 0.1);
+        assert_eq!(metadata["cause_code"], "host_timeout");
         assert!(!local_hosts().contains_key(&runtime.runtime_id));
         assert!(
             host.lock()

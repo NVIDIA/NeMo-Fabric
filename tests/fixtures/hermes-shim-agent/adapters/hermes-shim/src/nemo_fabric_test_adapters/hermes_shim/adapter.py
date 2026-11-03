@@ -45,6 +45,16 @@ class ShimRuntime:
                 "hermes_runtime_not_started",
                 "shim runtime is not started",
             )
+        if request.context.get("normalized_deadline"):
+            raise lifecycle.LifecycleError(
+                "timeout",
+                "Adapter invocation exceeded 300 seconds",
+                metadata={
+                    "owner": "adapter",
+                    "timeout_seconds": 300,
+                    "cause_code": "strands_prompt_timeout",
+                },
+            )
         pid_file = request.context.get("child_pid_file")
         if pid_file is not None:
             # Start a direct child in its own session (POSIX) and a grandchild

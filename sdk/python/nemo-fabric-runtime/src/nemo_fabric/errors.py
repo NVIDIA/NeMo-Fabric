@@ -66,6 +66,9 @@ def _runtime_error(error: Exception, *, stage: str) -> FabricRuntimeError:
         str(error),
         stage=stage,
         code="timeout" if isinstance(error, TimeoutError) else None,
+        details=getattr(error, "details", None)
+        if isinstance(error, TimeoutError)
+        else None,
     )
 
 

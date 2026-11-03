@@ -137,6 +137,11 @@ async def test_native_deadline_keeps_type_and_evicts_runtime(
     assert caught.value.code == "timeout"
     assert caught.value.stage == "invoke"
     assert isinstance(caught.value.__cause__, TimeoutError)
+    assert caught.value.details == {
+        "owner": "fabric_runtime",
+        "timeout_seconds": 5.0,
+        "cause_code": "host_timeout",
+    }
     assert runtime.status == RuntimeStatus.FAILED
     with pytest.raises(FabricStateError):
         await runtime.invoke(input="retry")
@@ -188,6 +193,11 @@ def test_runner_real_inner_deadline_preserves_failure_evidence(
     failure = FabricRunnerFailure.model_validate_json(result.read_text())
     assert failure.runner_error.code == "timeout"
     assert failure.runner_error.stage == "invoke"
+    assert failure.runner_error.details == {
+        "owner": "fabric_runtime",
+        "timeout_seconds": 1.0,
+        "cause_code": "host_timeout",
+    }
     assert not failure.runner_error.retryable
 
 
@@ -437,3 +447,22 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert empty_chunks == []
     assert empty_result.status == "succeeded"
     assert empty_result.output["openai_stream_invocation_count"] == 2
+
+
+async def test_adapter_deadline_keeps_normalized_code_and_native_cause(
+    hermes_shim_agent_dir,
+):
+    with pytest.raises(FabricRuntimeError) as caught:
+        await Fabric().run(
+            hermes_shim_config(),
+            base_dir=hermes_shim_agent_dir,
+            request=RunRequest(input="test", context={"normalized_deadline": True}),
+        )
+    assert caught.value.code == "timeout"
+    assert caught.value.stage == "invoke"
+    assert caught.value.details == {
+        "owner": "adapter",
+        "timeout_seconds": 300,
+        "cause_code": "strands_prompt_timeout",
+    }
+    assert isinstance(caught.value.__cause__, TimeoutError)
