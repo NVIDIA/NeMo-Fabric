@@ -681,7 +681,7 @@ def test_failure_recovers_only_matching_bounded_stats(tmp_path, malformed):
 
     payload = FabricRunPayload(
         config=build_harbor_config(adapter_id="test.adapter", workspace=str(tmp_path)),
-        config_base_dir=tmp_path,
+        config_base_dir=str(tmp_path),
         request={"request_id": "request-test", "input": "test"},
     )
     payload.config.runtime.artifacts = str(tmp_path / "artifacts")
