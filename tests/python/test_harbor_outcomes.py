@@ -672,7 +672,7 @@ def test_runner_serializes_cancellation_without_turning_it_into_success(
     assert "status" not in document
 
 
-@pytest.mark.parametrize("malformed", [False, True])
+@pytest.mark.parametrize("malformed", [None, "identity", "json", "oversized"])
 def test_failure_recovers_only_matching_bounded_stats(tmp_path, malformed):
     from nemo_fabric import FabricRuntimeError
     from nemo_fabric.integrations.harbor.failure import failure_evidence
@@ -697,20 +697,32 @@ def test_failure_recovers_only_matching_bounded_stats(tmp_path, malformed):
         "schema_version": "fabric.system_stats/v1alpha1",
         "runtime_id": "runtime-test",
         "invocation_id": "invocation-test",
-        "request_id": "wrong" if malformed else "request-test",
+        "request_id": "wrong" if malformed == "identity" else "request-test",
         "system_stats": stats,
     }
-    (home / "system-stats-summary.json").write_text(json.dumps(summary))
+    summary_json = json.dumps(summary)
+    if malformed == "json":
+        summary_json = "invalid JSON"
+    elif malformed == "oversized":
+        summary_json += " " * 262145
+    (home / "system-stats-summary.json").write_text(summary_json)
     (home / "adapter-invocation.json").write_text("secret sentinel")
+    (home / "system-stats.jsonl").write_text("unparsed samples")
     error = FabricRuntimeError(
         "original", details={"runtime_evidence": {"runtime_id": "runtime-test"}}
     )
     evidence = failure_evidence(error, payload)
-    assert len(evidence["artifacts"]) == 2
+    expected_kinds = {"fabric_invocation", "system_stats_samples"}
+    if malformed is None:
+        expected_kinds.add("system_stats_summary")
+    assert {item["kind"] for item in evidence["artifacts"]} == expected_kinds
     assert "secret sentinel" not in json.dumps(evidence)
+    assert "unparsed samples" not in json.dumps(evidence)
     if malformed:
         assert evidence["system_stats"] is None
-        assert evidence["coverage"]["system_stats"] == "invalid"
+        assert evidence["coverage"]["system_stats"] == (
+            "truncated" if malformed == "oversized" else "invalid"
+        )
     else:
         assert evidence["system_stats"]["elapsed_seconds"] == 0.25
         assert evidence["coverage"]["system_stats"] == "partial"

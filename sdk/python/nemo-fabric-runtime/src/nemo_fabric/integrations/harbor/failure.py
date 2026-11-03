@@ -117,16 +117,6 @@ def _retained_files(evidence: dict, payload: FabricRunPayload) -> None:
             path = invocation_home / name
             if path.is_symlink() or not path.is_file():
                 continue
-            references.append(
-                {
-                    "name": kind,
-                    "kind": kind,
-                    "path": str(path),
-                    "media_type": "application/json"
-                    if name.endswith(".json")
-                    else "application/x-ndjson",
-                }
-            )
             if kind == "system_stats_summary":
                 try:
                     # Never load a time series or a raw invocation payload.
@@ -146,5 +136,16 @@ def _retained_files(evidence: dict, payload: FabricRunPayload) -> None:
                     evidence["system_stats"] = summary["system_stats"]
                 except (OSError, ValueError, KeyError, TypeError):
                     evidence["coverage"]["system_stats"] = "invalid"
+                    continue
+            references.append(
+                {
+                    "name": kind,
+                    "kind": kind,
+                    "path": str(path),
+                    "media_type": "application/json"
+                    if name.endswith(".json")
+                    else "application/x-ndjson",
+                }
+            )
     except OSError:
         return
