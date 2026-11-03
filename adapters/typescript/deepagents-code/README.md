@@ -135,9 +135,9 @@ refuses to resume a thread open elsewhere.
 
 ## Runtime Health
 
-`Fabric.check()` supports `live`, `active` and `ready`. `dcode` runs its agent
-inside the ACP process and keeps the runtime's session open in it, so each level
-observes that the ACP child process is still running. A busy process passes. A
+`Fabric.check()` supports `live`. `dcode` runs its agent inside the ACP process
+and keeps the runtime's session open in it, so `live` observes that the ACP
+child process is still running; `active` and `ready` are unsupported. A busy process passes. A
 stopped or exited process fails. Checks don't send prompts.
 
 Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx)
