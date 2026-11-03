@@ -76,7 +76,7 @@ authentication and per-server tool filters are unsupported.
 The adapter accepts plain-text input and returns the terminal assistant text in
 `output.response`. Ordered invocations reuse one warm Kilo Code session and its
 conversation history. A prompt has a 30-minute deadline; on timeout the adapter
-asks Kilo Code to abort the prompt and reports `kilo_prompt_timeout`.
+asks Kilo Code to abort the prompt and reports `timeout`, retaining `kilo_prompt_timeout` as the cause.
 
 The adapter disables project Kilo Code configuration and uses temporary Kilo
 and XDG directories. The child process receives required operating-system

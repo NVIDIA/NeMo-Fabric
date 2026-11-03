@@ -931,7 +931,10 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
                 code: "runtime_stop_failed".to_string(),
                 message: error.to_string(),
                 retryable: false,
-                metadata: BTreeMap::new(),
+                metadata: match &error {
+                    FabricError::AdapterLifecycleOperation { metadata, .. } => metadata.clone(),
+                    _ => BTreeMap::new(),
+                },
             });
         }
         Err(_) => {}
@@ -4538,6 +4541,13 @@ for line in sys.stdin:
             with open(os.environ["FABRIC_FAKE_HOST_STOP_MARKER"], "w", encoding="utf-8") as stream:
                 stream.write("started")
             time.sleep(0.25)
+        if MODE == "stop_deadline":
+            error = failure("stop", "timeout", "adapter stop deadline expired")
+            error["metadata"] = {
+                "owner": "adapter", "timeout_seconds": 300, "cause_code": "adapter_stop_timeout",
+            }
+            response("stop", error=error)
+            sys.exit(18)
         if MODE == "stop_failure":
             response("stop", error=failure("stop", "fake_stop", "stop rejected"))
             sys.exit(18)
@@ -6517,19 +6527,28 @@ for line in sys.stdin:
 
     #[test]
     fn run_plan_preserves_completed_result_when_stop_fails() {
-        let (root, plan) = local_host_plan("stop_failure");
+        for (mode, cause) in [("stop_failure", "fake_stop"), ("stop_deadline", "timeout")] {
+            let (root, plan) = local_host_plan(mode);
 
-        let result = run_plan(&plan, RunRequest::text("completed"))
-            .expect("completed result with stop failure");
+            let result = run_plan(&plan, RunRequest::text("completed"))
+                .expect("completed result with stop failure");
 
-        assert_eq!(result.status, RunStatus::Failed);
-        assert_eq!(result.output["input"], "completed");
-        let error = result.error.expect("stop error");
-        assert_eq!(error.stage, ErrorStage::Stop);
-        assert_eq!(error.code, "runtime_stop_failed");
-        assert!(error.message.contains("fake_stop"), "{}", error.message);
+            assert_eq!(result.status, RunStatus::Failed);
+            assert_eq!(result.output["input"], "completed");
+            let error = result.error.expect("stop error");
+            assert_eq!(error.stage, ErrorStage::Stop);
+            assert_eq!(error.code, "runtime_stop_failed");
+            assert!(error.message.contains(cause), "{}", error.message);
+            if mode == "stop_deadline" {
+                assert_eq!(error.metadata["owner"], "adapter");
+                assert_eq!(error.metadata["timeout_seconds"], 300);
+                assert_eq!(error.metadata["cause_code"], "adapter_stop_timeout");
+            } else {
+                assert!(error.metadata.is_empty());
+            }
 
-        let _ = fs::remove_dir_all(root);
+            let _ = fs::remove_dir_all(root);
+        }
     }
     #[test]
     fn default_environment_prepares_through_local_provider() {

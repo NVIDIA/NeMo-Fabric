@@ -166,22 +166,31 @@ def _runtime_wrapper(
 async def test_deadline_identity_survives_stateful_sdk_boundaries(
     native_client, mock_native, stage, error_type, expected_code
 ):
+    error = error_type("deadline-looking text")
+    details = {
+        "owner": "fabric_runtime",
+        "timeout_seconds": 300,
+        "cause_code": "host_timeout",
+    }
+    if expected_code == "timeout":
+        error.details = details
     if stage == "start":
-        mock_native.start_runtime.side_effect = error_type("deadline-looking text")
+        mock_native.start_runtime.side_effect = error
         operation = native_client.start_runtime(_config())
     else:
         runtime = await native_client.start_runtime(_config())
         if stage == "invoke":
-            mock_native.invoke_runtime.side_effect = error_type("deadline-looking text")
+            mock_native.invoke_runtime.side_effect = error
             operation = runtime.invoke(input="test")
         else:
-            mock_native.stop_runtime.side_effect = error_type("deadline-looking text")
+            mock_native.stop_runtime.side_effect = error
             operation = runtime.stop()
     with pytest.raises(FabricRuntimeError) as caught:
         await operation
     assert caught.value.stage == stage
     assert caught.value.code == expected_code
-    assert isinstance(caught.value.__cause__, error_type)
+    assert caught.value.__cause__ is error
+    assert caught.value.details == (details if expected_code == "timeout" else {})
     if stage == "invoke":
         await runtime.stop()
 
