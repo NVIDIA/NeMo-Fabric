@@ -403,7 +403,7 @@ adapter descriptors that accept either name through `extension_schemas.model`
 continue receiving it in `AgentModelConfig.extensions`; adapters that advertise
 the normalized capability receive the typed field instead.
 
-Descriptors can also declare a `config_schema` for static requirements spanning configuration blocks. Both `plan(...)` and metadata-only `inspect_adapter(...)` enforce these requirements. The shared NOOA adapter requires a registered workflow. Deep Agents requires an explicit `tools.enabled` allowlist (including `[]`) or `execute` in `tools.blocked` when `local_shell` is selected. Cline rejects the `openai` provider alias; its pinned SDK uses `openai-native`, and the documented NVIDIA endpoint uses `nvidia`. Planning does not prove native package availability, authentication, endpoint health, or membership in Pi's installed model catalog.
+Descriptors can also declare a `config_schema` for static requirements spanning configuration blocks. Both `plan(...)` and metadata-only `inspect_adapter(...)` enforce these requirements. The shared NOOA adapter requires a registered workflow. Deep Agents requires an explicit `tools.enabled` allowlist (including `[]`) or `execute` in `tools.blocked` when `local_shell` is selected. Cline's `model_schema` rejects the `openai` provider alias; its pinned SDK uses `openai-native`, and the documented NVIDIA endpoint uses `nvidia`. Planning does not prove native package availability, authentication, endpoint health, or membership in Pi's installed model catalog.
 
 If a normalized field has no complete mapping, `plan(...)` and runtime start
 fail with a configuration compatibility error naming the adapter and field.
