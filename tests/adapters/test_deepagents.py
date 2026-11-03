@@ -30,6 +30,11 @@ from langchain_core.tools import StructuredTool
 from langchain_core.tools import ToolException
 from langchain_openai import ChatOpenAI as InstalledChatOpenAI
 from langgraph.errors import GraphRecursionError
+from mcp import ClientSession
+from mcp.types import CallToolResult
+from mcp.types import ListToolsResult
+from mcp.types import TextContent
+from mcp.types import Tool
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
@@ -40,6 +45,7 @@ from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import McpOAuth2Config
 from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
+from pydantic import ValidationError
 from pydantic import create_model
 from nemo_fabric_adapters.deepagents import adapter  # noqa: E402
 
@@ -2024,6 +2030,7 @@ async def test_recursion_limit_failure_is_normalized(tmp_path, make_payload, fak
 async def test_mcp_servers_become_adapter_tools(
     tmp_path, make_payload, monkeypatch, fake_sdks
 ):
+    """Resolve transports and enable feedback for configured MCP tools."""
     tool_read = MagicMock()
     tool_read.name = "read_file"
     tool_write = MagicMock()
@@ -2084,6 +2091,7 @@ async def test_mcp_servers_become_adapter_tools(
 async def test_mcp_tool_errors_are_feedback_without_automatic_retries(
     tmp_path, make_payload, monkeypatch, failure
 ):
+    """Allow corrected calls without automatically replaying failed calls."""
     mock_call = AsyncMock(return_value=("corrected", None))
     if failure == "mcp":
         mock_call.side_effect = ToolException("Missing required command argument")
@@ -2135,6 +2143,79 @@ async def test_mcp_tool_errors_are_feedback_without_automatic_retries(
     assert corrected.status == "success"
     assert corrected.content == "corrected"
     assert mock_call.await_count == (1 if failure == "validation" else 2)
+
+
+@pytest.mark.parametrize("failure", ["mcp", "response_validation"])
+async def test_mcp_session_errors_preserve_the_validation_boundary(
+    tmp_path, make_payload, monkeypatch, failure
+):
+    """Declared tool errors are feedback; malformed server responses stay fatal."""
+    mock_session = MagicMock(spec=ClientSession)
+    mock_session.list_tools = AsyncMock(
+        return_value=ListToolsResult(
+            tools=[
+                Tool(
+                    name="run_command",
+                    description="Test command tool",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {"command": {"type": "string"}},
+                        "required": ["command"],
+                    },
+                )
+            ]
+        )
+    )
+    mock_session.call_tool = AsyncMock(
+        return_value=CallToolResult(
+            content=[
+                TextContent(type="text", text="Missing required command argument")
+            ],
+            isError=True,
+        )
+    )
+    if failure == "response_validation":
+        with pytest.raises(ValidationError) as malformed:
+            CallToolResult.model_validate({"content": "not a content list"})
+        mock_session.call_tool.side_effect = malformed.value
+    mock_context = MagicMock()
+    mock_context.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_context.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr(
+        "langchain_mcp_adapters.tools.create_session",
+        MagicMock(return_value=mock_context),
+    )
+    config = make_payload(tmp_path)["config"]
+    config["mcp"] = {"servers": {"commands": {"transport": "stdio", "url": "unused"}}}
+    tools = await adapter.resolve_tools(AgentConfig.from_mapping(config))
+    call = {"name": "run_command", "args": {}, "id": "invalid", "type": "tool_call"}
+    if failure == "response_validation":
+        with pytest.raises(
+            RuntimeError, match="MCP tool response validation failed"
+        ) as error:
+            await tools[0].ainvoke(call)
+        assert error.value.__cause__ is malformed.value
+        mock_session.call_tool.assert_awaited_once()
+        return
+    feedback = await tools[0].ainvoke(call)
+    assert isinstance(feedback, ToolMessage)
+    assert feedback.status == "error"
+    assert feedback.tool_call_id == "invalid"
+    assert "Missing required command argument" in feedback.content
+    mock_session.call_tool.assert_awaited_once()
+    mock_session.call_tool.return_value = CallToolResult(
+        content=[TextContent(type="text", text="corrected")]
+    )
+    corrected = await tools[0].ainvoke(
+        {**call, "args": {"command": "printf corrected"}, "id": "corrected"}
+    )
+    assert corrected.status == "success"
+    assert corrected.content[0]["text"] == "corrected"
+    assert mock_session.call_tool.await_count == 2
+    assert mock_session.call_tool.call_args.args == (
+        "run_command",
+        {"command": "printf corrected"},
+    )
 
 
 @pytest.mark.parametrize(

@@ -18,8 +18,10 @@ import json
 import math
 import os
 import uuid
+from collections.abc import Awaitable
 from collections.abc import Callable
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 from typing import Any
 from typing import NamedTuple
@@ -40,6 +42,7 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
+from pydantic import ValidationError
 
 HARNESS = "deepagents"
 # Providers we serve through the OpenAI-compatible ``ChatOpenAI`` client.
@@ -379,7 +382,25 @@ def resolve_skills(config: AgentConfig) -> list[str] | None:
     return skills or None
 
 
+def _mcp_tool_coroutine(
+    coroutine: Callable[..., Awaitable[Any]],
+) -> Callable[..., Awaitable[Any]]:
+    """Keep MCP response validation failures out of input-error feedback."""
+
+    @wraps(coroutine)
+    async def call_tool(*args: Any, **kwargs: Any) -> Any:
+        """Run once, preserving fatal failures after local argument parsing."""
+        try:
+            return await coroutine(*args, **kwargs)
+        except ValidationError as error:
+            # Local tool input validation runs before this coroutine is entered.
+            raise RuntimeError("MCP tool response validation failed.") from error
+
+    return call_tool
+
+
 async def _mcp_tools(config: AgentConfig) -> list[Any]:
+    """Load MCP tools with recoverable input errors but fatal invalid responses."""
     servers = config.mcp.servers if config.mcp is not None else {}
     connections = {name: _mcp_connection(name, spec) for name, spec in servers.items()}
     if not connections:
@@ -391,6 +412,7 @@ async def _mcp_tools(config: AgentConfig) -> list[Any]:
     for tool in tools:
         # MCP isError results become ToolException, not graph-fatal failures.
         # Return them as tool feedback; never replay a call automatically.
+        tool.coroutine = _mcp_tool_coroutine(tool.coroutine)
         tool.handle_tool_error = True
         tool.handle_validation_error = True
     return tools
