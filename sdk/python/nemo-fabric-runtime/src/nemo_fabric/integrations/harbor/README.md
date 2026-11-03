@@ -70,6 +70,12 @@ The bridge does not
 inspect harness IDs, native error-code lists, or diagnostic text. Other
 adapter-specific timeout codes are not automatically reclassified.
 
+Raised lifecycle failures retain an optional versioned `evidence` object beside `runner_error`. It records only obtained identities, cleanup events, selected software evidence, validated persisted stats and artifact references. Each dimension has explicit coverage; missing usage and cost remain unknown, and absent samples are not reconstructed. A result obtained before a later publication failure is retained as `partial_result`, without changing the failure into a successful run. Partial usage remains evidence and does not populate Harbor's final accounting totals.
+
+The envelope limits inline evidence to 256 KiB, artifact and telemetry references to 64 entries each, and lifecycle events to 256. Malformed optional observations are marked invalid while the original runner error and valid sibling observations remain available. Stats recovery reads only a matching invocation summary under the obtained runtime's configured artifact root; it does not parse raw invocation payloads or scan shared temporary storage. Sampling-disabled failures can therefore lack persisted stats. Abrupt process termination can prevent any failure envelope from being written.
+
+Use matching host bridge and task runner versions when enabling this transport. The new consumer accepts legacy error-only documents. Older consumers reject the new optional field rather than silently interpreting an incompatible failure document.
+
 ## Finalized Telemetry Artifacts
 
 The task runner validates telemetry after the one-shot NeMo Fabric runtime shuts down. For Relay trajectories finalized during shutdown, it reads the runtime-owned plugin configuration and collects local ATIF files from that runtime's configured output directory. It validates the trajectory before promoting it to Harbor's `agent/trajectory.json`; ambiguous or malformed artifacts remain telemetry failures rather than changing the verifier reward. Remote-only output and nested filename templates are not collected by this fallback. Adapter invocation results and multi-turn behavior are unchanged.

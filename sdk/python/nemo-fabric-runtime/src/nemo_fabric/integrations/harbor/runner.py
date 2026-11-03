@@ -15,6 +15,7 @@ from nemo_fabric import Fabric
 from nemo_fabric import FabricConfigError
 from nemo_fabric import FabricError
 from nemo_fabric import RunResult
+from nemo_fabric.integrations.harbor.failure import failure_evidence
 from nemo_fabric.integrations.harbor.models import FabricRunPayload
 from nemo_fabric.integrations.harbor.models import FabricRunnerError
 from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
@@ -75,13 +76,17 @@ async def run(payload: FabricRunPayload) -> RunResult:
         request=payload.request,
         **compatibility,
     )
-    publish_telemetry_evidence(
-        result,
-        Path(payload.logs_dir),
-        harbor_session_id=payload.request.context.get("harbor_session_id"),
-        harbor_context_id=payload.request.context.get("harbor_context_id"),
-        runtime_stopped=True,
-    )
+    try:
+        publish_telemetry_evidence(
+            result,
+            Path(payload.logs_dir),
+            harbor_session_id=payload.request.context.get("harbor_session_id"),
+            harbor_context_id=payload.request.context.get("harbor_context_id"),
+            runtime_stopped=True,
+        )
+    except BaseException as error:
+        error._fabric_partial_result = result.to_mapping()
+        raise
     return result
 
 
@@ -92,12 +97,13 @@ def main() -> None:
     args = parser.parse_args()
 
     args.result.parent.mkdir(parents=True, exist_ok=True)
+    payload = None
     try:
         payload = FabricRunPayload.model_validate_json(
             args.spec.read_text(encoding="utf-8")
         )
         result = asyncio.run(run(payload))
-    except Exception as error:
+    except (Exception, asyncio.CancelledError) as error:
         diagnostic = FabricRunnerError(
             stage=error.stage if isinstance(error, FabricError) else None,
             code=error.code if isinstance(error, FabricError) else None,
@@ -109,9 +115,13 @@ def main() -> None:
             retryable=error.retryable if isinstance(error, FabricError) else False,
         )
         args.result.write_text(
-            FabricRunnerFailure(runner_error=diagnostic).model_dump_json(indent=2),
+            FabricRunnerFailure(
+                runner_error=diagnostic, evidence=failure_evidence(error, payload)
+            ).model_dump_json(indent=2),
             encoding="utf-8",
         )
+        if isinstance(error, asyncio.CancelledError):
+            raise
         raise SystemExit(1) from None
     args.result.write_text(json.dumps(result.to_mapping(), indent=2), encoding="utf-8")
     if result.status != "succeeded" or result.error is not None:
