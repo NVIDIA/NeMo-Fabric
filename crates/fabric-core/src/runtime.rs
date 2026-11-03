@@ -3550,7 +3550,11 @@ fn lock_agent_state(plan: &RunPlan, artifacts: &ArtifactManifest) -> Result<Opti
         path: state_dir.clone(),
         source,
     })?;
-    let lock_path = state_dir.join(".fabric-state.lock");
+    // The lock sits beside the folder, which the adapter owns and may replace.
+    let mut lock_name = std::ffi::OsString::from(".");
+    lock_name.push(state_dir.file_name().unwrap_or_default());
+    lock_name.push(".lock");
+    let lock_path = state_dir.with_file_name(lock_name);
     let file = File::options()
         .create(true)
         .write(true)
@@ -4036,7 +4040,14 @@ fn collect_workspace_artifacts(
         return Ok(());
     }
     patch.push_str(&String::from_utf8_lossy(&diff.stdout));
-    patch.push_str(&untracked_workspace_patch(workspace)?);
+    // Kept agent state can hold conversations and credentials; leave it out
+    // when the artifact directory sits inside the workspace.
+    let kept_state: Vec<PathBuf> = manifest
+        .root
+        .iter()
+        .map(|root| root.join(".fabric").join("state"))
+        .collect();
+    patch.push_str(&untracked_workspace_patch(workspace, &kept_state)?);
     if patch.trim().is_empty() {
         return Ok(());
     }
@@ -4075,16 +4086,29 @@ fn collect_workspace_artifacts(
     Ok(())
 }
 
-fn untracked_workspace_patch(workspace: &Path) -> Result<String> {
-    let Ok(untracked) = Command::new("git")
+fn untracked_workspace_patch(workspace: &Path, excluded: &[PathBuf]) -> Result<String> {
+    let mut command = Command::new("git");
+    command
         .arg("-C")
         .arg(workspace)
         .arg("ls-files")
         .arg("--others")
         .arg("--exclude-standard")
         .arg("-z")
-        .output()
-    else {
+        .arg("--")
+        .arg(".");
+    let workspace_root = workspace
+        .canonicalize()
+        .unwrap_or_else(|_| workspace.to_path_buf());
+    for path in excluded {
+        let path = path.canonicalize().unwrap_or_else(|_| path.clone());
+        if let Ok(relative) = path.strip_prefix(&workspace_root) {
+            let mut pathspec = std::ffi::OsString::from(":(exclude)");
+            pathspec.push(relative);
+            command.arg(pathspec);
+        }
+    }
+    let Ok(untracked) = command.output() else {
         return Ok(String::new());
     };
     if !untracked.status.success() || untracked.stdout.is_empty() {
@@ -4955,6 +4979,35 @@ for line in sys.stdin:
         assert!(Path::new(first_dir).is_absolute(), "{first_dir}");
         assert_eq!(Path::new(first_dir), expected);
         assert!(expected.is_dir());
+        // The lock sits beside the folder, so an adapter that replaces the
+        // folder can't drop it.
+        assert!(!expected.join(".fabric-state.lock").exists());
+        assert!(expected.with_file_name(".assistant.lock").is_file());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn workspace_patch_leaves_out_kept_agent_state() {
+        let root = std::env::temp_dir().join(new_id("fabric-workspace-patch-test"));
+        let state = root.join("artifacts/.fabric/state/acme.agent/assistant");
+        fs::create_dir_all(&state).expect("create state folder");
+        assert!(
+            Command::new("git")
+                .arg("init")
+                .arg("-q")
+                .arg(&root)
+                .status()
+                .expect("run git init")
+                .success()
+        );
+        fs::write(root.join("notes.txt"), "note\n").expect("write workspace file");
+        fs::write(state.join("state.db"), "private\n").expect("write state file");
+
+        let patch = untracked_workspace_patch(&root, &[root.join("artifacts/.fabric/state")])
+            .expect("untracked patch");
+
+        assert!(patch.contains("notes.txt"), "{patch}");
+        assert!(!patch.contains("state.db"), "{patch}");
         let _ = fs::remove_dir_all(root);
     }
 
