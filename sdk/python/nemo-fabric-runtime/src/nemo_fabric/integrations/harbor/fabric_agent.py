@@ -576,6 +576,7 @@ else:
             )
 
         def to_agent_info(self) -> AgentInfo:
+            """Report the complete model's explicit identity through Harbor metadata."""
             info = super().to_agent_info()
             if self.fabric_model_config is not None:
                 model = _configured_model(self.fabric_model_config)

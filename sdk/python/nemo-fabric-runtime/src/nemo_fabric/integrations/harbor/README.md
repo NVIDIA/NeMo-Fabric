@@ -25,11 +25,11 @@ For example, after installing the matching Pi adapter and harness in your task i
 ```bash
 harbor run --path ./task --agent-import-path nemo_fabric.integrations.harbor.fabric_agent:FabricAgent \
   --ak fabric_adapter_id=nvidia.fabric.pi \
-  --ak 'fabric_model_config={"provider":"openai","model":"example/custom-model","base_url":"https://model.example.com/v1","api_key_env":"MODEL_API_KEY","api":"openai-completions","context_window":32768,"max_tokens":2048}' \
+  --ak 'fabric_model_config={"provider":"openai","model":"example/custom-model","base_url":"https://model.example.com/v1","api_key_env":"MODEL_API_KEY","api":"openai-completions","context_window":32768,"max_tokens":2048,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0}}' \
   --ae 'MODEL_API_KEY=${MODEL_API_KEY}'
 ```
 
-Replace the model ID, endpoint, and limits with your served model's values. The host and task must use compatible NeMo Fabric packages and descriptor metadata. Pi's `api` and `context_window` are top-level extensions; putting them under `settings` is invalid.
+Replace the model ID, endpoint, and limits with your served model's values. The host and task must use compatible NeMo Fabric packages and descriptor metadata. Pi's `api`, `context_window`, `input`, and `cost` are top-level extensions; putting them under `settings` is invalid. Set all four cost rates to the model's known per-million-token prices; use zero only for a model you explicitly treat as unpriced. Descriptor admission validates supplied fields. Pi's installed catalog membership and completeness checks for unknown models remain startup checks; native catalog models can inherit their metadata.
 
 Existing `--model`, `fabric_model_provider`, `fabric_model_base_url`, `fabric_model_api_key_env`, and `fabric_model_settings` calls remain supported. When combined with `fabric_model_config`, each explicitly supplied duplicate must equal the corresponding field in the complete object; conflicts are errors. The complete object's provider is explicit, with no provider inference or field merging. Keep credentials in Harbor's managed environment and name them with `api_key_env`; inline keys and credentials in endpoint URLs are rejected.
 
