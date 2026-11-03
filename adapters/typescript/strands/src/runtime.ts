@@ -131,7 +131,7 @@ export class StrandsAdapterRuntime implements AdapterRuntime {
         output: null,
         error: {
           code: "timeout",
-          message: "The Strands invocation deadline has already elapsed",
+          message: `Strands adapter invocation deadline ${context.deadline_millis} (Unix milliseconds) has already elapsed`,
           retryable: false,
           extensions: {
             owner: "adapter",

@@ -90,7 +90,7 @@ export class KiroAdapterRuntime implements AdapterRuntime {
         output: null,
         error: {
           code: "timeout",
-          message: "The Kiro invocation deadline has already elapsed",
+          message: `Kiro adapter invocation deadline ${context.deadline_millis} (Unix milliseconds) has already elapsed`,
           retryable: false,
           extensions: {
             owner: "adapter",

@@ -151,7 +151,7 @@ test("rejects an expired deadline before dispatch and keeps the session usable",
     output: null,
     error: {
       code: "timeout",
-      message: "The Strands invocation deadline has already elapsed",
+      message: `Strands adapter invocation deadline ${deadline} (Unix milliseconds) has already elapsed`,
       retryable: false,
       extensions: {
         owner: "adapter",
