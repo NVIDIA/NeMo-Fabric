@@ -256,6 +256,26 @@ async def test_hermes_stop_cuts_off_an_in_flight_api_request(
     assert not _token_path(tmp_path).exists()
 
 
+async def test_hermes_interfaces_fail_start_on_windows_before_any_child_starts(
+    tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(interfaces, "POSIX", False)
+    runtime = adapter.HermesRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(
+            _payload(
+                tmp_path,
+                {"interfaces": {"api": {"port": _free_port()}}},
+                base_url=f"{api_server}/v1",
+            )
+        )
+
+    assert caught.value.code == "hermes_interfaces_unsupported_platform"
+    assert runtime._interfaces._children == []
+    assert not _token_path(tmp_path).exists()
+
+
 async def test_hermes_interface_port_in_use_fails_start(
     tmp_path: Path, api_server: str
 ):

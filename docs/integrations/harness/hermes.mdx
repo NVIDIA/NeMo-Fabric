@@ -157,7 +157,9 @@ harness = HarnessConfig(
   actions, such as restart, start Hermes processes outside the runtime.
 - The API server needs `aiohttp`, from Hermes's `messaging` extra. The dashboard
   needs a built frontend at `HERMES_WEB_DIST` or Hermes's own
-  `hermes_cli/web_dist`; the adapter never builds it.
+  `hermes_cli/web_dist`; the adapter never builds it. Interfaces need a POSIX
+  host: on Windows, `start` fails with `hermes_interfaces_unsupported_platform`
+  before any child starts.
 
 ## Runtime Health
 

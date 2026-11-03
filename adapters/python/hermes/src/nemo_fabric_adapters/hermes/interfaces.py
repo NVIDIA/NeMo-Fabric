@@ -20,6 +20,8 @@ from nemo_fabric_adapters.common import local_interfaces
 from nemo_fabric_adapters.common import utils as common_utils
 
 HEALTH_PATHS = {"api": "/health", "dashboard": "/api/status"}
+# Children run in their own sessions and stop by process group.
+POSIX = os.name != "nt"
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 60.0
 # Fabric gives the adapter host 10 s to stop, including this wait.
 STOP_GRACE_SECONDS = 5.0
@@ -71,6 +73,12 @@ class InterfaceChildren:
         environment: dict[str, str],
     ) -> None:
         """Start the enabled interfaces and write the API token once all pass health."""
+        if not POSIX:
+            raise lifecycle.LifecycleError(
+                "hermes_interfaces_unsupported_platform",
+                "Hermes interfaces require a POSIX host",
+                metadata={"field": "harness.settings.interfaces"},
+            )
         for name, port in ports.items():
             if not local_interfaces.port_available(port):
                 raise lifecycle.LifecycleError(
