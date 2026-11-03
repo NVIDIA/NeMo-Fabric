@@ -162,7 +162,7 @@ else:
         fabric_harness_settings: dict[str, Any] | None = Field(
             default=None, description="Selected adapter settings."
         )
-        fabric_model_config: dict[str, Any] | None = Field(
+        fabric_model_config: dict[str, Any] | ModelConfig | None = Field(
             default=None,
             description="Complete public Fabric ModelConfig, including descriptor-declared extensions; duplicate model options must agree.",
         )
@@ -243,6 +243,12 @@ else:
             if not value.strip():
                 raise ValueError("fabric_adapter_id must not be empty")
             return value
+
+        @field_validator("fabric_model_config", mode="before")
+        @classmethod
+        def normalize_model_config(cls, value: Any) -> Any:
+            """Keep the public model object and JSON inputs on the same wire path."""
+            return value.to_mapping() if isinstance(value, ModelConfig) else value
 
         @field_validator("fabric_model_provider")
         @classmethod
@@ -402,7 +408,7 @@ else:
             extra_env: dict[str, str] | None = None,
             *args: Any,
             fabric_model_api_key_env: str | None = None,
-            fabric_model_config: dict[str, Any] | None = None,
+            fabric_model_config: dict[str, Any] | ModelConfig | None = None,
             fabric_model_provider: str | None = None,
             fabric_model_settings: dict[str, Any] | None = None,
             fabric_discovery_paths: list[str] | None = None,
