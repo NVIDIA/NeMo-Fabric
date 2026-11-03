@@ -466,3 +466,51 @@ async def test_adapter_deadline_keeps_normalized_code_and_native_cause(
         "cause_code": "strands_prompt_timeout",
     }
     assert isinstance(caught.value.__cause__, TimeoutError)
+
+
+@pytest.mark.parametrize("adapter", ["strands", "kiro", "kilo"])
+@pytest.mark.parametrize("invalid_metadata", [False, True])
+async def test_committed_deadline_schema_survives_core_result_validation(
+    hermes_shim_agent_dir, repo_root, adapter, invalid_metadata
+):
+    source = json.loads(
+        (
+            repo_root / f"adapters/typescript/{adapter}/{adapter}.fabric-adapter.json"
+        ).read_text()
+    )
+    descriptor_path = (
+        hermes_shim_agent_dir / "adapters/hermes-shim/hermes-shim.fabric-adapter.json"
+    )
+    descriptor = json.loads(descriptor_path.read_text())
+    descriptor["extension_schemas"].update(source["extension_schemas"])
+    descriptor_path.write_text(json.dumps(descriptor))
+    metadata = (
+        {
+            "owner": "adapter",
+            "timeout_seconds": 300,
+            "cause_code": "kilo_prompt_timeout",
+        }
+        if adapter == "kilo"
+        else {
+            "owner": "adapter",
+            "deadline_millis": 300_000,
+            "cause_code": f"{adapter}_deadline_exceeded",
+        }
+    )
+    if invalid_metadata:
+        metadata["undeclared"] = "must not cross the runtime boundary"
+    operation = Fabric().run(
+        hermes_shim_config(),
+        base_dir=hermes_shim_agent_dir,
+        request=RunRequest(
+            input="deadline", context={"normalized_deadline_result": metadata}
+        ),
+    )
+    if invalid_metadata:
+        with pytest.raises(FabricRuntimeError, match="extensions"):
+            await operation
+    else:
+        result = await operation
+        assert result.status == "failed"
+        assert result.error.code == "timeout"
+        assert result.error.metadata == metadata

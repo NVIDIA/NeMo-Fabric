@@ -45,6 +45,16 @@ class ShimRuntime:
                 "hermes_runtime_not_started",
                 "shim runtime is not started",
             )
+        if "normalized_deadline_result" in request.context:
+            return AgentRunResult(
+                status=AgentRunStatus.FAILED,
+                output=None,
+                error=AgentRunError(
+                    code="timeout",
+                    message="Adapter invocation deadline expired",
+                    extensions=request.context["normalized_deadline_result"],
+                ),
+            )
         if request.context.get("normalized_deadline"):
             raise lifecycle.LifecycleError(
                 "timeout",
