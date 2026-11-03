@@ -176,9 +176,11 @@ class FabricFailureEvidence(BaseModel):
             )
             else "missing"
         )
-        coverage.setdefault("identity", identity_coverage)
-        if identity_invalid:
-            coverage["identity"] = "invalid"
+        coverage["identity"] = (
+            coverage["identity"]
+            if coverage.get("identity") in ("invalid", "unsupported", "truncated")
+            else identity_coverage
+        )
         validators = {
             "partial_result": RunResult,
             "execution": ExecutionEvidence,

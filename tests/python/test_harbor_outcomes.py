@@ -615,6 +615,8 @@ def test_failure_evidence_without_observations_is_explicit(runner_cli, monkeypat
     assert evidence["usage"] is None
     assert evidence["system_stats"] is None
     assert evidence["runtime_id"] is None
+    assert evidence["request_id"] is not None
+    assert evidence["coverage"]["identity"] == "partial"
     assert evidence["events"] == []
     assert evidence["coverage"]["usage"] == "missing"
 

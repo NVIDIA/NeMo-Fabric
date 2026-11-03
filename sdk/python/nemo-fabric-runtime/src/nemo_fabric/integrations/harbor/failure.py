@@ -97,7 +97,7 @@ def _retained_files(evidence: dict, payload: FabricRunPayload) -> None:
             for index, entry in enumerate(entries):
                 if index == 4:
                     evidence["coverage"]["artifacts"] = "truncated"
-                    break
+                    return
                 if entry.is_dir(follow_symlinks=False):
                     candidate = Path(entry.path)
                     marker = candidate / "adapter-invocation.json"
