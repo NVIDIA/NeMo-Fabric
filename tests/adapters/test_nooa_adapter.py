@@ -11,6 +11,7 @@ import re
 import runpy
 import subprocess
 import sys
+import textwrap
 import types
 from contextlib import asynccontextmanager
 from contextlib import contextmanager
@@ -512,6 +513,77 @@ def test_host_module_runs_once_and_accepts_the_public_target_wrapper():
     host = runpy.run_path(adapter.__file__)
     target = InteractiveAgentTarget(agent=MagicMock())
     assert host["_unwrap_target"](target) is target
+
+
+def test_host_runs_a_factory_that_returns_the_wrapper(tmp_path: Path):
+    (tmp_path / "wrapper_target.py").write_text(
+        textwrap.dedent(
+            """
+            from types import SimpleNamespace
+
+            from fabric_nooa_test_target import EchoInteractiveAgent
+            from nemo_fabric_adapters.nooa import InteractiveAgentTarget
+
+
+            class ReplyAgent(EchoInteractiveAgent):
+                async def handle(self, notification):
+                    self.event_manager.emit("AgentMessage", SimpleNamespace(content="reply"))
+                    return SimpleNamespace(kind="DONE", explanation="done")
+
+
+            def create_agent(context):
+                agent = ReplyAgent(close_marker=context.workspace / "agent-closed")
+                return InteractiveAgentTarget(
+                    agent=agent, close=lambda: (context.workspace / "wrapper-closed").touch()
+                )
+            """
+        )
+    )
+    start = _start_payload(tmp_path)
+    start["config"] = {
+        "workflow": {
+            "entrypoint": {
+                "kind": "interactive_agent_factory",
+                "ref": "wrapper_target:create_agent",
+            },
+        }
+    }
+    request, context = _invocation()
+    requests = [
+        {"operation": "start", "payload": start},
+        {
+            "operation": "invoke",
+            "payload": {
+                "request": request.to_mapping(),
+                "runtime_context": context.to_mapping(),
+            },
+        },
+        {"operation": "stop", "payload": {"runtime_id": "runtime-1"}},
+    ]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [str(tmp_path), str(ROOT / "tests" / "fixtures" / "nooa" / "src")]
+    )
+    (tmp_path / "workspace").mkdir()
+
+    # Run the host the way Fabric starts it.
+    completed = subprocess.run(
+        [sys.executable, "-m", "nemo_fabric_adapters.nooa.adapter"],
+        input="".join(f"{json.dumps(item)}\n" for item in requests),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+        env=environment,
+    )
+
+    responses = [json.loads(line) for line in completed.stdout.splitlines()]
+    assert [response["outcome"]["status"] for response in responses] == [
+        "succeeded"
+    ] * 3, completed.stderr
+    assert responses[1]["outcome"]["output"]["output"]["response"] == "reply"
+    assert (tmp_path / "workspace" / "wrapper-closed").exists()
+    assert not (tmp_path / "workspace" / "agent-closed").exists()
 
 
 async def test_runtime_builds_once_and_preserves_agent_state(
