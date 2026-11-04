@@ -3,7 +3,7 @@
 
 """OO Agents adapter for NVIDIA NeMo Fabric."""
 
-from nemo_fabric_adapters.nooa.adapter import InteractiveAgentBuildContext
-from nemo_fabric_adapters.nooa.adapter import InteractiveAgentTarget
+from nemo_fabric_adapters.nooa.interactive import InteractiveAgentBuildContext
+from nemo_fabric_adapters.nooa.interactive import InteractiveAgentTarget
 
 __all__ = ["InteractiveAgentBuildContext", "InteractiveAgentTarget"]
