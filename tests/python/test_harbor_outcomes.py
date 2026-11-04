@@ -672,7 +672,10 @@ def test_runner_serializes_cancellation_without_turning_it_into_success(
     assert "status" not in document
 
 
-@pytest.mark.parametrize("malformed", [None, "identity", "json", "oversized"])
+@pytest.mark.parametrize(
+    "malformed",
+    [None, "identity", "json", "oversized", "negative_stats", "nonfinite_stats"],
+)
 def test_failure_recovers_only_matching_bounded_stats(tmp_path, malformed):
     from nemo_fabric import FabricRuntimeError
     from nemo_fabric.integrations.harbor.failure import failure_evidence
@@ -693,6 +696,10 @@ def test_failure_recovers_only_matching_bounded_stats(tmp_path, malformed):
         "before": {"status": "unavailable", "reason": "not available"},
         "after": {"status": "unsupported", "reason": "not supported"},
     }
+    if malformed == "negative_stats":
+        stats["elapsed_seconds"] = -1
+    elif malformed == "nonfinite_stats":
+        stats["elapsed_seconds"] = float("nan")
     summary = {
         "schema_version": "fabric.system_stats/v1alpha1",
         "runtime_id": "runtime-test",

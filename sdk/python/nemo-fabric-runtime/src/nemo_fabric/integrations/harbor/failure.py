@@ -15,6 +15,7 @@ from nemo_fabric.integrations.harbor.models import (
     FabricRunPayload,
     _validated_failure_evidence,
 )
+from nemo_fabric.types import InvocationSystemStats
 
 
 def failure_evidence(error: BaseException, payload: FabricRunPayload | None) -> dict:
@@ -133,8 +134,10 @@ def _retained_files(evidence: dict, payload: FabricRunPayload) -> None:
                         or summary["request_id"] != evidence.get("request_id")
                     ):
                         raise ValueError("summary identity mismatch")
-                    evidence["system_stats"] = summary["system_stats"]
-                except (OSError, ValueError, KeyError, TypeError):
+                    evidence["system_stats"] = InvocationSystemStats.from_mapping(
+                        summary["system_stats"]
+                    ).to_mapping()
+                except (OSError, ValueError, KeyError, TypeError, FabricError):
                     evidence["coverage"]["system_stats"] = "invalid"
                     continue
             references.append(
