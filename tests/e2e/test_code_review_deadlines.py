@@ -242,21 +242,30 @@ async def test_code_review_deadline_matrix(tmp_path):
                     and error.stage == "invoke"
                 )
             if mode == "timeout":
-                assert record["elapsed_seconds"] < 45
+                assert record["timeout_seconds"] - 1 <= record["elapsed_seconds"] < 45
             record["status"] = "passed"
         except Exception as error:
             record["failure"] = str(error)
         finally:
-            try:
-                if runtime is not None:
+            cleanup_errors = []
+            if runtime is not None:
+                try:
                     await runtime.stop()
-                if environment is not None:
+                except Exception as error:
+                    cleanup_errors.append({"operation": "stop", "message": str(error)})
+            if environment is not None:
+                try:
                     await fabric.release_environment(environment)
-                record["cleanup"] = "passed"
-            except Exception as error:
+                except Exception as error:
+                    cleanup_errors.append(
+                        {"operation": "release", "message": str(error)}
+                    )
+            if cleanup_errors:
                 record["cleanup"] = "failed"
                 record["status"] = "failed"
-                record["cleanup_error"] = str(error)
+                record["cleanup_errors"] = cleanup_errors
+            else:
+                record["cleanup"] = "passed"
             records.append(record)
             evidence.parent.mkdir(parents=True, exist_ok=True)
             evidence.write_text(

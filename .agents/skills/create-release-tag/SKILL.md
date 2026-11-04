@@ -28,10 +28,6 @@ fi
 git fetch upstream "${RELEASE_BRANCH}" --tags
 ```
 
-## Validate the Release Candidate
-
-Before tagging, follow [Local Validation](../../../RELEASING.md#local-validation), including the [invocation deadline qualification checklist](../../../tests/e2e/invocation-deadline-checklist.md). Require retained passing evidence for host and OpenShell execution with both Hermes and Deep Agents, finite and unlimited deadlines, and timeout reasons and cleanup. A skipped live test or a model-free echo run alone does not satisfy inference qualification. Keep detailed commands and results in the checklist and release evidence rather than this skill.
-
 ## Create and Verify the Tag
 
 Assume `upstream` is the NVIDIA repository remote. Preserve user changes: do
@@ -83,6 +79,19 @@ test "${RELEASE_SHA}" = "${REMOTE_RELEASE_SHA}"
 test "$(just normalize-release-tag "${RELEASE_TAG}")" = "${RELEASE_VERSION}"
 CURRENT_VERSION="$(python -c "import tomllib; print(tomllib.load(open('Cargo.toml', 'rb'))['workspace']['package']['version'])")"
 test "${CURRENT_VERSION}" = "${RELEASE_VERSION}"
+```
+
+## Validate the Stable Release
+
+In this verified checkout, follow [Local Validation](../../../RELEASING.md#local-validation), including the [invocation deadline qualification checklist](../../../tests/e2e/invocation-deadline-checklist.md). Record the full `RELEASE_SHA` with the local or external qualification results, and require it to match the commit being tagged. Build the host SDK, provider, and task image from that commit. Require retained passing results for host and OpenShell execution with both Hermes and Deep Agents, finite and unlimited deadlines, and timeout reasons and cleanup. A skipped live test or a model-free echo run alone does not satisfy inference qualification. Do not commit run evidence.
+
+Continue in the same shell only after qualification succeeds. Recheck the checkout and upstream branch before creating or pushing the tag; stop if either changed during validation.
+
+```bash
+test "$(git rev-parse HEAD)" = "${RELEASE_SHA}"
+test -z "$(git status --porcelain)"
+git fetch upstream "${RELEASE_BRANCH}"
+test "$(git rev-parse "upstream/${RELEASE_BRANCH}^{commit}")" = "${RELEASE_SHA}"
 
 if git rev-parse --verify --quiet "refs/tags/${RELEASE_TAG}" >/dev/null; then
   echo "Error: local tag ${RELEASE_TAG} already exists" >&2

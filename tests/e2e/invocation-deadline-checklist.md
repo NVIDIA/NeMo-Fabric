@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Invocation Deadline Qualification
 
-Use this checklist on the exact release candidate or PR commit. Retain the model ID, endpoint, harness versions, task image digest, commands, normalized results, elapsed times, and cleanup outcomes. Keep run evidence in local output directories or external review artifacts; do not commit it. Keep credentials out of evidence. A skipped live test is incomplete qualification.
+Use this checklist on the exact release candidate or PR commit. Record the full source commit SHA with the model ID, endpoint, harness versions, task image digest, commands, normalized results, elapsed times, and cleanup outcomes. For release qualification, the SHA must match `RELEASE_SHA`, and the host SDK, provider, and task image must be built from that commit. Keep run evidence in local output directories or external review artifacts; do not commit it. Keep credentials out of evidence. A skipped live test is incomplete qualification.
 
 - [ ] Unit and regression suites: configuration validation, optional deadline propagation, finite enforcement, termination reasons, and unchanged lifecycle/health budgets.
 - [ ] Model-free OpenShell tests: finite and unlimited invocations exceed 320 seconds, short finite deadline retains `timeout` at `invoke`, and sandboxes are deleted.
