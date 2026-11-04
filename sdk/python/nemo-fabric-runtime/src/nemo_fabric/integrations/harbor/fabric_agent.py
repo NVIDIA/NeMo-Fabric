@@ -248,7 +248,11 @@ else:
         @classmethod
         def normalize_model_config(cls, value: Any) -> Any:
             """Keep the public model object and JSON inputs on the same wire path."""
-            return value.to_mapping() if isinstance(value, ModelConfig) else value
+            return (
+                _model_config_mapping(value)
+                if isinstance(value, ModelConfig)
+                else value
+            )
 
         @field_validator("fabric_model_provider")
         @classmethod
@@ -860,6 +864,13 @@ else:
             return env
 
 
+def _model_config_mapping(value: ModelConfig) -> dict[str, Any]:
+    """Preserve descriptor-owned extensions, including explicit empty values."""
+    return value.to_mapping() | value.model_dump(
+        mode="json", include=set(value.extra_fields)
+    )
+
+
 def _configured_model(
     value: Mapping[str, Any] | ModelConfig,
     *,
@@ -885,7 +896,9 @@ def _configured_model(
             for entry in item:
                 reject_credentials(entry)
 
-    document = value.to_mapping() if isinstance(value, ModelConfig) else dict(value)
+    document = (
+        _model_config_mapping(value) if isinstance(value, ModelConfig) else dict(value)
+    )
     try:
         json.dumps(document, allow_nan=False)
         reject_credentials(document, root=True)

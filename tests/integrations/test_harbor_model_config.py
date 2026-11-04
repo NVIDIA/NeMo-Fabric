@@ -234,3 +234,56 @@ def test_existing_model_flags_remain_compatible(implementation, tmp_path):
         "base_url": "https://model.example.test/v1",
         "api_key_env": "MODEL_API_KEY",
     }
+
+
+@pytest.mark.parametrize("typed_model", [False, True])
+@pytest.mark.parametrize("extension", [[], {}])
+def test_empty_extension_survives_guest_payload(
+    implementation, pi_model, tmp_path, typed_model, extension
+):
+    from nemo_fabric import ModelConfig
+    from nemo_fabric.integrations.harbor.models import FabricRunPayload
+    from nemo_fabric_adapter_catalog import get_adapter_descriptor
+
+    descriptor = get_adapter_descriptor("nvidia.fabric.pi")
+    descriptor["adapter_id"] = "example.fabric.custom"
+    descriptor["extension_schemas"]["model"]["properties"]["custom_empty"] = {
+        "type": "array" if isinstance(extension, list) else "object",
+    }
+    descriptor_path = tmp_path / "custom.fabric-adapter.json"
+    descriptor_path.write_text(json.dumps(descriptor))
+    pi_model["custom_empty"] = extension
+    model = ModelConfig.from_mapping(pi_model) if typed_model else pi_model
+    agent = implementation.FabricAgent(
+        logs_dir=tmp_path / "logs",
+        fabric_adapter_id=descriptor["adapter_id"],
+        fabric_adapter_descriptor=descriptor_path,
+        fabric_model_config=model,
+    )
+    payload = FabricRunPayload.model_validate_json(
+        agent._build_spec("test").model_dump_json()
+    )
+    assert agent.options.fabric_model_config["custom_empty"] == extension
+    assert payload.config.to_mapping()["models"]["default"]["custom_empty"] == extension
+    config = implementation.build_harbor_config(
+        adapter_id=descriptor["adapter_id"], workspace="/app", model_config=model
+    )
+    assert config.to_mapping()["models"]["default"]["custom_empty"] == extension
+
+
+@pytest.mark.parametrize("typed_model", [False, True])
+@pytest.mark.parametrize("extension", [[], {}])
+def test_unknown_empty_extension_fails_preflight(
+    implementation, pi_model, typed_model, extension
+):
+    from nemo_fabric import ModelConfig
+
+    pi_model["unknown_empty"] = extension
+    model = ModelConfig.from_mapping(pi_model) if typed_model else pi_model
+    with pytest.raises(ValueError, match="descriptor"):
+        implementation.FabricAgent.preflight(
+            kwargs={
+                "fabric_adapter_id": "nvidia.fabric.pi",
+                "fabric_model_config": model,
+            }
+        )
