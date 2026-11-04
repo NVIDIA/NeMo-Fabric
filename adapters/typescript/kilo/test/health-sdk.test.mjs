@@ -172,7 +172,7 @@ test("native health request deadlines do not abort or close an invocation", asyn
 
 
 for (const level of ["active", "ready"]) {
-  test(`native server exit invalidates a rejected ${level} probe`, async (t) => {
+  test(`native server exit is preserved during a rejected ${level} probe`, async (t) => {
     const reply = Promise.withResolvers();
     const { handle, state, client } = await session(t);
     if (level === "active") client.session.get = () => reply.promise;
@@ -181,12 +181,34 @@ for (const level of ["active", "ready"]) {
     state.alive = false;
     reply.reject(new Error("PRIVATE-native-connection-error"));
     const result = await pending;
-    assert.equal(result.outcome, "unknown");
-    assert.equal(result.reason_code, "observation_changed");
-    assert.equal(result.observed_at, null);
+    assert.equal(result.outcome, "failed");
+    assert.equal(result.reason_code, "agent_exited");
+    assert.equal(result.activity, "stopped");
+    assert.equal(result.source, "fabric.adapter.liveness");
+    assert.ok(Number.isFinite(Date.parse(result.observed_at)));
     assert.equal(JSON.stringify(result).includes("PRIVATE"), false);
     assert.equal(state.aborts, 0);
     assert.equal(state.closed, 0);
     assert.equal((await handle.check("live")).reason_code, "agent_exited");
+  });
+}
+
+for (const level of ["active", "ready"]) {
+  test(`preserves a confirmed Kilo process exit during a resolved ${level} request`, async (t) => {
+    const reply = Promise.withResolvers();
+    const { handle, state, client } = await session(t);
+    client.session.get = () => reply.promise;
+    client.global.health = () => reply.promise;
+    const checking = handle.check(level);
+    state.alive = false;
+    reply.resolve({ data: { id: "session-1", healthy: true, version: "test" } });
+    const result = await checking;
+    assert.equal(result.outcome, "failed");
+    assert.equal(result.reason_code, "agent_exited");
+    assert.equal(result.activity, "stopped");
+    assert.equal(result.source, "fabric.adapter.liveness");
+    assert.ok(Number.isFinite(Date.parse(result.observed_at)));
+    assert.equal(state.aborts, 0);
+    assert.equal(state.closed, 0);
   });
 }

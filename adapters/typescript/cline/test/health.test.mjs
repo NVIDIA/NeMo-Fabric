@@ -205,3 +205,46 @@ test("a replaced native host cannot turn a missing resident into confirmed closu
   assert.equal((await handle.check("live")).reason_code, "observation_changed");
   await handle.stop();
 });
+
+test("runtime health preserves confirmed native exit evidence without invoking or stopping", async (t) => {
+  const evidence = {
+    outcome: "failed", reason_code: "agent_exited", activity: "stopped",
+    source: "fabric.adapter.liveness", observed_at: new Date().toISOString(),
+  };
+  let stops = 0;
+  const runtime = new ClineAdapterRuntime({
+    create: async () => ({
+      id: "native-session",
+      check: async () => evidence,
+      prompt: async () => { throw new Error("health must not invoke"); },
+      stop: async () => { stops += 1; },
+    }),
+  });
+  await runtime.start(input);
+  t.after(() => runtime.stop());
+  assert.deepEqual(await runtime.check("live"), evidence);
+  assert.equal(stops, 0);
+});
+
+for (const rejected of [false, true]) {
+  test(`ready preserves the same native agent's closure when get ${rejected ? "rejects" : "resolves"}`, async (t) => {
+    const fixture = nativeFixture();
+    const reply = Promise.withResolvers();
+    fixture.core.get = () => reply.promise;
+    const handle = await new ClineSdkSessionFactory(fixture.loader).create(input);
+    t.after(() => handle.stop());
+    const checking = handle.check("ready");
+    fixture.agent.shutdownCalled = true;
+    if (rejected) reply.reject(new Error("PRIVATE native shutdown"));
+    else reply.resolve({ sessionId: "session", status: "idle" });
+    const result = await checking;
+    assert.equal(result.outcome, "failed");
+    assert.equal(result.reason_code, "session_closed");
+    assert.equal(result.activity, "stopped");
+    assert.ok(Number.isFinite(Date.parse(result.observed_at)));
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
+    assert.equal(fixture.calls.send, 0);
+    assert.equal(fixture.sessions.get("session"), fixture.resident);
+    assert.equal(fixture.resident.agent, fixture.agent);
+  });
+}

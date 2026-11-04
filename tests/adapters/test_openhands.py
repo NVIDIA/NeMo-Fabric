@@ -898,12 +898,13 @@ async def test_health_uses_native_conversation_lifecycle(
 
 @pytest.mark.parametrize("flag", ["_cleanup_initiated", "_cleanup_complete"])
 @pytest.mark.parametrize("level", ["live", "active"])
-async def test_health_detects_native_closure(flag, level):
+@pytest.mark.parametrize("initialized", [False, True])
+async def test_health_detects_native_closure(flag, level, initialized):
     runtime = adapter.OpenHandsRuntime()
     conversation = MagicMock()
     conversation._cleanup_initiated = False
     conversation._cleanup_complete = False
-    conversation._agent_ready = True
+    conversation._agent_ready = initialized
     conversation._arun_task = None
     setattr(conversation, flag, True)
     runtime._conversation = conversation
@@ -911,6 +912,7 @@ async def test_health_detects_native_closure(flag, level):
     result = await runtime.check(level)
     assert (result["outcome"], result["reason_code"]) == ("failed", "session_closed")
     assert result["activity"] == "stopped"
+    assert result["observed_at"] is not None
 
 
 async def test_health_rejects_unqualified_native_shape_and_missing_runtime():

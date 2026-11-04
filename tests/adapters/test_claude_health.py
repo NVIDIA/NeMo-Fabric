@@ -187,15 +187,28 @@ async def test_claude_health_rechecks_ownership_after_native_response(
     assert (result["outcome"], result["reason_code"]) == expected
 
 
-async def test_claude_health_reports_probe_errors_without_claiming_process_death(
-    claude_health,
+@pytest.mark.parametrize("level", ["active", "ready"])
+@pytest.mark.parametrize("exited", [False, True])
+async def test_claude_health_preserves_process_evidence_during_probe_errors(
+    claude_health, level, exited
 ):
-    runtime, client, _, _ = claude_health
-    client.get_mcp_status.side_effect = RuntimeError("secret-native-detail")
-    result = await runtime.check("active")
-    assert (result["outcome"], result["reason_code"]) == ("unknown", "probe_error")
+    runtime, client, _, process = claude_health
+
+    async def failed_request():
+        if exited:
+            process.returncode = 9
+        raise RuntimeError("secret-native-detail")
+
+    client.get_mcp_status.side_effect = failed_request
+    result = await runtime.check(level)
+    expected = ("failed", "agent_exited") if exited else ("unknown", "probe_error")
+    assert (result["outcome"], result["reason_code"]) == expected
+    assert result["activity"] == ("stopped" if exited else "idle")
+    assert result["observed_at"] is not None
     assert "secret-native-detail" not in str(result)
-    assert (await runtime.check("live"))["outcome"] == "passed"
+    assert (await runtime.check("live"))["outcome"] == (
+        "failed" if exited else "passed"
+    )
 
 
 async def test_claude_health_cancellation_bounds_native_requests_and_recovery(
