@@ -90,6 +90,8 @@ fn invoke_seconds(plan: &RunPlan) -> Result<u64> {
     Ok(seconds.ceil() as u64)
 }
 
+/// Wait for a passing server check and return whole seconds left for startup.
+/// Failed readiness clears only the provisional start binding; no start is sent.
 fn wait_for_server(
     key: &str,
     deadline: Instant,
