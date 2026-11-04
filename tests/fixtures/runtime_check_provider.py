@@ -97,7 +97,9 @@ while not (root / "release").exists() and time.monotonic() - started < 8:
             input=payload,
             text=True,
             capture_output=True,
-            timeout=frame["timeout_seconds"] + 2,
+            timeout=frame["timeout_seconds"] + 2
+            if frame["timeout_seconds"] is not None
+            else None,
         )
         response = json.loads(result.stdout)
         if (

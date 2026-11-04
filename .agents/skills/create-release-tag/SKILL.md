@@ -28,6 +28,10 @@ fi
 git fetch upstream "${RELEASE_BRANCH}" --tags
 ```
 
+## Validate the Release Candidate
+
+Before tagging, follow [Local Validation](../../../RELEASING.md#local-validation), including the [invocation deadline qualification checklist](../../../tests/e2e/invocation-deadline-checklist.md). Require retained passing evidence for host and OpenShell execution with both Hermes and Deep Agents, finite and unlimited deadlines, and timeout reasons and cleanup. A skipped live test or a model-free echo run alone does not satisfy inference qualification. Keep detailed commands and results in the checklist and release evidence rather than this skill.
+
 ## Create and Verify the Tag
 
 Assume `upstream` is the NVIDIA repository remote. Preserve user changes: do
