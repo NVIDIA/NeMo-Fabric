@@ -23,6 +23,10 @@ NeMo Fabric gives applications, evaluation systems, and rollout platforms a cons
 - **Switch harnesses:** Reuse the consumer integration while adapters handle harness-specific behavior.
 - **Compare outcomes:** Collect normalized results, errors, artifacts, lifecycle events, and telemetry references.
 
+Invocation response and artifact budgets are configured under
+[`runtime.response_limits`](docs/sdk/python.mdx#response-and-artifact-limits),
+with the same policy for host and OpenShell execution.
+
 ## Supported Agent Harnesses
 
 NeMo Fabric includes adapters for the following harnesses and execution targets. Select a harness name for its adapter documentation:

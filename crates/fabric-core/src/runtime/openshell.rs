@@ -12,7 +12,7 @@
 
 use super::*;
 use crate::config::{DiscoveryConfig, EnvironmentConfig, ResolutionStrategy};
-use crate::environment::{collect_artifacts, command_runtime};
+use crate::environment::{collect_artifacts, command_runtime, command_runtime_with_limits};
 use crate::task_command::{TaskCommand, TaskCommandResponse};
 
 pub(super) struct OpenShellRuntimeAdapter;
@@ -512,10 +512,11 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
         let key = claim(runtime, false)?.expect("active invocation binding");
         let mut confirmed = false;
         let result = (|| {
-            let response = command_runtime(
+            let response = command_runtime_with_limits(
                 &runtime.environment,
                 &command,
                 timeout.map(|seconds| seconds.saturating_add(15)),
+                plan.config.runtime.response_limits.unwrap_or_default(),
             )?;
             if let TaskCommandResponse::Rejected { error } = &response {
                 confirmed = error.effects == "none";
@@ -795,7 +796,11 @@ fn collect_result_artifacts(
         .filter(|path| seen.insert((*path).clone()))
         .cloned()
         .collect();
-    let files = collect_artifacts(&runtime.environment, &unique)?;
+    let files = collect_artifacts(
+        &runtime.environment,
+        &unique,
+        plan.config.runtime.response_limits.unwrap_or_default(),
+    )?;
     if files.len() != unique.len() {
         return Err(invalid_environment("artifact.correlation"));
     }
@@ -850,7 +855,7 @@ fn collect_result_artifacts(
     Ok(())
 }
 
-fn is_internal_sdk_artifact(path: &str) -> bool {
+pub(super) fn is_internal_sdk_artifact(path: &str) -> bool {
     path == ".fabric"
         || path.starts_with(".fabric/")
         || matches!(path, "workspace.patch" | "workspace-status.txt")

@@ -153,7 +153,13 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
 def main(arguments: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if arguments is None else arguments
     operation = arguments[0] if arguments and arguments[0] in OPERATIONS else "unknown"
+    response_limit = 4 * 1024 * 1024
     try:
+        response_limit = int(
+            os.environ.get("FABRIC_RESPONSE_LIMIT_BYTES", response_limit)
+        )
+        if response_limit <= 0:
+            raise ProtocolError()
         request = parse_command(arguments)
         if transport.fcntl is None:
             raise ProtocolError("platform_unsupported", "transport", unsupported=True)
@@ -163,7 +169,11 @@ def main(arguments: list[str] | None = None) -> int:
             host = RuntimeServer(directory=socket_path.parent)
             asyncio.run(transport.serve(host, socket_path=socket_path))
             return 0
-        response = asyncio.run(transport.client(request, socket_path=socket_path))
+        response = asyncio.run(
+            transport.client(
+                request, socket_path=socket_path, response_limit=response_limit
+            )
+        )
     except Exception as error:
         if operation == "serve":
             print(
@@ -182,6 +192,6 @@ def main(arguments: list[str] | None = None) -> int:
         if not isinstance(error, ProtocolError):
             error = ProtocolError()
         response = envelope(operation, error=error)
-    encoded = encode_response(response)
+    encoded = encode_response(response, limit=response_limit)
     sys.stdout.write(encoded.decode("utf-8"))
     return 0 if decode_object(encoded)["status"] == "succeeded" else 1

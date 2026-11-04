@@ -38,10 +38,8 @@ const DEFAULT_READY_TIMEOUT_SECONDS: u64 = 60;
 const DEFAULT_DELETE_TIMEOUT_SECONDS: u64 = 30;
 // Compressed decimal JSON byte arrays stay below the 3 MiB exec-output limit.
 // Expansion is separately bounded before bytes cross the provider protocol.
-const MAX_COMPRESSED_ARTIFACT_FILE_BYTES: usize = 256 * 1024;
-const MAX_TOTAL_COMPRESSED_ARTIFACT_BYTES: usize = 700 * 1024;
+#[cfg(test)]
 const MAX_ARTIFACT_FILE_BYTES: usize = 1024 * 1024;
-const MAX_TOTAL_ARTIFACT_BYTES: usize = 2 * 1024 * 1024;
 const DEFAULT_EXEC_TIMEOUT_SECONDS: u64 = 30;
 const GATEWAY_CALL_TIMEOUT_SECONDS: u64 = 30;
 const MAX_OPERATION_TIMEOUT_SECONDS: u64 = 600;
@@ -214,10 +212,22 @@ where
             environment,
             command,
             timeout_seconds,
-        } => runtime_command(environment, command, timeout_seconds, factory).await,
-        ProviderOperation::CollectArtifacts { environment, paths } => {
-            collect_artifacts(environment, paths, factory).await
+            response_limit_bytes,
+        } => {
+            runtime_command_with_limit(
+                environment,
+                command,
+                timeout_seconds,
+                response_limit_bytes,
+                factory,
+            )
+            .await
         }
+        ProviderOperation::CollectArtifacts {
+            environment,
+            paths,
+            limits,
+        } => collect_artifacts(environment, paths, limits, factory).await,
         ProviderOperation::Prepare {
             environment_id,
             environment,
@@ -255,10 +265,28 @@ where
     }
 }
 
+#[cfg(test)]
 async fn runtime_command<F: GatewayFactory>(
     environment: EnvironmentHandle,
     command: TaskCommand,
     timeout_seconds: impl Into<Option<u64>>,
+    factory: &F,
+) -> Result<Value, ProviderError> {
+    runtime_command_with_limit(
+        environment,
+        command,
+        timeout_seconds,
+        4 * 1024 * 1024,
+        factory,
+    )
+    .await
+}
+
+async fn runtime_command_with_limit<F: GatewayFactory>(
+    environment: EnvironmentHandle,
+    command: TaskCommand,
+    timeout_seconds: impl Into<Option<u64>>,
+    response_limit_bytes: usize,
     factory: &F,
 ) -> Result<Value, ProviderError> {
     let timeout_seconds = timeout_seconds.into();
@@ -340,14 +368,17 @@ async fn runtime_command<F: GatewayFactory>(
             arguments,
             ExecRequest {
                 workdir: None,
-                environment: HashMap::new(),
+                environment: HashMap::from([(
+                    "FABRIC_RESPONSE_LIMIT_BYTES".into(),
+                    response_limit_bytes.to_string(),
+                )]),
                 timeout: exec_timeout,
                 stdin,
             },
         ),
     )
     .await?;
-    if executed.stdout.len().saturating_add(executed.stderr.len()) > 4 * 1024 * 1024 {
+    if executed.stdout.len().saturating_add(executed.stderr.len()) > response_limit_bytes {
         return Err(ProviderError::contract(
             "response_too_large",
             "task command output exceeded its limit; effects are unknown",
@@ -600,21 +631,79 @@ fn valid_diagnostic_code(code: &str) -> bool {
     )
 }
 
+fn default_response_limit_bytes() -> usize {
+    4 * 1024 * 1024
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(default)]
+struct ArtifactLimits {
+    max_response_bytes: u32,
+    max_artifact_bytes: u32,
+    max_artifact_files: u32,
+    max_artifact_file_bytes: u32,
+}
+impl Default for ArtifactLimits {
+    fn default() -> Self {
+        Self {
+            max_response_bytes: 4 * 1024 * 1024,
+            max_artifact_bytes: 2 * 1024 * 1024,
+            max_artifact_files: 16,
+            max_artifact_file_bytes: 1024 * 1024,
+        }
+    }
+}
+impl ArtifactLimits {
+    fn transport_bytes(self) -> usize {
+        self.max_artifact_bytes as usize * 8 + self.max_response_bytes as usize * 6 + 1024 * 1024
+    }
+}
+#[derive(Deserialize)]
+struct ArtifactLimitFailure {
+    limit: String,
+    configured: usize,
+    observed: usize,
+    asset: String,
+}
+fn artifact_limit_error(
+    limit: &str,
+    configured: usize,
+    observed: usize,
+    asset: &str,
+) -> ProviderError {
+    ProviderError::contract(
+        "response_limit_exceeded",
+        format!(
+            "runtime.response_limits.{limit}={configured} exceeded by {asset}: observed {observed}; increase the configured limit"
+        ),
+    )
+}
+
 async fn collect_artifacts<F: GatewayFactory>(
     environment: EnvironmentHandle,
     paths: Vec<String>,
+    limits: ArtifactLimits,
     factory: &F,
 ) -> Result<Value, ProviderError> {
-    if paths.len() > 16
-        || paths.iter().any(|path| {
-            path.is_empty()
-                || path.contains('\\')
-                || path.contains('\0')
-                || path
-                    .split('/')
-                    .any(|part| part.is_empty() || part == "." || part == "..")
-        })
-    {
+    if paths.len() > limits.max_artifact_files as usize {
+        return Err(artifact_limit_error(
+            "max_artifact_files",
+            limits.max_artifact_files as usize,
+            paths.len(),
+            paths
+                .last()
+                .map(String::as_str)
+                .unwrap_or("artifact manifest"),
+        ));
+    }
+    if paths.iter().any(|path| {
+        path.is_empty()
+            || path.contains('\\')
+            || path.contains('\0')
+            || path
+                .split('/')
+                .any(|part| part.is_empty() || part == "." || part == "..")
+    }) {
         return Err(ProviderError::contract(
             "invalid_artifact_path",
             "declared artifact paths are invalid",
@@ -644,12 +733,13 @@ async fn collect_artifacts<F: GatewayFactory>(
     )
     .await?;
     binding.verify(&sandbox)?;
-    let stdin = serde_json::to_vec(&json!({"root": root, "paths": paths})).map_err(|_| {
-        ProviderError::contract(
-            "invalid_artifact_path",
-            "artifact request could not be encoded",
-        )
-    })?;
+    let stdin = serde_json::to_vec(&json!({"root": root, "paths": paths, "limits": limits}))
+        .map_err(|_| {
+            ProviderError::contract(
+                "invalid_artifact_path",
+                "artifact request could not be encoded",
+            )
+        })?;
     let executed = bounded_gateway_call(
         "exec",
         Duration::from_secs(30),
@@ -670,15 +760,35 @@ async fn collect_artifacts<F: GatewayFactory>(
         ),
     )
     .await?;
-    if executed.exit_code != 0
-        || executed.stdout.len().saturating_add(executed.stderr.len()) > MAX_EXEC_OUTPUT_BYTES
-    {
+    if executed.stdout.len().saturating_add(executed.stderr.len()) > limits.transport_bytes() {
+        return Err(ProviderError::contract(
+            "artifact_read_failed",
+            "artifact transfer exceeded its derived transport budget",
+        ));
+    }
+    if executed.exit_code != 0 {
+        if let Ok(error) = serde_json::from_slice::<ArtifactLimitFailure>(&executed.stdout) {
+            if [
+                "max_artifact_bytes",
+                "max_artifact_file_bytes",
+                "max_artifact_files",
+            ]
+            .contains(&error.limit.as_str())
+            {
+                return Err(artifact_limit_error(
+                    &error.limit,
+                    error.configured,
+                    error.observed,
+                    &error.asset,
+                ));
+            }
+        }
         return Err(ProviderError::contract(
             "artifact_read_failed",
             "declared artifacts could not be read as bounded regular files",
         ));
     }
-    let files = decode_artifact_response(&executed.stdout, &paths)?;
+    let files = decode_artifact_response_with_limits(&executed.stdout, &paths, limits)?;
     serde_json::to_value(files).map_err(|_| {
         ProviderError::contract(
             "artifact_read_failed",
@@ -687,9 +797,18 @@ async fn collect_artifacts<F: GatewayFactory>(
     })
 }
 
+#[cfg(test)]
 fn decode_artifact_response(
     stdout: &[u8],
     paths: &[String],
+) -> Result<Vec<CollectedArtifact>, ProviderError> {
+    decode_artifact_response_with_limits(stdout, paths, ArtifactLimits::default())
+}
+
+fn decode_artifact_response_with_limits(
+    stdout: &[u8],
+    paths: &[String],
+    limits: ArtifactLimits,
 ) -> Result<Vec<CollectedArtifact>, ProviderError> {
     let response: ArtifactResponse = serde_json::from_slice(stdout).map_err(|_| {
         ProviderError::contract(
@@ -709,24 +828,38 @@ fn decode_artifact_response(
     for (file, path) in response.files.into_iter().zip(paths) {
         compressed_total = compressed_total.saturating_add(file.content.len());
         uncompressed_total = uncompressed_total.saturating_add(file.uncompressed_size);
-        if file.path != path.as_str()
-            || file.content.len() > MAX_COMPRESSED_ARTIFACT_FILE_BYTES
-            || compressed_total > MAX_TOTAL_COMPRESSED_ARTIFACT_BYTES
-            || file.uncompressed_size > MAX_ARTIFACT_FILE_BYTES
-            || uncompressed_total > MAX_TOTAL_ARTIFACT_BYTES
-        {
+        if file.path != path.as_str() || compressed_total > limits.transport_bytes() {
             return Err(ProviderError::contract(
                 "artifact_read_failed",
                 "artifact reader failed correlation or size checks",
             ));
         }
-        let content = decompress_to_vec_zlib_with_limit(&file.content, MAX_ARTIFACT_FILE_BYTES)
-            .map_err(|_| {
-                ProviderError::contract(
-                    "artifact_read_failed",
-                    "artifact reader returned invalid compressed bytes",
-                )
-            })?;
+        if file.uncompressed_size > limits.max_artifact_file_bytes as usize {
+            return Err(artifact_limit_error(
+                "max_artifact_file_bytes",
+                limits.max_artifact_file_bytes as usize,
+                file.uncompressed_size,
+                path,
+            ));
+        }
+        if uncompressed_total > limits.max_artifact_bytes as usize {
+            return Err(artifact_limit_error(
+                "max_artifact_bytes",
+                limits.max_artifact_bytes as usize,
+                uncompressed_total,
+                path,
+            ));
+        }
+        let content = decompress_to_vec_zlib_with_limit(
+            &file.content,
+            limits.max_artifact_file_bytes as usize,
+        )
+        .map_err(|_| {
+            ProviderError::contract(
+                "artifact_read_failed",
+                "artifact reader returned invalid compressed bytes",
+            )
+        })?;
         if content.len() != file.uncompressed_size {
             return Err(ProviderError::contract(
                 "artifact_read_failed",
@@ -1373,10 +1506,14 @@ enum ProviderOperation {
         environment: EnvironmentHandle,
         command: TaskCommand,
         timeout_seconds: Option<u64>,
+        #[serde(default = "default_response_limit_bytes")]
+        response_limit_bytes: usize,
     },
     CollectArtifacts {
         environment: EnvironmentHandle,
         paths: Vec<String>,
+        #[serde(default)]
+        limits: ArtifactLimits,
     },
     Prepare {
         environment_id: String,
@@ -2576,7 +2713,9 @@ mod tests {
         }]}))
         .expect("oversized response");
         let error = decode_artifact_response(&response, &paths).expect_err("reject expansion");
-        assert_eq!(error.code(), "artifact_read_failed");
+        assert_eq!(error.code(), "response_limit_exceeded");
+        assert!(error.to_string().contains("max_artifact_file_bytes"));
+        assert!(error.to_string().contains(&paths[0]));
     }
 
     #[tokio::test]

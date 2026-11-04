@@ -189,6 +189,23 @@ class InstructionsConfig(FabricBaseModel):
     system: InstructionConfig | None = None
 
 
+class ResponseLimits(FabricBaseModel):
+    """Inclusive byte and file budgets, enforced by the SDK in every environment."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_response_bytes: int = Field(
+        default=4 * 1024 * 1024, strict=True, gt=0, le=(1 << 32) - 1
+    )
+    max_artifact_bytes: int = Field(
+        default=2 * 1024 * 1024, strict=True, gt=0, le=(1 << 32) - 1
+    )
+    max_artifact_files: int = Field(default=16, strict=True, gt=0, le=(1 << 32) - 1)
+    max_artifact_file_bytes: int = Field(
+        default=1024 * 1024, strict=True, gt=0, le=(1 << 32) - 1
+    )
+
+
 class RuntimeConfig(FabricBaseModel):
     """Invocation runtime contract."""
 
@@ -201,6 +218,7 @@ class RuntimeConfig(FabricBaseModel):
         allow_inf_nan=False,
     )
     max_turns: int | None = Field(default=None, gt=0, le=(1 << 32) - 1)
+    response_limits: ResponseLimits | None = None
 
 
 class EnvironmentConfig(FabricBaseModel):

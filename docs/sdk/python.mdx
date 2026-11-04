@@ -400,7 +400,7 @@ Relay subfields:
 | `models.<role>.top_p`, `.max_tokens` | No | No | Yes | Yes | Yes; passed through LiteLLM |
 | `instructions.system` | `replace`, `append` | `replace`; maps to Codex base instructions | `replace` | `replace` | `replace` |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core |
-| `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core |
+| `runtime.artifacts`, `.timeout_seconds`, `.response_limits` | Core | Core | Core | Core | Core |
 | `runtime.max_turns` | Yes | No | Yes; maps to LangGraph supersteps | Yes; maps to Hermes iterations | Yes |
 | `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core |
 | `environment.workspace`, `.artifacts`, `.env`, `.env_names` | Core | Core | Core | Core | Core |
@@ -1448,6 +1448,69 @@ an empty settings map and rejects a non-empty map. Validation does not apply
 schema defaults or otherwise change the settings preserved in `RunPlan`.
 Validation errors identify the adapter, descriptor source and path, and
 offending settings path.
+
+## Response and Artifact Limits
+
+`runtime.response_limits` applies to buffered invocation results on the host and
+inside OpenShell. The SDK enforces these budgets independently of the harness;
+adapters do not need a capability declaration for them.
+
+```python
+from nemo_fabric import ResponseLimits
+
+config.runtime.response_limits = ResponseLimits(
+    max_response_bytes=8 * 1024 * 1024,
+    max_artifact_bytes=16 * 1024 * 1024,
+    max_artifact_files=32,
+    max_artifact_file_bytes=8 * 1024 * 1024,
+)
+```
+
+The equivalent YAML belongs in the normalized runtime section:
+
+```yaml
+runtime:
+  response_limits:
+    max_response_bytes: 8388608
+    max_artifact_bytes: 16777216
+    max_artifact_files: 32
+    max_artifact_file_bytes: 8388608
+```
+
+| Field | Default | What is counted |
+| --- | --- | --- |
+| `max_response_bytes` | 4 MiB | Compact UTF-8 JSON serialization of the normalized invocation `RunResult`, excluding transport envelopes, the trailing newline and later stop events. |
+| `max_artifact_bytes` | 2 MiB | Sum of the uncompressed sizes of unique declared artifact files. |
+| `max_artifact_files` | 16 | Unique declared artifact paths; repeated references count once. |
+| `max_artifact_file_bytes` | 1 MiB | Uncompressed size of each declared artifact file. |
+
+Limits are inclusive: a value exactly at the budget passes. Each supplied field
+must be an integer from 1 through 4294967295. Omit individual fields to keep their
+defaults; omit `response_limits` or use `None` to keep all defaults. Unknown limit
+names are rejected. File and aggregate byte budgets are independent, so raising
+one does not raise the other. SDK diagnostics under `.fabric/`, workspace patches,
+and workspace status files do not consume the declared-agent artifact budgets.
+Provider transport allowances scale with these budgets; compression does not add
+a separate screenshot size limit.
+
+A breach returns `status == "failed"` with
+`error.code == "response_limit_exceeded"`. The error names the limit, configured
+value, observed value and offending asset in both its message and metadata.
+The rejected output and artifact manifest are replaced by this diagnostic;
+there is no partial successful result or silent truncation. Limit diagnostics
+are exempt from the response budget so even a one-byte budget reports why it
+failed. A limit failure does not undo agent side effects and is not automatically
+retried.
+
+For a large screenshot, keep the image in a declared artifact instead of embedding
+base64 in the response. Raise both `max_artifact_file_bytes` and
+`max_artifact_bytes` enough to hold the complete file and the other artifacts,
+then invoke again. On success, read its returned `ArtifactRef.path`; OpenShell
+copies the complete bytes into the host `runtime.artifacts` destination. Local
+execution keeps the original file path. A result that exceeds its response
+budget must also fit after artifact paths and execution metadata are added on
+the host. These are returned-result budgets, not limits on intermediate model
+messages or streaming chunks already delivered to a consumer.
 
 ## Errors
 

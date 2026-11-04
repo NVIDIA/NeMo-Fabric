@@ -46,6 +46,7 @@ class OwnedRuntime:
     state: str = "running"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     generation: int = 0
+    response_limit_bytes: int = 4 * 1024 * 1024 * 6 + 1024 * 1024
 
 
 class RuntimeServer:
@@ -66,6 +67,10 @@ class RuntimeServer:
         # issue another start until the enclosing sandbox is replaced.
         self.start_uncertain = False
         self._start_lock = asyncio.Lock()
+
+    def response_limit_bytes(self, request: dict[str, Any]) -> int:
+        owned = self.runtimes.get(request.get("runtime_id"))
+        return owned.response_limit_bytes if owned is not None else 4 * 1024 * 1024
 
     def _owned(self, request: dict[str, Any]) -> OwnedRuntime:
         owned = self.runtimes.get(request["runtime_id"])
@@ -176,6 +181,11 @@ class RuntimeServer:
                         # uncertain and retain sandbox ownership.
                         raise ProtocolError("runtime_id_conflict", "start")
                     owned = OwnedRuntime(runtime, request["agent"], "unknown")
+                    if config.runtime.response_limits is not None:
+                        owned.response_limit_bytes = (
+                            config.runtime.response_limits.max_response_bytes * 6
+                            + 1024 * 1024
+                        )
                     self.runtimes[runtime.runtime_id] = owned
                     # The runtime is addressable; stop can clean it up.
                     self.start_uncertain = False

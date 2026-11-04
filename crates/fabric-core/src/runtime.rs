@@ -38,6 +38,7 @@ use crate::system_stats::ResourceObservation;
 use crate::system_stats::{CgroupStats, InvocationSystemStats, StatsSession, SystemReader};
 
 mod openshell;
+mod response_limits;
 use openshell::OpenShellRuntimeAdapter;
 
 pub(crate) fn remote_check_agent(
@@ -1295,9 +1296,19 @@ pub fn invoke_runtime(
     validate_runtime_handle(plan, runtime)?;
     if uses_local_host(plan) {
         if runtime.environment.provider == "openshell" {
-            return OpenShellRuntimeAdapter.invoke(plan, runtime, request);
+            let mut result = OpenShellRuntimeAdapter.invoke(plan, runtime, request)?;
+            response_limits::enforce_response(
+                &mut result,
+                plan.config.runtime.response_limits.unwrap_or_default(),
+            )?;
+            return Ok(result);
         }
-        return LocalHostAdapter.invoke(plan, runtime, request);
+        let mut result = LocalHostAdapter.invoke(plan, runtime, request)?;
+        response_limits::enforce_response(
+            &mut result,
+            plan.config.runtime.response_limits.unwrap_or_default(),
+        )?;
+        return Ok(result);
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
         harness: harness(plan),
@@ -1370,7 +1381,13 @@ pub fn invoke_openai_stream(
         if runtime.environment.provider == "openshell" {
             return OpenShellRuntimeAdapter.invoke_openai_stream(plan, runtime, request, transport);
         }
-        return LocalHostAdapter.invoke_openai_stream(plan, runtime, request, transport);
+        let mut result =
+            LocalHostAdapter.invoke_openai_stream(plan, runtime, request, transport)?;
+        response_limits::enforce_response(
+            &mut result,
+            plan.config.runtime.response_limits.unwrap_or_default(),
+        )?;
+        return Ok(result);
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
         harness: harness(plan),
@@ -2470,7 +2487,7 @@ fn run_local_host_invocation_with_timeout(
             serde_json::to_value(&agent_result.extensions).map_err(FabricError::SerializeJson)?,
         );
     }
-    Ok(RunResult {
+    let mut result = RunResult {
         agent_name: plan.agent_name.clone(),
         harness: harness(plan),
         adapter_kind: adapter_kind(plan),
@@ -2491,7 +2508,12 @@ fn run_local_host_invocation_with_timeout(
             .collect(),
         events,
         metadata,
-    })
+    };
+    response_limits::enforce_local_artifacts(
+        &mut result,
+        plan.config.runtime.response_limits.unwrap_or_default(),
+    )?;
+    Ok(result)
 }
 
 fn invalidate_timed_out_local_host(
@@ -6287,6 +6309,8 @@ for line in sys.stdin:
     #[test]
     fn local_host_enriches_typed_usage_artifacts_and_extensions() {
         let (root, plan) = local_host_plan("typed_result");
+        fs::create_dir_all(root.join("artifacts/reports")).unwrap();
+        fs::write(root.join("artifacts/reports/result.json"), "{}").unwrap();
 
         let result = run_plan(&plan, RunRequest::text("enrich")).expect("normalized result");
 
