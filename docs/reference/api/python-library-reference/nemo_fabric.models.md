@@ -503,6 +503,79 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
+## <kbd>class</kbd> `ResponseLimits`
+
+Inclusive byte and file budgets, enforced by the SDK in every environment.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `max_response_bytes` | `int` | No | `4194304` | `Strict(strict=True), Gt(gt=0), Le(le=4294967295)` | — |
+| `max_artifact_bytes` | `int` | No | `2097152` | `Strict(strict=True), Gt(gt=0), Le(le=4294967295)` | — |
+| `max_artifact_files` | `int` | No | `16` | `Strict(strict=True), Gt(gt=0), Le(le=4294967295)` | — |
+| `max_artifact_file_bytes` | `int` | No | `1048576` | `Strict(strict=True), Gt(gt=0), Le(le=4294967295)` | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
 ## <kbd>class</kbd> `RuntimeConfig`
 
 Invocation runtime contract.
@@ -520,6 +593,7 @@ The model defines the following fields:
 | `artifacts` | `str \| Path \| None` | No | `None` | — | — |
 | `timeout_seconds` | `float \| None` | No | `None` | `Gt(gt=0), _PydanticGeneralMetadata(allow_inf_nan=False)` | — |
 | `max_turns` | `int \| None` | No | `None` | `Gt(gt=0), Le(le=4294967295)` | — |
+| `response_limits` | `ResponseLimits \| None` | No | `None` | — | — |
 
 ---
 

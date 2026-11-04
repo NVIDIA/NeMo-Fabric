@@ -89,6 +89,7 @@ async def client(
     *,
     socket_path: Path = Path(SOCKET_PATH),
     timeout: float | None = None,
+    response_limit: int = RESPONSE_LIMIT,
 ) -> dict[str, Any]:
     started = time.monotonic()
     operation = request["operation"]
@@ -116,7 +117,7 @@ async def client(
             else None
         ):
             reader, writer = await asyncio.open_unix_connection(
-                socket_path, limit=RESPONSE_LIMIT
+                socket_path, limit=response_limit
             )
             if operation == "check":
                 remaining = deadline - time.monotonic()
@@ -126,7 +127,7 @@ async def client(
             writer.write(encoded)
             sent = True
             await writer.drain()
-            response = await read_message(reader, RESPONSE_LIMIT)
+            response = await read_message(reader, response_limit)
             validate_response(response, operation)
             if operation == "check":
                 finished = time.monotonic()
@@ -249,10 +250,12 @@ async def serve(
                 async with asyncio.timeout(READ_SECONDS):
                     request = await read_message(reader, REQUEST_LIMIT)
                 response = await host.handle(request)
+                response_limit = host.response_limit_bytes(request)
             except (ValueError, TimeoutError):
                 response = envelope("unknown", error=ProtocolError())
+                response_limit = RESPONSE_LIMIT
             # A disconnected bridge does not cancel or replay runtime work.
-            writer.write(encode_response(response))
+            writer.write(encode_response(response, limit=response_limit))
             await asyncio.wait_for(writer.drain(), READ_SECONDS)
         except (OSError, TimeoutError):
             pass

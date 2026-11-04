@@ -139,6 +139,9 @@ one `stop` for each NeMo Fabric runtime.
 - Accept `AgentRunRequest` and `RuntimeContext`, then return one
   `AgentRunResult` from `invoke`.
 - Make `stop` safe after partial startup and failed invocation.
+- Leave `runtime.response_limits` enforcement to the SDK. These budgets are
+  independent of harness capabilities and are not projected into `AgentRuntimeConfig`.
+  Return complete outputs and declare complete artifact files; do not silently truncate.
 - Isolate mutable state between independent runtimes.
 - If the descriptor declares `capabilities.streaming`, implement
   `async invoke_openai_stream(request, context, emit)`. Execute the target exactly once,

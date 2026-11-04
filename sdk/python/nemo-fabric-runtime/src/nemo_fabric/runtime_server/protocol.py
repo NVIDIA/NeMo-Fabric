@@ -216,10 +216,10 @@ def encode_request(request: dict[str, Any]) -> bytes:
     return encoded
 
 
-def encode_response(response: dict[str, Any]) -> bytes:
+def encode_response(response: dict[str, Any], *, limit: int = RESPONSE_LIMIT) -> bytes:
     try:
         encoded = _encode(response)
-        if len(encoded) <= RESPONSE_LIMIT:
+        if len(encoded) <= limit:
             return encoded
     except (ValueError, TypeError, RecursionError):
         pass

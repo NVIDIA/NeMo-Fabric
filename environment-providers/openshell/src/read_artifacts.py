@@ -5,8 +5,8 @@
 
 The provider runs this one-shot script with the task interpreter, passing an
 absolute artifact root and relative file paths as JSON on stdin. It reads only
-regular files beneath that root without following symlinks, with limits of 16
-files, 1 MiB per file, and 2 MiB total. It compresses each file for the bounded
+regular files beneath that root without following symlinks, using the normalized
+runtime response limits supplied by the host. It compresses each file for the bounded
 JSON transfer; the host verifies and expands the bytes before copying them to
 the artifact destination. The persistent task runtime server is not involved.
 """
@@ -19,9 +19,15 @@ import zlib
 
 FILE_LIMIT = 1024 * 1024
 TOTAL_LIMIT = 2 * 1024 * 1024
-TRANSFER_FILE_LIMIT = 256 * 1024
-TRANSFER_TOTAL_LIMIT = 700 * 1024
 COUNT_LIMIT = 16
+
+
+class LimitExceeded(ValueError):
+    def __init__(self, limit, configured, observed, asset):
+        self.details = dict(
+            limit=limit, configured=configured, observed=observed, asset=asset
+        )
+        super().__init__(limit)
 
 
 def directory(parent, name):
@@ -37,8 +43,19 @@ def collect(request):
     paths = request["paths"]
     if not isinstance(root, str) or not root.startswith("/") or ".." in root.split("/"):
         raise ValueError("invalid root")
-    if not isinstance(paths, list) or len(paths) > COUNT_LIMIT:
-        raise ValueError("invalid file count")
+    limits = request.get("limits", {})
+    file_limit = limits.get("max_artifact_file_bytes", FILE_LIMIT)
+    total_limit = limits.get("max_artifact_bytes", TOTAL_LIMIT)
+    count_limit = limits.get("max_artifact_files", COUNT_LIMIT)
+    if any(
+        type(value) is not int or not 0 < value <= (1 << 32) - 1
+        for value in (file_limit, total_limit, count_limit)
+    ):
+        raise ValueError("invalid limits")
+    if not isinstance(paths, list):
+        raise ValueError("invalid file list")
+    if len(paths) > count_limit:
+        raise LimitExceeded("max_artifact_files", count_limit, len(paths), paths[-1])
     root_descriptor = directory(None, "/")
     try:
         for name in root.split("/"):
@@ -49,7 +66,6 @@ def collect(request):
             root_descriptor = child
         files = []
         total = 0
-        transferred = 0
         for path in paths:
             if not isinstance(path, str) or not path or "\\" in path or "\0" in path:
                 raise ValueError("invalid path")
@@ -69,24 +85,42 @@ def collect(request):
                 )
                 with os.fdopen(descriptor, "rb") as stream:
                     before = os.fstat(stream.fileno())
-                    if not stat.S_ISREG(before.st_mode) or before.st_size > FILE_LIMIT:
-                        raise ValueError("not a bounded regular file")
-                    content = stream.read(FILE_LIMIT + 1)
+                    if not stat.S_ISREG(before.st_mode):
+                        raise ValueError("not a regular file")
+                    if before.st_size > file_limit:
+                        raise LimitExceeded(
+                            "max_artifact_file_bytes", file_limit, before.st_size, path
+                        )
+                    if total + before.st_size > total_limit:
+                        raise LimitExceeded(
+                            "max_artifact_bytes",
+                            total_limit,
+                            total + before.st_size,
+                            path,
+                        )
+                    content = stream.read(file_limit + 1)
                     after = os.fstat(stream.fileno())
-                    if len(content) > FILE_LIMIT or (
+                    if len(content) > file_limit:
+                        raise LimitExceeded(
+                            "max_artifact_file_bytes", file_limit, len(content), path
+                        )
+                    if (
                         before.st_size,
                         before.st_mtime_ns,
                     ) != (after.st_size, after.st_mtime_ns):
                         raise ValueError("file changed or exceeded limit")
                     total += len(content)
-                    if total > TOTAL_LIMIT:
-                        raise ValueError("total exceeded limit")
+                    if total > total_limit:
+                        raise LimitExceeded(
+                            "max_artifact_bytes", total_limit, total, path
+                        )
                     compressed = zlib.compress(content)
-                    transferred += len(compressed)
-                    if len(compressed) > TRANSFER_FILE_LIMIT or transferred > TRANSFER_TOTAL_LIMIT:
-                        raise ValueError("compressed transfer exceeded limit")
                     files.append(
-                        {"path": path, "content": list(compressed), "uncompressed_size": len(content)}
+                        {
+                            "path": path,
+                            "content": list(compressed),
+                            "uncompressed_size": len(content),
+                        }
                     )
             finally:
                 os.close(parent)
@@ -96,8 +130,11 @@ def collect(request):
 
 
 try:
-    request = json.loads(sys.stdin.buffer.read(16 * 1024 + 1))
+    request = json.loads(sys.stdin.buffer.read(1024 * 1024 + 1))
     print(json.dumps({"files": collect(request)}, separators=(",", ":")))
+except LimitExceeded as error:
+    print(json.dumps(error.details, separators=(",", ":")))
+    sys.exit(1)
 except Exception:
     # Never emit submitted paths, file data, or raw OS errors in diagnostics.
     print('{"error":"artifact_read_failed"}')

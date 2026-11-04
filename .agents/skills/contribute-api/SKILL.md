@@ -26,6 +26,7 @@ runtime or bindings.
 - `RunRequest.relay_session_root` is forwarded as the typed `AgentRunRequest.relay_session_root` field. Keep Rust, Python, TypeScript, and schema representations in parity. Context keys do not control Relay propagation; preserve the adapter fallback for unusable UUIDs.
 - OpenShell task commands serialize public SDK config/request/handle/result mappings. Keep forwarding buffered and preserve task-generated IDs, normalized failed results, telemetry references, and declared artifacts. Do not normalize an SDK result as an adapter result. Task paths remain POSIX strings; host artifact destinations stay separate. Unknown outcomes bind the immutable sandbox identity through reattachment and must not be replayed.
 - Preserve normalized `runtime.timeout_seconds` across host and task SDKs: positive finite values enforce the invocation deadline; omission/null disables the total invocation deadline. Keep lifecycle, health, and cleanup budgets separate, and do not replace disabled invocation deadlines with transport defaults.
+- Keep `runtime.response_limits` SDK-owned across host/task execution. Preserve inclusive byte/file budgets, explicit limit diagnostics, and transport allowances derived from configured budgets. Do not add adapter capability requirements or independent compressed-file ceilings. Use `tests/e2e/response-limits-checklist.md` when changing these paths.
 - Update docs and examples in the same branch
 
 ## Minimum Acceptance

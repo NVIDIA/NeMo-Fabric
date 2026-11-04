@@ -23,10 +23,10 @@ READER = (
 )
 
 
-def read(root, paths):
+def read(root, paths, limits=None):
     process = subprocess.run(
         [sys.executable, str(READER)],
-        input=json.dumps({"root": str(root), "paths": paths}),
+        input=json.dumps({"root": str(root), "paths": paths, "limits": limits or {}}),
         text=True,
         capture_output=True,
         timeout=5,
@@ -100,7 +100,15 @@ def test_export_rejects_nonregular_or_escaping_files(tmp_path, kind):
         (root / path).write_bytes(b"x" * (1024 * 1024 + 1))
     code, result, stderr = read(root, [path])
     assert code == 1
-    assert result == {"error": "artifact_read_failed"}
+    if kind == "oversized":
+        assert result == dict(
+            limit="max_artifact_file_bytes",
+            configured=1024 * 1024,
+            observed=1024 * 1024 + 1,
+            asset=path,
+        )
+    else:
+        assert result == {"error": "artifact_read_failed"}
     assert stderr == ""
 
 
@@ -113,7 +121,11 @@ def test_export_rejects_limits_without_partial_file_results(tmp_path, case):
         (tmp_path / path).write_bytes(b"x" * size)
     code, result, stderr = read(tmp_path, paths)
     assert code == 1
-    assert result == {"error": "artifact_read_failed"}
+    assert "files" not in result
+    assert result["limit"] == (
+        "max_artifact_bytes" if case == "total_bytes" else "max_artifact_files"
+    )
+    assert result["asset"] == paths[-1]
     assert stderr == ""
 
 
@@ -138,7 +150,9 @@ def test_export_compresses_large_relay_files_within_transfer_limit(tmp_path):
     sizes = (687_836, 406_705)
     paths = [f"relay-{index}" for index in range(len(sizes))]
     for path, size in zip(paths, sizes, strict=True):
-        (tmp_path / path).write_bytes(b"event-data\n" * (size // 11) + b"x" * (size % 11))
+        (tmp_path / path).write_bytes(
+            b"event-data\n" * (size // 11) + b"x" * (size % 11)
+        )
 
     code, result, stderr = read(tmp_path, paths)
 
@@ -153,11 +167,52 @@ def test_export_compresses_large_relay_files_within_transfer_limit(tmp_path):
     )
 
 
-def test_export_rejects_large_incompressible_file(tmp_path):
+def test_export_preserves_large_incompressible_file(tmp_path):
     (tmp_path / "uncompressible").write_bytes(os.urandom(300_000))
 
     code, result, stderr = read(tmp_path, ["uncompressible"])
 
-    assert code == 1
-    assert result == {"error": "artifact_read_failed"}
+    assert code == 0
+    assert (
+        zlib.decompress(bytes(result["files"][0]["content"]))
+        == (tmp_path / "uncompressible").read_bytes()
+    )
     assert stderr == ""
+
+
+@pytest.mark.parametrize(
+    ("field", "boundary"),
+    [
+        ("max_artifact_bytes", 10),
+        ("max_artifact_file_bytes", 6),
+        ("max_artifact_files", 2),
+    ],
+)
+@pytest.mark.parametrize("delta", [-1, 0, 1])
+def test_normalized_artifact_limits_below_at_above(tmp_path, field, boundary, delta):
+    paths = ["first.png", "second.png"]
+    (tmp_path / paths[0]).write_bytes(b"1" * 6)
+    (tmp_path / paths[1]).write_bytes(b"2" * 4)
+    code, result, stderr = read(tmp_path, paths, {field: boundary + delta})
+    assert stderr == ""
+    if delta < 0:
+        assert code == 1
+        assert result["limit"] == field
+        assert result["configured"] == boundary + delta
+        assert result["asset"] in paths
+        assert "files" not in result
+    else:
+        assert code == 0
+        assert [
+            zlib.decompress(bytes(file["content"])) for file in result["files"]
+        ] == [b"1" * 6, b"2" * 4]
+
+
+def test_raised_limits_export_complete_file_over_old_one_mib_cap(tmp_path):
+    content = os.urandom(1024 * 1024 + 1)
+    (tmp_path / "screenshot.png").write_bytes(content)
+    code, result, _ = read(
+        tmp_path, ["screenshot.png"], {"max_artifact_file_bytes": len(content)}
+    )
+    assert code == 0
+    assert zlib.decompress(bytes(result["files"][0]["content"])) == content

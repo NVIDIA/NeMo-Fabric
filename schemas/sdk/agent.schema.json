@@ -1479,6 +1479,41 @@
         }
       ]
     },
+    "ResponseLimits": {
+      "additionalProperties": false,
+      "description": "Inclusive budgets for a buffered invocation result and declared artifact files.\nOmitted fields retain the default budget. These limits are owned by the SDK,\nindependently of the harness and execution environment.",
+      "properties": {
+        "max_artifact_bytes": {
+          "default": 2097152,
+          "description": "Maximum aggregate uncompressed bytes in unique declared artifact files.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_artifact_file_bytes": {
+          "default": 1048576,
+          "description": "Maximum uncompressed bytes in one declared artifact file.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_artifact_files": {
+          "default": 16,
+          "description": "Maximum number of unique declared artifact files.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_response_bytes": {
+          "default": 4194304,
+          "description": "Maximum compact UTF-8 JSON bytes in the normalized RunResult.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "RuntimeConfig": {
       "additionalProperties": true,
       "description": "Invocation runtime contract.",
@@ -1509,6 +1544,17 @@
           "default": "text",
           "description": "Output schema label.",
           "type": "string"
+        },
+        "response_limits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResponseLimits"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Response and declared-artifact budgets enforced by the SDK."
         },
         "timeout_seconds": {
           "description": "Maximum duration of one invocation in seconds.",

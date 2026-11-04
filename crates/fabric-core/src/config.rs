@@ -1059,6 +1059,9 @@ pub struct RuntimeConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(extend("exclusiveMinimum" = 0.0))]
     pub timeout_seconds: Option<f64>,
+    /// Response and declared-artifact budgets enforced by the SDK.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_limits: Option<ResponseLimits>,
     /// Maximum number of harness turns within one invocation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 1, max = u32::MAX))]
@@ -1066,6 +1069,49 @@ pub struct RuntimeConfig {
     /// Additive normalized runtime fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
+}
+
+/// Inclusive budgets for a buffered invocation result and declared artifact files.
+/// Omitted fields retain the default budget. These limits are owned by the SDK,
+/// independently of the harness and execution environment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct ResponseLimits {
+    /// Maximum compact UTF-8 JSON bytes in the normalized RunResult.
+    #[schemars(range(min = 1))]
+    pub max_response_bytes: u32,
+    /// Maximum aggregate uncompressed bytes in unique declared artifact files.
+    #[schemars(range(min = 1))]
+    pub max_artifact_bytes: u32,
+    /// Maximum number of unique declared artifact files.
+    #[schemars(range(min = 1))]
+    pub max_artifact_files: u32,
+    /// Maximum uncompressed bytes in one declared artifact file.
+    #[schemars(range(min = 1))]
+    pub max_artifact_file_bytes: u32,
+}
+
+impl Default for ResponseLimits {
+    fn default() -> Self {
+        Self {
+            max_response_bytes: 4 * 1024 * 1024,
+            max_artifact_bytes: 2 * 1024 * 1024,
+            max_artifact_files: 16,
+            max_artifact_file_bytes: 1024 * 1024,
+        }
+    }
+}
+
+impl ResponseLimits {
+    // Transport envelopes and compression are implementation details, not extra
+    // user budgets. Allow JSON escaping/decimal byte arrays plus bounded metadata.
+    pub(crate) fn response_transport_bytes(&self) -> usize {
+        self.max_response_bytes as usize * 6 + 1024 * 1024
+    }
+
+    pub(crate) fn artifact_transport_bytes(&self) -> usize {
+        self.max_artifact_bytes as usize * 8 + self.response_transport_bytes()
+    }
 }
 
 fn default_input_schema() -> String {
@@ -1920,6 +1966,21 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
                 return invalid_config(
                     format!("discovery.local_paths.{index}"),
                     "must contain at least one non-whitespace character",
+                );
+            }
+        }
+    }
+    if let Some(limits) = config.runtime.response_limits {
+        for (name, value) in [
+            ("max_response_bytes", limits.max_response_bytes),
+            ("max_artifact_bytes", limits.max_artifact_bytes),
+            ("max_artifact_files", limits.max_artifact_files),
+            ("max_artifact_file_bytes", limits.max_artifact_file_bytes),
+        ] {
+            if value == 0 {
+                return invalid_config(
+                    format!("runtime.response_limits.{name}"),
+                    "must be greater than zero",
                 );
             }
         }
@@ -4510,6 +4571,50 @@ mod tests {
             "skills": {"paths": ["skills/review"]}
         }))
         .expect("typed config")
+    }
+
+    #[test]
+    fn response_limit_defaults_validation_and_unknown_fields() {
+        let limits: ResponseLimits =
+            serde_json::from_value(serde_json::json!({"max_response_bytes": 8})).unwrap();
+        assert_eq!(limits.max_response_bytes, 8);
+        assert_eq!(limits.max_artifact_files, 16);
+        assert_eq!(limits.max_artifact_bytes, 2 * 1024 * 1024);
+        assert_eq!(limits.max_artifact_file_bytes, 1024 * 1024);
+        assert!(
+            serde_json::from_value::<ResponseLimits>(serde_json::json!({"max_response_byte": 8}))
+                .is_err()
+        );
+        for field in [
+            "max_response_bytes",
+            "max_artifact_bytes",
+            "max_artifact_files",
+            "max_artifact_file_bytes",
+        ] {
+            for value in [
+                serde_json::json!(0),
+                serde_json::json!(-1),
+                serde_json::json!(1.5),
+                serde_json::json!(true),
+                serde_json::json!("12"),
+                Value::Null,
+            ] {
+                let mut config = typed_config("test.host");
+                let value = serde_json::from_value(serde_json::json!({field: value}));
+                match value {
+                    Err(_) => {}
+                    Ok(limits) => {
+                        config.runtime.response_limits = Some(limits);
+                        let error = validate_config(&config).expect_err("invalid limit");
+                        assert!(
+                            error
+                                .to_string()
+                                .contains(&format!("runtime.response_limits.{field}"))
+                        );
+                    }
+                }
+            }
+        }
     }
 
     fn config_with_model(adapter_id: &str, provider: &str) -> FabricConfig {
