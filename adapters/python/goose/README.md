@@ -116,4 +116,6 @@ An invocation fails with one of these codes:
 | `goose_no_response` | Goose finished without an assistant message. |
 
 Tool commands that Goose leaves running keep running until `stop`, which ends
-them on Linux.
+them on Linux. The adapter finds a run's processes by the
+`NEMO_FABRIC_GOOSE_RUN` environment variable they inherit, so a command that
+clears its environment is not stopped.

@@ -380,7 +380,7 @@ def _gone(pid: int) -> bool:
     return False
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Finds tool commands by session")
+@pytest.mark.skipif(sys.platform != "linux", reason="Finds run processes in /proc")
 async def test_goose_timeout_stops_goose_and_its_tool_commands(
     mock_goose: Path, tmp_path: Path
 ):
@@ -429,20 +429,26 @@ async def test_goose_resolves_a_relative_command_from_the_base_directory(
         await runtime.stop()
 
 
-@pytest.mark.skipif(os.name != "posix", reason="Uses POSIX sessions")
-def test_goose_cleanup_skips_a_session_id_that_a_live_process_reused():
-    other = subprocess.Popen(
-        [sys.executable, "-c", "import time; time.sleep(30)"], start_new_session=True
-    )
+@pytest.mark.skipif(sys.platform != "linux", reason="Finds run processes in /proc")
+def test_goose_cleanup_kills_only_processes_with_the_run_marker():
+    processes = {
+        marker: subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            env={**os.environ, adapter.RUN_MARKER_ENV: marker},
+        )
+        for marker in ("run", "run-other")
+    }
     try:
-        adapter._kill_sessions([other.pid])
-        assert other.poll() is None
+        adapter._kill_marked(["run"])
+        assert processes["run"].wait(timeout=5) == -9
+        assert processes["run-other"].poll() is None
     finally:
-        other.kill()
-        other.wait()
+        for process in processes.values():
+            process.kill()
+            process.wait()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Finds tool commands by session")
+@pytest.mark.skipif(sys.platform != "linux", reason="Finds run processes in /proc")
 async def test_goose_stop_ends_tool_commands_left_running(
     mock_goose: Path, tmp_path: Path
 ):

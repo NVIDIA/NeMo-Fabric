@@ -14,6 +14,7 @@ import shutil
 import signal
 import sys
 import tempfile
+import uuid
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,8 @@ MAX_TURNS_NOTICE = (
 FAILED_EXTENSION = re.compile(r"Failed to start extension '([^']+)'")
 MCP_TIMEOUT_SECONDS = 300
 STOP_GRACE_SECONDS = 5.0
+# Every process a run starts inherits this variable, so cleanup can find it.
+RUN_MARKER_ENV = "NEMO_FABRIC_GOOSE_RUN"
 # Parent settings that would override the normalized model or system instruction.
 OVERRIDDEN_ENV = (
     "OPENAI_BASE_URL",
@@ -202,46 +205,30 @@ def _final_message(events: list[dict[str, Any]]) -> dict[str, Any] | None:
     return final
 
 
-def _kill_sessions(sessions: list[int]) -> None:
-    """Kill the tool commands that exited Goose runs left in their sessions.
+def _kill_marked(markers: list[str]) -> None:
+    """Kill the processes that carry one of these run markers in their environment.
 
-    Goose starts each shell command in its own process group, so on Linux this
-    kills every process in each run's session. Other platforms reach only the
-    run's process group. The kernel keeps a session ID allocated while any
-    process belongs to the session, so a live process with that ID means the
-    session ended and the ID was reused.
+    Goose starts each shell command in its own process group, and commands can
+    outlive Goose, so the adapter finds them by the marker they inherit. This
+    reads /proc and does nothing on other platforms.
     """
 
-    sessions = [session for session in sessions if not _pid_exists(session)]
     if sys.platform != "linux":
-        for session in sessions:
-            with suppress(ProcessLookupError, PermissionError):
-                os.killpg(session, signal.SIGKILL)
         return
+    wanted = {f"{RUN_MARKER_ENV}={marker}".encode() for marker in markers}
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
             continue
         try:
-            # The fields after the command name start with state, ppid, pgrp, session.
-            fields = (entry / "stat").read_text().rsplit(")", 1)[1].split()
-            if int(fields[3]) in sessions:
+            environ = (entry / "environ").read_bytes().split(b"\0")
+            if wanted.intersection(environ):
                 os.kill(int(entry.name), signal.SIGKILL)
-        except (OSError, IndexError, ValueError):
+        except (OSError, ValueError):
             continue
 
 
-def _pid_exists(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        pass
-    return True
-
-
 async def _terminate(process: asyncio.subprocess.Process) -> None:
-    """Stop Goose, reap it, then kill the tool commands it started."""
+    """Stop Goose and reap it."""
 
     with suppress(ProcessLookupError):
         process.terminate()
@@ -251,8 +238,6 @@ async def _terminate(process: asyncio.subprocess.Process) -> None:
         with suppress(ProcessLookupError):
             process.kill()
         await process.wait()
-    if os.name == "posix":
-        _kill_sessions([process.pid])
 
 
 def _failed(
@@ -274,8 +259,8 @@ class GooseRuntime:
         self._args: list[str] = []
         self._env: dict[str, str] = {}
         self._resume = False
-        # Each run's session ID, which tool commands it left running still carry.
-        self._sessions: list[int] = []
+        # One marker per run, which the processes it starts inherit.
+        self._markers: list[str] = []
         # Goose's cumulative session totals after the last run. None is unknown.
         self._usage_totals: dict[str, int | None] = dict.fromkeys(USAGE_FIELDS, 0)
 
@@ -358,8 +343,10 @@ class GooseRuntime:
                 "goose_not_started", "The Goose runtime is not started."
             )
         deadline = lifecycle.invocation_deadline(context)
-        if not self._resume and self._sessions:
+        if not self._resume and self._markers:
             self._resume = await self._session_exists(deadline)
+        marker = uuid.uuid4().hex
+        self._markers.append(marker)
         process = await asyncio.create_subprocess_exec(
             str(self._command),
             *self._args,
@@ -368,22 +355,22 @@ class GooseRuntime:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=self._workspace,
-            env=self._env,
-            start_new_session=os.name == "posix",
+            env={**self._env, RUN_MARKER_ENV: marker},
         )
-        self._sessions.append(process.pid)
         prompt = common_utils.normalize_user_input(request.input).encode()
         try:
             async with asyncio.timeout_at(deadline):
                 stdout, stderr = await process.communicate(prompt)
         except TimeoutError:
             await _terminate(process)
+            _kill_marked([marker])
             self._usage_totals = dict.fromkeys(USAGE_FIELDS)
             return _failed(
                 "goose_timeout", "Goose did not finish before the invocation deadline."
             )
         except BaseException:
             await _terminate(process)
+            _kill_marked([marker])
             raise
 
         events = _events(stdout)
@@ -502,10 +489,10 @@ class GooseRuntime:
         )
 
     async def stop(self) -> None:
-        root, sessions = self._root, self._sessions
+        root, markers = self._root, self._markers
         self.__init__()
-        if os.name == "posix":
-            _kill_sessions(sessions)
+        # Tool commands that earlier runs left running end with the runtime.
+        _kill_marked(markers)
         if root is not None:
             root.cleanup()
 
