@@ -89,6 +89,46 @@ fn invoke_seconds(plan: &RunPlan) -> Result<u64> {
     }
     Ok(seconds.ceil() as u64)
 }
+
+fn wait_for_server(
+    key: &str,
+    deadline: Instant,
+    mut check: impl FnMut(f64) -> Result<crate::CheckReport>,
+) -> Result<u64> {
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        let passed = check(remaining.min(Duration::from_secs(3)).as_secs_f64())
+            .is_ok_and(|report| report.outcome == crate::CheckOutcome::Passed);
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if passed {
+            // The command provider requires at least one whole second. Round
+            // down so Start cannot reset or extend the shared allowance.
+            if remaining.as_secs() > 0 {
+                return Ok(remaining.as_secs());
+            }
+            break;
+        }
+        thread::sleep(remaining.min(Duration::from_millis(100)));
+    }
+    if let Some(bindings) = BINDINGS
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .get_mut(key)
+    {
+        bindings.remove(START_KEY);
+    }
+    Err(lifecycle_error(
+        AdapterLifecycleOperation::Start,
+        "unconfirmed",
+        "host_unavailable",
+        "Fabric runtime server did not become ready before the startup deadline",
+        "",
+    ))
+}
+
 fn task_root(path: Option<&Path>, field: &str, default: Option<&str>) -> Result<PathBuf> {
     let value = path
         .and_then(Path::to_str)
@@ -340,13 +380,24 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                 },
             );
         }
-        // TODO(#428): Sandbox readiness can precede the Fabric server socket.
-        // Poll the server-scope `fabric-agent-ctl check` here before Start.
+        // Sandbox readiness can precede the Fabric server socket. Share the
+        // existing remote-start allowance across server checks and Start; the
+        // provider retains its bounded gateway and response transport grace.
+        let deadline = Instant::now() + Duration::from_secs(105);
+        let timeout = wait_for_server(&key, deadline, |timeout_seconds| {
+            crate::check::check_environment(
+                &environment,
+                &crate::CheckRequest::Server {
+                    schema_version: Default::default(),
+                    timeout_seconds,
+                },
+            )
+        })?;
         let command = TaskCommand::Start {
             agent: plan.agent_name.clone(),
             config,
         };
-        let response = command_runtime(&environment, &command, 105);
+        let response = command_runtime(&environment, &command, timeout);
         if let Ok(TaskCommandResponse::Rejected { error }) = &response
             && error.effects == "none"
             && !matches!(
@@ -917,6 +968,80 @@ mod tests {
                 ("sandbox_id".to_string(), Value::String(new_id("sandbox"))),
             ]),
         }
+    }
+
+    fn server_check(outcome: crate::CheckOutcome) -> crate::CheckReport {
+        serde_json::from_value(serde_json::json!({
+            "schema_version": "fabric.check/v1alpha1", "scope": "server",
+            "runtime_id": null, "requested_level": null, "outcome": outcome,
+            "reason_code": null, "completed_at": "2026-11-03T00:00:00Z",
+            "elapsed_ms": 0, "server": {"state": "responding"},
+            "runtime": null, "checks": []
+        }))
+        .expect("server report")
+    }
+
+    #[test]
+    fn startup_wait_uses_the_remaining_allowance() {
+        let key = resource_key(&environment()).unwrap();
+        let mut calls = 0;
+        let remaining = wait_for_server(&key, Instant::now() + Duration::from_secs(3), |seconds| {
+            assert!(seconds > 0.0 && seconds <= 3.0);
+            calls += 1;
+            Ok(server_check(if calls == 1 {
+                crate::CheckOutcome::Unknown
+            } else {
+                crate::CheckOutcome::Passed
+            }))
+        })
+        .expect("eventually responding server");
+        assert_eq!(calls, 2);
+        assert_eq!(remaining, 2);
+    }
+
+    #[test]
+    fn startup_wait_timeout_clears_only_the_provisional_start() {
+        for outcome in [
+            crate::CheckOutcome::Failed,
+            crate::CheckOutcome::Unknown,
+            crate::CheckOutcome::Unsupported,
+        ] {
+            let environment = environment();
+            let key = resource_key(&environment).unwrap();
+            set_state(&key, START_KEY, State::Starting);
+            set_state(&key, "other-runtime", State::Active);
+            let started = Instant::now();
+            let error = wait_for_server(&key, started + Duration::from_millis(30), |seconds| {
+                assert!(seconds > 0.0 && seconds <= 0.03);
+                Ok(server_check(outcome))
+            })
+            .unwrap_err();
+            assert!(started.elapsed() < Duration::from_millis(500));
+            assert!(
+                matches!(error, FabricError::AdapterLifecycleOperation { code, .. } if code == "host_unavailable")
+            );
+            let bindings = BINDINGS.lock().unwrap();
+            let binding = &bindings[&key];
+            assert!(!binding.contains_key(START_KEY));
+            assert!(!binding.contains_key(UNKNOWN_START_KEY));
+            assert_eq!(binding.len(), 1);
+            assert!(binding.contains_key("other-runtime"));
+            drop(bindings);
+            BINDINGS.lock().unwrap().remove(&key);
+        }
+    }
+
+    #[test]
+    fn a_late_passing_server_check_does_not_authorize_start() {
+        let key = resource_key(&environment()).unwrap();
+        set_state(&key, START_KEY, State::Starting);
+        let result = wait_for_server(&key, Instant::now() + Duration::from_millis(20), |_| {
+            thread::sleep(Duration::from_millis(30));
+            Ok(server_check(crate::CheckOutcome::Passed))
+        });
+        assert!(result.is_err());
+        assert!(!BINDINGS.lock().unwrap()[&key].contains_key(START_KEY));
+        BINDINGS.lock().unwrap().remove(&key);
     }
 
     #[test]

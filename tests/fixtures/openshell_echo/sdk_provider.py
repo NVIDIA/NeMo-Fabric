@@ -52,9 +52,26 @@ async def main():
             elif operation == "runtime_command":
                 command = frame["command"]
                 if command["operation"] == "check":
-                    value = server_report(
-                        os.environ.get("FABRIC_TEST_SERVER_STATE", "responding"),
-                        time.monotonic(),
+                    state = os.environ.get("FABRIC_TEST_SERVER_STATE", "responding")
+                    if sequence := os.environ.get("FABRIC_TEST_SERVER_SEQUENCE"):
+                        records = (
+                            Path(os.environ["FABRIC_TEST_PROVIDER_LOG"])
+                            .read_text()
+                            .splitlines()
+                        )
+                        count = sum(
+                            json.loads(record)["frame"]
+                            .get("command", {})
+                            .get("operation")
+                            == "check"
+                            for record in records
+                        )
+                        states = json.loads(sequence)
+                        state = states[min(count, len(states) - 1)]
+                    value = (
+                        {"PRIVATE": "malformed server response"}
+                        if state in ("malformed", "unavailable")
+                        else server_report(state, time.monotonic())
                     )
                 elif command["operation"] == "start":
                     task_root = os.environ.get("FABRIC_TEST_TASK_ROOT")
@@ -74,9 +91,13 @@ async def main():
                 else:
                     await runtime.stop()
                     value = None
-                if command["operation"] == "invoke" and os.environ.get("FABRIC_TEST_DROP_EXECUTION"):
+                if command["operation"] == "invoke" and os.environ.get(
+                    "FABRIC_TEST_DROP_EXECUTION"
+                ):
                     value.pop("execution", None)
-                if command["operation"] == "invoke" and os.environ.get("FABRIC_TEST_MALFORM_EXECUTION"):
+                if command["operation"] == "invoke" and os.environ.get(
+                    "FABRIC_TEST_MALFORM_EXECUTION"
+                ):
                     value["execution"] = "malformed optional evidence"
                 fault = os.environ.get("FABRIC_TEST_PROVIDER_FAULT")
                 if not fault_injected and (
@@ -94,6 +115,15 @@ async def main():
                     fault_injected = True
                     value = {"stopped": True}
                 output = {"status": "returned", "value": value}
+                if command["operation"] == "check" and state == "unavailable":
+                    output = {
+                        "status": "rejected",
+                        "error": {
+                            "code": "host_unavailable",
+                            "stage": "transport",
+                            "effects": "none",
+                        },
+                    }
             elif operation == "collect_artifacts":
                 reader = os.environ["FABRIC_TEST_ARTIFACT_READER"]
                 result = subprocess.run(
@@ -118,7 +148,9 @@ async def main():
                 for file in json.loads(result.stdout)["files"]:
                     content = zlib.decompress(bytes(file["content"]))
                     if len(content) != file["uncompressed_size"]:
-                        raise ValueError("artifact reader returned an incorrect file size")
+                        raise ValueError(
+                            "artifact reader returned an incorrect file size"
+                        )
                     output.append({"path": file["path"], "content": list(content)})
             elif operation == "release":
                 output = (
