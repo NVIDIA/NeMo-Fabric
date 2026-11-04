@@ -458,11 +458,12 @@ async def test_goose_resolves_a_relative_command_from_the_base_directory(
     mock_goose: Path, tmp_path: Path, command: str
 ):
     (tmp_path / "bin").mkdir()
-    name = "goose.cmd" if sys.platform == "win32" else "goose"
-    local = Path(shutil.copy(mock_goose, tmp_path / name))
+    # Python 3.11 on Windows applies PATHEXT only to bare names, so name the extension.
+    suffix = ".cmd" if sys.platform == "win32" else ""
+    local = Path(shutil.copy(mock_goose, tmp_path / f"goose{suffix}"))
     os.environ["PATH"] = str(tmp_path / "bin")
     runtime = await _started(
-        _config(mock_goose, harness={"settings": {"goose_command": command}}),
+        _config(mock_goose, harness={"settings": {"goose_command": command + suffix}}),
         tmp_path,
     )
     try:
