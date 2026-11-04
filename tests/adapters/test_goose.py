@@ -429,6 +429,16 @@ async def test_goose_resolves_a_relative_command_from_the_base_directory(
         await runtime.stop()
 
 
+def test_goose_cleanup_tolerates_an_unreadable_proc(monkeypatch: pytest.MonkeyPatch):
+    def unreadable(_path: Path):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(adapter.sys, "platform", "linux")
+    monkeypatch.setattr(adapter.Path, "iterdir", unreadable)
+
+    adapter._kill_marked(["run"])
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="Finds run processes in /proc")
 def test_goose_cleanup_kills_only_processes_with_the_run_marker():
     processes = {
@@ -534,6 +544,11 @@ async def test_goose_start_strips_ambient_model_overrides(
             },
             "goose_mcp_configuration_unsupported",
             id="tool-policy",
+        ),
+        pytest.param(
+            {"instructions": {"system": {"content": "x" * 131063, "mode": "append"}}},
+            "goose_system_instruction_too_long",
+            id="append-too-long",
         ),
     ],
 )

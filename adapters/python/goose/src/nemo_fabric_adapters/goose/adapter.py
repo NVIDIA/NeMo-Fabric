@@ -34,6 +34,8 @@ MAX_TURNS_NOTICE = (
 FAILED_EXTENSION = re.compile(r"Failed to start extension '([^']+)'")
 MCP_TIMEOUT_SECONDS = 300
 STOP_GRACE_SECONDS = 5.0
+# Linux limits one command argument to 128 KiB, including its terminating NUL.
+MAX_ARGUMENT_BYTES = 128 * 1024
 # Every process a run starts inherits this variable, so cleanup can find it.
 RUN_MARKER_ENV = "NEMO_FABRIC_GOOSE_RUN"
 # Parent settings that would override the normalized model or system instruction.
@@ -216,7 +218,11 @@ def _kill_marked(markers: list[str]) -> None:
     if sys.platform != "linux":
         return
     wanted = {f"{RUN_MARKER_ENV}={marker}".encode() for marker in markers}
-    for entry in Path("/proc").iterdir():
+    try:
+        entries = list(Path("/proc").iterdir())
+    except OSError:
+        return
+    for entry in entries:
         if not entry.name.isdigit():
             continue
         try:
@@ -271,6 +277,16 @@ class GooseRuntime:
         instruction = common_instructions.system_instruction(
             config, adapter=HARNESS, supported_modes={"replace", "append"}
         )
+        if (
+            instruction is not None
+            and instruction.mode == "append"
+            and len(f"--system={instruction.content}".encode()) >= MAX_ARGUMENT_BYTES
+        ):
+            raise lifecycle.LifecycleError(
+                "goose_system_instruction_too_long",
+                "Goose takes an appended system instruction as one command argument, "
+                "which must be shorter than 128 KiB. Use mode replace instead.",
+            )
         model = _selected_model(config)
         settings = config.harness.settings if config.harness is not None else {}
         command = _resolve_command(settings, Path(base_dir))

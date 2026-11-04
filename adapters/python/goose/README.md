@@ -71,6 +71,9 @@ The adapter maps NeMo Fabric configuration into Goose as follows:
 | stdio and streamable HTTP `mcp.servers` | Goose `stdio` and `streamable_http` extensions |
 | `environment.workspace` | Working directory of `goose run` |
 
+An appended instruction travels as one command argument, so it must be shorter
+than 128 KiB, the Linux limit. Use `replace` for a longer instruction.
+
 Goose keeps its default extensions, including the developer shell and file
 tools, beside the configured MCP servers. Goose runs tool calls without
 approval (`GOOSE_MODE=auto`) because a headless run cannot answer approval
