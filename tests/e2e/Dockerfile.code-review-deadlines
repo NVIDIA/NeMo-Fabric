@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Build the existing Hermes code-review image at the release's Hermes pin first.
+FROM fabric-code-review-hermes-sdk:deadline-qualification-base
+USER root
+WORKDIR /src/fabric
+COPY adapters/python/deepagents/ adapters/python/deepagents/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv build --python /usr/local/bin/python3 --wheel --out-dir /deepagents-wheels adapters/python/deepagents \
+    && uv venv --python /usr/local/bin/python3 /opt/deepagents \
+    && uv pip install --python /opt/deepagents/bin/python \
+        'deepagents==0.7.9' 'mcp<2' 'langchain-mcp-adapters>=0.1,<0.3' \
+        'langchain-openai>=0.3' 'langgraph-checkpoint-sqlite>=3,<4' \
+    && uv pip install --python /opt/deepagents/bin/python --no-deps /deepagents-wheels/*.whl \
+    && /opt/deepagents/bin/python -c 'import site; from pathlib import Path; Path(site.getsitepackages()[0], "fabric-runtime.pth").write_text("/opt/fabric/lib/python3.14/site-packages\n")'
+COPY adapters/python/deepagents/deepagents.fabric-adapter.json /opt/fabric/adapters/python/deepagents/deepagents.fabric-adapter.json
+COPY tests/e2e/deadline_review_source.py /opt/fabric/qualification/deadline_review_source.py
+WORKDIR /sandbox
+USER sandbox:sandbox

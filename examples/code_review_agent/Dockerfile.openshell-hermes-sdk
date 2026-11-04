@@ -30,9 +30,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && uv pip install --python /opt/fabric/bin/python \
         'nemo-relay>=0.10,<0.11' 'tomli-w>=1.2,<2' \
     && mv /src/hermes-agent /opt/fabric/hermes-agent \
-    && uv pip install --python /opt/fabric/bin/python \
-        --config-settings-package hermes-agent:editable_mode=compat \
-        --editable '/opt/fabric/hermes-agent[mcp]'
+    && UV_PROJECT_ENVIRONMENT=/opt/fabric uv sync \
+        --project /opt/fabric/hermes-agent --frozen --inexact --no-default-groups --extra mcp \
+        --config-settings-package hermes-agent:editable_mode=compat
 RUN /opt/fabric/bin/python - <<'PY'
 from pathlib import Path
 

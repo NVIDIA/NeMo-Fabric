@@ -258,6 +258,8 @@ just test-typescript
 just docs
 ```
 
+Complete the [invocation deadline qualification checklist](tests/e2e/invocation-deadline-checklist.md) for releases containing the local or OpenShell runtime. Require real code-review inference with Hermes and Deep Agents on both the host and OpenShell, in addition to the model-free transport regression. Retain evidence from the release candidate; skipped live cases do not satisfy this gate.
+
 If you want to validate the Python packaging recipe before pushing a tag, run:
 
 ```bash

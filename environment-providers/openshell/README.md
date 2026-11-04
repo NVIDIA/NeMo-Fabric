@@ -108,7 +108,7 @@ read through directory descriptors with symlink and traversal checks;
 directories and special files are rejected. Collection never truncates files
 or copies the workspace. Relay file references retain their correlation metadata.
 
-OpenShell bridge invocations return a buffered result. Set `runtime.timeout_seconds` to a positive, finite number for a total invocation limit, for example `900`. Omit it or use `null` (`None` in Python) to disable Fabric's total invocation deadline. There is no 300-second ceiling, and the provider and task command transport do not impose another invocation deadline. Fractional seconds are preserved in the task runtime. Transport deadlines allow additional time for the task runtime to report its result and clean up. `runtime.max_turns` independently controls the harness turn limit when the selected adapter supports it; harness-native limits still apply.
+OpenShell bridge invocations return a buffered result. Set `runtime.timeout_seconds` to a positive, finite number for a total invocation limit, for example `900`. Omit it or use `null` (`None` in Python) to disable NeMo Fabric's total invocation deadline. The provider and task command transport respect the configured invocation deadline. Fractional seconds are preserved in the task runtime. Transport deadlines allow additional time for the task runtime to report its result and clean up. `runtime.max_turns` independently controls the harness turn limit when the selected adapter supports it; harness-native limits still apply.
 
 ```python
 runtime=RuntimeConfig(timeout_seconds=None, max_turns=100)
@@ -143,15 +143,6 @@ Fabric-owned release checks typed deletion acknowledgements and waits for the
 original ID; an accepted acknowledgement alone does not prove deletion.
 Readiness cleanup also preserves replacements.
 
-Gateway credentials use environment-variable references, such as `connection.token_env` and `connection.ca_cert_env`. Tokens require verified HTTPS. Literal credential fields are rejected. Routine OpenShell provider and transport errors exclude raw SDK exceptions and process stderr. OpenShell provider timeout settings accept 1–600 seconds. Calls are bounded and are not automatically replayed after a lost response. Cancelling preparation releases a confirmed resource; an unconfirmed cleanup error includes its sandbox identity for recovery.
+Gateway credentials use environment-variable references, such as `connection.token_env` and `connection.ca_cert_env`. Tokens require verified HTTPS. Literal credential fields are rejected. Routine OpenShell provider and transport errors exclude raw SDK exceptions and process stderr. OpenShell provider timeout settings accept 1–600 seconds. Setup, direct exec, and cleanup calls are bounded and are not automatically replayed after a lost response. Cancelling preparation releases a confirmed resource; an unconfirmed cleanup error includes its sandbox identity for recovery.
 
 The OpenShell provider communicates privately over JSON and stdio. This interface is internal to NeMo Fabric. The public task command schemas are described in the [command bridge guide](../../sdk/python/nemo-fabric-runtime/src/nemo_fabric/host/README.md).
-
-## Qualify Invocation Deadlines
-
-Run the model-free live tests from the repository root with a development Python environment containing pytest and the current SDK. The launcher rebuilds the task image and provider, starts an isolated OpenShell gateway, and removes the test sandboxes on successful completion. Two invocations run concurrently for 325 seconds, one with a 360-second limit and one without a total limit; a separate case verifies a short finite deadline and its reported reason.
-
-```bash
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" OPENSHELL_EXAMPLE_MODE=fabric_owned \
-  bash examples/openshell/run-demo.sh tests/e2e/openshell-timeouts-workload.sh
-```
