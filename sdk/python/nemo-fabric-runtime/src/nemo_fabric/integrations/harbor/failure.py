@@ -137,7 +137,14 @@ def _retained_files(evidence: dict, payload: FabricRunPayload) -> None:
                     evidence["system_stats"] = InvocationSystemStats.from_mapping(
                         summary["system_stats"]
                     ).to_mapping()
-                except (OSError, ValueError, KeyError, TypeError, FabricError):
+                except (
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    OverflowError,
+                    FabricError,
+                ):
                     evidence["coverage"]["system_stats"] = "invalid"
                     continue
             references.append(

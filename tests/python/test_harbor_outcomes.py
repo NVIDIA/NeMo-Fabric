@@ -674,7 +674,15 @@ def test_runner_serializes_cancellation_without_turning_it_into_success(
 
 @pytest.mark.parametrize(
     "malformed",
-    [None, "identity", "json", "oversized", "negative_stats", "nonfinite_stats"],
+    [
+        None,
+        "identity",
+        "json",
+        "oversized",
+        "negative_stats",
+        "nonfinite_stats",
+        "overflow_stats",
+    ],
 )
 def test_failure_recovers_only_matching_bounded_stats(tmp_path, malformed):
     from nemo_fabric import FabricRuntimeError
@@ -700,6 +708,8 @@ def test_failure_recovers_only_matching_bounded_stats(tmp_path, malformed):
         stats["elapsed_seconds"] = -1
     elif malformed == "nonfinite_stats":
         stats["elapsed_seconds"] = float("nan")
+    elif malformed == "overflow_stats":
+        stats["elapsed_seconds"] = 10**400
     summary = {
         "schema_version": "fabric.system_stats/v1alpha1",
         "runtime_id": "runtime-test",
@@ -719,6 +729,8 @@ def test_failure_recovers_only_matching_bounded_stats(tmp_path, malformed):
         "original", details={"runtime_evidence": {"runtime_id": "runtime-test"}}
     )
     evidence = failure_evidence(error, payload)
+    assert evidence["runtime_id"] == "runtime-test"
+    assert evidence["request_id"] == "request-test"
     expected_kinds = {"fabric_invocation", "system_stats_samples"}
     if malformed is None:
         expected_kinds.add("system_stats_summary")
