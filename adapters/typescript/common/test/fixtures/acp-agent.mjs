@@ -16,6 +16,10 @@ let effort = "medium";
 let mcpCount = 0;
 let ready = false;
 
+if (process.env.TEST_PROCESS_MARKER !== undefined) {
+  writeFileSync(process.env.TEST_PROCESS_MARKER, String(process.pid));
+}
+
 if (process.env.TEST_DESCENDANT_MARKER !== undefined) {
   const descendant = spawn(process.execPath, ["-e", `
     process.on("SIGTERM", () => {});

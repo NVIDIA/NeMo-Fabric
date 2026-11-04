@@ -203,15 +203,17 @@ async def test_runtime_health_reports_stopped_activity_after_owned_process_exit(
 
 @pytest.mark.parametrize("error", [httpx.RemoteProtocolError, httpx.ReadTimeout])
 @pytest.mark.parametrize("changed_context", [False, True])
+@pytest.mark.parametrize("exited", [False, True])
 async def test_runtime_health_preserves_process_exit_during_transport_failure(
-    runtime_health, error, changed_context
+    runtime_health, error, changed_context, exited
 ):
     runtime, _, _ = runtime_health
     runtime._process = MagicMock(spec=asyncio.subprocess.Process)
     runtime._process.returncode = None
 
     async def exit_during_request(request):
-        runtime._process.returncode = 1
+        if exited:
+            runtime._process.returncode = 1
         if changed_context:
             runtime._context = None
         raise error("TEST_ONLY_PRIVATE", request=request)
@@ -226,11 +228,18 @@ async def test_runtime_health_preserves_process_exit_during_transport_failure(
         assert result["reason_code"] == "observation_changed"
         assert result["activity"] == "unknown"
         assert result["observed_at"] is None
-    else:
+    elif exited:
         assert result["outcome"] == "failed"
         assert result["reason_code"] == "agent_exited"
         assert result["activity"] == "stopped"
         assert result["observed_at"] is not None
+    else:
+        assert result["outcome"] == "unknown"
+        assert result["reason_code"] == (
+            "probe_timeout" if error is httpx.ReadTimeout else "probe_error"
+        )
+        assert result["activity"] == "unknown"
+        assert result["observed_at"] is None
     assert "TEST_ONLY_PRIVATE" not in json.dumps(result)
 
 

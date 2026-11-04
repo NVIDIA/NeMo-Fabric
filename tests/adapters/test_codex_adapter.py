@@ -2226,6 +2226,44 @@ async def test_health_detects_owned_process_exit(codex_health, level):
     thread.read.assert_not_awaited()
 
 
+@pytest.mark.parametrize("level", ["active", "ready"])
+@pytest.mark.parametrize(
+    "change", ["unchanged", "unusable", "uninitialized", "process"]
+)
+@pytest.mark.parametrize("exited", [False, True])
+async def test_health_preserves_owned_process_exit_during_native_error(
+    codex_health, level, change, exited
+):
+    runtime, client, thread, process = codex_health
+
+    async def read(**kwargs):
+        if exited:
+            process.poll.return_value = 7
+        if change == "unusable":
+            runtime._unusable = True
+        elif change == "uninitialized":
+            client._initialized = False
+        elif change == "process":
+            client._client._sync._proc = MagicMock(spec=subprocess.Popen)
+        raise RuntimeError("private-native-probe-detail")
+
+    thread.read.side_effect = read
+    result = await runtime.check(level)
+
+    if change == "process" or (not exited and change != "unchanged"):
+        expected = ("unknown", "observation_changed", "unknown")
+    elif exited:
+        expected = ("failed", "agent_exited", "stopped")
+    else:
+        expected = ("unknown", "probe_error", "idle")
+    assert (result["outcome"], result["reason_code"], result["activity"]) == expected
+    assert (result["observed_at"] is None) == (
+        result["reason_code"] == "observation_changed"
+    )
+    assert "private-native-probe-detail" not in json.dumps(result)
+    client.close.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     ("status", "level", "outcome", "reason"),
     [

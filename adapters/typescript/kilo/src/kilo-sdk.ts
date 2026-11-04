@@ -445,14 +445,14 @@ class KiloSdkSessionHandle implements KiloSessionHandle {
         outcome: "failed",
         activity: "stopped",
       };
-    if (!this.server.isAlive())
-      return {
-        outcome: "failed",
-        reason_code: "agent_exited",
-        activity: "stopped",
-        source: "fabric.adapter.liveness",
-        observed_at: new Date().toISOString(),
-      };
+    const exited = (): AdapterCheckResult => ({
+      outcome: "failed",
+      reason_code: "agent_exited",
+      activity: "stopped",
+      source: "fabric.adapter.liveness",
+      observed_at: new Date().toISOString(),
+    });
+    if (!this.server.isAlive()) return exited();
     if (level === "live")
       return {
         outcome: "passed",
@@ -476,8 +476,8 @@ class KiloSdkSessionHandle implements KiloSessionHandle {
               options,
             )
           : await this.client.global.health(options);
-      if (this.stopped || !this.server.isAlive())
-        return unobservedHealth("observation_changed");
+      if (this.stopped) return unobservedHealth("observation_changed");
+      if (!this.server.isAlive()) return exited();
       if (!isRecord(response.data)) return unobservedHealth("probe_error");
       if (level === "active" && response.data.id !== this.id)
         return unobservedHealth("observation_changed");
@@ -506,13 +506,9 @@ class KiloSdkSessionHandle implements KiloSessionHandle {
         observed_at: new Date().toISOString(),
       };
     } catch {
-      return unobservedHealth(
-        this.stopped || !this.server.isAlive()
-          ? "observation_changed"
-          : signal.aborted
-            ? "probe_timeout"
-            : "probe_error",
-      );
+      if (this.stopped) return unobservedHealth("observation_changed");
+      if (!this.server.isAlive()) return exited();
+      return unobservedHealth(signal.aborted ? "probe_timeout" : "probe_error");
     } finally {
       this.healthPending = false;
     }
