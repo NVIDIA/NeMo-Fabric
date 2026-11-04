@@ -8,8 +8,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import runpy
 import subprocess
 import sys
+import textwrap
 import types
 from contextlib import asynccontextmanager
 from contextlib import contextmanager
@@ -38,6 +40,7 @@ NOOA_ROOT = ROOT / "adapters" / "python" / "nooa"
 if not ((3, 12) <= sys.version_info[:2] < (3, 14)):
     pytest.skip("NOOA supports Python 3.12 and 3.13", allow_module_level=True)
 
+from nemo_fabric_adapters.nooa import InteractiveAgentTarget
 from nemo_fabric_adapters.nooa import adapter
 from nemo_fabric_adapters.nooa import model_support
 from nemo_fabric_adapters.nooa import telemetry as nooa_telemetry
@@ -488,6 +491,99 @@ def test_main_opts_into_typed_agent_config(monkeypatch: pytest.MonkeyPatch):
     serve.assert_called_once_with(
         adapter.NooaRuntime, config_loader=AgentConfig.from_mapping
     )
+
+
+def test_host_module_runs_once_and_accepts_the_public_target_wrapper():
+    # Fabric starts the host with `python -m`, which runs adapter.py as __main__.
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-W",
+            "error::RuntimeWarning",
+            "-m",
+            "nemo_fabric_adapters.nooa.adapter",
+        ],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+    host = runpy.run_path(adapter.__file__)
+    target = InteractiveAgentTarget(agent=MagicMock())
+    assert host["_unwrap_target"](target) is target
+
+
+def test_host_runs_a_factory_that_returns_the_wrapper(tmp_path: Path):
+    (tmp_path / "wrapper_target.py").write_text(
+        textwrap.dedent(
+            """
+            from types import SimpleNamespace
+
+            from fabric_nooa_test_target import EchoInteractiveAgent
+            from nemo_fabric_adapters.nooa import InteractiveAgentTarget
+
+
+            class ReplyAgent(EchoInteractiveAgent):
+                async def handle(self, notification):
+                    self.event_manager.emit("AgentMessage", SimpleNamespace(content="reply"))
+                    return SimpleNamespace(kind="DONE", explanation="done")
+
+
+            def create_agent(context):
+                agent = ReplyAgent(close_marker=context.workspace / "agent-closed")
+                return InteractiveAgentTarget(
+                    agent=agent, close=lambda: (context.workspace / "wrapper-closed").touch()
+                )
+            """
+        )
+    )
+    start = _start_payload(tmp_path)
+    start["config"] = {
+        "workflow": {
+            "entrypoint": {
+                "kind": "interactive_agent_factory",
+                "ref": "wrapper_target:create_agent",
+            },
+        }
+    }
+    request, context = _invocation()
+    requests = [
+        {"operation": "start", "payload": start},
+        {
+            "operation": "invoke",
+            "payload": {
+                "request": request.to_mapping(),
+                "runtime_context": context.to_mapping(),
+            },
+        },
+        {"operation": "stop", "payload": {"runtime_id": "runtime-1"}},
+    ]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [str(tmp_path), str(ROOT / "tests" / "fixtures" / "nooa" / "src")]
+    )
+    (tmp_path / "workspace").mkdir()
+
+    # Run the host the way Fabric starts it.
+    completed = subprocess.run(
+        [sys.executable, "-m", "nemo_fabric_adapters.nooa.adapter"],
+        input="".join(f"{json.dumps(item)}\n" for item in requests),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+        env=environment,
+    )
+
+    responses = [json.loads(line) for line in completed.stdout.splitlines()]
+    assert [response["outcome"]["status"] for response in responses] == [
+        "succeeded"
+    ] * 3, completed.stderr
+    assert responses[1]["outcome"]["output"]["output"]["response"] == "reply"
+    assert (tmp_path / "workspace" / "wrapper-closed").exists()
+    assert not (tmp_path / "workspace" / "agent-closed").exists()
 
 
 async def test_runtime_builds_once_and_preserves_agent_state(
