@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nemo_fabric import CheckReport, EnvironmentHandle
+from nemo_fabric import CheckReport, EnvironmentHandle, RuntimeStatus
 from nemo_fabric.runtime_server import cli, protocol, transport
 from nemo_fabric.runtime_server.health import check_response
 
@@ -92,7 +92,72 @@ async def test_missing_runtime_does_not_dispatch(host, host_request, mock_fabric
     mock_fabric.check = AsyncMock()
     missing = await host.handle(host_request("check", runtime_id="missing"))
     assert missing["result"]["reason_code"] == "runtime_unavailable"
+    assert missing["result"]["runtime"] is None
+    assert missing["result"]["checks"] == []
     mock_fabric.check.assert_not_awaited()
+
+
+@pytest.mark.parametrize("level", ["live", "active", "ready"])
+@pytest.mark.parametrize(
+    ("status", "activity"),
+    [(RuntimeStatus.STOPPED, "stopped"), (RuntimeStatus.FAILED, "unknown")],
+)
+async def test_unavailable_runtime_preserves_known_sdk_state_without_probing(
+    host, host_request, mock_fabric, mock_runtime, level, status, activity
+):
+    await host.handle(host_request("start"))
+    mock_runtime.status = status
+    mock_fabric.check = AsyncMock()
+    owned = host.runtimes["runtime-1"]
+    generation = owned.generation
+
+    response = await host.handle(
+        host_request("check", runtime_id="runtime-1", level=level)
+    )
+
+    assert response["status"] == "failed"
+    assert response["changed"] is False
+    assert response["error"]["effects"] == "none"
+    assert response["result"]["outcome"] == "unknown"
+    assert response["result"]["reason_code"] == "runtime_unavailable"
+    assert response["result"]["runtime"] == {
+        "state": status.value,
+        "activity": activity,
+    }
+    assert response["result"]["checks"] == []
+    assert mock_runtime.status == status
+    assert owned.runtime is mock_runtime
+    assert (owned.state, owned.generation) == ("running", generation)
+    mock_fabric.check.assert_not_awaited()
+    mock_runtime.invoke.assert_not_awaited()
+    mock_runtime.stop.assert_not_awaited()
+    protocol.validate_response(response, "check")
+
+
+async def test_stopped_runtime_record_preserves_state_without_probing(
+    host, host_request, mock_fabric, mock_runtime
+):
+    await host.handle(host_request("start"))
+    assert (await host.handle(host_request("stop")))["status"] == "succeeded"
+    mock_runtime.stop.reset_mock()
+    mock_fabric.check = AsyncMock()
+    owned = host.runtimes["runtime-1"]
+    generation = owned.generation
+
+    response = await host.handle(host_request("check", runtime_id="runtime-1"))
+
+    assert response["result"]["outcome"] == "unknown"
+    assert response["result"]["reason_code"] == "runtime_unavailable"
+    assert response["result"]["runtime"] == {"state": "stopped", "activity": "stopped"}
+    assert response["result"]["checks"] == []
+    assert response["changed"] is False
+    assert response["error"]["effects"] == "none"
+    assert owned.runtime is None
+    assert (owned.state, owned.generation) == ("stopped", generation)
+    mock_fabric.check.assert_not_awaited()
+    mock_runtime.invoke.assert_not_awaited()
+    mock_runtime.stop.assert_not_awaited()
+    protocol.validate_response(response, "check")
 
 
 def test_removed_operational_level_is_rejected_by_cli_and_protocol(host_request):
