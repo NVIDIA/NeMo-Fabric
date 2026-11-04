@@ -292,13 +292,15 @@ class GooseRuntime:
         command = _resolve_command(settings, Path(base_dir))
         workspace = _workspace(context, base_dir)
         extensions = _mcp_extensions(config)
+        # NeMo Fabric passes environment.env and env_names in the runtime context.
+        available = {**os.environ, **context.environment.env}
         env = {
             name: value
-            for name, value in os.environ.items()
+            for name, value in available.items()
             if name not in OVERRIDDEN_ENV
         }
         if model.api_key_env is not None:
-            api_key = os.environ.get(model.api_key_env)
+            api_key = available.get(model.api_key_env)
             if not api_key:
                 raise lifecycle.LifecycleError(
                     "goose_credential_missing",
@@ -377,17 +379,16 @@ class GooseRuntime:
         try:
             async with asyncio.timeout_at(deadline):
                 stdout, stderr = await process.communicate(prompt)
-        except TimeoutError:
+        except BaseException as error:
             await _terminate(process)
             _kill_marked([marker])
+            # The run may have advanced Goose's totals without reporting them.
             self._usage_totals = dict.fromkeys(USAGE_FIELDS)
+            if not isinstance(error, TimeoutError):
+                raise
             return _failed(
                 "goose_timeout", "Goose did not finish before the invocation deadline."
             )
-        except BaseException:
-            await _terminate(process)
-            _kill_marked([marker])
-            raise
 
         events = _events(stdout)
         self._resume = self._resume or process.returncode == 0

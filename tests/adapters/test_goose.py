@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -27,7 +29,14 @@ from nemo_fabric_adapters.goose import adapter
 def mock_goose_fixture(repo_root: Path, tmp_path: Path) -> Path:
     os.environ["FAKE_GOOSE_CAPTURE"] = str(tmp_path / "capture.jsonl")
     os.environ["FAKE_GOOSE_CHILD_PID"] = str(tmp_path / "child.pid")
-    return repo_root / "tests/_utils/mock_goose.py"
+    script = repo_root / "tests/_utils/mock_goose.py"
+    if sys.platform != "win32":
+        return script
+    # Windows does not run a Python script as a command, so wrap it in a batch file.
+    launcher = tmp_path / "launcher" / "goose.cmd"
+    launcher.parent.mkdir()
+    launcher.write_text(f'@"{sys.executable}" "{script}" %*\r\n', encoding="utf-8")
+    return launcher
 
 
 def _captures(tmp_path: Path) -> list[dict[str, Any]]:
@@ -39,7 +48,11 @@ def _captures(tmp_path: Path) -> list[dict[str, Any]]:
     ]
 
 
-def _context(workspace: Path, deadline_millis: int | None = None) -> RuntimeContext:
+def _context(
+    workspace: Path,
+    deadline_millis: int | None = None,
+    env: dict[str, str] | None = None,
+) -> RuntimeContext:
     payload: dict[str, Any] = {
         "runtime_id": "goose-runtime",
         "invocation_id": "goose-invocation",
@@ -49,7 +62,7 @@ def _context(workspace: Path, deadline_millis: int | None = None) -> RuntimeCont
             "provider": "local",
             "control_location": "in_env_control",
             "workspace": str(workspace),
-            "env": {},
+            "env": env or {},
             "ownership": "caller_owned",
         },
         "artifacts": {},
@@ -74,12 +87,14 @@ def _config(command: Path, **overrides: Any) -> AgentConfig:
     return AgentConfig.from_mapping(mapping)
 
 
-async def _started(config: AgentConfig, tmp_path: Path) -> adapter.GooseRuntime:
+async def _started(
+    config: AgentConfig, tmp_path: Path, env: dict[str, str] | None = None
+) -> adapter.GooseRuntime:
     runtime = adapter.GooseRuntime()
     await runtime.start(
         {
             "config": config,
-            "runtime_context": _context(tmp_path).to_mapping(),
+            "runtime_context": _context(tmp_path, env=env).to_mapping(),
             "base_dir": str(tmp_path),
         }
     )
@@ -412,19 +427,46 @@ async def test_goose_timeout_stops_goose_and_its_tool_commands(
     assert "--resume" in after_run["args"]
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Finds run processes in /proc")
+async def test_goose_cancelled_run_leaves_the_next_usage_unknown(
+    mock_goose: Path, tmp_path: Path
+):
+    runtime = await _started(_config(mock_goose), tmp_path)
+    child = tmp_path / "child.pid"
+    try:
+        task = asyncio.create_task(_invoke(runtime, tmp_path, "SLEEP"))
+        for _ in range(200):
+            if child.exists():
+                break
+            await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        tool_stopped = _gone(int(child.read_text(encoding="utf-8")))
+        after = await _invoke(runtime, tmp_path, "after")
+    finally:
+        await runtime.stop()
+
+    assert tool_stopped
+    assert after.status == "succeeded"
+    # The cancelled run advanced Goose's totals without reporting them.
+    assert after.usage is None
+
+
 @pytest.mark.parametrize("command", ["./goose", "bin/../goose"])
 async def test_goose_resolves_a_relative_command_from_the_base_directory(
     mock_goose: Path, tmp_path: Path, command: str
 ):
     (tmp_path / "bin").mkdir()
-    (tmp_path / "goose").symlink_to(mock_goose)
+    name = "goose.cmd" if sys.platform == "win32" else "goose"
+    local = Path(shutil.copy(mock_goose, tmp_path / name))
     os.environ["PATH"] = str(tmp_path / "bin")
     runtime = await _started(
         _config(mock_goose, harness={"settings": {"goose_command": command}}),
         tmp_path,
     )
     try:
-        assert runtime._command == mock_goose.resolve()
+        assert runtime._command == local.resolve()
     finally:
         await runtime.stop()
 
@@ -472,6 +514,41 @@ async def test_goose_stop_ends_tool_commands_left_running(
 
     assert result.status == "succeeded"
     assert _gone(child)
+
+
+async def test_goose_uses_the_runtime_context_environment(
+    mock_goose: Path, tmp_path: Path
+):
+    config = _config(
+        mock_goose,
+        models={
+            "default": {
+                "provider": "openai",
+                "model": "served-model",
+                "api_key_env": "FABRIC_CONTEXT_MODEL_KEY",
+            }
+        },
+    )
+    runtime = await _started(
+        config,
+        tmp_path,
+        env={
+            "FABRIC_CONTEXT_MODEL_KEY": "context-secret",
+            "GOOSE_CONTEXT_LIMIT": "64000",
+            "OPENAI_BASE_URL": "https://context.example.test/v1",
+        },
+    )
+    try:
+        result = await _invoke(runtime, tmp_path, "Hello.")
+    finally:
+        await runtime.stop()
+
+    assert result.status == "succeeded"
+    [capture] = _captures(tmp_path)
+    assert capture["env"]["OPENAI_API_KEY"] == "context-secret"
+    assert capture["env"]["GOOSE_CONTEXT_LIMIT"] == "64000"
+    # The normalized model still wins over a configured provider setting.
+    assert "OPENAI_BASE_URL" not in capture["env"]
 
 
 async def test_goose_start_strips_ambient_model_overrides(

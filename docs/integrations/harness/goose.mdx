@@ -16,6 +16,7 @@ Install the Goose CLI, then install the runtime and adapter:
 ```bash
 curl -fLO https://github.com/aaif-goose/goose/releases/download/v1.57.0/goose-x86_64-unknown-linux-musl.tar.gz
 echo "6c3a05e30e1a425dc06a410dbe24b3f3697c9721b1ea2340434ddda6b64267ae  goose-x86_64-unknown-linux-musl.tar.gz" | sha256sum -c -
+mkdir -p ~/.local/bin
 tar xzf goose-x86_64-unknown-linux-musl.tar.gz -C ~/.local/bin ./goose
 pip install "nemo-fabric[goose]"
 ```
