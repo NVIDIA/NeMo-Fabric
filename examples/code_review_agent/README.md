@@ -187,6 +187,13 @@ Install the
 [Deep Agents adapter requirements](../../adapters/python/deepagents/README.md). This
 variant uses the `NVIDIA_API_KEY` configured for the default demo.
 
+### Goose (`goose`)
+
+Install Goose 1.57.0 and the [Goose adapter](../../adapters/python/goose/README.md).
+This variant uses the `NVIDIA_API_KEY` configured for the default demo through
+Goose's OpenAI-compatible provider. It omits the default code-review skill, and
+Goose does not currently support Relay telemetry.
+
 ### NVIDIA-labs Object Oriented Agents (NOOA) CodingAgent (`nooa`)
 
 Install `nemo-fabric[nooa]` and follow the

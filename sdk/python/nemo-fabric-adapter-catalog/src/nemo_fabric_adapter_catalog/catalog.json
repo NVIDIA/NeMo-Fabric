@@ -790,6 +790,108 @@
       "sha256": "0c44210e0ba4e58a173b6ed1e38ecb4d518d84a4dd5c68449a7155463c591c73",
       "source": "adapters/typescript/droid/droid.fabric-adapter.json"
     },
+    "nvidia.fabric.goose": {
+      "descriptor": {
+        "adapter_id": "nvidia.fabric.goose",
+        "adapter_kind": "python",
+        "capabilities": {
+          "cancellation": false,
+          "service": false,
+          "streaming": false,
+          "updates": false
+        },
+        "config": {
+          "accepts": [
+            "models",
+            "models.base_url",
+            "models.temperature",
+            "instructions.system",
+            "runtime.max_turns",
+            "mcp"
+          ],
+          "system_instruction_modes": [
+            "replace",
+            "append"
+          ]
+        },
+        "contract_version": "fabric.adapter/v1alpha2",
+        "model_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "else": {
+            "required": [
+              "base_url"
+            ]
+          },
+          "if": {
+            "properties": {
+              "provider": {
+                "const": "openai"
+              }
+            },
+            "required": [
+              "provider"
+            ]
+          },
+          "properties": {
+            "api_key_env": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "base_url": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "model": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "provider": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "settings": {
+              "additionalProperties": false,
+              "properties": {},
+              "type": "object"
+            },
+            "temperature": {
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "provider",
+            "model"
+          ],
+          "type": "object"
+        },
+        "requirements": {},
+        "runner": {
+          "module": "nemo_fabric_adapters.goose.adapter"
+        },
+        "settings_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "goose_command": {
+              "default": "goose",
+              "description": "Goose executable name or path. Relative paths containing a directory are resolved from the NeMo Fabric base directory.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "ecosystem": "python",
+      "package": {
+        "name": "nemo-fabric-adapters-goose",
+        "version": "0.7.0"
+      },
+      "sha256": "dded6cfd187ad3ee23ea0968589201ffe2c5578ee0e5537f23944f5a5f4a4fc6",
+      "source": "adapters/python/goose/goose.fabric-adapter.json"
+    },
     "nvidia.fabric.hermes": {
       "descriptor": {
         "adapter_id": "nvidia.fabric.hermes",

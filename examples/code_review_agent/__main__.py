@@ -29,6 +29,7 @@ from examples.code_review_agent.config import (
     codex_config,
     deepagents_config,
     droid_config,
+    goose_config,
     hermes_config,
     kilo_config,
     kiro_config,
@@ -52,6 +53,7 @@ CONFIG_BUILDERS: dict[str, Callable[[], FabricConfig]] = {
     "codex": codex_config,
     "deepagents": deepagents_config,
     "droid": droid_config,
+    "goose": goose_config,
     "nooa": nooa_config,
     "openclaw": openclaw_config,
     "openhands": openhands_config,
@@ -192,6 +194,7 @@ async def main() -> None:
         in {
             "cline",
             "droid",
+            "goose",
             "kilo",
             "kiro",
             "strands",
@@ -204,6 +207,7 @@ async def main() -> None:
         display_name = {
             "cline": "Cline",
             "droid": "Factory Droid",
+            "goose": "Goose",
             "kilo": "Kilo Code",
             "kiro": "Kiro",
             "strands": "Strands",

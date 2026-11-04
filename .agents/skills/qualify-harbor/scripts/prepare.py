@@ -191,6 +191,13 @@ def adapter_dockerfile(plan: dict, row: dict, base: str) -> str:
     # These harnesses deliberately are not dependencies of their adapter packages.
     installs = {
         "nvidia.fabric.droid": "npm install --global droid@0.233.0",
+        "nvidia.fabric.goose": (
+            "curl -fsSLo /tmp/goose.tar.gz https://github.com/aaif-goose/goose/releases/"
+            "download/v1.57.0/goose-x86_64-unknown-linux-musl.tar.gz && echo "
+            "'6c3a05e30e1a425dc06a410dbe24b3f3697c9721b1ea2340434ddda6b64267ae  "
+            "/tmp/goose.tar.gz' | sha256sum -c - && tar xzf /tmp/goose.tar.gz "
+            "-C /usr/local/bin ./goose && rm /tmp/goose.tar.gz"
+        ),
         "nvidia.fabric.openhands": (
             'pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0" '
             '"litellm==1.100.1" "mcp==1.28.1" && pip check'
