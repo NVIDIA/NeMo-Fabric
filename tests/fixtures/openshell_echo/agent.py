@@ -34,6 +34,8 @@ class EchoRuntime:
     async def invoke(self, request, context):
         if context.runtime_id != self.context.runtime_id:
             raise ValueError("invocation must match the active runtime")
+        if delay := request.context.get("delay_seconds"):
+            await asyncio.sleep(delay)
         barrier_path = request.context.get("parallel_barrier")
         both_runtimes_entered = None
         if barrier_path:

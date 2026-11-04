@@ -25,6 +25,7 @@ runtime or bindings.
 - Keep every affected public surface in parity
 - `RunRequest.relay_session_root` is forwarded as the typed `AgentRunRequest.relay_session_root` field. Keep Rust, Python, TypeScript, and schema representations in parity. Context keys do not control Relay propagation; preserve the adapter fallback for unusable UUIDs.
 - OpenShell task commands serialize public SDK config/request/handle/result mappings. Keep forwarding buffered and preserve task-generated IDs, normalized failed results, telemetry references, and declared artifacts. Do not normalize an SDK result as an adapter result. Task paths remain POSIX strings; host artifact destinations stay separate. Unknown outcomes bind the immutable sandbox identity through reattachment and must not be replayed.
+- Preserve normalized `runtime.timeout_seconds` across host and task SDKs: positive finite values enforce the invocation deadline; omission/null disables the total invocation deadline. Keep lifecycle, health, and cleanup budgets separate, and do not replace disabled invocation deadlines with transport defaults.
 - Update docs and examples in the same branch
 
 ## Minimum Acceptance

@@ -545,3 +545,48 @@ async def test_disabled_provenance_crosses_the_real_guest_sdk_dispatch(
         capture_result("disabled-sandbox", result)
     finally:
         await fabric.release_environment(environment)
+
+
+@pytest.mark.parametrize("timeout", [None, 900.25])
+async def test_invocation_timeout_is_preserved_without_a_provider_cap(
+    remote_config, tmp_path, timeout
+):
+    remote_config.runtime.timeout_seconds = timeout
+    fabric = Fabric()
+    environment = await fabric.attach_environment(
+        remote_config,
+        EnvironmentReference.from_mapping(
+            {
+                "provider": "openshell",
+                "resource": {
+                    "sandbox_name": "echo",
+                    "sandbox_id": remote_config.environment.connection["sandbox_id"],
+                },
+            }
+        ),
+    )
+    try:
+        async with await fabric.start_runtime_in(remote_config, environment) as runtime:
+            result = await runtime.invoke(input="deadline")
+            assert result.status == "succeeded"
+    finally:
+        await fabric.release_environment(environment)
+    frames = [
+        json.loads(line)["frame"]
+        for line in (tmp_path / "provider.jsonl").read_text().splitlines()
+    ]
+    commands = [frame for frame in frames if frame["operation"] == "runtime_command"]
+    start = next(
+        frame for frame in commands if frame["command"]["operation"] == "start"
+    )
+    assert start["command"]["config"]["runtime"].get("timeout_seconds") == timeout
+    invoke = next(
+        frame for frame in commands if frame["command"]["operation"] == "invoke"
+    )
+    assert invoke["timeout_seconds"] == (916 if timeout else None)
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
+def test_invalid_invocation_timeouts_are_rejected(timeout):
+    with pytest.raises(ValueError):
+        RuntimeConfig(timeout_seconds=timeout)

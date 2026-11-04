@@ -415,3 +415,19 @@ async def test_stopped_runtime_records_are_bounded(
     assert (await host.handle(host_request("stop", runtime_id="runtime-129")))[
         "status"
     ] == "succeeded"
+
+
+async def test_native_invocation_deadline_keeps_timeout_reason(
+    host, host_request, mock_runtime
+):
+    from nemo_fabric import FabricRuntimeError
+
+    await host.handle(host_request("start"))
+    mock_runtime.invoke.side_effect = FabricRuntimeError(
+        "PRIVATE", stage="invoke", code="timeout"
+    )
+    response = await host.handle(host_request("invoke", input="wait"))
+    assert response["error"]["code"] == "timeout"
+    assert response["error"]["stage"] == "invoke"
+    assert response["error"]["effects"] == "unknown"
+    assert "PRIVATE" not in str(response)

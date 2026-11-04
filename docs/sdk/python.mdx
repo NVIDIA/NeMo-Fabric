@@ -1434,6 +1434,13 @@ All public SDK errors inherit from `FabricError`.
 | `ResourceObservationUnsupportedError` | The runtime's adapter kind, environment provider, or operating system has no resource reader. Subclass of `FabricRuntimeError`. |
 
 Consumers own job-level retries and rollout-level failure policy.
+`runtime.timeout_seconds` sets a positive, finite total invocation limit. Omit it
+or set it to `None` to disable Fabric's total invocation deadline, including for
+OpenShell. OpenShell accepts limits above 300 seconds; update both the host SDK
+and provider and the task image to use this behavior. `runtime.max_turns` remains
+an independent harness turn limit where supported. Startup, health checks, and
+cleanup retain separate deadlines; harness-native limits still apply.
+
 Core host-operation deadlines (`host_timeout`) become Python `TimeoutError`, then
 `FabricRuntimeError` with `code == "timeout"` and the failed lifecycle stage.
 If invocation succeeds in `Fabric.run()` but stop reaches this deadline,

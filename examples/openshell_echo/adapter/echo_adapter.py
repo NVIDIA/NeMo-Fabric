@@ -7,6 +7,7 @@ The adapter keeps input history and declares a receipt on the second turn.
 It contains no OpenShell integration; the environment provider supplies that.
 """
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -30,6 +31,8 @@ class EchoRuntime:
     async def invoke(self, request, context):
         if context.runtime_id != self.context.runtime_id:
             raise ValueError("invocation must match the active runtime")
+        if delay := request.context.get("delay_seconds"):
+            await asyncio.sleep(delay)
         self.inputs.append(request.input)
         output = {"first_input": self.inputs[0], "turn": len(self.inputs)}
         artifacts = []

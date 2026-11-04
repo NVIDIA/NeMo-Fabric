@@ -88,7 +88,7 @@ async def client(
     request: dict[str, Any],
     *,
     socket_path: Path = Path(SOCKET_PATH),
-    timeout: float = CALL_SECONDS,
+    timeout: float | None = None,
 ) -> dict[str, Any]:
     started = time.monotonic()
     operation = request["operation"]
@@ -102,11 +102,18 @@ async def client(
     try:
         encoded = encode_request(request)
         if operation == "check":
-            timeout = min(timeout, request.get("timeout_seconds", CHECK_SECONDS))
-        deadline = started + timeout
+            timeout = min(
+                timeout if timeout is not None else CALL_SECONDS,
+                request.get("timeout_seconds", CHECK_SECONDS),
+            )
+        elif operation != "invoke" and timeout is None:
+            timeout = CALL_SECONDS
+        deadline = started + timeout if timeout is not None else None
         # One deadline covers connection, write, and the complete response.
         async with asyncio.timeout_at(
             asyncio.get_running_loop().time() + max(0, deadline - time.monotonic())
+            if deadline is not None
+            else None
         ):
             reader, writer = await asyncio.open_unix_connection(
                 socket_path, limit=RESPONSE_LIMIT

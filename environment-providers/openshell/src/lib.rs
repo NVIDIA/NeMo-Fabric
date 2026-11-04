@@ -256,10 +256,13 @@ where
 async fn runtime_command<F: GatewayFactory>(
     environment: EnvironmentHandle,
     command: TaskCommand,
-    timeout_seconds: u64,
+    timeout_seconds: impl Into<Option<u64>>,
     factory: &F,
 ) -> Result<Value, ProviderError> {
-    if !(1..=320).contains(&timeout_seconds) {
+    let timeout_seconds = timeout_seconds.into();
+    if timeout_seconds == Some(0)
+        || (timeout_seconds.is_none() && !matches!(&command, TaskCommand::Invoke { .. }))
+    {
         return Err(ProviderError::contract(
             "invalid_runtime_command",
             "runtime command timeout is unsupported",
@@ -313,15 +316,20 @@ async fn runtime_command<F: GatewayFactory>(
             "SDK command payload exceeds its limit",
         ));
     }
-    let exec_timeout = remaining(Duration::from_secs(timeout_seconds))?;
+    let exec_timeout = timeout_seconds
+        .map(|seconds| remaining(Duration::from_secs(seconds)))
+        .transpose()?;
     if health_budget.is_some() {
         let index = arguments
             .iter()
             .position(|value| value == "--timeout-seconds")
             .expect("health timeout argument");
-        arguments[index + 1] = exec_timeout.as_secs_f64().to_string();
+        arguments[index + 1] = exec_timeout
+            .expect("health deadline")
+            .as_secs_f64()
+            .to_string();
     }
-    let executed = bounded_gateway_call(
+    let executed = optional_gateway_call(
         "exec",
         exec_timeout,
         client.exec(
@@ -531,6 +539,7 @@ fn valid_diagnostic_code(code: &str) -> bool {
             | "runtime_id_conflict"
             | "stop_failed"
             | "invoke_failed"
+            | "timeout"
             | "host_stopping"
             | "runtime_unavailable"
             | "runtime_exists"
@@ -619,7 +628,7 @@ async fn collect_artifacts<F: GatewayFactory>(
             ExecRequest {
                 workdir: None,
                 environment: HashMap::new(),
-                timeout: Duration::from_secs(30),
+                timeout: Some(Duration::from_secs(30)),
                 stdin: Some(stdin),
             },
         ),
@@ -1066,6 +1075,17 @@ fn unconfirmed_cleanup_error(name: &str, sandbox_id: &str) -> ProviderError {
     )
 }
 
+async fn optional_gateway_call<T>(
+    operation: &str,
+    timeout: Option<Duration>,
+    call: impl Future<Output = Result<T, ProviderError>>,
+) -> Result<T, ProviderError> {
+    match timeout {
+        Some(timeout) => bounded_gateway_call(operation, timeout, call).await,
+        None => call.await,
+    }
+}
+
 async fn bounded_gateway_call<T>(
     operation: &str,
     timeout: Duration,
@@ -1164,7 +1184,7 @@ where
             ExecRequest {
                 workdir,
                 environment: env,
-                timeout: Duration::from_secs(timeout),
+                timeout: Some(Duration::from_secs(timeout)),
                 stdin,
             },
         ),
@@ -1316,7 +1336,7 @@ enum ProviderOperation {
     RuntimeCommand {
         environment: EnvironmentHandle,
         command: TaskCommand,
-        timeout_seconds: u64,
+        timeout_seconds: Option<u64>,
     },
     CollectArtifacts {
         environment: EnvironmentHandle,
@@ -1976,7 +1996,7 @@ impl ProviderSandboxPhase {
 struct ExecRequest {
     workdir: Option<String>,
     environment: HashMap<String, String>,
-    timeout: Duration,
+    timeout: Option<Duration>,
     stdin: Option<Vec<u8>>,
 }
 
@@ -2244,7 +2264,7 @@ impl Gateway for SdkGateway {
         let options = ExecOptions {
             workdir: request.workdir,
             environment: request.environment,
-            timeout: Some(request.timeout),
+            timeout: request.timeout,
             stdin: request.stdin,
             no_login_shell: true,
         };
@@ -3331,6 +3351,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn runtime_command_forwards_long_and_unlimited_exec_deadlines() {
+        for timeout in [Some(900), None] {
+            let calls = Arc::new(Mutex::new(Vec::new()));
+            let factory = MockFactory {
+                calls: Arc::clone(&calls),
+                ready_id: "sandbox-id-1",
+                deletion: None,
+                execution: Some((
+                    0,
+                    serde_json::to_vec(&json!({
+                        "operation": "invoke", "status": "succeeded", "changed": null,
+                        "result": {}, "error": null
+                    }))
+                    .unwrap(),
+                    Vec::new(),
+                )),
+            };
+            runtime_command(
+                environment_handle_fixture(),
+                TaskCommand::Invoke {
+                    agent: "echo".into(),
+                    runtime_id: "runtime-task".into(),
+                    request: json!({}),
+                },
+                timeout,
+                &factory,
+            )
+            .await
+            .expect("valid timeout");
+            let expected = format!(":{}", timeout.unwrap_or(0));
+            assert!(
+                calls
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|call| call.starts_with("exec:") && call.ends_with(&expected))
+            );
+        }
+        for timeout in [Some(0), None] {
+            let command = TaskCommand::Stop {
+                agent: "echo".into(),
+                runtime_id: "runtime-task".into(),
+            };
+            let error = runtime_command(
+                environment_handle_fixture(),
+                command,
+                timeout,
+                &NeverConnect,
+            )
+            .await
+            .expect_err("invalid timeout");
+            assert_eq!(error.code(), "invalid_runtime_command");
+        }
+    }
+
+    #[tokio::test]
     async fn task_rejection_keeps_unknown_effects_and_excludes_diagnostic_values() {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let diagnostic = json!({"operation": "start", "status": "failed", "error": {"code": "start_failed", "stage": "start", "effects": "unknown", "message": "PRIVATE"}});
@@ -3584,7 +3660,7 @@ mod tests {
                 "exec:{}:{name}:{}:{}",
                 workspace.unwrap_or("default"),
                 command.join(" "),
-                request.timeout.as_secs()
+                request.timeout.map_or(0, |timeout| timeout.as_secs())
             ));
             if let Some((exit_code, stdout, stderr)) = &self.execution {
                 return Ok(ExecResponse {

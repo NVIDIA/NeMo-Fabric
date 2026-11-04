@@ -76,6 +76,7 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 - [Adapter catalog](sdk/python/nemo-fabric-adapter-catalog/README.md): Inspect bundled adapter metadata on a host without installing harness SDKs.
 - [Host admission](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host): Validate requested capabilities and reject host/task descriptor drift before execution.
 - [NeMo Fabric runtime server](sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md): Manage runtimes and check server responsiveness inside one sandbox through `fabric-agent-ctl` and one private local socket. Unconfirmed cleanup retains sandbox ownership and blocks replacement servers.
+- [Invocation deadlines](environment-providers/openshell/README.md): Set normalized `runtime.timeout_seconds` for a finite invocation limit, including above 300 seconds, or omit it to disable the total deadline in local and OpenShell execution.
 - [Health checks](docs/sdk/health-checks.mdx): Use `Fabric.check()` for OpenShell runtime-server checks, agent runtime checks, and prepared or attached OpenClaw Gateway service checks. Refer to the [adapter support table](docs/sdk/health-checks.mdx#native-evidence-by-adapter) for supported levels and native evidence. OpenShell server and runtime requests map to `fabric-agent-ctl check`; service checks use the local SDK.
 - [Documentation overview](docs/about-nemo-fabric/overview.mdx): Understand the execution model and choose an interface.
 - [Adapter reference](adapters/README.md): Compare adapter configuration, runtime, and observability support.
@@ -86,7 +87,7 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 Planned areas of development include:
 
 - **Refine runtime resource measurements:** Improve CPU, memory, elapsed-time, and available GPU measurements through broader benchmark validation.
-- **Support long-running, artifact-heavy workloads:** Make OpenShell timeouts and response/artifact limits configurable, including unlimited task duration, with clear limit errors and guidance for retrieving large screenshots.
+- **Support artifact-heavy workloads:** Make response and artifact limits configurable, with clear limit errors and guidance for retrieving large screenshots.
 - **Expose task progress and recoverable results:** Provide task state, step progress, plans, pending requests, sandbox task listings, and paginated events, with final results retrievable after invocation ends or the caller disconnects.
 - **Standardize model usage accounting:** Report input, cached, output, and reasoning tokens consistently, distinguish complete, partial, and unknown usage, and attribute delegated work to the correct invocation.
 - **Capture execution provenance:** Record NeMo Fabric and adapter versions, requested models, sanitized MCP configuration, and execution environment, with explicit sources and unknowns.
