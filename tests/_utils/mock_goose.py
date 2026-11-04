@@ -16,11 +16,15 @@ import time
 from pathlib import Path
 
 args = sys.argv[1:]
+root = Path(os.environ["GOOSE_PATH_ROOT"])
+sessions = root / "data" / "sessions"
+if args == ["session", "list", "--format", "json"]:
+    print(json.dumps([{"name": path.stem} for path in sorted(sessions.glob("*.json"))]))
+    raise SystemExit(0)
 if args[:1] != ["run"]:
     raise SystemExit(2)
 name = args[args.index("--name") + 1]
-root = Path(os.environ["GOOSE_PATH_ROOT"])
-session = root / "data" / "sessions" / f"{name}.json"
+session = sessions / f"{name}.json"
 if "--resume" in args and not session.exists():
     print(f"Error: No session found with name '{name}'", file=sys.stderr)
     raise SystemExit(1)

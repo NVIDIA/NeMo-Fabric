@@ -381,8 +381,42 @@ async def test_goose_timeout_stops_goose_and_its_tool_commands(
     assert result.error.code == "goose_timeout"
     assert elapsed < 10
     assert tool_stopped
-    assert after.status == "succeeded"
+    # Goose created the session before the timeout, so the next run resumes it.
+    assert after.output == {"response": "turn 2: after"}
     assert after.usage is None
+    timed_out_run, after_run = _captures(tmp_path)
+    assert "--resume" not in timed_out_run["args"]
+    assert "--resume" in after_run["args"]
+
+
+@pytest.mark.parametrize("command", ["./goose", "bin/../goose"])
+async def test_goose_resolves_a_relative_command_from_the_base_directory(
+    mock_goose: Path, tmp_path: Path, command: str
+):
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "goose").symlink_to(mock_goose)
+    os.environ["PATH"] = str(tmp_path / "bin")
+    runtime = await _started(
+        _config(mock_goose, harness={"settings": {"goose_command": command}}),
+        tmp_path,
+    )
+    try:
+        assert runtime._command == mock_goose.resolve()
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Uses POSIX sessions")
+def test_goose_cleanup_skips_a_session_id_that_a_live_process_reused():
+    other = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"], start_new_session=True
+    )
+    try:
+        adapter._kill_sessions([other.pid])
+        assert other.poll() is None
+    finally:
+        other.kill()
+        other.wait()
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Finds tool commands by session")

@@ -75,11 +75,13 @@ def _resolve_command(settings: dict[str, Any], base_dir: Path) -> Path:
             "Goose goose_command must be a non-empty string.",
             metadata={"field": "harness.settings.goose_command"},
         )
-    command = Path(configured.strip())
-    if not command.is_absolute() and len(command.parts) > 1:
+    value = configured.strip()
+    command = Path(value)
+    # A bare name is looked up on PATH. A relative path with a directory,
+    # including ./goose, resolves from the base directory.
+    if not command.is_absolute() and os.path.dirname(value):
         command = base_dir / command
-    # A bare name is looked up on PATH. A path is only checked for an executable file.
-    found = shutil.which(command)
+    found = shutil.which(str(command))
     if found is None:
         raise lifecycle.LifecycleError(
             "goose_command_not_found",
@@ -200,17 +202,21 @@ def _final_message(events: list[dict[str, Any]]) -> dict[str, Any] | None:
     return final
 
 
-def _signal_session(session: int, signum: int) -> None:
-    """Signal a Goose process and the tool commands it started.
+def _kill_sessions(sessions: list[int]) -> None:
+    """Kill the tool commands that exited Goose runs left in their sessions.
 
     Goose starts each shell command in its own process group, so on Linux this
-    signals every process in Goose's session instead. Other platforms reach only
-    Goose's process group.
+    kills every process in each run's session. Other platforms reach only the
+    run's process group. The kernel keeps a session ID allocated while any
+    process belongs to the session, so a live process with that ID means the
+    session ended and the ID was reused.
     """
 
+    sessions = [session for session in sessions if not _pid_exists(session)]
     if sys.platform != "linux":
-        with suppress(ProcessLookupError, PermissionError):
-            os.killpg(session, signum)
+        for session in sessions:
+            with suppress(ProcessLookupError, PermissionError):
+                os.killpg(session, signal.SIGKILL)
         return
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
@@ -218,23 +224,35 @@ def _signal_session(session: int, signum: int) -> None:
         try:
             # The fields after the command name start with state, ppid, pgrp, session.
             fields = (entry / "stat").read_text().rsplit(")", 1)[1].split()
-            if int(fields[3]) == session:
-                os.kill(int(entry.name), signum)
+            if int(fields[3]) in sessions:
+                os.kill(int(entry.name), signal.SIGKILL)
         except (OSError, IndexError, ValueError):
             continue
 
 
-async def _terminate(process: asyncio.subprocess.Process) -> None:
-    """Stop Goose and its tool commands, then reap Goose."""
+def _pid_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    return True
 
+
+async def _terminate(process: asyncio.subprocess.Process) -> None:
+    """Stop Goose, reap it, then kill the tool commands it started."""
+
+    with suppress(ProcessLookupError):
+        process.terminate()
+    try:
+        await asyncio.wait_for(process.wait(), STOP_GRACE_SECONDS)
+    except TimeoutError:
+        with suppress(ProcessLookupError):
+            process.kill()
+        await process.wait()
     if os.name == "posix":
-        _signal_session(process.pid, signal.SIGTERM)
-        with suppress(TimeoutError):
-            await asyncio.wait_for(process.wait(), STOP_GRACE_SECONDS)
-        _signal_session(process.pid, signal.SIGKILL)
-    elif process.returncode is None:
-        process.kill()
-    await process.wait()
+        _kill_sessions([process.pid])
 
 
 def _failed(
@@ -340,6 +358,8 @@ class GooseRuntime:
                 "goose_not_started", "The Goose runtime is not started."
             )
         deadline = lifecycle.invocation_deadline(context)
+        if not self._resume and self._sessions:
+            self._resume = await self._session_exists(deadline)
         process = await asyncio.create_subprocess_exec(
             str(self._command),
             *self._args,
@@ -367,8 +387,7 @@ class GooseRuntime:
             raise
 
         events = _events(stdout)
-        # Goose creates the named session before it reports any event.
-        self._resume = self._resume or bool(events)
+        self._resume = self._resume or process.returncode == 0
         usage = self._usage(
             next((e for e in reversed(events) if e.get("type") == "complete"), None)
         )
@@ -415,6 +434,43 @@ class GooseRuntime:
             usage=usage,
         )
 
+    async def _session_exists(self, deadline: float) -> bool:
+        """Return whether a failed earlier run created this runtime's session.
+
+        Goose creates the named session before its first model call, so a run
+        can fail or time out after creating it without reporting any event.
+        """
+
+        process = await asyncio.create_subprocess_exec(
+            str(self._command),
+            "session",
+            "list",
+            "--format",
+            "json",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            cwd=self._workspace,
+            env=self._env,
+        )
+        try:
+            async with asyncio.timeout_at(deadline):
+                stdout, _ = await process.communicate()
+        except BaseException as error:
+            with suppress(ProcessLookupError):
+                process.kill()
+            await process.wait()
+            if isinstance(error, TimeoutError):
+                return False
+            raise
+        try:
+            sessions = json.loads(stdout)
+        except ValueError:
+            return False
+        return isinstance(sessions, list) and any(
+            isinstance(session, dict) and session.get("name") == SESSION_NAME
+            for session in sessions
+        )
+
     def _usage(self, complete: dict[str, Any] | None) -> contract.AgentUsage | None:
         """Return this run's usage as the change in Goose's session totals."""
 
@@ -442,8 +498,7 @@ class GooseRuntime:
         root, sessions = self._root, self._sessions
         self.__init__()
         if os.name == "posix":
-            for session in sessions:
-                _signal_session(session, signal.SIGKILL)
+            _kill_sessions(sessions)
         if root is not None:
             root.cleanup()
 
