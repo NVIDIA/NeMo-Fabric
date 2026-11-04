@@ -683,7 +683,7 @@ fn probe_remote(
     let response = crate::environment::command_runtime(
         environment,
         &command,
-        remaining.ceil().clamp(1.0, 320.0) as u64,
+        Some(remaining.ceil().clamp(1.0, 320.0) as u64),
     );
     let mut report = match response {
         Ok(crate::task_command::TaskCommandResponse::Returned { value }) => {

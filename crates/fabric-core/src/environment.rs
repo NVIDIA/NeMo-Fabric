@@ -282,7 +282,7 @@ pub(crate) fn release_environment(
 pub(crate) fn command_runtime(
     environment: &EnvironmentHandle,
     command: &TaskCommand,
-    timeout_seconds: u64,
+    timeout_seconds: Option<u64>,
 ) -> Result<TaskCommandResponse> {
     if environment.provider != OPEN_SHELL_PROVIDER_ID {
         return Err(FabricError::UnsupportedEnvironmentProvider {
@@ -400,7 +400,10 @@ where
             "could not write the bounded provider request".to_string(),
         );
     }
-    let output = match process.responses.recv_timeout(response_timeout) {
+    let output = match process
+        .responses
+        .recv_timeout(response_timeout.expect("bounded environment operation"))
+    {
         Ok(Ok(output)) => output,
         Ok(Err(_)) => {
             process.shutdown();
@@ -715,7 +718,14 @@ where
                         "could not write the bounded provider request".to_string(),
                     )
                 })?;
-            match process_guard.responses.recv_timeout(response_timeout) {
+            let received = match response_timeout {
+                Some(timeout) => process_guard.responses.recv_timeout(timeout),
+                None => process_guard
+                    .responses
+                    .recv()
+                    .map_err(|_| RecvTimeoutError::Disconnected),
+            };
+            match received {
                 Ok(Ok(output)) => Ok(output),
                 Ok(Err(_)) => Err(provider_failure(
                     operation_name,
@@ -1224,7 +1234,7 @@ enum ProviderOperation<'a> {
     RuntimeCommand {
         environment: &'a EnvironmentHandle,
         command: &'a TaskCommand,
-        timeout_seconds: u64,
+        timeout_seconds: Option<u64>,
     },
     CollectArtifacts {
         environment: &'a EnvironmentHandle,
@@ -1246,7 +1256,7 @@ impl ProviderOperation<'_> {
         }
     }
 
-    fn response_timeout(&self) -> Duration {
+    fn response_timeout(&self) -> Option<Duration> {
         let operation_seconds = match self {
             Self::Prepare { environment, .. } => readiness_seconds(environment, true)
                 .saturating_add(setting_seconds(
@@ -1259,7 +1269,9 @@ impl ProviderOperation<'_> {
                 .saturating_add(3 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS),
             Self::RuntimeCommand {
                 timeout_seconds, ..
-            } => timeout_seconds.saturating_add(2 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS),
+            } => timeout_seconds
+                .as_ref()?
+                .saturating_add(2 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS),
             Self::CollectArtifacts { .. } => 30 + 2 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS,
             Self::Release { environment } => connection_seconds(
                 &environment.connection,
@@ -1268,7 +1280,9 @@ impl ProviderOperation<'_> {
             )
             .saturating_add(3 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS),
         };
-        Duration::from_secs(operation_seconds.saturating_add(PROVIDER_RESPONSE_GRACE_SECONDS))
+        Some(Duration::from_secs(
+            operation_seconds.saturating_add(PROVIDER_RESPONSE_GRACE_SECONDS),
+        ))
     }
 }
 
@@ -1364,7 +1378,10 @@ mod tests {
             environment: &environment,
         };
 
-        assert_eq!(operation.response_timeout(), Duration::from_secs(285));
+        assert_eq!(
+            operation.response_timeout().expect("finite timeout"),
+            Duration::from_secs(285)
+        );
     }
 
     #[test]
@@ -1394,13 +1411,19 @@ mod tests {
             environment: &environment,
             reference: &reference,
         };
-        assert_eq!(attach.response_timeout(), Duration::from_secs(465));
+        assert_eq!(
+            attach.response_timeout().expect("finite timeout"),
+            Duration::from_secs(465)
+        );
 
         let prepare = ProviderOperation::Prepare {
             environment_id: "environment-test",
             environment: &environment,
         };
-        assert_eq!(prepare.response_timeout(), Duration::from_secs(765));
+        assert_eq!(
+            prepare.response_timeout().expect("finite timeout"),
+            Duration::from_secs(765)
+        );
     }
 
     #[test]
@@ -1423,16 +1446,29 @@ mod tests {
         let runtime = ProviderOperation::RuntimeCommand {
             environment: &environment,
             command: &command,
-            timeout_seconds: 315,
+            timeout_seconds: Some(315),
         };
-        assert_eq!(runtime.response_timeout(), Duration::from_secs(390));
+        assert_eq!(
+            runtime.response_timeout().expect("finite timeout"),
+            Duration::from_secs(390)
+        );
+
+        let unlimited = ProviderOperation::RuntimeCommand {
+            environment: &environment,
+            command: &command,
+            timeout_seconds: None,
+        };
+        assert_eq!(unlimited.response_timeout(), None);
 
         let paths = Vec::new();
         let artifacts = ProviderOperation::CollectArtifacts {
             environment: &environment,
             paths: &paths,
         };
-        assert_eq!(artifacts.response_timeout(), Duration::from_secs(105));
+        assert_eq!(
+            artifacts.response_timeout().expect("finite timeout"),
+            Duration::from_secs(105)
+        );
     }
 
     fn provider_script(body: &str) -> (PathBuf, OsString) {
@@ -1595,7 +1631,7 @@ else:
                     ProviderOperation::RuntimeCommand {
                         environment: &environment,
                         command: &task,
-                        timeout_seconds: 1,
+                        timeout_seconds: Some(1),
                     },
                     timeout_seconds,
                 );

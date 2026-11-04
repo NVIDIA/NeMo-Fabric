@@ -90,9 +90,6 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
 const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";
 const LOCAL_HOST_START_TIMEOUT: Duration = Duration::from_secs(90);
-// Protocol liveness backstop. Adapters remain responsible for normal request
-// timeouts and should return a normalized response before this bound.
-const LOCAL_HOST_INVOKE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 // Adapters receive a deadline this much earlier than the host timeout so they
 // can interrupt native work and return a normalized result before it fires.
 const LOCAL_HOST_ADAPTER_RESERVE: Duration = Duration::from_secs(10);
@@ -512,7 +509,7 @@ pub struct RuntimeContext {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<RuntimeTelemetryContext>,
     /// Unix time in milliseconds by which the adapter should return its result.
-    /// Present on every invocation, shortly before Fabric's own invocation timeout.
+    /// Present when runtime.timeout_seconds is set, shortly before Fabric's invocation timeout.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deadline_millis: Option<u64>,
 }
@@ -2052,19 +2049,21 @@ fn run_local_host_openai_stream_adapter(
     )
 }
 
-fn local_host_invoke_timeout(plan: &RunPlan) -> Result<Duration> {
+fn local_host_invoke_timeout(plan: &RunPlan) -> Result<Option<Duration>> {
     match plan.config.runtime.timeout_seconds {
         Some(seconds) if seconds <= 0.0 => Err(FabricError::InvalidConfig {
             field: "runtime.timeout_seconds".to_string(),
             reason: "must be a finite number greater than zero".to_string(),
         }),
         Some(seconds) => {
-            Duration::try_from_secs_f64(seconds).map_err(|_| FabricError::InvalidConfig {
-                field: "runtime.timeout_seconds".to_string(),
-                reason: "must be a finite number greater than zero".to_string(),
-            })
+            Duration::try_from_secs_f64(seconds)
+                .map(Some)
+                .map_err(|_| FabricError::InvalidConfig {
+                    field: "runtime.timeout_seconds".to_string(),
+                    reason: "must be a finite number greater than zero".to_string(),
+                })
         }
-        None => Ok(LOCAL_HOST_INVOKE_TIMEOUT),
+        None => Ok(None),
     }
 }
 
@@ -2072,7 +2071,7 @@ fn run_local_host_adapter_with_timeout(
     plan: &RunPlan,
     runtime: &RuntimeHandle,
     request: RunRequest,
-    invoke_timeout: Duration,
+    invoke_timeout: impl Into<Option<Duration>>,
 ) -> Result<RunResult> {
     run_local_host_invocation_with_timeout(
         plan,
@@ -2102,8 +2101,9 @@ fn run_local_host_invocation_with_timeout(
     runtime: &RuntimeHandle,
     mut request: RunRequest,
     invocation_kind: LocalHostInvocation,
-    invoke_timeout: Duration,
+    invoke_timeout: impl Into<Option<Duration>>,
 ) -> Result<RunResult> {
+    let invoke_timeout = invoke_timeout.into();
     let operation = invocation_kind.operation();
     if request.request_id.is_empty() {
         request.request_id = new_id("request");
@@ -2145,7 +2145,7 @@ fn run_local_host_invocation_with_timeout(
             &adapter_invocation.runtime_context.environment.env,
         )?;
         adapter_invocation.runtime_context.deadline_millis =
-            adapter_deadline_millis(invoke_timeout);
+            invoke_timeout.and_then(adapter_deadline_millis);
         let (lifecycle_request, adapter_payload) = match invocation_kind {
             LocalHostInvocation::Invoke => {
                 let mut persisted = adapter_invocation.clone();
@@ -2894,8 +2894,9 @@ fn exchange_lifecycle_message(
     host: &mut LocalAdapterHost,
     runtime_id: &str,
     request: &AdapterLifecycleRequest,
-    timeout: Duration,
+    timeout: impl Into<Option<Duration>>,
 ) -> Result<Value> {
+    let timeout = timeout.into();
     let operation = request.operation();
     if let Some(status) = host.child.try_wait().map_err(|source| {
         lifecycle_error(
@@ -2942,7 +2943,14 @@ fn exchange_lifecycle_message(
         ));
     }
 
-    let line = match host.responses.recv_timeout(timeout) {
+    let received = match timeout {
+        Some(timeout) => host.responses.recv_timeout(timeout),
+        None => host
+            .responses
+            .recv()
+            .map_err(|_| RecvTimeoutError::Disconnected),
+    };
+    let line = match received {
         Ok(line) => line,
         Err(RecvTimeoutError::Timeout) => {
             return Err(lifecycle_error(
@@ -2952,7 +2960,7 @@ fn exchange_lifecycle_message(
                 format!(
                     "persistent local adapter host did not complete {} within {} ms",
                     operation.as_str(),
-                    timeout.as_millis()
+                    timeout.expect("finite receive deadline").as_millis()
                 ),
                 local_host_diagnostics(host),
             ));
@@ -5798,6 +5806,18 @@ for line in sys.stdin:
             // Adapters must return before Fabric's own 60-second timeout fires.
             assert!((before + 50_000..=now_millis() + 50_000).contains(&deadline));
         }
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn omitted_invocation_timeout_has_no_total_deadline() {
+        let (root, plan) = local_host_plan("success");
+        assert_eq!(local_host_invoke_timeout(&plan).expect("no timeout"), None);
+        let runtime = start_runtime(&plan).expect("start local host");
+        let result =
+            invoke_runtime(&plan, &runtime, RunRequest::text("no deadline")).expect("invoke");
+        assert!(result.output["deadline_millis"].is_null());
         stop_runtime(&plan, &runtime).expect("stop local host");
         let _ = fs::remove_dir_all(root);
     }

@@ -276,7 +276,7 @@
           "description": "Artifact manifest visible to the adapter at invocation start."
         },
         "deadline_millis": {
-          "description": "Unix time in milliseconds by which the adapter should return its result.\nPresent on every invocation, shortly before Fabric's own invocation timeout.",
+          "description": "Unix time in milliseconds by which the adapter should return its result.\nPresent when runtime.timeout_seconds is set, shortly before Fabric's invocation timeout.",
           "format": "uint64",
           "minimum": 0,
           "type": [

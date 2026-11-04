@@ -40,6 +40,7 @@ MESSAGES = {
     "runtime_limit_reached": "The client runtime limit has been reached; stop an owned runtime before starting another.",
     "status_failed": "Fabric could not read the recorded runtime status.",
     "stop_failed": "Fabric could not complete the stop operation.",
+    "timeout": "The invocation exceeded runtime.timeout_seconds.",
     "invoke_failed": "Fabric did not report a successful invocation.",
     "host_stopping": "The Fabric host is shutting down.",
     "runtime_unavailable": "No active Fabric runtime is available.",
