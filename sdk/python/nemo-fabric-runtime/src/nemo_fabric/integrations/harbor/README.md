@@ -20,7 +20,7 @@ Relay artifacts.
 
 Use `fabric_model_config` for a complete public [`ModelConfig`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/sdk/python/nemo-fabric-runtime/src/nemo_fabric/models.py), including `max_tokens`, `temperature`, `top_p`, `settings`, and adapter-declared top-level extensions. The selected descriptor determines which fields the adapter supports. Unknown fields and invalid values fail host preflight. This option requires host descriptor metadata from the matching catalog or `fabric_adapter_descriptor`.
 
-For programmatic jobs on Harbor 0.24, pass a JSON mapping in retained `AgentConfig.kwargs`, such as `model.model_dump(mode="json")`. That Harbor version can reject job resume when a kwarg retains a typed Pydantic object because its saved defaults differ. Direct `FabricAgent` construction also accepts a `ModelConfig` instance.
+For programmatic jobs on Harbor 0.24, set `AgentConfig.kwargs["fabric_model_config"]` to `model.model_dump(mode="json")` and include the selected `fabric_adapter_id` in the same kwargs mapping. That Harbor version can reject job resume when a kwarg retains a typed Pydantic object because its saved defaults differ. Direct `FabricAgent` construction also accepts a `ModelConfig` instance.
 
 For example, after installing the matching Pi adapter and harness in your task image, configure an unknown model with Pi's top-level catalog metadata:
 
