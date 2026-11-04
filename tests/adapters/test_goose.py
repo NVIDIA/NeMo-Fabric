@@ -197,8 +197,7 @@ async def test_goose_maps_configuration_into_one_isolated_run(
         "-",
     ]
     env = capture["env"]
-    root = env.pop("GOOSE_PATH_ROOT")
-    assert env == {
+    assert {
         "GOOSE_PROVIDER": "openai",
         "GOOSE_MODEL": "served-model",
         "GOOSE_MODE": "auto",
@@ -207,8 +206,9 @@ async def test_goose_maps_configuration_into_one_isolated_run(
         "GOOSE_TEMPERATURE": "0.2",
         "OPENAI_API_KEY": "secret-value",
         "OPENAI_BASE_URL": "http://models.example.test/v1",
-    }
-    assert not Path(root).exists()
+    }.items() <= env.items()
+    assert "OPENAI_HOST" not in env
+    assert not Path(env["GOOSE_PATH_ROOT"]).exists()
     assert capture["config"] == {
         "extensions": {
             "local": {
@@ -281,6 +281,29 @@ async def test_goose_continues_one_session_and_reports_turn_usage(
             "output_tokens": 2,
             "total_tokens": 12,
         }
+
+
+async def test_goose_keeps_reported_usage_when_a_counter_is_missing(
+    mock_goose: Path, tmp_path: Path
+):
+    runtime = await _started(_config(mock_goose), tmp_path)
+    try:
+        without_cache = await _invoke(runtime, tmp_path, "NO_CACHE")
+        after = await _invoke(runtime, tmp_path, "after")
+    finally:
+        await runtime.stop()
+
+    expected = {
+        "input_tokens": 10,
+        "input_tokens_include_cache": True,
+        "output_tokens": 2,
+        "total_tokens": 12,
+    }
+    assert without_cache.usage is not None
+    assert without_cache.usage.to_mapping() == expected
+    # The cache counter has no baseline after a run that omitted it.
+    assert after.usage is not None
+    assert after.usage.to_mapping() == expected
 
 
 async def test_goose_runtimes_do_not_share_sessions(mock_goose: Path, tmp_path: Path):

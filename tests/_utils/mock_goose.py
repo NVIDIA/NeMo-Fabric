@@ -120,7 +120,8 @@ emit(
         "total_tokens": 12 * tokens,
         "input_tokens": 10 * tokens,
         "output_tokens": 2 * tokens,
-        "cache_read_input_tokens": 3 * tokens,
+        # Goose omits a counter that the model endpoint does not report.
+        **({} if "NO_CACHE" in task else {"cache_read_input_tokens": 3 * tokens}),
         "cache_write_input_tokens": 0,
     }
 )

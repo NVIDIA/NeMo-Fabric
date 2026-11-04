@@ -276,8 +276,8 @@ class GooseRuntime:
         self._resume = False
         # Each run's session ID, which tool commands it left running still carry.
         self._sessions: list[int] = []
-        # Goose reports cumulative session totals. None means the last run lost them.
-        self._usage_totals: dict[str, int] | None = dict.fromkeys(USAGE_FIELDS, 0)
+        # Goose's cumulative session totals after the last run. None is unknown.
+        self._usage_totals: dict[str, int | None] = dict.fromkeys(USAGE_FIELDS, 0)
 
     async def start(self, payload: dict[str, Any]) -> None:
         config: contract.AgentConfig = payload["config"]
@@ -378,7 +378,7 @@ class GooseRuntime:
                 stdout, stderr = await process.communicate(prompt)
         except TimeoutError:
             await _terminate(process)
-            self._usage_totals = None
+            self._usage_totals = dict.fromkeys(USAGE_FIELDS)
             return _failed(
                 "goose_timeout", "Goose did not finish before the invocation deadline."
             )
@@ -472,24 +472,31 @@ class GooseRuntime:
         )
 
     def _usage(self, complete: dict[str, Any] | None) -> contract.AgentUsage | None:
-        """Return this run's usage as the change in Goose's session totals."""
+        """Return this run's usage as the change in Goose's session totals.
 
-        totals = None
-        if complete is not None and all(
-            isinstance(complete.get(name), int) for name in USAGE_FIELDS
-        ):
-            totals = {name: complete[name] for name in USAGE_FIELDS}
+        Goose omits a counter that the model endpoint does not report, and a
+        run without totals leaves every counter unknown for the next run too.
+        """
+
+        totals: dict[str, int | None] = {}
+        for name in USAGE_FIELDS:
+            value = (complete or {}).get(name)
+            totals[name] = value if isinstance(value, int) else None
         baseline, self._usage_totals = self._usage_totals, totals
-        if totals is None or baseline is None:
-            return None
-        delta = {name: totals[name] - baseline[name] for name in USAGE_FIELDS}
-        if any(value < 0 for value in delta.values()):
+        delta: dict[str, int | None] = {}
+        for name in USAGE_FIELDS:
+            before, after = baseline[name], totals[name]
+            known = before is not None and after is not None and after >= before
+            delta[name] = after - before if known else None
+        if all(value is None for value in delta.values()):
             return None
         return contract.AgentUsage(
             input_tokens=delta["input_tokens"],
             cached_input_tokens=delta["cache_read_input_tokens"],
             # Goose counts OpenAI prompt tokens, which include cached tokens.
-            input_tokens_include_cache=True,
+            input_tokens_include_cache=(
+                True if delta["input_tokens"] is not None else None
+            ),
             output_tokens=delta["output_tokens"],
             total_tokens=delta["total_tokens"],
         )

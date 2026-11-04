@@ -100,8 +100,9 @@ flowchart TD
 
 Each invocation returns the final assistant message and its own usage. Goose
 reports cumulative session token totals, and the adapter reports the change
-since the previous invocation. Input tokens include cached input. If a run ends
-without totals, its usage and the next invocation's usage are unknown.
+since the previous invocation. Input tokens include cached input. A counter that
+the model endpoint does not report stays unknown. If a run ends without totals,
+its usage and the next invocation's usage are unknown.
 
 An invocation fails with one of these codes:
 
