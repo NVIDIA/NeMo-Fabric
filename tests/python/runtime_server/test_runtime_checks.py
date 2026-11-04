@@ -128,9 +128,9 @@ async def test_unavailable_runtime_preserves_known_sdk_state_without_probing(
     assert mock_runtime.status == status
     assert owned.runtime is mock_runtime
     assert (owned.state, owned.generation) == ("running", generation)
-    mock_fabric.check.assert_not_awaited()
-    mock_runtime.invoke.assert_not_awaited()
-    mock_runtime.stop.assert_not_awaited()
+    mock_fabric.check.assert_not_called()
+    mock_runtime.invoke.assert_not_called()
+    mock_runtime.stop.assert_not_called()
     protocol.validate_response(response, "check")
 
 
@@ -154,9 +154,9 @@ async def test_stopped_runtime_record_preserves_state_without_probing(
     assert response["error"]["effects"] == "none"
     assert owned.runtime is None
     assert (owned.state, owned.generation) == ("stopped", generation)
-    mock_fabric.check.assert_not_awaited()
-    mock_runtime.invoke.assert_not_awaited()
-    mock_runtime.stop.assert_not_awaited()
+    mock_fabric.check.assert_not_called()
+    mock_runtime.invoke.assert_not_called()
+    mock_runtime.stop.assert_not_called()
     protocol.validate_response(response, "check")
 
 

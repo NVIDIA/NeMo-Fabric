@@ -218,6 +218,7 @@ class RuntimeServer:
     async def _check_runtime(
         self, command: dict[str, Any], started: float
     ) -> dict[str, Any]:
+        """Report known lifecycle state or probe health without invoking the agent."""
         request = CheckRequest(
             scope="runtime",
             runtime_id=command["runtime_id"],
