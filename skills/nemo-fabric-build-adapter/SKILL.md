@@ -139,7 +139,6 @@ one `stop` for each NeMo Fabric runtime.
 - Accept `AgentRunRequest` and `RuntimeContext`, then return one
   `AgentRunResult` from `invoke`.
 - Make `stop` safe after partial startup and failed invocation.
-- Normalize execution deadlines to canonical error code `timeout` at the adapter boundary. Preserve the owner, enforced limit or absolute deadline, and stable native cause in lifecycle error metadata or normalized error extensions. Do not classify transport or setup failures as invocation deadlines.
 - Isolate mutable state between independent runtimes.
 - If the descriptor declares `capabilities.streaming`, implement
   `async invoke_openai_stream(request, context, emit)`. Execute the target exactly once,

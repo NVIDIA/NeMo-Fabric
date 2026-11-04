@@ -97,8 +97,6 @@ Core host-operation deadlines (`host_timeout`) become Python `TimeoutError`, the
 If invocation succeeds in `Fabric.run()` but stop reaches this deadline,
 it returns a failed `RunResult` with `error.stage == "stop"` and
 `error.code == "timeout"`. Check the returned result as well as raised errors.
-Adapter lifecycle failures with canonical `code == "timeout"` also preserve deadline identity. Raised `FabricRuntimeError.details` retains structured source metadata: runtime host deadlines report `owner: "fabric_runtime"`, `timeout_seconds`, and `cause_code: "host_timeout"`; adapter deadlines retain their adapter-owned limit and cause. Native diagnostic messages remain available through exception chaining.
-
 Adapters can report execution deadlines in normalized results with
 `result.error.code == "timeout"`. Other adapter-specific timeout codes are not
 automatically reclassified. Do not classify deadlines from error text.
