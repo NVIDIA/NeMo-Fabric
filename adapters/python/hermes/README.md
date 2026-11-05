@@ -88,7 +88,7 @@ The descriptor validates the following `harness.settings` fields:
 | `save_trajectories` | boolean | `false` | Enables Hermes-native JSONL conversation trajectory saving. This is separate from normalized NeMo Fabric telemetry. |
 | `max_tokens` | positive integer | `512` | Limits the number of tokens in each Hermes model response. |
 | `terminal_timeout` | positive number | `60` | Limits a Hermes terminal operation in seconds. |
-| `interfaces.api`, `interfaces.dashboard` | object | None | Serve Hermes's API server or dashboard from a runtime, each with an exact `port` and optional `enabled`; see [Serve the API Server and Dashboard](../../../docs/integrations/harness/hermes.mdx#serve-the-api-server-and-dashboard). |
+| `interfaces.api`, `interfaces.dashboard` | object | None | Serve Hermes's API server or dashboard from a runtime, each with an exact `port` and optional `enabled`; see [Serve the API Server and Dashboard](../../../docs/integrations/harness/hermes-interfaces.mdx#serve-the-api-server-and-dashboard). |
 | `startup_timeout_seconds` | number, at most 75 | `60` | Time from the start of the runtime for every enabled interface to pass its health check. |
 
 For example:
