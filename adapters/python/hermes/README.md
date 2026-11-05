@@ -24,7 +24,7 @@ Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) fo
 
 ## Install
 
-The adapter package supports Python 3.11 through 3.14. Use [Hermes Agent v0.22.5](https://github.com/NousResearch/hermes-agent/releases/tag/v0.22.5) with Python 3.14 and Relay 0.10 on supported platforms. This release includes dependency security fixes absent from v2026.9.24. Hermes Agent 0.20 and later is not installable from PyPI. Follow the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation), select v0.22.5, then install the NeMo Fabric packages into the same Python environment.
+The adapter package supports Python 3.11 through 3.14. Use [Hermes Agent v0.22.7](https://github.com/NousResearch/hermes-agent/releases/tag/v0.22.7) with Python 3.14 and Relay 0.11 on supported platforms. This release includes dependency security fixes absent from v2026.9.24. Hermes Agent 0.20 and later is not installable from PyPI. Follow the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation), select v0.22.7, then install the NeMo Fabric packages into the same Python environment.
 
 The following table shows which NeMo Fabric components each package expression
 provides. None of these expressions installs Hermes Agent:
@@ -37,7 +37,7 @@ provides. None of these expressions installs Hermes Agent:
 | `pip install "nemo-fabric-adapters-hermes[relay]"` | No | Yes | No | Yes |
 | `pip install nemo-fabric-adapters-hermes` | No | Yes | No | No |
 
-NeMo Fabric tests Hermes Agent v0.22.5, including Relay telemetry and streaming, on Python 3.14. Hermes Agent and the adapter's `relay` and `full` extras require `nemo-relay>=0.10,<0.11` on supported platforms. Keep Hermes in a separate Python environment when the NeMo Fabric application uses Relay 0.11 for other adapters. Hermes Agent declares its Python package version as `0.0.0`; identify the installed release by its Git tag and commit (`bf0203a794a07aac3ff764972ab9087baa4e4f4e`) when reviewing scanner results. The adapter checks the Hermes integration and Relay version at startup when telemetry is enabled.
+NeMo Fabric tests Hermes Agent v0.22.7, including Relay telemetry and streaming, on Python 3.14. The adapter's `relay` and `full` extras accept `nemo-relay>=0.10,<0.12`; Hermes v0.22.7 requires `>=0.11,<0.12` on supported platforms. Hermes v0.22.5 with Relay 0.10 remains supported. Use a separate Python 3.14 Hermes environment when the application uses another Python version, and set `ADAPTER_PYTHON` to its interpreter. Hermes Agent declares its Python package version as `0.0.0`; identify the installed release by its Git tag and commit (`b200f5bc60e31588ba2cb60e288029c4a54ba5fa`) when reviewing scanner results. The adapter checks the Hermes integration and Relay version at startup when telemetry is enabled.
 
 Create its isolated development environment:
 
@@ -50,7 +50,7 @@ For split runtime and adapter environments, configure `ADAPTER_PYTHON` and use
 matching NeMo Fabric release versions. Refer to the
 [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
-Hermes Agent v0.22.5 supports ordinary `Runtime.invoke()` calls, Relay telemetry, and `Runtime.invoke_stream()`.
+Hermes Agent v0.22.7 supports ordinary `Runtime.invoke()` calls, Relay telemetry, and `Runtime.invoke_stream()`.
 
 ## What It Maps
 
