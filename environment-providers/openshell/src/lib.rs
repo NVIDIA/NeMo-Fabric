@@ -680,7 +680,10 @@ impl Default for ArtifactLimits {
 }
 impl ArtifactLimits {
     fn transport_bytes(self) -> usize {
-        self.max_artifact_bytes as usize * 8 + self.max_response_bytes as usize * 6 + 1024 * 1024
+        (self.max_artifact_bytes as usize)
+            .saturating_mul(8)
+            .saturating_add((self.max_response_bytes as usize).saturating_mul(6))
+            .saturating_add(1024 * 1024)
     }
 }
 #[derive(Deserialize)]
@@ -1518,8 +1521,7 @@ fn validate_profile(
         if let Some(path) = path
             && (!path.starts_with('/')
                 || path.contains('\\')
-                || path.chars().any(char::is_control)
-                || path.len() > 4096
+                || path.contains('\0')
                 || path.split('/').any(|part| part == ".."))
         {
             return Err(ProviderError::contract(
@@ -3014,6 +3016,33 @@ mod tests {
         .expect("valid settings");
 
         assert_eq!(settings.policy.expect("policy").version, 1);
+    }
+
+    #[test]
+    fn response_limits_do_not_change_existing_profile_path_validation() {
+        for path in [
+            "/sandbox/with\nnewline".to_string(),
+            format!("/sandbox/{}", "a".repeat(4096)),
+        ] {
+            let mut environment = environment_plan_fixture();
+            environment.workspace = Some(path.clone());
+            environment.artifacts = Some(path);
+            validate_profile(&environment, "fabric_owned").expect("unchanged profile validation");
+        }
+    }
+
+    #[test]
+    fn artifact_transport_budget_saturates_instead_of_wrapping() {
+        let limits = ArtifactLimits {
+            max_response_bytes: u32::MAX,
+            max_artifact_bytes: u32::MAX,
+            ..Default::default()
+        };
+        let expected = u128::from(u32::MAX) * 14 + 1024 * 1024;
+        assert_eq!(
+            limits.transport_bytes(),
+            expected.min(usize::MAX as u128) as usize
+        );
     }
 
     #[test]

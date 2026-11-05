@@ -1106,11 +1106,15 @@ impl ResponseLimits {
     // Transport envelopes and compression are implementation details, not extra
     // user budgets. Allow JSON escaping/decimal byte arrays plus bounded metadata.
     pub(crate) fn response_transport_bytes(&self) -> usize {
-        self.max_response_bytes as usize * 6 + 1024 * 1024
+        (self.max_response_bytes as usize)
+            .saturating_mul(6)
+            .saturating_add(1024 * 1024)
     }
 
     pub(crate) fn artifact_transport_bytes(&self) -> usize {
-        self.max_artifact_bytes as usize * 8 + self.response_transport_bytes()
+        (self.max_artifact_bytes as usize)
+            .saturating_mul(8)
+            .saturating_add(self.response_transport_bytes())
     }
 }
 
@@ -4571,6 +4575,25 @@ mod tests {
             "skills": {"paths": ["skills/review"]}
         }))
         .expect("typed config")
+    }
+
+    #[test]
+    fn transport_budgets_saturate_at_the_platform_ceiling() {
+        let limits = ResponseLimits {
+            max_response_bytes: u32::MAX,
+            max_artifact_bytes: u32::MAX,
+            ..Default::default()
+        };
+        let response = u128::from(u32::MAX) * 6 + 1024 * 1024;
+        let artifact = u128::from(u32::MAX) * 8 + response;
+        assert_eq!(
+            limits.response_transport_bytes(),
+            response.min(usize::MAX as u128) as usize
+        );
+        assert_eq!(
+            limits.artifact_transport_bytes(),
+            artifact.min(usize::MAX as u128) as usize
+        );
     }
 
     #[test]
