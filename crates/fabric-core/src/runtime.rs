@@ -5080,8 +5080,13 @@ for line in sys.stdin:
         stop_runtime(&plan, &first).expect_err("the adapter fails its stop");
         let second = start_runtime_with_service(&plan, &service)
             .expect("connect once the first runtime's host is gone");
-        let _ = stop_runtime(&plan, &second);
-        let _ = release_service(&plan, &service);
+        stop_runtime(&plan, &second).expect_err("the adapter fails its stop");
+        assert!(matches!(
+            release_service(&plan, &service),
+            Err(FabricError::AdapterLifecycleOperation { .. })
+        ));
+        release_service(&plan, &service).expect("retry release service");
+        assert!(!local_services().contains_key(&service.service_id));
         let _ = fs::remove_dir_all(root);
     }
 
