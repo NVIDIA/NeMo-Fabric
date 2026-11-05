@@ -1393,8 +1393,65 @@ async def test_openclaw_stop_kills_a_gateway_that_ignores_sigterm_where_group_si
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+async def test_openclaw_stop_kills_descendant_holding_gateway_pipes(tmp_path: Path):
+    marker = tmp_path / "descendant.ready"
+    descendant_code = """
+import signal
+import sys
+import time
+from pathlib import Path
+
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+Path(sys.argv[1]).touch()
+time.sleep(60)
+"""
+    gateway_code = """
+import subprocess
+import sys
+import time
+
+subprocess.Popen([sys.executable, "-c", sys.argv[1], sys.argv[2]])
+time.sleep(60)
+"""
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        gateway_code,
+        descendant_code,
+        str(marker),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    runtime = adapter.OpenClawRuntime()
+    runtime._process = process
+    runtime._shutdown_timeout = 0.1
+    try:
+        async with asyncio.timeout(5):
+            while not marker.exists():
+                await asyncio.sleep(0.01)
+
+        await runtime.stop()
+
+        assert process.returncode is not None
+        # EOF proves the SIGTERM-ignoring descendant closed the inherited pipes.
+        # The Gateway leader has already exited when stop's wait times out.
+        assert process.stdout is not None
+        assert process.stderr is not None
+        async with asyncio.timeout(1):
+            await asyncio.gather(process.stdout.read(), process.stderr.read())
+    finally:
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        await process.wait()
+        if process.stdout is not None and process.stderr is not None:
+            await asyncio.gather(process.stdout.read(), process.stderr.read())
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+@pytest.mark.parametrize("group_signals_denied", [False, True])
 async def test_openclaw_stop_does_not_kill_a_gateway_that_exited_during_cancellation(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, group_signals_denied: bool
 ):
     runtime = adapter.OpenClawRuntime()
     mock_process = MagicMock(spec=asyncio.subprocess.Process)
@@ -1407,19 +1464,30 @@ async def test_openclaw_stop_does_not_kill_a_gateway_that_exited_during_cancella
 
     mock_process.wait = AsyncMock(side_effect=exit_then_cancel)
     runtime._process = mock_process
-    signals: list[tuple[int, int]] = []
+    group_signals: list[tuple[int, int]] = []
+    pid_signals: list[tuple[int, int]] = []
+
+    def signal_group(pid: int, signum: int) -> None:
+        group_signals.append((pid, signum))
+        if group_signals_denied:
+            raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(adapter.os, "killpg", signal_group)
     monkeypatch.setattr(
-        adapter.os, "killpg", lambda pid, signum: signals.append((pid, signum))
+        adapter.os, "kill", lambda pid, signum: pid_signals.append((pid, signum))
     )
 
     with pytest.raises(asyncio.CancelledError):
         await runtime.stop()
 
-    # Once the Gateway is reaped, its PID can belong to another process.
-    assert signals == [(1234, signal.SIGTERM)]
+    assert group_signals == [(1234, signal.SIGTERM), (1234, signal.SIGKILL)]
+    # Once the Gateway is reaped, only the process group may be signaled.
+    assert pid_signals == ([(1234, signal.SIGTERM)] if group_signals_denied else [])
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock openclaw script directly")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Runs the mock openclaw script directly"
+)
 async def test_openclaw_startup_timeout_bounds_all_of_start(
     mock_openclaw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

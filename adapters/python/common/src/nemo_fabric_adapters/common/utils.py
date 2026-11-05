@@ -793,16 +793,22 @@ def relay_model_name(payload: dict[str, Any]) -> str:
     return selected_model_config(payload).get("model") or "unknown"
 
 
-def signal_process_group(pid: int, signum: signal.Signals) -> None:
+def signal_process_group(
+    pid: int, signum: signal.Signals, *, fallback_to_pid: bool = True
+) -> None:
     """Signal a child's process group, or only the child where that's denied.
 
     OpenShell's sandbox denies signals to a process group with EPERM.
+    Disable the PID fallback after reaping the child: descendants can still
+    occupy the group, but the child's PID may have been reused.
     """
     try:
         os.killpg(pid, signum)
     except ProcessLookupError:
         pass
     except PermissionError:
+        if not fallback_to_pid:
+            return
         try:
             os.kill(pid, signum)
         except ProcessLookupError:

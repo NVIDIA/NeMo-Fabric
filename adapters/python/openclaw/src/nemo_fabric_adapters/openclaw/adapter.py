@@ -1751,14 +1751,18 @@ class OpenClawRuntime:
                 except (TimeoutError, asyncio.CancelledError) as error:
                     if isinstance(error, asyncio.CancelledError):
                         cancellation = cancellation or error
-                    # A reaped Gateway's PID can belong to another process.
-                    if process.returncode is None:
-                        if os.name == "nt":
+                    if os.name == "nt":
+                        if process.returncode is None:
                             process.kill()
-                        else:
-                            common_utils.signal_process_group(
-                                process.pid, signal.SIGKILL
-                            )
+                    else:
+                        # Descendants can retain captured pipes after the leader
+                        # exits. Escalate the group, but never fall back to the
+                        # reaped leader's potentially reused PID.
+                        common_utils.signal_process_group(
+                            process.pid,
+                            signal.SIGKILL,
+                            fallback_to_pid=process.returncode is None,
+                        )
                     try:
                         await process.wait()
                     except asyncio.CancelledError as error:
