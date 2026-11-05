@@ -477,6 +477,14 @@ class KiloSdkSessionHandle implements KiloSessionHandle {
             )
           : await this.client.global.health(options);
       if (this.stopped) return unobservedHealth("observation_changed");
+      if (
+        level === "active" &&
+        isRecord(response.data) &&
+        typeof response.data.id === "string" &&
+        response.data.id.length > 0 &&
+        response.data.id !== this.id
+      )
+        return unobservedHealth("observation_changed");
       if (!this.server.isAlive()) return exited();
       if (!isRecord(response.data)) return unobservedHealth("probe_error");
       if (level === "active" && response.data.id !== this.id)

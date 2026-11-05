@@ -147,6 +147,38 @@ test("native query failure remains unknown and never leaks errors", async (t) =>
   assert.equal(state.closed, 0);
 });
 
+for (const alive of [true, false]) {
+  test(`a changed native session invalidates an active check when the server is ${alive ? "alive" : "exited"}`, async (t) => {
+    const { handle, state, client } = await session(t);
+    client.session.get = async () => {
+      state.alive = alive;
+      return { data: { id: "PRIVATE-replacement-session" } };
+    };
+    const result = await handle.check("active");
+    assert.equal(result.outcome, "unknown");
+    assert.equal(result.reason_code, "observation_changed");
+    assert.equal(JSON.stringify(result).includes("PRIVATE"), false);
+    assert.equal(handle.id, "session-1");
+    assert.equal(state.aborts, 0);
+    assert.equal(state.closed, 0);
+  });
+}
+
+for (const data of [null, {}, { id: null }, { id: 123 }, { id: "" }]) {
+  test(`a malformed native session response ${JSON.stringify(data)} preserves server exit evidence`, async (t) => {
+    const { handle, state, client } = await session(t);
+    client.session.get = async () => {
+      state.alive = false;
+      return { data };
+    };
+    const result = await handle.check("active");
+    assert.equal(result.outcome, "failed");
+    assert.equal(result.reason_code, "agent_exited");
+    assert.equal(state.aborts, 0);
+    assert.equal(state.closed, 0);
+  });
+}
+
 test("native health request deadlines do not abort or close an invocation", async (t) => {
   const keepAlive = setInterval(() => {}, 1000);
   t.after(() => clearInterval(keepAlive));
