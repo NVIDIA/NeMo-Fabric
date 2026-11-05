@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import copy
 import ipaddress
 import json
@@ -1754,10 +1753,19 @@ class OpenClawRuntime:
     async def stop(self) -> None:
         cancellation: asyncio.CancelledError | None = None
         self._stopping = True
-        token_path, self._dashboard_token_path = self._dashboard_token_path, None
+        token_path = self._dashboard_token_path
         if token_path is not None:
-            with contextlib.suppress(OSError):
+            try:
                 token_path.unlink(missing_ok=True)
+            except OSError:
+                # Keep the path so a later stop can retry.
+                logger.error(
+                    "OpenClaw could not remove its dashboard token at %s",
+                    token_path,
+                    exc_info=True,
+                )
+            else:
+                self._dashboard_token_path = None
         try:
             self._restore_signal_handlers()
         except Exception:

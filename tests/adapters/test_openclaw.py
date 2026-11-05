@@ -1494,6 +1494,47 @@ async def test_openclaw_dashboard_removes_the_token_when_start_fails_after_writi
     assert runtime._process is None
 
 
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "win32"},
+    reason="Starts the mock Gateway, which CI runs only on Linux",
+)
+async def test_openclaw_dashboard_stop_retries_a_token_it_could_not_remove(
+    mock_openclaw: Path,
+    tmp_path: Path,
+    dashboard_port: int,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    token_path = _dashboard_token(tmp_path)
+    runtime = adapter.OpenClawRuntime()
+    await runtime.start(
+        {
+            "config": _dashboard_config(mock_openclaw, {"port": dashboard_port}),
+            "runtime_context": _context(tmp_path).to_mapping(),
+            "base_dir": str(tmp_path),
+        }
+    )
+    unlink = Path.unlink
+
+    def fail_token_unlink(path: Path, missing_ok: bool = False) -> None:
+        if path == token_path:
+            raise PermissionError("token is locked")
+        unlink(path, missing_ok=missing_ok)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "unlink", fail_token_unlink)
+        await runtime.stop()
+
+    assert runtime._process is None
+    assert token_path.exists()
+    assert "could not remove its dashboard token" in caplog.text
+
+    await runtime.stop()
+
+    assert not token_path.exists()
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock openclaw script directly")
 @pytest.mark.parametrize("offset", [0, 2])
 async def test_openclaw_dashboard_port_in_use_fails_start(
