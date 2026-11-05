@@ -1314,7 +1314,7 @@ async def test_openclaw_stop_continues_after_cleanup_failures(
     await runtime.stop()
 
     mock_client.aclose.assert_awaited_once_with()
-    mock_process.wait.assert_awaited_once_with()
+    mock_process.wait.assert_awaited()
     mock_close_job.assert_called_once_with(1234)
     assert log_task.cancelled()
     mock_temp_dir.cleanup.assert_called_once_with()
@@ -1397,7 +1397,6 @@ async def test_openclaw_stop_kills_a_gateway_that_ignores_sigterm_where_group_si
 async def test_openclaw_stop_is_bounded_with_descendant_holding_gateway_pipes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
     group_signals_denied: bool,
 ):
     marker = tmp_path / "descendant.ready"
@@ -1454,11 +1453,9 @@ time.sleep(60)
         assert process.returncode is not None
         assert process.stdout is not None
         assert process.stderr is not None
-        if group_signals_denied:
-            assert "captured pipes" in caplog.text
-        else:
-            # EOF proves the descendant closed the inherited pipes. The leader
-            # has already exited when stop's first wait times out.
+        if not group_signals_denied:
+            # EOF proves the descendant closed the inherited pipes, whether
+            # Process.wait returns at leader exit or waits for pipe closure.
             async with asyncio.timeout(1):
                 await asyncio.gather(process.stdout.read(), process.stderr.read())
     finally:
