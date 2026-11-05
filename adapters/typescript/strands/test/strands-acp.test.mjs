@@ -212,10 +212,11 @@ test("retains a timed-out runtime session until process cleanup succeeds", { ski
   const { pid: parent } = JSON.parse(await readFile(input.runtimeContext.environment.env.TEST_STRANDS_STATE, "utf8"));
   const { pid: child } = JSON.parse(await readFile(descendantState, "utf8"));
   const originalKill = process.kill.bind(process);
-  let failTermination = true;
+  // Deny the first stop's group signal and its fallback to the agent itself.
+  let deniedTerminations = 2;
   const kill = t.mock.method(process, "kill", (pid, signal) => {
-    if (pid === -parent && signal === "SIGTERM" && failTermination) {
-      failTermination = false;
+    if (Math.abs(pid) === parent && signal === "SIGTERM" && deniedTerminations > 0) {
+      deniedTerminations -= 1;
       throw Object.assign(new Error("termination denied"), { code: "EPERM" });
     }
     return originalKill(pid, signal);
