@@ -121,6 +121,13 @@ async def client(
             await writer.drain()
             response = await read_message(reader, RESPONSE_LIMIT)
             validate_response(response, operation)
+            if operation == "status" and response["status"] == "succeeded":
+                result = response["result"]
+                if (result["runtime_id"], result["agent_name"]) != (
+                    request["runtime_id"],
+                    request["agent"],
+                ):
+                    raise ProtocolError("invalid_response", "transport")
             if operation == "check":
                 finished = time.monotonic()
                 if finished >= deadline:

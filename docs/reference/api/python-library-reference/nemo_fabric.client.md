@@ -377,6 +377,48 @@ Execute one complete start, invoke, and stop lifecycle.
 ---
 
 
+### <kbd>method</kbd> `runtime_status`
+
+```python
+async def runtime_status(
+    *,
+    runtime_id: str,
+    agent_name: str,
+    environment: EnvironmentHandle | None = None,
+) -> RuntimeStatusReport
+```
+
+Read recorded runtime state and rediscover a safe handle by identifier.
+
+Without an environment, read runtimes created by this ``Fabric`` instance and retain each ``Runtime`` until successful stop. The most recent 128 successful stops retain lightweight records with a null handle. A local environment additionally selects its exact environment identifier.
+
+An OpenShell environment routes ``fabric-agent-ctl status`` to the owning server, including from a later client process. The returned handle belongs to that server's local environment. Records do not survive server restart. This operation never starts, invokes, stops, or probes a runtime. Recorded ``active`` state does not establish current harness health; use ``check()`` for a fresh observation.
+
+
+
+**Args:**
+
+ - <b>`runtime_id`</b>:  Runtime identifier returned by start.
+ - <b>`agent_name`</b>:  Exact owning agent name.
+ - <b>`environment`</b>:  Optional local selector or verified OpenShell binding.
+
+
+
+**Returns:**
+ An immutable ``RuntimeStatusReport`` with a discovery-only handle. Handle environment variables and arbitrary provider metadata are omitted.
+
+
+
+**Raises:**
+
+ - <b>`FabricConfigError`</b>:  If the target or returned report is invalid.
+ - <b>`FabricStateError`</b>:  If the runtime or selected ownership is unavailable.
+ - <b>`FabricNativeUnavailableError`</b>:  If remote routing needs a missing extension.
+ - <b>`FabricRuntimeError`</b>:  If the status transport fails.
+
+---
+
+
 ### <kbd>method</kbd> `start_runtime`
 
 ```python

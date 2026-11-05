@@ -16,6 +16,7 @@ from nemo_fabric import (
     Fabric,
     FabricConfig,
     FabricConfigError,
+    FabricStateError,
     CheckRequest,
     EnvironmentHandle,
     RunRequest,
@@ -120,6 +121,19 @@ class RuntimeServer:
                     if self.shutting_down
                     else None,
                 )
+            if operation == "status":
+                owned = self._owned(request)
+                stage = "status"
+                report = await self.fabric.runtime_status(
+                    runtime_id=request["runtime_id"], agent_name=request["agent"]
+                )
+                return envelope(
+                    operation,
+                    {
+                        **report.to_mapping(),
+                        "server_state": owned.state,
+                    },
+                )
             if self.shutting_down:
                 raise ProtocolError("host_stopping")
 
@@ -200,6 +214,15 @@ class RuntimeServer:
                 result = (await owned.runtime.invoke(**invoke_arguments)).to_mapping()
                 return envelope(operation, result, changed=None)
         except Exception as error:
+            if isinstance(error, FabricStateError) and error.code in (
+                "wrong_agent",
+                "runtime_unavailable",
+                "runtime_id_conflict",
+            ):
+                error = ProtocolError(
+                    error.code,
+                    "start" if error.code == "runtime_id_conflict" else "status",
+                )
             if not isinstance(error, ProtocolError):
                 if isinstance(error, (FabricConfigError, ValidationError)):
                     code = (

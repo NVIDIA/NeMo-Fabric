@@ -18,6 +18,7 @@ SPDX-License-Identifier: Apache-2.0
 | `invoke --agent NAME --runtime-id ID --input FILE` | `Runtime.invoke(input=...)` |
 | `invoke --agent NAME --runtime-id ID --request FILE` | `Runtime.invoke(request=RunRequest(...))` |
 | `stop --agent NAME --runtime-id ID` | `Runtime.stop()` |
+| `status --agent NAME --runtime-id ID` | `Fabric.runtime_status()` with recorded server state |
 
 Run the server under the sandbox supervisor:
 
@@ -30,6 +31,7 @@ Wait for `/sandbox/fabric.sock` with a caller-owned deadline, then issue command
 ```sh
 fabric-agent-ctl check
 fabric-agent-ctl start --agent researcher --config /sandbox/config.json
+fabric-agent-ctl status --agent researcher --runtime-id RUNTIME_ID
 fabric-agent-ctl invoke --agent researcher --runtime-id RUNTIME_ID --input /sandbox/input.json
 fabric-agent-ctl stop --agent researcher --runtime-id RUNTIME_ID
 ```
@@ -37,6 +39,10 @@ fabric-agent-ctl stop --agent researcher --runtime-id RUNTIME_ID
 The response envelope separates command diagnostics from the public SDK payload in `result`: start returns `RuntimeHandle.to_mapping()`, invoke returns `RunResult.to_mapping()` directly, and stop returns JSON `null` for the SDK's `None` return. There is no `fabric_result` wrapper. Replace `RUNTIME_ID` with `result.runtime_id` from start. Multiple invocations retain the same runtime and conversation. Targeted commands require both the returned runtime ID and exact agent name. Repeated successful stop is a no-op. Serve starts a process and is never forwarded over the socket.
 
 Use `--request FILE` to forward a complete public `RunRequest`, including `request_id`, `relay_session_root`, `context`, `overrides`, and supported extensions. For example, a request file can contain `{"input": "Review calculator.py", "request_id": "review-1", "context": {"review_tag": "cedar-4827"}}`. `--input FILE` is a mutually exclusive convenience for any JSON-compatible SDK input: an object, array, string, number, boolean, or null. Null follows the SDK's normalization to an empty input string. Agent input fields named `stream` or `streaming` remain ordinary input data; this command calls `Runtime.invoke()`, never a streaming method.
+
+`status --agent NAME --runtime-id ID` returns the existing SDK ownership record without starting, invoking, stopping, or probing the harness. The result is a `RuntimeStatusReport` mapping with `runtime_id`, `agent_name`, `status` (`active`, `stopped`, or `failed`), `handle`, and the server's recorded `server_state` (`running`, `stopping`, `stopped`, or `unknown`). Recorded active state does not establish current process health. Status reads bypass the invocation lock. A valid read exits 0, including a known stopped or failed runtime; missing or mismatched ownership exits 1. `changed` is always false, and status errors always report `effects: "none"`.
+
+The handle is a discovery snapshot with runtime identity, opaque binding, adapter and service identifiers, and environment identity and paths. Environment variables, provider connection metadata, provider metadata, and unknown handle extensions are excluded. The original `Runtime` remains the lifecycle handle for invocation and cleanup. Successful stop removes the current handle, so status returns `handle: null`; the most recent 128 stopped records remain available. A later CLI process can retrieve a record while the original server remains alive. Records do not survive server replacement. Native-interface metadata remains separate future work.
 
 `check` reports server responsiveness. Add both `--agent` and `--runtime-id` to check one runtime. Runtime checks default to `live`; the mutually exclusive `--active` and `--ready` flags include preceding levels. Checks can run during invocations, and busy agents can pass.
 
@@ -86,7 +92,7 @@ The bridge requires Unix sockets and `fcntl`; Windows imports remain safe and co
 
 ## Local Qualification And Migration
 
-Follow the [OpenShell Code Review instructions](../../../../../../examples/code_review_agent/README.md#openshell-code-review) to build the image and create a sandbox. The image contains the current SDK, runtime server, adapter, and harness, and advertises `fabric-agent-ctl`, interface version 2, and `start/invoke/stop/serve/check`. The server implementation is `nemo_fabric.runtime_server.state.RuntimeServer`. Rebuild the image and create fresh sandboxes after updating the command interface.
+Follow the [OpenShell Code Review instructions](../../../../../../examples/code_review_agent/README.md#openshell-code-review) to build the image and create a sandbox. The image contains the current SDK, runtime server, adapter, and harness, and advertises `fabric-agent-ctl`, interface version 2, and `start/invoke/stop/serve/check/status`. The server implementation is `nemo_fabric.runtime_server.state.RuntimeServer`. Rebuild the image and create fresh sandboxes after updating the command interface.
 
 The example starts the server, waits for its socket, starts a runtime, invokes twice, and stops through separate exec calls. The older NemoClaw client using `validate/prepare/configure` requires migration. Version 1 requests fail explicitly. Direct SDK lifecycle and streaming APIs retain their existing behavior.
 

@@ -25,6 +25,7 @@ runtime or bindings.
 - Keep every affected public surface in parity
 - `RunRequest.relay_session_root` is forwarded as the typed `AgentRunRequest.relay_session_root` field. Keep Rust, Python, TypeScript, and schema representations in parity. Context keys do not control Relay propagation; preserve the adapter fallback for unusable UUIDs.
 - OpenShell task commands serialize public SDK config/request/handle/result mappings. Keep forwarding buffered and preserve task-generated IDs, normalized failed results, telemetry references, and declared artifacts. Do not normalize an SDK result as an adapter result. Task paths remain POSIX strings; host artifact destinations stay separate. Unknown outcomes bind the immutable sandbox identity through reattachment and must not be replayed.
+- Runtime discovery uses the typed public `Fabric.runtime_status()` operation. Keep `fabric-agent-ctl status` delegated to that SDK operation and OpenShell status routed through the existing provider command transport. Preserve recorded lifecycle state separately from health observations, use null handles for stopped records, and exclude environment variables and arbitrary provider metadata from discovery snapshots.
 - Update docs and examples in the same branch
 
 ## Minimum Acceptance

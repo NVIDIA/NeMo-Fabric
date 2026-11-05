@@ -233,7 +233,37 @@ root is separate. OpenShell invocation is buffered; streaming and shared-service
 hosting remain local SDK capabilities. Commands with uncertain outcomes are
 never replayed; an uncertain start blocks further starts in that sandbox.
 
-### Runtime Health
+### Recorded Runtime Status
+
+Use `Fabric.runtime_status()` to read the recorded lifecycle state and rediscover a runtime handle without starting, invoking, stopping, or probing the harness:
+
+```python
+report = await fabric.runtime_status(
+    runtime_id=runtime.runtime_id,
+    agent_name=config.metadata.name,
+)
+print(report.status)  # "active", "stopped", or "failed"
+```
+
+A direct local lookup selects a runtime started by the same `Fabric` instance. The client retains live runtime objects until successful stop, even when the caller drops the original Python reference. Callers remain responsible for stopping runtimes. An optional local `EnvironmentHandle` restricts the lookup to that environment. After successful stop, the latest 128 records remain available with `handle=None`; older records are unavailable.
+
+For OpenShell, pass a verified environment handle and the runtime identifier returned by start. The SDK sends `fabric-agent-ctl status` to the original owning server, so a later client process can perform the same read:
+
+```python
+report = await Fabric().runtime_status(
+    environment=environment,
+    runtime_id=runtime_id,
+    agent_name="researcher",
+)
+```
+
+`RuntimeStatusReport` contains `runtime_id`, `agent_name`, `status`, `handle`, and `server_state`. The server state is `running`, `stopping`, `stopped`, or `unknown`; direct local reads use `None`. Missing runtimes, wrong agents, and mismatched local environment identifiers raise `FabricStateError`. The SDK validates remote report identity and uses fixed diagnostics for transport failures.
+
+The returned handle is a discovery snapshot. The snapshot retains runtime identity, the opaque binding, adapter and service identifiers, and environment identity and paths. The snapshot excludes environment variable values, provider connection metadata, provider metadata, and unknown handle extensions. Use the original `Runtime` for invocation and cleanup. OpenShell reports the handle owned inside the sandbox, rather than a new host-side runtime binding. Stopped runtimes have no current handle. Records are held by the owning process and do not survive server restart.
+
+Recorded `active` state does not prove the harness is currently healthy. Use `Fabric.check()` for a fresh health observation. This status operation adds no native-interface endpoints or credential locations.
+
+## Runtime Health
 
 Use `Fabric.check(environment=..., request=...)` to check runtime health. Refer to the [health-check overview](health-checks.mdx) for scopes, outcomes, and deadlines, and the [adapter support table](health-checks.mdx#native-evidence-by-adapter) for supported levels and native evidence.
 
@@ -336,7 +366,7 @@ Service checks evaluate earlier levels in order under the same three-second defa
 `Fabric.check()` and `fabric-agent-ctl check`. The executable ships with
 `nemo-fabric-runtime` and follows the SDK package release.
 
-`fabric-agent-ctl serve` starts one runtime server per sandbox. The `start`, `invoke`, and `stop` commands call the existing `Fabric.start_runtime()`, `Runtime.invoke()`, and `Runtime.stop()` methods. Start accepts `FabricConfig` and returns the SDK `RuntimeHandle` mapping. Invoke accepts a full `RunRequest` through `--request` or any JSON SDK input through `--input`, and returns the SDK `RunResult` mapping. Stop returns JSON null. These payloads occupy the response envelope's `result` field; command diagnostics remain separate. Targeted commands require the returned runtime ID and exact agent name. The caller waits for the private socket before start. Caller-side preflight uses `Fabric.plan()` and `Fabric.doctor()`; startup validates configuration against installed descriptors.
+`fabric-agent-ctl serve` starts one runtime server per sandbox. The `start`, `invoke`, `stop`, and `status` commands call `Fabric.start_runtime()`, `Runtime.invoke()`, `Runtime.stop()`, and `Fabric.runtime_status()`. Start accepts `FabricConfig` and returns the SDK `RuntimeHandle` mapping. Invoke accepts a full `RunRequest` through `--request` or any JSON SDK input through `--input`, and returns the SDK `RunResult` mapping. Stop returns JSON null. These payloads occupy the response envelope's `result` field; command diagnostics remain separate. Targeted commands require the returned runtime ID and exact agent name. The caller waits for the private socket before start. Caller-side preflight uses `Fabric.plan()` and `Fabric.doctor()`; startup validates configuration against installed descriptors.
 
 One sandbox can own multiple runtimes, each addressed by its returned runtime ID. Invoke and stop operations are independent across IDs; stopping one runtime leaves the others usable, and another runtime can be started after a stop. An uncertain start blocks further starts because the server cannot safely determine whether an unaddressable runtime exists. Ordinary SDK stop does not confirm descendant cleanup, so the runtime server retains `fabric.unclean` after runtime use and reports `cleanup_unconfirmed` if previous sandbox process cleanup cannot be confirmed. Refer to the [runtime server command guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md).
 
