@@ -108,7 +108,7 @@ wheels = [
 
 [[package]]
 name = "nemo-fabric-adapter-contract"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "../../../adapter-contract/python" }
 dependencies = [
     { name = "nemo-fabric-evidence" },
@@ -123,7 +123,7 @@ provides-extras = ["pydantic"]
 
 [[package]]
 name = "nemo-fabric-adapters-common"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "../common" }
 dependencies = [
     { name = "nemo-fabric-adapter-contract" },
@@ -134,7 +134,7 @@ requires-dist = [{ name = "nemo-fabric-adapter-contract", editable = "../../../a
 
 [[package]]
 name = "nemo-fabric-adapters-openclaw"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "." }
 dependencies = [
     { name = "httpx", extra = ["http2"] },
@@ -151,7 +151,7 @@ requires-dist = [
 
 [[package]]
 name = "nemo-fabric-evidence"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "../../../sdk/python/nemo-fabric-evidence" }
 
 [[package]]

@@ -42,8 +42,13 @@ ALLOWED = set(sys.stdlib_module_names) | {
 OPTIONAL_LAZY_IMPORTS = {
     "client.py": {"nemo_fabric_collector"},
 }
+EVIDENCE_VERSION = tomllib.loads(
+    (ROOT_DIR / "sdk/python/nemo-fabric-evidence/pyproject.toml").read_text(
+        encoding="utf-8"
+    )
+)["project"]["version"]
 EXPECTED_DEPENDENCIES = [
-    "nemo-fabric-evidence == 0.6.0",
+    f"nemo-fabric-evidence == {EVIDENCE_VERSION}",
     "httpx~=0.28",
     "pydantic>=2.12,<3",
     "typing-extensions>=4.12",
