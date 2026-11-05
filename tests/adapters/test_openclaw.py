@@ -212,7 +212,9 @@ def test_openclaw_rejects_invalid_port_range(settings: dict[str, object]):
             id="unknown-field",
         ),
         pytest.param({"interfaces": {"dashboard": {}}}, id="missing-port"),
-        pytest.param({"interfaces": {"dashboard": {"port": 65_426}}}, id="port-too-high"),
+        pytest.param(
+            {"interfaces": {"dashboard": {"port": 65_426}}}, id="port-too-high"
+        ),
         pytest.param(
             {
                 "interfaces": {"dashboard": {"port": 20_000}},
@@ -1494,7 +1496,9 @@ async def test_openclaw_dashboard_removes_the_token_when_start_fails_after_writi
     assert runtime._process is None
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock openclaw script directly")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Runs the mock openclaw script directly"
+)
 @pytest.mark.parametrize("offset", [0, 2])
 async def test_openclaw_dashboard_port_in_use_fails_start(
     mock_openclaw: Path, tmp_path: Path, dashboard_port: int, offset: int

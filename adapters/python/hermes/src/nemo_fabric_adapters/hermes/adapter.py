@@ -117,6 +117,7 @@ class HermesRuntime:
                 runtime_context, common_utils.base_dir(payload)
             )
             self._hermes_home.mkdir(parents=True, exist_ok=True)
+            interfaces.require_released_home(self._hermes_home)
             # A runtime that ended without stop can leave its API token in a
             # kept Hermes home, for a server that no longer runs.
             token_path = self._hermes_home / "interfaces" / "api.token"

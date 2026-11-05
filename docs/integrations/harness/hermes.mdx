@@ -157,10 +157,7 @@ harness = HarnessConfig(
   that has a `base_url` to `config.yaml` as Hermes's `custom` provider, with
   its key as a reference to `api_key_env`, so the API server and browser chat
   use the configured endpoint and key.
-- `stop` removes the token, sends SIGTERM to each child's process group, and
-  SIGKILL to what remains after 5 seconds. The gateway drains in-flight API
-  runs and cron jobs for 3 seconds. After start, a child that exits doesn't fail
-  the runtime check, and NeMo Fabric doesn't restart it.
+- `stop` removes the token and closes the dashboard and its owned browser-chat and recovery processes before stopping the API gateway. Detached processes started by these interfaces remain part of runtime cleanup. Each phase sends SIGTERM and then SIGKILL to surviving owned processes. The dashboard gets 2 seconds when the API is enabled, and the API gets 5 seconds. A dashboard-only runtime gets 5 seconds. The gateway drains in-flight API runs and cron jobs for 3 seconds. Unconfirmed process cleanup fails stop and retains the cleanup handles for a retry. A retained ownership record blocks replacement while earlier owned processes remain or their ownership cannot be inspected. After start, a child that exits doesn't fail the runtime check, and NeMo Fabric doesn't restart it.
 - The embedded agent, the gateway, the dashboard and browser chat share the
   Hermes home, and Hermes coordinates their writes. The dashboard's gateway
   actions, such as restart, start Hermes processes outside the runtime.
