@@ -83,7 +83,17 @@ test "${CURRENT_VERSION}" = "${RELEASE_VERSION}"
 
 ## Validate the Stable Release
 
-In this verified checkout, follow [Local Validation](../../../RELEASING.md#local-validation), including the [invocation deadline qualification checklist](../../../tests/e2e/invocation-deadline-checklist.md). Record the full `RELEASE_SHA` with the local or external qualification results, and require it to match the commit being tagged. Build the host SDK, provider, and task image from that commit. Require retained passing results for host and OpenShell execution with both Hermes and Deep Agents, finite and unlimited deadlines, and timeout reasons and cleanup. A skipped live test or a model-free echo run alone does not satisfy inference qualification. Do not commit run evidence.
+In this verified checkout, complete [Local Validation](../../../RELEASING.md#local-validation).
+Use the separate [runtime deadline qualification skill](../qualify-runtime-deadlines/SKILL.md)
+to prepare and execute the saved inference plan against `RELEASE_SHA`. Require its
+machine-verified full report; developer subsets and skipped tests are nonpasses.
+Keep all run evidence local or external, never committed.
+
+```bash
+python3 .agents/skills/qualify-runtime-deadlines/scripts/qualify.py verify \
+  --report "${DEADLINE_QUALIFICATION_REPORT:?Set the full qualification report path}" \
+  --revision "${RELEASE_SHA}" --release
+```
 
 Continue in the same shell only after qualification succeeds. Recheck the checkout and upstream branch before creating or pushing the tag; stop if either changed during validation.
 
