@@ -130,6 +130,7 @@ def mock_native_fixture() -> MagicMock:
 
     mock_native.invoke_runtime.side_effect = invoke
     mock_native.stop_runtime.return_value = json.dumps([])
+    mock_native.finalize_run_result.side_effect = lambda result_json, limit: result_json
     return mock_native
 
 

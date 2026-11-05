@@ -24,6 +24,7 @@ from nemo_fabric.runtime_server.protocol import (
     REQUEST_LIMIT,
     SOCKET_PATH,
     ProtocolError,
+    response_transport_limit,
     decode_json,
     decode_object,
     encode_request,
@@ -153,7 +154,7 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
 def main(arguments: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if arguments is None else arguments
     operation = arguments[0] if arguments and arguments[0] in OPERATIONS else "unknown"
-    response_limit = 4 * 1024 * 1024
+    response_limit = response_transport_limit()
     try:
         response_limit = int(
             os.environ.get("FABRIC_RESPONSE_LIMIT_BYTES", response_limit)

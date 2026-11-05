@@ -738,21 +738,44 @@ fn collect_result_artifacts(
         return Err(invalid_environment("artifact.identity"));
     }
     let base = resolve_path(&plan.base_dir, root);
-    let root = destination_root(&base, &result.runtime_id, &result.invocation_id)?;
     let mut seen = BTreeSet::new();
     let unique: Vec<String> = paths
         .iter()
         .filter(|path| seen.insert((*path).clone()))
         .cloned()
         .collect();
-    let files = collect_artifacts(
-        &runtime.environment,
-        &unique,
-        plan.config.runtime.response_limits.unwrap_or_default(),
-    )?;
+    let limits = plan.config.runtime.response_limits.unwrap_or_default();
+    let files = match collect_artifacts(&runtime.environment, &unique, limits)? {
+        crate::environment::CollectedArtifacts::Files(files) => files,
+        crate::environment::CollectedArtifacts::Limited(error) => {
+            let configured = match error.limit.as_str() {
+                "max_artifact_bytes" => limits.max_artifact_bytes,
+                "max_artifact_file_bytes" => limits.max_artifact_file_bytes,
+                "max_artifact_files" => limits.max_artifact_files,
+                _ => return Err(invalid_environment("artifact.limit")),
+            } as u64;
+            if error.configured != configured
+                || error.observed <= configured
+                || !unique.contains(&error.asset)
+                || error.asset.len() > 4096
+                || error.asset.chars().any(char::is_control)
+            {
+                return Err(invalid_environment("artifact.limit"));
+            }
+            response_limits::reject(
+                result,
+                &error.limit,
+                configured,
+                error.observed,
+                &error.asset,
+            );
+            return Ok(());
+        }
+    };
     if files.len() != unique.len() {
         return Err(invalid_environment("artifact.correlation"));
     }
+    let root = destination_root(&base, &result.runtime_id, &result.invocation_id)?;
     for (path, file) in unique.iter().zip(files) {
         if &file.path != path {
             return Err(invalid_environment("artifact.correlation"));

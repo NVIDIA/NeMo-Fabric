@@ -16,7 +16,7 @@ use nemo_fabric_core::{
     resolve_diagnostic_plan_from_config_with_adapter_directories,
     resolve_run_plan_from_config_with_adapter_directories, run_plan,
 };
-use pyo3::exceptions::{PyRuntimeError, PyTimeoutError};
+use pyo3::exceptions::{PyRuntimeError, PyTimeoutError, PyValueError};
 use pyo3::prelude::*;
 
 pyo3::create_exception!(
@@ -358,6 +358,20 @@ fn runtime_resource_snapshot(
     to_json(&snapshot)
 }
 
+/// Recheck the completed result after Python-owned lifecycle cleanup.
+#[pyfunction]
+fn finalize_run_result(result_json: String, max_response_bytes: u32) -> PyResult<String> {
+    let mut result: nemo_fabric_core::RunResult = serde_json::from_str(&result_json)
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    result
+        .enforce_response_limit(nemo_fabric_core::ResponseLimits {
+            max_response_bytes,
+            ..Default::default()
+        })
+        .map_err(to_py_error)?;
+    to_json(&result)
+}
+
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(check_environment, m)?)?;
@@ -372,6 +386,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.py().get_type::<ResourceObservationUnsupportedError>(),
     )?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
+    m.add_function(wrap_pyfunction!(finalize_run_result, m)?)?;
     m.add_function(wrap_pyfunction!(plan_config, m)?)?;
     m.add_function(wrap_pyfunction!(inspect_adapter_metadata, m)?)?;
     m.add_function(wrap_pyfunction!(doctor_config, m)?)?;

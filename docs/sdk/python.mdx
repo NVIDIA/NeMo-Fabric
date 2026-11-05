@@ -1449,7 +1449,7 @@ runtime:
 
 | Field | Default | What is counted |
 | --- | --- | --- |
-| `max_response_bytes` | 4 MiB | Compact UTF-8 JSON serialization of the normalized invocation `RunResult`, excluding transport envelopes, the trailing newline and later stop events. |
+| `max_response_bytes` | 4 MiB | Compact UTF-8 JSON serialization of the normalized invocation `RunResult`, excluding transport envelopes and the trailing newline. Convenience runs recheck after stop events or stop errors are added. |
 | `max_artifact_bytes` | 2 MiB | Sum of the uncompressed sizes of unique declared artifact files. |
 | `max_artifact_files` | 16 | Unique declared artifact paths; repeated references count once. |
 | `max_artifact_file_bytes` | 1 MiB | Uncompressed size of each declared artifact file. |
@@ -1461,7 +1461,13 @@ names are rejected. File and aggregate byte budgets are independent, so raising
 one does not raise the other. SDK diagnostics under `.fabric/`, workspace patches,
 and workspace status files do not consume the declared-agent artifact budgets.
 Provider transport allowances scale with these budgets; compression does not add
-a separate screenshot size limit.
+a separate screenshot size limit. The 32-bit schema ceiling is not a guaranteed
+transfer capacity: OpenShell buffers compressed artifacts as JSON byte arrays,
+which increase wire size and memory use, and collection retains a separate
+30-second deadline. Raising byte budgets does not increase sandbox memory or
+that deadline. Large batches can still fail with `gateway_timeout` or
+`artifact_read_failed`; split them into smaller batches or return references to
+externally stored data when they exceed the sandbox's transfer capacity.
 
 A breach returns `status == "failed"` with
 `error.code == "response_limit_exceeded"`. The error names the limit, configured

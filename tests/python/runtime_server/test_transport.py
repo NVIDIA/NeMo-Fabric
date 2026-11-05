@@ -565,3 +565,63 @@ async def test_invoke_has_no_implicit_transport_deadline(
     finally:
         stop.set()
         await asyncio.wait_for(task, 2)
+
+
+@pytest.mark.parametrize("runtime_id", [[], {}, None, 12])
+async def test_invalid_runtime_ids_receive_validation_envelope(
+    host, host_request, socket_path, runtime_id
+):
+    stop, ready = asyncio.Event(), asyncio.Event()
+    task = asyncio.create_task(
+        transport.serve(
+            host, socket_path=socket_path, stop_event=stop, ready_event=ready
+        )
+    )
+    writer = None
+    try:
+        await asyncio.wait_for(ready.wait(), 1)
+        reader, writer = await asyncio.open_unix_connection(socket_path)
+        request = host_request("invoke", input="test", runtime_id=runtime_id)
+        writer.write(json.dumps(request).encode() + b"\n")
+        await writer.drain()
+        response = json.loads(await asyncio.wait_for(reader.readline(), 1))
+        assert response["error"]["code"] == "invalid_request"
+        assert response["error"]["effects"] == "none"
+    finally:
+        if writer is not None:
+            writer.close()
+            await writer.wait_closed()
+        stop.set()
+        await asyncio.wait_for(task, 2)
+
+
+async def test_default_client_accepts_envelope_over_raw_response_budget(
+    mock_runtime, host_request, socket_path
+):
+    result = mock_runtime.invoke.return_value.to_mapping()
+    result["output"] = ""
+    raw_size = len(
+        json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode()
+    )
+    result["output"] = "x" * (protocol.RESPONSE_LIMIT - raw_size - 20)
+    response = protocol.envelope("invoke", result, changed=None)
+    encoded = protocol.encode_response(
+        response, limit=protocol.response_transport_limit()
+    )
+    assert len(encoded) > protocol.RESPONSE_LIMIT
+
+    async def handle(reader, writer):
+        await reader.readline()
+        writer.write(encoded)
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    async with await asyncio.start_unix_server(handle, path=socket_path):
+        received = await asyncio.wait_for(
+            transport.client(
+                host_request("invoke", input="test"), socket_path=socket_path
+            ),
+            5,
+        )
+    assert received == response

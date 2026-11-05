@@ -74,9 +74,13 @@ async def main():
                 else:
                     await runtime.stop()
                     value = None
-                if command["operation"] == "invoke" and os.environ.get("FABRIC_TEST_DROP_EXECUTION"):
+                if command["operation"] == "invoke" and os.environ.get(
+                    "FABRIC_TEST_DROP_EXECUTION"
+                ):
                     value.pop("execution", None)
-                if command["operation"] == "invoke" and os.environ.get("FABRIC_TEST_MALFORM_EXECUTION"):
+                if command["operation"] == "invoke" and os.environ.get(
+                    "FABRIC_TEST_MALFORM_EXECUTION"
+                ):
                     value["execution"] = "malformed optional evidence"
                 fault = os.environ.get("FABRIC_TEST_PROVIDER_FAULT")
                 if not fault_injected and (
@@ -94,6 +98,10 @@ async def main():
                     fault_injected = True
                     value = {"stopped": True}
                 output = {"status": "returned", "value": value}
+            elif operation == "collect_artifacts" and os.environ.get(
+                "FABRIC_TEST_ARTIFACT_LIMIT"
+            ):
+                output = json.loads(os.environ["FABRIC_TEST_ARTIFACT_LIMIT"])
             elif operation == "collect_artifacts":
                 reader = os.environ["FABRIC_TEST_ARTIFACT_READER"]
                 result = subprocess.run(
@@ -118,7 +126,9 @@ async def main():
                 for file in json.loads(result.stdout)["files"]:
                     content = zlib.decompress(bytes(file["content"]))
                     if len(content) != file["uncompressed_size"]:
-                        raise ValueError("artifact reader returned an incorrect file size")
+                        raise ValueError(
+                            "artifact reader returned an incorrect file size"
+                        )
                     output.append({"path": file["path"], "content": list(content)})
             elif operation == "release":
                 output = (

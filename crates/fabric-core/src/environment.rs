@@ -319,7 +319,7 @@ pub(crate) fn collect_artifacts(
     environment: &EnvironmentHandle,
     paths: &[String],
     limits: ResponseLimits,
-) -> Result<Vec<CollectedArtifact>> {
+) -> Result<CollectedArtifacts> {
     OPEN_SHELL_ENVIRONMENT_PROVIDER.request(ProviderOperation::CollectArtifacts {
         environment,
         paths,
@@ -1677,4 +1677,21 @@ print(json.dumps({'protocol_version': 'PRIVATE response', 'request_id': request[
 pub(crate) struct CollectedArtifact {
     pub(crate) path: String,
     pub(crate) content: Vec<u8>,
+}
+
+/// Artifact collection either returns complete files or a correlated limit observation.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum CollectedArtifacts {
+    Files(Vec<CollectedArtifact>),
+    Limited(ArtifactLimitFailure),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ArtifactLimitFailure {
+    pub(crate) limit: String,
+    pub(crate) configured: u64,
+    pub(crate) observed: u64,
+    pub(crate) asset: String,
 }
