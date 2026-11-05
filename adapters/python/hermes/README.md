@@ -7,6 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 
 This adapter runs Hermes Agent through its Python SDK.
 
+Managed API and dashboard children launch through an adapter-owned bootstrap that applies the same behavioral mapping when Hermes constructs native agent instances. Fabric-configured instructions, tool policy, turn limits, generation settings, and trajectory settings take precedence over native constructor defaults. The bootstrap retains native routing, session identity, execution, and transport; it does not modify the installed Hermes source. A mode-`0600` configuration snapshot under the runtime's `interfaces` directory supplies the mapping and is removed on stop. Gateway processes independently started outside this launcher do not receive this guarantee.
+
 ## Runtime Health
 
 `Fabric.check()` supports `live`, `active`, and `ready` for a started runtime.

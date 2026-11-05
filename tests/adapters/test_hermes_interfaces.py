@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import os
 import socket
 import sys
@@ -148,6 +149,62 @@ def test_hermes_interfaces_read_the_model_endpoint_and_key_from_config():
     }
     assert config["agent"]["cron_drain_timeout"] == 3
     assert config["agent"]["restart_drain_timeout"] == 0
+
+
+async def test_hermes_gateway_agents_receive_fabric_behavior(
+    tmp_path: Path, api_server: str
+):
+    port = _free_port()
+    payload = _payload(
+        tmp_path, _interface("api", port=port), base_url=f"{api_server}/v1"
+    )
+    config = payload["config"].to_mapping()
+    config["models"]["default"].update(temperature=0.0, top_p=0.41, max_tokens=128)
+    config["instructions"] = {
+        "system": {"mode": "replace", "content": "FABRIC_PARITY_MARKER"}
+    }
+    config["tools"] = {"enabled": ["file"], "blocked": ["terminal"]}
+    payload["config"] = AgentConfig.from_mapping(config)
+    runtime = adapter.HermesRuntime()
+    try:
+        await runtime.start(payload)
+        config_path = _token_path(tmp_path).with_name("agent-config.json")
+        assert config_path.stat().st_mode & 0o777 == 0o600
+        token = _token_path(tmp_path).read_text()
+        for number in range(2):
+            reply = await asyncio.to_thread(
+                requests.post,
+                f"http://127.0.0.1:{port}/v1/chat/completions",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "model": "hermes-agent",
+                    "messages": [
+                        {"role": "user", "content": f"fresh conversation {number}"}
+                    ],
+                },
+                timeout=60,
+            )
+            assert reply.status_code == 200, reply.text
+        captured = await asyncio.to_thread(
+            requests.get, f"{api_server}/_requests", timeout=5
+        )
+        # Native session titling may make separate tool-free auxiliary calls.
+        requests_seen = [request for request in captured.json() if request.get("tools")]
+        assert len(requests_seen) == 2
+        for request in requests_seen:
+            assert "FABRIC_PARITY_MARKER" in json.dumps(request["messages"])
+            assert request["temperature"] == 0.0
+            assert request["top_p"] == 0.41
+            assert request["max_tokens"] == 128
+            assert {tool["function"]["name"] for tool in request["tools"]} == {
+                "read_file",
+                "write_file",
+                "patch",
+                "search_files",
+            }
+    finally:
+        await runtime.stop()
+    assert not config_path.exists()
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Reads Linux procfs")

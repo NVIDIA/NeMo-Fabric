@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import http.client
+import json
 import os
 import secrets
 import signal
@@ -15,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import local_interfaces
 from nemo_fabric_adapters.common import utils as common_utils
@@ -72,6 +74,7 @@ class InterfaceChildren:
     def __init__(self) -> None:
         self._children: list[_Child] = []
         self._token_path: Path | None = None
+        self._agent_config_path: Path | None = None
 
     async def start(
         self,
@@ -81,6 +84,7 @@ class InterfaceChildren:
         token_path: Path,
         timeout: float,
         environment: dict[str, str],
+        agent_config: AgentConfig,
     ) -> None:
         """Start the enabled interfaces and write the API token once all pass health."""
         require_supported_platform()
@@ -100,6 +104,11 @@ class InterfaceChildren:
         log_dir.mkdir(parents=True, exist_ok=True)
         deadline = asyncio.get_running_loop().time() + timeout
         try:
+            config_path = hermes_home / "interfaces" / "agent-config.json"
+            local_interfaces.write_private_file(
+                config_path, json.dumps(agent_config.to_mapping())
+            )
+            self._agent_config_path = config_path
             for name, port in ports.items():
                 arguments, child_environment = _child_command(
                     name, port, token=token, web_dist=web_dist, environment=environment
@@ -108,7 +117,9 @@ class InterfaceChildren:
                     process = await asyncio.create_subprocess_exec(
                         sys.executable,
                         "-m",
-                        "hermes_cli.main",
+                        "nemo_fabric_adapters.hermes.native",
+                        "--fabric-config",
+                        str(config_path),
                         *arguments,
                         env=child_environment,
                         stdin=asyncio.subprocess.DEVNULL,
@@ -148,6 +159,9 @@ class InterfaceChildren:
             for child in running:
                 common_utils.signal_process_group(child.process.pid, signal.SIGKILL)
             self._children = []
+            if self._agent_config_path is not None:
+                self._agent_config_path.unlink(missing_ok=True)
+                self._agent_config_path = None
         if pending:
             await asyncio.wait(pending)
 

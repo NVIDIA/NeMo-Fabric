@@ -148,6 +148,7 @@ harness = HarnessConfig(
   that has a `base_url` to `config.yaml` as Hermes's `custom` provider, with
   its key as a reference to `api_key_env`, so the API server and browser chat
   use the configured endpoint and key.
+- Managed children launch through an adapter-owned bootstrap that applies Fabric's instructions, enabled/blocked toolsets, turn limit, generation settings, and trajectory setting when native Hermes agent instances are constructed. Fabric-owned settings take precedence over native constructor defaults and instruction overrides. Native provider routing and session identity remain unchanged. The bootstrap reads an owner-only `interfaces/agent-config.json` snapshot, removed on stop, because Hermes v0.22.5's API constructor does not read all these settings from `config.yaml`. Independently started gateways bypass the bootstrap.
 - `stop` removes the token, sends SIGTERM to each child's process group, and
   SIGKILL to what remains after 5 seconds. The gateway drains in-flight API
   runs and cron jobs for 3 seconds. After start, a child that exits doesn't fail

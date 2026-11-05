@@ -37,7 +37,7 @@ from nemo_fabric_adapters.hermes import telemetry
 
 # Default agent loop budget when FabricConfig.runtime.max_turns is unset.
 # The actual internal hermes default  as of v0.21 is `sys.maxsize`
-DEFAULT_MAX_ITERATIONS: int = 90
+DEFAULT_MAX_ITERATIONS: int = configuration.DEFAULT_MAX_ITERATIONS
 LOGGER = logging.getLogger(__name__)
 hermes_mcp_server_config = configuration.hermes_mcp_server_config
 
@@ -192,19 +192,6 @@ class HermesRuntime:
                 )
                 self._session_db = SessionDB()
                 self._conversation_history = None
-                max_iterations = configuration._max_turns(agent_config)
-                if max_iterations is None:
-                    max_iterations = DEFAULT_MAX_ITERATIONS
-                temperature = model_config.temperature
-                top_p = model_config.top_p
-                request_overrides = {
-                    name: value
-                    for name, value in (
-                        ("temperature", temperature),
-                        ("top_p", top_p),
-                    )
-                    if value is not None
-                }
                 self._agent = AIAgent(
                     **filter_supported_kwargs(
                         AIAgent,
@@ -212,22 +199,12 @@ class HermesRuntime:
                         api_key=api_key,
                         provider=model_config.provider,
                         model=model_config.model,
-                        max_iterations=int(max_iterations),
-                        enabled_toolsets=self._enabled_toolsets,
-                        disabled_toolsets=configuration.disabled_toolsets(agent_config)
-                        or None,
+                        **configuration.agent_behavior_kwargs(
+                            agent_config, self._enabled_toolsets
+                        ),
                         quiet_mode=True,
                         skip_context_files=True,
                         skip_memory=True,
-                        save_trajectories=bool(
-                            self._settings.get("save_trajectories", False)
-                        ),
-                        max_tokens=model_config.max_tokens
-                        or self._settings.get("max_tokens", 512),
-                        request_overrides=request_overrides or None,
-                        reasoning_config=self._settings.get(
-                            "reasoning_config", {"effort": "none"}
-                        ),
                         platform="fabric",
                         session_id=self._runtime_id,
                         session_db=self._session_db,
@@ -252,6 +229,7 @@ class HermesRuntime:
                         0.0,
                     ),
                     environment=environment,
+                    agent_config=agent_config,
                 )
             self._agent_config = agent_config
             self._started = True
@@ -747,7 +725,6 @@ def filter_supported_call_kwargs(func: Any, **kwargs: Any) -> dict[str, Any]:
     signature = inspect.signature(func)
     supported = set(signature.parameters)
     return {key: value for key, value in kwargs.items() if key in supported}
-
 
 
 # Selected software reported by the shared lifecycle host; no dependency scan.
