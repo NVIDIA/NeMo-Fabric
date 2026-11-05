@@ -108,6 +108,10 @@ class HermesRuntime:
             self._agent_config = agent_config
             self._settings = configuration._settings(agent_config)
             interface_ports = interfaces.interface_ports(self._settings)
+            if interface_ports:
+                # Refuse before Hermes's setup, whose MCP discovery can take
+                # minutes and outlast the caller's start deadline.
+                interfaces.require_supported_platform()
             model_config = configuration._selected_model(agent_config)
             self._model_config = model_config
             self._runtime_id = runtime_context.runtime_id
