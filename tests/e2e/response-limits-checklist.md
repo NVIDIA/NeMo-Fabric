@@ -24,6 +24,7 @@ Keep logs, reports, endpoint addresses and run evidence outside tracked files.
       above the former provider transport cap. Verify complete file hashes.
 - [ ] Run `code-review-response-limits-workload.sh` through the same launcher with
       the local inference endpoint configured through the code-review environment
-      variables. Check Hermes and Deep Agents on host and OpenShell, with a tiny
+      variables, including `CODE_REVIEW_RESPONSE_EVIDENCE` set to a persistent local
+      report path outside tracked files. Check Hermes and Deep Agents on host and OpenShell, with a tiny
       rejecting budget and a raised accepting budget: eight cells, cleanup required.
 - [ ] Review only the child branch diff against PR #601; preserve the GitHub stack.

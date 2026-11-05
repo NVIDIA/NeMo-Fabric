@@ -59,6 +59,20 @@ pub enum ProviderError {
     /// Standard input or output failed.
     #[error("provider I/O failed: {0}")]
     Io(#[from] std::io::Error),
+    /// A declared artifact exceeded a host-configured budget.
+    #[error(
+        "runtime.response_limits.{limit}={configured} exceeded by {asset:?}: observed {observed}"
+    )]
+    ArtifactLimit {
+        /// Normalized limit name.
+        limit: String,
+        /// Host-configured budget.
+        configured: usize,
+        /// Observed size or count.
+        observed: usize,
+        /// Correlated declared artifact path.
+        asset: String,
+    },
     /// The request violated the provider contract.
     #[error("{message}")]
     Contract {
@@ -80,6 +94,7 @@ impl ProviderError {
     fn code(&self) -> &str {
         match self {
             Self::Io(_) => "provider_io",
+            Self::ArtifactLimit { .. } => "response_limit_exceeded",
             Self::Contract { code, .. } => code,
         }
     }
@@ -227,7 +242,17 @@ where
             environment,
             paths,
             limits,
-        } => collect_artifacts(environment, paths, limits, factory).await,
+        } => match collect_artifacts(environment, paths, limits, factory).await {
+            Err(ProviderError::ArtifactLimit {
+                limit,
+                configured,
+                observed,
+                asset,
+            }) => Ok(
+                json!({"limit": limit, "configured": configured, "observed": observed, "asset": asset}),
+            ),
+            other => other,
+        },
         ProviderOperation::Prepare {
             environment_id,
             environment,
@@ -661,7 +686,6 @@ impl ArtifactLimits {
 #[derive(Deserialize)]
 struct ArtifactLimitFailure {
     limit: String,
-    configured: usize,
     observed: usize,
     asset: String,
 }
@@ -671,12 +695,39 @@ fn artifact_limit_error(
     observed: usize,
     asset: &str,
 ) -> ProviderError {
-    ProviderError::contract(
-        "response_limit_exceeded",
-        format!(
-            "runtime.response_limits.{limit}={configured} exceeded by {asset}: observed {observed}; increase the configured limit"
-        ),
-    )
+    ProviderError::ArtifactLimit {
+        limit: limit.into(),
+        configured,
+        observed,
+        asset: asset.into(),
+    }
+}
+
+fn validated_artifact_limit_failure(
+    stdout: &[u8],
+    paths: &[String],
+    limits: ArtifactLimits,
+) -> Option<ProviderError> {
+    let error: ArtifactLimitFailure = serde_json::from_slice(stdout).ok()?;
+    let configured = match error.limit.as_str() {
+        "max_artifact_bytes" => limits.max_artifact_bytes,
+        "max_artifact_file_bytes" => limits.max_artifact_file_bytes,
+        "max_artifact_files" => limits.max_artifact_files,
+        _ => return None,
+    } as usize;
+    if !paths.contains(&error.asset)
+        || error.asset.chars().any(char::is_control)
+        || error.asset.len() > 4096
+        || error.observed <= configured
+    {
+        return None;
+    }
+    Some(artifact_limit_error(
+        &error.limit,
+        configured,
+        error.observed,
+        &error.asset,
+    ))
 }
 
 async fn collect_artifacts<F: GatewayFactory>(
@@ -685,6 +736,20 @@ async fn collect_artifacts<F: GatewayFactory>(
     limits: ArtifactLimits,
     factory: &F,
 ) -> Result<Value, ProviderError> {
+    if paths.iter().any(|path| {
+        path.is_empty()
+            || path.contains('\\')
+            || path.chars().any(char::is_control)
+            || path.len() > 4096
+            || path
+                .split('/')
+                .any(|part| part.is_empty() || part == "." || part == "..")
+    }) {
+        return Err(ProviderError::contract(
+            "invalid_artifact_path",
+            "declared artifact paths are invalid",
+        ));
+    }
     if paths.len() > limits.max_artifact_files as usize {
         return Err(artifact_limit_error(
             "max_artifact_files",
@@ -694,19 +759,6 @@ async fn collect_artifacts<F: GatewayFactory>(
                 .last()
                 .map(String::as_str)
                 .unwrap_or("artifact manifest"),
-        ));
-    }
-    if paths.iter().any(|path| {
-        path.is_empty()
-            || path.contains('\\')
-            || path.contains('\0')
-            || path
-                .split('/')
-                .any(|part| part.is_empty() || part == "." || part == "..")
-    }) {
-        return Err(ProviderError::contract(
-            "invalid_artifact_path",
-            "declared artifact paths are invalid",
         ));
     }
     let root = environment
@@ -767,21 +819,8 @@ async fn collect_artifacts<F: GatewayFactory>(
         ));
     }
     if executed.exit_code != 0 {
-        if let Ok(error) = serde_json::from_slice::<ArtifactLimitFailure>(&executed.stdout) {
-            if [
-                "max_artifact_bytes",
-                "max_artifact_file_bytes",
-                "max_artifact_files",
-            ]
-            .contains(&error.limit.as_str())
-            {
-                return Err(artifact_limit_error(
-                    &error.limit,
-                    error.configured,
-                    error.observed,
-                    &error.asset,
-                ));
-            }
+        if let Some(error) = validated_artifact_limit_failure(&executed.stdout, &paths, limits) {
+            return Err(error);
         }
         return Err(ProviderError::contract(
             "artifact_read_failed",
@@ -1479,7 +1518,8 @@ fn validate_profile(
         if let Some(path) = path
             && (!path.starts_with('/')
                 || path.contains('\\')
-                || path.contains('\0')
+                || path.chars().any(char::is_control)
+                || path.len() > 4096
                 || path.split('/').any(|part| part == ".."))
         {
             return Err(ProviderError::contract(
@@ -2686,6 +2726,87 @@ mod tests {
                 outcome: ProviderWaitOutcome::Complete,
             };
             assert_eq!(require_provider_ready(result).is_ok(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn artifact_limit_observations_cross_the_provider_boundary_as_structured_data() {
+        let limits = ArtifactLimits::default();
+        for asset in ["screenshot.png", "undeclared.png"] {
+            let factory = MockFactory {
+                calls: Arc::new(Mutex::new(Vec::new())),
+                ready_id: "sandbox-id-1",
+                deletion: None,
+                execution: Some((
+                    1,
+                    serde_json::to_vec(
+                        &json!({"limit": "max_artifact_file_bytes", "configured": 1,
+                    "observed": limits.max_artifact_file_bytes + 1, "asset": asset}),
+                    )
+                    .unwrap(),
+                    Vec::new(),
+                )),
+            };
+            let outcome = handle_operation(
+                ProviderOperation::CollectArtifacts {
+                    environment: environment_handle_fixture(),
+                    paths: vec!["screenshot.png".into()],
+                    limits,
+                },
+                &factory,
+            )
+            .await;
+            if asset == "screenshot.png" {
+                assert_eq!(
+                    outcome.unwrap(),
+                    json!({"limit": "max_artifact_file_bytes", "configured": limits.max_artifact_file_bytes,
+                    "observed": limits.max_artifact_file_bytes + 1, "asset": asset})
+                );
+            } else {
+                assert_eq!(outcome.unwrap_err().code(), "artifact_read_failed");
+            }
+        }
+    }
+
+    #[test]
+    fn sandbox_limit_diagnostics_use_host_values_and_declared_assets() {
+        let paths = vec!["screenshot.png".to_string()];
+        let limits = ArtifactLimits::default();
+        let valid = json!({"limit": "max_artifact_file_bytes", "configured": 1,
+            "observed": limits.max_artifact_file_bytes + 1, "asset": paths[0]});
+        let error =
+            validated_artifact_limit_failure(&serde_json::to_vec(&valid).unwrap(), &paths, limits)
+                .unwrap();
+        match error {
+            ProviderError::ArtifactLimit {
+                configured,
+                observed,
+                asset,
+                ..
+            } => {
+                assert_eq!(configured, limits.max_artifact_file_bytes as usize);
+                assert_eq!(observed, configured + 1);
+                assert_eq!(asset, paths[0]);
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+        for (field, value) in [
+            ("asset", json!("other.png")),
+            ("asset", json!("screenshot.png\nPRIVATE")),
+            ("asset", json!("x".repeat(8192))),
+            ("limit", json!("unknown")),
+            ("observed", json!(0)),
+        ] {
+            let mut invalid = valid.clone();
+            invalid[field] = value;
+            assert!(
+                validated_artifact_limit_failure(
+                    &serde_json::to_vec(&invalid).unwrap(),
+                    &paths,
+                    limits
+                )
+                .is_none()
+            );
         }
     }
 

@@ -56,3 +56,47 @@ def test_bridge_can_carry_response_above_old_four_mib_cap():
     response = {"operation": "invoke", "value": "x" * (4 * 1024 * 1024)}
     wire = encode_response(response, limit=8 * 1024 * 1024)
     assert json.loads(wire) == response
+
+
+@pytest.mark.parametrize("stop_failure", [False, True])
+async def test_python_convenience_run_rechecks_final_native_result(stop_failure):
+    from unittest.mock import MagicMock
+    from nemo_fabric.runtime import _run_native_lifecycle
+
+    native = pytest.importorskip("nemo_fabric._native")
+    module = MagicMock()
+    result = dict(
+        agent_name="test",
+        harness="echo",
+        adapter_kind="python",
+        runtime_id="runtime-test",
+        invocation_id="invocation-test",
+        request_id="request-test",
+        status="succeeded",
+        output="done",
+    )
+    module.start_runtime.return_value = "{}"
+    module.invoke_runtime.return_value = json.dumps(result)
+    if stop_failure:
+        module.stop_runtime.side_effect = RuntimeError("x" * 4096)
+    else:
+        module.stop_runtime.return_value = json.dumps(
+            [
+                dict(
+                    event_id="stop-test",
+                    timestamp_millis=0,
+                    kind="stop",
+                    message="x" * 4096,
+                )
+            ]
+        )
+    module.finalize_run_result.side_effect = native.finalize_run_result
+    final = await _run_native_lifecycle(
+        module,
+        {"config": {"runtime": {"response_limits": {"max_response_bytes": 2048}}}},
+        {},
+    )
+    assert final["status"] == "failed"
+    assert final["error"]["code"] == "response_limit_exceeded"
+    assert final["error"]["metadata"]["observed"] > 2048
+    module.stop_runtime.assert_called_once()

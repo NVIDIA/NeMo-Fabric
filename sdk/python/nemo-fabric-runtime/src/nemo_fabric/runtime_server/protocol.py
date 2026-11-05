@@ -14,6 +14,13 @@ from nemo_fabric.runtime_server.health import validate_check_response
 INTERFACE_VERSION = 2
 REQUEST_LIMIT = 512 * 1024
 RESPONSE_LIMIT = 4 * 1024 * 1024
+
+
+def response_transport_limit(max_response_bytes: int = RESPONSE_LIMIT) -> int:
+    """Match the native core allowance; provider calls forward that computed value."""
+    return max_response_bytes * 6 + 1024 * 1024
+
+
 CALL_SECONDS = 320.0
 READ_SECONDS = 10.0
 SHUTDOWN_SECONDS = 4.0

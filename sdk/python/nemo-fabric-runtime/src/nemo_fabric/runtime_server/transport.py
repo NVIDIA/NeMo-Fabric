@@ -28,6 +28,7 @@ from nemo_fabric.runtime_server.protocol import (
     SHUTDOWN_SECONDS,
     SOCKET_PATH,
     ProtocolError,
+    response_transport_limit,
     decode_object,
     encode_request,
     encode_response,
@@ -89,7 +90,7 @@ async def client(
     *,
     socket_path: Path = Path(SOCKET_PATH),
     timeout: float | None = None,
-    response_limit: int = RESPONSE_LIMIT,
+    response_limit: int = response_transport_limit(),
 ) -> dict[str, Any]:
     started = time.monotonic()
     operation = request["operation"]
