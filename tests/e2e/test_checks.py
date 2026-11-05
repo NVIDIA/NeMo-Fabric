@@ -237,7 +237,8 @@ async def test_pi_sdk_health_is_independent_of_an_active_invocation(
             assert len(checks) == 4
             for command in checks[:2]:
                 assert set(command) == {"operation", "timeout_seconds"}
-                assert 0 < command["timeout_seconds"] <= 3
+            assert 0 < checks[0]["timeout_seconds"] <= 3
+            assert 3 < checks[1]["timeout_seconds"] <= 105
             assert all(
                 command["runtime_id"] == runtime.runtime_id
                 and command["level"] == "ready"

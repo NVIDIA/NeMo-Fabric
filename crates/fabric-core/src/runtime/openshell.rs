@@ -102,7 +102,8 @@ fn wait_for_server(
         if remaining.is_zero() {
             break;
         }
-        let passed = check(remaining.min(Duration::from_secs(3)).as_secs_f64())
+        // The allowance includes provider startup and the complete round trip.
+        let passed = check(remaining.as_secs_f64())
             .is_ok_and(|report| report.outcome == crate::CheckOutcome::Passed);
         let remaining = deadline.saturating_duration_since(Instant::now());
         if passed {
@@ -999,6 +1000,24 @@ mod tests {
         .expect("eventually responding server");
         assert_eq!(calls, 2);
         assert_eq!(remaining, 2);
+    }
+
+    #[test]
+    fn startup_wait_allows_slow_provider_round_trips() {
+        let key = resource_key(&environment()).unwrap();
+        let mut calls = 0;
+        let remaining = wait_for_server(&key, Instant::now() + Duration::from_secs(5), |seconds| {
+            calls += 1;
+            // A healthy provider needs four seconds for the complete round trip.
+            Ok(server_check(if seconds >= 4.0 {
+                crate::CheckOutcome::Passed
+            } else {
+                crate::CheckOutcome::Unknown
+            }))
+        })
+        .expect("allow a healthy provider more than three seconds");
+        assert_eq!(calls, 1);
+        assert!(remaining > 0 && remaining < 5);
     }
 
     #[test]

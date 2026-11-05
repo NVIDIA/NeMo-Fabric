@@ -52,6 +52,8 @@ async def main():
             elif operation == "runtime_command":
                 command = frame["command"]
                 if command["operation"] == "check":
+                    if delay := os.environ.get("FABRIC_TEST_SERVER_DELAY_SECONDS"):
+                        await asyncio.sleep(float(delay))
                     state = os.environ.get("FABRIC_TEST_SERVER_STATE", "responding")
                     if sequence := os.environ.get("FABRIC_TEST_SERVER_SEQUENCE"):
                         records = (

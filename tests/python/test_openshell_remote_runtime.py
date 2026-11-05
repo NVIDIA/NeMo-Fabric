@@ -207,9 +207,50 @@ async def test_start_waits_for_a_passing_server_check(
         for record in commands[:2]:
             command = record["frame"]["command"]
             assert set(command) == {"operation", "timeout_seconds"}
-            assert 0 < command["timeout_seconds"] <= 3
+            assert 0 < command["timeout_seconds"] <= 105
+        assert (
+            commands[1]["frame"]["command"]["timeout_seconds"]
+            < commands[0]["frame"]["command"]["timeout_seconds"]
+        )
         assert commands[1]["output"]["value"]["outcome"] == "passed"
-        assert commands[2]["frame"]["timeout_seconds"] <= 105
+        assert (
+            0
+            < commands[2]["frame"]["timeout_seconds"]
+            <= commands[1]["frame"]["command"]["timeout_seconds"]
+        )
+    finally:
+        await runtime.stop()
+        await fabric.release_environment(environment)
+
+
+async def test_start_accepts_a_slow_server_check(remote_config, tmp_path, monkeypatch):
+    delay_seconds = 3.25
+    monkeypatch.setenv("FABRIC_TEST_SERVER_DELAY_SECONDS", str(delay_seconds))
+    fabric = Fabric()
+    environment = await fabric.attach_environment(
+        remote_config,
+        EnvironmentReference.from_mapping(
+            {"provider": "openshell", "resource": {"sandbox_name": "echo"}}
+        ),
+    )
+    runtime = await fabric.start_runtime_in(remote_config, environment)
+    try:
+        records = [
+            json.loads(line)
+            for line in (tmp_path / "provider.jsonl").read_text().splitlines()
+        ]
+        commands = [
+            record["frame"]
+            for record in records
+            if record["frame"]["operation"] == "runtime_command"
+        ]
+        assert [frame["command"]["operation"] for frame in commands] == [
+            "check",
+            "start",
+        ]
+        check_budget = commands[0]["command"]["timeout_seconds"]
+        assert delay_seconds < check_budget <= 105
+        assert 0 < commands[1]["timeout_seconds"] <= check_budget - delay_seconds
     finally:
         await runtime.stop()
         await fabric.release_environment(environment)
