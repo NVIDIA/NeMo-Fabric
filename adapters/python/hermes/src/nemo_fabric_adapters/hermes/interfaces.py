@@ -123,6 +123,18 @@ class InterfaceChildren:
         log_dir = hermes_home / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         deadline = asyncio.get_running_loop().time() + timeout
+        inherited_lock: tuple[int, ...] = ()
+        if "FABRIC_STATE_LOCK_FD" in environment:
+            try:
+                descriptor = int(environment["FABRIC_STATE_LOCK_FD"])
+                if descriptor < 3:
+                    raise ValueError("invalid writer lock")
+                os.fstat(descriptor)
+                inherited_lock = (descriptor,)
+            except (ValueError, OSError) as error:
+                raise lifecycle.LifecycleError(
+                    "session_lock_invalid", "Inherited state lock is unavailable"
+                ) from error
         try:
             config_path = hermes_home / "interfaces" / "agent-config.json"
             local_interfaces.write_private_file(
@@ -150,6 +162,7 @@ class InterfaceChildren:
                         stdout=log,
                         stderr=asyncio.subprocess.STDOUT,
                         start_new_session=True,
+                        pass_fds=inherited_lock,
                     )
                 self._children.append(
                     _Child(name, port, process, tui_token if name != "api" else None)

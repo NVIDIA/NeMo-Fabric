@@ -33,6 +33,7 @@ use crate::config::{
 use crate::environment::resolve_environment_provider;
 use crate::error::{FabricError, Result};
 use crate::resource_snapshot::{LocalHostProcess, RuntimeResourceSnapshot, snapshot_local_host};
+use crate::session::{SESSION_REF_SCHEMA_VERSION, SessionRef, session_error};
 #[cfg(test)]
 use crate::system_stats::ResourceObservation;
 use crate::system_stats::{CgroupStats, InvocationSystemStats, StatsSession, SystemReader};
@@ -136,6 +137,9 @@ static LOCAL_SERVICES: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<LocalServiceRec
 /// A request passed to a NeMo Fabric-managed harness runtime.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
 pub struct RunRequest {
+    /// Explicitly accept recovery uncertainty before submitting this new turn.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub acknowledge_recovery: bool,
     /// Request id.
     pub request_id: String,
     /// Optional UUID propagation root shared across conversation turns.
@@ -156,6 +160,7 @@ impl RunRequest {
     /// Build a text request.
     pub fn text(input: impl Into<String>) -> Self {
         Self {
+            acknowledge_recovery: false,
             request_id: new_id("request"),
             relay_session_root: None,
             input: Value::String(input.into()),
@@ -168,6 +173,9 @@ impl RunRequest {
 /// Result from a NeMo Fabric-managed harness invocation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RunResult {
+    /// Durable native session selected for this invocation, when enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_ref: Option<SessionRef>,
     /// Stable agent name.
     pub agent_name: String,
     /// Stable machine-readable harness identifier used for this run.
@@ -416,6 +424,12 @@ pub struct EnvironmentHandle {
 /// Active or resumable harness runtime.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RuntimeHandle {
+    /// Confirmed durable native session identity, independent of runtime identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_ref: Option<SessionRef>,
+    /// Recovery conditions requiring an explicit caller decision before new work.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recovery_warnings: Vec<ErrorInfo>,
     /// Runtime handle id.
     pub runtime_id: String,
     /// NeMo Fabric-owned opaque binding for this runtime handle.
@@ -498,6 +512,9 @@ pub struct InvocationHandle {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeContext {
+    /// Explicit durable session selection, supplied only to opted-in adapters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_ref: Option<SessionRef>,
     /// Runtime handle id.
     pub runtime_id: String,
     /// Invocation handle id.
@@ -920,6 +937,11 @@ struct RelayRuntimeConfig {
 }
 
 struct LocalAdapterHost {
+    cleanup_pending: bool,
+    #[cfg(unix)]
+    descendants: Vec<LocalHostProcess>,
+    session_ref: Option<SessionRef>,
+    session_invalidated: bool,
     service_execution: Option<crate::ExecutionEvidence>,
     execution: Option<crate::ExecutionEvidence>,
     adapter_execution: Option<crate::ExecutionEvidence>,
@@ -1175,6 +1197,8 @@ fn start_service(
     let service_id = new_id("service");
     let runtime_binding = runtime_binding(&service_id, None, plan, &environment)?;
     let runtime = RuntimeHandle {
+        session_ref: None,
+        recovery_warnings: Vec::new(),
         runtime_id: service_id.clone(),
         runtime_binding,
         agent_name: plan.agent_name.clone(),
@@ -1291,6 +1315,7 @@ fn start_service(
 }
 
 fn validate_start_plan(plan: &RunPlan) -> Result<()> {
+    crate::session::selection(plan)?;
     validate_config(&plan.config)?;
     validate_agent_config(&plan.agent_config)?;
     validate_harness_settings(&plan.config, plan.adapter_descriptor.as_ref())?;
@@ -1464,9 +1489,12 @@ pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<Fabri
         } else {
             LocalHostAdapter.stop(runtime)
         };
-        // A failed stop still releases the runtime's host, so the service
-        // forgets the runtime either way.
-        if let Some(service_id) = runtime.service_id.as_ref()
+        // An error alone does not prove that native writers have stopped.
+        let cleaned = stopped.is_ok()
+            || (runtime.environment.provider == "local"
+                && !local_hosts().contains_key(&runtime.runtime_id));
+        if cleaned
+            && let Some(service_id) = runtime.service_id.as_ref()
             && let Some(record) = local_services().get(service_id).cloned()
         {
             record
@@ -1899,11 +1927,14 @@ impl RuntimeAdapter for LocalHostAdapter {
     }
 
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
-        local_host_processes().remove(&runtime.runtime_id);
-        let Some(host) = local_hosts().remove(&runtime.runtime_id) else {
+        let host = { local_hosts().get(&runtime.runtime_id).cloned() };
+        let Some(host) = host else {
             return Ok(vec![local_host_stop_event(runtime, true, false)]);
         };
         let mut host = host.lock().unwrap_or_else(|error| error.into_inner());
+        host.cleanup_pending = true;
+        #[cfg(unix)]
+        remember_host_descendants(&mut host);
         let request =
             AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Stop(AdapterLifecycleStop {
                 runtime_id: runtime.runtime_id.clone(),
@@ -1916,24 +1947,28 @@ impl RuntimeAdapter for LocalHostAdapter {
         );
         let termination = terminate_local_host(&mut host);
         let diagnostics = local_host_diagnostics(&host);
-        let removal = remove_local_host_files(&host);
         let host_crashed = matches!(
             &result,
             Err(FabricError::AdapterLifecycleOperation { code, .. })
                 if code == "host_crashed"
         );
-        if !host_crashed {
-            result?;
-        }
         termination.map_err(|source| {
             lifecycle_error(
                 AdapterLifecycleOperation::Stop,
                 &runtime.runtime_id,
-                "host_termination_failed",
+                "cleanup_unconfirmed",
                 format!("persistent local adapter host could not be terminated: {source}"),
                 diagnostics,
             )
         })?;
+        // Keep the host and its lock available for a retry until termination
+        // has been confirmed. A failed adapter stop may still be safely killed.
+        local_hosts().remove(&runtime.runtime_id);
+        local_host_processes().remove(&runtime.runtime_id);
+        let removal = remove_local_host_files(&host);
+        if !host_crashed {
+            result?;
+        }
         removal.map_err(|source| {
             lifecycle_error(
                 AdapterLifecycleOperation::Stop,
@@ -1969,7 +2004,9 @@ fn start_local_runtime(
         .map(|(service_id, _, _, _)| service_id.clone());
     let runtime_id = new_id("runtime");
     let runtime_binding = runtime_binding(&runtime_id, service_id.as_ref(), plan, &environment)?;
-    let runtime = RuntimeHandle {
+    let mut runtime = RuntimeHandle {
+        session_ref: None,
+        recovery_warnings: Vec::new(),
         runtime_id,
         runtime_binding,
         agent_name: plan.agent_name.clone(),
@@ -2040,14 +2077,26 @@ fn start_local_runtime(
         }
     };
     host.service_execution = service_execution;
-    if let Err(error) = exchange_lifecycle_message(
+    let started = exchange_lifecycle_message(
         &mut host,
         &runtime.runtime_id,
         &request,
         LOCAL_HOST_START_TIMEOUT,
-    ) {
+    )
+    .and_then(|output| confirm_native_session(plan, &mut runtime, &mut host, output));
+    if let Err(error) = started {
         crate::check::invalidate_runtime(&runtime);
-        let _ = terminate_local_host(&mut host);
+        if terminate_local_host(&mut host).is_err() {
+            host.cleanup_pending = true;
+            local_hosts().insert(runtime.runtime_id.clone(), Arc::new(Mutex::new(host)));
+            return Err(lifecycle_error(
+                AdapterLifecycleOperation::Start,
+                &runtime.runtime_id,
+                "cleanup_unconfirmed",
+                "failed start left native cleanup unconfirmed",
+                "",
+            ));
+        }
         let _ = remove_local_host_files(&host);
         return Err(error);
     }
@@ -2057,6 +2106,70 @@ fn start_local_runtime(
     );
     local_hosts().insert(runtime.runtime_id.clone(), Arc::new(Mutex::new(host)));
     Ok(runtime)
+}
+
+fn confirm_native_session(
+    plan: &RunPlan,
+    runtime: &mut RuntimeHandle,
+    host: &mut LocalAdapterHost,
+    output: Value,
+) -> Result<()> {
+    let selected = crate::session::selection(plan)?;
+    if !crate::session::durable(plan) {
+        return Ok(());
+    }
+    let id = output
+        .get("session_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.trim().is_empty())
+        .ok_or_else(|| {
+            session_error(
+                "session_resume_unconfirmed",
+                "adapter did not confirm the durable session identity",
+            )
+        })?;
+    let reference = SessionRef {
+        schema_version: SESSION_REF_SCHEMA_VERSION.to_string(),
+        adapter_id: adapter_id(plan).unwrap_or_else(|| harness(plan)),
+        session_id: id.to_string(),
+    };
+    if let Some(session_ref) = &selected {
+        if session_ref != &reference {
+            return Err(session_error(
+                "session_identity_changed",
+                "adapter confirmed another native session",
+            ));
+        }
+    } else {
+        let root = host.artifacts.root.as_ref().ok_or_else(|| {
+            session_error(
+                "session_storage_required",
+                "durable sessions require retained storage",
+            )
+        })?;
+        let home = agent_state_dir(plan, &host.artifacts)?.ok_or_else(|| {
+            session_error(
+                "session_storage_required",
+                "durable session storage was not supplied",
+            )
+        })?;
+        crate::session::register_storage(root, &reference, &home)?;
+    }
+    runtime.recovery_warnings = output
+        .get("recovery_warnings")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|_| {
+            session_error(
+                "session_resume_unconfirmed",
+                "adapter returned invalid recovery warnings",
+            )
+        })?
+        .unwrap_or_default();
+    host.session_ref = Some(reference.clone());
+    runtime.session_ref = Some(reference);
+    Ok(())
 }
 
 fn validate_local_host(plan: &RunPlan, environment: &EnvironmentHandle) -> Result<()> {
@@ -2180,6 +2293,27 @@ fn run_local_host_invocation_with_timeout(
 
     let exchange_result = {
         let mut host_guard = host.lock().unwrap_or_else(|error| error.into_inner());
+        if host_guard.session_invalidated {
+            return Err(session_error(
+                "session_identity_changed",
+                "native session identity is no longer confirmed",
+            ));
+        }
+        if host_guard.cleanup_pending {
+            return Err(lifecycle_error(
+                operation,
+                &runtime.runtime_id,
+                "cleanup_unconfirmed",
+                "runtime cleanup is not confirmed; retry stop before restarting",
+                "",
+            ));
+        }
+        if host_guard.session_ref != runtime.session_ref {
+            return Err(session_error(
+                "session_identity_changed",
+                "runtime handle does not match its bound native session",
+            ));
+        }
         let artifacts = host_guard.artifacts.clone();
         let relay_config = host_guard.relay_config.clone();
         let fabric_home = prepare_fabric_home(&artifacts, runtime, &invocation)?;
@@ -2314,6 +2448,18 @@ fn run_local_host_invocation_with_timeout(
             .map(|stats| crate::system_stats::persist_summary(stats, &invocation, &fabric_home));
         match exchange {
             Ok(output) => {
+                // Confirm identity before releasing the host mutex: a queued
+                // invocation must not enter a session that just changed.
+                if let Some(reference) = host_guard.session_ref.as_ref()
+                    && output.get("session_id").and_then(Value::as_str)
+                        != Some(reference.session_id.as_str())
+                {
+                    host_guard.session_invalidated = true;
+                    return Err(session_error(
+                        "session_identity_changed",
+                        "adapter result did not confirm the bound native session",
+                    ));
+                }
                 let stderr = take_local_host_stderr(&mut host_guard);
                 Ok((
                     output,
@@ -2523,6 +2669,7 @@ fn run_local_host_invocation_with_timeout(
         );
     }
     Ok(RunResult {
+        session_ref: runtime.session_ref.clone(),
         agent_name: plan.agent_name.clone(),
         harness: harness(plan),
         adapter_kind: adapter_kind(plan),
@@ -2551,6 +2698,11 @@ fn invalidate_timed_out_local_host(
     expected_host: &Arc<Mutex<LocalAdapterHost>>,
     host: &mut LocalAdapterHost,
 ) {
+    host.cleanup_pending = true;
+    if terminate_local_host(host).is_err() {
+        return;
+    }
+    host.cleanup_pending = false;
     {
         let mut hosts = local_hosts();
         if hosts
@@ -2561,7 +2713,6 @@ fn invalidate_timed_out_local_host(
         }
     }
 
-    let _ = terminate_local_host(host);
     let _ = remove_local_host_files(host);
 }
 
@@ -2640,6 +2791,9 @@ fn local_host_stop_event(
 }
 
 fn stop_service_host(record: &mut LocalServiceRecord) -> Result<()> {
+    record.host.cleanup_pending = true;
+    #[cfg(unix)]
+    remember_host_descendants(&mut record.host);
     let request =
         AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Stop(AdapterLifecycleStop {
             runtime_id: record.runtime.runtime_id.clone(),
@@ -2652,23 +2806,23 @@ fn stop_service_host(record: &mut LocalServiceRecord) -> Result<()> {
     );
     let termination = terminate_local_host(&mut record.host);
     let diagnostics = local_host_diagnostics(&record.host);
-    let removal = remove_local_host_files(&record.host);
     let host_crashed = matches!(
         &result,
         Err(FabricError::AdapterLifecycleOperation { code, .. }) if code == "host_crashed"
     );
-    if !host_crashed {
-        result?;
-    }
     termination.map_err(|source| {
         lifecycle_error(
             AdapterLifecycleOperation::Stop,
             &record.runtime.runtime_id,
-            "host_termination_failed",
+            "cleanup_unconfirmed",
             format!("persistent service host could not be terminated: {source}"),
             diagnostics,
         )
     })?;
+    let removal = remove_local_host_files(&record.host);
+    if !host_crashed {
+        result?;
+    }
     removal.map_err(|source| {
         lifecycle_error(
             AdapterLifecycleOperation::Stop,
@@ -2773,6 +2927,7 @@ fn spawn_local_host(
         }
     };
     command
+        .env_remove("FABRIC_STATE_LOCK_FD")
         .envs(&environment_env)
         .env("FABRIC_RUNTIME_ID", &runtime.runtime_id)
         .env("FABRIC_HOME", &runtime_dir)
@@ -2787,11 +2942,14 @@ fn spawn_local_host(
         use std::os::fd::AsRawFd;
         use std::os::unix::process::CommandExt;
         let fd = lock.as_raw_fd();
-        // SAFETY: the closure runs between fork and exec and only calls
-        // fcntl, which is async-signal-safe.
+        command.env("FABRIC_STATE_LOCK_FD", fd.to_string());
+        // SAFETY: fcntl is async-signal-safe; the descriptor remains owned by
+        // state_lock across spawn. The native host must retain writer exclusion
+        // if core exits before its child does.
         unsafe {
             command.pre_exec(move || {
-                if libc::fcntl(fd, libc::F_SETFD, 0) == -1 {
+                let flags = libc::fcntl(fd, libc::F_GETFD);
+                if flags < 0 || libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) < 0 {
                     return Err(std::io::Error::last_os_error());
                 }
                 Ok(())
@@ -2887,6 +3045,11 @@ fn spawn_local_host(
         });
     }
     Ok(LocalAdapterHost {
+        cleanup_pending: false,
+        #[cfg(unix)]
+        descendants: Vec::new(),
+        session_ref: None,
+        session_invalidated: false,
         service_execution: None,
         execution: crate::provenance::core_snapshot(&plan.config.provenance),
         adapter_execution: None,
@@ -3168,52 +3331,86 @@ fn take_local_host_stderr(host: &mut LocalAdapterHost) -> String {
 }
 
 fn terminate_local_host(host: &mut LocalAdapterHost) -> std::io::Result<()> {
-    if host.child.try_wait()?.is_some() {
-        return Ok(());
-    }
-    // Snapshot before the grace wait: once the host exits, its children are
-    // re-parented and can no longer be found from its PID.
     #[cfg(unix)]
-    let mut descendants = host_descendants(host.child.id());
+    remember_host_descendants(host);
     let deadline = Instant::now() + LOCAL_HOST_EXIT_GRACE;
-    loop {
-        if host.child.try_wait()?.is_some() {
-            #[cfg(unix)]
-            kill_pids(&descendants);
-            return Ok(());
-        }
-        if Instant::now() >= deadline {
-            break;
-        }
+    while host.child.try_wait()?.is_none() && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(10));
     }
-
     #[cfg(unix)]
     {
-        // Also reach processes the host started during the grace wait.
-        descendants.extend(host_descendants(host.child.id()));
-        kill_pids(&descendants);
+        remember_host_descendants(host);
+        for process in &host.descendants {
+            if process.has_exited() == Some(true) {
+                continue;
+            }
+            if !process.is_current() {
+                return Err(std::io::Error::other(
+                    "owned child identity could not be confirmed",
+                ));
+            }
+            // SAFETY: the recorded identity still belongs to this host's child.
+            if unsafe { libc::kill(process.pid() as libc::pid_t, libc::SIGKILL) } != 0
+                && process.has_exited() != Some(true)
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+        }
     }
     #[cfg(windows)]
-    if let Some(job) = &host.job
+    if let Some(job) = &host.job {
         // SAFETY: the host owns this job handle until it is dropped.
-        && unsafe {
+        if unsafe {
             windows_sys::Win32::System::JobObjects::TerminateJobObject(
                 std::os::windows::io::AsRawHandle::as_raw_handle(job),
                 1,
             )
-        } != 0
-    {
+        } == 0
+        {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+    if host.child.try_wait()?.is_none() {
+        if let Err(source) = host.child.kill()
+            && host.child.try_wait()?.is_none()
+        {
+            return Err(source);
+        }
         host.child.wait()?;
-        return Ok(());
     }
-    if let Err(source) = host.child.kill()
-        && host.child.try_wait()?.is_none()
+    #[cfg(unix)]
     {
-        return Err(source);
+        let deadline = Instant::now() + LOCAL_HOST_EXIT_GRACE;
+        while host.descendants.iter().any(|process| process.has_exited() != Some(true)) {
+            if Instant::now() >= deadline {
+                return Err(std::io::Error::other(
+                    "owned native children have not exited",
+                ));
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        host.descendants.clear();
     }
-    host.child.wait()?;
     Ok(())
+}
+
+#[cfg(unix)]
+fn remember_host_descendants(host: &mut LocalAdapterHost) {
+    // An exited host's PID can be reused. Never discover children from that PID.
+    if !matches!(host.child.try_wait(), Ok(None)) {
+        return;
+    }
+    host.descendants.retain(|process| process.has_exited() != Some(true));
+    for pid in host_descendants(host.child.id()) {
+        if !host
+            .descendants
+            .iter()
+            .any(|process| process.pid() == pid as u32)
+        {
+            host.descendants
+                .push(LocalHostProcess::new(pid as u32, SystemTime::now()));
+        }
+    }
 }
 
 /// Lists every live descendant of a host, including children that started
@@ -3233,15 +3430,6 @@ fn host_descendants(host_pid: u32) -> Vec<libc::pid_t> {
         descendants.extend(children);
     }
     descendants
-}
-
-#[cfg(unix)]
-fn kill_pids(pids: &[libc::pid_t]) {
-    for &pid in pids {
-        // SAFETY: kill has no memory-safety preconditions. PIDs are allocated
-        // sequentially, so reuse within the exit grace is not a practical risk.
-        unsafe { libc::kill(pid, libc::SIGKILL) };
-    }
 }
 
 #[cfg(target_os = "linux")]
@@ -3461,6 +3649,9 @@ fn adapter_lifecycle_start(
     service: Option<AdapterServiceContext>,
 ) -> Result<AdapterLifecycleStart> {
     let config = adapter_lifecycle_config(plan);
+    let mut runtime_context =
+        adapter_runtime_context(plan, runtime, invocation, artifacts, relay_config)?;
+    runtime_context.session_ref = crate::session::selection(plan)?;
     Ok(AdapterLifecycleStart {
         provenance: crate::ProvenanceConfig {
             enabled: plan.config.provenance.enabled,
@@ -3469,13 +3660,7 @@ fn adapter_lifecycle_start(
         agent_name: plan.agent_name.clone(),
         base_dir: absolute_path(plan.base_dir.clone())?,
         config,
-        runtime_context: adapter_runtime_context(
-            plan,
-            runtime,
-            invocation,
-            artifacts,
-            relay_config,
-        )?,
+        runtime_context,
         capability_plan: plan.capability_plan.clone(),
         telemetry_plan: plan.telemetry_plan.clone(),
         service,
@@ -3523,6 +3708,7 @@ fn project_agent_run_request(request: &RunRequest) -> Result<AgentRunRequest> {
         None => BTreeMap::new(),
     };
     Ok(AgentRunRequest {
+        acknowledge_recovery: request.acknowledge_recovery,
         input: request.input.clone(),
         relay_session_root: request.relay_session_root.clone(),
         context: request.context.clone(),
@@ -3596,6 +3782,7 @@ fn adapter_runtime_context(
     let mut environment = runtime.environment.clone();
     resolve_named_environment(plan, &mut environment.env)?;
     Ok(RuntimeContext {
+        session_ref: None,
         runtime_id: runtime.runtime_id.clone(),
         invocation_id: invocation.invocation_id.clone(),
         request_id: invocation.request_id.clone(),
@@ -3622,6 +3809,9 @@ fn agent_state_dir(plan: &RunPlan, artifacts: &ArtifactManifest) -> Result<Optio
                 .to_string(),
         });
     };
+    if let Some(session_ref) = crate::session::selection(plan)? {
+        return crate::session::resolve_storage(root, &session_ref).map(Some);
+    }
     // A deserialized plan can carry any agent name, so check it again here.
     if !is_one_folder_name(&plan.agent_name) {
         return Err(FabricError::InvalidConfig {
@@ -3653,22 +3843,11 @@ fn lock_agent_state(plan: &RunPlan, artifacts: &ArtifactManifest) -> Result<Opti
     let Some(state_dir) = agent_state_dir(plan, artifacts)? else {
         return Ok(None);
     };
-    std::fs::create_dir_all(&state_dir).map_err(|source| FabricError::Write {
-        path: state_dir.clone(),
-        source,
-    })?;
-    // Kept state can hold conversations and credentials: only its owner may
-    // read it, including a folder that an earlier runtime created.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&state_dir, std::fs::Permissions::from_mode(0o700)).map_err(
-            |source| FabricError::Write {
-                path: state_dir.clone(),
-                source,
-            },
-        )?;
-    }
+    let state_dir = crate::session::prepare_storage_home(
+        artifacts.root.as_ref().expect("retained storage root"),
+        &adapter_id(plan).unwrap_or_else(|| harness(plan)),
+        &state_dir,
+    )?;
     // The lock sits beside the folder, which the adapter owns and may replace.
     let mut lock_name = std::ffi::OsString::from(".");
     lock_name.push(state_dir.file_name().unwrap_or_default());
@@ -4629,8 +4808,11 @@ for line in sys.stdin:
             print("start diagnostic", file=sys.stderr, flush=True)
             response("start", error=failure("start", "fake_start", "start rejected"))
             sys.exit(16)
-        if MODE == "invoke_timeout_exit":
-            child = subprocess.Popen(["sleep", "30"])
+        if MODE in {"invoke_timeout_exit", "stop_exit_child"}:
+            child = (
+                subprocess.Popen([sys.executable, "-c", "import sys,time; reply=sys.stdin.readline(); time.sleep(.1); print(reply, end='', flush=True); time.sleep(30)"], stdin=subprocess.PIPE, text=True)
+                if MODE == "stop_exit_child" else subprocess.Popen(["sleep", "30"])
+            )
             root = os.path.dirname(os.environ["FABRIC_FAKE_HOST_STOP_MARKER"])
             with open(os.path.join(root, "child.pid"), "w", encoding="utf-8") as stream:
                 stream.write(str(child.pid))
@@ -4645,7 +4827,7 @@ for line in sys.stdin:
                 "metadata": {"ready": True},
             })
         else:
-            response("start")
+            response("start", output={"session_id": "native-session"} if MODE == "durable_changed_result" else None)
         if MODE == "crash_after_start":
             os.close(0)
             print("host crashed intentionally", file=sys.stderr, flush=True)
@@ -4782,8 +4964,16 @@ for line in sys.stdin:
             }
         else:
             result = {"status": "succeeded", "output": output}
+        if MODE == "durable_changed_result":
+            result["session_id"] = "another-native-session"
         response(operation, output=result)
     elif operation == "stop":
+        if MODE == "stop_exit_child":
+            # Flush a reply only after the host exits. The child remains alive
+            # and inherits stdout, so Fabric cannot discover it from a dead host.
+            child.stdin.write(json.dumps({"operation": "stop", "outcome": {"status": "succeeded", "output": None}}) + "\n")
+            child.stdin.flush()
+            os._exit(0)
         if MODE == "stop_delay":
             with open(os.environ["FABRIC_FAKE_HOST_STOP_MARKER"], "w", encoding="utf-8") as stream:
                 stream.write("started")
@@ -4980,6 +5170,7 @@ else:
     #[test]
     fn sdk_run_result_preserves_ordered_telemetry_references() {
         let result = RunResult {
+            session_ref: None,
             agent_name: "agent".to_string(),
             harness: "harness".to_string(),
             adapter_kind: AdapterKind::Python,
@@ -5109,6 +5300,55 @@ else:
         (root, plan)
     }
 
+    fn durable_session_plan(mode: &str) -> (PathBuf, RunPlan) {
+        let (root, plan) = local_host_plan_keeping_state_in(mode);
+        let path = root.join("adapters/local-host/local-host.fabric-adapter.json");
+        let mut descriptor: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        descriptor["capabilities"]["session_resume"] = Value::Bool(true);
+        fs::write(path, descriptor.to_string()).unwrap();
+        let plan = resolve_run_plan_from_config(plan.config, ResolveContext::new(&root)).unwrap();
+        (root, plan)
+    }
+
+    #[test]
+    fn durable_session_start_requires_native_confirmation() {
+        let (root, plan) = durable_session_plan("success");
+        let error = start_runtime(&plan).expect_err("missing native identity");
+        assert!(
+            matches!(error, FabricError::Session { code, .. } if code == "session_resume_unconfirmed")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn changed_native_session_result_invalidates_later_invocations() {
+        let (root, plan) = durable_session_plan("durable_changed_result");
+        let runtime = start_runtime(&plan).unwrap();
+        assert_eq!(
+            runtime.session_ref.as_ref().unwrap().session_id,
+            "native-session"
+        );
+        for _ in 0..2 {
+            let error = invoke_runtime(&plan, &runtime, RunRequest::text("continue")).unwrap_err();
+            assert!(
+                matches!(error, FabricError::Session { code, .. } if code == "session_identity_changed")
+            );
+        }
+        stop_runtime(&plan, &runtime).unwrap();
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn durable_selection_rejects_forged_capability_before_startup() {
+        let (root, mut plan) = local_host_plan_keeping_state();
+        plan.capabilities.session_resume = true;
+        let error = start_runtime(&plan).unwrap_err();
+        assert!(
+            matches!(error, FabricError::Session { code, .. } if code == "session_resume_unsupported")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn keep_state_gives_an_agents_runtimes_one_state_folder_one_at_a_time() {
         let (root, plan) = local_host_plan_keeping_state();
@@ -5139,6 +5379,25 @@ else:
         // folder can't drop it.
         assert!(!expected.join(".fabric-state.lock").exists());
         assert!(expected.with_file_name(".assistant.lock").is_file());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn kept_state_remains_locked_by_the_native_host_after_core_drops_its_guard() {
+        let (root, plan) = local_host_plan_keeping_state();
+        let first = start_runtime(&plan).expect("start writer");
+        let host = local_hosts().get(&first.runtime_id).cloned().expect("host");
+        // Simulate loss of the core owner's descriptor while its native writer survives.
+        drop(host.lock().expect("host lock")._state_lock.take());
+        let competing = start_runtime(&plan);
+        if let Ok(runtime) = &competing {
+            stop_runtime(&plan, runtime).expect("clean up unexpected replacement");
+        }
+        stop_runtime(&plan, &first).expect("stop original writer");
+        assert!(matches!(competing, Err(FabricError::StateInUse { .. })));
+        let replacement = start_runtime(&plan).expect("start after native writer exits");
+        stop_runtime(&plan, &replacement).expect("stop replacement");
         let _ = fs::remove_dir_all(root);
     }
 
@@ -6344,6 +6603,8 @@ else:
         environment.provider = "remote".to_string();
         let runtime_id = new_id("runtime");
         let runtime = RuntimeHandle {
+            session_ref: None,
+            recovery_warnings: Vec::new(),
             runtime_binding: runtime_binding(&runtime_id, None, &plan, &environment)
                 .expect("runtime binding"),
             runtime_id,
@@ -7071,6 +7332,7 @@ else:
     #[test]
     fn agent_run_request_projection_keeps_only_southbound_fields() {
         let request = RunRequest {
+            acknowledge_recovery: false,
             request_id: "request-1".to_string(),
             relay_session_root: None,
             input: serde_json::json!({"task": "review"}),
@@ -7443,6 +7705,31 @@ else:
         assert_eq!(stopped[0].metadata["host_crashed"], true);
         stop_runtime(&plan, &runtime).expect("cleanup remains idempotent");
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn local_host_stop_cleans_children_even_when_host_exits_before_reply() {
+        let (root, plan) = local_host_plan("stop_exit_child");
+        let runtime = start_runtime(&plan).expect("start local host");
+        let pid: u32 = fs::read_to_string(root.join("child.pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        let child = LocalHostProcess::new(pid, SystemTime::now());
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while child.has_exited() != Some(true) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        let survived = child.has_exited() != Some(true);
+        if survived {
+            unsafe {
+                libc::kill(pid as libc::pid_t, libc::SIGKILL);
+            }
+        }
+        assert!(!survived, "native writer survived successful cleanup");
         let _ = fs::remove_dir_all(root);
     }
 

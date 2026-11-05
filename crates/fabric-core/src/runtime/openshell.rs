@@ -29,6 +29,7 @@ enum State {
 }
 #[derive(Clone)]
 struct Binding {
+    session_ref: Option<SessionRef>,
     host_execution: Option<crate::ExecutionEvidence>,
     sandbox_software: Option<crate::provenance::SandboxSoftwareReport>,
     state: State,
@@ -230,21 +231,20 @@ fn task_config(plan: &RunPlan, environment: &EnvironmentHandle) -> Result<crate:
     Ok(config)
 }
 fn set_state(key: &str, runtime_id: &str, state: State) {
-    BINDINGS
-        .lock()
-        .unwrap_or_else(|error| error.into_inner())
+    let mut bindings = BINDINGS.lock().unwrap_or_else(|error| error.into_inner());
+    let binding = bindings
         .entry(key.to_string())
         .or_default()
-        .insert(
-            runtime_id.to_string(),
-            Binding {
-                host_execution: None,
-                sandbox_software: None,
-                state,
-                runtime_id: Some(runtime_id.to_string()),
-                agent: None,
-            },
-        );
+        .entry(runtime_id.to_string())
+        .or_insert_with(|| Binding {
+            session_ref: None,
+            host_execution: None,
+            sandbox_software: None,
+            state,
+            runtime_id: Some(runtime_id.to_string()),
+            agent: None,
+        });
+    binding.state = state;
 }
 fn set_start_state(key: &str, state: State) {
     let mut bindings = BINDINGS.lock().unwrap_or_else(|error| error.into_inner());
@@ -253,6 +253,7 @@ fn set_start_state(key: &str, state: State) {
     environment_bindings.insert(
         UNKNOWN_START_KEY.to_string(),
         Binding {
+            session_ref: None,
             host_execution: None,
             sandbox_software: None,
             state,
@@ -321,6 +322,12 @@ fn claim(runtime: &RuntimeHandle, stopping: bool) -> Result<Option<String>> {
             "",
         ));
     }
+    if !stopping && binding.session_ref != runtime.session_ref {
+        return Err(session_error(
+            "session_identity_changed",
+            "runtime handle does not match the bound native session",
+        ));
+    }
     if stopping && binding.state == State::Stopped {
         return Ok(None);
     }
@@ -373,6 +380,7 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
             environment_bindings.insert(
                 START_KEY.to_string(),
                 Binding {
+                    session_ref: None,
                     host_execution: None,
                     sandbox_software: None,
                     state: State::Starting,
@@ -394,6 +402,7 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
             )
         })?;
         let command = TaskCommand::Start {
+            session_ref: plan.session_ref.clone(),
             agent: plan.agent_name.clone(),
             config,
         };
@@ -445,7 +454,25 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                 "",
             ));
         }
+        let confirmed = match (crate::session::selection(plan)?, task.session_ref.as_ref()) {
+            (Some(expected), Some(reference)) => reference == &expected,
+            (None, Some(reference)) => {
+                crate::session::durable(plan)
+                    && reference.validate().is_ok()
+                    && Some(reference.adapter_id.clone()) == adapter_id(plan)
+            }
+            (None, None) => !crate::session::durable(plan),
+            _ => false,
+        };
+        if !confirmed {
+            return Err(session_error(
+                "session_resume_unconfirmed",
+                "task did not confirm the selected native session",
+            ));
+        }
         let runtime = RuntimeHandle {
+            session_ref: task.session_ref,
+            recovery_warnings: task.recovery_warnings,
             runtime_binding: runtime_binding(&task.runtime_id, None, plan, &environment)?,
             runtime_id: task.runtime_id,
             agent_name: task.agent_name,
@@ -472,6 +499,7 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
             environment_bindings.insert(
                 runtime.runtime_id.clone(),
                 Binding {
+                    session_ref: runtime.session_ref.clone(),
                     state: State::Active,
                     runtime_id: Some(runtime.runtime_id.clone()),
                     agent: Some(runtime.agent_name.clone()),
@@ -523,6 +551,7 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                 || result.agent_name != runtime.agent_name
                 || result.harness != runtime.harness
                 || result.adapter_kind != runtime.adapter_kind
+                || result.session_ref != runtime.session_ref
                 || result.invocation_id.is_empty()
             {
                 return Err(lifecycle_error(
@@ -662,6 +691,7 @@ pub(super) fn release(environment: &EnvironmentHandle) -> Result<()> {
         bindings.entry(key.clone()).or_default().insert(
             RELEASE_KEY.to_string(),
             Binding {
+                session_ref: None,
                 host_execution: None,
                 sandbox_software: None,
                 state: State::Releasing,
@@ -683,6 +713,7 @@ pub(super) fn release(environment: &EnvironmentHandle) -> Result<()> {
             BTreeMap::from([(
                 UNKNOWN_START_KEY.to_string(),
                 Binding {
+                    session_ref: None,
                     host_execution: None,
                     sandbox_software: None,
                     state: State::Unknown,
@@ -1078,6 +1109,8 @@ mod tests {
         assert_eq!(resource_key(&rebound).expect("rebound resource"), key);
         set_state(&key, "runtime-task", State::Unknown);
         let runtime = RuntimeHandle {
+            session_ref: None,
+            recovery_warnings: Vec::new(),
             runtime_id: "runtime-task".to_string(),
             runtime_binding: "unused".to_string(),
             agent_name: "echo".to_string(),
@@ -1104,6 +1137,8 @@ mod tests {
         set_state(&key, "runtime-two", State::Active);
 
         let runtime = |runtime_id: &str| RuntimeHandle {
+            session_ref: None,
+            recovery_warnings: Vec::new(),
             runtime_id: runtime_id.to_string(),
             runtime_binding: "unused".to_string(),
             agent_name: "echo".to_string(),

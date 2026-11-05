@@ -11,6 +11,10 @@ import type { JsonObject, JsonValue } from "../json.js";
  */
 export interface AgentRunRequest {
   /**
+   * Acknowledge uncertain earlier completion before starting this new request.
+   */
+  acknowledge_recovery?: boolean;
+  /**
    * Caller-provided task, rollout, workflow, or application context.
    */
   context?: JsonObject;

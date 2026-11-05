@@ -269,6 +269,10 @@
           "description": "Whether the selected runtime supports service lifecycle operations.",
           "type": "boolean"
         },
+        "session_resume": {
+          "description": "Whether the adapter implements durable native session creation and resume.",
+          "type": "boolean"
+        },
         "streaming": {
           "default": false,
           "description": "Whether invocations can emit progressive output.",

@@ -26,6 +26,8 @@ pub(crate) enum TaskCommand {
     Start {
         agent: String,
         config: Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        session_ref: Option<crate::SessionRef>,
     },
     Invoke {
         agent: String,

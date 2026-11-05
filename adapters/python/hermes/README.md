@@ -164,6 +164,33 @@ The default Hermes home is `<artifact root>/.fabric/hermes/runtimes/<runtime-id>
 
 The adapter leaves the installed Hermes source unchanged. Independently started processes do not automatically receive its mapping. Refer to [Shared Configuration and Ownership](../../../docs/integrations/harness/hermes/hermes.mdx#shared-configuration-and-ownership) for precedence and managed API gateway scope.
 
+## Cold Resume
+
+With `runtime.keep_state`, save `Runtime.session_ref.to_mapping()` in caller-owned
+storage. Pass `session_ref=SessionRef.from_mapping(saved_reference)`
+to `Fabric.start_runtime()` to reopen the exact native conversation. The caller
+must also retain the full artifact state tree, including NeMo Fabric's private
+relative bindings in `.fabric/state/nvidia.fabric.hermes/.sessions`. A corrected
+agent name can select the same reference. A different adapter cannot. A missing or incompatible session returns an explicit error.
+
+The adapter uses Hermes's native resume checks, conversation projection, and
+reopen operation. Hermes owns native identifiers and compression segments.
+NeMo Fabric supplies the current startup configuration and instructions and creates
+a new runtime ID. Hermes can restore its saved system prompt and pinned tools.
+NeMo Fabric does not override those native resume rules. `RunResult.session_ref`
+confirms the selected conversation.
+
+An uncertain earlier turn produces a `session_recovery_required` startup
+warning. NeMo Fabric preserves history and does not replay the request. Inspect the
+native and external state before issuing a new `RunRequest` with
+`acknowledge_recovery=True`. This gate applies to NeMo Fabric-controlled invocations.
+NeMo Fabric does not change native API or dashboard session selection or behavior.
+
+The state lock remains held while shutdown is unconfirmed. On Unix, native API
+and dashboard processes inherit the lock so a surviving writer still prevents
+replacement after its host exits. Retry cleanup after a caller timeout and confirm that the runtime has stopped. See the [SDK resume guide](../../../docs/sdk/python.mdx#resume-a-hermes-conversation)
+for selection, recovery, and storage details.
+
 ## Execution Model
 
 The runtime owns the enabled execution backends:
