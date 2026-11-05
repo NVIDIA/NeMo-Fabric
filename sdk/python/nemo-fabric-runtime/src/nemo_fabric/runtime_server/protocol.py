@@ -21,6 +21,7 @@ SOCKET_PATH = "/sandbox/fabric.sock"
 OPERATIONS = ("start", "invoke", "stop", "serve", "check")
 # A cause is an SDK or adapter error code, never its message or other values.
 CAUSE = re.compile(r"[a-z][a-z0-9_]{0,63}")
+CAUSE_SUFFIX = re.compile(rf" Cause: ({CAUSE.pattern})\.\Z")
 CONFIG_OPERATIONS = ("start",)
 LIFECYCLE_OPERATIONS = ("start", "stop")
 
@@ -271,7 +272,15 @@ def validate_response(response: dict[str, Any], operation: str) -> None:
             or error["effects"] not in ("none", "applied", "unknown")
         ):
             raise invalid
-        error["message"] = MESSAGES[error["code"]]
+        # Replace server text with the fixed message, keeping only its cause code.
+        cause = (
+            CAUSE_SUFFIX.search(error["message"])
+            if isinstance(error["message"], str)
+            else None
+        )
+        error["message"] = str(
+            ProtocolError(error["code"], cause=cause[1] if cause else None)
+        )
         if operation != "check":
             return
     result = response["result"]
