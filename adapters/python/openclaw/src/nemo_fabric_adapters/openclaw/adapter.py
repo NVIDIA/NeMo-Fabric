@@ -38,7 +38,7 @@ from nemo_fabric_adapters.common import utils as common_utils
 from nemo_fabric_adapters.openclaw import _windows_job
 
 
-DEFAULT_STARTUP_TIMEOUT_SECONDS = 30.0
+DEFAULT_STARTUP_TIMEOUT_SECONDS = 60.0
 # Fabric gives the adapter host 10 s to stop, including this wait.
 DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
@@ -511,6 +511,7 @@ def _openclaw_config(
         },
         "telemetry": {"enabled": False},
         "update": {"checkOnStart": False},
+        "models": {"catalogRefresh": {"enabled": False}},
         "discovery": {"mdns": {"mode": "off"}},
     }
     agent_id = _agent_id(config.harness.settings if config.harness else {})
@@ -556,7 +557,7 @@ def _openclaw_config(
             "id": model.api_key_env,
         }
     if provider:
-        result["models"] = {"providers": {model.provider: provider}}
+        result["models"]["providers"] = {model.provider: provider}
     channel_config = _channel_config(
         config.harness.settings if config.harness else {}, agent_id=agent_id
     )
@@ -1084,8 +1085,14 @@ class OpenClawRuntime:
         startup_timeout = _positive_setting(
             settings, "startup_timeout_seconds", DEFAULT_STARTUP_TIMEOUT_SECONDS
         )
+        # One deadline covers every startup step, so start ends within it.
+        startup_deadline = asyncio.get_running_loop().time() + startup_timeout
+
+        def startup_remaining() -> float:
+            return max(startup_deadline - asyncio.get_running_loop().time(), 0.0)
+
         version_output = await _command_output(
-            command, "--version", env=child_env, timeout=startup_timeout
+            command, "--version", env=child_env, timeout=startup_remaining()
         )
         version = _validate_openclaw_version(version_output)
         from nemo_fabric_adapters.common.provenance import record_version
@@ -1139,7 +1146,7 @@ class OpenClawRuntime:
                 "validate",
                 "--json",
                 env=child_env,
-                timeout=startup_timeout,
+                timeout=startup_remaining(),
             )
             if os.name == "nt":
                 try:
@@ -1152,7 +1159,7 @@ class OpenClawRuntime:
             gateway_command = _gateway_command(
                 command,
                 port=port,
-                prefix=await _parent_death_prefix(timeout=startup_timeout),
+                prefix=await _parent_death_prefix(timeout=startup_remaining()),
             )
             self._process = await asyncio.create_subprocess_exec(
                 *gateway_command,
@@ -1179,7 +1186,7 @@ class OpenClawRuntime:
                 ),
             ]
             self._install_signal_handlers()
-            await self._wait_started(port, token, startup_timeout)
+            await self._wait_started(port, token, startup_remaining())
             self._client = httpx.AsyncClient(
                 headers={"authorization": f"Bearer {token}"},
                 http2=True,
@@ -1600,10 +1607,14 @@ class OpenClawRuntime:
                         metadata={"detail": detail[-2000:]},
                     )
                 try:
-                    response = await client.get(f"http://127.0.0.1:{port}/startupz")
+                    # A request can't outlast the startup deadline.
+                    response = await asyncio.wait_for(
+                        client.get(f"http://127.0.0.1:{port}/startupz"),
+                        timeout=deadline - asyncio.get_running_loop().time(),
+                    )
                     if response.status_code == 200:
                         return
-                except httpx.RequestError:
+                except (httpx.RequestError, TimeoutError):
                     pass
                 await asyncio.sleep(0.05)
         raise lifecycle.LifecycleError(
