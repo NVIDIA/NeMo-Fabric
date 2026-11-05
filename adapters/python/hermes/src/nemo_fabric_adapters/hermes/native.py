@@ -18,6 +18,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
+from functools import wraps
 
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapters.hermes import configuration
@@ -74,6 +75,7 @@ def main() -> None:
                 **configured_kwargs(config, bound.arguments, load_config())
             )
 
+        @wraps(native_agent.run_conversation)
         def run_conversation(self, *args: Any, **kwargs: Any) -> Any:
             try:
                 return super().run_conversation(*args, **kwargs)

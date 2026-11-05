@@ -270,6 +270,14 @@ async def test_api_turns_export_atif_without_resetting_native_conversation(
                     {"role": "user", "content": "second native turn"},
                 ]
             )
+        captured = await asyncio.to_thread(
+            requests.get, f"{api_server}/_requests", timeout=5
+        )
+        model_turns = [request for request in captured.json() if request.get("tools")]
+        assert len(model_turns) == 2
+        history = json.dumps(model_turns[-1]["messages"])
+        assert "first native turn" in history
+        assert "second native turn" in history
         connection = sqlite3.connect(runtime._hermes_home / "state.db")
         try:
             sessions = connection.execute(
