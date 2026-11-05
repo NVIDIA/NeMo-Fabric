@@ -1787,18 +1787,33 @@ class OpenClawRuntime:
                 except (TimeoutError, asyncio.CancelledError) as error:
                     if isinstance(error, asyncio.CancelledError):
                         cancellation = cancellation or error
-                    # A reaped Gateway's PID can belong to another process.
-                    if process.returncode is None:
-                        if os.name == "nt":
+                finally:
+                    if os.name == "nt":
+                        if process.returncode is None:
                             process.kill()
-                        else:
-                            common_utils.signal_process_group(
-                                process.pid, signal.SIGKILL
-                            )
-                    try:
-                        await process.wait()
-                    except asyncio.CancelledError as error:
-                        cancellation = cancellation or error
+                    else:
+                        # Descendants can retain captured pipes after the leader
+                        # exits. Escalate the group, but never fall back to the
+                        # reaped leader's potentially reused PID.
+                        common_utils.signal_process_group(
+                            process.pid,
+                            signal.SIGKILL,
+                            fallback_to_pid=process.returncode is None,
+                        )
+                try:
+                    # A descendant can retain these pipes even after the
+                    # leader is killed. Leave time for the rest of cleanup
+                    # within the host's default stop deadline.
+                    await asyncio.wait_for(
+                        process.wait(), timeout=min(self._shutdown_timeout, 1.0)
+                    )
+                except TimeoutError:
+                    logger.warning(
+                        "OpenClaw Gateway cleanup timed out; descendants may "
+                        "retain captured pipes"
+                    )
+                except asyncio.CancelledError as error:
+                    cancellation = cancellation or error
         except Exception:
             logger.error("OpenClaw Gateway process cleanup failed", exc_info=True)
         windows_job, self._windows_job = self._windows_job, None
