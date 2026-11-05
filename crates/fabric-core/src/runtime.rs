@@ -4024,22 +4024,6 @@ fn collect_workspace_artifacts(
     if status_text.trim().is_empty() {
         return Ok(());
     }
-    let mut patch = String::new();
-    let Ok(diff) = Command::new("git")
-        .arg("-C")
-        .arg(workspace)
-        .arg("diff")
-        .arg("--binary")
-        .arg("--")
-        .arg(".")
-        .output()
-    else {
-        return Ok(());
-    };
-    if !diff.status.success() {
-        return Ok(());
-    }
-    patch.push_str(&String::from_utf8_lossy(&diff.stdout));
     // Kept agent state can hold conversations and credentials; leave it out
     // when the artifact directory sits inside the workspace.
     let kept_state: Vec<PathBuf> = manifest
@@ -4047,6 +4031,9 @@ fn collect_workspace_artifacts(
         .iter()
         .map(|root| root.join(".fabric").join("state"))
         .collect();
+    let Some(mut patch) = tracked_workspace_patch(workspace, &kept_state) else {
+        return Ok(());
+    };
     patch.push_str(&untracked_workspace_patch(workspace, &kept_state)?);
     if patch.trim().is_empty() {
         return Ok(());
@@ -4086,6 +4073,40 @@ fn collect_workspace_artifacts(
     Ok(())
 }
 
+fn tracked_workspace_patch(workspace: &Path, excluded: &[PathBuf]) -> Option<String> {
+    let diff = Command::new("git")
+        .arg("-C")
+        .arg(workspace)
+        .arg("diff")
+        .arg("--binary")
+        .arg("--")
+        .arg(".")
+        .args(excluded_pathspecs(workspace, excluded))
+        .output()
+        .ok()?;
+    if !diff.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&diff.stdout).into_owned())
+}
+
+/// Git pathspecs that leave out each excluded path inside the workspace.
+fn excluded_pathspecs(workspace: &Path, excluded: &[PathBuf]) -> Vec<std::ffi::OsString> {
+    let workspace_root = workspace
+        .canonicalize()
+        .unwrap_or_else(|_| workspace.to_path_buf());
+    excluded
+        .iter()
+        .filter_map(|path| {
+            let path = path.canonicalize().unwrap_or_else(|_| path.clone());
+            let relative = path.strip_prefix(&workspace_root).ok()?;
+            let mut pathspec = std::ffi::OsString::from(":(exclude)");
+            pathspec.push(relative);
+            Some(pathspec)
+        })
+        .collect()
+}
+
 fn untracked_workspace_patch(workspace: &Path, excluded: &[PathBuf]) -> Result<String> {
     let mut command = Command::new("git");
     command
@@ -4096,18 +4117,8 @@ fn untracked_workspace_patch(workspace: &Path, excluded: &[PathBuf]) -> Result<S
         .arg("--exclude-standard")
         .arg("-z")
         .arg("--")
-        .arg(".");
-    let workspace_root = workspace
-        .canonicalize()
-        .unwrap_or_else(|_| workspace.to_path_buf());
-    for path in excluded {
-        let path = path.canonicalize().unwrap_or_else(|_| path.clone());
-        if let Ok(relative) = path.strip_prefix(&workspace_root) {
-            let mut pathspec = std::ffi::OsString::from(":(exclude)");
-            pathspec.push(relative);
-            command.arg(pathspec);
-        }
-    }
+        .arg(".")
+        .args(excluded_pathspecs(workspace, excluded));
     let Ok(untracked) = command.output() else {
         return Ok(String::new());
     };
@@ -5012,6 +5023,35 @@ for line in sys.stdin:
     }
 
     #[test]
+    fn workspace_patch_leaves_out_tracked_kept_agent_state() {
+        let root = std::env::temp_dir().join(new_id("fabric-workspace-patch-test"));
+        let state = root.join("artifacts/.fabric/state/acme.agent/assistant");
+        fs::create_dir_all(&state).expect("create state folder");
+        let git = |args: &[&str]| {
+            assert!(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(&root)
+                    .args(args)
+                    .status()
+                    .expect("run git")
+                    .success()
+            );
+        };
+        git(&["init", "-q"]);
+        fs::write(root.join("notes.txt"), "note\n").expect("write workspace file");
+        fs::write(state.join("state.db"), "private\n").expect("write state file");
+        git(&["add", "--intent-to-add", "--", "."]);
+
+        let patch = tracked_workspace_patch(&root, &[root.join("artifacts/.fabric/state")])
+            .expect("tracked patch");
+
+        assert!(patch.contains("notes.txt"), "{patch}");
+        assert!(!patch.contains("state.db"), "{patch}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn keep_state_planning_rejects_unaccepting_adapters_and_unsafe_agent_names() {
         let (root, accepting) = local_host_plan_keeping_state();
         let (plain_root, plain) = local_host_plan("success");
@@ -5080,8 +5120,13 @@ for line in sys.stdin:
         stop_runtime(&plan, &first).expect_err("the adapter fails its stop");
         let second = start_runtime_with_service(&plan, &service)
             .expect("connect once the first runtime's host is gone");
-        let _ = stop_runtime(&plan, &second);
-        let _ = release_service(&plan, &service);
+        stop_runtime(&plan, &second).expect_err("the adapter fails its stop");
+        assert!(matches!(
+            release_service(&plan, &service),
+            Err(FabricError::AdapterLifecycleOperation { .. })
+        ));
+        release_service(&plan, &service).expect("retry release service");
+        assert!(!local_services().contains_key(&service.service_id));
         let _ = fs::remove_dir_all(root);
     }
 
