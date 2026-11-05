@@ -13,6 +13,14 @@ pub type Result<T> = std::result::Result<T, FabricError>;
 /// Errors raised by NeMo Fabric config loading and validation.
 #[derive(Debug, thiserror::Error)]
 pub enum FabricError {
+    /// A normalized durable session operation could not be completed.
+    #[error("{code}: {message}")]
+    Session {
+        /// Stable machine-readable failure code.
+        code: String,
+        /// Safe diagnostic without the native session identifier.
+        message: String,
+    },
     /// The base directory could not be resolved to an absolute path.
     #[error("failed to resolve base directory {path}: {source}")]
     ResolveBaseDirectory {
@@ -254,6 +262,14 @@ pub enum FabricError {
         actual: String,
         /// Service handle id.
         service_id: String,
+    },
+    /// Another runtime holds the agent's kept state folder.
+    #[error(
+        "agent state folder {path} is in use by another runtime; stop that runtime before starting another"
+    )]
+    StateInUse {
+        /// The agent's state folder.
+        path: PathBuf,
     },
     /// A service cannot be released while runtimes still use it.
     #[error("service `{service_id}` has active runtimes: {runtime_ids:?}")]

@@ -175,6 +175,20 @@ construction.
 
 For Deep Agents, mini-SWE-agent, and the LangGraph custom-agent example, pass the same UUID string through `RunRequest.relay_session_root` on each conversation turn to group Relay trajectories under one session. Core forwards the typed field as `AgentRunRequest.relay_session_root`; context keys do not control Relay propagation. An unusable UUID preserves per-request behavior. The remaining adapters do not consume this field.
 
+For Hermes cold resume, configure `runtime.keep_state` and retain the complete
+artifact state tree. Persist `Runtime.session_ref.to_mapping()` in caller-owned
+storage and pass `session_ref=SessionRef.from_mapping(saved_reference)`
+to `Fabric.start_runtime()`, `start_runtime_in()`, or `run()`. A new runtime ID
+does not change the selected session. Retention alone starts a fresh
+conversation. Never select the latest conversation implicitly. Agent names are
+labels, while the reference's adapter must match. Handle `state_in_use` and
+missing or incompatible session errors explicitly. Inspect
+`Runtime.recovery_warnings` before continuing an uncertain session. Send a new
+`RunRequest(..., acknowledge_recovery=True)` only after inspecting native and
+external state. Do not replay an interrupted request automatically. Keep
+ownership and retry cleanup when stop is unconfirmed. Native Hermes API and
+dashboard behavior remains owned by Hermes.
+
 Pick the smallest lifecycle the consumer needs:
 
 - **Single invocation** — one input, no retained state after the call.

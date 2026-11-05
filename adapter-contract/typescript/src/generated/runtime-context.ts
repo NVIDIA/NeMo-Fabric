@@ -30,6 +30,16 @@ export interface RuntimeContext {
    */
   runtime_id: string;
   /**
+   * Explicit durable session selection, supplied only to opted-in adapters.
+   */
+  session_ref?: SessionRef | null;
+  /**
+   * Absolute folder for the adapter's native state, present when
+   * `runtime.keep_state` is set. Every runtime of the agent gets the same
+   * folder, and Fabric lets only one running runtime use it at a time.
+   */
+  state_dir?: string | null;
+  /**
    * Runtime telemetry context generated for this invocation.
    */
   telemetry?: RuntimeTelemetryContext | null;
@@ -116,6 +126,23 @@ export interface EnvironmentHandle {
    * an environment-local path and must not be resolved on the host.
    */
   workspace?: string | null;
+}
+/**
+ * Adapter-issued native identity, resolved only within caller-supplied storage.
+ */
+export interface SessionRef {
+  /**
+   * Adapter responsible for interpreting the opaque identifier.
+   */
+  adapter_id: string;
+  /**
+   * Supported envelope version.
+   */
+  schema_version: "fabric.session_ref/v1alpha1";
+  /**
+   * Opaque adapter-issued identifier interpreted by the adapter.
+   */
+  session_id: string;
 }
 /**
  * Runtime telemetry config passed to adapters.

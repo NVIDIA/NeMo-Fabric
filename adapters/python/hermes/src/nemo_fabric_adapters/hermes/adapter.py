@@ -30,8 +30,10 @@ from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
+from nemo_fabric_adapters.hermes import sessions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.hermes import configuration
+from nemo_fabric_adapters.hermes import interfaces
 from nemo_fabric_adapters.hermes import telemetry
 
 # Default agent loop budget when FabricConfig.runtime.max_turns is unset.
@@ -65,13 +67,15 @@ class HermesRuntime:
         self._enabled_toolsets: list[str] | None = None
         self._mcp_authentication_checked = False
         self._conversation_history: list[dict[str, Any]] | None = None
+        self._native_session: sessions.NativeSession | None = None
         self._session_db: Any = None
         self._agent: Any = None
         self._relay_plugin_config: dict[str, Any] | None = None
         self._relay_plugin_config_path: Path | None = None
         self._active_invoke_task: asyncio.Task[tuple[dict[str, Any], str]] | None = None
+        self._interfaces = interfaces.InterfaceChildren()
 
-    async def start(self, payload: dict[str, Any]) -> None:
+    async def start(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         if self._started:
             raise lifecycle.LifecycleError(
                 "hermes_runtime_already_started",
@@ -79,6 +83,9 @@ class HermesRuntime:
             )
 
         self._stopping = False
+        # startup_timeout_seconds bounds all of start, so Fabric's start limit
+        # can't expire first.
+        started_at = asyncio.get_running_loop().time()
         try:
             agent_config = payload.get("config")
             if not isinstance(agent_config, AgentConfig):
@@ -102,17 +109,19 @@ class HermesRuntime:
                 telemetry.validate_hermes_relay_compatibility()
             self._agent_config = agent_config
             self._settings = configuration._settings(agent_config)
+            interface_ports = interfaces.interface_ports(self._settings)
             model_config = configuration._selected_model(agent_config)
             self._model_config = model_config
             self._runtime_id = runtime_context.runtime_id
-            self._hermes_home = (
-                _artifact_root(runtime_context, common_utils.base_dir(payload))
-                / ".fabric"
-                / "hermes"
-                / "runtimes"
-                / runtime_context.runtime_id
+            self._hermes_home = _hermes_home(
+                runtime_context, common_utils.base_dir(payload)
             )
             self._hermes_home.mkdir(parents=True, exist_ok=True)
+            interfaces.require_released_home(self._hermes_home)
+            # A runtime that ended without stop can leave its API token in a
+            # kept Hermes home, for a server that no longer runs.
+            token_path = self._hermes_home / "interfaces" / "api.token"
+            token_path.unlink(missing_ok=True)
             os.environ["HOME"] = str(self._hermes_home)
             os.environ["HERMES_HOME"] = str(self._hermes_home)
             os.environ.setdefault("HERMES_YOLO_MODE", "1")
@@ -145,6 +154,7 @@ class HermesRuntime:
                 # Workspace belongs to the per-runtime context, not AgentConfig.
                 workspace=str(runtime_context.environment.workspace or "."),
                 relay_enabled=relay_enabled,
+                interfaces=interface_ports,
             )
             api_key_env = configuration._api_key_env(model_config)
             api_key = os.environ.get(api_key_env)
@@ -179,8 +189,21 @@ class HermesRuntime:
                 self._enabled_toolsets = configuration.resolve_hermes_toolsets(
                     agent_config, loaded_hermes_config
                 )
+                if (
+                    runtime_context.session_ref is not None
+                    and not (self._hermes_home / "state.db").is_file()
+                ):
+                    raise lifecycle.LifecycleError(
+                        "session_not_found",
+                        "Native session database was not found in retained storage",
+                    )
                 self._session_db = SessionDB()
-                self._conversation_history = None
+                self._native_session = sessions.open_session(
+                    self._session_db, runtime_context
+                )
+                self._conversation_history = (
+                    self._native_session.history if self._native_session else None
+                )
                 max_iterations = configuration._max_turns(agent_config)
                 if max_iterations is None:
                     max_iterations = DEFAULT_MAX_ITERATIONS
@@ -218,12 +241,35 @@ class HermesRuntime:
                             "reasoning_config", {"effort": "none"}
                         ),
                         platform="fabric",
-                        session_id=self._runtime_id,
+                        session_id=self._native_session.native_id
+                        if self._native_session
+                        else self._runtime_id,
                         session_db=self._session_db,
                     )
                 )
+            if interface_ports:
+                environment = dict(os.environ)
+                provider_key_env = configuration.PROVIDER_DEFAULT_API_KEY_ENV.get(
+                    str(model_config.provider or "").lower()
+                )
+                if provider_key_env:
+                    # Hermes's own processes read a provider's key from its
+                    # default variable, not from api_key_env.
+                    environment[provider_key_env] = api_key
+                await self._interfaces.start(
+                    interface_ports,
+                    hermes_home=self._hermes_home,
+                    token_path=token_path,
+                    timeout=max(
+                        interfaces.startup_timeout(self._settings)
+                        - (asyncio.get_running_loop().time() - started_at),
+                        0.0,
+                    ),
+                    environment=environment,
+                )
             self._agent_config = agent_config
             self._started = True
+            return self._native_session.start_output() if self._native_session else None
         except BaseException:
             await self.stop()
             raise
@@ -251,6 +297,20 @@ class HermesRuntime:
                 "Hermes invocation does not match the active runtime",
             )
 
+        if self._native_session and self._native_session.recovery_required:
+            if not request.acknowledge_recovery:
+                return AgentRunResult(
+                    status=AgentRunStatus.FAILED,
+                    session_id=self._native_session.session_id,
+                    output=None,
+                    error=AgentRunError(
+                        code="session_recovery_required",
+                        message="Inspect the restored state and explicitly acknowledge recovery before a new invocation.",
+                        retryable=False,
+                    ),
+                )
+            self._native_session.recovery_required = False
+
         user_message = common_utils.normalize_user_input(request.input)
         instructions = agent_config.instructions
         system_prompt = (
@@ -265,13 +325,18 @@ class HermesRuntime:
             if self._relay_plugin_config is not None:
                 common_utils.reject_ambient_relay_plugin_config()
             try:
-                return _invoke_hermes_turn(
+                result = _invoke_hermes_turn(
                     agent=self._agent,
                     system_prompt=system_prompt,
                     user_message=user_message,
                     conversation_history=self._conversation_history,
                     task_id=runtime_context.request_id,
                 )
+                if self._native_session:
+                    self._native_session.finish_turn(
+                        str(self._agent.session_id), result[0]
+                    )
+                return result
             finally:
                 if self._relay_plugin_config is not None:
                     # Hermes writes TOML-configured ATIF at its session-finalization
@@ -289,6 +354,8 @@ class HermesRuntime:
                 "hermes_invocation_in_progress",
                 "Hermes runtime already has an active invocation",
             )
+        if self._native_session:
+            self._native_session.begin_turn(runtime_context)
         invoke_task = asyncio.create_task(asyncio.to_thread(run_hermes_turn))
         self._active_invoke_task = invoke_task
 
@@ -374,6 +441,9 @@ class HermesRuntime:
                     message="Hermes did not complete the invocation",
                 )
         return AgentRunResult(
+            session_id=self._native_session.session_id
+            if self._native_session
+            else None,
             status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
             output=output,
             error=error,
@@ -596,6 +666,10 @@ class HermesRuntime:
         self._stopping = True
         active_invoke_task = self._active_invoke_task
         errors: list[BaseException] = []
+        try:
+            await self._interfaces.stop()
+        except BaseException as error:
+            errors.append(error)
         if active_invoke_task is not None:
             try:
                 await asyncio.shield(active_invoke_task)
@@ -621,6 +695,7 @@ class HermesRuntime:
         self._enabled_toolsets = None
         self._mcp_authentication_checked = False
         self._conversation_history = None
+        self._native_session = None
         self._relay_plugin_config = None
         self._relay_plugin_config_path = None
         self._started = False
@@ -665,6 +740,20 @@ class HermesRuntime:
                 "hermes_runtime_stop_failed",
                 "Hermes runtime failed to stop cleanly",
             ) from errors[0]
+
+
+def _hermes_home(runtime_context: RuntimeContext, base_dir: str) -> Path:
+    """Return the agent's state folder when Fabric keeps state across runtimes,
+    otherwise this runtime's own folder."""
+    if runtime_context.state_dir:
+        return Path(runtime_context.state_dir)
+    return (
+        _artifact_root(runtime_context, base_dir)
+        / ".fabric"
+        / "hermes"
+        / "runtimes"
+        / runtime_context.runtime_id
+    )
 
 
 def _artifact_root(runtime_context: RuntimeContext, base_dir: str) -> Path:
@@ -712,7 +801,6 @@ def filter_supported_call_kwargs(func: Any, **kwargs: Any) -> dict[str, Any]:
     signature = inspect.signature(func)
     supported = set(signature.parameters)
     return {key: value for key, value in kwargs.items() if key in supported}
-
 
 
 # Selected software reported by the shared lifecycle host; no dependency scan.

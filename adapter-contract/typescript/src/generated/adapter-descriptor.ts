@@ -43,6 +43,7 @@ export type AdapterConfigField =
   | "models.max_tokens"
   | "instructions.system"
   | "runtime.max_turns"
+  | "runtime.keep_state"
   | "tools.enabled"
   | "tools.definitions"
   | "tools.blocked"
@@ -121,6 +122,10 @@ export type RuntimeCapabilities = {
    * Whether the selected runtime supports service lifecycle operations.
    */
   service?: boolean;
+  /**
+   * Whether the adapter implements durable native session creation and resume.
+   */
+  session_resume?: boolean;
   /**
    * Whether invocations can emit progressive output.
    */

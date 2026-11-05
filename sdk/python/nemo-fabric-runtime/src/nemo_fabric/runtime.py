@@ -32,6 +32,8 @@ from nemo_fabric.models import RunRequest
 from nemo_fabric.openai_streaming import OpenAIInvokeStream
 from nemo_fabric.streaming import InvokeStream
 from nemo_fabric.types import (
+    ErrorInfo,
+    SessionRef,
     RunPlan,
     RunResult,
     RuntimeHandle,
@@ -142,6 +144,20 @@ class Runtime:
         """Return the unique identifier for this started runtime lifecycle."""
 
         return self._runtime.runtime_id
+
+    @property
+    def session_ref(self) -> SessionRef | None:
+        """Return the confirmed durable native session, or None for legacy sessions."""
+        value = self._runtime.get("session_ref")
+        return None if value is None else SessionRef.from_mapping(value)
+
+    @property
+    def recovery_warnings(self) -> tuple[ErrorInfo, ...]:
+        """Return recovery warnings. Acknowledge them through a new RunRequest."""
+        return tuple(
+            ErrorInfo.from_mapping(value)
+            for value in self._runtime.get("recovery_warnings", ())
+        )
 
     @property
     def supports_streaming(self) -> bool:

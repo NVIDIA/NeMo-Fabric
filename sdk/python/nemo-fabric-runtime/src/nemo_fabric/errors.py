@@ -65,7 +65,10 @@ def _runtime_error(error: Exception, *, stage: str) -> FabricRuntimeError:
     return FabricRuntimeError(
         str(error),
         stage=stage,
-        code="timeout" if isinstance(error, TimeoutError) else None,
+        code="timeout"
+        if isinstance(error, TimeoutError)
+        else getattr(error, "code", None),
+        retryable=getattr(error, "retryable", False),
     )
 
 

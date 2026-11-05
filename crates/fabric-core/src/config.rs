@@ -873,6 +873,9 @@ pub enum AdapterConfigField {
     /// Per-invocation harness turn limit.
     #[serde(rename = "runtime.max_turns")]
     MaxTurns,
+    /// Agent-named state folder kept across runtimes.
+    #[serde(rename = "runtime.keep_state")]
+    KeepState,
     /// Adapter-native tool names to expose.
     #[serde(rename = "tools.enabled")]
     EnabledTools,
@@ -1063,6 +1066,11 @@ pub struct RuntimeConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 1, max = u32::MAX))]
     pub max_turns: Option<u32>,
+    /// Keep the adapter's native state in a folder named after the agent, so
+    /// every runtime of the agent uses the same folder. Requires an artifact
+    /// directory and an adapter that accepts `runtime.keep_state`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keep_state: bool,
     /// Additive normalized runtime fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
@@ -1927,6 +1935,12 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
     if config.runtime.max_turns == Some(0) {
         return invalid_config("runtime.max_turns", "must be greater than zero");
     }
+    if config.runtime.keep_state && !is_one_folder_name(&config.metadata.name) {
+        return invalid_config(
+            "metadata.name",
+            "must be usable as one folder name when runtime.keep_state is set: not empty, `.` or `..`, and without `/` or `\\`",
+        );
+    }
     if let Some(timeout) = config.runtime.timeout_seconds
         && (!timeout.is_finite()
             || timeout <= 0.0
@@ -2388,6 +2402,11 @@ fn validate_names(field: &str, names: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Whether a name can be one path component on every platform Fabric runs on.
+pub(crate) fn is_one_folder_name(name: &str) -> bool {
+    !name.trim().is_empty() && name != "." && name != ".." && !name.contains(['/', '\\'])
+}
+
 fn invalid_config<T>(field: impl Into<String>, reason: impl Into<String>) -> Result<T> {
     Err(FabricError::InvalidConfig {
         field: field.into(),
@@ -2635,6 +2654,17 @@ fn resolve_selected_descriptors(
     )?;
     let resolution = resolve_resolution(&config, descriptor)?;
     let environment_plan = resolve_environment_plan(&config, &base_dir);
+    if config.runtime.keep_state
+        && config.runtime.artifacts.is_none()
+        && environment_plan
+            .as_ref()
+            .is_none_or(|environment| environment.artifacts.is_none())
+    {
+        return invalid_config(
+            "runtime.keep_state",
+            "requires an artifact directory, from runtime.artifacts or environment.artifacts",
+        );
+    }
     validate_control_location(descriptor, environment_plan.as_ref())?;
     let capability_plan = resolve_capability_plan(&config, &base_dir, adapter_descriptor.as_ref());
     if enforce_compatibility {
@@ -2649,6 +2679,7 @@ fn resolve_selected_descriptors(
         adapter_target_descriptor.as_ref(),
     );
     Ok(RunPlan {
+        session_ref: None,
         agent_name: config.metadata.name.clone(),
         base_dir,
         config,
@@ -2810,6 +2841,13 @@ pub(crate) fn adapter_config_compatibility_issues(
                 ),
             ));
         }
+    }
+    if config.runtime.keep_state && !accepts(AdapterConfigField::KeepState) {
+        issues.push(incompatible(
+            "runtime.keep_state".to_string(),
+            "the adapter does not declare that it keeps its state in an agent-named folder"
+                .to_string(),
+        ));
     }
     if config.runtime.max_turns.is_some() && !accepts(AdapterConfigField::MaxTurns) {
         issues.push(incompatible(
@@ -3688,6 +3726,7 @@ fn resolve_runtime_capabilities(
         .map(|descriptor| descriptor.capabilities.clone())
         .unwrap_or_default();
     RuntimeCapabilities {
+        session_resume: implemented_runtime && descriptor_capabilities.session_resume,
         service: implemented_runtime && descriptor_capabilities.service,
         streaming: implemented_runtime && descriptor_capabilities.streaming,
         updates: implemented_runtime && descriptor_capabilities.updates,
@@ -4077,6 +4116,9 @@ fn normalize_path(path: PathBuf) -> PathBuf {
 /// Resolved NeMo Fabric run plan.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RunPlan {
+    /// Native session to resume. Omission starts a fresh conversation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_ref: Option<crate::SessionRef>,
     /// Stable agent name.
     pub agent_name: String,
     /// Base directory used to resolve relative NeMo Fabric paths.
@@ -4110,6 +4152,9 @@ pub struct RunPlan {
 /// Lifecycle behavior implemented by a resolved runtime path.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RuntimeCapabilities {
+    /// Whether the adapter implements durable native session creation and resume.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub session_resume: bool,
     /// Whether the selected runtime supports service lifecycle operations.
     #[serde(default)]
     pub service: bool,
@@ -7070,6 +7115,7 @@ mod tests {
         let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
         let request = AgentRunRequest {
+            acknowledge_recovery: false,
             input: serde_json::json!("review"),
             relay_session_root: None,
             context: BTreeMap::new(),

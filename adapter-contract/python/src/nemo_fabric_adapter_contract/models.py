@@ -469,6 +469,7 @@ class AgentRunRequest(AgentContractBlock):
     """Southbound invocation request passed to an adapter target."""
 
     input: JsonValue = _json_value_field()
+    acknowledge_recovery: bool = _default(False)
     relay_session_root: str | None = _optional()
     context: dict[str, JsonValue] = _json_dict()
 
@@ -556,6 +557,9 @@ class AgentRunResult(AgentContractBlock):
     """Southbound terminal result returned by an adapter target."""
 
     status: AgentRunStatus
+    session_id: str | None = field(
+        default=None, repr=False, metadata={"omit_none": True}
+    )
     output: JsonValue = _json_value_field()
     error: AgentRunError | None = _optional()
     usage: AgentUsage | None = _optional()
@@ -637,6 +641,21 @@ class RuntimeTelemetryContext(ContractModel):
 
 
 @dataclass(slots=True, kw_only=True)
+class SessionRef(ContractModel):
+    """Opaque adapter-issued identity within caller-supplied retained storage."""
+
+    schema_version: str
+    adapter_id: str
+    session_id: str = field(repr=False)
+
+    def _validate(self) -> None:
+        if self.schema_version != "fabric.session_ref/v1alpha1":
+            raise ContractValidationError("unsupported session reference schema")
+        _nonblank(self.adapter_id, "adapter_id")
+        _nonblank(self.session_id, "session_id")
+
+
+@dataclass(slots=True, kw_only=True)
 class RuntimeContext(ContractModel):
     """Fabric-generated context for one adapter invocation."""
 
@@ -647,6 +666,8 @@ class RuntimeContext(ContractModel):
     artifacts: ArtifactManifest
     telemetry: RuntimeTelemetryContext | None = _optional()
     deadline_millis: int | None = _optional()
+    state_dir: str | Path | None = _optional()
+    session_ref: SessionRef | None = _optional()
 
     def _validate(self) -> None:
         _nonblank(self.runtime_id, "runtime_id")

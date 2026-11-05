@@ -42,6 +42,13 @@ task runtime server. That server selects the runtime ID and returns a
 `RunResult` through the same path.
 Start and stop use the same command route.
 
+Explicit session selection travels with the startup configuration in one bounded
+stdin JSON object. The provider uses `fabric-agent-ctl start --agent NAME --request -`
+with `{"config": ..., "session_ref": ...}`. Native session identifiers do not appear
+in command arguments. Known session and retained-state rejections preserve their
+diagnostic code and effects, so a rejected selection does not become an uncertain
+start. A busy stop also preserves `runtime_busy` for a later cleanup retry.
+
 `Fabric.check()` maps health requests to `fabric-agent-ctl check`. Checks use
 an independent provider worker and one remaining deadline across gateway
 connection, identity verification, exec, and response decoding. Failed and

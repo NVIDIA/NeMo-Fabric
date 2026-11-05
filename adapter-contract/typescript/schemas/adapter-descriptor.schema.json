@@ -39,6 +39,11 @@
           "type": "string"
         },
         {
+          "const": "runtime.keep_state",
+          "description": "Agent-named state folder kept across runtimes.",
+          "type": "string"
+        },
+        {
           "const": "tools.enabled",
           "description": "Adapter-native tool names to expose.",
           "type": "string"
@@ -262,6 +267,10 @@
         "service": {
           "default": false,
           "description": "Whether the selected runtime supports service lifecycle operations.",
+          "type": "boolean"
+        },
+        "session_resume": {
+          "description": "Whether the adapter implements durable native session creation and resume.",
           "type": "boolean"
         },
         "streaming": {

@@ -122,6 +122,20 @@ adapter boundary:
   the task environment.
 - Read identity, environment, artifacts, telemetry, and the invocation
   deadline (`deadline_millis`) from `RuntimeContext`, not from workflow settings.
+- If the adapter declares `runtime.keep_state`, keep all native state in
+  `RuntimeContext.state_dir` when it is present. Every runtime of the agent
+  receives the same folder.
+- Declare `capabilities.session_resume` only when the adapter implements durable
+  native sessions. Read `RuntimeContext.session_ref` at startup: a supplied
+  reference reopens that conversation in `state_dir`. Omission starts fresh.
+  `state_dir` controls retention. Native APIs own identifier interpretation and
+  history restoration.
+  Confirm identity in start output as `session_id` and in every
+  `AgentRunResult.session_id`. Do not silently fall back after failed resume.
+  Return structured startup `recovery_warnings` for safely restored but uncertain
+  turns. Preserve native history and do not replay work. Require
+  `AgentRunRequest.acknowledge_recovery` before new NeMo Fabric-controlled work.
+  Keep native interface writers covered by the inherited state lock on Unix.
 
 Reject unsupported values with stable, safe error codes. Do not log complete
 configs, environment values, headers, credentials, or arbitrary user input.

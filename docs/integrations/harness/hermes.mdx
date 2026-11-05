@@ -94,6 +94,16 @@ Use `runtime.max_turns` to set the Hermes agent-loop budget. The adapter maps
 that normalized field to `AIAgent.max_iterations`; `max_iterations` is not a
 Hermes harness setting.
 
+By default, the Hermes home is
+`<artifact root>/.fabric/hermes/runtimes/<runtime_id>`, so runtimes don't share
+config or the session database. With `runtime.keep_state`, it is the agent's
+state folder, `<artifact root>/.fabric/state/nvidia.fabric.hermes/<agent name>`:
+every runtime of the agent then uses the same session database, memory, skills
+and logs. Unless the caller explicitly selects a `SessionRef`, each runtime
+starts a new conversation, and earlier sessions stay in the
+database. At each start, the adapter rewrites `config.yaml` and removes an
+API token that an earlier runtime left in the Hermes home.
+
 ## Understand the Runtime Lifecycle
 
 Each NeMo Fabric runtime creates one Hermes Agent `AIAgent` and one `SessionDB`.
@@ -107,6 +117,55 @@ attempt is blocked, skipped, fails, or aborts without a rewrite.
 
 For the complete configuration and lifecycle reference, refer to the
 [Hermes Agent adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/hermes).
+
+## Serve the API Server and Dashboard
+
+A runtime can serve Hermes's API server and dashboard as child processes
+alongside its embedded agent:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.hermes",
+    settings={"interfaces": {"api": {"port": 8642}, "dashboard": {"port": 9119}}},
+)
+```
+
+- The adapter starts `python -m hermes_cli.main gateway run` for the API server
+  and `python -m hermes_cli.main dashboard --skip-build --isolated`, on the
+  adapter's interpreter and the runtime's Hermes home, each on `127.0.0.1` at
+  its port. Each must pass its health check, `GET /health` or
+  `GET /api/status`, within `startup_timeout_seconds` (60 by default, at most
+  75) of the runtime's start. `start` fails if a port is in use or a child exits first; a failed
+  start stops the children it started and leaves no token. Set `enabled` to
+  `false` to keep a configured interface off.
+- The children inherit the adapter host's environment without its
+  `API_SERVER_*` variables. The gateway also starts any other Hermes platform
+  that this environment configures, such as Telegram with `TELEGRAM_BOT_TOKEN`
+  or webhooks with `WEBHOOK_ENABLED`.
+- Once every enabled interface passes, the adapter writes the API server's
+  bearer token, generated at each start, to `interfaces/api.token` in the
+  Hermes home with mode `0600`. Send it as `Authorization: Bearer <token>`. Only the
+  gateway child receives it. Processes that run as the runtime's user,
+  including the agent's own tools, can read it.
+- The dashboard has no sign-in. On loopback, Hermes embeds its session token in
+  the page, so anyone who can reach the port can use the dashboard and its
+  browser chat, which runs the agent. The adapter turns off none of its pages.
+  Browser chat needs Hermes's built terminal UI bundle.
+- With interfaces enabled, the adapter writes an `openai` or `custom` model
+  that has a `base_url` to `config.yaml` as Hermes's `custom` provider, with
+  its key as a reference to `api_key_env`, so the API server and browser chat
+  use the configured endpoint and key.
+- `stop` removes the token and closes the dashboard and its owned browser-chat and recovery processes before stopping the API gateway. Detached processes started by these interfaces remain part of runtime cleanup. Each phase sends SIGTERM and then SIGKILL to surviving owned processes. The dashboard gets 2 seconds when the API is enabled, and the API gets 5 seconds. A dashboard-only runtime gets 5 seconds. The gateway drains in-flight API runs and cron jobs for 3 seconds. Unconfirmed process cleanup fails stop and retains the cleanup handles for a retry. A retained ownership record blocks replacement while earlier owned processes remain or their ownership cannot be inspected. After start, a child that exits doesn't fail the runtime check, and NeMo Fabric doesn't restart it.
+- The embedded agent, the gateway, the dashboard and browser chat share the
+  Hermes home, and Hermes coordinates their writes. The dashboard's gateway
+  actions, such as restart, start Hermes processes outside the runtime.
+- The API server needs `aiohttp`, from Hermes's `messaging` extra. The dashboard
+  needs a built frontend at `HERMES_WEB_DIST` or Hermes's own
+  `hermes_cli/web_dist`; the adapter never builds it. Interfaces need a POSIX
+  host: on Windows, `start` fails with `hermes_interfaces_unsupported_platform`
+  before any child starts.
 
 ## Runtime Health
 

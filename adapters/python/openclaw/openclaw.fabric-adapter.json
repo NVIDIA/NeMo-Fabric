@@ -64,6 +64,32 @@
         "additionalProperties": false,
         "description": "Inclusive consumer-allocated port range. The adapter selects a Gateway base port whose complete derived footprint through base + 110 fits within the range. When omitted, the adapter selects an available local range."
       },
+      "interfaces": {
+        "type": "object",
+        "properties": {
+          "dashboard": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Serve the Control UI. A present dashboard is on unless this is false."
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65425,
+                "description": "Exact loopback Gateway base port, which serves the Control UI. Start fails if it or port + 2 is in use. OpenClaw allocates browser ports through port + 110 on demand, so keep that range free. Can't be combined with port_range."
+              }
+            },
+            "required": ["port"],
+            "additionalProperties": false,
+            "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token."
+          }
+        },
+        "additionalProperties": false,
+        "description": "Native interfaces served by a managed runtime. Services reject interfaces."
+      },
       "startup_timeout_seconds": {
         "type": "number",
         "exclusiveMinimum": 0,
@@ -88,6 +114,9 @@
         "exclusiveMinimum": 0,
         "description": "Timeout between response bytes from the local OpenClaw Gateway. When unset, the invocation timeout bounds the response."
       }
+    },
+    "dependentSchemas": {
+      "port_range": {"properties": {"interfaces": {"properties": {"dashboard": false}}}}
     },
     "additionalProperties": false
   },
