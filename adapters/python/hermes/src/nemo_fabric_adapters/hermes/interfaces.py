@@ -49,6 +49,16 @@ def startup_timeout(settings: dict[str, Any]) -> float:
     )
 
 
+def require_supported_platform() -> None:
+    """Refuse interfaces on a host without POSIX process groups."""
+    if not POSIX:
+        raise lifecycle.LifecycleError(
+            "hermes_interfaces_unsupported_platform",
+            "Hermes interfaces require a POSIX host",
+            metadata={"field": "harness.settings.interfaces"},
+        )
+
+
 @dataclass
 class _Child:
     name: str
@@ -73,12 +83,7 @@ class InterfaceChildren:
         environment: dict[str, str],
     ) -> None:
         """Start the enabled interfaces and write the API token once all pass health."""
-        if not POSIX:
-            raise lifecycle.LifecycleError(
-                "hermes_interfaces_unsupported_platform",
-                "Hermes interfaces require a POSIX host",
-                metadata={"field": "harness.settings.interfaces"},
-            )
+        require_supported_platform()
         for name, port in ports.items():
             if not local_interfaces.port_available(port):
                 raise lifecycle.LifecycleError(

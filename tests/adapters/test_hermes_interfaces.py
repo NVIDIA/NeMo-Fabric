@@ -12,6 +12,8 @@ import socket
 import sys
 import time
 from pathlib import Path
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 import requests
@@ -260,6 +262,14 @@ async def test_hermes_interfaces_fail_start_on_windows_before_any_child_starts(
     tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(interfaces, "POSIX", False)
+    # start() stops whatever it started when it fails, so check the spawn
+    # itself rather than the children left afterwards.
+    spawn = AsyncMock()
+    monkeypatch.setattr(interfaces.asyncio, "create_subprocess_exec", spawn)
+    # Refusing before Hermes's setup keeps MCP discovery, which can take
+    # minutes, from outlasting a caller's start deadline.
+    write_config = MagicMock(wraps=configuration.write_hermes_config)
+    monkeypatch.setattr(configuration, "write_hermes_config", write_config)
     runtime = adapter.HermesRuntime()
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
@@ -272,7 +282,8 @@ async def test_hermes_interfaces_fail_start_on_windows_before_any_child_starts(
         )
 
     assert caught.value.code == "hermes_interfaces_unsupported_platform"
-    assert runtime._interfaces._children == []
+    spawn.assert_not_called()
+    write_config.assert_not_called()
     assert not _token_path(tmp_path).exists()
 
 
