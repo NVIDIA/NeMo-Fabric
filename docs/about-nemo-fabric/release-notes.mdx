@@ -23,9 +23,7 @@ This page summarizes NVIDIA NeMo Fabric 0.6.1 and the 0.6 release series. [GitHu
 
 ## Current Release: 0.6.1
 
-Hermes Agent v0.22.7 can record Relay 0.11 telemetry through NeMo Fabric. The Hermes adapter now accepts stable Relay versions `>=0.10,<0.12`, while retaining support for Hermes v0.22.5 with Relay 0.10. The default source setup selects v0.22.7. Existing Hermes environments can keep their compatible Relay 0.10 installation.
-
-Hermes still requires Python 3.14. Applications such as Gym can remain on Python 3.13 and select a separate Hermes environment with `ADAPTER_PYTHON`. Public SDK APIs and configuration are unchanged. Refer to the [Hermes installation guide](../integrations/harness/hermes.mdx) for supported combinations.
+NeMo Fabric 0.6.1 adds Relay 0.11 telemetry support for Hermes Agent v0.22.7 and selects that release in the default source setup. Existing Hermes v0.22.5 installations remain supported. Refer to [Hermes compatibility](#hermes-compatibility) under Upgrade Notes for supported versions and interpreter setup.
 
 ## NeMo Fabric 0.6.0
 
@@ -42,7 +40,7 @@ NeMo Fabric 0.6.0 makes agent execution easier to compare and operate. Key featu
 
 <Warning>
 
-The `nemo-fabric[relay]` extra and the Deep Agents, mini-SWE-agent, and NOOA Relay integrations now require `nemo-relay>=0.11,<0.12`. Hermes Agent v0.22.7 uses Relay 0.11; v0.22.5 remains supported with Relay 0.10. Hermes requires Python 3.14, with `ADAPTER_PYTHON` selecting a separate interpreter when the application uses another supported Python version. Claude, Codex, and Pi support Relay CLI releases `>=0.9,<0.12`; the Pi extension must match the CLI release. Remote HTTP model trust requires Relay CLI 0.11.
+The `nemo-fabric[relay]` extra and the Deep Agents, mini-SWE-agent, and NOOA Relay integrations now require `nemo-relay>=0.11,<0.12`. Claude, Codex, and Pi support Relay CLI releases `>=0.9,<0.12`; the Pi extension must match the CLI release. Remote HTTP model trust requires Relay CLI 0.11.
 
 </Warning>
 
@@ -56,6 +54,17 @@ Two collection features are enabled by default:
 Upgrade the runtime, adapters, adapter contract, and the new `nemo-fabric-evidence` package together. The runtime and adapter contract use the same version-matched evidence package; the SDK does not depend on the southbound adapter contract.
 
 Rust callers constructing `FabricConfig` or `RunResult` with complete struct literals must account for the added collection controls and optional result fields. Prefer defaults where available. The NeMo Fabric 0.6 Harbor extra selects `harbor>=0.24,<0.25`. Harbor 0.25.0’s upstream `fabric` extra targets NeMo Fabric 0.5.x; use the [Harbor integration guide](../integrations/consumer/harbor.mdx) to select the appropriate integration.
+
+### Hermes Compatibility
+
+The Hermes adapter accepts stable Relay versions `>=0.10,<0.12`. Use the Relay line required by the selected Hermes release:
+
+| Hermes Agent | NeMo Relay Python Package |
+| --- | --- |
+| v0.22.7 | `>=0.11,<0.12` |
+| v0.22.5 | `>=0.10,<0.11` |
+
+Hermes requires Python 3.14. Applications using another supported Python version can select a separate Hermes environment with `ADAPTER_PYTHON`. Public SDK APIs and configuration are unchanged. Refer to the [Hermes installation guide](../integrations/harness/hermes.mdx) for setup instructions.
 
 ## Release Highlights
 
