@@ -29,6 +29,7 @@ function failed(code: string, message: string, extensions?: JsonObject): AgentRu
 export class DeepAgentsCodeAdapterRuntime implements AdapterRuntime {
   private readonly factory: DeepAgentsCodeSessionFactory;
   private invoking = false;
+  private stopping = false;
   private generation = 0;
   private session?: DeepAgentsCodeSessionHandle;
 
@@ -46,17 +47,15 @@ export class DeepAgentsCodeAdapterRuntime implements AdapterRuntime {
 
   private async invalidate(session: DeepAgentsCodeSessionHandle): Promise<void> {
     if (this.session !== session) return;
-    this.generation += 1;
-    this.session = undefined;
     try {
-      await session.stop();
+      await this.stop();
     } catch {
       // Preserve the invocation failure that made the session unusable.
     }
   }
 
   async invoke(request: AgentRunRequest, context: RuntimeContext): Promise<AgentRunResult> {
-    if (this.session === undefined) {
+    if (this.session === undefined || this.stopping) {
       throw new LifecycleError("deepagents_code_not_started", "Deep Agents Code adapter runtime is not started");
     }
     if (typeof request.input !== "string") {
@@ -110,7 +109,7 @@ export class DeepAgentsCodeAdapterRuntime implements AdapterRuntime {
   async check(level: CheckLevel): Promise<AdapterCheckResult> {
     const session = this.session;
     const generation = this.generation;
-    if (session === undefined) return { ...unobservedHealth("session_closed"), outcome: "failed", activity: "stopped" };
+    if (session === undefined || this.stopping) return { ...unobservedHealth("session_closed"), outcome: "failed", activity: "stopped" };
     let result: AdapterCheckResult;
     try {
       result = await session.check(level);
@@ -124,7 +123,13 @@ export class DeepAgentsCodeAdapterRuntime implements AdapterRuntime {
   async stop(): Promise<void> {
     this.generation += 1;
     const session = this.session;
-    this.session = undefined;
-    if (session !== undefined) await session.stop();
+    if (session === undefined) return;
+    this.stopping = true;
+    // Keep the handle until the ACP stop settles so a failed stop can be retried.
+    await session.stop();
+    if (this.session === session) {
+      this.session = undefined;
+      this.stopping = false;
+    }
   }
 }
