@@ -35,7 +35,7 @@ The adapter's `relay` and `full` extras accept `nemo-relay>=0.10,<0.12`. Install
 | v0.22.7 | `>=0.11,<0.12` |
 | v0.22.5 | `>=0.10,<0.11` |
 
-Applications can use another Python version by setting `ADAPTER_PYTHON` to the Hermes Python 3.14 interpreter. The adapter reports a compatibility error at startup if Relay telemetry is enabled with an unsupported Hermes or Relay installation.
+Applications can use another Python version by setting `ADAPTER_PYTHON` to the Hermes Python 3.14 interpreter. When Relay telemetry is enabled, startup checks that the installed Relay version is a stable 0.10 or 0.11 release and that Hermes exposes the callable `agent.relay_runtime.resolve_plugin_sources` hook. Select the Hermes and Relay pairing from the table above.
 
 For local NeMo Fabric development, run the following command from the repository root. The recipe checks out Hermes Agent v0.22.7 at commit `b200f5bc60e31588ba2cb60e288029c4a54ba5fa` and creates an isolated Python 3.14 environment with the adapter's `relay` extra. Hermes declares its Python package version as `0.0.0`; use the Git tag and commit to identify the release when reviewing scanner results.
 
