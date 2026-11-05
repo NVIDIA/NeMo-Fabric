@@ -36,9 +36,11 @@ while True: time.sleep(0.01)
 try:
     for line in sys.stdin:
         message=json.loads(line); operation=message['operation']; output=None
-        if operation=='start' and (root/'fail-start').exists():
-            error={'stage':'start','code':(root/'fail-start').read_text(),'message':'PRIVATE detail','retryable':False}
+        failure=root/f'fail-{operation}'
+        if failure.exists():
+            error={'stage':operation,'code':failure.read_text(),'message':'PRIVATE detail','retryable':False}
             print(json.dumps({'operation':operation,'outcome':{'status':'failed','error':error}}),flush=True)
+            if operation=='stop': break
             continue
         if operation=='invoke':
             (root/'entered').write_text('entered')
