@@ -258,7 +258,7 @@ just test-typescript
 just docs
 ```
 
-Complete the [invocation deadline qualification checklist](tests/e2e/invocation-deadline-checklist.md) for releases containing the local or OpenShell runtime. Require real code-review inference with Hermes and Deep Agents on both the host and OpenShell, in addition to the model-free transport regression. Retain evidence from the release candidate; skipped live cases do not satisfy this gate.
+Use the separate [runtime deadline qualification skill](.agents/skills/qualify-runtime-deadlines/SKILL.md) to prepare a saved plan and run the focused source-revision gate. It builds noneditable SDK wheels and requires the full Hermes/Deep Agents × host/OpenShell inference matrix plus the model-free transport regression. Before tagging, run its `verify --release --revision "$RELEASE_SHA"` check against the retained report. Missing cells, subsets, skipped execution, failed cleanup or mismatched evidence do not satisfy this gate. Keep run evidence outside version control.
 
 If you want to validate the Python packaging recipe before pushing a tag, run:
 
