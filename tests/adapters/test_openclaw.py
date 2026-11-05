@@ -481,6 +481,8 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     assert generated["mcp"]["servers"]["local"]["command"] == "python"
     assert generated["mcp"]["servers"]["remote"]["transport"] == ("streamable-http")
     assert "auth" not in generated["mcp"]["servers"]["remote"]
+    # The sandbox would deny OpenClaw's model catalog lookup anyway.
+    assert generated["models"]["catalogRefresh"] == {"enabled": False}
     assert not state_root.exists()
 
 
@@ -1321,6 +1323,54 @@ async def test_openclaw_stop_continues_after_cleanup_failures(
     assert runtime._windows_job is None
     assert runtime._log_tasks == []
     assert runtime._temp_dir is None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock openclaw script directly")
+async def test_openclaw_startup_timeout_bounds_all_of_start(
+    mock_openclaw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # Each command finishes within the timeout, but the two together don't.
+    monkeypatch.setenv("FAKE_OPENCLAW_COMMAND_DELAY", "0.6")
+    monkeypatch.setenv("FAKE_OPENCLAW_CAPTURE", str(tmp_path / "config.json"))
+    config = _config(mock_openclaw)
+    assert config.harness is not None
+    config.harness.settings["startup_timeout_seconds"] = 1
+    runtime = adapter.OpenClawRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(
+            {
+                "config": config,
+                "runtime_context": _context(tmp_path).to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+
+    assert caught.value.code == "openclaw_command_timeout"
+    assert runtime._process is None
+
+
+async def test_openclaw_startup_deadline_bounds_a_pending_readiness_request():
+    async def never_respond(reader, _writer):
+        await reader.read()
+
+    server = await asyncio.start_server(never_respond, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = None
+    runtime._process = mock_process
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime._wait_started(port, "token", 0.2)
+    finally:
+        server.close()
+
+    assert caught.value.code == "openclaw_gateway_start_timeout"
+    # Each readiness request otherwise waits up to 1 second for a response.
+    assert loop.time() - started < 0.8
 
 
 @pytest.mark.parametrize("phase", ["client", "process", "logs"])
