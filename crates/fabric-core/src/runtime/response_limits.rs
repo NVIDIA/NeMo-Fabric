@@ -54,15 +54,7 @@ pub(super) fn enforce_response(result: &mut RunResult, limits: ResponseLimits) -
     serde_json::to_writer(&mut counter, result).map_err(FabricError::SerializeJson)?;
     // Exempt only a small failed diagnostic, never arbitrary adapter output
     // that happens to use the same error code.
-    if counter.0 <= 64 * 1024
-        && result.status == RunStatus::Failed
-        && result.output.is_null()
-        && result.artifacts.artifacts.is_empty()
-        && result
-            .error
-            .as_ref()
-            .is_some_and(|error| error.code == "response_limit_exceeded")
-    {
+    if counter.0 <= 64 * 1024 && is_sdk_limit_diagnostic(result) {
         return Ok(());
     }
     if counter.0 > u64::from(limits.max_response_bytes) {
@@ -75,6 +67,45 @@ pub(super) fn enforce_response(result: &mut RunResult, limits: ResponseLimits) -
         );
     }
     Ok(())
+}
+
+fn is_sdk_limit_diagnostic(result: &RunResult) -> bool {
+    let Some(error) = &result.error else {
+        return false;
+    };
+    if error.code != "response_limit_exceeded" {
+        return false;
+    }
+    let (Some(limit), Some(configured), Some(observed), Some(asset)) = (
+        error.metadata.get("limit").and_then(Value::as_str),
+        error.metadata.get("configured").and_then(Value::as_u64),
+        error.metadata.get("observed").and_then(Value::as_u64),
+        error.metadata.get("asset").and_then(Value::as_str),
+    ) else {
+        return false;
+    };
+    if ![
+        "max_response_bytes",
+        "max_artifact_bytes",
+        "max_artifact_files",
+        "max_artifact_file_bytes",
+    ]
+    .contains(&limit)
+        || configured == 0
+        || configured > u64::from(u32::MAX)
+        || observed <= configured
+        || asset.is_empty()
+        || asset.len() > 4096
+        || asset.chars().any(char::is_control)
+        || (limit == "max_response_bytes" && asset != "RunResult")
+    {
+        return false;
+    }
+    // Match the complete output of the one SDK rejection constructor, including
+    // empty payload fields, exact diagnostic text/metadata and retry semantics.
+    let mut canonical = result.clone();
+    reject(&mut canonical, limit, configured, observed, asset);
+    *result == canonical
 }
 
 pub(super) fn enforce_local_artifacts(
@@ -185,6 +216,52 @@ mod tests {
                 assert_eq!(result.error.as_ref().unwrap(), &error);
             }
         }
+    }
+
+    #[test]
+    fn diagnostic_exemption_requires_the_exact_sdk_rejection_shape() {
+        let mut original = result();
+        reject(&mut original, "max_response_bytes", 1, 1000, "RunResult");
+        assert!(is_sdk_limit_diagnostic(&original));
+        for (field, value) in [
+            ("usage", serde_json::json!({})),
+            ("metadata", serde_json::json!({"payload": "x"})),
+            (
+                "events",
+                serde_json::json!([{"event_id":"stop", "timestamp_millis":0, "kind":"stop", "message":"payload"}]),
+            ),
+            ("telemetry", serde_json::json!([{"relay_enabled":false}])),
+            ("artifacts", serde_json::json!({"root":"/tmp"})),
+        ] {
+            let mut mapping = serde_json::to_value(&original).unwrap();
+            mapping[field] = value;
+            let mut result: RunResult = serde_json::from_value(mapping).unwrap();
+            assert!(!is_sdk_limit_diagnostic(&result), "{field}");
+            enforce_response(
+                &mut result,
+                ResponseLimits {
+                    max_response_bytes: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert!(is_sdk_limit_diagnostic(&result));
+            assert_eq!(
+                result.error.unwrap().metadata["limit"],
+                "max_response_bytes"
+            );
+        }
+        let mut result = original.clone();
+        result
+            .error
+            .as_mut()
+            .unwrap()
+            .metadata
+            .insert("extra".into(), Value::Bool(true));
+        assert!(!is_sdk_limit_diagnostic(&result));
+        let mut result = original;
+        result.error.as_mut().unwrap().message = "arbitrary payload".into();
+        assert!(!is_sdk_limit_diagnostic(&result));
     }
 
     #[test]

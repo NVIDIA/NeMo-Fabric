@@ -1473,9 +1473,9 @@ A breach returns `status == "failed"` with
 `error.code == "response_limit_exceeded"`. The error names the limit, configured
 value, observed value and offending asset in both its message and metadata.
 The rejected output and artifact manifest are replaced by this diagnostic;
-there is no partial successful result or silent truncation. Limit diagnostics
-are exempt from the response budget so even a one-byte budget reports why it
-failed. A limit failure does not undo agent side effects and is not automatically
+there is no partial successful result or silent truncation. Only the SDK's minimal canonical limit diagnostic is exempt from the response
+budget, so even a one-byte budget reports why it failed. Additional payloads or
+shutdown metadata are checked normally. A limit failure does not undo agent side effects and is not automatically
 retried.
 
 For a large screenshot, keep the image in a declared artifact instead of embedding
