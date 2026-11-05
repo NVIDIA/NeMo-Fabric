@@ -108,7 +108,7 @@ Stop removes the API token, sends SIGTERM to running interface process groups, a
 
 Enable Relay through the normal NeMo Fabric telemetry configuration. The embedded and managed native paths receive the generated Relay plugin configuration. Native sessions retain their own trace roots rather than being assigned to the embedded Fabric invocation.
 
-For SDK invocations, the adapter finalizes the Hermes Relay session and flushes subscribers before returning, so available ATOF/ATIF artifacts are complete at the invocation boundary. With a live Relay runtime, Hermes emits `compaction` when tracked compaction rewrites history or provider state; `compaction.attempt` describes an attempt that is blocked, skipped, fails, or aborts without a rewrite.
+For SDK invocations, the adapter finalizes the Hermes Relay session and flushes subscribers before returning, so available ATOF/ATIF artifacts are complete at the invocation boundary. Managed native API turns also finalize and flush a Relay segment when execution returns. This makes ATIF available per turn without deleting the native conversation; subsequent turns can continue it and produce separate segments. Export failures are logged, so consumers must verify artifact contents. With a live Relay runtime, Hermes emits `compaction` when tracked compaction rewrites history or provider state; `compaction.attempt` describes an attempt that is blocked, skipped, fails, or aborts without a rewrite.
 
 Native API responses remain native responses. Relay's standard artifact format provides common execution evidence, but does not by itself provide Fabric result normalization, complete usage accounting, or session-scoped collection of native transcripts and generated files.
 
@@ -126,68 +126,25 @@ export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
   tests/adapters/test_hermes_interfaces.py -q
 ```
 
-These tests exercise the installed native Hermes processes against a local mock model endpoint. They check configuration mapping, two fresh API conversations, private configuration files, authentication, readiness failures, and cleanup. They do not establish compatibility with your hosted model or qualify browser interaction.
+These tests exercise the installed native Hermes processes against a local mock model endpoint. They check configuration mapping, fresh conversations, ATIF export at turn completion, continued native conversation state, private configuration files, authentication, readiness failures, and cleanup. They do not establish compatibility with your hosted model or qualify browser interaction.
 
-### Check a Live Model Endpoint
+### Run a Live File Task and Inspect Relay
 
-Reuse the `config` example from the [adapter guide](./hermes.mdx#configure-the-adapter), replacing its endpoint, model, and credential reference with your own values. With the Hermes interpreter selected through `ADAPTER_PYTHON`, run the following code in the same script:
+Use the [native interfaces example](../../../examples/interfaces/README.md) to submit real input through the Hermes API, verify its file effects, and inspect Relay evidence. It starts one runtime with ATOF and ATIF enabled and checks both formats separately.
 
-```python
-import asyncio
-import json
-from pathlib import Path
-from urllib.request import Request, urlopen
+From the repository root, with your prepared Hermes environment and model credentials:
 
-from nemo_fabric import Fabric
-
-marker = "FABRIC_CONFIG_CHECK"
-config.harness.settings["interfaces"] = {"api": {"port": 8642}}
-config.instructions.system.content = f"Reply exactly {marker} to every user message. Do not call tools."
-config.models["default"].temperature = 0.0
-config.models["default"].top_p = 0.41
-config.models["default"].max_tokens = 128
-config.environment.artifacts = Path("artifacts/hermes-interface-check").resolve()
-
-def native_turn(token, number):
-    request = Request(
-        "http://127.0.0.1:8642/v1/chat/completions",
-        data=json.dumps({
-            "model": "hermes-agent",
-            "messages": [{"role": "user", "content": f"Hello, conversation {number}."}],
-        }).encode(),
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-    )
-    with urlopen(request, timeout=120) as response:
-        return json.load(response)["choices"][0]["message"]["content"]
-
-async def main():
-    async with await Fabric().start_runtime(config) as runtime:
-        result = await runtime.invoke(input="Please respond to this simple greeting without using tools.")
-        assert result.output.response == marker
-        token_path = (
-            config.environment.artifacts / ".fabric/hermes/runtimes"
-            / runtime.runtime_id / "interfaces/api.token"
-        )
-        token = token_path.read_text()
-        for number in range(2):
-            assert await asyncio.to_thread(native_turn, token, number) == marker
-    assert not token_path.exists()
-
-asyncio.run(main())
+```bash
+export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
+.venv-hermes/bin/python examples/interfaces/hermes.py \
+  --base-url "$MODEL_BASE_URL" \
+  --model "$MODEL_NAME" \
+  --port 8642
 ```
 
-This is an instruction and access smoke test. To establish configuration parity, also inspect actual model requests using your endpoint's request capture or a test-owned forwarding recorder. Do not infer parity from matching answers or generated files alone.
+The example uses sample release notes by default. Add `--input-file /path/to/release-notes.md` for your own input. Its README includes setup, output verification, and commands to inspect ATIF tool steps and raw ATOF events. The example exits unsuccessfully if the generated file, tool observations, populated ATIF trajectory, or token cleanup is missing.
 
-| Check | Required evidence |
-| --- | --- |
-| Model and credentials | Both paths call the configured endpoint/model with the intended credential; do not record credential values. |
-| Instructions and generation | Captured requests contain the marker instruction, temperature `0`, top-p `0.41`, and token limit `128`. |
-| Tool policy | The file-only configuration exposes `read_file`, `write_file`, `patch`, and `search_files`, without unrelated tools. Test blocked-tool behavior separately. |
-| Conversation isolation | Two fresh native conversations remain distinct from each other and the embedded Fabric conversation. |
-| Relay | With Relay enabled, actual turns emit supported records with distinct native session roots. Check artifact contents and attribution, not just file existence. |
-| Cleanup | Runtime stop removes the API token and configuration snapshot and terminates the managed child. Descendant termination needs its own evidence where group signals are denied. |
-
-An SDK call returns a normalized `RunResult`; the native call returns an API response. Successful Relay capture does not change that result boundary.
+Matching answers or generated configuration files do not establish configuration parity. Inspect actual model requests for the configured model, credential, instructions, generation settings, and tool policy. Verify session attribution in the trace; the native API response remains distinct from a normalized Fabric `RunResult`.
 
 ## 6. Limitations and Planned Work
 
