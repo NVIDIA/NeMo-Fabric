@@ -152,6 +152,7 @@
     }
   },
   "capabilities": {
+    "session_resume": true,
     "metadata": {"health_checks": ["live", "active", "ready"]}
   }
 }

@@ -83,6 +83,22 @@ impl LocalHostProcess {
         self.identity.is_some() && platform::start_identity(self.pid) == self.identity
     }
 
+    /// A missing observation alone is not proof that an owned writer exited.
+    #[cfg(unix)]
+    pub(crate) fn has_exited(&self) -> bool {
+        if let (Some(original), Some(current)) = (self.identity, platform::start_identity(self.pid))
+            && original != current
+        {
+            return true;
+        }
+        if platform::is_zombie(self.pid) {
+            return true;
+        }
+        // SAFETY: signal zero only checks existence and permission.
+        (unsafe { libc::kill(self.pid as libc::pid_t, 0) }) != 0
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+    }
+
     /// Record the host `pid`, started by NeMo Fabric at `started_at`.
     pub(crate) fn new(pid: u32, started_at: SystemTime) -> Self {
         Self {
@@ -525,6 +541,10 @@ mod platform {
         stat(pid).ok().map(|stat| stat.start)
     }
 
+    pub(super) fn is_zombie(pid: u32) -> bool {
+        stat(pid).is_ok_and(|stat| stat.zombie)
+    }
+
     fn sysconf(name: libc::c_int) -> u64 {
         // SAFETY: sysconf has no memory-safety preconditions.
         u64::try_from(unsafe { libc::sysconf(name) }).unwrap_or(0)
@@ -707,6 +727,23 @@ mod platform {
         usage(pid).ok().map(|info| info.ri_proc_start_abstime)
     }
 
+    pub(super) fn is_zombie(pid: u32) -> bool {
+        let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
+        // SAFETY: proc_pidinfo writes at most the supplied buffer size. Read the
+        // structure only when the full structure has been initialized.
+        let size = std::mem::size_of::<libc::proc_bsdinfo>();
+        let read = unsafe {
+            libc::proc_pidinfo(
+                pid as libc::pid_t,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                info.as_mut_ptr().cast(),
+                size as i32,
+            )
+        };
+        read == size as i32 && unsafe { info.assume_init() }.pbi_status == libc::SZOMB
+    }
+
     pub(super) fn read_tree(root: u32, identity: u64) -> Result<TreeRead, &'static str> {
         let timebase = timebase().ok_or(PROCESS_UNREADABLE)?;
         read_tree_with(&Live { timebase }, root, identity)
@@ -721,6 +758,11 @@ mod platform {
 
     pub(super) fn start_identity(_pid: u32) -> Option<u64> {
         None
+    }
+
+    #[cfg(unix)]
+    pub(super) fn is_zombie(_pid: u32) -> bool {
+        false
     }
 
     pub(super) fn read_tree(_root: u32, _identity: u64) -> Result<TreeRead, &'static str> {

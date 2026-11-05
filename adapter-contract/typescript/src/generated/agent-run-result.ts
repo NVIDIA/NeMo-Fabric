@@ -47,6 +47,10 @@ export interface AgentRunResultCommon {
    */
   output: JsonValue;
   /**
+   * Confirmed adapter-issued identity of the durable native session.
+   */
+  session_id?: string | null;
+  /**
    * Normalized model usage when reported by the adapter target.
    */
   usage?: AgentUsage | null;

@@ -90,6 +90,7 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
             "--agent",
             "--runtime-id",
             "--config",
+            "--session-ref",
             "--input",
             "--request",
             "--timeout-seconds",
@@ -106,8 +107,13 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
     if operation in ("invoke", "stop"):
         required.add("--runtime-id")
     if operation in CONFIG_OPERATIONS:
-        required.add("--config")
+        config_flags = flags.keys() & {"--config", "--request"}
+        if len(config_flags) != 1:
+            raise ProtocolError()
+        required.update(config_flags)
     allowed = required.copy()
+    if operation == "start" and "--config" in flags:
+        allowed.add("--session-ref")
     if operation == "check":
         allowed.add("--timeout-seconds")
         if flags.keys() & {"--agent", "--runtime-id"}:
@@ -142,7 +148,19 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
         if flag in flags:
             request[flag[2:].replace("-", "_")] = flags[flag]
     if operation in CONFIG_OPERATIONS:
-        request["config"] = read_input(flags["--config"])
+        if "--config" in flags:
+            request["config"] = read_input(flags["--config"])
+        else:
+            payload = read_input(flags["--request"])
+            if (
+                not isinstance(payload, dict)
+                or "config" not in payload
+                or not payload.keys() <= {"config", "session_ref"}
+            ):
+                raise ProtocolError()
+            request.update(payload)
+    if "--session-ref" in flags:
+        request["session_ref"] = read_input(flags["--session-ref"])
     if operation == "invoke":
         flag = next(iter(payload_flags))
         request[flag[2:]] = read_input(flags[flag])

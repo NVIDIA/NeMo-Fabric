@@ -343,6 +343,7 @@ async def run(
     base_dir: str | os.PathLike[str] | None = None,
     input: Any = None,
     request: RunRequest | None = None,
+    session_ref: SessionRef | None = None,
     expected_descriptor_sha256: str | None = None,
 ) -> RunResult
 ```
@@ -357,6 +358,7 @@ Execute one complete start, invoke, and stop lifecycle.
 
  - <b>`config`</b>:  Complete typed ``FabricConfig``.
  - <b>`base_dir`</b>:  Base directory for resolving relative paths.
+ - <b>`session_ref`</b>:  Native session to resume. Durable sessions  require retained storage and adapter support. Omission starts fresh.
  - <b>`input`</b>:  JSON-compatible invocation input.
  - <b>`request`</b>:  Complete validated ``RunRequest``.
  - <b>`expected_descriptor_sha256`</b>:  Optional host-inspection fingerprint.  Reject descriptor drift before starting the runtime.
@@ -385,6 +387,7 @@ async def start_runtime(
     *,
     base_dir: str | os.PathLike[str] | None = None,
     overrides: Mapping[str, Any] | None = None,
+    session_ref: SessionRef | None = None,
     streaming: bool = False,
     launch_collector: bool | None = None,
     completion_wait_timeout: float = 1.0,
@@ -403,6 +406,7 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
 
  - <b>`config`</b>:  Complete typed ``FabricConfig``.
  - <b>`base_dir`</b>:  Base directory for resolving relative paths.
+ - <b>`session_ref`</b>:  Native session to resume. Durable sessions  require retained storage and adapter support. Omission starts fresh.
  - <b>`overrides`</b>:  JSON-compatible overrides applied to every invocation  in the runtime unless superseded by invocation overrides.
  - <b>`streaming`</b>:  Whether to enable collector-backed NeMo Relay ATOF  streaming for ``Runtime.invoke_stream()``.
  - <b>`launch_collector`</b>:  Whether to launch an embedded collector. ``None``  defaults to ``True`` when streaming is enabled. ``False`` uses  an externally managed collector. Pi does not support ``False``.  This argument cannot be set unless ``streaming=True``.
@@ -435,6 +439,7 @@ async def start_runtime_in(
     *,
     base_dir: str | os.PathLike[str] | None = None,
     overrides: Mapping[str, Any] | None = None,
+    session_ref: SessionRef | None = None,
     streaming: bool = False,
 ) -> Runtime
 ```
@@ -450,6 +455,7 @@ Starting or stopping the runtime does not release ``environment``. Runtime and r
  - <b>`config`</b>:  Complete typed ``FabricConfig`` matching the environment.
  - <b>`environment`</b>:  Handle returned by ``prepare_environment()`` or  ``attach_environment()``.
  - <b>`base_dir`</b>:  Base directory for resolving relative paths.
+ - <b>`session_ref`</b>:  Native session to resume. Durable sessions  require retained storage and adapter support. Omission starts fresh.
  - <b>`overrides`</b>:  JSON-compatible runtime-scoped invocation overrides.
  - <b>`streaming`</b>:  Whether to provision NeMo Relay ATOF streaming.
 

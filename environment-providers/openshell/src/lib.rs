@@ -520,6 +520,14 @@ fn valid_diagnostic_code(code: &str) -> bool {
     matches!(
         code,
         "platform_unsupported"
+            | "state_in_use"
+            | "session_not_found"
+            | "session_incompatible"
+            | "session_adapter_mismatch"
+            | "session_ref_invalid"
+            | "session_storage_required"
+            | "session_resume_unsupported"
+            | "runtime_busy"
             | "cleanup_unconfirmed"
             | "invalid_request"
             | "interface_unsupported"
@@ -1366,6 +1374,8 @@ enum TaskCommand {
     Start {
         agent: String,
         config: Value,
+        #[serde(default)]
+        session_ref: Option<Value>,
     },
     Invoke {
         agent: String,
@@ -1389,6 +1399,7 @@ impl TaskCommand {
 
     fn arguments(self) -> Result<(&'static str, Vec<String>, Option<Value>), ProviderError> {
         let mut arguments = vec!["fabric-agent-ctl".to_string()];
+        let mut bundled_start = false;
         let (operation, agent, runtime_id, payload) = match self {
             Self::Check {
                 timeout_seconds,
@@ -1433,7 +1444,27 @@ impl TaskCommand {
                 }
                 return Ok(("check", arguments, None));
             }
-            Self::Start { agent, config } => ("start", agent, None, Some(config)),
+            Self::Start {
+                agent,
+                config,
+                session_ref,
+            } => {
+                if !config.is_object()
+                    || session_ref.as_ref().is_some_and(|value| !value.is_object())
+                {
+                    return Err(ProviderError::contract(
+                        "invalid_runtime_command",
+                        "SDK start payload is invalid",
+                    ));
+                }
+                let payload = if let Some(session_ref) = session_ref {
+                    bundled_start = true;
+                    json!({"config": config, "session_ref": session_ref})
+                } else {
+                    config
+                };
+                ("start", agent, None, Some(payload))
+            }
             Self::Invoke {
                 agent,
                 runtime_id,
@@ -1459,7 +1490,7 @@ impl TaskCommand {
         }
         if payload.is_some() {
             arguments.extend([
-                if operation == "start" {
+                if operation == "start" && !bundled_start {
                     "--config"
                 } else {
                     "--request"
@@ -2398,6 +2429,59 @@ fn grpc_error_code(code: tonic::Code) -> &'static str {
 mod tests {
     use super::*;
     use miniz_oxide::deflate::compress_to_vec_zlib;
+
+    #[test]
+    fn session_selection_reaches_the_guest_without_command_line_values() {
+        let selector = json!({"schema_version": "fabric.session_ref/v1alpha1", "adapter_id": "nvidia.fabric.hermes", "session_id": "private-native-id"});
+        let config = json!({"metadata": {"name": "researcher"}});
+        let command: TaskCommand = serde_json::from_value(json!({"operation": "start", "agent": "researcher", "config": config, "session_ref": selector})).expect("explicit session start");
+        let (operation, arguments, payload) = command.arguments().unwrap();
+        assert_eq!(operation, "start");
+        assert_eq!(
+            arguments,
+            [
+                "fabric-agent-ctl",
+                "start",
+                "--agent",
+                "researcher",
+                "--request",
+                "-"
+            ]
+        );
+        assert_eq!(
+            payload,
+            Some(json!({"config": config, "session_ref": selector}))
+        );
+    }
+
+    #[test]
+    fn retained_state_rejections_preserve_their_known_effects() {
+        for code in [
+            "state_in_use",
+            "session_not_found",
+            "session_incompatible",
+            "session_adapter_mismatch",
+            "session_ref_invalid",
+            "session_storage_required",
+            "session_resume_unsupported",
+            "runtime_busy",
+        ] {
+            let operation = if code == "runtime_busy" {
+                "stop"
+            } else {
+                "start"
+            };
+            let response = json!({"operation": operation, "status": "failed", "changed": false, "result": null, "error": {"code": code, "stage": operation, "effects": "none", "message": "PRIVATE"}});
+            let decoded =
+                decode_sdk_command_response(operation, 1, &serde_json::to_vec(&response).unwrap())
+                    .expect("normalized task rejection");
+            assert_eq!(
+                decoded,
+                json!({"status": "rejected", "error": {"code": code, "stage": operation, "effects": "none"}})
+            );
+            assert!(!decoded.to_string().contains("PRIVATE"));
+        }
+    }
 
     #[test]
     fn server_check_maps_to_the_named_health_command() {
@@ -3347,6 +3431,7 @@ mod tests {
         let output = runtime_command(
             environment_handle_fixture(),
             TaskCommand::Start {
+                session_ref: None,
                 agent: "echo".to_string(),
                 config: json!({}),
             },
@@ -3379,6 +3464,7 @@ mod tests {
         let output = runtime_command(
             environment_handle_fixture(),
             TaskCommand::Start {
+                session_ref: None,
                 agent: "echo".to_string(),
                 config: json!({}),
             },

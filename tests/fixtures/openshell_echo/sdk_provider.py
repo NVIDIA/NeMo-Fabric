@@ -74,11 +74,27 @@ async def main():
                 else:
                     await runtime.stop()
                     value = None
-                if command["operation"] == "invoke" and os.environ.get("FABRIC_TEST_DROP_EXECUTION"):
+                if command["operation"] == "invoke" and os.environ.get(
+                    "FABRIC_TEST_DROP_EXECUTION"
+                ):
                     value.pop("execution", None)
-                if command["operation"] == "invoke" and os.environ.get("FABRIC_TEST_MALFORM_EXECUTION"):
+                if command["operation"] == "invoke" and os.environ.get(
+                    "FABRIC_TEST_MALFORM_EXECUTION"
+                ):
                     value["execution"] = "malformed optional evidence"
                 fault = os.environ.get("FABRIC_TEST_PROVIDER_FAULT")
+                if (
+                    fault == "unexpected_session_start"
+                    and command["operation"] == "start"
+                ) or (
+                    fault == "unexpected_session_result"
+                    and command["operation"] == "invoke"
+                ):
+                    value["session_ref"] = {
+                        "schema_version": "fabric.session_ref/v1alpha1",
+                        "adapter_id": "different-adapter",
+                        "session_id": "another-session",
+                    }
                 if not fault_injected and (
                     (fault == "start" and command["operation"] == "start")
                     or (fault == "invoke" and command["operation"] == "invoke")
@@ -118,7 +134,9 @@ async def main():
                 for file in json.loads(result.stdout)["files"]:
                     content = zlib.decompress(bytes(file["content"]))
                     if len(content) != file["uncompressed_size"]:
-                        raise ValueError("artifact reader returned an incorrect file size")
+                        raise ValueError(
+                            "artifact reader returned an incorrect file size"
+                        )
                     output.append({"path": file["path"], "content": list(content)})
             elif operation == "release":
                 output = (
