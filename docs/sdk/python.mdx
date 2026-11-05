@@ -138,7 +138,8 @@ Attached services require separate route-specific admission.
 ## Execution Model
 
 NeMo Fabric separates configuration, planning, runtime lifecycle, and individual
-invocations. It does not expose a separate portable session layer.
+invocations. Adapters that declare `session_resume` can also expose a portable
+`SessionRef` for an explicitly selected durable conversation.
 
 ```mermaid
 flowchart TB
@@ -886,7 +887,8 @@ print(first.status, second.status)
 The adapter reuses its native state between calls. Codex maps the calls to turns
 on one live thread, Deep Agents invokes one compiled graph and checkpointer,
 Hermes Agent reuses one agent and session database, and Claude keeps one connected SDK
-client. Harness-native identifiers remain adapter-internal.
+client. Durable Hermes conversations expose their native identifier inside an
+opaque `SessionRef`.  NeMo Fabric does not interpret that identifier.
 
 ### Keep Agent State Across Runtimes
 
@@ -909,6 +911,65 @@ The operating system releases the lock after all copies of the lock have closed:
 Planning fails without an artifact directory or for an adapter that doesn't declare `runtime.keep_state`. The Hermes Agent adapter declares `runtime.keep_state`.
 
 Enabling `runtime.keep_state` preserves earlier Hermes sessions in the database. Each new Hermes SDK runtime starts a fresh conversation.
+
+### Resume a Hermes Conversation
+
+Retention preserves state. Omitting `session_ref` starts a fresh conversation.
+Resume requires the exact `SessionRef` and access to the original retained
+storage. Hermes accepts `session_ref` through `Fabric.run()`, `start_runtime()`,
+and `start_runtime_in()`:
+
+```python
+from nemo_fabric import Fabric, SessionRef
+
+fabric = Fabric()
+# config.runtime.keep_state must be True and an artifact root must be supplied.
+async with await fabric.start_runtime(config) as runtime:
+    reference_data = runtime.session_ref.to_mapping()
+    await runtime.invoke(input="Inspect the repository")
+
+# Persist reference_data and the retained artifact root in caller-owned storage.
+reference = SessionRef.from_mapping(reference_data)
+async with await fabric.start_runtime(config, session_ref=reference) as resumed:
+    if not resumed.recovery_warnings:
+        await resumed.invoke(input="Continue the review")
+```
+
+The reference contains `schema_version` (`fabric.session_ref/v1alpha1`),
+`adapter_id`, and `session_id`. A resumed runtime has a new runtime ID and the
+same session reference. Results confirm the reference in `RunResult.session_ref`.
+An agent name is a label: correcting the name does not change the selected
+session. NeMo Fabric resolves the reference only within the supplied artifact root,
+using private relative storage bindings under `.fabric/state/<adapter id>/.sessions`.
+Move or retain the complete state tree, including these bindings. NeMo Fabric does
+not maintain a consumer identity registry. The caller controls storage access.
+NeMo Fabric supplies the current configuration and instructions when the runtime
+starts. Hermes can restore its saved system prompt and pinned tools according
+to native resume rules, so new instructions do not necessarily replace the
+conversation's saved prompt.
+
+Missing sessions, mismatched adapters, unsupported capabilities, incompatible
+state, or an unconfirmed native identity fail explicitly. NeMo Fabric never falls
+back to a fresh conversation after an explicit resume failure. Structured SDK
+errors expose codes such as `session_not_found`, `session_adapter_mismatch`,
+`session_resume_unsupported`, and `state_in_use`.
+
+If a previous turn might be incomplete, Hermes can restore the native history
+and return `Runtime.recovery_warnings` with `session_recovery_required`. NeMo Fabric
+does not replay the request or supply fabricated tool results. Inspect the
+native history and any external effects before sending a new request with
+`RunRequest(input=..., acknowledge_recovery=True)`. Ordinary NeMo Fabric invocations
+remain blocked until acknowledgment. A durable completed response does not
+become uncertain merely because the caller lost the reply. A recorded tool
+failure followed by a completed response also does not require recovery.
+
+Writer ownership remains held while cleanup is unconfirmed. A busy managed
+stop returns `runtime_busy`. Retry stop after the invocation ends. A failed or
+timed out stop does not establish that replacement is safe. Keep the runtime
+handle and retry cleanup. Hermes native interface children retain the state
+lock when their adapter host exits, so a surviving writer prevents replacement.
+These controls do not change how the native Hermes API or dashboard chooses
+conversations or accepts work.
 
 ## Runtime Resource Snapshots
 

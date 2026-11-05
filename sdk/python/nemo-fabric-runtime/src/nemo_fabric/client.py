@@ -41,6 +41,7 @@ from nemo_fabric.runtime import (
     _run_request_payload,
 )
 from nemo_fabric.service import Service
+from nemo_fabric.types import SessionRef
 from nemo_fabric.service import ServiceStatus
 from nemo_fabric.streaming import (
     _configured_stream_sink,
@@ -517,6 +518,7 @@ class Fabric:
         base_dir: str | os.PathLike[str] | None = None,
         input: Any = None,
         request: RunRequest | None = None,
+        session_ref: SessionRef | None = None,
         expected_descriptor_sha256: str | None = None,
     ) -> RunResult:
         """Execute one complete start, invoke, and stop lifecycle.
@@ -529,6 +531,8 @@ class Fabric:
         Args:
             config: Complete typed ``FabricConfig``.
             base_dir: Base directory for resolving relative paths.
+            session_ref: Native session to resume. Durable sessions
+                require retained storage and adapter support. Omission starts fresh.
             input: JSON-compatible invocation input.
             request: Complete validated ``RunRequest``.
             expected_descriptor_sha256: Optional host-inspection fingerprint.
@@ -556,6 +560,7 @@ class Fabric:
             input=input,
             request=request,
         )
+        plan = _with_session_ref(plan, session_ref)
         native = self._require_native_module("run")
         try:
             return RunResult.from_mapping(
@@ -582,6 +587,7 @@ class Fabric:
         *,
         base_dir: str | os.PathLike[str] | None = None,
         overrides: Mapping[str, Any] | None = None,
+        session_ref: SessionRef | None = None,
         streaming: bool = False,
         launch_collector: bool | None = None,
         completion_wait_timeout: float = 1.0,
@@ -601,6 +607,8 @@ class Fabric:
         Args:
             config: Complete typed ``FabricConfig``.
             base_dir: Base directory for resolving relative paths.
+            session_ref: Native session to resume. Durable sessions
+                require retained storage and adapter support. Omission starts fresh.
             overrides: JSON-compatible overrides applied to every invocation
                 in the runtime unless superseded by invocation overrides.
             streaming: Whether to enable collector-backed NeMo Relay ATOF
@@ -637,6 +645,7 @@ class Fabric:
 
         return await self._start_runtime(
             config,
+            session_ref=session_ref,
             base_dir=base_dir,
             overrides=overrides,
             streaming=streaming,
@@ -781,6 +790,7 @@ class Fabric:
         *,
         base_dir: str | os.PathLike[str] | None = None,
         overrides: Mapping[str, Any] | None = None,
+        session_ref: SessionRef | None = None,
         streaming: bool = False,
     ) -> Runtime:
         """Start one stateful runtime in an explicitly prepared or attached environment.
@@ -797,6 +807,8 @@ class Fabric:
             environment: Handle returned by ``prepare_environment()`` or
                 ``attach_environment()``.
             base_dir: Base directory for resolving relative paths.
+            session_ref: Native session to resume. Durable sessions
+                require retained storage and adapter support. Omission starts fresh.
             overrides: JSON-compatible runtime-scoped invocation overrides.
             streaming: Whether to provision NeMo Relay ATOF streaming.
 
@@ -819,6 +831,7 @@ class Fabric:
         return await self._start_runtime(
             config,
             environment=environment,
+            session_ref=session_ref,
             base_dir=base_dir,
             overrides=overrides,
             streaming=streaming,
@@ -857,6 +870,7 @@ class Fabric:
         environment: EnvironmentHandle | None = None,
         base_dir: str | os.PathLike[str] | None = None,
         overrides: Mapping[str, Any] | None = None,
+        session_ref: SessionRef | None = None,
         streaming: bool = False,
         launch_collector: bool | None = None,
         completion_wait_timeout: float = 1.0,
@@ -1047,6 +1061,7 @@ class Fabric:
             )
             if expected_descriptor_sha256 is not None:
                 _verify_adapter_descriptor(plan, expected_descriptor_sha256)
+            plan = _with_session_ref(plan, session_ref)
             method = "start_runtime_in" if environment is not None else "start_runtime"
             native = self._require_native_module(method)
         except BaseException:
@@ -1284,6 +1299,16 @@ def _environment_reference_json(reference: EnvironmentReference) -> str:
 
 def _base_dir_arg(base_dir: str | os.PathLike[str] | None) -> str | None:
     return None if base_dir is None else os.fspath(base_dir)
+
+
+def _with_session_ref(plan: RunPlan, session_ref: SessionRef | None) -> RunPlan:
+    if session_ref is None:
+        return plan
+    if not isinstance(session_ref, SessionRef):
+        raise FabricConfigError("session_ref must be a SessionRef")
+    return RunPlan.from_mapping(
+        {**plan.to_mapping(), "session_ref": session_ref.to_mapping()}
+    )
 
 
 async def _release_registered_service(

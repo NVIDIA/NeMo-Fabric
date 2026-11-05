@@ -67,6 +67,7 @@ def _runtime_error(error: Exception, *, stage: str) -> FabricRuntimeError:
         str(error),
         stage=stage,
         code=code if isinstance(code, str) else None,
+        retryable=getattr(error, "retryable", False),
     )
 
 

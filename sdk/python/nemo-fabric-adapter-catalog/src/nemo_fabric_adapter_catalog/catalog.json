@@ -801,7 +801,8 @@
               "active",
               "ready"
             ]
-          }
+          },
+          "session_resume": true
         },
         "config": {
           "accepts": [
@@ -1079,7 +1080,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.7.0"
       },
-      "sha256": "d4ffb1125719a5e7ddaf1f58eb45f4f7b10e877288abc2a2abcc848075192301",
+      "sha256": "7842f36c5d2087223be6d7b020d61d8af97e728ce6642c7cfaff22076ca30ccf",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {
