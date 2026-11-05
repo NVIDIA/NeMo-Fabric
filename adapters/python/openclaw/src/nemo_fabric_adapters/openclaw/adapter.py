@@ -1590,10 +1590,7 @@ class OpenClawRuntime:
         process = self._process
         if process is None or process.returncode is not None:
             return
-        try:
-            os.killpg(process.pid, signum)
-        except ProcessLookupError:
-            pass
+        common_utils.signal_process_group(process.pid, signum)
 
     async def _wait_started(self, port: int, token: str, timeout: float) -> None:
         deadline = asyncio.get_running_loop().time() + timeout
@@ -1746,10 +1743,7 @@ class OpenClawRuntime:
                 if os.name == "nt":
                     process.terminate()
                 else:
-                    try:
-                        os.killpg(process.pid, signal.SIGTERM)
-                    except ProcessLookupError:
-                        pass
+                    common_utils.signal_process_group(process.pid, signal.SIGTERM)
                 try:
                     await asyncio.wait_for(
                         process.wait(), timeout=self._shutdown_timeout
@@ -1757,17 +1751,33 @@ class OpenClawRuntime:
                 except (TimeoutError, asyncio.CancelledError) as error:
                     if isinstance(error, asyncio.CancelledError):
                         cancellation = cancellation or error
+                finally:
                     if os.name == "nt":
-                        process.kill()
+                        if process.returncode is None:
+                            process.kill()
                     else:
-                        try:
-                            os.killpg(process.pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
-                    try:
-                        await process.wait()
-                    except asyncio.CancelledError as error:
-                        cancellation = cancellation or error
+                        # Descendants can retain captured pipes after the leader
+                        # exits. Escalate the group, but never fall back to the
+                        # reaped leader's potentially reused PID.
+                        common_utils.signal_process_group(
+                            process.pid,
+                            signal.SIGKILL,
+                            fallback_to_pid=process.returncode is None,
+                        )
+                try:
+                    # A descendant can retain these pipes even after the
+                    # leader is killed. Leave time for the rest of cleanup
+                    # within the host's default stop deadline.
+                    await asyncio.wait_for(
+                        process.wait(), timeout=min(self._shutdown_timeout, 1.0)
+                    )
+                except TimeoutError:
+                    logger.warning(
+                        "OpenClaw Gateway cleanup timed out; descendants may "
+                        "retain captured pipes"
+                    )
+                except asyncio.CancelledError as error:
+                    cancellation = cancellation or error
         except Exception:
             logger.error("OpenClaw Gateway process cleanup failed", exc_info=True)
         windows_job, self._windows_job = self._windows_job, None
