@@ -1393,7 +1393,13 @@ async def test_openclaw_stop_kills_a_gateway_that_ignores_sigterm_where_group_si
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
-async def test_openclaw_stop_kills_descendant_holding_gateway_pipes(tmp_path: Path):
+@pytest.mark.parametrize("group_signals_denied", [False, True])
+async def test_openclaw_stop_is_bounded_with_descendant_holding_gateway_pipes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    group_signals_denied: bool,
+):
     marker = tmp_path / "descendant.ready"
     descendant_code = """
 import signal
@@ -1406,10 +1412,13 @@ Path(sys.argv[1]).touch()
 time.sleep(60)
 """
     gateway_code = """
+import signal
 import subprocess
 import sys
 import time
 
+if sys.argv[3] == "ignore-term":
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
 subprocess.Popen([sys.executable, "-c", sys.argv[1], sys.argv[2]])
 time.sleep(60)
 """
@@ -1419,6 +1428,7 @@ time.sleep(60)
         gateway_code,
         descendant_code,
         str(marker),
+        "ignore-term" if group_signals_denied else "exit-on-term",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         start_new_session=True,
@@ -1426,23 +1436,34 @@ time.sleep(60)
     runtime = adapter.OpenClawRuntime()
     runtime._process = process
     runtime._shutdown_timeout = 0.1
+    original_killpg = os.killpg
+
+    def deny_group_signals(_pgid: int, _signum: int) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
     try:
         async with asyncio.timeout(5):
             while not marker.exists():
                 await asyncio.sleep(0.01)
 
-        await runtime.stop()
+        if group_signals_denied:
+            monkeypatch.setattr(os, "killpg", deny_group_signals)
+
+        await asyncio.wait_for(runtime.stop(), timeout=2)
 
         assert process.returncode is not None
-        # EOF proves the SIGTERM-ignoring descendant closed the inherited pipes.
-        # The Gateway leader has already exited when stop's wait times out.
         assert process.stdout is not None
         assert process.stderr is not None
-        async with asyncio.timeout(1):
-            await asyncio.gather(process.stdout.read(), process.stderr.read())
+        if group_signals_denied:
+            assert "captured pipes" in caplog.text
+        else:
+            # EOF proves the descendant closed the inherited pipes. The leader
+            # has already exited when stop's first wait times out.
+            async with asyncio.timeout(1):
+                await asyncio.gather(process.stdout.read(), process.stderr.read())
     finally:
         with suppress(ProcessLookupError):
-            os.killpg(process.pid, signal.SIGKILL)
+            original_killpg(process.pid, signal.SIGKILL)
         await process.wait()
         if process.stdout is not None and process.stderr is not None:
             await asyncio.gather(process.stdout.read(), process.stderr.read())

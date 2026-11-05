@@ -1764,7 +1764,17 @@ class OpenClawRuntime:
                             fallback_to_pid=process.returncode is None,
                         )
                     try:
-                        await process.wait()
+                        # A descendant can retain these pipes even after the
+                        # leader is killed. Leave time for the rest of cleanup
+                        # within the host's default stop deadline.
+                        await asyncio.wait_for(
+                            process.wait(), timeout=min(self._shutdown_timeout, 1.0)
+                        )
+                    except TimeoutError:
+                        logger.warning(
+                            "OpenClaw Gateway cleanup timed out; descendants may "
+                            "retain captured pipes"
+                        )
                     except asyncio.CancelledError as error:
                         cancellation = cancellation or error
         except Exception:
