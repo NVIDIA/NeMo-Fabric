@@ -67,8 +67,9 @@
       "startup_timeout_seconds": {
         "type": "number",
         "exclusiveMinimum": 0,
-        "default": 30,
-        "description": "Maximum time to wait for the OpenClaw Gateway to become ready."
+        "maximum": 75,
+        "default": 60,
+        "description": "One deadline for all of start, from checking the OpenClaw command to the Gateway becoming ready, within NeMo Fabric's 90-second start limit."
       },
       "shutdown_timeout_seconds": {
         "type": "number",
