@@ -10,6 +10,7 @@ import importlib.util
 import json
 import os
 import socket
+import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -205,6 +206,80 @@ async def test_hermes_gateway_agents_receive_fabric_behavior(
     finally:
         await runtime.stop()
     assert not config_path.exists()
+
+
+async def test_api_turns_export_atif_without_resetting_native_conversation(
+    tmp_path: Path, api_server: str
+):
+    port = _free_port()
+    payload = _payload(
+        tmp_path, _interface("api", port=port), base_url=f"{api_server}/v1"
+    )
+    payload["runtime_context"]["telemetry"] = {
+        "relay_enabled": True,
+        "metadata": {"telemetry_providers": ["relay"]},
+    }
+    relay_dir = tmp_path / "relay"
+    wrapper = tmp_path / "relay.json"
+    wrapper.write_text(
+        json.dumps(
+            {
+                "relay": {
+                    "config": {
+                        "version": 4,
+                        "atof": {
+                            "enabled": True,
+                            "sinks": [
+                                {
+                                    "type": "file",
+                                    "output_directory": str(relay_dir / "atof"),
+                                    "filename": "events.atof.jsonl",
+                                }
+                            ],
+                        },
+                        "atif": {
+                            "enabled": True,
+                            "output_directory": str(relay_dir / "atif"),
+                        },
+                    }
+                }
+            }
+        )
+    )
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(wrapper)
+    runtime = adapter.HermesRuntime()
+    messages = [{"role": "user", "content": "first native turn"}]
+    try:
+        await runtime.start(payload)
+        token = _token_path(tmp_path).read_text()
+        for turn in range(2):
+            reply = await asyncio.to_thread(
+                requests.post,
+                f"http://127.0.0.1:{port}/v1/chat/completions",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"model": "hermes-agent", "messages": messages},
+                timeout=60,
+            )
+            assert reply.status_code == 200, reply.text
+            trajectories = list((relay_dir / "atif").rglob("*.json"))
+            assert len(trajectories) == turn + 1
+            assert all(json.loads(path.read_text())["steps"] for path in trajectories)
+            messages.extend(
+                [
+                    reply.json()["choices"][0]["message"],
+                    {"role": "user", "content": "second native turn"},
+                ]
+            )
+        connection = sqlite3.connect(runtime._hermes_home / "state.db")
+        try:
+            sessions = connection.execute(
+                "SELECT id FROM sessions WHERE source = 'api_server'"
+            ).fetchall()
+        finally:
+            connection.close()
+        assert len(sessions) == 1
+    finally:
+        await runtime.stop()
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Reads Linux procfs")

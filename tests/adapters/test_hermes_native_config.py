@@ -3,9 +3,13 @@
 
 """Fabric behavior survives creation of additional native Hermes agents."""
 
+import os
+from unittest.mock import MagicMock
+
 import pytest
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapters.hermes import configuration
+from nemo_fabric_adapters.hermes import native
 from nemo_fabric_adapters.hermes.native import configured_kwargs
 
 
@@ -77,3 +81,40 @@ def test_native_behavior_preserves_native_prompt_when_fabric_has_none():
     assert result["request_overrides"] is None
     assert result["max_tokens"] == 512
     assert result["max_iterations"] == configuration.DEFAULT_MAX_ITERATIONS
+
+
+@pytest.mark.parametrize(
+    "platform,relay_enabled,expected",
+    [("api_server", True, True), ("api_server", False, False), ("cli", True, False)],
+)
+def test_only_relay_enabled_api_turns_finalize(
+    monkeypatch, platform, relay_enabled, expected
+):
+    if relay_enabled:
+        os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] = "/test/plugins.toml"
+    else:
+        os.environ.pop("HERMES_NEMO_RELAY_PLUGINS_TOML", None)
+    finalize = MagicMock()
+    monkeypatch.setattr(native.telemetry, "finalize_native_relay_segment", finalize)
+    agent = MagicMock(platform=platform, session_id="native-session")
+
+    native.finalize_api_turn(agent)
+
+    if expected:
+        finalize.assert_called_once_with("native-session")
+    else:
+        finalize.assert_not_called()
+
+
+def test_api_relay_finalization_failure_is_reported_without_raising(
+    monkeypatch, caplog
+):
+    os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] = "/test/plugins.toml"
+    finalize = MagicMock(side_effect=RuntimeError("test export failure"))
+    monkeypatch.setattr(native.telemetry, "finalize_native_relay_segment", finalize)
+
+    native.finalize_api_turn(
+        MagicMock(platform="api_server", session_id="native-session")
+    )
+
+    assert "Hermes API turn Relay finalization failed" in caplog.text
