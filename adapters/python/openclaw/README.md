@@ -107,7 +107,6 @@ The following settings are specific to the OpenClaw adapter:
 | `agent_id` | `default` | OpenClaw agent for NeMo Fabric-originated invocations. |
 | `channel_config` | None | OpenClaw-native `channels` and `bindings` for a prepared service. Every binding must target `agent_id`. Managed runtimes reject this setting. |
 | `port_range` | Random available range | Inclusive consumer-allocated range with `start` and `end` fields; it must span at least 111 ports. |
-| `interfaces.dashboard` | None | Serve the Control UI on a managed runtime, with an exact `port` and optional `enabled`; see [Serve the Control UI](../../../docs/integrations/harness/openclaw.mdx#serve-the-control-ui). |
 | `startup_timeout_seconds` | `60` | One deadline for all of start, from checking the `openclaw` command to the Gateway becoming ready; at most 75 seconds. |
 | `shutdown_timeout_seconds` | `5` | Graceful shutdown timeout. |
 | `connect_timeout_seconds` | `10` | Local HTTP connection timeout. |
