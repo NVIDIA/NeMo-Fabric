@@ -153,6 +153,8 @@ Matching answers or generated configuration files do not establish configuration
 - Denied process-group signals fall back to the direct child. This does not guarantee that all descendants have stopped.
 - The adapter does not restart an interface child after a crash. Dashboard gateway actions can start processes outside the adapter launcher and its configuration mapping.
 - Readiness currently checks the HTTP response without verifying that the child owns the listening port.
+- NeMo Fabric's `check()` reports embedded SDK agent health and activity only. It does not aggregate native interface health or active native turns. Startup probes check API `/health` and dashboard `/api/status`; the adapter does not monitor child health continuously.
+- There is no unified inventory of all agent instances in a runtime. SDK invocation tracking covers SDK requests; native API run status and persisted sessions are exposed through Hermes endpoints. Persisted sessions do not identify all live agent objects, which can exist only for a turn.
 - Child processes inherit the embedded adapter's `HERMES_YOLO_MODE` environment setting. Interactive approval behavior requires separate review and validation.
 - Native responses and complete usage accounting are not normalized into Fabric invocation results by these interfaces.
 
@@ -163,6 +165,8 @@ The API configuration-parity tests do not qualify browser interaction, explicit 
 ### Planned Work
 
 Native TUI support remains proposed and is shown as a dashed path in the diagram. Session-scoped collection of native transcripts and generated files into Fabric's artifact model remains separate work; standard Relay formatting alone does not provide it.
+
+Add runtime-wide health and discovery that covers the embedded agent and managed native interfaces. Report process health and readiness separately from active runs and persisted sessions, include child failures and native activity in aggregate status, and provide a way to discover native runs and sessions alongside SDK invocations. Hermes's authenticated `/health/detailed`, `/v1/runs/{run_id}`, and `/api/sessions` endpoints provide native diagnostics today; they do not provide a unified NeMo Fabric inventory.
 
 ## 7. Implementation Details
 
