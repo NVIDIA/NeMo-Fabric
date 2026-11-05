@@ -2629,12 +2629,10 @@ fn local_host_processes() -> std::sync::MutexGuard<'static, BTreeMap<String, Loc
         .unwrap_or_else(|error| error.into_inner())
 }
 
+/// Read retained host exit evidence without taking the invocation lock.
+/// Release the process registry before inspecting the process.
 pub(crate) fn local_host_has_exited(runtime_id: &str) -> Option<bool> {
-    let process = LOCAL_HOST_PROCESSES
-        .try_lock()
-        .ok()?
-        .get(runtime_id)
-        .cloned()?;
+    let process = local_host_processes().get(runtime_id).cloned()?;
     process.has_exited()
 }
 
@@ -6584,6 +6582,55 @@ for line in sys.stdin:
 
     #[test]
     #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn local_host_exit_evidence_survives_registry_contention_and_poisoning() {
+        use std::sync::mpsc;
+
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let host = local_hosts().get(&runtime.runtime_id).unwrap().clone();
+        {
+            let mut host = host.lock().unwrap();
+            host.child.kill().unwrap();
+            host.child.wait().unwrap();
+        }
+
+        let runtime_id = runtime.runtime_id.clone();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (observed_tx, observed_rx) = mpsc::channel();
+        let processes = local_host_processes();
+        let observer = thread::spawn(move || {
+            entered_tx.send(()).unwrap();
+            observed_tx
+                .send(local_host_has_exited(&runtime_id))
+                .unwrap();
+        });
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let early = observed_rx.recv_timeout(Duration::from_millis(50));
+        drop(processes);
+        let contended = match early {
+            Ok(observation) => observation,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                observed_rx.recv_timeout(Duration::from_secs(2)).unwrap()
+            }
+            Err(error) => panic!("receive exit observation: {error}"),
+        };
+        observer.join().unwrap();
+
+        let poisoning = std::panic::catch_unwind(|| {
+            let _processes = local_host_processes();
+            panic!("poison the process registry for this test");
+        });
+        let poisoned = local_host_has_exited(&runtime.runtime_id);
+        LOCAL_HOST_PROCESSES.clear_poison();
+
+        stop_runtime(&plan, &runtime).unwrap();
+        fs::remove_dir_all(root).unwrap();
+        assert!(poisoning.is_err());
+        assert_eq!((contended, poisoned), (Some(true), Some(true)));
+    }
+
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn health_preserves_a_host_exit_during_a_failed_probe() {
         use crate::check::{CheckOutcome, CheckReason, CheckRequest};
         use std::os::unix::fs::PermissionsExt;
@@ -6613,7 +6660,24 @@ for line in sys.stdin:
         .unwrap();
         fs::set_permissions(&endpoint, fs::Permissions::from_mode(0o600)).unwrap();
         let exited = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let accept_deadline = Instant::now() + Duration::from_secs(5);
+            let (mut stream, _) = loop {
+                match listener.accept() {
+                    Ok(connection) => break connection,
+                    Err(error)
+                        if error.kind() == ErrorKind::WouldBlock
+                            && Instant::now() < accept_deadline =>
+                    {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                        panic!("timed out waiting for health connection")
+                    }
+                    Err(error) => panic!("accept health connection: {error}"),
+                }
+            };
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(2)))
                 .unwrap();

@@ -81,7 +81,7 @@ mini-SWE-agent, NOOA InteractiveAgent, NOOA BenchAgent, and Remote Agent adverti
 
 Pi readiness checks configured model, tool, and MCP state. Those observations do not perform a model request or execute a tool. OpenClaw readiness follows the Gateway's channel policies and can use the Gateway's cached observations. The linked OpenClaw endpoint tests use controlled Gateway HTTP responses.
 
-On Linux and macOS, confirmed exit of a Fabric-owned adapter host returns `failed/agent_exited` for any adapter that advertises health checks. The managed runtime can no longer serve requests, even if a separate native child process or attached service survives. This observation does not establish descendant cleanup. An unreadable process identity or a failed health connection alone remains `unknown`.
+On Linux and macOS, confirmed exit of an adapter host owned by NeMo Fabric returns `failed/agent_exited` for any adapter that advertises health checks. The managed runtime can no longer serve requests, even if a separate native child process or attached service survives. This observation does not establish descendant cleanup. An unreadable process identity or a failed health connection alone remains `unknown`.
 
 Adapter checks also preserve confirmed native-process exit and closed-session evidence when a native health request fails. A changed runtime or session identity still invalidates the observation and returns `unknown/observation_changed`.
 
