@@ -81,9 +81,11 @@ mini-SWE-agent, NOOA InteractiveAgent, NOOA BenchAgent, and Remote Agent adverti
 
 Pi readiness checks configured model, tool, and MCP state. Those observations do not perform a model request or execute a tool. OpenClaw readiness follows the Gateway's channel policies and can use the Gateway's cached observations. The linked OpenClaw endpoint tests use controlled Gateway HTTP responses.
 
-On Linux and macOS, confirmed exit of an adapter host owned by NeMo Fabric returns `failed/agent_exited` for any adapter that advertises health checks. The managed runtime can no longer serve requests, even if a separate native child process or attached service survives. This observation does not establish descendant cleanup. An unreadable process identity or a failed health connection alone remains `unknown`.
+On Linux and macOS, confirmed exit of an adapter host owned by NeMo Fabric returns `failed/agent_exited` at `live` for any adapter that advertises `live`. Checks evaluate `live` before higher levels, so a confirmed host exit fails a `ready` check even when the adapter does not support `ready`. The managed runtime can no longer serve requests, even if a separate native child process or attached service survives. This observation does not establish descendant cleanup. An unreadable process identity or a failed health connection alone remains `unknown`.
 
-Adapter checks also preserve confirmed native-process exit and closed-session evidence when a native health request fails. A changed runtime or session identity still invalidates the observation and returns `unknown/observation_changed`.
+Adapter checks also preserve confirmed native-process exit and closed-session evidence when a native health request fails. A changed runtime or NeMo Fabric session invalidates the observation and returns `unknown/observation_changed`.
+
+Kilo checks the NeMo Fabric session and runtime generation at every level. The `active` probe also returns `unknown/observation_changed` when the native session identifier differs from the selected session. Kilo's `ready` probe checks server health without comparing the native session identifier; a full `ready` check still runs `active` first.
 
 Passing a health check does not establish successful inference, valid model credentials, provider availability, or successful tool execution unless the particular probe verifies that property. For example, Claude's readiness response does not require connected MCP servers, and Qwen's command response does not test model access. The linked qualification tests hold a local model response to verify that health checks can complete during invocation; those tests provide separate invocation evidence rather than changing what the health result means.
 
