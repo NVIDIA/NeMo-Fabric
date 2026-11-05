@@ -100,7 +100,7 @@ The API server binds to `127.0.0.1` at its configured port. After every enabled 
 <artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/api.token
 ```
 
-Send the token as `Authorization: Bearer <token>`. Only the API gateway child receives it in its environment. Processes running as the runtime's user, including agent tools, can read the token file.
+Clients calling the native API must read the generated token file and include `Authorization: Bearer <token>` in each HTTP request. Only the API gateway child receives it in its environment. Processes running as the runtime's user, including agent tools, can read the token file.
 
 ### Dashboard Access
 
