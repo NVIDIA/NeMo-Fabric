@@ -21,6 +21,12 @@ This is the Release Notes template. Document one release version per page and us
 
 This page summarizes NVIDIA NeMo Fabric 0.6.0. [GitHub Releases](https://github.com/NVIDIA/NeMo-Fabric/releases) remain the source of truth for complete release history and tag-specific notes.
 
+## Upcoming 0.6 Patch
+
+Hermes Agent v0.22.7 can record Relay 0.11 telemetry through NeMo Fabric. The Hermes adapter now accepts stable Relay versions `>=0.10,<0.12`, while retaining support for Hermes v0.22.5 with Relay 0.10. The default source setup selects v0.22.7. Existing Hermes environments can keep their compatible Relay 0.10 installation.
+
+Hermes still requires Python 3.14. Applications such as Gym can remain on Python 3.13 and select a separate Hermes environment with `ADAPTER_PYTHON`. Public SDK APIs and configuration are unchanged. Refer to the [Hermes installation guide](../integrations/harness/hermes.mdx) for supported combinations.
+
 ## Current Release
 
 NeMo Fabric 0.6.0 makes agent execution easier to compare and operate. Key features and ecosystem updates include:
