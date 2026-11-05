@@ -1,0 +1,69 @@
+---
+title: "NVIDIA NeMo Fabric Artifacts"
+description: "Find Python packages, TypeScript packages, and Rust crates in their public registries."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+NVIDIA NeMo Fabric distributes Python packages on PyPI, TypeScript packages on npm, and Rust crates on crates.io. The tables below list the packages and link to their registry pages, where you can find available versions and installation details. For installation guidance, refer to [Installation](install.mdx).
+
+## Python Packages on PyPI
+
+The following packages provide the Python SDK, shared contracts, and harness adapters.
+
+| Package | Purpose |
+| --- | --- |
+| [`nemo-fabric`](https://pypi.org/project/nemo-fabric/) | SDK metapackage that installs the native runtime and offers integration extras. |
+| [`nemo-fabric-runtime`](https://pypi.org/project/nemo-fabric-runtime/) | Python SDK, native bindings, and runtime services. |
+| [`nemo-fabric-evidence`](https://pypi.org/project/nemo-fabric-evidence/) | Shared software execution evidence types and serialization. |
+| [`nemo-fabric-collector`](https://pypi.org/project/nemo-fabric-collector/) | Standalone service that collects and routes NeMo Relay records to runtimes. |
+| [`nemo-fabric-adapter-catalog`](https://pypi.org/project/nemo-fabric-adapter-catalog/) | Metadata-only catalog of bundled adapter descriptors. |
+| [`nemo-fabric-adapter-contract`](https://pypi.org/project/nemo-fabric-adapter-contract/) | Typed Python contract for adapter implementations. |
+| [`nemo-fabric-adapters-common`](https://pypi.org/project/nemo-fabric-adapters-common/) | Shared adapter lifecycle and integration helpers. |
+| [`nemo-fabric-adapters-claude`](https://pypi.org/project/nemo-fabric-adapters-claude/) | Claude Code adapter. |
+| [`nemo-fabric-adapters-codex`](https://pypi.org/project/nemo-fabric-adapters-codex/) | Codex adapter. |
+| [`nemo-fabric-adapters-deepagents`](https://pypi.org/project/nemo-fabric-adapters-deepagents/) | LangChain Deep Agents adapter. |
+| [`nemo-fabric-adapters-hermes`](https://pypi.org/project/nemo-fabric-adapters-hermes/) | Hermes Agent adapter. |
+| [`nemo-fabric-adapters-mini-swe-agent`](https://pypi.org/project/nemo-fabric-adapters-mini-swe-agent/) | mini-SWE-agent adapter. |
+| [`nemo-fabric-adapters-nooa`](https://pypi.org/project/nemo-fabric-adapters-nooa/) | NOOA agent adapters. |
+| [`nemo-fabric-adapters-openclaw`](https://pypi.org/project/nemo-fabric-adapters-openclaw/) | OpenClaw adapter. |
+| [`nemo-fabric-adapters-openhands`](https://pypi.org/project/nemo-fabric-adapters-openhands/) | OpenHands adapter. |
+| [`nemo-fabric-adapters-remote-agent`](https://pypi.org/project/nemo-fabric-adapters-remote-agent/) | Adapter for a remote agent endpoint. |
+
+### Native Runtime Wheels
+
+The `nemo-fabric-runtime` package includes native code. Release wheel builds cover the following platforms.
+
+| Operating System | Architecture |
+| --- | --- |
+| Linux | x86_64, arm64 |
+| macOS | arm64 |
+| Windows | x86_64 |
+
+Refer to the package's [PyPI files](https://pypi.org/project/nemo-fabric-runtime/#files) for the wheels available for a particular version. Python and harness requirements are described in [Installation](install.mdx).
+
+## TypeScript Packages on npm
+
+The following packages provide the TypeScript adapter contract and harness adapters.
+
+| Package | Purpose |
+| --- | --- |
+| [`nemo-fabric-adapter-contract`](https://www.npmjs.com/package/nemo-fabric-adapter-contract) | Dependency-free TypeScript types for the adapter contract. |
+| [`nemo-fabric-adapters-common`](https://www.npmjs.com/package/nemo-fabric-adapters-common) | Shared TypeScript adapter lifecycle host. |
+| [`nemo-fabric-adapters-cline`](https://www.npmjs.com/package/nemo-fabric-adapters-cline) | Cline SDK adapter. |
+| [`nemo-fabric-adapters-droid`](https://www.npmjs.com/package/nemo-fabric-adapters-droid) | Factory Droid SDK adapter. |
+| [`nemo-fabric-adapters-kilo`](https://www.npmjs.com/package/nemo-fabric-adapters-kilo) | Kilo Code SDK adapter. |
+| [`nemo-fabric-adapters-kiro`](https://www.npmjs.com/package/nemo-fabric-adapters-kiro) | Kiro ACP adapter. |
+| [`nemo-fabric-adapters-opencode`](https://www.npmjs.com/package/nemo-fabric-adapters-opencode) | OpenCode SDK adapter. |
+| [`nemo-fabric-adapters-pi`](https://www.npmjs.com/package/nemo-fabric-adapters-pi) | Pi SDK adapter. |
+| [`nemo-fabric-adapters-qwen`](https://www.npmjs.com/package/nemo-fabric-adapters-qwen) | Qwen Code SDK adapter. |
+| [`nemo-fabric-adapters-strands`](https://www.npmjs.com/package/nemo-fabric-adapters-strands) | AWS Strands ACP adapter. |
+
+## Rust Crates on crates.io
+
+The following crates provide the Rust library and command-line interface.
+
+| Crate | Purpose |
+| --- | --- |
+| [`nemo-fabric-core`](https://crates.io/crates/nemo-fabric-core) | Core Rust library for configuring and running agents. |
+| [`nemo-fabric-cli`](https://crates.io/crates/nemo-fabric-cli) | Command-line interface, installed as `nemo-fabric`. |

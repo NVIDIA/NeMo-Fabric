@@ -1,0 +1,455 @@
+---
+title: "NVIDIA NeMo Fabric Installation"
+description: "Install guide."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+## Package Installation Method
+
+The `nemo-fabric` package installs the NeMo Fabric runtime. Harness adapters can
+run in that environment or in a separate environment with their harness
+dependencies.
+
+### Supported Python Versions
+
+NeMo Fabric supports Python 3.11 through 3.14. Some integrations and adapters have additional requirements. The supported Hermes Agent v0.22.7 release requires Python 3.14; OpenHands and the Harbor integration require Python 3.12 or later.
+
+### Supported Platforms
+
+NeMo Fabric supports the following platforms:
+
+- Linux (x86_64 and arm64)
+- macOS (arm64)
+- Windows (x86_64)
+
+### Choose an Installation
+
+The following table shows a representative subset of package expressions and
+the components they install. The sections that follow describe the complete
+installation alternatives. A **No** entry means that the expression does not
+install that component; the component can already exist in the environment or
+be managed separately.
+
+| Installation | Runtime | Collector | Adapter | Harness | Relay Python | Relay CLI |
+| --- | --- | --- | --- | --- | --- | --- |
+| `nemo-fabric` | Yes | No | No | No | No | No |
+| `nemo-fabric[streaming]` | Yes | Yes | No | No | No | No |
+| `nemo-fabric[relay]` | Yes | No | No | No | Yes | No |
+| `nemo-fabric[hermes-agent]` | Yes | No | Yes | No | No | No |
+| `nemo-fabric[hermes-agent]` plus `nemo-fabric-adapters-hermes[relay]` | Yes | No | Yes | No | Yes | No |
+| `nemo-fabric-adapters-claude[harness]` | No | No | Yes | Yes | No | Yes |
+| `nemo-fabric-adapters-claude[full]` | No | No | Yes | Yes | No | Yes |
+| `nemo-fabric-adapters-deepagents[full]` | No | No | Yes | Yes | Yes | No |
+| `nemo-fabric-adapters-mini-swe-agent[full]` | No | No | Yes | Yes | Yes | No |
+| `nemo-fabric-adapters-nooa[full]` | No | No | Yes | Yes | Yes | No |
+| `nemo-fabric-adapters-openclaw` | No | No | Yes | No | No | No |
+| `nemo-fabric-adapters-openhands` | No | No | Yes | No | No | No |
+| `nemo-fabric-adapters-hermes[full]` | No | No | Yes | No | Yes | No |
+| `nemo-fabric-adapters-hermes[relay]` | No | No | Yes | No | Yes | No |
+| `nemo-fabric-adapters-claude` | No | No | Yes | No | No | No |
+
+An adapter package's `full` extra is scoped to the adapter environment and does
+not install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent
+to `harness`; both install the supported harness and `nemo-relay` CLI. For
+LangChain Deep Agents and mini-SWE-agent, `full` installs the harness and NeMo
+Relay Python package without the CLI. For Hermes Agent, `full` installs the
+adapter and Relay Python package; Hermes Agent must be installed separately.
+
+### Install the NeMo Fabric Runtime
+
+Install the NeMo Fabric runtime:
+
+```bash
+pip install nemo-fabric
+```
+
+The `nemo-fabric` package installs the matching NeMo Fabric runtime
+unconditionally.
+
+Install the matching collector when an application uses the default
+embedded collector for NeMo Relay ATOF streaming:
+
+```bash
+pip install "nemo-fabric[streaming]"
+```
+
+Applications that set `launch_collector=False` and use an externally managed
+collector do not need this extra.
+
+### Inspect Adapter Metadata Without Harness SDKs
+
+The optional `nemo-fabric-adapter-catalog` package provides release snapshots of bundled Python and TypeScript adapter descriptors and their registered targets, without installing the runtime or harness SDKs:
+
+```bash
+pip install nemo-fabric-adapter-catalog
+```
+
+Look up a descriptor by its exact ID; unknown IDs raise `KeyError`:
+
+```python
+from nemo_fabric_adapter_catalog import get_adapter_descriptor
+
+descriptor = get_adapter_descriptor("nvidia.fabric.codex")
+print(descriptor["config"]["accepts"])
+```
+
+Catalog resources do not register execution runners or change task-side discovery. Install actual adapters and harness dependencies separately, and verify snapshot claims against the task's descriptor before relying on them. A catalog package version or fingerprint is not runtime-observed provenance.
+
+### Install a Complete Runtime and Harness
+
+Use a `nemo-fabric` harness extra when the runtime, adapter, and harness run in
+the same Python environment:
+
+```bash
+pip install "nemo-fabric[claude]"
+pip install "nemo-fabric[codex]"
+pip install "nemo-fabric[deepagents]"
+pip install "nemo-fabric[mini-swe-agent]"
+pip install "nemo-fabric[nooa]"
+pip install "nemo-fabric[openclaw]"
+pip install "nemo-fabric[openhands]"
+```
+
+Each `nemo-fabric` harness extra installs the corresponding adapter package
+with its `harness` extra. You can combine independent `nemo-fabric` extras. For
+example, the following command also installs Harbor; the Claude harness extra
+supplies the Relay CLI, while `relay` supplies the Relay Python package:
+
+```bash
+pip install "nemo-fabric[claude,harbor,relay]"
+```
+
+The NOOA extra supports Python 3.12 and 3.13 only. On another supported Python
+version, the command can succeed while its environment marker omits the NOOA
+adapter.
+
+The OpenClaw extra installs its adapter and HTTP client, but not OpenClaw.
+Install the `openclaw` npm package separately before using that adapter.
+
+OpenHands requires Python 3.12 or later. The root extra installs the adapter
+but not OpenHands. Install the supported `openhands-sdk` and `openhands-tools`
+packages separately as described in the
+[OpenHands adapter guide](../integrations/harness/openhands.mdx).
+
+The Claude and Codex harness extras install the `nemo-relay` CLI required for
+Relay-enabled runs. The root `relay` extra installs only the Relay Python
+package for SDK-native integrations.
+
+### Install Hermes Agent
+
+Hermes Agent 0.20 and later is no longer installable from PyPI. End users must
+follow the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
+then install NeMo Fabric and the bare Hermes adapter into the Python environment
+that runs Hermes Agent:
+
+```bash
+pip install "nemo-fabric[hermes-agent]"
+```
+
+These packages do not install Hermes Agent. Use [Hermes Agent v0.22.7](https://github.com/NousResearch/hermes-agent/releases/tag/v0.22.7) with Python 3.14. This release includes dependency security fixes absent from v2026.9.24 and supports ordinary runs, Relay 0.11 telemetry, and streaming. For local development, create the isolated environment from the repository root:
+
+```bash
+just install-hermes-agent
+export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
+```
+
+For a Relay-enabled Hermes environment, install the adapter's `relay` extra
+alongside `nemo-fabric[hermes-agent]`; the generic root `relay` extra does not
+include the adapter's TOML writer dependency.
+
+### Install Cline
+
+The [Cline adapter](../integrations/harness/cline.mdx) requires Node.js 22.19.0 or newer and is distributed through npm. Install the NeMo Fabric runtime with pip, then install the supported Cline SDK and adapter in the Node.js project that owns the NeMo Fabric configuration:
+
+```bash
+pip install nemo-fabric
+npm install --save-exact @cline/sdk@0.0.83
+npm install nemo-fabric-adapters-cline
+```
+
+The adapter does not declare or install the Cline SDK as a package dependency. Refer to the [Cline adapter guide](../integrations/harness/cline.mdx) to configure adapter discovery and supported capabilities.
+
+### Install Factory Droid
+
+The [Factory Droid adapter](../integrations/harness/droid.mdx) requires Node.js 22.19.0 or newer, Factory's supported TypeScript SDK, and a caller-installed Droid CLI:
+
+```bash
+pip install nemo-fabric
+npm install --global droid@0.233.0
+npm install --save-exact @factory/droid-sdk@0.9.1
+npm install nemo-fabric-adapters-droid
+```
+
+The adapter never installs the Droid CLI at runtime. Refer to the [Factory Droid adapter guide](../integrations/harness/droid.mdx) for supported configuration and discovery.
+
+### Install Kiro
+
+The [Kiro adapter](../integrations/harness/kiro.mdx) requires Node.js 22.19.0
+or newer and a caller-installed Kiro CLI with the V3 ACP server. Install and
+authenticate Kiro, then install the adapter:
+
+```bash
+pip install nemo-fabric
+curl -fsSL https://cli.kiro.dev/install | bash
+kiro-cli login
+npm install nemo-fabric-adapters-kiro
+```
+
+For non-interactive environments, provide `KIRO_API_KEY` instead of using
+browser login. NeMo Fabric does not install or update the Kiro CLI at runtime.
+
+### Install an Adapter and Harness Without the Runtime
+
+Use an adapter package's `harness` extra when a different environment runs NeMo
+Fabric:
+
+```bash
+pip install "nemo-fabric-adapters-claude[harness]"
+pip install "nemo-fabric-adapters-codex[harness]"
+pip install "nemo-fabric-adapters-deepagents[harness]"
+pip install "nemo-fabric-adapters-nooa[harness]"
+```
+
+This installation mode keeps the runtime dependencies out of the adapter
+environment. Set `ADAPTER_PYTHON` in the runtime environment to the adapter
+environment's Python interpreter. A Python adapter and its Python harness must
+use the same interpreter. Use matching NeMo Fabric
+release versions for the runtime and adapter package unless a different pairing
+has been explicitly validated.
+
+The OpenClaw adapter does not provide `harness` or `full` extras. Install
+`nemo-fabric-adapters-openclaw` directly and install the `openclaw` npm package
+separately.
+
+The OpenHands adapter also omits `harness` and `full` extras. Install the bare
+adapter and the supported OpenHands packages separately.
+
+### Add an Adapter to an Existing Harness Environment
+
+Install an adapter package without an extra when the environment already
+supplies and manages a compatible harness:
+
+```bash
+pip install nemo-fabric-adapters-claude
+pip install nemo-fabric-adapters-codex
+pip install nemo-fabric-adapters-deepagents
+pip install nemo-fabric-adapters-hermes
+pip install nemo-fabric-adapters-nooa
+pip install nemo-fabric-adapters-openclaw
+pip install nemo-fabric-adapters-openhands
+```
+
+Bare adapter distributions install only adapter-owned dependencies. They do not
+install the NeMo Fabric runtime or the harness.
+
+If the existing harness and runtime share an environment, install the runtime
+and bare adapter together. The following example preserves the existing Codex
+SDK instead of installing the adapter's supported SDK version:
+
+```bash
+pip install nemo-fabric nemo-fabric-adapters-codex
+```
+
+### Install NeMo Relay
+
+[NeMo Relay](https://docs.nvidia.com/nemo/relay) integration occurs in two
+ways:
+
+- [Python package](https://pypi.org/project/nemo-relay/)
+- [NeMo Relay CLI](https://crates.io/crates/nemo-relay-cli)
+
+The required integration depends on the agent harness. Relay-enabled runs with
+the Claude, Codex, and Pi adapters require the
+[`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli).
+
+NeMo Fabric 0.6 uses these Relay versions:
+
+| Integration | Relay version | Installation |
+| --- | --- | --- |
+| Claude, Codex, Pi | `>=0.9,<0.12` | CLI and matching Pi extension where required |
+| Deep Agents, mini-SWE-agent, NOOA, NOOA Bench | `>=0.11,<0.12` | Python package |
+| Hermes Agent | `>=0.10,<0.12` | Python package in a separate Hermes environment |
+| Remote Agent | Service-owned | Match the remote service's supported Relay version |
+
+#### NeMo Relay Python Package
+
+The root `relay` extra installs a version of the NeMo Relay Python package known
+to be compatible with the installed version of NeMo Fabric:
+
+```bash
+pip install "nemo-fabric[relay]"
+```
+
+LangChain Deep Agents, Hermes Agent, mini-SWE-agent, and NOOA import the NeMo
+Relay Python package directly. Their adapter packages provide `relay` and
+`full` extras:
+
+```bash
+pip install "nemo-fabric-adapters-deepagents[relay]"
+pip install "nemo-fabric-adapters-hermes[relay]"
+pip install "nemo-fabric-adapters-mini-swe-agent[relay]"
+pip install "nemo-fabric-adapters-nooa[relay]"
+pip install "nemo-fabric-adapters-deepagents[full]"
+pip install "nemo-fabric-adapters-hermes[full]"
+pip install "nemo-fabric-adapters-mini-swe-agent[full]"
+pip install "nemo-fabric-adapters-nooa[full]"
+```
+
+Use `relay` when the environment already manages the harness. For Deep Agents, mini-SWE-agent, and NOOA, use `full` to install the harness and Relay package together. Hermes Agent's `relay` and `full` extras install Relay. Install Hermes Agent separately.
+
+Hermes v0.22.7 requires `nemo-relay>=0.11,<0.12`; Hermes v0.22.5 requires `nemo-relay>=0.10,<0.11`. The Hermes adapter supports both ranges. Use Python 3.14 for Hermes. Applications on Python 3.13 or another supported version can select a separate Hermes interpreter through `ADAPTER_PYTHON`.
+
+Deep Agents, mini-SWE-agent, and NOOA require `nemo-relay>=0.11,<0.12`. Claude and Codex launch the external Relay CLI. Their `harness` and `full` extras install the CLI.
+
+NeMo Fabric uses runtime-owned Relay configuration. Remove or relocate a user `plugins.toml` or the nearest `.nemo-relay/plugins.toml` before starting a Relay-enabled Deep Agents, Hermes Agent, or mini-SWE-agent runtime. Administrators manage system configuration in `/etc/nemo-relay/plugins.toml`.
+
+#### Upgrade to Relay 0.11
+
+The Relay Python package requires 0.11. Claude, Codex, and Pi support stable CLI releases from 0.9 through 0.11. The Pi extension must match the selected CLI release. The `insecure_http_model_hosts` setting requires CLI 0.11. Hermes v0.22.7 uses Relay 0.11; v0.22.5 remains supported with Relay 0.10. Restart existing runtimes after the upgrade so each gateway and extension uses the selected release.
+
+Relay 0.11 gateways require HTTPS for remote model endpoints by default, including private network and Kubernetes Service addresses. Plain HTTP remains available for loopback endpoints. To trust a credential-free remote HTTP model endpoint, set `harness.settings.insecure_http_model_hosts` to its exact hostname or IP address. Prompts and responses travel unencrypted, and Relay strips credential headers before forwarding. Relay 0.11 also requires HTTPS for remote telemetry collectors by default. Relay supports explicit exceptions for trusted collectors through `insecure_http_hosts`, or `NEMO_RELAY_OTEL_INSECURE_HTTP_HOSTS` for automatic OTLP exporters. Relay releases before 0.10.2 can forward credentials to remote HTTP model endpoints. Use HTTPS when model requests or telemetry contain credentials or sensitive content.
+
+NeMo Fabric generates a `PreToolUse` check for Claude and Codex. With Relay 0.10.1 and later, a delivery failure blocks the operation with exit code 2. Relay 0.9.x and 0.10.0 return exit code 1 for delivery failures.
+
+Claude hooks set `onFailure: "block"` so delivery errors, process launch failures, crashes, and timeouts block the tool call. This requires Claude Code 2.1.295 or later; the pinned `claude-agent-sdk==0.2.166` bundles 2.1.299.
+
+NeMo Fabric wraps Codex `PreToolUse` checks to return exit code 2 with a blocking reason when Relay fails to start, times out, or returns a nonzero exit code. This also handles exit code 1 from Relay 0.9.x and 0.10.0. The wrapper has a 35-second timeout. Codex 0.154.0 can still continue if the wrapper itself fails to start or reaches the outer harness timeout.
+
+Lifecycle hooks allow execution to continue when telemetry delivery fails. Guardrail denials return exit code 2 under both policies. The harness hook timeout is 45 seconds, which leaves a margin around Relay's 30-second delivery timeout.
+
+#### Migrate Relay Observability Configurations to Version 4
+
+NeMo Fabric writes and accepts observability configuration version 4 and
+rejects version 3. Relay 0.11 requires version 4. Change `version = 3` to `version = 4` in each observability
+component configuration, including `RelayObservabilityConfig(version=...)` and
+`relay.components[].config.version`. Typed OpenTelemetry endpoints keep the
+same shape, and the outer plugin configuration stays `version = 1`. Omitting
+the observability version selects version 4.
+
+Relay also enables automatic OTLP export when an
+`OTEL_EXPORTER_OTLP_ENDPOINT` or signal-specific OTLP endpoint variable is set
+in the runtime environment, and it skips configured endpoints while global
+OTLP header variables are set. Automatic traces use the `gen_ai` projection,
+which exports prompt and response content. Remove unintended OTLP variables
+from the environment that starts the runtime, set
+`opentelemetry.enabled = false` in the observability configuration, or set
+`OTEL_SDK_DISABLED=true` to turn off every Relay OTLP exporter. Refer to the NeMo Relay
+[migration guide](https://github.com/NVIDIA/NeMo-Relay/blob/0.11.0/docs/reference/migration-guides.mdx)
+for the complete list of 0.11 changes.
+
+Configurations from Relay 0.6 must also move flat OpenTelemetry exporter fields
+into entries under `opentelemetry.endpoints`. In the Python SDK, replace the
+removed `RelayOtlpConfig` model with `RelayOpenTelemetryConfig` and one or more
+`RelayOpenTelemetryEndpointConfig` entries.
+
+#### NeMo Relay CLI
+
+Claude and Codex harness extras install their compatible CLI binary without
+the Relay Python package. Pi requires a separate CLI installation alongside
+the npm adapter. Install the `>=0.9,<0.12` range:
+
+```bash
+pip install "nemo-relay-cli-bin>=0.9,<0.12"
+```
+
+If `cargo-binstall` is available, install the pinned CLI with Cargo:
+
+```bash
+cargo binstall nemo-relay-cli --version 0.11.0
+```
+
+After installation, run `nemo-relay --version` and confirm the version is in
+the `>=0.9,<0.12` range. When Relay is enabled with
+`FabricConfig.enable_relay(...)`, the Claude, Codex, and Pi adapters start and
+supervise the CLI gateway automatically.
+
+The Pi adapter also requires a user-supplied path to the
+[Relay Pi extension](https://github.com/NVIDIA/NeMo-Relay/tree/0.11.0/crates/cli/assets/pi-extension)
+from the Relay release that matches the CLI.
+Set
+`harness.settings.relay_extension_path` to the extension file or package
+directory; relative paths resolve from `environment.workspace`. Relay-enabled
+Pi configurations must also set `runtime.artifacts` so NeMo Fabric can provide
+the adapter-owned Relay configuration. Refer to the
+[Pi adapter guide](../integrations/harness/pi.mdx) for the complete
+configuration and the embedded collector streaming workflow. Do not set
+`launch_collector=False` for Pi streaming because the Pi extension does not
+attach the NeMo Fabric request IDs required by an externally managed collector.
+
+## Deployment Scenarios
+
+Choose a deployment scenario based on where the consumer, runtime, adapter, and harness need to run.
+
+### Runtime and Harness in the Same Environment
+
+The NeMo Fabric runtime, selected adapter, and harness share one environment. This is the simplest scenario for local development and the [quickstart](./quickstart.mdx).
+
+Install the runtime with the harness extra, or install the runtime and a bare adapter beside an existing harness. The package options earlier in this guide describe both approaches.
+
+### Isolated Task Environment
+
+The host application constructs and serializes the final typed `FabricConfig`. It then runs NeMo Fabric, the selected adapter, and the harness inside an isolated task environment such as a Docker container or sandbox. Adapter discovery and task-path resolution occur inside that environment.
+
+Harbor uses this model. Install its integration in the host environment:
+
+```bash
+pip install "nemo-fabric[harbor]"
+```
+
+Install NeMo Fabric, the selected adapter, and the harness in the task environment. For a Hermes Agent task, install Hermes Agent according to its installation guide, then add `nemo-fabric`, `nemo-fabric-adapters-hermes`, and optionally `nemo-fabric[relay]`.
+
+Relay-enabled Claude, Codex, or Pi tasks also require the adapter-compatible NeMo Relay CLI in the task environment. Pi additionally requires its matching Relay extension. Refer to the [Harbor integration guide](../integrations/consumer/harbor.mdx) for details.
+
+### Runtime and Harness in Separate Environments
+
+The NeMo Fabric runtime and agent harness can run in separate, locally accessible Python environments. This scenario isolates their Python dependencies while the runtime launches the adapter through the adapter environment's interpreter.
+
+Install `nemo-fabric` in the runtime environment. Install the adapter and harness in the second environment, then set `ADAPTER_PYTHON` in the runtime environment:
+
+```bash
+export ADAPTER_PYTHON="/path/to/adapter-environment/bin/python"
+```
+
+On Windows, use the adapter environment's Python executable:
+
+```powershell
+$env:ADAPTER_PYTHON = "C:\path\to\adapter-environment\Scripts\python.exe"
+```
+
+Use matching NeMo Fabric release versions for the runtime and adapter unless a different pairing has been validated.
+
+## Source Installation Method
+
+**Prerequisites:**
+- Rust and Cargo
+- Python 3.11 through 3.14
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
+- `just` 1.50.0+
+
+1. Create a Python virtual environment and activate it (replace `3.13` with your preferred Python version):
+
+```bash
+uv venv -p 3.13 --seed .venv
+source .venv/bin/activate
+just install-hermes-agent
+```
+
+2. Build the Rust core and Python libraries.
+
+```bash
+just build-all
+```
+
+The above command will install only those dependencies that are strictly necessary for the build.
+Alternately If you want to install all optional dependencies, you can run:
+
+```bash
+uv sync --all-groups --all-extras
+```
+
+Then run the build command with the `no_uv=true` flag to avoid re-installing the dependencies:
+
+```bash
+just no_uv=true build-all
+```

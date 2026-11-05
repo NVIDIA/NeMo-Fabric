@@ -1,0 +1,74 @@
+---
+title: "NVIDIA NeMo Fabric Ecosystem"
+description: "Benchmark agents with Harbor and NeMo Gym, and explore the products that use and extend NVIDIA NeMo Fabric."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+NVIDIA NeMo Fabric connects applications, benchmarking frameworks, and evaluation systems to a growing set of agent harnesses and custom agents. Each consumer keeps ownership of its workflow while NeMo Fabric provides a common execution boundary for configuration, lifecycle, results, artifacts, and telemetry.
+
+## Benchmark With Harbor and NeMo Gym
+
+NeMo Fabric is integrated into the frameworks teams use to benchmark and improve agents. Harbor ships `FabricAgent` upstream, and NeMo Gym provides Fabric-backed agents for evaluation and training workflows. Teams can select supported harnesses through a common execution interface while keeping benchmark tasks, environments, and verification in their chosen framework.
+
+- **Harbor:** `FabricAgent` is included in [Harbor 0.25.0](https://github.com/harbor-framework/harbor/releases/tag/v0.25.0), bringing NeMo Fabric harness execution into Harbor's own agent integrations.
+- **NeMo Gym:** The upstream [NeMo Fabric agent](https://github.com/NVIDIA-NeMo/Gym/tree/main/responses_api_agents/nemo_fabric_agent) provides interchangeable harness execution. Gym includes Fabric-backed configurations for [SWE-bench](https://github.com/NVIDIA-NeMo/Gym/blob/main/responses_api_agents/anyswe_agent/configs/anyswe_nemo_fabric.yaml) and [Terminal-Bench](https://github.com/NVIDIA-NeMo/Gym/blob/main/responses_api_agents/anyterminal_agent/configs/anyterminal_nemo_fabric.yaml).
+
+![Harbor, NeMo Gym, and NVIDIA applications connect through NeMo Fabric to agent harnesses, shared frameworks, custom agents, and remote services.](../../assets/ecosystem.png)
+
+## Integration Status
+
+The ecosystem includes integrations at different maturity levels:
+
+| Consumer | Status | How It Uses NeMo Fabric |
+| --- | --- | --- |
+| [Harbor](https://github.com/harbor-framework/harbor) | Shipped upstream in 0.25.0 | Includes `FabricAgent` to run supported harnesses in Harbor benchmark tasks. |
+| [NVIDIA NeMo Helix](https://github.com/NVIDIA-NeMo/nemo-helix) | Available | Runs and evaluates platform-managed agents through lifecycles backed by NeMo Fabric. |
+| [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw/) | Active integration | Uses NeMo Fabric inside NVIDIA OpenShell sandboxes to run supported harnesses. |
+| [NVIDIA NeMo Gym](https://github.com/NVIDIA-NeMo/gym) | Available upstream | Runs NeMo Fabric harnesses through its agent-server boundary for benchmark evaluation and training rollouts. |
+| [NVIDIA Polar](https://github.com/NVIDIA-NeMo/ProRL-Agent-Server) | Emerging | Can use NeMo Fabric as a portable harness boundary for agentic reinforcement learning rollouts. |
+
+## Harbor Framework
+
+[Harbor](https://github.com/harbor-framework/harbor) is a framework for evaluating and optimizing agents in sandboxed environments. Its upstream `FabricAgent` connects Harbor's benchmark workflow to NeMo Fabric-supported harnesses. Harbor owns task provisioning, execution environments, verification, and benchmark results; NeMo Fabric manages the selected harness and returns normalized execution results and evidence.
+
+The integration shipped in [Harbor 0.25.0](https://github.com/harbor-framework/harbor/releases/tag/v0.25.0) through [upstream PR #3528](https://github.com/harbor-framework/harbor/pull/3528). That Harbor release's `fabric` extra selects the NeMo Fabric 0.5.x runtime and adapter catalog; follow the [upstream dependency requirements](https://github.com/harbor-framework/harbor/blob/v0.25.0/pyproject.toml) when using its built-in agent. Refer to the [NeMo Fabric Harbor guide](../integrations/consumer/harbor.mdx) for the separately packaged integration and examples.
+
+## NVIDIA NeMo Helix
+
+[NVIDIA NeMo Helix](https://github.com/NVIDIA-NeMo/nemo-helix) is a platform for building, deploying, evaluating, and improving agents. Its platform-managed agent path translates durable agent definitions into NeMo Fabric configuration. NeMo Fabric then runs the selected harness while NeMo Helix manages deployment, shared model infrastructure, evaluation, and the broader product lifecycle.
+
+For more information about NeMo Helix, refer to the [NeMo Helix documentation](https://docs.nvidia.com/nemo-helix/documentation/home/).
+
+This integration demonstrates that a platform can support multiple harnesses without embedding each harness lifecycle into its core services. Refer to [NeMo Studio Agents](https://docs.nvidia.com/nemo-helix/latest/documentation/studio/agents/) and [Evaluate with a NeMo Fabric Harness](https://docs.nvidia.com/nemo-helix/documentation/evaluate-models/agent-eval/fabric-runner/) for the shipped workflows.
+
+## NVIDIA NemoClaw
+
+[NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw/) is an open-source reference stack for operating agents in secure NVIDIA OpenShell sandboxes. The active integration uses NeMo Fabric as the in-sandbox execution layer while NemoClaw owns sandbox provisioning, policy, deployment, and recovery.
+
+For more information about NemoClaw, refer to the [NemoClaw documentation](https://docs.nvidia.com/nemoclaw/latest/about/overview.html).
+
+This boundary lets NemoClaw offer multiple harnesses through one lifecycle and evidence contract without moving sandbox ownership into NeMo Fabric. The integration is still being hardened for release compatibility, conformance, and downstream validation.
+
+## NVIDIA NeMo Gym
+
+[NVIDIA NeMo Gym](https://github.com/NVIDIA-NeMo/gym) provides environments for evaluating and improving models and agents at scale. Its NeMo Fabric agent integration runs supported harnesses behind Gym's agent-server boundary, allowing the same environments and verifiers to compare harnesses or collect rollouts without changing the task contract.
+
+The integration lives in NeMo Gym's upstream [NeMo Fabric agent](https://github.com/NVIDIA-NeMo/Gym/tree/main/responses_api_agents/nemo_fabric_agent), with harness-specific configurations and benchmark task integrations. NeMo Gym continues to own environments, tasks, verifiers, concurrency, and training integration. NeMo Fabric owns harness configuration and execution and returns normalized results and evidence.
+
+## NVIDIA Polar
+
+[NVIDIA Polar](https://github.com/NVIDIA-NeMo/ProRL-Agent-Server) is a rollout framework for real-world agent harnesses. A NeMo Fabric integration is an emerging direction rather than a shipped capability. The intended boundary would let Polar select a harness backed by NeMo Fabric while retaining ownership of rollout scheduling, runtime pooling, trajectory construction, evaluation, and trainer integration.
+
+This direction would give reinforcement learning systems the same portable harness contract used by application and evaluation consumers.
+
+## Build a Consumer Integration
+
+Consumer integrations use the public NeMo Fabric Python SDK to construct `FabricConfig`, plan capabilities, manage runtimes, and consume normalized results and artifacts. Refer to the [consumer integration overview](../integrations/consumer/overview.mdx) and [Python SDK guide](../sdk/python.mdx) to build another integration through the same boundary.
+
+## Roadmap
+
+Potential integrations to explore:
+
+- **[NVIDIA OSMO](https://github.com/NVIDIA/OSMO)** for orchestrated agent workflows.
+- **[NVIDIA NeMoCUA](https://github.com/NVIDIA/NemoCUA)** for computer-use agent workflows.

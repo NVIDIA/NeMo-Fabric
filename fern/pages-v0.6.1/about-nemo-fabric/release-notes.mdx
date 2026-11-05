@@ -1,0 +1,112 @@
+---
+title: "Release Notes"
+description: "Review the current NVIDIA NeMo Fabric release status and find the official release history."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+{/* @tpl:naming
+Use title casing: Start with "Release Notes for" followed by the product name. Fern resolves the page title from frontmatter; do not add an H1 heading.
+*/}
+
+{/* @tpl:formatting
+This is the Release Notes template. Document one release version per page and use the documentation version selector or previous-release links for earlier versions. Include patch releases on the same page in reverse chronological order.
+*/}
+
+{/* @tpl:formatting
+- Release notes summarize what changed in a version. Link to guides and reference pages instead of duplicating full procedures.
+- Use tables for support matrices, compatibility lists, and fixed or known issue summaries when they improve scanability.
+- Use callouts for upgrade blockers, breaking changes, and security advisories.
+*/}
+
+This page summarizes NVIDIA NeMo Fabric 0.6.1 and the 0.6 release series. [GitHub Releases](https://github.com/NVIDIA/NeMo-Fabric/releases) remain the source of truth for complete release history and tag-specific notes.
+
+## Current Release: 0.6.1
+
+NeMo Fabric 0.6.1 adds Relay 0.11 telemetry support for Hermes Agent v0.22.7 and selects that release in the default source setup. Existing Hermes v0.22.5 installations remain supported. Refer to [Hermes compatibility](#hermes-compatibility) under Upgrade Notes for supported versions and interpreter setup.
+
+## NeMo Fabric 0.6.0
+
+NeMo Fabric 0.6.0 makes agent execution easier to compare and operate. Key features and ecosystem updates include:
+
+- **Benchmark where you work.** Harbor now ships `FabricAgent` upstream, bringing NeMo Fabric into the benchmarking workflows teams already use.
+- **Compare results with better evidence.** Software provenance identifies selected software versions, while system statistics show the agent's local resource use.
+- **Choose where agents run.** Select local execution or OpenShell sandboxes through a consistent SDK workflow.
+- **Monitor agent health.** Shared health checks help applications make monitoring and recovery decisions across supported harnesses.
+- **Expand your harness choices.** Lightweight ACP integrations add Kiro and AWS Strands.
+
+
+## Upgrade Notes
+
+<Warning>
+
+The `nemo-fabric[relay]` extra and the Deep Agents, mini-SWE-agent, and NOOA Relay integrations now require `nemo-relay>=0.11,<0.12`. Claude, Codex, and Pi support Relay CLI releases `>=0.9,<0.12`; the Pi extension must match the CLI release. Remote HTTP model trust requires Relay CLI 0.11.
+
+</Warning>
+
+Relay 0.11 requires HTTPS for remote model endpoints by default, including private-network addresses. For a trusted, credential-free HTTP model endpoint, set `harness.settings.insecure_http_model_hosts` to its exact hostname or IP address. Requests and responses travel unencrypted, and Relay removes credential headers before forwarding. Remote telemetry collectors also require HTTPS by default. Restart existing runtimes after changing Relay versions. Refer to [Install NeMo Relay](../getting-started/install.mdx#install-nemo-relay) for migration details and collector trust configuration. Observability configuration remains version 4.
+
+Two collection features are enabled by default:
+
+- Invocation resource statistics collect before/after readings. Set `FabricConfig.system_stats=None` to disable them; periodic sampling remains opt-in. The independent final `resource_snapshot` is not disabled by this setting.
+- Selected software evidence is enabled through `FabricConfig.provenance`. Set `ProvenanceConfig(enabled=False)` before initialization to skip collection. Old saved results can omit the optional `execution` field.
+
+Upgrade the runtime, adapters, adapter contract, and the new `nemo-fabric-evidence` package together. The runtime and adapter contract use the same version-matched evidence package; the SDK does not depend on the southbound adapter contract.
+
+Rust callers constructing `FabricConfig` or `RunResult` with complete struct literals must account for the added collection controls and optional result fields. Prefer defaults where available. The NeMo Fabric 0.6 Harbor extra selects `harbor>=0.24,<0.25`. Harbor 0.25.0’s upstream `fabric` extra targets NeMo Fabric 0.5.x; use the [Harbor integration guide](../integrations/consumer/harbor.mdx) to select the appropriate integration.
+
+### Hermes Compatibility
+
+The Hermes adapter accepts stable Relay versions `>=0.10,<0.12`. Use the Relay line required by the selected Hermes release:
+
+| Hermes Agent | NeMo Relay Python Package |
+| --- | --- |
+| v0.22.7 | `>=0.11,<0.12` |
+| v0.22.5 | `>=0.10,<0.11` |
+
+Hermes requires Python 3.14. Applications using another supported Python version can select a separate Hermes environment with `ADAPTER_PYTHON`. Public SDK APIs and configuration are unchanged. Refer to the [Hermes installation guide](../integrations/harness/hermes.mdx) for setup instructions.
+
+## Release Highlights
+
+### Benchmark Where You Work
+
+Harbor now ships `FabricAgent` upstream in [Harbor 0.25.0](https://github.com/harbor-framework/harbor/releases/tag/v0.25.0). Alongside the existing NeMo Gym integration, this brings supported NeMo Fabric harnesses into the frameworks teams already use to evaluate and improve agents.
+
+Harbor's upstream integration uses NeMo Fabric 0.5.x. To inspect 0.6 provenance and resource statistics alongside Harbor's benchmark results, use the separate [NeMo Fabric 0.6 Harbor bridge](../integrations/consumer/harbor.mdx) with Harbor 0.24. The bridge saves this evidence in a separate NeMo Fabric result artifact.
+
+### Compare Runs With Software Provenance
+
+A benchmark score is more useful when you know which software produced it. NeMo Fabric 0.6 records selected harness, adapter, runtime, and reported infrastructure versions alongside execution results. Teams can spot software differences between runs, interpret changes in performance, and investigate unexpected results. See [Selected Software Evidence](../sdk/python.mdx#selected-software-evidence).
+
+### Understand the Resources Behind Each Result
+
+System statistics show CPU, memory, and process usage for the agent's local process tree. Teams can compare resource demand across harnesses and configurations, while optional sampling helps reveal transient peaks. See [Resource Usage and Stats](../sdk/system-stats.mdx) for measurement scope and collection options.
+
+### Choose Where Agents Run With OpenShell
+
+**Choose where agents run without rewriting the application.** NeMo Fabric keeps the application's SDK workflow consistent across local execution and OpenShell sandboxes. Select the execution environment through configuration to control where the agent or harness loop runs, while retaining the same interface for running agents and collecting results and evidence.
+
+The optional [OpenShell provider](https://github.com/NVIDIA/NeMo-Fabric/tree/v0.6.1/environment-providers/openshell) supports new or existing sandboxes with explicit lifecycle and cleanup controls. One sandbox can host multiple agent runtimes independently, and declared artifacts are transferred back to the host.
+
+The [Hermes Code Review](https://github.com/NVIDIA/NeMo-Fabric/tree/v0.6.1/examples/code_review_agent) and [custom LangGraph agent](https://github.com/NVIDIA/NeMo-Fabric/tree/v0.6.1/examples/langgraph_custom_agent) examples demonstrate this workflow, including optional Relay integration. See the [sandbox execution guide](../sdk/python.mdx#sandbox-command-bridge) for setup and lifecycle details.
+
+OpenShell is the first supported sandbox provider, with additional providers planned.
+
+### Understand Agent Health Across Harnesses
+
+**Monitor agent health through one consistent interface.** NeMo Fabric checks native agent state to help applications understand whether a runtime is alive, active, or ready, including while an invocation is running. Applications can use the same health-reporting interface across supported harnesses, local execution, and OpenShell sandboxes.
+
+Systems such as NVIDIA NemoClaw can use these observations to inform monitoring and recovery decisions without building separate probes for each harness. Reports make unsupported checks and uncertain observations explicit, helping applications distinguish limited visibility from a confirmed failure. See [Health Checks](../sdk/health-checks.mdx) for supported checks and their interpretation.
+
+### New Harness Integrations: Kiro and AWS Strands
+
+The shared ACP runner supports [Kiro CLI V3](../integrations/harness/kiro.mdx) and [AWS Strands](../integrations/harness/strands.mdx). Each runtime owns a harness process and persistent conversation, with supported MCP configuration, invocation-local usage, and deadline cleanup. Install and authenticate the corresponding harness separately; consult each guide for supported configuration and limits.
+
+## Current Limitations
+
+- Initial OpenShell provider support is qualified on Linux with matched OpenShell 0.1.2 components. The command bridge returns buffered results and rejects streaming requests. Service hosting remains a local SDK capability. Artifact collection is bounded and does not copy an entire workspace.
+- Health levels are adapter-specific observations, not interchangeable guarantees of model availability or prompt acceptance. Unsupported levels remain explicit.
+- Resource statistics do not measure remote model-server or tool-server resources. Shared cgroup measurements cannot be attributed exclusively to one invocation, and GPU usage is not collected by this resource API.
+- Software execution evidence is a selected inventory, not a full dependency inventory, reproducibility guarantee, or attestation. Input and configuration capture remain outside this contract.
+- Kiro and AWS Strands use lightweight integrations through the shared ACP runner, without Relay telemetry or native NeMo Fabric streaming.
+- The adapter catalog contains metadata snapshots; it does not provide provider-backed executable registries or an automated adapter conformance suite.

@@ -1,0 +1,141 @@
+---
+title: "Use the Kiro Adapter"
+description: "Install and configure the NVIDIA NeMo Fabric harness integration for Kiro."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use the `nvidia.fabric.kiro` adapter to run Kiro CLI V3 through its standard
+Agent Client Protocol (ACP) server. Each NeMo Fabric runtime starts one
+`kiro-cli acp --agent-engine=v3` child process and creates one persistent ACP
+session. Ordered NeMo Fabric invocations reuse that session; independent runtimes
+use separate processes and sessions.
+
+## Install Kiro and the Adapter
+
+Install Node.js 22.19.0 or newer, then install and authenticate Kiro CLI:
+
+```bash
+curl -fsSL https://cli.kiro.dev/install | bash
+kiro-cli login
+npm install nemo-fabric-adapters-kiro
+```
+
+For CI or another non-interactive environment, set `KIRO_API_KEY` instead of
+using browser login. The adapter uses a caller-installed Kiro CLI and never
+installs or updates Kiro at runtime.
+
+For source development from the repository root:
+
+```bash
+just install-typescript-kiro
+npm run build --prefix adapter-contract/typescript
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-common
+npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro
+```
+
+## Configure the Adapter
+
+The following configuration registers the source descriptor and uses Kiro's
+current default model:
+
+```python
+from nemo_fabric import DiscoveryConfig
+from nemo_fabric import EnvironmentConfig
+from nemo_fabric import FabricConfig
+from nemo_fabric import HarnessConfig
+from nemo_fabric import MetadataConfig
+from nemo_fabric import RuntimeConfig
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="kiro-review"),
+    discovery=DiscoveryConfig(
+        local_paths=["adapters/typescript/kiro/kiro.fabric-adapter.json"]
+    ),
+    harness=HarnessConfig(
+        adapter_id="nvidia.fabric.kiro",
+        settings={"permission_mode": "allow_once"},
+    ),
+    runtime=RuntimeConfig(input_schema="text", output_schema="message"),
+    environment=EnvironmentConfig(
+        provider="local",
+        workspace=".",
+    ),
+)
+```
+
+Use the packaged descriptor at
+`node_modules/nemo-fabric-adapters-kiro/kiro.fabric-adapter.json` after an npm
+install. When a model is supplied,
+the adapter verifies it against the session's advertised `model` option before
+the first invocation.
+
+## Adapter Settings
+
+The settings schema is closed:
+
+| Setting | Behavior |
+| --- | --- |
+| `mode_id` | Selects an ACP session mode advertised by Kiro. |
+| `effort` | Selects `low`, `medium`, `high`, `xhigh`, or `max` when the chosen model advertises it. |
+| `permission_mode` | `deny` rejects tool permission requests. `allow_once` chooses only a one-time allow option offered by Kiro. The default is `deny`. |
+
+The adapter never selects a persistent allow option. `permission_mode` controls
+ACP permission responses; it is not a normalized NeMo Fabric tool allowlist.
+
+## MCP Servers
+
+The adapter sends normalized MCP definitions as client-owned inputs to
+`session/new`:
+
+- Stdio servers support `args` and `env`, require an absolute executable path,
+  and do not accept HTTP headers.
+- Streamable HTTP and SSE servers support `custom_headers`, but do not accept
+  process arguments or environment variables.
+- Network endpoints require HTTPS. Loopback HTTP remains available for local
+  development.
+- Authentication objects, per-server tool filters, and extensions are rejected
+  rather than ignored.
+
+Kiro's initialization response is authoritative. Startup fails when the
+running Kiro deployment does not advertise the configured network transport.
+When MCP servers are configured, startup also waits for Kiro to report every
+server as connected before accepting the first invocation.
+
+## Supported Surface
+
+The initial adapter accepts `models` and `mcp`. Kiro model, mode, and effort
+selection use advertised ACP session configuration. Successful assistant text,
+terminal stop reasons, session identifiers, and reported token usage are
+normalized into NeMo Fabric results.
+
+NeMo Fabric system instructions, skill paths, built-in tool policy, arbitrary model
+endpoints, Relay telemetry, and streaming are not advertised. Kiro may support
+related native features, but this adapter does not claim them until NeMo Fabric can
+configure and verify them through a stable Kiro interface.
+
+## Try the Code-Review Example
+
+```bash
+.venv/bin/python -m examples.code_review_agent --variant kiro --plan
+.venv/bin/python -m examples.code_review_agent \
+  --variant kiro \
+  --input "Review calculator.py" \
+  --show-output
+```
+
+Set `KIRO_API_KEY` before these commands only in a non-interactive environment.
+
+The example intentionally does not project the shared NeMo Fabric skill or system
+instruction because the initial Kiro adapter does not advertise those fields.
+
+## Runtime health
+
+`Fabric.check()` supports `live`. The adapter observes the selected ACP child
+process identifier, exit status, and signal status through the shared process
+runner. A retained session identifier is insufficient. A busy process remains
+live, and a stopped or exited process fails the liveness observation.
+
+`active` and `ready` are unsupported. Checks do not send prompts, change session settings, or cancel invocations.
+
+Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
