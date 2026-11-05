@@ -1,7 +1,7 @@
 {
   "type": "excalidraw",
   "version": 2,
-  "source": "https://excalidraw.com",
+  "source": "https://app.excalidraw.com",
   "elements": [
     {
       "id": "hermes-0",
@@ -22,11 +22,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1000,
-      "version": 1,
-      "versionNonce": 2000,
+      "version": 2,
+      "versionNonce": 970466068,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "text": "Hermes invocation paths: one Fabric runtime",
@@ -37,7 +37,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "a0",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-1",
@@ -60,13 +64,15 @@
         "type": 3
       },
       "seed": 1001,
-      "version": 1,
-      "versionNonce": 2001,
+      "version": 2,
+      "versionNonce": 159270956,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "a1",
+      "created": null
     },
     {
       "id": "hermes-2",
@@ -89,13 +95,15 @@
         "type": 3
       },
       "seed": 1002,
-      "version": 1,
-      "versionNonce": 2002,
+      "version": 2,
+      "versionNonce": 176857236,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "a2",
+      "created": null
     },
     {
       "id": "hermes-3",
@@ -116,22 +124,26 @@
       "frameId": null,
       "roundness": null,
       "seed": 1003,
-      "version": 1,
-      "versionNonce": 2003,
+      "version": 2,
+      "versionNonce": 828138156,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
-      "text": "One Fabric runtime \u2014 shared lifecycle ownership",
-      "originalText": "One Fabric runtime \u2014 shared lifecycle ownership",
+      "text": "One Fabric runtime — shared lifecycle ownership",
+      "originalText": "One Fabric runtime — shared lifecycle ownership",
       "fontSize": 23,
       "fontFamily": 2,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "a3",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-4",
@@ -154,13 +166,15 @@
         "type": 3
       },
       "seed": 1004,
-      "version": 1,
-      "versionNonce": 2004,
+      "version": 2,
+      "versionNonce": 1796304404,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "a4",
+      "created": null
     },
     {
       "id": "hermes-5",
@@ -181,11 +195,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1005,
-      "version": 1,
-      "versionNonce": 2005,
+      "version": 2,
+      "versionNonce": 462630188,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "text": "NeMo Fabric adapter host",
@@ -196,7 +210,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "a5",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-6",
@@ -219,13 +237,15 @@
         "type": 3
       },
       "seed": 1006,
-      "version": 1,
-      "versionNonce": 2006,
+      "version": 2,
+      "versionNonce": 2086833044,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "a6",
+      "created": null
     },
     {
       "id": "hermes-7",
@@ -246,11 +266,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1007,
-      "version": 1,
-      "versionNonce": 2007,
+      "version": 2,
+      "versionNonce": 1502390188,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "text": "Hermes adapter",
@@ -261,7 +281,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "a7",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-8",
@@ -284,13 +308,15 @@
         "type": 3
       },
       "seed": 1008,
-      "version": 1,
-      "versionNonce": 2008,
+      "version": 2,
+      "versionNonce": 1353971988,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "a8",
+      "created": null
     },
     {
       "id": "hermes-9",
@@ -311,11 +337,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1009,
-      "version": 1,
-      "versionNonce": 2009,
+      "version": 2,
+      "versionNonce": 1064489516,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "text": "Embedded Hermes AIAgent\nFabric conversation",
@@ -326,7 +352,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "a9",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-10",
@@ -349,13 +379,15 @@
         "type": 3
       },
       "seed": 1010,
-      "version": 1,
-      "versionNonce": 2010,
+      "version": 2,
+      "versionNonce": 1132181140,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aA",
+      "created": null
     },
     {
       "id": "hermes-11",
@@ -376,11 +408,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1011,
-      "version": 1,
-      "versionNonce": 2011,
+      "version": 2,
+      "versionNonce": 204450988,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "text": "Managed Hermes Gateway",
@@ -391,7 +423,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aB",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-12",
@@ -414,13 +450,15 @@
         "type": 3
       },
       "seed": 1012,
-      "version": 1,
-      "versionNonce": 2012,
+      "version": 2,
+      "versionNonce": 1366279188,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aC",
+      "created": null
     },
     {
       "id": "hermes-13",
@@ -441,11 +479,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1013,
-      "version": 1,
-      "versionNonce": 2013,
+      "version": 2,
+      "versionNonce": 292370220,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "text": "Native API / chat entry points",
@@ -456,7 +494,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aD",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-14",
@@ -479,13 +521,15 @@
         "type": 3
       },
       "seed": 1014,
-      "version": 1,
-      "versionNonce": 2014,
+      "version": 2,
+      "versionNonce": 1887838612,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aE",
+      "created": null
     },
     {
       "id": "hermes-15",
@@ -506,11 +550,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1015,
-      "version": 1,
-      "versionNonce": 2015,
+      "version": 2,
+      "versionNonce": 1536520620,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "text": "Gateway-side Hermes AIAgent\nNative conversation(s)",
@@ -521,7 +565,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aF",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-16",
@@ -544,13 +592,15 @@
         "type": 3
       },
       "seed": 1016,
-      "version": 1,
-      "versionNonce": 2016,
+      "version": 2,
+      "versionNonce": 1744097044,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aG",
+      "created": null
     },
     {
       "id": "hermes-17",
@@ -571,11 +621,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1017,
-      "version": 1,
-      "versionNonce": 2017,
+      "version": 2,
+      "versionNonce": 1506958380,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "text": "Application / Fabric SDK",
@@ -586,7 +636,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aH",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-18",
@@ -607,11 +661,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1018,
-      "version": 1,
-      "versionNonce": 2018,
+      "version": 2,
+      "versionNonce": 674352276,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "points": [
@@ -629,13 +683,15 @@
       "endBinding": null,
       "startArrowhead": null,
       "endArrowhead": "arrow",
-      "elbowed": false
+      "elbowed": false,
+      "index": "aI",
+      "created": null
     },
     {
       "id": "hermes-19",
       "type": "text",
-      "x": 255,
-      "y": 225,
+      "x": 170,
+      "y": 221,
       "width": 200,
       "height": 35,
       "angle": 0,
@@ -650,11 +706,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1019,
-      "version": 1,
-      "versionNonce": 2019,
+      "version": 70,
+      "versionNonce": 893971628,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793913757174,
       "link": null,
       "locked": false,
       "text": "Runtime.invoke()",
@@ -665,7 +721,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aJ",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-20",
@@ -686,11 +746,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1020,
-      "version": 1,
-      "versionNonce": 2020,
+      "version": 2,
+      "versionNonce": 586357268,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "points": [
@@ -708,7 +768,9 @@
       "endBinding": null,
       "startArrowhead": null,
       "endArrowhead": "arrow",
-      "elbowed": false
+      "elbowed": false,
+      "index": "aK",
+      "created": null
     },
     {
       "id": "hermes-21",
@@ -729,11 +791,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1021,
-      "version": 1,
-      "versionNonce": 2021,
+      "version": 2,
+      "versionNonce": 217202988,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "points": [
@@ -751,15 +813,17 @@
       "endBinding": null,
       "startArrowhead": null,
       "endArrowhead": "arrow",
-      "elbowed": false
+      "elbowed": false,
+      "index": "aL",
+      "created": null
     },
     {
       "id": "hermes-22",
       "type": "text",
       "x": 598,
-      "y": 322,
+      "y": 313.25,
       "width": 135,
-      "height": 30,
+      "height": 47.5,
       "angle": 0,
       "strokeColor": "#3b424b",
       "backgroundColor": "transparent",
@@ -772,22 +836,26 @@
       "frameId": null,
       "roundness": null,
       "seed": 1022,
-      "version": 1,
-      "versionNonce": 2022,
+      "version": 4,
+      "versionNonce": 1620828692,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793913767364,
       "link": null,
       "locked": false,
-      "text": "owns child",
-      "originalText": "owns child",
+      "text": "owns\n child",
+      "originalText": "owns\n child",
       "fontSize": 19,
       "fontFamily": 2,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aM",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-23",
@@ -808,11 +876,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1023,
-      "version": 1,
-      "versionNonce": 2023,
+      "version": 2,
+      "versionNonce": 1978219436,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "points": [
@@ -830,7 +898,9 @@
       "endBinding": null,
       "startArrowhead": null,
       "endArrowhead": "arrow",
-      "elbowed": false
+      "elbowed": false,
+      "index": "aN",
+      "created": null
     },
     {
       "id": "hermes-24",
@@ -853,13 +923,15 @@
         "type": 3
       },
       "seed": 1024,
-      "version": 1,
-      "versionNonce": 2024,
+      "version": 2,
+      "versionNonce": 622503188,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aO",
+      "created": null
     },
     {
       "id": "hermes-25",
@@ -880,11 +952,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1025,
-      "version": 1,
-      "versionNonce": 2025,
+      "version": 2,
+      "versionNonce": 1260185132,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "text": "Native API client",
@@ -895,7 +967,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aP",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-26",
@@ -916,11 +992,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1026,
-      "version": 1,
-      "versionNonce": 2026,
+      "version": 2,
+      "versionNonce": 774693524,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "points": [
@@ -938,7 +1014,9 @@
       "endBinding": null,
       "startArrowhead": null,
       "endArrowhead": "arrow",
-      "elbowed": false
+      "elbowed": false,
+      "index": "aQ",
+      "created": null
     },
     {
       "id": "hermes-27",
@@ -961,13 +1039,15 @@
         "type": 3
       },
       "seed": 1027,
-      "version": 1,
-      "versionNonce": 2027,
+      "version": 2,
+      "versionNonce": 1098334380,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aR",
+      "created": null
     },
     {
       "id": "hermes-28",
@@ -988,11 +1068,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1028,
-      "version": 1,
-      "versionNonce": 2028,
+      "version": 2,
+      "versionNonce": 622555156,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "text": "Stock Hermes TUI\nProposed terminal path",
@@ -1003,7 +1083,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aS",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-29",
@@ -1024,11 +1108,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1029,
-      "version": 1,
-      "versionNonce": 2029,
+      "version": 2,
+      "versionNonce": 1621248812,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "points": [
@@ -1058,7 +1142,9 @@
       "endBinding": null,
       "startArrowhead": null,
       "endArrowhead": "arrow",
-      "elbowed": false
+      "elbowed": false,
+      "index": "aT",
+      "created": null
     },
     {
       "id": "hermes-30",
@@ -1081,13 +1167,15 @@
         "type": 3
       },
       "seed": 1030,
-      "version": 1,
-      "versionNonce": 2030,
+      "version": 2,
+      "versionNonce": 702303636,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "aU",
+      "created": null
     },
     {
       "id": "hermes-31",
@@ -1108,11 +1196,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1031,
-      "version": 1,
-      "versionNonce": 2031,
+      "version": 2,
+      "versionNonce": 721946028,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "text": "Shared Fabric-managed Hermes home\nNative config / workspace / persisted state",
@@ -1123,7 +1211,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aV",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-32",
@@ -1144,11 +1236,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1032,
-      "version": 1,
-      "versionNonce": 2032,
+      "version": 2,
+      "versionNonce": 1839561492,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "points": [
@@ -1166,13 +1258,15 @@
       "endBinding": null,
       "startArrowhead": null,
       "endArrowhead": "arrow",
-      "elbowed": false
+      "elbowed": false,
+      "index": "aW",
+      "created": null
     },
     {
       "id": "hermes-33",
       "type": "text",
-      "x": 410,
-      "y": 699,
+      "x": 326,
+      "y": 693,
       "width": 160,
       "height": 30,
       "angle": 0,
@@ -1187,11 +1281,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1033,
-      "version": 1,
-      "versionNonce": 2033,
+      "version": 56,
+      "versionNonce": 58619436,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793913760391,
       "link": null,
       "locked": false,
       "text": "reads / writes",
@@ -1202,7 +1296,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aX",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-34",
@@ -1223,11 +1321,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1034,
-      "version": 1,
-      "versionNonce": 2034,
+      "version": 2,
+      "versionNonce": 183302292,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "points": [
@@ -1245,13 +1343,15 @@
       "endBinding": null,
       "startArrowhead": null,
       "endArrowhead": "arrow",
-      "elbowed": false
+      "elbowed": false,
+      "index": "aY",
+      "created": null
     },
     {
       "id": "hermes-35",
       "type": "text",
-      "x": 810,
-      "y": 699,
+      "x": 725,
+      "y": 698,
       "width": 160,
       "height": 30,
       "angle": 0,
@@ -1266,11 +1366,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1035,
-      "version": 1,
-      "versionNonce": 2035,
+      "version": 25,
+      "versionNonce": 1899032364,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793913761974,
       "link": null,
       "locked": false,
       "text": "reads / writes",
@@ -1281,7 +1381,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aZ",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-36",
@@ -1302,11 +1406,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1036,
-      "version": 1,
-      "versionNonce": 2036,
+      "version": 2,
+      "versionNonce": 1567147540,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "text": "Same Hermes loop implementation; separate agent instances and conversations.",
@@ -1317,15 +1421,19 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "aa",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-37",
       "type": "text",
       "x": 170,
-      "y": 981,
+      "y": 985.375,
       "width": 1020,
-      "height": 35,
+      "height": 26.25,
       "angle": 0,
       "strokeColor": "#3b424b",
       "backgroundColor": "transparent",
@@ -1338,22 +1446,26 @@
       "frameId": null,
       "roundness": null,
       "seed": 1037,
-      "version": 1,
-      "versionNonce": 2037,
+      "version": 11,
+      "versionNonce": 441814188,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793913780979,
       "link": null,
       "locked": false,
-      "text": "Stopping the Fabric runtime must stop both paths and their owned work.",
-      "originalText": "Stopping the Fabric runtime must stop both paths and their owned work.",
+      "text": "Stopping the Fabric runtime stops both paths and their owned work.",
+      "originalText": "Stopping the Fabric runtime stops both paths and their owned work.",
       "fontSize": 21,
       "fontFamily": 2,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "ab",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-38",
@@ -1376,13 +1488,15 @@
         "type": 3
       },
       "seed": 1038,
-      "version": 1,
-      "versionNonce": 2038,
+      "version": 2,
+      "versionNonce": 1510925204,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
-      "locked": false
+      "locked": false,
+      "index": "ac",
+      "created": null
     },
     {
       "id": "hermes-39",
@@ -1403,11 +1517,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1039,
-      "version": 1,
-      "versionNonce": 2039,
+      "version": 2,
+      "versionNonce": 1030868908,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "text": "Configured model endpoint",
@@ -1418,7 +1532,11 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "ad",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     },
     {
       "id": "hermes-40",
@@ -1439,11 +1557,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1040,
-      "version": 1,
-      "versionNonce": 2040,
+      "version": 2,
+      "versionNonce": 1729450260,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "points": [
@@ -1469,7 +1587,9 @@
       "endBinding": null,
       "startArrowhead": null,
       "endArrowhead": "arrow",
-      "elbowed": false
+      "elbowed": false,
+      "index": "ae",
+      "created": null
     },
     {
       "id": "hermes-41",
@@ -1490,11 +1610,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1041,
-      "version": 1,
-      "versionNonce": 2041,
+      "version": 2,
+      "versionNonce": 1014168108,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "points": [
@@ -1520,7 +1640,9 @@
       "endBinding": null,
       "startArrowhead": null,
       "endArrowhead": "arrow",
-      "elbowed": false
+      "elbowed": false,
+      "index": "af",
+      "created": null
     },
     {
       "id": "hermes-42",
@@ -1541,11 +1663,11 @@
       "frameId": null,
       "roundness": null,
       "seed": 1042,
-      "version": 1,
-      "versionNonce": 2042,
+      "version": 2,
+      "versionNonce": 871501460,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1793908800000,
+      "updated": 1793909002299,
       "link": null,
       "locked": false,
       "text": "Native requests bypass\nFabric Runtime.invoke()",
@@ -1556,14 +1678,19 @@
       "verticalAlign": "middle",
       "containerId": null,
       "autoResize": false,
-      "lineHeight": 1.25
+      "lineHeight": 1.25,
+      "index": "ag",
+      "created": null,
+      "labelPosition": null,
+      "baseFontSize": null
     }
   ],
   "appState": {
+    "gridSize": 20,
+    "gridStep": 5,
+    "gridModeEnabled": false,
     "viewBackgroundColor": "#ffffff",
-    "exportBackground": true,
-    "exportEmbedScene": true,
-    "gridSize": null
+    "lockedMultiSelections": {}
   },
   "files": {}
 }
