@@ -400,6 +400,22 @@ where
 }
 
 fn to_py_error(error: nemo_fabric_core::FabricError) -> PyErr {
+    let session_code = match &error {
+        FabricError::Session { code, .. } => Some((code.as_str(), false)),
+        FabricError::StateInUse { .. } => Some(("state_in_use", true)),
+        FabricError::AdapterLifecycleOperation { code, .. } if code.starts_with("session_") => {
+            Some((code.as_str(), code == "session_busy"))
+        }
+        _ => None,
+    };
+    if let Some((code, retryable)) = session_code {
+        return Python::attach(|py| {
+            let exception = PyRuntimeError::new_err(error.to_string());
+            let _ = exception.value(py).setattr("code", code);
+            let _ = exception.value(py).setattr("retryable", retryable);
+            exception
+        });
+    }
     match &error {
         FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout" => {
             PyTimeoutError::new_err(error.to_string())

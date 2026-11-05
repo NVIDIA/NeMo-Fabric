@@ -22,6 +22,13 @@ CONFIG_OPERATIONS = ("start",)
 LIFECYCLE_OPERATIONS = ("start", "stop")
 
 MESSAGES = {
+    "state_in_use": "Another runtime still owns the supplied retained storage.",
+    "session_not_found": "The selected session was not found in the supplied retained storage.",
+    "session_incompatible": "The selected session or retained storage cannot be safely opened.",
+    "session_adapter_mismatch": "The session reference targets another adapter.",
+    "session_ref_invalid": "The session reference is invalid.",
+    "session_storage_required": "Durable sessions require retained storage.",
+    "session_resume_unsupported": "The adapter does not support durable sessions.",
     "platform_unsupported": "The command bridge requires a Unix platform.",
     "cleanup_unconfirmed": "Previous runtime cleanup is unconfirmed; replace the sandbox before restarting the server.",
     "runtime_busy": "A runtime operation is in progress; cleanup is unconfirmed.",
@@ -127,6 +134,8 @@ def validate_request(request: Any) -> str:
             raise ProtocolError()
         required.update(payload_fields)
     allowed = required.copy()
+    if operation == "start":
+        allowed.add("session_ref")
     if operation == "check":
         allowed.add("timeout_seconds")
         if request.keys() & {"agent", "runtime_id"}:

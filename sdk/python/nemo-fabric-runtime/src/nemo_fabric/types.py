@@ -1395,6 +1395,38 @@ class AdapterInfo(FabricMapping):
         return data
 
 
+class SessionRef(FabricMapping):
+    """Portable native session identity, resolved within supplied retained storage.
+
+    ``session_id`` is opaque to NeMo Fabric and must not contain credentials or paths.
+    Changing an agent name does not change the referenced session.
+    """
+
+    schema_version: str
+    adapter_id: str
+    session_id: str
+    _fields = frozenset({"schema_version", "adapter_id", "session_id"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if set(data) != cls._fields:
+            raise FabricConfigError(
+                "SessionRef requires exactly schema_version, adapter_id, and session_id"
+            )
+        if data["schema_version"] != "fabric.session_ref/v1alpha1":
+            raise FabricConfigError("unsupported SessionRef schema_version")
+        for name in ("adapter_id", "session_id"):
+            data[name] = _required_text(data[name], name)
+        return data
+
+    def __repr__(self) -> str:
+        return (
+            "SessionRef(adapter_id="
+            + repr(self.adapter_id)
+            + ", session_id='[redacted]')"
+        )
+
+
 class RuntimeCapabilities(FabricMapping):
     """Operations declared by the resolved runtime and adapter.
 
@@ -1404,6 +1436,7 @@ class RuntimeCapabilities(FabricMapping):
 
     Attributes:
         service: Whether long-lived service handles are supported.
+        session_resume: Whether durable native session creation and resume are supported.
         streaming: Whether event streaming is supported.
         updates: Whether runtime configuration updates are supported.
         cancellation: Whether in-flight cancellation is supported.
@@ -1411,12 +1444,14 @@ class RuntimeCapabilities(FabricMapping):
     """
 
     service: bool
+    session_resume: bool
     streaming: bool
     updates: bool
     cancellation: bool
     metadata: Mapping[str, Any]
     _fields = frozenset(
         {
+            "session_resume",
             "service",
             "streaming",
             "updates",
@@ -1444,6 +1479,7 @@ class RunPlan(FabricMapping):
         config: Typed configuration snapshot.
         adapter: Resolved adapter identity.
         capabilities: Operations declared by the resolved runtime.
+        session_ref: Native session to resume. Omission starts a fresh conversation.
     """
 
     agent_name: str
@@ -1451,10 +1487,20 @@ class RunPlan(FabricMapping):
     config: _FabricConfigSnapshot
     adapter: AdapterInfo
     capabilities: RuntimeCapabilities
-    _fields = frozenset({"agent_name", "base_dir", "config", "adapter", "capabilities"})
+    session_ref: SessionRef | None
+    _fields = frozenset(
+        {"agent_name", "base_dir", "config", "adapter", "capabilities", "session_ref"}
+    )
+
+    @property
+    def session_ref(self) -> SessionRef | None:
+        """Explicit native session selection, when supplied."""
+        return self._data.get("session_ref")
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if data.get("session_ref") is not None:
+            data["session_ref"] = SessionRef.from_mapping(data["session_ref"])
         descriptor = data.get("adapter")
         if descriptor is None:
             descriptor = (data.get("adapter_descriptor") or {}).get("descriptor", {})
@@ -1805,6 +1851,8 @@ class RuntimeHandle(FabricMapping):
     """
 
     runtime_id: str
+    session_ref: SessionRef | None
+    recovery_warnings: Sequence[ErrorInfo]
     runtime_binding: str
     agent_name: str
     harness: str
@@ -1814,6 +1862,8 @@ class RuntimeHandle(FabricMapping):
     environment: Mapping[str, Any]
     _fields = frozenset(
         {
+            "session_ref",
+            "recovery_warnings",
             "runtime_id",
             "runtime_binding",
             "agent_name",
@@ -1826,8 +1876,24 @@ class RuntimeHandle(FabricMapping):
     )
     _json_fields = frozenset({"environment"})
 
+    @property
+    def session_ref(self) -> SessionRef | None:
+        """Confirmed durable session, or None for a runtime without one."""
+        return self._data.get("session_ref")
+
+    @property
+    def recovery_warnings(self) -> Sequence[ErrorInfo]:
+        """Recovery warnings reported when the native session was restored."""
+        return self._data.get("recovery_warnings", ())
+
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if data.get("session_ref") is not None:
+            data["session_ref"] = SessionRef.from_mapping(data["session_ref"])
+        if data.get("recovery_warnings"):
+            data["recovery_warnings"] = [
+                ErrorInfo.from_mapping(warning) for warning in data["recovery_warnings"]
+            ]
         for field in (
             "runtime_id",
             "runtime_binding",
@@ -2694,6 +2760,7 @@ class RunResult(FabricMapping):
     """
 
     agent_name: str
+    session_ref: SessionRef | None
     harness: str
     adapter_kind: str
     adapter_id: str
@@ -2713,6 +2780,7 @@ class RunResult(FabricMapping):
     metadata: Mapping[str, Any]
     _fields = frozenset(
         {
+            "session_ref",
             "agent_name",
             "harness",
             "adapter_kind",
@@ -2735,8 +2803,15 @@ class RunResult(FabricMapping):
     )
     _json_fields = frozenset({"metadata"})
 
+    @property
+    def session_ref(self) -> SessionRef | None:
+        """Confirmed durable session, or None when no durable session was selected."""
+        return self._data.get("session_ref")
+
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if data.get("session_ref") is not None:
+            data["session_ref"] = SessionRef.from_mapping(data["session_ref"])
         for field in (
             "agent_name",
             "harness",

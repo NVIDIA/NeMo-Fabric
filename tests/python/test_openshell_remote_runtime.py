@@ -165,6 +165,32 @@ async def test_real_task_sdk_retains_state_and_collects_declared_artifacts(
         await fabric.release_environment(rebound)
 
 
+@pytest.mark.parametrize(
+    "fault", ["unexpected_session_start", "unexpected_session_result"]
+)
+async def test_remote_session_identity_cannot_be_added_to_a_legacy_runtime(
+    remote_config, monkeypatch, fault
+):
+    monkeypatch.setenv("FABRIC_TEST_PROVIDER_FAULT", fault)
+    fabric = Fabric()
+    environment = await fabric.attach_environment(
+        remote_config,
+        EnvironmentReference.from_mapping(
+            {"provider": "openshell", "resource": {"sandbox_name": "echo"}}
+        ),
+    )
+    if fault == "unexpected_session_start":
+        with pytest.raises(FabricRuntimeError):
+            await fabric.start_runtime_in(remote_config, environment)
+    else:
+        runtime = await fabric.start_runtime_in(remote_config, environment)
+        try:
+            with pytest.raises(FabricRuntimeError):
+                await runtime.invoke(input="Check the bound session.")
+        finally:
+            await runtime.stop()
+
+
 @pytest.mark.parametrize("partial", [None, {"partial": "review"}])
 async def test_failed_task_result_preserves_output_error_and_artifacts(
     remote_config, partial

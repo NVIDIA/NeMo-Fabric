@@ -2679,6 +2679,7 @@ fn resolve_selected_descriptors(
         adapter_target_descriptor.as_ref(),
     );
     Ok(RunPlan {
+        session_ref: None,
         agent_name: config.metadata.name.clone(),
         base_dir,
         config,
@@ -3725,6 +3726,7 @@ fn resolve_runtime_capabilities(
         .map(|descriptor| descriptor.capabilities.clone())
         .unwrap_or_default();
     RuntimeCapabilities {
+        session_resume: implemented_runtime && descriptor_capabilities.session_resume,
         service: implemented_runtime && descriptor_capabilities.service,
         streaming: implemented_runtime && descriptor_capabilities.streaming,
         updates: implemented_runtime && descriptor_capabilities.updates,
@@ -4114,6 +4116,9 @@ fn normalize_path(path: PathBuf) -> PathBuf {
 /// Resolved NeMo Fabric run plan.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RunPlan {
+    /// Native session to resume. Omission starts a fresh conversation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_ref: Option<crate::SessionRef>,
     /// Stable agent name.
     pub agent_name: String,
     /// Base directory used to resolve relative NeMo Fabric paths.
@@ -4147,6 +4152,9 @@ pub struct RunPlan {
 /// Lifecycle behavior implemented by a resolved runtime path.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RuntimeCapabilities {
+    /// Whether the adapter implements durable native session creation and resume.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub session_resume: bool,
     /// Whether the selected runtime supports service lifecycle operations.
     #[serde(default)]
     pub service: bool,
@@ -7107,6 +7115,7 @@ mod tests {
         let path = repository_root().join("adapters/python/claude/claude.fabric-adapter.json");
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
         let request = AgentRunRequest {
+            acknowledge_recovery: false,
             input: serde_json::json!("review"),
             relay_session_root: None,
             context: BTreeMap::new(),

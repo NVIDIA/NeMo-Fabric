@@ -3,6 +3,10 @@
   "additionalProperties": false,
   "description": "Southbound invocation request passed to an adapter target.",
   "properties": {
+    "acknowledge_recovery": {
+      "description": "Acknowledge uncertain earlier completion before starting this new request.",
+      "type": "boolean"
+    },
     "context": {
       "additionalProperties": true,
       "description": "Caller-provided task, rollout, workflow, or application context.",
