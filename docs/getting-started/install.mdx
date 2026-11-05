@@ -306,7 +306,7 @@ NeMo Fabric uses runtime-owned Relay configuration. Remove or relocate a user `p
 
 #### Upgrade to Relay 0.11
 
-The Relay Python package requires 0.11. Claude, Codex, and Pi support stable CLI releases from 0.9 through 0.11. The Pi extension must match the selected CLI release. The `insecure_http_model_hosts` setting requires CLI 0.11. Hermes v0.22.7 uses Relay 0.11; v0.22.5 remains supported with Relay 0.10. Restart existing runtimes after the upgrade so each gateway and extension uses the selected release.
+The `nemo-fabric[relay]` extra requires Relay 0.11. Claude, Codex, and Pi support stable CLI releases from 0.9 through 0.11. The Pi extension must match the selected CLI release. The `insecure_http_model_hosts` setting requires CLI 0.11. Hermes v0.22.7 uses Relay 0.11; v0.22.5 remains supported with Relay 0.10. Restart existing runtimes after the upgrade so each gateway and extension uses the selected release.
 
 Relay 0.11 gateways require HTTPS for remote model endpoints by default, including private network and Kubernetes Service addresses. Plain HTTP remains available for loopback endpoints. To trust a credential-free remote HTTP model endpoint, set `harness.settings.insecure_http_model_hosts` to its exact hostname or IP address. Prompts and responses travel unencrypted, and Relay strips credential headers before forwarding. Relay 0.11 also requires HTTPS for remote telemetry collectors by default. Relay supports explicit exceptions for trusted collectors through `insecure_http_hosts`, or `NEMO_RELAY_OTEL_INSECURE_HTTP_HOSTS` for automatic OTLP exporters. Relay releases before 0.10.2 can forward credentials to remote HTTP model endpoints. Use HTTPS when model requests or telemetry contain credentials or sensitive content.
 
