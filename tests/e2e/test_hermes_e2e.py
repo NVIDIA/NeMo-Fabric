@@ -15,7 +15,7 @@ from packaging.version import Version
 import pytest
 import requests
 import yaml
-from _utils.utils import assert_atof_model, assert_atof_skill_selection
+from _utils.utils import assert_atof_model, assert_atof_skill_selection, atof_records
 
 from examples.code_review_agent import (
     hermes_config,
@@ -104,8 +104,7 @@ async def test_hermes_persistent_host_with_relay(
     ]
     assert (
         sum(
-            record["name"] == "hermes.session"
-            and record.get("scope_category") == "end"
+            record["name"] == "hermes.session" and record.get("scope_category") == "end"
             for record in atof_records
         )
         == 2
@@ -300,6 +299,22 @@ async def test_skill_selection(
 
     assert result["status"] == "succeeded", result.to_mapping()
     assert_atof_skill_selection(result["output"], skill)
+    skill_results = [
+        json.loads(record["data"])
+        for record in atof_records(result["output"])
+        if record["kind"] == "scope"
+        and record["category"] == "tool"
+        and record["name"] == "skill_view"
+        and record["scope_category"] == "end"
+    ]
+    if skill is None:
+        assert skill_results == []
+    else:
+        assert len(skill_results) == 1, skill_results
+        loaded = skill_results[0]
+        assert loaded["success"] is True, loaded
+        skill_dir = {"default": default_skill, "alternate": alternate_skill}[skill]
+        assert loaded["content"] == (skill_dir / "SKILL.md").read_text(), loaded
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
