@@ -43,6 +43,17 @@ def finalize_hermes_relay_session(session_id: str) -> None:
     subscribers.flush()
 
 
+def finalize_native_relay_segment(session_id: str) -> None:
+    """Export a native API turn without firing conversation-end plugin hooks."""
+    from agent import relay_runtime
+    from nemo_relay import subscribers
+
+    relay_runtime.SESSION_COORDINATOR.finalize_conversation(
+        profile_key=relay_runtime.current_profile_key(), session_id=session_id
+    )
+    subscribers.flush()
+
+
 def validate_hermes_telemetry_provider(runtime_context: RuntimeContext) -> None:
     telemetry = runtime_context.telemetry
     providers = telemetry.metadata.get("telemetry_providers", []) if telemetry else []

@@ -32,11 +32,12 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.hermes import configuration
+from nemo_fabric_adapters.hermes import interfaces
 from nemo_fabric_adapters.hermes import telemetry
 
 # Default agent loop budget when FabricConfig.runtime.max_turns is unset.
 # The actual internal hermes default  as of v0.21 is `sys.maxsize`
-DEFAULT_MAX_ITERATIONS: int = 90
+DEFAULT_MAX_ITERATIONS: int = configuration.DEFAULT_MAX_ITERATIONS
 LOGGER = logging.getLogger(__name__)
 hermes_mcp_server_config = configuration.hermes_mcp_server_config
 
@@ -70,6 +71,7 @@ class HermesRuntime:
         self._relay_plugin_config: dict[str, Any] | None = None
         self._relay_plugin_config_path: Path | None = None
         self._active_invoke_task: asyncio.Task[tuple[dict[str, Any], str]] | None = None
+        self._interfaces = interfaces.InterfaceChildren()
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -79,6 +81,9 @@ class HermesRuntime:
             )
 
         self._stopping = False
+        # startup_timeout_seconds bounds all of start, so Fabric's start limit
+        # can't expire first.
+        started_at = asyncio.get_running_loop().time()
         try:
             agent_config = payload.get("config")
             if not isinstance(agent_config, AgentConfig):
@@ -102,6 +107,11 @@ class HermesRuntime:
                 telemetry.validate_hermes_relay_compatibility()
             self._agent_config = agent_config
             self._settings = configuration._settings(agent_config)
+            interface_ports = interfaces.interface_ports(self._settings)
+            if interface_ports:
+                # Refuse before Hermes's setup, whose MCP discovery can take
+                # minutes and outlast the caller's start deadline.
+                interfaces.require_supported_platform()
             model_config = configuration._selected_model(agent_config)
             self._model_config = model_config
             self._runtime_id = runtime_context.runtime_id
@@ -145,6 +155,7 @@ class HermesRuntime:
                 # Workspace belongs to the per-runtime context, not AgentConfig.
                 workspace=str(runtime_context.environment.workspace or "."),
                 relay_enabled=relay_enabled,
+                interfaces=interface_ports,
             )
             api_key_env = configuration._api_key_env(model_config)
             api_key = os.environ.get(api_key_env)
@@ -181,19 +192,6 @@ class HermesRuntime:
                 )
                 self._session_db = SessionDB()
                 self._conversation_history = None
-                max_iterations = configuration._max_turns(agent_config)
-                if max_iterations is None:
-                    max_iterations = DEFAULT_MAX_ITERATIONS
-                temperature = model_config.temperature
-                top_p = model_config.top_p
-                request_overrides = {
-                    name: value
-                    for name, value in (
-                        ("temperature", temperature),
-                        ("top_p", top_p),
-                    )
-                    if value is not None
-                }
                 self._agent = AIAgent(
                     **filter_supported_kwargs(
                         AIAgent,
@@ -201,26 +199,57 @@ class HermesRuntime:
                         api_key=api_key,
                         provider=model_config.provider,
                         model=model_config.model,
-                        max_iterations=int(max_iterations),
-                        enabled_toolsets=self._enabled_toolsets,
-                        disabled_toolsets=configuration.disabled_toolsets(agent_config)
-                        or None,
+                        **configuration.agent_behavior_kwargs(
+                            agent_config, self._enabled_toolsets
+                        ),
                         quiet_mode=True,
                         skip_context_files=True,
                         skip_memory=True,
-                        save_trajectories=bool(
-                            self._settings.get("save_trajectories", False)
-                        ),
-                        max_tokens=model_config.max_tokens
-                        or self._settings.get("max_tokens", 512),
-                        request_overrides=request_overrides or None,
-                        reasoning_config=self._settings.get(
-                            "reasoning_config", {"effort": "none"}
-                        ),
                         platform="fabric",
                         session_id=self._runtime_id,
                         session_db=self._session_db,
                     )
+                )
+            if interface_ports:
+                if "api" in interface_ports:
+                    from hermes_cli.profile_channels import platform_ids
+
+                    # This gateway serves the managed API, not ambient chat bots.
+                    # Explicit disables beat Hermes's credential-based enablement.
+                    self._hermes_config["platforms"] = {
+                        name: {"enabled": False}
+                        for name in platform_ids(self._hermes_home)
+                        if name != "api_server"
+                    }
+                    self._hermes_config["gateway"] = {"multiplex_profiles": False}
+                    self._hermes_config_path.write_text(
+                        common_utils.dump_yaml(self._hermes_config), encoding="utf-8"
+                    )
+                environment = dict(os.environ)
+                if (
+                    str(model_config.provider or "").lower() == "openai"
+                    and not model_config.base_url
+                ):
+                    # An ambient endpoint must not redirect the configured key.
+                    environment.pop("OPENAI_BASE_URL", None)
+                provider_key_env = configuration.PROVIDER_DEFAULT_API_KEY_ENV.get(
+                    str(model_config.provider or "").lower()
+                )
+                if provider_key_env:
+                    # Hermes's own processes read a provider's key from its
+                    # default variable, not from api_key_env.
+                    environment[provider_key_env] = api_key
+                await self._interfaces.start(
+                    interface_ports,
+                    hermes_home=self._hermes_home,
+                    token_path=self._hermes_home / "interfaces" / "api.token",
+                    timeout=max(
+                        interfaces.startup_timeout(self._settings)
+                        - (asyncio.get_running_loop().time() - started_at),
+                        0.0,
+                    ),
+                    environment=environment,
+                    agent_config=agent_config,
                 )
             self._agent_config = agent_config
             self._started = True
@@ -596,6 +625,10 @@ class HermesRuntime:
         self._stopping = True
         active_invoke_task = self._active_invoke_task
         errors: list[BaseException] = []
+        try:
+            await self._interfaces.stop()
+        except BaseException as error:
+            errors.append(error)
         if active_invoke_task is not None:
             try:
                 await asyncio.shield(active_invoke_task)
@@ -712,7 +745,6 @@ def filter_supported_call_kwargs(func: Any, **kwargs: Any) -> dict[str, Any]:
     signature = inspect.signature(func)
     supported = set(signature.parameters)
     return {key: value for key, value in kwargs.items() if key in supported}
-
 
 
 # Selected software reported by the shared lifecycle host; no dependency scan.

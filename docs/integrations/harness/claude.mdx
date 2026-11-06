@@ -208,3 +208,9 @@ including credentials provided to the harness, and rejects conflicting upstream
 authorization configuration. Prompts and responses travel unencrypted. HTTPS
 remains the default, and MCP policy is unchanged. This option applies to
 Relay-enabled Codex, Claude, and Pi runs.
+
+## Startup Diagnostics
+
+When the SDK fails to connect, the existing lifecycle error metadata includes `startup_diagnostics`: fixed safe summaries of recognized native permission, model, and reasoning-effort rejections. For example, Claude Code's root/sudo restriction on `--dangerously-skip-permissions` survives startup failure without changing the configured permissions or execution user.
+
+The adapter scans at most 8,192 characters per stderr callback and retains at most one summary per recognized reason. It omits raw stderr, credential values, model IDs, prompts, and environment maps. If stderr has no recognized reason, the metadata contains an omission notice; no stderr leaves the existing error metadata unchanged. Capture ends after startup, and existing runtime journal handling remains unchanged.
