@@ -114,42 +114,7 @@ Native API responses remain native responses. Relay's standard artifact format p
 
 ## 5. Testing
 
-### Run Automated Regressions
-
-Prepare the repository's Hermes environment as described in [Install the Adapter](./hermes.mdx#install-the-adapter), then run these commands from the repository root:
-
-```bash
-export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
-.venv-hermes/bin/python -m pytest \
-  tests/adapters/test_hermes_adapter.py \
-  tests/adapters/test_hermes_native_config.py \
-  tests/adapters/test_hermes_config_builder.py \
-  tests/adapters/test_hermes_interfaces.py \
-  tests/adapters/test_hermes_streaming.py \
-  tests/adapters/test_hermes_health.py \
-  tests/e2e/test_hermes_e2e.py \
-  tests/e2e/test_hermes_checks.py -q
-```
-
-These tests exercise the installed Hermes processes against a local mock model endpoint. They check the existing SDK invocation and streaming paths, warm-session reuse, normalized results and Relay artifacts, health checks, native configuration mapping, fresh conversations, ATIF export at turn completion, continued native conversation state, private configuration files, authentication, readiness failures, and cleanup. They do not establish compatibility with your hosted model or qualify browser interaction.
-
-### Run a Live File Task and Inspect Relay
-
-Use the [native interfaces example](../../../examples/interfaces/README.md) to submit real input through the Hermes API, verify its file effects, and inspect Relay evidence. It starts one runtime with ATOF and ATIF enabled and checks both formats separately.
-
-From the repository root, with your prepared Hermes environment and model credentials:
-
-```bash
-export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
-.venv-hermes/bin/python examples/interfaces/hermes.py \
-  --base-url "$MODEL_BASE_URL" \
-  --model "$MODEL_NAME" \
-  --port 8642
-```
-
-The example uses sample release notes by default. Add `--input-file /path/to/release-notes.md` for your own input. Its README includes setup, output verification, and commands to inspect ATIF tool steps and raw ATOF events. The example exits unsuccessfully if the generated file, tool observations, populated ATIF trajectory, or token cleanup is missing.
-
-Matching answers or generated configuration files do not establish configuration parity. Inspect actual model requests for the configured model, credential, instructions, generation settings, and tool policy. Verify session attribution in the trace; the native API response remains distinct from a normalized NeMo Fabric `RunResult`.
+See the [Hermes interfaces example](../../../examples/interfaces/README.md) for setup, manual testing, output verification, and Relay trajectory inspection.
 
 ## 6. Limitations and Planned Work
 
