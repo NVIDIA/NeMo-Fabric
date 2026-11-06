@@ -44,8 +44,16 @@ def configured_kwargs(
     config: AgentConfig, native_kwargs: dict[str, Any], native_config: dict[str, Any]
 ) -> dict[str, Any]:
     """Apply Fabric-owned behavior while retaining native routing and identity."""
-    enabled = configuration.resolve_hermes_toolsets(config, native_config)
+    enabled = (
+        configuration.resolve_hermes_toolsets(config, native_config)
+        if config.tools is not None and config.tools.enabled is not None
+        else None
+    )
     behavior = configuration.agent_behavior_kwargs(config, enabled)
+    if config.tools is None or config.tools.enabled is None:
+        behavior.pop("enabled_toolsets")
+    if config.tools is None or not config.tools.blocked:
+        behavior.pop("disabled_toolsets")
     overrides = {
         **(native_kwargs.get("request_overrides") or {}),
         **(behavior["request_overrides"] or {}),

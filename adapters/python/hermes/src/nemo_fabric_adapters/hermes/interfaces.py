@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import http.client
 import json
+import logging
 import os
 import secrets
 import signal
@@ -22,6 +23,7 @@ from nemo_fabric_adapters.common import local_interfaces
 from nemo_fabric_adapters.common import utils as common_utils
 
 HEALTH_PATHS = {"api": "/health", "dashboard": "/api/status"}
+LOGGER = logging.getLogger(__name__)
 # Children run in their own sessions and stop by process group.
 POSIX = os.name != "nt"
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 60.0
@@ -139,9 +141,7 @@ class InterfaceChildren:
 
     async def stop(self) -> None:
         """Remove the API token, then stop every interface process group."""
-        token_path, self._token_path = self._token_path, None
-        if token_path is not None:
-            token_path.unlink(missing_ok=True)
+        self._remove_private_file("_token_path")
         running = [
             child for child in self._children if child.process.returncode is None
         ]
@@ -159,11 +159,20 @@ class InterfaceChildren:
             for child in running:
                 common_utils.signal_process_group(child.process.pid, signal.SIGKILL)
             self._children = []
-            if self._agent_config_path is not None:
-                self._agent_config_path.unlink(missing_ok=True)
-                self._agent_config_path = None
+            self._remove_private_file("_agent_config_path")
         if pending:
             await asyncio.wait(pending)
+
+    def _remove_private_file(self, attribute: str) -> None:
+        path = getattr(self, attribute)
+        if path is not None:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                # Retain the path for retry; cleanup must not prevent child stop.
+                LOGGER.exception("Could not remove Hermes interface file %s", path)
+            else:
+                setattr(self, attribute, None)
 
 
 def _web_dist() -> Path:

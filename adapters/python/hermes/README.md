@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 This adapter runs Hermes Agent through its Python SDK.
 
-Managed API and dashboard children launch through an adapter-owned bootstrap that applies the same behavioral mapping when Hermes constructs native agent instances. Fabric-configured instructions, tool policy, turn limits, generation settings, and trajectory settings take precedence over native constructor defaults. The bootstrap retains native routing, session identity, execution, and transport; it does not modify the installed Hermes source. A mode-`0600` configuration snapshot under the runtime's `interfaces` directory supplies the mapping and is removed on stop. Gateway processes independently started outside this launcher do not receive this guarantee.
+Managed API and dashboard children launch through an adapter-owned bootstrap that applies the same behavioral mapping when Hermes constructs native agent instances. Instructions and behavioral settings configured by NeMo Fabric take precedence over native constructor defaults. Explicit tool selection and nonempty blocked-tool policies override native defaults; unspecified tool policies retain native interface defaults. The bootstrap retains native routing, session identity, execution, and transport; it does not modify the installed Hermes source. A mode-`0600` configuration snapshot under the runtime's `interfaces` directory supplies the mapping and is removed on stop. Gateway processes independently started outside this launcher do not receive this guarantee.
 
 ## Runtime Health
 
@@ -89,7 +89,7 @@ The descriptor validates the following `harness.settings` fields:
 | `max_tokens` | positive integer | `512` | Limits the number of tokens in each Hermes model response. |
 | `terminal_timeout` | positive number | `60` | Limits a Hermes terminal operation in seconds. |
 | `interfaces.api`, `interfaces.dashboard` | object | None | Serve Hermes's API server or dashboard from a runtime, each with an exact `port` and optional `enabled`; see [Access and Use](../../../docs/integrations/harness/hermes-interfaces.mdx#3-access-and-use). |
-| `startup_timeout_seconds` | number, at most 75 | `60` | Time from the start of the runtime for every enabled interface to pass its health check. |
+| `startup_timeout_seconds` | number, greater than 0 and at most 75 | `60` | Time from the start of the runtime for every enabled interface to pass its health check. |
 
 For example:
 

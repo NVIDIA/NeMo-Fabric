@@ -490,6 +490,76 @@ async def test_hermes_interface_startup_timeout_counts_from_the_start_of_start(
     assert timeouts[0] <= 4.5
 
 
+@pytest.mark.parametrize("explicit_endpoint", [False, True])
+async def test_native_openai_endpoint_does_not_use_ambient_fallback(
+    tmp_path, api_server, monkeypatch, explicit_endpoint
+):
+    os.environ["OPENAI_BASE_URL"] = "http://ambient.invalid/v1"
+    import run_agent
+
+    # This test observes child environment construction, not provider login.
+    monkeypatch.setattr(run_agent, "AIAgent", MagicMock())
+    environments = []
+
+    async def record_start(self, ports, *, environment, **kwargs):
+        environments.append(environment)
+
+    monkeypatch.setattr(interfaces.InterfaceChildren, "start", record_start)
+    runtime = adapter.HermesRuntime()
+    try:
+        await runtime.start(
+            _payload(
+                tmp_path,
+                {"interfaces": {"api": {"port": 8642}}},
+                base_url=f"{api_server}/v1" if explicit_endpoint else None,
+            )
+        )
+        assert environments[0]["OPENAI_API_KEY"] == MODEL_KEY
+        if explicit_endpoint:
+            assert runtime._hermes_config["model"]["base_url"] == f"{api_server}/v1"
+        else:
+            assert "OPENAI_BASE_URL" not in environments[0]
+        assert os.environ["OPENAI_BASE_URL"] == "http://ambient.invalid/v1"
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.parametrize("failed_attribute", ["_token_path", "_agent_config_path"])
+async def test_private_file_removal_failure_still_stops_children_and_retries(
+    tmp_path, monkeypatch, caplog, failed_attribute
+):
+    children = interfaces.InterfaceChildren()
+    for attribute in ("_token_path", "_agent_config_path"):
+        path = tmp_path / attribute
+        path.write_text("private")
+        setattr(children, attribute, path)
+    failed_path = getattr(children, failed_attribute)
+    process = MagicMock(pid=1234, returncode=None, wait=AsyncMock(return_value=0))
+    children._children.append(interfaces._Child("api", 0, process))
+    signal_group = MagicMock()
+    monkeypatch.setattr(interfaces.common_utils, "signal_process_group", signal_group)
+    unlink = Path.unlink
+
+    def deny_private_file(path, *args, **kwargs):
+        if path == failed_path:
+            raise PermissionError("test removal denied")
+        return unlink(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "unlink", deny_private_file)
+        await children.stop()
+
+    assert process.wait.await_count == 1
+    assert signal_group.call_count == 2
+    assert not children._children
+    assert getattr(children, failed_attribute) == failed_path
+    assert "Could not remove Hermes interface file" in caplog.text
+    await children.stop()
+    assert not failed_path.exists()
+    assert children._token_path is None
+    assert children._agent_config_path is None
+
+
 async def test_hermes_interface_start_timeout_stops_the_started_child(
     tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch
 ):

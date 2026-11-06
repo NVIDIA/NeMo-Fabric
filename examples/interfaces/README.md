@@ -5,11 +5,11 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric Native Interface Examples
 
-Use native harness interfaces alongside a Fabric-managed runtime. Each harness example uses the public Python SDK for configuration and lifecycle, then sends input through the harness's native interface.
+Use native harness interfaces alongside a NeMo Fabric-managed runtime. Each harness example uses the public Python SDK for configuration and lifecycle, then sends input through the harness's native interface.
 
 ## Hermes API and Relay
 
-[`hermes.py`](hermes.py) starts one managed Hermes API server, submits a real file task, verifies the generated file, and checks Relay ATOF events and ATIF tool steps. Its API response remains native; the SDK manages the runtime but does not convert this response into a Fabric `RunResult`.
+[`hermes.py`](hermes.py) starts one managed Hermes API server, submits a real file task, verifies the generated file, and checks Relay ATOF events and ATIF tool steps. Its API response remains native; the SDK manages the runtime but does not convert this response into a NeMo Fabric `RunResult`.
 
 ### Prepare the Environment
 
@@ -25,12 +25,12 @@ This prepares pinned Hermes v0.22.5, the adapter, and Relay 0.10. The applicatio
 Set your OpenAI-compatible model endpoint, served model name, and credential:
 
 ```bash
-export MODEL_BASE_URL="http://MODEL_HOST:8000/v1"
+export MODEL_BASE_URL="https://MODEL_HOST/v1"
 export MODEL_NAME="YOUR_SERVED_MODEL_NAME"
 export MODEL_API_KEY="YOUR_MODEL_API_KEY"
 ```
 
-Use the value required by your endpoint. An endpoint without authentication can use a nonempty placeholder credential. To reference an existing credential variable instead, pass its name with `--api-key-env`.
+Use HTTPS for remote endpoints that receive credentials. For a local server, use a loopback URL such as `http://127.0.0.1:8000/v1`; an authenticated encrypted tunnel is another option. Use the credential value required by your endpoint. An endpoint without authentication can use a nonempty placeholder credential. To reference an existing credential variable instead, pass its name with `--api-key-env`.
 
 ### Run a Real Task
 

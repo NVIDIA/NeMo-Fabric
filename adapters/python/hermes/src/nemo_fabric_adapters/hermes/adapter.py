@@ -212,6 +212,12 @@ class HermesRuntime:
                 )
             if interface_ports:
                 environment = dict(os.environ)
+                if (
+                    str(model_config.provider or "").lower() == "openai"
+                    and not model_config.base_url
+                ):
+                    # An ambient endpoint must not redirect the configured key.
+                    environment.pop("OPENAI_BASE_URL", None)
                 provider_key_env = configuration.PROVIDER_DEFAULT_API_KEY_ENV.get(
                     str(model_config.provider or "").lower()
                 )

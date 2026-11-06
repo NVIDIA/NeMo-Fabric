@@ -84,6 +84,30 @@ def test_native_behavior_preserves_native_prompt_when_fabric_has_none():
 
 
 @pytest.mark.parametrize(
+    "tools,enabled,blocked",
+    [
+        (None, ["native"], ["terminal"]),
+        ({}, ["native"], ["terminal"]),
+        ({"enabled": []}, [], ["terminal"]),
+        ({"blocked": ["web"]}, ["native"], ["web"]),
+    ],
+)
+def test_native_tool_defaults_survive_without_explicit_policy(tools, enabled, blocked):
+    mapping = {"models": {"default": {"provider": "openai", "model": "test"}}}
+    if tools is not None:
+        mapping["tools"] = tools
+    config = AgentConfig.from_mapping(mapping)
+    result = configured_kwargs(
+        config,
+        {"enabled_toolsets": ["native"], "disabled_toolsets": ["terminal"]},
+        {},
+    )
+
+    assert result["enabled_toolsets"] == enabled
+    assert result["disabled_toolsets"] == blocked
+
+
+@pytest.mark.parametrize(
     "platform,relay_enabled,expected",
     [("api_server", True, True), ("api_server", False, False), ("cli", True, False)],
 )
