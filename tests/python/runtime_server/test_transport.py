@@ -19,6 +19,7 @@ if sys.platform == "win32":
         "The Unix command bridge requires a Unix platform", allow_module_level=True
     )
 
+from nemo_fabric.errors import FabricRuntimeError
 from nemo_fabric.runtime_server import protocol, transport
 
 
@@ -331,6 +332,71 @@ async def test_missing_malformed_and_truncated_responses_are_unknown_and_never_r
     assert response["changed"] is None
     assert response["error"]["effects"] == "unknown"
     assert len(calls) == 1
+    assert "PRIVATE" not in str(response)
+
+
+async def test_client_keeps_the_error_cause_from_the_server(
+    host, host_request, mock_fabric, socket_path
+):
+    mock_fabric.start_runtime.side_effect = FabricRuntimeError(
+        "adapter lifecycle start failed: PRIVATE",
+        stage="start",
+        code="openclaw_gateway_start_timeout",
+    )
+
+    async def peer(reader, writer):
+        request = protocol.decode_object(await reader.readline())
+        writer.write(protocol.encode_response(await host.handle(request)))
+        await writer.drain()
+        writer.close()
+
+    server = await asyncio.start_unix_server(peer, path=socket_path)
+    async with server:
+        response = await transport.client(
+            host_request("start"), socket_path=socket_path
+        )
+    assert response["error"]["code"] == "start_failed"
+    assert response["error"]["message"] == (
+        "Fabric could not establish an active runtime. "
+        "Cause: openclaw_gateway_start_timeout."
+    )
+    assert "PRIVATE" not in str(response)
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("PRIVATE detail", ""),
+        ("PRIVATE detail. Cause: PRIVATE value.", ""),
+        ("PRIVATE detail. Cause: " + "x" * 65 + ".", ""),
+        ("PRIVATE detail. Cause: gateway_timeout.\nPRIVATE", ""),
+        ("PRIVATE detail. Cause: gateway_timeout.", " Cause: gateway_timeout."),
+    ],
+)
+async def test_client_replaces_server_error_text_except_an_identifier_cause(
+    socket_path, host_request, message, expected
+):
+    async def peer(reader, writer):
+        await reader.readline()
+        response = protocol.envelope(
+            "start",
+            changed=False,
+            error=protocol.ProtocolError("start_failed", "start"),
+        )
+        response["error"]["message"] = message
+        writer.write(json.dumps(response).encode() + b"\n")
+        await writer.drain()
+        writer.close()
+
+    server = await asyncio.start_unix_server(peer, path=socket_path)
+    async with server:
+        response = await transport.client(
+            host_request("start"), socket_path=socket_path
+        )
+    assert response["error"]["code"] == "start_failed"
+    assert response["error"]["message"] == (
+        protocol.MESSAGES["start_failed"] + expected
+    )
     assert "PRIVATE" not in str(response)
 
 

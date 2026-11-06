@@ -118,6 +118,47 @@ async def test_real_sdk_supports_multiple_independent_runtimes_per_sandbox(
             await host.shutdown()
 
 
+@pytest.mark.parametrize(
+    ("operation", "message"),
+    [
+        ("start", "Fabric could not establish an active runtime."),
+        ("invoke", "Fabric did not report a successful invocation."),
+        ("stop", "Fabric could not complete the stop operation."),
+    ],
+)
+async def test_real_sdk_failure_names_the_adapter_error_code(
+    blocking_adapter_config, tmp_path, operation, message
+):
+    (tmp_path / "release").write_text("release")
+    host = RuntimeServer(directory=tmp_path)
+    request = {"interface_version": 2, "operation": operation, "agent": "blocking"}
+    if operation == "start":
+        request["config"] = blocking_adapter_config.to_mapping()
+    else:
+        started = await host.handle(
+            {
+                **request,
+                "operation": "start",
+                "config": blocking_adapter_config.to_mapping(),
+            }
+        )
+        assert started["status"] == "succeeded", started
+        request["runtime_id"] = started["result"]["runtime_id"]
+        if operation == "invoke":
+            request["input"] = {"message": "hello"}
+    (tmp_path / f"fail-{operation}").write_text("test_adapter_failure")
+    try:
+        response = await host.handle(request)
+    finally:
+        (tmp_path / f"fail-{operation}").unlink()
+        with suppress(Exception):
+            await host.shutdown()
+    assert response["status"] == "failed", response
+    assert response["error"]["code"] == f"{operation}_failed"
+    assert response["error"]["message"] == f"{message} Cause: test_adapter_failure."
+    assert "PRIVATE" not in str(response)
+
+
 @pytest.mark.parametrize("invalid_config", ["missing_adapter", "unsupported_setting"])
 async def test_real_sdk_rejects_start_before_native_runtime_creation(
     hermes_shim_agent_dir, monkeypatch, invalid_config
