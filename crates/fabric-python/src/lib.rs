@@ -422,6 +422,14 @@ fn to_py_error(error: nemo_fabric_core::FabricError) -> PyErr {
         FabricError::ResourceObservationUnsupported { .. } => {
             ResourceObservationUnsupportedError::new_err(error.to_string())
         }
+        FabricError::AdapterLifecycleOperation { code, .. } => {
+            // Keep the adapter's stable code so the SDK can report it.
+            let py_error = PyRuntimeError::new_err(error.to_string());
+            match Python::attach(|py| py_error.value(py).setattr("code", code)) {
+                Ok(()) => py_error,
+                Err(setattr_error) => setattr_error,
+            }
+        }
         _ => PyRuntimeError::new_err(error.to_string()),
     }
 }

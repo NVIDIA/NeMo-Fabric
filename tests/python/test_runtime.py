@@ -160,13 +160,19 @@ def _runtime_wrapper(
 
 @pytest.mark.parametrize("stage", ["start", "invoke", "stop"])
 @pytest.mark.parametrize(
-    ("error_type", "expected_code"),
-    [(TimeoutError, "timeout"), (RuntimeError, None)],
+    ("error_type", "native_code", "expected_code"),
+    [
+        (TimeoutError, "native_timeout", "timeout"),
+        (RuntimeError, None, None),
+        (RuntimeError, "adapter_failed", "adapter_failed"),
+    ],
 )
 async def test_deadline_identity_survives_stateful_sdk_boundaries(
-    native_client, mock_native, stage, error_type, expected_code
+    native_client, mock_native, stage, error_type, native_code, expected_code
 ):
     error = error_type("deadline-looking text")
+    if native_code is not None:
+        error.code = native_code
     details = {
         "owner": "fabric_runtime",
         "timeout_seconds": 300,
