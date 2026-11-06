@@ -68,7 +68,7 @@ _COLLECTOR_CONTROL_TIMEOUT_MARGIN_SECONDS = 1.0
 # Dedicated workers run health requests during invocations.
 _CHECK_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="fabric-health")
 logger = logging.getLogger(__name__)
-_MAX_STOPPED_STATUS_RECORDS = 128
+_MAX_RUNTIME_RECORDS = 128
 
 
 class Fabric:
@@ -99,6 +99,8 @@ class Fabric:
         self._execution_participant = "caller_sdk"
         self._software_snapshot = None
         self._software_snapshot_lock = Lock()
+        self._runtime_records_lock = Lock()
+        self._pending_runtime_starts: set[object] = set()
         self._runtimes: dict[str, Runtime] = {}
         self._stopped_status: OrderedDict[
             str, tuple[tuple[str, str], RuntimeStatusReport]
@@ -114,9 +116,11 @@ class Fabric:
         """Read recorded runtime state and rediscover a safe handle by identifier.
 
         Without an environment, read runtimes created by this ``Fabric`` instance
-        and retain each ``Runtime`` until successful stop. The most recent 128
-        successful stops retain lightweight records with a null handle. A local
-        environment additionally selects its exact environment identifier.
+        and retain each ``Runtime`` until successful stop. Each client holds at
+        most 128 runtime records, including pending starts. New starts evict the
+        oldest stopped records first and fail with ``runtime_limit_reached`` if
+        active, failed, and pending runtimes fill the limit. A stopped record has
+        a null handle. A local environment also selects its exact identifier.
 
         An OpenShell environment routes ``fabric-agent-ctl status`` to the owning
         server, including from a later client process. The returned handle belongs
@@ -253,28 +257,27 @@ class Fabric:
         return report
 
     def _record_stopped_runtime(self, runtime: Runtime) -> None:
-        if (
-            runtime.status is not RuntimeStatus.STOPPED
-            or self._runtimes.get(runtime.runtime_id) is not runtime
-        ):
-            return
-        handle = runtime.handle
-        self._stopped_status[runtime.runtime_id] = (
-            (handle.environment["provider"], handle.environment["environment_id"]),
-            RuntimeStatusReport.from_mapping(
-                {
-                    "runtime_id": runtime.runtime_id,
-                    "agent_name": handle.agent_name,
-                    "status": "stopped",
-                    "handle": None,
-                    "server_state": None,
-                }
-            ),
-        )
-        self._stopped_status.move_to_end(runtime.runtime_id)
-        self._runtimes.pop(runtime.runtime_id, None)
-        while len(self._stopped_status) > _MAX_STOPPED_STATUS_RECORDS:
-            self._stopped_status.popitem(last=False)
+        with self._runtime_records_lock:
+            if (
+                runtime.status is not RuntimeStatus.STOPPED
+                or self._runtimes.get(runtime.runtime_id) is not runtime
+            ):
+                return
+            handle = runtime.handle
+            self._stopped_status[runtime.runtime_id] = (
+                (handle.environment["provider"], handle.environment["environment_id"]),
+                RuntimeStatusReport.from_mapping(
+                    {
+                        "runtime_id": runtime.runtime_id,
+                        "agent_name": handle.agent_name,
+                        "status": "stopped",
+                        "handle": None,
+                        "server_state": None,
+                    }
+                ),
+            )
+            self._stopped_status.move_to_end(runtime.runtime_id)
+            self._runtimes.pop(runtime.runtime_id, None)
 
     def _set_execution_participant(self, participant: str) -> None:
         """Relabel only this instance's own cached observations when embedded."""
@@ -610,6 +613,8 @@ class Fabric:
                 requested without NeMo Relay enabled, ``launch_collector`` is
                 set without streaming, Pi is configured with an external
                 collector, or an external collector has no sink.
+            FabricStateError: If active, failed, and pending runtimes fill the
+                client's 128-record limit (``runtime_limit_reached``).
             FabricNativeUnavailableError: If the native extension is not
                 installed.
             FabricRuntimeError: If runtime startup fails.
@@ -785,6 +790,8 @@ class Fabric:
 
         Raises:
             FabricConfigError: If inputs are invalid or the handle does not match the plan.
+            FabricStateError: If active, failed, and pending runtimes fill the
+                client's 128-record limit (``runtime_limit_reached``).
             FabricNativeUnavailableError: If the native extension is not installed.
             FabricRuntimeError: If runtime startup fails.
         """
@@ -832,6 +839,54 @@ class Fabric:
         self,
         config: FabricConfig,
         *,
+        environment: EnvironmentHandle | None = None,
+        base_dir: str | os.PathLike[str] | None = None,
+        overrides: Mapping[str, Any] | None = None,
+        streaming: bool = False,
+        launch_collector: bool | None = None,
+        completion_wait_timeout: float = 1.0,
+        service: Service | None = None,
+        expected_descriptor_sha256: str | None = None,
+    ) -> Runtime:
+        reservation = object()
+        with self._runtime_records_lock:
+            occupied = (
+                len(self._runtimes)
+                + len(self._stopped_status)
+                + len(self._pending_runtime_starts)
+            )
+            while occupied >= _MAX_RUNTIME_RECORDS and self._stopped_status:
+                self._stopped_status.popitem(last=False)
+                occupied -= 1
+            if occupied >= _MAX_RUNTIME_RECORDS:
+                raise FabricStateError(
+                    "The client runtime limit has been reached; stop an owned runtime before starting another.",
+                    stage="start",
+                    code="runtime_limit_reached",
+                )
+            self._pending_runtime_starts.add(reservation)
+        try:
+            return await self._start_runtime_reserved(
+                config,
+                reservation=reservation,
+                environment=environment,
+                base_dir=base_dir,
+                overrides=overrides,
+                streaming=streaming,
+                launch_collector=launch_collector,
+                completion_wait_timeout=completion_wait_timeout,
+                service=service,
+                expected_descriptor_sha256=expected_descriptor_sha256,
+            )
+        finally:
+            with self._runtime_records_lock:
+                self._pending_runtime_starts.discard(reservation)
+
+    async def _start_runtime_reserved(
+        self,
+        config: FabricConfig,
+        *,
+        reservation: object,
         environment: EnvironmentHandle | None = None,
         base_dir: str | os.PathLike[str] | None = None,
         overrides: Mapping[str, Any] | None = None,
@@ -1033,10 +1088,15 @@ class Fabric:
             collector=collector,
             collector_client=collector_client,
         )
-        if (
-            owned_runtime.runtime_id in self._runtimes
-            or owned_runtime.runtime_id in self._stopped_status
-        ):
+        with self._runtime_records_lock:
+            duplicate = (
+                owned_runtime.runtime_id in self._runtimes
+                or owned_runtime.runtime_id in self._stopped_status
+            )
+            if not duplicate:
+                self._runtimes[owned_runtime.runtime_id] = owned_runtime
+                self._pending_runtime_starts.remove(reservation)
+        if duplicate:
             # A duplicate native identity cannot safely replace an existing owner
             # or be stopped independently. The enclosing server retains its
             # uncertain-start marker so the supervisor can replace the sandbox.
@@ -1046,7 +1106,6 @@ class Fabric:
                 stage="start",
                 code="runtime_id_conflict",
             )
-        self._runtimes[owned_runtime.runtime_id] = owned_runtime
         return owned_runtime
 
     async def prepare_service(

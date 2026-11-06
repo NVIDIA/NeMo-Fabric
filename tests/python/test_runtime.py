@@ -19,6 +19,7 @@ from nemo_fabric import (
     Fabric,
     FabricConfig,
     FabricConfigError,
+    FabricError,
     FabricNativeUnavailableError,
     FabricRuntimeError,
     FabricStateError,
@@ -1298,7 +1299,7 @@ async def test_runtime_status_preserves_live_runtime_after_caller_drops_referenc
 async def test_runtime_status_stopped_records_are_bounded(
     native_client, mock_native, monkeypatch
 ):
-    monkeypatch.setattr(client_mod, "_MAX_STOPPED_STATUS_RECORDS", 2)
+    monkeypatch.setattr(client_mod, "_MAX_RUNTIME_RECORDS", 2)
     for index in range(3):
         mock_native.start_runtime.return_value = json.dumps(
             _runtime(f"runtime-{index}")
@@ -1313,6 +1314,210 @@ async def test_runtime_status_stopped_records_are_bounded(
         )
         assert report.status == "stopped"
         assert report.handle is None
+
+
+@pytest.mark.parametrize("state", ["active", "failed"])
+async def test_runtime_limit_preserves_owners_and_rejects_before_native_work(
+    native_client, mock_native, monkeypatch, state
+):
+    monkeypatch.setattr(client_mod, "_MAX_RUNTIME_RECORDS", 2)
+    runtimes = []
+    for index in range(2):
+        mock_native.start_runtime.return_value = json.dumps(
+            _runtime(f"runtime-{index}")
+        )
+        runtime = await native_client.start_runtime(_config())
+        runtimes.append(runtime)
+        if state == "failed":
+            mock_native.stop_runtime.side_effect = RuntimeError("TEST_ONLY_PRIVATE")
+            with pytest.raises(FabricRuntimeError):
+                await runtime.stop()
+    before = list(mock_native.mock_calls)
+    with pytest.raises(FabricStateError) as caught:
+        await native_client.start_runtime(_config())
+    assert caught.value.code == "runtime_limit_reached"
+    assert caught.value.stage == "start"
+    assert mock_native.mock_calls == before
+    assert "TEST_ONLY_PRIVATE" not in str(caught.value)
+    mock_native.stop_runtime.side_effect = None
+    for runtime in runtimes:
+        report = await native_client.runtime_status(
+            runtime_id=runtime.runtime_id, agent_name="demo"
+        )
+        assert report.status == state
+        await runtime.stop()
+
+
+async def test_runtime_limit_evicts_stopped_records_before_active_and_failed_owners(
+    native_client, mock_native, monkeypatch
+):
+    monkeypatch.setattr(client_mod, "_MAX_RUNTIME_RECORDS", 3)
+    stopped = await native_client.start_runtime(_config())
+    await stopped.stop()
+    mock_native.start_runtime.return_value = json.dumps(_runtime("failed"))
+    failed = await native_client.start_runtime(_config())
+    mock_native.stop_runtime.side_effect = RuntimeError("stop failed")
+    with pytest.raises(FabricRuntimeError):
+        await failed.stop()
+    mock_native.stop_runtime.side_effect = None
+    mock_native.start_runtime.return_value = json.dumps(_runtime("active"))
+    active = await native_client.start_runtime(_config())
+    mock_native.start_runtime.return_value = json.dumps(_runtime("new"))
+    new = await native_client.start_runtime(_config())
+    with pytest.raises(FabricStateError) as caught:
+        await native_client.runtime_status(
+            runtime_id=stopped.runtime_id, agent_name="demo"
+        )
+    assert caught.value.code == "runtime_unavailable"
+    for runtime, status in [(failed, "failed"), (active, "active"), (new, "active")]:
+        report = await native_client.runtime_status(
+            runtime_id=runtime.runtime_id, agent_name="demo"
+        )
+        assert report.status == status
+        await runtime.stop()
+
+
+@pytest.mark.parametrize("failure", ["validation", "planning", "start"])
+async def test_failed_start_releases_runtime_capacity(
+    native_client, mock_native, monkeypatch, failure
+):
+    monkeypatch.setattr(client_mod, "_MAX_RUNTIME_RECORDS", 1)
+    plan = mock_native.plan_config.side_effect
+    if failure == "planning":
+        mock_native.plan_config.side_effect = RuntimeError("planning failed")
+    if failure == "start":
+        mock_native.start_runtime.side_effect = RuntimeError("start failed")
+    with pytest.raises(FabricError):
+        await native_client.start_runtime(
+            _config(), launch_collector=True if failure == "validation" else None
+        )
+    mock_native.plan_config.side_effect = plan
+    mock_native.start_runtime.side_effect = None
+    runtime = await native_client.start_runtime(_config())
+    await runtime.stop()
+
+
+async def test_pending_start_uses_capacity_and_cancellation_releases_the_reservation(
+    native_client, mock_native, monkeypatch
+):
+    monkeypatch.setattr(client_mod, "_MAX_RUNTIME_RECORDS", 1)
+    entered, release = threading.Event(), threading.Event()
+    plan = mock_native.plan_config.side_effect
+
+    def delayed_plan(*arguments):
+        entered.set()
+        assert release.wait(3)
+        return plan(*arguments)
+
+    mock_native.plan_config.side_effect = delayed_plan
+    pending = asyncio.create_task(native_client.start_runtime(_config()))
+    try:
+        assert await _wait_for(entered)
+        with pytest.raises(FabricStateError) as caught:
+            await native_client.start_runtime(_config())
+        assert caught.value.code == "runtime_limit_reached"
+        mock_native.start_runtime.assert_not_called()
+        pending.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
+    finally:
+        release.set()
+        await asyncio.gather(pending, return_exceptions=True)
+    mock_native.plan_config.side_effect = plan
+    runtime = await native_client.start_runtime(_config())
+    await runtime.stop()
+
+
+async def test_runtime_capacity_is_scoped_to_each_client(native_client, monkeypatch):
+    monkeypatch.setattr(client_mod, "_MAX_RUNTIME_RECORDS", 1)
+    first = await native_client.start_runtime(_config())
+    second = await Fabric().start_runtime(_config())
+    await first.stop()
+    await second.stop()
+
+
+@pytest.mark.parametrize("state", ["active", "failed", "stopped"])
+@pytest.mark.parametrize(
+    "server_state", [None, "running", "stopping", "stopped", "unknown"]
+)
+async def test_runtime_status_output_matches_the_published_schema(
+    native_client, mock_native, runtime_status_validator, state, server_state
+):
+    runtime = await native_client.start_runtime(_config())
+    if state == "failed":
+        mock_native.stop_runtime.side_effect = RuntimeError("stop failed")
+        with pytest.raises(FabricRuntimeError):
+            await runtime.stop()
+        mock_native.stop_runtime.side_effect = None
+    if state == "stopped":
+        await runtime.stop()
+    report = (
+        await native_client.runtime_status(
+            runtime_id=runtime.runtime_id, agent_name="demo"
+        )
+    ).to_mapping()
+    report["server_state"] = server_state
+    runtime_status_validator.validate(report)
+    await runtime.stop()
+
+
+@pytest.mark.parametrize(
+    "field", ["runtime_id", "agent_name", "status", "handle", "server_state"]
+)
+async def test_runtime_status_schema_requires_every_field(
+    native_client, runtime_status_validator, field
+):
+    runtime = await native_client.start_runtime(_config())
+    report = (
+        await native_client.runtime_status(
+            runtime_id=runtime.runtime_id, agent_name="demo"
+        )
+    ).to_mapping()
+    del report[field]
+    assert not runtime_status_validator.is_valid(report)
+    await runtime.stop()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "null_handle",
+        "stopped_handle",
+        "invalid_status",
+        "invalid_server_state",
+        "extra_field",
+        "extra_handle_field",
+        "env",
+        "connection",
+        "metadata",
+    ],
+)
+async def test_runtime_status_schema_rejects_invalid_shapes_and_private_environment_fields(
+    native_client, runtime_status_validator, mutation
+):
+    runtime = await native_client.start_runtime(_config())
+    report = (
+        await native_client.runtime_status(
+            runtime_id=runtime.runtime_id, agent_name="demo"
+        )
+    ).to_mapping()
+    if mutation == "null_handle":
+        report["handle"] = None
+    elif mutation == "stopped_handle":
+        report["status"] = "stopped"
+    elif mutation == "invalid_status":
+        report["status"] = "running"
+    elif mutation == "invalid_server_state":
+        report["server_state"] = "responding"
+    elif mutation == "extra_field":
+        report["private"] = "TEST_ONLY_PRIVATE"
+    elif mutation == "extra_handle_field":
+        report["handle"]["private"] = "TEST_ONLY_PRIVATE"
+    else:
+        report["handle"]["environment"][mutation] = {"private": "TEST_ONLY_PRIVATE"}
+    assert not runtime_status_validator.is_valid(report)
+    await runtime.stop()
 
 
 async def test_runtime_status_stopping_one_runtime_preserves_another(
