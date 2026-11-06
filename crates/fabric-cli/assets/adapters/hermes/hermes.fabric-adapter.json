@@ -47,7 +47,6 @@
       "max_tokens": {
         "type": "integer",
         "minimum": 1,
-        "default": 512,
         "description": "Maximum number of tokens in each Hermes model response."
       },
       "terminal_timeout": {
