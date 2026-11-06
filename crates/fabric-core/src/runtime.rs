@@ -2467,7 +2467,6 @@ fn invalidate_timed_out_local_host(
             .is_some_and(|host| Arc::ptr_eq(host, expected_host))
         {
             hosts.remove(runtime_id);
-            local_host_processes().remove(runtime_id);
         }
     }
 
@@ -5776,6 +5775,7 @@ for line in sys.stdin:
     fn local_host_invoke_timeout_evicts_and_terminates_host() {
         let (root, plan) = local_host_plan("invoke_timeout");
         let runtime = start_runtime(&plan).expect("start local host");
+        crate::check::register(&runtime, vec![crate::check::CheckLevel::Live]);
         let host = local_hosts()
             .get(&runtime.runtime_id)
             .cloned()
@@ -5810,6 +5810,25 @@ for line in sys.stdin:
         );
         assert!(!runtime_dir.exists());
 
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        for level in ["live", "active", "ready"] {
+            let request = serde_json::from_value(serde_json::json!({
+                "scope": "runtime", "runtime_id": runtime.runtime_id,
+                "level": level, "timeout_seconds": 0.5,
+            }))
+            .unwrap();
+            let report = crate::check::check_environment(&runtime.environment, &request).unwrap();
+            assert_eq!(report.outcome, crate::check::CheckOutcome::Failed);
+            assert_eq!(
+                report.reason_code,
+                Some(crate::check::CheckReason::AgentExited)
+            );
+            assert_eq!(
+                report.runtime.unwrap().state,
+                crate::check::CheckRuntimeState::Failed
+            );
+        }
+
         let retry = invoke_runtime(&plan, &runtime, RunRequest::text("retry"))
             .expect_err("timed-out runtime must remain unavailable");
         assert!(matches!(
@@ -5818,6 +5837,7 @@ for line in sys.stdin:
         ));
         let stopped = stop_runtime(&plan, &runtime).expect("stop after timeout is idempotent");
         assert_eq!(stopped[0].metadata["already_stopped"], true);
+        assert!(local_host_has_exited(&runtime.runtime_id).is_none());
 
         let _ = fs::remove_dir_all(root);
     }
