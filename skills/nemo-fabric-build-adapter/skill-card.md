@@ -68,15 +68,15 @@ Underlying evaluation signals used in this run: <br>
 ## Evaluation Results: <br>
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 77.0% — baseline ran, but no comparable score was available; uplift unavailable | 69.6% — baseline ran, but no comparable score was available; uplift unavailable |
-| Security | 71.4% → 71.4% (±0.0 points) | 57.1% → 71.4% (+14.3 points) |
-| Correctness | 42.9% → 88.6% (+45.7 points) | 51.4% → 82.9% (+31.5 points) |
-| Discoverability | 92.0% — baseline ran, but no comparable score was available; uplift unavailable | 84.0% — baseline ran, but no comparable score was available; uplift unavailable |
-| Effectiveness | 24.3% → 53.4% (+29.1 points) | 24.1% → 38.1% (+14.0 points) |
-| Efficiency | 79.5% — baseline ran, but no comparable score was available; uplift unavailable | 71.5% — baseline ran, but no comparable score was available; uplift unavailable |
+| Overall | 79.4% — baseline ran, but no comparable score was available; uplift unavailable | Not available |
+| Security | 85.7% → 71.4% (-14.3 points) | Not available |
+| Correctness | 40.0% → 94.3% (+54.3 points) | Not available |
+| Discoverability | 92.0% — baseline ran, but no comparable score was available; uplift unavailable | Not available |
+| Effectiveness | 24.3% → 53.4% (+29.1 points) | Not available |
+| Efficiency | 85.8% — baseline ran, but no comparable score was available; uplift unavailable | Not available |
 
 ## Skill Version(s): <br>
-a736aa8a (source: git SHA, committed 2026-10-27) <br>
+b19b367 (source: git SHA, committed 2026-11-03) <br>
 
 ## Ethical Considerations: <br>
 NVIDIA believes Trustworthy AI is a shared responsibility and we have established policies and practices to enable development for a wide array of AI applications. When downloaded or used in accordance with our terms of service, developers should work with their internal team to ensure this skill meets requirements for the relevant industry and use case and addresses unforeseen product misuse. <br>

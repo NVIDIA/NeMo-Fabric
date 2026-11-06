@@ -21,6 +21,8 @@ The dedicated `nvidia.fabric.nooa.bench-agent` adapter maps the benchmark-native
 [observed token usage](docs/bench-agent.md#observed-token-usage) preserves the
 SDK's inclusive input convention and documents missing-request limitations.
 
+The shared `nvidia.fabric.nooa` adapter requires `workflow.target_id` selecting a registered target. Planning and host metadata inspection reject a missing workflow before installation. The dedicated `nvidia.fabric.nooa.bench-agent` adapter has no workflow requirement.
+
 ## Install
 
 NOOA requires Python 3.12 or 3.13. Install NeMo Fabric, the adapters, and the

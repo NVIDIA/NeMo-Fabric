@@ -397,7 +397,11 @@
               "type": "string"
             },
             "provider": {
+              "description": "Cline SDK 0.0.83 uses openai-native for OpenAI. Use nvidia for the documented NVIDIA OpenAI-compatible endpoint.",
               "minLength": 1,
+              "not": {
+                "const": "openai"
+              },
               "type": "string"
             }
           },
@@ -428,7 +432,7 @@
         "name": "nemo-fabric-adapters-cline",
         "version": "0.7.0"
       },
-      "sha256": "66ff12840fc8a005278a94b88f3ca54760d8f18ea7f04e7bc939e5a3f838605a",
+      "sha256": "d536a86c564fef01d6be9e9cf3c671c4b2e1acba9b9e02acd2105520703711d4",
       "source": "adapters/typescript/cline/cline.fabric-adapter.json"
     },
     "nvidia.fabric.codex": {
@@ -1332,6 +1336,83 @@
             "replace"
           ]
         },
+        "config_schema": {
+          "description": "The local_shell backend requires an explicit tools.enabled allowlist (including an empty list) or execute in tools.blocked.",
+          "if": {
+            "properties": {
+              "harness": {
+                "properties": {
+                  "settings": {
+                    "properties": {
+                      "deepagents": {
+                        "properties": {
+                          "backend": {
+                            "properties": {
+                              "type": {
+                                "const": "local_shell"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "backend"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "deepagents"
+                    ]
+                  }
+                },
+                "required": [
+                  "settings"
+                ]
+              }
+            },
+            "required": [
+              "harness"
+            ]
+          },
+          "then": {
+            "properties": {
+              "tools": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "enabled": {
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "enabled"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "blocked": {
+                        "contains": {
+                          "const": "execute"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "blocked"
+                    ]
+                  }
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "tools"
+            ]
+          },
+          "type": "object"
+        },
         "contract_version": "fabric.adapter/v1alpha2",
         "model_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1602,7 +1683,7 @@
         "name": "nemo-fabric-adapters-deepagents",
         "version": "0.7.0"
       },
-      "sha256": "d4394a8dd328bd1b1f89386a75f176cfc83755e0c6714c3c9839468510deb181",
+      "sha256": "dd6a21d5af9df1072aa476a064280d9012f683adbbfc6cb6a92b33562416e340",
       "source": "adapters/python/deepagents/deepagents.fabric-adapter.json"
     },
     "nvidia.fabric.mini-swe-agent": {
@@ -1741,6 +1822,21 @@
             "mcp"
           ]
         },
+        "config_schema": {
+          "description": "The shared NOOA adapter requires a registered workflow target.",
+          "properties": {
+            "workflow": {
+              "required": [
+                "target_id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "workflow"
+          ],
+          "type": "object"
+        },
         "contract_version": "fabric.adapter/v1alpha2",
         "model_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1815,7 +1911,7 @@
         "name": "nemo-fabric-adapters-nooa",
         "version": "0.7.0"
       },
-      "sha256": "80f632e09ea3279e7283a58790e53516d693162bc7742f2e932b8e7453373042",
+      "sha256": "6ec836b371326efaf0cf217256dae76848f2e7e0067420c602307c30aab1df17",
       "source": "adapters/python/nooa/nooa.fabric-adapter.json"
     },
     "nvidia.fabric.nooa.bench-agent": {
