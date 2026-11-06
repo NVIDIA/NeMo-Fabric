@@ -90,13 +90,13 @@ fn invoke_seconds(plan: &RunPlan) -> Result<u64> {
     Ok(seconds.ceil() as u64)
 }
 
-/// Wait for a passing server check and return whole seconds left for startup.
+/// Wait for a passing server check within the readiness allowance.
 /// Failed readiness clears only the provisional start binding; no start is sent.
 fn wait_for_server(
     key: &str,
     deadline: Instant,
     mut check: impl FnMut(f64) -> Result<crate::CheckReport>,
-) -> Result<u64> {
+) -> Result<()> {
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
@@ -107,10 +107,8 @@ fn wait_for_server(
             .is_ok_and(|report| report.outcome == crate::CheckOutcome::Passed);
         let remaining = deadline.saturating_duration_since(Instant::now());
         if passed {
-            // The command provider requires at least one whole second. Round
-            // down so Start cannot reset or extend the shared allowance.
-            if remaining.as_secs() > 0 {
-                return Ok(remaining.as_secs());
+            if !remaining.is_zero() {
+                return Ok(());
             }
             break;
         }
@@ -383,11 +381,10 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                 },
             );
         }
-        // Sandbox readiness can precede the Fabric server socket. Share the
-        // existing remote-start allowance across server checks and Start; the
-        // provider retains its bounded gateway and response transport grace.
+        // Sandbox readiness can precede the Fabric server socket. Give readiness
+        // its own allowance so a slow server cannot consume the Start budget.
         let deadline = Instant::now() + Duration::from_secs(105);
-        let timeout = wait_for_server(&key, deadline, |timeout_seconds| {
+        wait_for_server(&key, deadline, |timeout_seconds| {
             crate::check::check_environment(
                 &environment,
                 &crate::CheckRequest::Server {
@@ -400,7 +397,7 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
             agent: plan.agent_name.clone(),
             config,
         };
-        let response = command_runtime(&environment, &command, timeout);
+        let response = command_runtime(&environment, &command, 105);
         if let Ok(TaskCommandResponse::Rejected { error }) = &response
             && error.effects == "none"
             && !matches!(
@@ -988,7 +985,7 @@ mod tests {
     fn startup_wait_uses_the_remaining_allowance() {
         let key = resource_key(&environment()).unwrap();
         let mut calls = 0;
-        let remaining = wait_for_server(&key, Instant::now() + Duration::from_secs(3), |seconds| {
+        wait_for_server(&key, Instant::now() + Duration::from_secs(3), |seconds| {
             assert!(seconds > 0.0 && seconds <= 3.0);
             calls += 1;
             Ok(server_check(if calls == 1 {
@@ -999,14 +996,13 @@ mod tests {
         })
         .expect("eventually responding server");
         assert_eq!(calls, 2);
-        assert_eq!(remaining, 2);
     }
 
     #[test]
     fn startup_wait_allows_slow_provider_round_trips() {
         let key = resource_key(&environment()).unwrap();
         let mut calls = 0;
-        let remaining = wait_for_server(&key, Instant::now() + Duration::from_secs(5), |seconds| {
+        wait_for_server(&key, Instant::now() + Duration::from_secs(5), |seconds| {
             calls += 1;
             // A healthy provider needs four seconds for the complete round trip.
             Ok(server_check(if seconds >= 4.0 {
@@ -1017,7 +1013,15 @@ mod tests {
         })
         .expect("allow a healthy provider more than three seconds");
         assert_eq!(calls, 1);
-        assert!(remaining > 0 && remaining < 5);
+    }
+
+    #[test]
+    fn readiness_can_pass_with_less_than_one_second_remaining() {
+        let key = resource_key(&environment()).unwrap();
+        wait_for_server(&key, Instant::now() + Duration::from_millis(500), |_| {
+            Ok(server_check(crate::CheckOutcome::Passed))
+        })
+        .expect("Start has its own full allowance");
     }
 
     #[test]

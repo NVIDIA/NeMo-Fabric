@@ -92,10 +92,7 @@ finally:
 
 Before starting a runtime, the host polls `fabric-agent-ctl check` without a
 runtime target until the NeMo Fabric runtime server reports a passing server check.
-Sandbox readiness alone does not authorize startup. Server checks and the
-following remote start share a 105-second allowance, after configuration and
-optional software-evidence collection; the provider retains its bounded gateway
-and response transport grace. A server that never passes produces
+Sandbox readiness alone does not authorize startup. Server checks have a 105-second allowance after configuration and optional software-evidence collection. A passing check gives the following remote start its own full 105-second allowance. The provider retains its bounded gateway and response transport grace. A server that never passes produces
 `host_unavailable` without sending `start`, and a later startup attempt can retry
 the server check. NeMo Fabric sends `start` once and never replays an uncertain start.
 
