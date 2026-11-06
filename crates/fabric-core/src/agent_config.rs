@@ -140,7 +140,10 @@ pub struct AgentRuntimeConfig {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AgentSkillConfig {
-    /// Skill paths resolved for the task environment.
+    /// Skill paths resolved for the task environment. An entry that contains
+    /// `SKILL.md` is one skill; otherwise each folder directly inside it that
+    /// contains `SKILL.md` is a skill. An entry that holds no skills loads
+    /// nothing. A missing entry, or two skills with the same name, fails.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<PathBuf>,
     /// Adapter-owned skill fields.

@@ -55,7 +55,7 @@ needs and applies it.
 | `models` | Named model roles with provider, model, credential-variable name, endpoint, temperature, and provider settings. |
 | `instructions` | Portable target instructions. |
 | `runtime` | Target-applied behavior, such as a turn limit. |
-| `skills` | Skill paths resolved for the execution environment. |
+| `skills` | Skill paths resolved for the execution environment. Each entry is a skill or a folder of skills. |
 | `mcp` | Named Model Context Protocol (MCP) servers, authentication metadata, headers, and effective per-server tool policy. |
 | `tools` | Named tool or tool-group definitions plus effective enabled and blocked policy. |
 | `workflow` | A registered custom-agent entry point and immutable construction settings. |
@@ -65,6 +65,18 @@ Use the canonical
 [`agent-config.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/agent-config.schema.json)
 for exact fields and constraints. Python adapters can use the matching
 dependency-free dataclasses from `nemo_fabric_adapter_contract.models`.
+
+Resolve `skills.paths` during `start` in the task environment, where mounted
+skill folders exist. An entry that contains `SKILL.md` is one skill. Otherwise
+each folder directly inside the entry that contains `SKILL.md` is a skill, and
+other files and folders are ignored. An entry that exists but holds no skills
+loads nothing. Fail start when an entry does not exist, when an entry is not a
+folder, or when two skills share a name, and name the entry or both skill
+folders. A skill's name is the `name` field of its `SKILL.md` front matter, or
+its folder name. Python adapters can call
+`nemo_fabric_adapter_contract.skills.resolve_skills(paths, base_dir)`, which
+applies these rules, returns each skill's name and folder, and raises
+`SkillPathError` with the failing `skills.paths[N]` field.
 
 ## To Map the Normalized Configuration
 

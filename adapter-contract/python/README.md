@@ -28,6 +28,19 @@ Import `AgentConfig` from the contract models module:
 from nemo_fabric_adapter_contract.models import AgentConfig
 ```
 
+Resolve `skills.paths` in the task environment with the contract's skills
+helper. Each entry is a skill folder or a folder of skills:
+
+```python
+from nemo_fabric_adapter_contract.skills import SkillPathError, resolve_skills
+
+skills = resolve_skills(config.skills.paths if config.skills else [], base_dir)
+```
+
+The helper returns each skill's name and resolved folder. It raises
+`SkillPathError` when an entry does not exist or is not a folder, or when two
+skills share a name.
+
 An adapter descriptor opts into the southbound configuration with
 `config.input=agent_config`. Python adapters using the optional common
 lifecycle host pass `AgentConfig.from_mapping` as the `config_loader`.

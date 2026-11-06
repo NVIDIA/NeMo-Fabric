@@ -769,7 +769,7 @@
           "type": "object"
         },
         "paths": {
-          "description": "Skill paths resolved for the task environment.",
+          "description": "Skill paths resolved for the task environment. An entry that contains\n`SKILL.md` is one skill; otherwise each folder directly inside it that\ncontains `SKILL.md` is a skill. An entry that holds no skills loads\nnothing. A missing entry, or two skills with the same name, fails.",
           "items": {
             "type": "string"
           },

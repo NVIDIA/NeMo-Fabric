@@ -117,7 +117,11 @@ adapter boundary:
   planning; `replace` discards the harness default, while `append` preserves it
   and adds the configured content after it.
 - Convert MCP servers, tool definitions, tool policy, and skills into native
-  target constructs.
+  target constructs. Treat each `skills.paths` entry as one skill when it
+  contains `SKILL.md`, otherwise as a folder whose direct subfolders that
+  contain `SKILL.md` are skills; load nothing from an entry without skills, and
+  fail start on a missing entry or two skills with the same name. Python
+  adapters can use `nemo_fabric_adapter_contract.skills.resolve_skills`.
 - Resolve workflow entry points and construction settings during `start` in
   the task environment.
 - Read identity, environment, artifacts, telemetry, and the invocation

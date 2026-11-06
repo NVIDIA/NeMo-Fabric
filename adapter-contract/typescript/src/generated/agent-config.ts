@@ -286,7 +286,10 @@ export interface AgentSkillConfig {
    */
   extensions?: JsonObject;
   /**
-   * Skill paths resolved for the task environment.
+   * Skill paths resolved for the task environment. An entry that contains
+   * `SKILL.md` is one skill; otherwise each folder directly inside it that
+   * contains `SKILL.md` is a skill. An entry that holds no skills loads
+   * nothing. A missing entry, or two skills with the same name, fails.
    */
   paths?: string[];
 }
