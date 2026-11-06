@@ -1,4 +1,5 @@
 ---
+slug: "/about-nemo-fabric/release-notes"
 title: "Release Notes"
 description: "Review the current NVIDIA NeMo Fabric release status and find the official release history."
 ---
@@ -40,7 +41,7 @@ The `nemo-fabric[relay]` extra and the Deep Agents, mini-SWE-agent, and NOOA Rel
 
 </Warning>
 
-Relay 0.11 requires HTTPS for remote model endpoints by default, including private-network addresses. For a trusted, credential-free HTTP model endpoint, set `harness.settings.insecure_http_model_hosts` to its exact hostname or IP address. Requests and responses travel unencrypted, and Relay removes credential headers before forwarding. Remote telemetry collectors also require HTTPS by default. Restart existing runtimes after changing Relay versions. Refer to [Install NeMo Relay](../getting-started/install.mdx#install-nemo-relay) for migration details and collector trust configuration. Observability configuration remains version 4.
+Relay 0.11 requires HTTPS for remote model endpoints by default, including private-network addresses. For a trusted, credential-free HTTP model endpoint, set `harness.settings.insecure_http_model_hosts` to its exact hostname or IP address. Requests and responses travel unencrypted, and Relay removes credential headers before forwarding. Remote telemetry collectors also require HTTPS by default. Restart existing runtimes after changing Relay versions. Refer to [Install NeMo Relay](../getting-started/install-relay.mdx#install-nemo-relay) for migration details and collector trust configuration. Observability configuration remains version 4.
 
 Two collection features are enabled by default:
 
@@ -61,7 +62,7 @@ Harbor's upstream integration uses NeMo Fabric 0.5.x. To inspect 0.6 provenance 
 
 ### Compare Runs With Software Provenance
 
-A benchmark score is more useful when you know which software produced it. NeMo Fabric 0.6 records selected harness, adapter, runtime, and reported infrastructure versions alongside execution results. Teams can spot software differences between runs, interpret changes in performance, and investigate unexpected results. See [Selected Software Evidence](../sdk/python.mdx#selected-software-evidence).
+A benchmark score is more useful when you know which software produced it. NeMo Fabric 0.6 records selected harness, adapter, runtime, and reported infrastructure versions alongside execution results. Teams can spot software differences between runs, interpret changes in performance, and investigate unexpected results. See [Selected Software Evidence](../sdk/evidence.mdx#selected-software-evidence).
 
 ### Understand the Resources Behind Each Result
 
@@ -73,7 +74,7 @@ System statistics show CPU, memory, and process usage for the agent's local proc
 
 The optional [OpenShell provider](https://github.com/NVIDIA/NeMo-Fabric/tree/main/environment-providers/openshell) supports new or existing sandboxes with explicit lifecycle and cleanup controls. One sandbox can host multiple agent runtimes independently, and declared artifacts are transferred back to the host.
 
-The [Hermes Code Review](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent) and [custom LangGraph agent](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/langgraph_custom_agent) examples demonstrate this workflow, including optional Relay integration. See the [sandbox execution guide](../sdk/python.mdx#sandbox-command-bridge) for setup and lifecycle details.
+The [Hermes Code Review](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent) and [custom LangGraph agent](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/langgraph_custom_agent) examples demonstrate this workflow, including optional Relay integration. See the [sandbox execution guide](../sdk/environments.mdx#sandbox-command-bridge) for setup and lifecycle details.
 
 OpenShell is the first supported sandbox provider, with additional providers planned.
 

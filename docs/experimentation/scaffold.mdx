@@ -1,0 +1,52 @@
+---
+slug: "/experimentation/scaffold"
+title: "Scaffold an Application"
+description: "Generate an editable Python or Rust application from a CLI example."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+## Scaffold Examples
+
+Generate ordinary application code when you want to customize an example. The
+default `scripted` variant is credential-free:
+
+```bash
+nemo-fabric example init code-review my-agent --language python
+nemo-fabric example init code-review my-agent-rs --language rust
+```
+
+Add a selector such as `--variant hermes` to scaffold a non-default variant. A
+non-default variant requires its adapter package and credentials.
+
+### Run a Python Scaffold
+
+Create and activate a virtual environment, install the generated application,
+and run its launcher:
+
+```bash
+cd my-agent
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+python main.py "Review the workspace"
+```
+
+The Python scaffold constructs `FabricConfig` and calls the Python SDK
+directly.
+
+### Run a Rust Scaffold
+
+Build and run the generated Rust application:
+
+```bash
+cd my-agent-rs
+cargo run -- "Review the workspace"
+```
+
+The Rust scaffold constructs `FabricConfig` and calls `fabric-core` directly.
+When the CLI is built from a source checkout, the generated manifest uses an
+absolute path to that checkout's `crates/fabric-core`. Keep the checkout
+available, or replace the path dependency with a compatible published version
+before moving the scaffold. Neither scaffold is loaded back into the central
+CLI.

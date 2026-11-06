@@ -1,0 +1,21 @@
+---
+title: "Install Cline"
+description: "Install the Cline SDK, adapter, and NeMo Fabric runtime to run coding tasks through Cline."
+slug: "/getting-started/installation/cline"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Install [Cline](https://cline.bot/), an open source coding agent, as the harness for NVIDIA NeMo Fabric. This guide installs the Cline TypeScript SDK, its NeMo Fabric adapter, and the NeMo Fabric runtime so your application can run tasks through Cline.
+
+The [Cline adapter](../integrations/harness/cline.mdx) requires Node.js 22.19.0 or newer and is distributed through npm. Install the NeMo Fabric runtime with pip, then install the supported Cline SDK and adapter in the Node.js project that owns the NeMo Fabric configuration:
+
+```bash
+pip install nemo-fabric
+npm install --save-exact @cline/sdk@0.0.83
+npm install nemo-fabric-adapters-cline
+```
+
+The adapter does not declare or install the Cline SDK as a package dependency. Refer to the [Cline adapter guide](../integrations/harness/cline.mdx) to configure adapter discovery and supported capabilities.
+
+Continue with the [Cline adapter guide](../integrations/harness/cline.mdx) to configure and run a task.

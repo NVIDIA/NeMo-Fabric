@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric Software Evidence
 
-`RunResult.execution` records selected software versions inline. The default-on `FabricConfig.provenance` control and typed owner reports work through the existing SDK, adapter and task dispatch paths. Set `ProvenanceConfig(enabled=False)` before initialization to skip host and guest collectors. See the [SDK evidence contract](../../docs/sdk/python.mdx#selected-software-evidence).
+`RunResult.execution` records selected software versions inline. The default-on `FabricConfig.provenance` control and typed owner reports work through the existing SDK, adapter and task dispatch paths. Set `ProvenanceConfig(enabled=False)` before initialization to skip host and guest collectors. See the [SDK evidence contract](../../docs/sdk/evidence.mdx#selected-software-evidence).
 
 ## Reproduce The Six Paths
 

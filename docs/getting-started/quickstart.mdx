@@ -1,58 +1,58 @@
 ---
-title: "NVIDIA NeMo Fabric Quickstart"
-description: "Get started with NVIDIA NeMo Fabric."
-template-library-version: "1.0.0"
+title: "1. Install One Harness"
+description: "Install a supported harness, run your first agent, and inspect its result."
+slug: "/getting-started/quickstart"
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-This guide demonstrates how to install and run a simple agent using NeMo Fabric.
+Run a small workspace inspection task through NVIDIA NeMo Fabric. This package-based path uses LangChain Deep Agents and an NVIDIA-hosted model. It requires Python 3.11 or later and an NVIDIA API key; the [Installation Overview](install.mdx#requirements-and-supported-platforms) describes supported platforms.
 
-## Install NeMo Fabric
+This is the first of [three connected quickstarts](quickstart-overview.mdx). Keep `first_agent.py` and its configuration for the next two guides.
 
-Hermes Agent 0.20 and later is no longer installable from PyPI. Follow the
-[Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
-then install NeMo Fabric and its bare Hermes adapter into the Python environment
-that runs Hermes Agent:
+<Steps toc={true} tocDepth={2}>
+
+<Step title="Install One Harness" id="install-one-harness">
+
+Create an isolated application environment, then install NeMo Fabric and its supported Deep Agents adapter and dependencies:
 
 ```bash
-python -m pip install nemo-fabric nemo-fabric-adapters-hermes
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install 'nemo-fabric[deepagents]'
 ```
 
-These packages do not install Hermes Agent. For local development from a NeMo
-Fabric checkout, run `just install-hermes-agent` from the repository root
-instead. The recipe checks out tested Hermes source with Relay 0.10 support
-and installs it in an isolated environment. Set
-`ADAPTER_PYTHON` to `.venv-hermes/bin/python` when running NeMo Fabric from the
-project environment. Refer to the [NeMo Fabric installation guide](install.mdx)
-for separate adapter environments and other supported package combinations.
+On Windows, activate with `.venv\Scripts\Activate.ps1` in PowerShell. This example does not require the separate CLI or NeMo Relay.
 
-## Obtaining API Keys
+</Step>
 
-The following code example uses an NVIDIA-hosted model and requires an NVIDIA API key defined with the `NVIDIA_API_KEY`
-environment variable. An API key can be obtained by creating an account on [`build.nvidia.com`](https://build.nvidia.com/).
+<Step title="Provide Model Access" id="provide-model-access">
 
-## Run a Simple Agent
+Create an API key at [NVIDIA Build](https://build.nvidia.com/) and set it in the shell that will run the application:
+
+```bash
+export NVIDIA_API_KEY='<your-key>'
+```
+
+In PowerShell, use `$env:NVIDIA_API_KEY = '<your-key>'`. Keep the key out of the Python file.
+
+</Step>
+
+<Step title="Run a Workspace Task" id="run-a-workspace-task">
+
+Save this complete example as `first_agent.py` in a workspace you want to inspect. The agent uses the selected harness's tools and permissions; use a directory appropriate for the task.
 
 ```python
 import asyncio
 
 from nemo_fabric import (
-    Fabric,
-    FabricConfig,
-    HarnessConfig,
-    MetadataConfig,
-    ModelConfig,
-    RuntimeConfig,
+    EnvironmentConfig, Fabric, FabricConfig, HarnessConfig,
+    MetadataConfig, ModelConfig, RunRequest,
 )
 
 config = FabricConfig(
-    metadata=MetadataConfig(name="quickstart-agent"),
-    harness=HarnessConfig(
-        adapter_id="nvidia.fabric.hermes",
-        resolution="preinstalled",
-    ),
-    runtime=RuntimeConfig(max_turns=1),
+    metadata=MetadataConfig(name="workspace-review"),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.langchain.deepagents"),
     models={
         "default": ModelConfig(
             provider="nvidia",
@@ -61,15 +61,51 @@ config = FabricConfig(
             base_url="https://integrate.api.nvidia.com/v1",
         )
     },
+    environment=EnvironmentConfig(provider="local", workspace="."),
 )
 
-result = asyncio.run(Fabric().run(config, input="Who are you?"))
-print(result.output.response)
+async def main():
+    fabric = Fabric()
+    result = await fabric.run(
+        config,
+        request=RunRequest(
+            input="List the top-level workspace files and explain what this project appears to contain. Do not modify files.",
+            request_id="first-workspace-review",
+        ),
+    )
+    print("Adapter:", result.adapter_id)
+    print("Status:", result.status)
+    print("Request:", result.request_id)
+    if result.status == "succeeded":
+        print(result.output.response)
+    else:
+        print("Error:", result.error)
+    print("Artifacts:", result.artifacts)
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-A more detailed version of this example is available as a [Jupyter Notebook](https://jupyter.org/)
-at [`examples/notebooks/01_quickstart.ipynb`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/01_quickstart.ipynb).
+Run it from the workspace:
+
+```bash
+python first_agent.py
+```
+
+</Step>
+
+<Step title="Check the Outcome" id="check-the-outcome">
+
+The returned adapter ID should be `nvidia.fabric.langchain.deepagents`. A successful request has status `succeeded`, request ID `first-workspace-review`, and a response describing the workspace. The prose varies between runs; the status and correlation fields show whether the task completed. With `environment.workspace` set, Deep Agents uses a filesystem backend rooted in that directory; its tool paths use a virtual root. A request to avoid edits is an instruction, not a security boundary.
+
+`Fabric.run()` starts the runtime, invokes it once, and attempts shutdown. It can return a failed normalized result; configuration and lifecycle failures can instead raise SDK exceptions. Follow [Troubleshooting](../troubleshooting.mdx) if the run does not succeed.
+
+</Step>
+
+</Steps>
 
 ## Next Steps
 
-- [Python SDK](../sdk/python.mdx)
+Change only the input to ask for a concise onboarding summary. The same configuration and result-handling code still apply. Then continue to [2. Switch Harnesses](switch-harnesses.mdx) to change the execution target while retaining your application interface.
+
+For further exploration, see [Multi-Turn Runtimes](../sdk/runtimes.mdx) to preserve state between related turns, or the maintained [onboarding notebooks](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/notebooks) for an interactive tour.

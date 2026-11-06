@@ -1,9 +1,18 @@
+---
+title: "Adapter Contract"
+description: "Expose a harness or custom agent through NeMo Fabric's shared configuration, lifecycle, and result interface."
+slug: "/adapter-contract/overview"
+---
 {/*
 SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0
 */}
 
-# NVIDIA NeMo Fabric Adapter Contract
+The adapter contract defines the metadata, configuration, lifecycle operations, and result formats that connect a harness or custom agent to NVIDIA NeMo Fabric. Use it when building a new integration so existing NeMo Fabric applications can discover and run your agent through the shared execution interface.
+
+Start by choosing an integration shape below, then follow the six numbered tutorials in order to describe, implement, register, and verify your adapter. If your harness already has a supported adapter, use its [harness integration guide](../integrations/harness/overview.mdx). If you are building an application that calls agents, start with the [Python SDK](../sdk/python.mdx).
+
+## How Adapters Fit
 
 An adapter makes an agent harness or custom agent available through the same
 NVIDIA NeMo Fabric configuration, lifecycle, and result APIs. Fabric consumers

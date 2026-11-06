@@ -1,4 +1,5 @@
 ---
+slug: "/sdk/health-checks"
 title: "Health Checks"
 description: "Understand health scopes, levels, and the native evidence used by NVIDIA NeMo Fabric adapters."
 ---
@@ -6,7 +7,7 @@ description: "Understand health scopes, levels, and the native evidence used by 
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved. */}
 {/* SPDX-License-Identifier: Apache-2.0 */}
 
-Use `Fabric.check()` to check the health of a runtime server, an agent runtime, or an OpenClaw Gateway service. NVIDIA NeMo Fabric returns an immutable `CheckReport` with the selected target, outcome, individual observations, timestamps, and elapsed time. The [Python SDK guide](python.mdx#runtime-health) shows runtime and service examples.
+Use `Fabric.check()` to check the health of a runtime server, an agent runtime, or an OpenClaw Gateway service. NVIDIA NeMo Fabric returns an immutable `CheckReport` with the selected target, outcome, individual observations, timestamps, and elapsed time. The [runtime](#runtime-health) and [Gateway service](#gateway-service-health) examples below show how to use the API.
 
 ## Choose the Scope
 
@@ -91,6 +92,101 @@ Some native SDK requests cannot be cancelled safely. A caller timeout can theref
 
 Checks observe the selected native runtime through a health connection that is independent of the invocation request. A successful health response while an invocation is pending does not prove that the invocation will eventually succeed. Stop, release, and session replacement invalidate observations collected for an earlier owner.
 
-## Maintain the Evidence Table
 
-When an adapter changes its advertised levels or native probe, update this table, the adapter guide, and its qualification tests together. Keep native response details in the adapter documentation and preserve the shared report schema across harnesses.
+
+## Runtime Health
+
+Use `Fabric.check(environment=..., request=...)` to check runtime health. The scopes, outcomes, and deadlines above apply to these checks. Refer to the [adapter support table](#native-evidence-by-adapter) for supported levels and native evidence.
+
+The runtime ID selects the exact session inside the supplied environment:
+
+```python
+from nemo_fabric import CheckRequest, Fabric
+
+fabric = Fabric()
+environment = await fabric.prepare_environment(config)
+runtime = await fabric.start_runtime_in(config, environment)
+try:
+    report = await fabric.check(
+        environment=environment,
+        request=CheckRequest(
+            scope="runtime", runtime_id=runtime.runtime_id, level="ready"
+        ),
+    )
+    print(report.outcome)
+finally:
+    await runtime.stop()
+    await fabric.release_environment(environment)
+```
+
+The default level is `live`, and the default timeout is three seconds. A request
+for `ready` evaluates `live`, `active`, and `ready` in order, stopping at the
+first nonpassing result. One deadline covers routing, every probe, and response
+decoding. Checks can run during an invocation; a busy session can pass all
+three levels. A timeout returns `unknown/probe_timeout`. Stop or environment release during a probe returns
+`unknown/observation_changed`.
+
+`CheckReport` is an immutable mapping with outcomes `passed`, `failed`, `unknown`,
+and `unsupported`. Reports contain fixed evidence-source IDs, UTC timestamps,
+and elapsed milliseconds. An unavailable runtime returns
+`unknown/runtime_unavailable`. Adapters without health support return
+`unsupported/unsupported_adapter`.
+
+Cline `live` checks verify native session residency, identity, and closure. `active` checks also inspect request-interface state. `ready` checks additionally call `ClineCore.get()` to read a fresh native session snapshot. Cline checks can run during the first invocation and do not require model access. Refer to the [Cline health contract](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/typescript/cline/README.md#runtime-health).
+
+Codex checks its owned app-server process and a fresh loaded-thread response; native `idle` or `active` status is the readiness equivalent. Pi checks native session liveness, initialization and request-interface guards, and required model, tool, and MCP connection state. OpenClaw checks Gateway liveness, completed startup, selected-agent registration, the enabled Chat Completions endpoint, and native readiness including configured channels. Deep Agents checks its owned checkpoint connection, compiled message interface, and native state for the selected LangGraph thread. Hermes checks its owned native session, initialized invocation interface, and a fresh `get_activity_summary()` diagnostic response. Runtime activity covers NeMo Fabric invocations. Refer to the [OpenClaw runtime health guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/python/openclaw/README.md#runtime-health).
+
+A local `CheckRequest(scope="server")` returns `unsupported/unsupported_scope`. For OpenShell environments,
+`Fabric.check()` maps to `fabric-agent-ctl check` in the sandbox. Server requests
+stop at the runtime server; runtime requests select the owned agent and use the
+local SDK health path inside the sandbox. Health uses an independent provider
+worker during remote invocations.
+
+The diagram shows the local runtime adapter path. OpenShell adds the provider
+and command bridge before this path; server checks stop at the runtime server.
+
+```mermaid
+flowchart LR
+    SDK["Fabric SDK"] --> Core["Rust core"]
+    Core -->|"start / invoke / stop<br/>stdin / stdout"| Lifecycle
+    Core -->|"check<br/>authenticated loopback TCP"| Health
+    Endpoint["health.endpoint.json<br/>port and shared secret"] -.->|"endpoint discovery"| Core
+    subgraph Host["Adapter host process"]
+        Lifecycle["Lifecycle dispatcher"] -->|"await operation"| Adapter["Adapter runtime instance"]
+        Health["Health listener"] -->|"check native state"| Adapter
+        Adapter --> Harness["Native harness SDK"]
+    end
+```
+
+The lifecycle dispatcher awaits each start, invocation, or stop operation. The
+health listener checks the same adapter runtime through a separate connection,
+so checks can run while an invocation is pending. The host publishes the port
+and a per-process shared secret in a private `health.endpoint.json` file under
+`FABRIC_HOME`; the Rust core reads that file and authenticates health requests
+and responses. Each health request carries the remaining timeout budget, which the host applies
+to the probe.
+
+## Gateway Service Health
+
+Check a prepared or attached OpenClaw Gateway with `Fabric.check(service=..., request=...)`. Service checks use the selected process-local `ServiceHandle`:
+
+```python
+from nemo_fabric import CheckRequest, Fabric
+
+# Use the OpenClaw configuration from the Shared Services guide.
+fabric = Fabric()
+async with await fabric.prepare_service(config) as service:
+    report = await fabric.check(
+        service=service.handle,
+        request=CheckRequest(
+            scope="service", service_id=service.service_id, level="ready"
+        ),
+    )
+    print(report.outcome)
+```
+
+For OpenClaw, `live` validates `/healthz`, `active` validates an authenticated `/v1/models` response, and `ready` follows native `/readyz`, including configured channel health. A failed channel can fail Gateway readiness while `live` and `active` pass. Refer to the [OpenClaw Gateway health guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/python/openclaw/README.md#gateway-health).
+
+Service checks evaluate earlier levels in order under the same three-second default deadline. They can run during invocations. Reports have `scope="service"`, the selected `service_id`, and null runtime evidence. Release during a check invalidates evidence with `unknown/observation_changed`; a released or unavailable binding returns `unknown/service_unavailable`. Service hosting and checks remain local SDK capabilities; the sandbox command bridge continues to support server and runtime checks.
+
+The runtime example uses the configuration from [Configure Agents](configure.mdx). The Gateway example requires the OpenClaw configuration from [Shared Services](services.mdx).

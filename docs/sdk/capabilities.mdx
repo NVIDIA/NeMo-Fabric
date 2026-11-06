@@ -1,0 +1,179 @@
+---
+slug: "/sdk/capabilities"
+title: "Tools, Skills, and MCP"
+description: "Add supported tools, skills, MCP servers, and authentication to an agent."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+The examples in this guide extend the typed `config` from [Configure Agents](configure.mdx#start-with-one-run). Install the selected harness and its adapter before invoking it.
+
+Use the [harness compatibility guide](../reference/compatibility.mdx) before adding a capability. A common configuration shape does not imply equal support across adapters.
+
+## Add Skills and MCP Servers
+
+Build the complete nested `FabricConfig` directly, or start with a base
+config and use helpers to add capabilities. For example, extend the config from
+the first example with skills, MCP, and telemetry:
+
+```python
+capability_config = config.model_copy(deep=True)
+capability_config.add_skill_path("./skills/code-review")
+capability_config.add_mcp_server(
+    "github",
+    transport="stdio",
+    url="github-mcp",
+    args=["stdio"],
+    env={"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
+    exposure="harness_native",
+)
+capability_config.enable_relay(
+    project="fabric-review",
+    output_dir="./artifacts/relay",
+)
+```
+
+### Configure MCP Authentication And Headers
+
+MCP authentication and custom-header support vary by adapter:
+
+| Adapter | OAuth 2.0 Authentication | HTTP `custom_headers` |
+| --- | --- | --- |
+| Claude | Unsupported | Supported |
+| Codex | Supported | Supported |
+| Deep Agents | Unsupported | Supported |
+| Hermes Agent | Supported | Supported |
+
+Claude and Deep Agents return a configuration error when `authentication` is
+set. The bundled adapters do not support `service_account` MCP authentication.
+
+Configure OAuth 2.0 with `McpAuthenticationConfig`. The adapter and MCP server
+complete the authorization flow before the first agent turn. The flow can
+require interactive browser authorization.
+
+```python
+from nemo_fabric import McpAuthenticationConfig
+
+capability_config.add_mcp_server(
+    "github",
+    transport="streamable-http",
+    url="https://mcp.example.com/mcp",
+    authentication=McpAuthenticationConfig(
+        type="oauth2",
+        scopes=["repo:read"],
+    ),
+    exposure="harness_native",
+)
+```
+
+Use `custom_headers` to send HTTP headers with an `sse` or `streamable-http`
+server. Header names and values must be valid HTTP header text. To provide a
+sensitive value, set it in the process environment and use a `${NAME}`
+reference in the header value:
+
+```python
+import getpass
+import os
+
+os.environ["MCP_ACCESS_TOKEN"] = getpass.getpass("MCP access token: ")
+
+capability_config.add_mcp_server(
+    "private-api",
+    transport="streamable-http",
+    url="https://mcp.example.com/mcp",
+    authentication=None,
+    custom_headers={
+        "Authorization": "Bearer ${MCP_ACCESS_TOKEN}",
+        "X-Tenant": "example-team",
+    },
+)
+```
+
+Set referenced environment variables before calling `run(...)` or
+`start_runtime(...)`. Do not use `McpServerConfig.env` for HTTP header
+variables; `env` applies only to `stdio` MCP server processes.
+
+<Warning>
+  The Claude adapter stages its MCP configuration in a file for the Claude SDK.
+  A sensitive value in `custom_headers` can therefore be written to
+  disk. Store sensitive values in environment variables and use `${NAME}` in
+  `custom_headers`. The adapter stages the reference and supplies the value
+  through the scoped child-process environment instead of writing the value to
+  the MCP configuration file.
+</Warning>
+
+MCP tool policy is scoped to one server and uses the tool names that server
+advertises. `allowed_tools=None` exposes every discovered tool, while an empty
+allowlist exposes none. `blocked_tools` is then removed from the allowed or
+discovered set, and the same tool cannot appear in both lists:
+
+```python
+capability_config.add_mcp_server(
+    "github",
+    transport="streamable-http",
+    url="${GITHUB_MCP_URL}",
+    exposure="harness_native",
+    allowed_tools=["issues.read", "pull_requests.read"],
+    blocked_tools=["issues.delete"],
+)
+```
+
+An adapter must declare both `mcp` and `mcp.tool_filters` support before
+planning accepts these fields. Pi and Qwen Code declare per-server filtering; support for other adapters depends on the selected descriptor. Do not add filters to the Hermes configuration used as the starting point for this guide. Per-server MCP policy is distinct from the root
+`ToolsConfig`, which controls adapter-native tools across the harness.
+An MCP server requiring authentication also requires `mcp.auth.oauth2` or
+`mcp.auth.service_account`, matching its configured authentication type.
+
+## Define and Select Tools
+
+`tools.definitions` names tools and tool groups that the adapter constructs.
+Each definition has a portable `kind`, an adapter-resolved `ref`, and settings
+validated by the adapter descriptor. Use `add_tool_definition(...)` only when
+the selected adapter accepts `tools.definitions` and publishes a
+`tool_definition_schema`.
+
+`tools.enabled` and `tools.blocked` select across the effective named tool
+surface. Configure an allowlist, a blocklist, or both:
+
+```python
+from nemo_fabric import ToolsConfig
+
+def with_tool_policy(base):
+    tool_config = base.model_copy(deep=True)
+    tool_config.tools = ToolsConfig(
+        enabled=["Read", "Edit", "Bash"],
+        blocked=["WebFetch"],
+    )
+    return tool_config
+```
+
+`tools.enabled=None` preserves the harness default. An empty list disables every
+executable tool. A tool cannot appear in both lists. The selected adapter must
+enforce the complete configured policy or planning fails. Hermes interprets
+these adapter-native selectors as Hermes toolset names.
+
+Config helpers edit the typed config before planning or starting a runtime.
+They do not modify already-started runtimes. Use `block_tools(...)`,
+`remove_mcp_server(name)`, and `remove_skill_path(path)` to edit a copied config.
+Telemetry is enabled by adding entries to `telemetry.providers`; settings
+specific to NeMo Relay live in the top-level `relay` block.
+
+For evaluation or deployment variations, use ordinary Python functions and
+copies of the typed config. Supply the complete final config to NeMo Fabric.
+
+```python
+def review_agent_config(base, *, github_mcp: bool, relay: bool):
+    config = base.model_copy(deep=True)
+    if github_mcp:
+        config.add_mcp_server(
+            "github",
+            transport="streamable-http",
+            url="${GITHUB_MCP_URL}",
+            exposure="harness_native",
+        )
+    if relay:
+        config.enable_relay(project="fabric-review", output_dir="./artifacts/relay")
+    return config
+
+variant = review_agent_config(config, github_mcp=True, relay=True)
+```

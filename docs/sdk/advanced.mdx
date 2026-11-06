@@ -1,0 +1,89 @@
+---
+slug: "/sdk/advanced"
+title: "Advanced Integration"
+description: "Inspect host-side metadata and understand deployment and recovery responsibilities."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+## Inspect Metadata on a Separate Host
+
+Use `inspect_adapter(config, descriptor)` when the admission host cannot access
+the task's installed adapter. Supply canonical metadata from the matching
+`nemo-fabric-adapter-catalog` release or an external adapter:
+
+```python
+from nemo_fabric import Fabric, inspect_adapter
+from nemo_fabric_adapter_catalog import get_adapter_descriptor
+
+profile = inspect_adapter(config, get_adapter_descriptor(config.harness.adapter_id))
+print(profile.skills, profile.mcp, profile.atif)
+
+# In the task environment, resolve its own executable descriptor.
+result = await Fabric().run(
+    config,
+    input="Review the changes.",
+    expected_descriptor_sha256=profile.descriptor_sha256,
+)
+```
+
+The immutable `AdapterCapabilityProfile` reports declared skills and MCP support
+and ATIF availability for the selected telemetry configuration. Inspection uses
+the existing native planner without importing the harness SDK or reading
+task-local discovery paths. Unsupported requested configuration fails admission.
+Passing `None` as the descriptor permits basic execution with false capability
+claims, but rejects requested skills, MCP, or telemetry.
+
+The optional `expected_descriptor_sha256` argument on `run()` and
+`start_runtime()` verifies the normalized descriptor in the actual execution
+plan before startup. Catalog metadata never becomes an execution origin. A
+fingerprint confirms descriptor correspondence, not installed software versions
+or successful evidence production. ATIF requires a selected provider declaring
+that output; Relay additionally requires one explicitly enabled observability
+component with ATIF enabled. Unconfirmed ATIF requests, including ambiguous
+duplicate components, fail admission.
+For a registered workflow, also supply its canonical target metadata:
+`inspect_adapter(config, descriptor, target_descriptor=get_target_descriptor(config.workflow.target_id))`.
+Import `get_target_descriptor` from `nemo_fabric_adapter_catalog`. The fingerprint
+then covers both normalized descriptors, including the target factory reference
+and settings schema. Missing or mismatched target metadata fails admission.
+Task execution still resolves its own installed target and verifies both
+descriptors before starting the factory. Standalone fingerprints are unchanged.
+Attached services require separate route-specific admission.
+
+## Installation and Runtime Responsibilities
+
+In production, the consumer or execution environment is responsible for
+installing NeMo Fabric, the selected harness, adapter dependencies, model access,
+credentials, and any required native tools. NeMo Fabric validates and diagnoses the
+runtime assumptions, but it does not silently install harnesses or credentials at
+invocation time.
+
+Development environments may use extras, virtual environments, or local source
+checkouts to make iteration easy. Production environments should prefer explicit
+images, preinstalled dependencies, or managed deployment packages.
+
+Runtime compatibility checks should validate:
+
+- NeMo Fabric SDK and native extension versions;
+- selected adapter version;
+- selected harness version or version range;
+- required environment variables or secret references;
+- optional capability support such as NeMo Relay, MCP, or tool exposure.
+
+### Resilience
+
+NeMo Fabric reports lifecycle failures; applications own recovery policy. If a
+runtime process dies, a connection is permanently lost, or an adapter cannot
+complete an invocation, NeMo Fabric marks the relevant runtime/invocation as
+failed and returns structured error metadata when possible.
+
+Transient I/O failures may be marked with retryable error metadata, but NeMo Fabric
+does not perform job-level retries by default. Consumers decide whether to retry
+the request, start a replacement runtime, fail the job, or escalate to a user.
+
+### Capacity And Backpressure
+
+If a harness reports capacity pressure, an adapter should surface it as a
+structured error or event such as busy, rate limited, capacity exceeded, or
+backpressure. The consumer decides whether to wait, retry, scale out, or fail.

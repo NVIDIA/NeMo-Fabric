@@ -1,0 +1,46 @@
+---
+slug: "/sdk/requests"
+title: "Run Requests"
+description: "Execute one request and attach application-owned input and correlation metadata."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+The examples in this guide extend the typed `config` from [Configure Agents](configure.mdx#start-with-one-run). Install the selected harness and its adapter before invoking it.
+
+## Single-Invocation Runs
+
+Use `run(...)` when the application has one input and does not need to preserve
+runtime state after the result is collected.
+
+```python
+from nemo_fabric import Fabric, RunRequest
+
+request = RunRequest(
+    input="Review the workspace changes.",
+    request_id="request-123",
+    context={"source": "review-service"},
+)
+
+fabric = Fabric()
+result = await fabric.run(
+    config,
+    base_dir="/workspace/review-agent",
+    request=request,
+)
+
+print(result.status)
+if result.status == "succeeded":
+    print(result.output.response)
+else:
+    print(result.error)
+print(result.artifacts)
+```
+
+Use `input=...` for the common case. Use `request=RunRequest(...)` for structured
+invocation metadata. Applications read files themselves and pass either the
+loaded input or a validated request to NeMo Fabric.
+
+NeMo Fabric generates runtime and invocation IDs for lifecycle correlation. An
+application may include its own identifiers in opaque request metadata, but
+NeMo Fabric does not interpret them as job, session, scheduling, or resume state.

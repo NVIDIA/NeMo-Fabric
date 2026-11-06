@@ -1,0 +1,33 @@
+---
+slug: "/experimentation/examples"
+title: "Examples"
+description: "Discover and run maintained CLI examples and harness variants."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+## Experiment With Examples
+
+List the maintained workflows and inspect an example's available variants:
+
+```bash
+nemo-fabric example list
+nemo-fabric example show code-review
+```
+
+Run an example with its default variant:
+
+```bash
+nemo-fabric run --example code-review --input "Review the workspace"
+```
+
+Select a different maintained harness variant when you want to compare its
+behavior:
+
+```bash
+nemo-fabric run --example code-review --variant hermes \
+  --input "Review the workspace"
+```
+
+The `plan` and `doctor` commands accept the same `--example` and `--variant`
+selectors.

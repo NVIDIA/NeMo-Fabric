@@ -1,0 +1,163 @@
+---
+slug: "/sdk/configure"
+title: "Configure Agents"
+description: "Construct typed agent configuration and control models, instructions, paths, and environment values."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+This guide uses Hermes Agent to demonstrate typed configuration. First complete the [Hermes installation](../integrations/harness/hermes.mdx), including its supported Python environment. If the application uses a separate environment, set `ADAPTER_PYTHON` as described in [Existing and Separate Environments](../getting-started/install-adapter-harness.mdx#select-the-adapter-environment).
+
+## Start With One Run
+
+This example uses an NVIDIA-hosted model. Export your NVIDIA API key before
+running it:
+
+```bash
+export NVIDIA_API_KEY=...
+```
+
+Construct a typed config, then pass it to `Fabric.run(...)`. The SDK starts a
+runtime, invokes it once, collects the result, and stops the runtime.
+
+```python
+import asyncio
+
+from nemo_fabric import (
+    Fabric,
+    FabricConfig,
+    HarnessConfig,
+    InstructionConfig,
+    InstructionsConfig,
+    MetadataConfig,
+    ModelConfig,
+    RuntimeConfig,
+)
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="review-agent"),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.hermes"),
+    instructions=InstructionsConfig(
+        system=InstructionConfig(
+            content="Review code for concrete correctness risks.",
+            mode="replace",
+        )
+    ),
+    runtime=RuntimeConfig(max_turns=8),
+    models={
+        "default": ModelConfig(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            api_key_env="NVIDIA_API_KEY",
+        )
+    },
+)
+
+async def main() -> None:
+    fabric = Fabric()
+    result = await fabric.run(
+        config,
+        input="Review the workspace changes.",
+    )
+
+    print(result.status)
+    if result.status == "succeeded":
+        print(result.output.response)
+    else:
+        print(result.error)
+
+asyncio.run(main())
+```
+
+Omit `instructions.system` to preserve the harness's native system instruction.
+When present, `InstructionConfig.mode` defaults to `replace`. Use `append` only
+with an adapter whose descriptor advertises that mode; planning rejects other
+combinations before the runtime starts.
+
+Use `base_dir` to resolve relative paths in an in-memory config. For optional inspection before execution, see [Plan and Diagnose](plan.mdx): `plan(...)` inspects adapter selection and `doctor(...)` checks declared runtime requirements. You do not need to call them separately before running an agent.
+
+Use this configuration as the starting point for the other SDK guides.
+
+### Set Environment Values Or Forward Them By Name
+
+Use `environment.env` to set literal values. Use `environment.env_names` to forward variables that are already available to the NeMo Fabric process.
+
+| Field | What You Supply | What NeMo Fabric Saves In The Config And Run Plan |
+| --- | --- | --- |
+| `env` | A name and its literal value, such as `LOG_LEVEL: debug` | The name and value |
+| `env_names` | A name, such as `GITHUB_TOKEN` | Only the name |
+
+For example, set `GITHUB_TOKEN` in the shell that launches your application:
+
+```bash
+export GITHUB_TOKEN="example-token"
+```
+
+Then extend the configuration with a literal log level and the token's name:
+
+```python
+from nemo_fabric import EnvironmentConfig
+
+config.environment = EnvironmentConfig(
+    env={"LOG_LEVEL": "debug"},
+    env_names=["GITHUB_TOKEN"],
+)
+```
+
+NeMo Fabric looks up `GITHUB_TOKEN` in its own process environment and passes the actual value, `example-token`, to the adapter in `RuntimeContext.environment.env`. The adapter receives the value, not a name that it must look up. The configuration and run plan contain only the name; NeMo Fabric redacts environment values in the saved adapter invocation. Execution fails if a listed variable is unset. A name cannot appear in both `env` and `env_names`.
+
+`environment.env` does not expand `$GITHUB_TOKEN` or `${GITHUB_TOKEN}`. For example, `env={"GITHUB_TOKEN": "$GITHUB_TOKEN"}` passes the literal text `$GITHUB_TOKEN`. Use `env_names=["GITHUB_TOKEN"]` to request lookup. If your application instead reads the token and places its value in `env`, that value becomes part of the saved configuration and run plan.
+
+A `.env` file stores names and values, such as `GITHUB_TOKEN=example-token`. Neither `env` nor `env_names` loads that file. Your launcher or application must load it into the process environment before NeMo Fabric starts the adapter. The same forwarding mechanism works with variables supplied by a shell, CI secrets, or a container.
+
+With Harbor, the NeMo Fabric process runs inside the task environment. `env_names` reads that process's variables; listing a name does not copy its value from the Harbor host into the task. Harbor owns delivery through its managed execution environment. The existing Harbor bridge uses a separate `environment_env_names` payload field and resolves those names into `environment.env` inside the task runner. That bridge behavior is unchanged by `env_names`. Refer to [Harbor Environment Forwarding](../integrations/consumer/harbor.mdx#environment-forwarding) for the two-stage flow.
+
+NeMo Fabric reads named values at adapter start and checks them before each invocation. Persistent harnesses and shell backends can retain their startup environment, so NeMo Fabric rejects an invocation if a named value has changed instead of sending a context that disagrees with that environment. The error identifies the variable without exposing its value. Restart the runtime and any associated service after changing a forwarded value. Connecting a new runtime to a service also fails if the named values differ from the service's startup values.
+
+## Custom Fields And Adapter Settings
+
+Use normalized NeMo Fabric fields for portable behavior: models, system
+instructions, turn limit, runtime, environment, skills, MCP, telemetry, tools,
+and artifacts.
+
+Supply request context through `RunRequest.context` for each invocation. Request
+context is not part of `FabricConfig`.
+
+Use `harness.settings` only for stable, harness-native behavior declared by the
+selected descriptor. Each bundled adapter declares a closed settings schema.
+Executable paths, Relay command discovery, state directories, and similar
+launch mechanics are runtime implementation details rather than public adapter
+settings.
+
+Use the optional `workflow` block to select a registered target by `target_id`
+and provide its immutable construction settings. The Adapter Target Descriptor
+selects the adapter, supplies the target-native entry point, and validates
+`workflow.settings` during planning. Fabric then projects the entry point and
+settings into `AgentConfig.workflow`; consumer configuration does not repeat
+adapter-specific entry-point semantics. Validation does not apply schema
+defaults.
+
+Use `FabricConfig.metadata` for human-readable agent identity and caller-owned
+annotations. NeMo Fabric preserves these values in the resolved configuration
+but does not copy them into `RunResult.metadata`. Use `request_id` and
+`RunRequest.context` for per-invocation correlation. `RunResult.metadata`
+contains adapter-specific result details.
+
+To group several invocations into one NeMo Relay session, set
+`RunRequest.relay_session_root` to the same UUID string on each
+invocation. Deep Agents and mini-SWE-agent, which own an in-process Relay Agent
+scope, use it as the propagated Relay root. A UUID `request_id` stays the
+parent; otherwise the session root is also the parent. ATIF exports one
+trajectory per invocation under one `session_id`. An unusable value falls back
+to the per-request root without an error, and the invocation still succeeds. A
+context key named `session_id` does not group traces.
+
+For example, invoke each turn with `RunRequest(input=message, relay_session_root=conversation_uuid)`. Core forwards the typed field as `AgentRunRequest.relay_session_root`. Context keys do not control Relay grouping. Omitting the field preserves per-request behavior. Use matching runtime and adapter-contract versions when sending this field.
+
+Adapter settings are not portable by default. The exact descriptor selected
+during planning owns their JSON Schema. Planning and doctor reject settings
+that do not satisfy that schema. A descriptor without `settings_schema` accepts
+an empty settings map and rejects a non-empty map. Validation does not apply
+schema defaults or otherwise change the settings preserved in `RunPlan`.
+Validation errors identify the adapter, descriptor source and path, and
+offending settings path.

@@ -1,0 +1,21 @@
+---
+slug: "/sdk/streaming"
+title: "Streaming"
+description: "Choose between native output chunks and Relay execution records."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+NVIDIA NeMo Fabric exposes two independent streaming paths. Choose based on what the application needs to display or retain.
+
+| Need | Method | Requirements |
+| --- | --- | --- |
+| Adapter-native OpenAI Chat Completions chunks | `Runtime.invoke_openai_stream()` | An implemented and advertised native streaming capability; no Relay collector |
+| Live Agent Trajectory Observability Format (ATOF) execution records | `Runtime.invoke_stream()` | Relay instrumentation, `enable_relay()`, and `start_runtime(..., streaming=True)` |
+
+Both return an async iterator and a separate terminal `RunResult`. Consume the iterator, then await `stream.result()`; the stream ending does not establish invocation success. Closing a stream early drains the invocation rather than providing portable cancellation.
+
+- [Native OpenAI Streaming](native-streaming.mdx) explains chunk consumption and adapter support.
+- [NeMo Relay Streaming](relay-streaming.mdx) explains collectors, correlation, telemetry sinks, and adapter-specific requirements.
+
+OpenShell bridge invocations are buffered. These local streaming APIs do not make sandbox invocations streamable.

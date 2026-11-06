@@ -93,7 +93,7 @@ combined.
 ### Enable Relay Telemetry and Streaming
 
 Install Relay as described in the
-[Relay installation guide](../../docs/getting-started/install.mdx#install-nemo-relay),
+[Relay installation guide](../../docs/getting-started/install-relay.mdx#install-nemo-relay),
 and then enable Relay telemetry to collect Agent Trajectory Observability
 Format (ATOF) stream records:
 

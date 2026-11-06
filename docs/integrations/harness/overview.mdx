@@ -1,4 +1,5 @@
 ---
+slug: "/integrations/harness-integrations/overview"
 title: "Harness Integrations"
 description: "Connect NVIDIA NeMo Fabric to agent harnesses through adapters."
 ---
@@ -9,7 +10,7 @@ NVIDIA NeMo Fabric harness integrations are southbound: they connect NeMo
 Fabric to agent harnesses through adapters that translate the normalized
 contract into harness-native models, tools, sessions, and telemetry.
 
-## Harness Integrations Maintained by NeMo Fabric
+## Choose a Harness
 
 NeMo Fabric includes the following harness integrations:
 
@@ -25,6 +26,7 @@ NeMo Fabric includes the following harness integrations:
 | Kiro | [Use the Kiro adapter](./kiro.mdx) |
 | AWS Strands | [Use the Strands adapter](./strands.mdx) |
 | mini-SWE-agent | [Use the mini-SWE-agent adapter](./mini-swe-agent.mdx) |
+| NOOA | [Use the NOOA adapters](./nooa.mdx) |
 | OpenClaw | [Use the OpenClaw adapter](./openclaw.mdx) |
 | OpenHands | [Use the OpenHands adapter](./openhands.mdx) |
 | OpenCode | [Use the OpenCode adapter](./opencode.mdx) |
@@ -32,5 +34,4 @@ NeMo Fabric includes the following harness integrations:
 | Qwen Code | [Use the Qwen Code adapter](./qwen.mdx) |
 | Remote Agent | [Use the Remote Agent adapter](./remote-agent.mdx) |
 
-For a compatibility comparison of the bundled harness integrations, refer to
-the [agent harness adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters).
+Compare [configuration compatibility](../../reference/compatibility.mdx) before selecting an adapter. Installation, model protocols, native tools, telemetry, and optional operations differ across harnesses. Use `plan()` and `doctor()` for the actual installed descriptor.

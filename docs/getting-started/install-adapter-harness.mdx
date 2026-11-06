@@ -1,0 +1,52 @@
+---
+title: "Install an Adapter and Harness Without the Runtime"
+description: "Install task-side dependencies separately from the application runtime."
+slug: "/getting-started/installation/adapter-and-harness"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Prepare an adapter and harness in a Python environment separate from the NVIDIA NeMo Fabric runtime. The [harness adapter](../integrations/harness/overview.mdx) translates NeMo Fabric configuration and requests for the agent that executes your tasks. Use this route to isolate the harness's dependencies while your application runs NeMo Fabric in another locally accessible environment.
+
+Choose the command for your harness. Use an adapter package's `harness` extra when a different environment runs NeMo Fabric:
+
+```bash
+pip install "nemo-fabric-adapters-claude[harness]"
+pip install "nemo-fabric-adapters-codex[harness]"
+pip install "nemo-fabric-adapters-deepagents[harness]"
+pip install "nemo-fabric-adapters-nooa[harness]"
+```
+
+This installation mode keeps the runtime dependencies out of the adapter
+environment. Set `ADAPTER_PYTHON` in the runtime environment to the adapter
+environment's Python interpreter. A Python adapter and its Python harness must
+use the same interpreter. Use matching NeMo Fabric
+release versions for the runtime and adapter package unless a different pairing
+has been explicitly validated.
+
+The OpenClaw adapter does not provide `harness` or `full` extras. Install
+`nemo-fabric-adapters-openclaw` directly and install the `openclaw` npm package
+separately.
+
+The OpenHands adapter also omits `harness` and `full` extras. Install the bare
+adapter and the supported OpenHands packages separately.
+
+## Select the Adapter Environment
+
+The NeMo Fabric runtime and agent harness can run in separate, locally accessible Python environments. This scenario isolates their Python dependencies while the runtime launches the adapter through the adapter environment's interpreter.
+
+Install `nemo-fabric` in the runtime environment. Install the adapter and harness in the second environment, then set `ADAPTER_PYTHON` in the runtime environment:
+
+```bash
+export ADAPTER_PYTHON="/path/to/adapter-environment/bin/python"
+```
+
+On Windows, use the adapter environment's Python executable:
+
+```powershell
+$env:ADAPTER_PYTHON = "C:\path\to\adapter-environment\Scripts\python.exe"
+```
+
+Use matching NeMo Fabric release versions for the runtime and adapter unless a different pairing has been validated.
+
+Return to the [Installation Overview](install.mdx) to compare deployment scenarios.

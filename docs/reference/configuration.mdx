@@ -1,0 +1,67 @@
+---
+slug: "/reference/configuration"
+title: "Configuration and Schemas"
+description: "Find public schemas and understand their versioning and extension rules."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+## SDK Contract Boundaries
+
+NeMo Fabric keeps a narrow execution contract. Applications own product behavior
+around that contract.
+
+### Schemas And Python Models
+
+The SDK's Pydantic models are maintained against the Rust-generated public
+schemas. The schemas describe the typed cross-language contracts. Use the
+generated API reference for exact Python signatures.
+
+| Contract | Source |
+| --- | --- |
+| SDK Pydantic models | `nemo_fabric.models`; refer to the generated [Models reference](api/python-library-reference/nemo_fabric.models.md) |
+| Agent config | `schemas/sdk/agent.schema.json` |
+| Adapter contract | `schemas/adapter-contract/`, including the descriptor, `AgentConfig`, execution types, and runtime context |
+| Run plan | `schemas/sdk/run-plan.schema.json` |
+| Request, result, and events | `schemas/sdk/run-request.schema.json`, `schemas/sdk/run-result.schema.json`, `schemas/sdk/fabric-event.schema.json` |
+| Runtime and invocation handles | `schemas/sdk/runtime-handle.schema.json`, `schemas/sdk/invocation-handle.schema.json` |
+| Artifacts and errors | `schemas/sdk/artifact-manifest.schema.json`, `schemas/sdk/error-info.schema.json` |
+| Runtime resource snapshot | `schemas/sdk/runtime-resource-snapshot.schema.json` |
+
+### Versioning
+
+NeMo Fabric uses explicit contract versions where persisted or independently
+maintained artifacts cross package boundaries:
+
+- `schema_version` identifies the typed NeMo Fabric config contract transported
+  across SDK and language boundaries.
+- `contract_version` identifies the contract implemented by
+  `*.fabric-adapter.json` and `*.fabric-target.json` records.
+- Python and Rust package versions identify the installed SDK/core release.
+
+NeMo Fabric versions top-level typed contracts and independently maintained adapter
+metadata. It does not version each config subsection independently. For
+example, MCP, skills, models, telemetry, and runtime fields evolve under the
+enclosing `schema_version`.
+
+NeMo Fabric validates adapter descriptor contract versions during planning. Package
+semver identifies the installed implementation, but it is not the compatibility
+contract for independently maintained adapters.
+
+### Config Extensibility
+
+The public schema has typed fields for stable NeMo Fabric concepts and controlled
+extension points for adapter- or application-owned data. Use known fields for
+portable concepts such as harness selection, models, runtime, skills, MCP,
+telemetry, and artifacts. Use adapter-owned `harness.settings` for settings
+validated by the selected descriptor and interpreted by its adapter. Use
+metadata or preserved extension fields for data NeMo Fabric should carry but
+not interpret.
+
+Additive optional fields may be introduced within the existing document schema
+version when old configs remain valid. Required fields, removed fields, or
+semantic changes that alter how existing configs are interpreted require a new
+enclosing document schema version or an explicit compatibility path.
+
+Unknown data is not the same as supported behavior. An adapter must advertise
+and implement a capability before NeMo Fabric treats it as runnable.

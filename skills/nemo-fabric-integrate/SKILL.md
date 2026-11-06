@@ -228,7 +228,7 @@ For explicit environment management, call `prepare_environment(config)` or
 Use typed `EnvironmentHandle` and `EnvironmentReference` objects. Stop the
 runtime before calling `release_environment(environment)` separately. Provider
 availability and reuse limits vary; task paths must remain strings for non-local
-environments. See the [environment lifecycle guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#explicit-environment-lifecycle).
+environments. See the [environment lifecycle guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/environments.mdx#explicit-environment-lifecycle).
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,

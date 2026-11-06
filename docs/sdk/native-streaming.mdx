@@ -1,0 +1,69 @@
+---
+slug: "/sdk/native-streaming"
+title: "Native OpenAI Streaming"
+description: "Consume adapter-native output chunks and a separate terminal result."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+This guide uses the source-only NeMo Agent Toolkit reference adapter, which implements native OpenAI streaming. Complete its [development bootstrap](../../external/nat/README.md#development-bootstrap) and calculator setup in a NeMo Fabric source checkout. This adapter is not a bundled or separately published harness package.
+
+From the repository root, construct the maintained calculator configuration:
+
+```python
+from external.nat.examples.calculator import build_config
+
+config = build_config()
+```
+
+Set `NVIDIA_API_KEY` for the configured model before invoking it. Use the same interpreter for the SDK, reference adapter, toolkit, and calculator MCP server as specified in that setup.
+
+## Native OpenAI Streaming
+
+Use `Runtime.invoke_openai_stream()` when the selected adapter provides native
+OpenAI Chat Completions chunks. `Runtime.supports_openai_streaming` reflects the
+selected descriptor's existing `capabilities.streaming` claim. If the claim is
+false, `invoke_openai_stream()` raises `FabricCapabilityError` with code
+`openai_streaming_unavailable`.
+
+```python
+from nemo_fabric import Fabric
+
+async with await Fabric().start_runtime(config) as runtime:
+    if not runtime.supports_openai_streaming:
+        raise RuntimeError("the selected adapter does not support OpenAI streaming")
+
+    stream = runtime.invoke_openai_stream(input="What is 21 multiplied by 2?")
+    async for chunk in stream:
+        print(chunk)
+
+    result = await stream.result()
+    print(result.status, result.output)
+```
+
+`invoke_openai_stream(...)` is synchronous and starts exactly one adapter
+invocation in the background. Its `OpenAIInvokeStream` yields only JSON mappings
+whose `object` field is `chat.completion.chunk`. An empty stream is valid. The
+terminal normalized `RunResult` is not a final chunk; obtain it separately with
+`await stream.result()` and treat it as authoritative.
+
+Only one turn can be active on a runtime. Fully consume the stream before
+starting another turn. If iteration stops early, call `await stream.aclose()`;
+it drains the invocation and discards unread chunks so the runtime can be reused.
+It does not cancel the target invocation. Awaiting `stream.result()` also drains
+and discards any unread chunks before it returns, so consume the iterator first
+when the application needs every chunk.
+
+The SDK owns an authenticated listener on the loopback interface and supplies
+the adapter host with a single-invocation HTTP sink that uses chunked NDJSON
+framing. It validates chunk shape, framing, authentication, and invocation
+correlation. This transport is an implementation detail; consumers provide no
+listener address, token, or protocol configuration.
+
+Native OpenAI streaming does not require NeMo Relay or
+`start_runtime(..., streaming=True)`. It is independent of Relay ATOF streaming:
+`supports_openai_streaming` and `invoke_openai_stream()` describe adapter-native
+OpenAI chunks, while `supports_streaming` and `invoke_stream()` describe Relay
+ATOF. Enabling one does not enable or change the other.
+
+Use only an adapter whose implementation and descriptor support this operation. The shared NeMo Agent Toolkit reference adapter demonstrates native streaming. The Remote Agent descriptor currently advertises native streaming without an `invoke_openai_stream` implementation; do not rely on that claim. Its Relay-backed path is a separate operation.

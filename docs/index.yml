@@ -2,135 +2,264 @@
 # SPDX-License-Identifier: Apache-2.0
 
 navigation:
-  - section: About NeMo Fabric
+- section: About NeMo Fabric
+  slug: about-nemo-fabric
+  collapsed: open-by-default
+  contents:
+  - page: Overview
+    path: ./about-nemo-fabric/overview.mdx
+  - page: Ecosystem
+    path: ./about-nemo-fabric/ecosystem.mdx
+  - page: Release Notes
+    path: ./about-nemo-fabric/release-notes.mdx
+- section: Getting Started
+  collapsed: open-by-default
+  contents:
+  - section: Quickstart
+    path: ./getting-started/quickstart-overview.mdx
+    collapsed: open-by-default
     contents:
-      - page: Overview
-        path: ./about-nemo-fabric/overview.mdx
-      - page: Ecosystem
-        path: ./about-nemo-fabric/ecosystem.mdx
-      - page: Release Notes
-        path: ./about-nemo-fabric/release-notes.mdx
-  - section: Getting Started
+    - page: "1. Install One Harness"
+      path: ./getting-started/quickstart.mdx
+    - page: "2. Switch Harnesses"
+      path: ./getting-started/switch-harnesses.mdx
+    - page: "3. Add Skills and MCP"
+      path: ./getting-started/skills-and-mcp.mdx
+  - section: Installation Overview
+    path: ./getting-started/install.mdx
+    collapsed: open-by-default
     contents:
-      - page: Install
-        path: ./getting-started/install.mdx
-      - page: Artifacts
-        path: ./getting-started/artifacts.mdx
-      - page: Quickstart
-        path: ./getting-started/quickstart.mdx
-  - section: Experimentation
+    - page: Install the NeMo Fabric Runtime
+      path: ./getting-started/install-fabric-runtime.mdx
+      icon: fa-solid fa-microchip
+    - page: Install a Complete Runtime and Harness
+      path: ./getting-started/install-complete.mdx
+      icon: fa-solid fa-cubes
+    - page: Install Hermes Agent
+      path: ./getting-started/install-hermes.mdx
+      icon: fa-solid fa-feather-pointed
+    - page: Install Cline
+      path: ./getting-started/install-cline.mdx
+      icon: fa-solid fa-robot
+    - page: Install Factory Droid
+      path: ./getting-started/install-droid.mdx
+      icon: fa-solid fa-industry
+    - page: Install Kiro
+      path: ./getting-started/install-kiro.mdx
+      icon: fa-solid fa-ghost
+    - page: Install an Adapter and Harness Without the Runtime
+      path: ./getting-started/install-adapter-harness.mdx
+      icon: fa-solid fa-plug
+    - page: Add an Adapter to an Existing Harness Environment
+      path: ./getting-started/install-existing-harness.mdx
+      icon: fa-solid fa-puzzle-piece
+    - page: NeMo Relay and Streaming Dependencies
+      path: ./getting-started/install-relay.mdx
+      icon: fa-solid fa-tower-broadcast
+- section: Integrations
+  path: ./integrations/overview.mdx
+  collapsed: open-by-default
+  contents:
+  - section: Consumer Integrations
+    path: ./integrations/consumer/overview.mdx
+    collapsed: open-by-default
     contents:
-      - page: CLI
-        path: ./experimentation/cli.mdx
-  - section: SDK
+    - page: Harbor
+      path: ./integrations/consumer/harbor.mdx
+      icon: fa-solid fa-ship
+  - section: Harness Integrations
+    path: ./integrations/harness/overview.mdx
+    collapsed: open-by-default
     contents:
-      - page: Python SDK
-        path: ./sdk/python.mdx
-      - page: Health Checks
-        path: ./sdk/health-checks.mdx
-      - page: Resource Usage and Stats
-        path: ./sdk/system-stats.mdx
-  - section: Adapter Contract
+    - page: Claude Code
+      path: ./integrations/harness/claude.mdx
+      icon: fa-solid fa-asterisk
+    - page: Codex
+      path: ./integrations/harness/codex.mdx
+      icon: fa-solid fa-terminal
+    - page: Cline
+      path: ./integrations/harness/cline.mdx
+      icon: fa-solid fa-robot
+    - page: Factory Droid
+      path: ./integrations/harness/droid.mdx
+      icon: fa-solid fa-industry
+    - page: Hermes Agent
+      path: ./integrations/harness/hermes.mdx
+      icon: fa-solid fa-feather-pointed
+    - page: LangChain Deep Agents
+      path: ./integrations/harness/deepagents.mdx
+      icon: fa-solid fa-diagram-project
+    - page: Kilo Code
+      path: ./integrations/harness/kilo.mdx
+      icon: fa-solid fa-bolt
+    - page: Kiro
+      path: ./integrations/harness/kiro.mdx
+      icon: fa-solid fa-ghost
+    - page: AWS Strands
+      path: ./integrations/harness/strands.mdx
+      icon: fa-solid fa-network-wired
+    - page: mini-SWE-agent
+      path: ./integrations/harness/mini-swe-agent.mdx
+      icon: fa-solid fa-code
+    - page: NOOA
+      path: ./integrations/harness/nooa.mdx
+      icon: fa-solid fa-cubes
+    - page: OpenClaw
+      path: ./integrations/harness/openclaw.mdx
+      icon: fa-solid fa-hand
+    - page: OpenHands
+      path: ./integrations/harness/openhands.mdx
+      icon: fa-solid fa-hands
+    - page: OpenCode
+      path: ./integrations/harness/opencode.mdx
+      icon: fa-solid fa-laptop-code
+    - page: Pi
+      path: ./integrations/harness/pi.mdx
+      icon: fa-solid fa-infinity
+    - page: Qwen Code
+      path: ./integrations/harness/qwen.mdx
+      icon: fa-solid fa-comment-dots
+    - page: Remote Agent
+      path: ./integrations/harness/remote-agent.mdx
+      icon: fa-solid fa-cloud
+- section: Python SDK
+  path: ./sdk/python.mdx
+  slug: sdk
+  collapsed: open-by-default
+  contents:
+  - section: Core Workflow
+    collapsed: open-by-default
     contents:
-      - page: Overview
-        path: ./adapter-contract/README.md
-      - page: Custom-Agent Integrations
-        path: ./adapter-contract/custom-agents.md
-      - section: Tutorials
-        contents:
-          - page: Describe Adapter
-            path: ./adapter-contract/tutorials/adapter-descriptor.md
-          - page: Map Normalized Configuration
-            path: ./adapter-contract/tutorials/normalized-configuration.md
-          - page: Implement Execution
-            path: ./adapter-contract/tutorials/execution.md
-          - page: Normalize Results and Telemetry
-            path: ./adapter-contract/tutorials/results.md
-          - page: Register and Discover Adapter
-            path: ./adapter-contract/tutorials/registration-and-discovery.md
-          - page: Verify Adapter
-            path: ./adapter-contract/tutorials/conformance.md
-      - page: Optional OpenAI Streaming
-        path: ./adapter-contract/openai-streaming.md
-      - page: Examples and References
-        path: ./adapter-contract/examples.md
-  - section: Integrations
+    - page: Configure Agents
+      path: ./sdk/configure.mdx
+    - page: Run Requests
+      path: ./sdk/requests.mdx
+    - page: Results, Errors, and Run Artifacts
+      path: ./sdk/results.mdx
+  - section: Execution Options
+    collapsed: open-by-default
     contents:
-      - section: Consumer Integrations
-        contents:
-          - page: Overview
-            path: ./integrations/consumer/overview.mdx
-          - page: Harbor
-            path: ./integrations/consumer/harbor.mdx
-      - section: Harness Integrations
-        contents:
-          - page: Overview
-            path: ./integrations/harness/overview.mdx
-          - page: Claude Code
-            path: ./integrations/harness/claude.mdx
-          - page: Codex
-            path: ./integrations/harness/codex.mdx
-          - page: Cline
-            path: ./integrations/harness/cline.mdx
-          - page: Factory Droid
-            path: ./integrations/harness/droid.mdx
-          - page: Hermes Agent
-            path: ./integrations/harness/hermes.mdx
-          - page: LangChain Deep Agents
-            path: ./integrations/harness/deepagents.mdx
-          - page: Kilo Code
-            path: ./integrations/harness/kilo.mdx
-          - page: Kiro
-            path: ./integrations/harness/kiro.mdx
-          - page: AWS Strands
-            path: ./integrations/harness/strands.mdx
-          - page: mini-SWE-agent
-            path: ./integrations/harness/mini-swe-agent.mdx
-          - page: OpenClaw
-            path: ./integrations/harness/openclaw.mdx
-          - page: OpenHands
-            path: ./integrations/harness/openhands.mdx
-          - page: OpenCode
-            path: ./integrations/harness/opencode.mdx
-          - page: Pi
-            path: ./integrations/harness/pi.mdx
-          - page: Qwen Code
-            path: ./integrations/harness/qwen.mdx
-          - page: Remote Agent
-            path: ./integrations/harness/remote-agent.mdx
-  - section: Reference
+    - page: Tools, Skills, and MCP
+      path: ./sdk/capabilities.mdx
+    - page: Multi-Turn Runtimes and Parallel Work
+      path: ./sdk/runtimes.mdx
+    - section: Streaming
+      path: ./sdk/streaming.mdx
+      collapsed: open-by-default
+      contents:
+      - page: Native OpenAI Streaming
+        path: ./sdk/native-streaming.mdx
+      - page: NeMo Relay Streaming
+        path: ./sdk/relay-streaming.mdx
+    - page: Environments and Sandboxes
+      path: ./sdk/environments.mdx
+    - page: Shared Services
+      path: ./sdk/services.mdx
+  - section: Diagnostics and Observability
+    collapsed: open-by-default
     contents:
-      - section: API
-        contents:
-          - section: Python Library Reference
-            contents:
-              - page: Overview
-                path: ./reference/api/python-library-reference/index.md
-              - page: Client
-                path: ./reference/api/python-library-reference/nemo_fabric.client.md
-              - page: Adapter Capability Inspection
-                path: ./reference/api/python-library-reference/nemo_fabric.capabilities.md
-              - page: Runtime Health
-                path: ./reference/api/python-library-reference/nemo_fabric.check.md
-              - page: Runtime
-                path: ./reference/api/python-library-reference/nemo_fabric.runtime.md
-              - page: Service
-                path: ./reference/api/python-library-reference/nemo_fabric.service.md
-              - page: Relay Streaming
-                path: ./reference/api/python-library-reference/nemo_fabric.streaming.md
-              - page: OpenAI Streaming
-                path: ./reference/api/python-library-reference/nemo_fabric.openai_streaming.md
-              - page: Models
-                path: ./reference/api/python-library-reference/nemo_fabric.models.md
-              - page: Types
-                path: ./reference/api/python-library-reference/nemo_fabric.types.md
-              - page: Errors
-                path: ./reference/api/python-library-reference/nemo_fabric.errors.md
-          # Auto-discovered from the generated rustdoc->MDX pages
-          # (cargo doc -p nemo-fabric-core, via scripts/docs/generate_rust_library_reference.py).
-          - folder: ./reference/api/rust-library-reference
-            title: Rust Library Reference
-  - section: Resources
+    - page: Plan and Diagnose
+      path: ./sdk/plan.mdx
+    - page: Health Checks
+      path: ./sdk/health-checks.mdx
+    - page: Resource Usage and Stats
+      path: ./sdk/system-stats.mdx
+    - page: Software Execution Evidence
+      path: ./sdk/evidence.mdx
+  - page: Advanced Integration
+    path: ./sdk/advanced.mdx
+  - section: Python API Reference
     contents:
-      - folder: ./resources/legal
-        title: Legal
+    - page: Overview
+      path: ./reference/api/python-library-reference/index.md
+    - page: Client
+      path: ./reference/api/python-library-reference/nemo_fabric.client.md
+    - page: Adapter Capability Inspection
+      path: ./reference/api/python-library-reference/nemo_fabric.capabilities.md
+    - page: Runtime Health
+      path: ./reference/api/python-library-reference/nemo_fabric.check.md
+    - page: Runtime
+      path: ./reference/api/python-library-reference/nemo_fabric.runtime.md
+    - page: Service
+      path: ./reference/api/python-library-reference/nemo_fabric.service.md
+    - page: Relay Streaming
+      path: ./reference/api/python-library-reference/nemo_fabric.streaming.md
+    - page: OpenAI Streaming
+      path: ./reference/api/python-library-reference/nemo_fabric.openai_streaming.md
+    - page: Models
+      path: ./reference/api/python-library-reference/nemo_fabric.models.md
+    - page: Types
+      path: ./reference/api/python-library-reference/nemo_fabric.types.md
+    - page: Errors
+      path: ./reference/api/python-library-reference/nemo_fabric.errors.md
+    collapsed: true
+- section: CLI (Experimental)
+  path: ./experimentation/cli.mdx
+  slug: experimentation
+  collapsed: open-by-default
+  contents:
+  - page: Install
+    path: ./experimentation/install.mdx
+  - page: Presets
+    path: ./experimentation/presets.mdx
+  - page: Examples
+    path: ./experimentation/examples.mdx
+  - page: Scaffold an Application
+    path: ./experimentation/scaffold.mdx
+- section: Adapter Contract
+  path: ./adapter-contract/README.md
+  collapsed: open-by-default
+  contents:
+  - page: Custom-Agent Integrations
+    path: ./adapter-contract/custom-agents.md
+  - section: Tutorials
+    collapsed: open-by-default
+    contents:
+    - page: "1. Describe the Adapter"
+      path: ./adapter-contract/tutorials/adapter-descriptor.md
+    - page: "2. Map Normalized Configuration"
+      path: ./adapter-contract/tutorials/normalized-configuration.md
+    - page: "3. Implement Execution"
+      path: ./adapter-contract/tutorials/execution.md
+    - page: "4. Normalize Results and Telemetry"
+      path: ./adapter-contract/tutorials/results.md
+    - page: "5. Register and Discover the Adapter"
+      path: ./adapter-contract/tutorials/registration-and-discovery.md
+    - page: "6. Verify the Adapter"
+      path: ./adapter-contract/tutorials/conformance.md
+  - page: Optional Native OpenAI Streaming
+    path: ./adapter-contract/openai-streaming.md
+  - page: Examples and References
+    path: ./adapter-contract/examples.md
+- section: Troubleshooting
+  path: ./troubleshooting.mdx
+  collapsed: open-by-default
+  contents: []
+- section: Contributing
+  path: ./contributing/overview.mdx
+  collapsed: true
+  contents:
+  - page: Development Setup and Building from Source
+    path: ./contributing/setup.mdx
+  - page: Testing and Validation
+    path: ./contributing/testing.mdx
+  - page: Documentation Contributions
+    path: ./contributing/documentation.mdx
+- section: Reference
+  collapsed: true
+  contents:
+  - page: Harness Compatibility
+    path: ./reference/compatibility.mdx
+  - page: Configuration and Schemas
+    path: ./reference/configuration.mdx
+  - page: Adapter Metadata Catalog
+    path: ./reference/catalog.mdx
+  - page: Packages and Distribution
+    path: ./getting-started/artifacts.mdx
+  - folder: ./reference/api/rust-library-reference
+    title: Rust Library Reference
+- section: Resources
+  collapsed: true
+  contents:
+  - folder: ./resources/legal
+    title: Legal

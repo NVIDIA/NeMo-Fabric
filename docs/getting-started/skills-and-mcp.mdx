@@ -1,0 +1,94 @@
+---
+slug: "/getting-started/quickstart/skills-and-mcp"
+title: "3. Add Skills and MCP"
+description: "Extend the original agent with a skill and an MCP server, then run a task."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+This third quickstart adds a local skill and a caller-supplied stdio MCP server to Deep Agents. After [2. Switch Harnesses](switch-harnesses.mdx), return to the original configuration in `first_agent.py` from [1. Install One Harness](quickstart.mdx). Reuse that configuration for the following steps. This guide does not install an MCP server for you; provide an installed server and its launch command.
+
+<Steps toc={true} tocDepth={2}>
+
+<Step title="Add a Skill" id="add-a-skill">
+
+Create `skills/review/SKILL.md` beside `first_agent.py`:
+
+```markdown
+---
+name: review
+description: Use when summarizing a project for a new contributor.
+---
+
+Identify the project's purpose, its likely entry points, and two questions
+that a new contributor should investigate. Separate observations from guesses.
+```
+
+Save the following as `extended_agent.py` beside `first_agent.py`. It copies the original configuration and adds the skill path:
+
+```python
+import asyncio
+
+from first_agent import config
+from nemo_fabric import Fabric
+
+variant = config.model_copy(deep=True)
+variant.add_skill_path("./skills/review")
+```
+
+The skill gives the agent instructions for a project-summary task. The final step runs the extended configuration.
+
+</Step>
+
+<Step title="Connect an MCP Server" id="connect-an-mcp-server">
+
+Choose an installed stdio MCP server, then supply its executable and actual arguments. Add the following below the skill configuration in `extended_agent.py`, replacing the command with the server's documented launch command:
+
+```python
+variant.add_mcp_server(
+    "project-tools",
+    transport="stdio",
+    url="/absolute/path/to/your-mcp-server",
+    args=[],
+    exposure="harness_native",
+)
+```
+
+This is a configuration template; replace the executable path and arguments before running it. Deep Agents does not support per-server MCP filtering or OAuth through this normalized surface. Other adapters have different support.
+
+</Step>
+
+<Step title="Run the Extended Agent" id="run-the-extended-agent">
+
+Append the following to `extended_agent.py`. Adjust the input to request a task that uses one of your MCP server's known tools:
+
+```python
+async def main():
+    result = await Fabric().run(
+        variant,
+        input="Use the review skill to summarize this project for a new contributor. Use relevant project-tools MCP tools to support the summary.",
+    )
+    print("Status:", result.status)
+    if result.status == "succeeded":
+        print(result.output.response)
+    else:
+        print("Error:", result.error)
+    print("Artifacts:", result.artifacts)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+Run the script from the directory containing `first_agent.py` and the skill:
+
+```bash
+python extended_agent.py
+```
+
+A successful run returns status `succeeded` and a project summary. Check the response and available execution evidence for use of the skill and the requested MCP tool. Successful execution alone does not establish that either was used. If startup or invocation fails, follow [Troubleshooting](../troubleshooting.mdx). For optional configuration inspection, refer to [Plan and Diagnose](../sdk/plan.mdx).
+
+Continue with [Tools, Skills, and MCP](../sdk/capabilities.mdx) for authentication, headers, tool policy, and compatibility details. The maintained [custom-agent example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/langgraph_custom_agent) includes a complete example MCP tool and consumer.
+
+</Step>
+
+</Steps>

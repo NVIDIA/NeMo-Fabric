@@ -131,7 +131,7 @@ execute it. Scalar fields are validated separately against
 
 `environment.env` sets literal values and saves those values in the configuration and run plan. `environment.env_names` lists existing variables to forward from the NeMo Fabric process environment and saves only their names. NeMo Fabric looks up the values and supplies them to the adapter through `RuntimeContext.environment.env`.
 
-For example, use `env={"LOG_LEVEL": "debug"}` for a literal setting and `env_names=["GITHUB_TOKEN"]` to forward a token already available to the NeMo Fabric process. `environment.env` does not expand `$GITHUB_TOKEN` or `${GITHUB_TOKEN}`, and neither field loads a `.env` file. Refer to [Set Environment Values Or Forward Them By Name](../docs/sdk/python.mdx#set-environment-values-or-forward-them-by-name) for examples and runtime refresh behavior.
+For example, use `env={"LOG_LEVEL": "debug"}` for a literal setting and `env_names=["GITHUB_TOKEN"]` to forward a token already available to the NeMo Fabric process. `environment.env` does not expand `$GITHUB_TOKEN` or `${GITHUB_TOKEN}`, and neither field loads a `.env` file. Refer to [Set Environment Values Or Forward Them By Name](../docs/sdk/configure.mdx#set-environment-values-or-forward-them-by-name) for examples and runtime refresh behavior.
 
 ### Complete FabricConfig Support
 
@@ -248,4 +248,4 @@ Qwen Code runtime health supports `live`, `active`, `ready`. Refer to the [Qwen 
 
 Strands runtime health supports `live`. Refer to the [Strands health guide](typescript/strands/README.md#runtime-health) for the qualified evidence and limits.
 
-Selected software evidence is collected by the shared lifecycle hosts at initialization. Python adapters own a narrow `PROVENANCE_PACKAGES` selection; TypeScript CLIs supply their own package resolution context. Existing startup reports can supplement the inventory without new probes. `FabricConfig.provenance.enabled=false` disables this work in both SDK and adapter hosts. See [software evidence](../docs/sdk/python.mdx#selected-software-evidence).
+Selected software evidence is collected by the shared lifecycle hosts at initialization. Python adapters own a narrow `PROVENANCE_PACKAGES` selection; TypeScript CLIs supply their own package resolution context. Existing startup reports can supplement the inventory without new probes. `FabricConfig.provenance.enabled=false` disables this work in both SDK and adapter hosts. See [software evidence](../docs/sdk/evidence.mdx#selected-software-evidence).
