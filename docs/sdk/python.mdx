@@ -1455,6 +1455,8 @@ it returns a failed `RunResult` with `error.stage == "stop"` and
 Adapters can report execution deadlines in normalized results with
 `result.error.code == "timeout"`. Other adapter-specific timeout codes are not
 automatically reclassified. Diagnostic text is not a timeout classifier.
+Other adapter lifecycle failures raise `FabricRuntimeError` with the adapter's
+code, such as `openclaw_gateway_start_timeout`.
 Single-invocation runs attempt to stop the runtime before returning. A `Runtime`
 used with `async with` also attempts cleanup after an invocation error; if cleanup
 fails, that failure is attached to the original exception rather than replacing
