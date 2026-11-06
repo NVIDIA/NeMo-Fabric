@@ -39,6 +39,7 @@ from nemo_fabric_adapters.common import openai_chat
 from nemo_fabric_adapters.common import utils as common_utils
 from nemo_fabric_adapters.openclaw import _windows_job
 from nemo_fabric_adapters.openclaw import interfaces as native_interfaces
+from nemo_fabric_adapters.openclaw import sessions
 
 
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 60.0
@@ -192,6 +193,13 @@ def _dashboard_port(settings: dict[str, Any]) -> int | None:
 
 
 def _dashboard_token_path(context: contract.RuntimeContext, base_dir: Path) -> Path:
+    if context.state_dir:
+        path = Path(context.state_dir) / "interfaces" / "dashboard.token"
+        if path.parent.is_symlink():
+            raise lifecycle.LifecycleError(
+                "session_incompatible", "Native interface directory is invalid"
+            )
+        return path
     root = context.artifacts.root
     artifact_root = (base_dir / str(root)).resolve() if root else base_dir / "artifacts"
     return (
@@ -956,6 +964,7 @@ def _write_service_connection(
     gateway_url: str,
     token: str,
     agent_id: str,
+    state_dir: str | None = None,
 ) -> None:
     payload = (
         json.dumps(
@@ -963,6 +972,7 @@ def _write_service_connection(
                 "gateway_url": gateway_url,
                 "gateway_token": token,
                 "agent_id": agent_id,
+                **({"native_state_dir": state_dir} if state_dir is not None else {}),
             }
         )
         + "\n"
@@ -1022,6 +1032,9 @@ class OpenClawRuntime:
         self._signal_handler: Any = None
         self._windows_job: int | None = None
         self._service_host = False
+        self._native_session: sessions.NativeSession | None = None
+        self._session_environment: dict[str, str] = {}
+        self._session_deadline: float | None = None
         self._active_invoke_task: asyncio.Task | None = None
         self._command_env: dict[str, str] | None = None
         self._mcp_transports: dict[str, str] = {}
@@ -1209,10 +1222,14 @@ class OpenClawRuntime:
 
     async def start(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         """Write the OpenClaw configuration and start or attach to the Gateway."""
+        self._stopping = False
         config: contract.AgentConfig = payload["config"]
         context = contract.RuntimeContext.from_mapping(payload["runtime_context"])
         settings = config.harness.settings if config.harness else {}
         base_dir = Path(common_utils.base_dir(payload)).resolve()
+        self._session_deadline = asyncio.get_running_loop().time() + _positive_setting(
+            settings, "startup_timeout_seconds", DEFAULT_STARTUP_TIMEOUT_SECONDS
+        )
         service = payload.get("service")
         if service is not None and not isinstance(service, dict):
             raise lifecycle.LifecycleError(
@@ -1242,10 +1259,79 @@ class OpenClawRuntime:
         )
         model = _selected_model(config)
         if service is not None and service.get("operation") == "connect":
-            await self._connect_service_runtime(config, context, settings, service)
-            return None
+            try:
+                await self._connect_service_runtime(config, context, settings, service)
+                if context.state_dir:
+                    connection = json.loads(
+                        Path(service["connection_path"]).read_text()
+                    )
+                    owned_state = connection.get("native_state_dir")
+                    if not isinstance(owned_state, str):
+                        raise lifecycle.LifecycleError(
+                            "session_resume_unsupported",
+                            "Caller-owned services do not expose retained session storage",
+                        )
+                    if Path(owned_state).resolve() != Path(context.state_dir).resolve():
+                        raise lifecycle.LifecycleError(
+                            "session_incompatible",
+                            "Service session storage does not match the selected namespace",
+                        )
+                    self._temp_dir = tempfile.TemporaryDirectory(
+                        prefix="nemo-fabric-openclaw-client-"
+                    )
+                    config_path = Path(self._temp_dir.name) / "openclaw.json"
+                    config_path.write_text(
+                        json.dumps(
+                            {
+                                "gateway": {
+                                    "mode": "local",
+                                    "port": urlsplit(self._gateway_url).port,
+                                    "auth": {
+                                        "mode": "token",
+                                        "token": {
+                                            "source": "env",
+                                            "provider": "default",
+                                            "id": "OPENCLAW_GATEWAY_TOKEN",
+                                        },
+                                    },
+                                },
+                                "agents": {"entries": {self._agent_id: {}}},
+                            }
+                        )
+                    )
+                    config_path.chmod(0o600)
+                    self._command = _resolve_command(settings, base_dir)
+                    self._session_environment = (
+                        common_utils.virtualenv_subprocess_env()
+                        | context.environment.env
+                        | {
+                            "OPENCLAW_STATE_DIR": owned_state,
+                            "OPENCLAW_CONFIG_PATH": str(config_path),
+                            "OPENCLAW_CONFIG_READONLY": "1",
+                            "OPENCLAW_GATEWAY_TOKEN": connection["gateway_token"],
+                        }
+                    )
+                    self._native_session = await sessions.open_session(
+                        context, self._agent_id, self._session_call
+                    )
+                    self._client.headers["x-openclaw-session-key"] = (
+                        self._native_session.key
+                    )
+                    self._session_deadline = None
+                    return self._native_session.start_output()
+                return None
+            except BaseException:
+                await self.stop()
+                raise
         if service is not None and service.get("operation") == "attach":
+            if context.state_dir or context.session_ref is not None:
+                raise lifecycle.LifecycleError(
+                    "session_resume_unsupported",
+                    "Caller-owned services do not expose retained session storage",
+                )
             return await self._attach_service(config, context, settings, service)
+        if context.state_dir:
+            _dashboard_token_path(context, base_dir).unlink(missing_ok=True)
         child_env = common_utils.virtualenv_subprocess_env()
         child_env.update(context.environment.env)
         if model.api_key_env is not None and not child_env.get(model.api_key_env):
@@ -1270,6 +1356,7 @@ class OpenClawRuntime:
         )
         # One deadline covers every startup step, so start ends within it.
         startup_deadline = asyncio.get_running_loop().time() + startup_timeout
+        self._session_deadline = startup_deadline
 
         def startup_remaining() -> float:
             return max(startup_deadline - asyncio.get_running_loop().time(), 0.0)
@@ -1309,8 +1396,18 @@ class OpenClawRuntime:
         token_env = "OPENCLAW_GATEWAY_TOKEN"
 
         temp_dir = tempfile.TemporaryDirectory(prefix="nemo-fabric-openclaw-")
-        state_dir = Path(temp_dir.name) / "state"
-        state_dir.mkdir(mode=0o700)
+        state_dir = (
+            Path(context.state_dir)
+            if context.state_dir
+            else Path(temp_dir.name) / "state"
+        )
+        state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        state_dir.chmod(0o700)
+        if context.session_ref is not None and not context.state_dir:
+            temp_dir.cleanup()
+            raise lifecycle.LifecycleError(
+                "session_storage_required", "Durable sessions require retained storage"
+            )
         config_path = Path(temp_dir.name) / "openclaw.json"
         generated = _openclaw_config(
             config,
@@ -1358,6 +1455,18 @@ class OpenClawRuntime:
                 port=port,
                 prefix=await _parent_death_prefix(timeout=startup_remaining()),
             )
+            inherited_lock: tuple[int, ...] = ()
+            if os.name != "nt" and "FABRIC_STATE_LOCK_FD" in child_env:
+                try:
+                    descriptor = int(child_env["FABRIC_STATE_LOCK_FD"])
+                    if descriptor < 3:
+                        raise ValueError("invalid writer lock")
+                    os.fstat(descriptor)
+                    inherited_lock = (descriptor,)
+                except (ValueError, OSError) as error:
+                    raise lifecycle.LifecycleError(
+                        "session_lock_invalid", "Inherited state lock is unavailable"
+                    ) from error
             self._process = await asyncio.create_subprocess_exec(
                 *gateway_command,
                 stdin=asyncio.subprocess.DEVNULL,
@@ -1365,6 +1474,7 @@ class OpenClawRuntime:
                 stderr=asyncio.subprocess.PIPE,
                 env=child_env,
                 start_new_session=os.name != "nt",
+                **({"pass_fds": inherited_lock} if inherited_lock else {}),
             )
             if self._windows_job is not None:
                 try:
@@ -1445,6 +1555,7 @@ class OpenClawRuntime:
         self._token = token
         self._gateway_url = f"http://127.0.0.1:{port}"
         self._agent_id = _agent_id(settings)
+        self._session_environment = child_env
         if service is not None and service.get("operation") == "prepare":
             connection_path = Path(service["connection_path"])
             _write_service_connection(
@@ -1452,13 +1563,69 @@ class OpenClawRuntime:
                 gateway_url=self._gateway_url,
                 token=token,
                 agent_id=self._agent_id,
+                state_dir=str(state_dir) if context.state_dir else None,
             )
             return self._service_info(
                 self._gateway_url,
                 self._agent_id,
                 openclaw_version=version,
             )
+        try:
+            self._native_session = await sessions.open_session(
+                context, self._agent_id, self._session_call
+            )
+            if self._native_session:
+                self._client.headers["x-openclaw-session-key"] = (
+                    self._native_session.key
+                )
+                self._session_deadline = None
+                return self._native_session.start_output()
+        except BaseException:
+            await self.stop()
+            raise
         return None
+
+    async def _session_call(
+        self, method: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        if self._command is None:
+            raise lifecycle.LifecycleError(
+                "session_resume_unsupported", "Native session management is unavailable"
+            )
+        try:
+            timeout = (
+                min(
+                    15.0,
+                    max(
+                        self._session_deadline - asyncio.get_running_loop().time(), 0.0
+                    ),
+                )
+                if self._session_deadline is not None
+                else 15.0
+            )
+            output = await _command_output(
+                self._command,
+                "gateway",
+                "call",
+                method,
+                "--json",
+                "--params",
+                json.dumps(params),
+                "--timeout",
+                str(max(int(timeout * 1000), 1)),
+                env=self._session_environment,
+                timeout=timeout,
+            )
+            result = json.loads(output)
+            if not isinstance(result, dict):
+                raise ValueError("invalid native response")
+            return result
+        except (lifecycle.LifecycleError, ValueError) as error:
+            raise lifecycle.LifecycleError(
+                "session_incompatible",
+                "Native session operation could not be confirmed",
+                metadata={"method": method},
+            ) from error
 
     def _client_for(self, settings: dict[str, Any], token: str) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -1883,6 +2050,10 @@ class OpenClawRuntime:
         context: contract.RuntimeContext,
     ) -> contract.AgentRunResult:
         """Run one Gateway turn and report MCP availability with its result."""
+        if self._stopping:
+            raise lifecycle.LifecycleError(
+                "host_stopping", "OpenClaw runtime cleanup is pending"
+            )
         gateway_url = self._gateway_url
         if gateway_url is None and self._port is not None:
             gateway_url = f"http://127.0.0.1:{self._port}"
@@ -1899,6 +2070,19 @@ class OpenClawRuntime:
                 "openclaw_runtime_mismatch",
                 "OpenClaw invocation does not match the active runtime",
             )
+        if self._native_session and self._native_session.recovery_required:
+            if not request.acknowledge_recovery:
+                return contract.AgentRunResult(
+                    status=contract.AgentRunStatus.FAILED,
+                    output={},
+                    session_id=self._native_session.session_id,
+                    error=contract.AgentRunError(
+                        code="session_recovery_required",
+                        message="Inspect native and external state before explicitly continuing",
+                        retryable=False,
+                    ),
+                )
+            self._native_session.recovery_required = False
         messages: list[dict[str, str]] = []
         instruction = (
             self._config.instructions.system if self._config.instructions else None
@@ -1915,8 +2099,16 @@ class OpenClawRuntime:
         )
         model = _selected_model(self._config)
         deadline = lifecycle.invocation_deadline(context)
+        native_session = self._native_session
+        turn_started = False
+        turn_finished = False
         try:
             async with asyncio.timeout_at(deadline):
+                if native_session:
+                    await native_session.begin_turn(
+                        context, acknowledge_recovery=request.acknowledge_recovery
+                    )
+                    turn_started = True
                 text, usage = await self._invoke_monitored_gateway(
                     self._client,
                     f"{gateway_url}/v1/chat/completions",
@@ -1927,12 +2119,15 @@ class OpenClawRuntime:
                     user=context.runtime_id,
                     agent_id=self._agent_id,
                 )
+                if native_session:
+                    turn_finished = await native_session.finish_turn()
         except lifecycle.LifecycleError:
             raise
         except httpx.HTTPStatusError as error:
             return contract.AgentRunResult(
                 status=contract.AgentRunStatus.FAILED,
                 output=await self._mcp_output(context.runtime_id, deadline),
+                session_id=native_session.session_id if native_session else None,
                 error=contract.AgentRunError(
                     code="openclaw_http_error",
                     message=f"OpenClaw Gateway returned HTTP status {error.response.status_code}",
@@ -1950,6 +2145,7 @@ class OpenClawRuntime:
             return contract.AgentRunResult(
                 status=contract.AgentRunStatus.FAILED,
                 output={},
+                session_id=native_session.session_id if native_session else None,
                 error=contract.AgentRunError(
                     code="timeout",
                     message="OpenClaw invocation timed out",
@@ -1961,12 +2157,18 @@ class OpenClawRuntime:
                 "openclaw_invalid_response",
                 "OpenClaw Gateway returned an invalid response",
             ) from error
+        finally:
+            if native_session and turn_started and not turn_finished:
+                native_session.recovery_required = True
         return contract.AgentRunResult(
             status=contract.AgentRunStatus.SUCCEEDED,
             output={
                 "response": text,
                 **await self._mcp_output(context.runtime_id, deadline),
             },
+            session_id=self._native_session.session_id
+            if self._native_session
+            else None,
             usage=usage,
         )
 
@@ -2066,7 +2268,7 @@ class OpenClawRuntime:
             cancellation = cancellation or error
         except Exception:
             logger.error("OpenClaw could not close its HTTP client", exc_info=True)
-        process, self._process = self._process, None
+        process = self._process
         try:
             if process is not None and process.returncode is None:
                 if os.name == "nt":
@@ -2100,15 +2302,23 @@ class OpenClawRuntime:
                     await asyncio.wait_for(
                         process.wait(), timeout=min(self._shutdown_timeout, 1.0)
                     )
-                except TimeoutError:
+                except TimeoutError as error:
+                    if process.returncode is None:
+                        raise lifecycle.LifecycleError(
+                            "cleanup_unconfirmed",
+                            "OpenClaw Gateway cleanup could not be confirmed",
+                        ) from error
                     logger.warning(
                         "OpenClaw Gateway cleanup timed out; descendants may "
                         "retain captured pipes"
                     )
                 except asyncio.CancelledError as error:
                     cancellation = cancellation or error
-        except Exception:
-            logger.error("OpenClaw Gateway process cleanup failed", exc_info=True)
+        except Exception as error:
+            raise lifecycle.LifecycleError(
+                "cleanup_unconfirmed", "OpenClaw Gateway cleanup could not be confirmed"
+            ) from error
+        self._process = None
         windows_job, self._windows_job = self._windows_job, None
         try:
             if windows_job is not None:
@@ -2137,6 +2347,9 @@ class OpenClawRuntime:
                 "OpenClaw could not remove its temporary Gateway configuration",
                 exc_info=True,
             )
+        self._native_session = None
+        self._session_environment = {}
+        self._session_deadline = None
         self._config = None
         self._context = None
         self._command = None

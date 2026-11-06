@@ -55,7 +55,7 @@ Before migration, copy every legacy session directory while the Gateway is stopp
 
 Run `openclaw doctor --fix` with the 2026.9.34 executable and the same path settings. The command imports legacy `sessions.json` files and JSONL session data into each agent's SQLite database. Restart the Gateway after the command succeeds. Keep the verified backup for rollback.
 
-Managed runtimes and NeMo Fabric-owned services use temporary state directories, so each new Gateway starts with fresh state.
+Managed runtimes and NeMo Fabric-owned services use temporary state by default. Set `runtime.keep_state=true` to retain the native Gateway home across restarts.
 
 ## Configuration
 
@@ -70,8 +70,7 @@ The adapter maps these fields into a generated `openclaw.json` before starting
 the Gateway. A non-empty `tools.enabled` list maps to `tools.allow`, an empty
 list maps to a wildcard `tools.deny` policy, and `tools.blocked` maps to
 `tools.deny`. It uses a generated one-time token, loopback binding, and an
-isolated temporary OpenClaw state directory. The Gateway is stopped and its
-temporary configuration is removed when the NeMo Fabric runtime stops.
+isolated OpenClaw state directory. Managed-runtime shutdown stops the Gateway and removes its temporary configuration. Retained native state remains available when `runtime.keep_state=true`.
 
 OpenClaw connects MCP servers per session when a run starts. A server that
 cannot be reached is skipped and the run continues with the tools of the
@@ -147,6 +146,40 @@ After readiness, private `interfaces/gateway.json` discovery references `dashboa
 Refer to the [four-path architecture](../../../docs/integrations/harness/openclaw/openclaw.mdx) and [repeatable examples](../../../examples/interfaces/openclaw/README.md). Relay telemetry, ATIF/ATOF export, and native OpenTelemetry are not supported.
 
 With native browser or terminal access enabled, runtime activity is `unknown`; healthy endpoints can still pass normalized checks. SDK invocation state alone cannot account for native work.
+
+## Cold Resume
+
+Set `runtime.keep_state=true` and configure `runtime.artifacts` to retain the native OpenClaw home. Save `runtime.session_ref` and pass that reference to select the same conversation after stopping the runtime:
+
+```python
+from nemo_fabric import Fabric
+
+fabric = Fabric()
+async with await fabric.start_runtime(config, base_dir=base_dir) as runtime:
+    reference = runtime.session_ref
+    await runtime.invoke(input="Remember the deployment checklist.")
+
+async with await fabric.start_runtime(
+    config, base_dir=base_dir, session_ref=reference
+) as resumed:
+    if resumed.recovery_warnings:
+        # Inspect native and external state before acknowledging recovery.
+        result = await resumed.invoke(
+            input="Continue after inspection.", acknowledge_recovery=True
+        )
+    else:
+        result = await resumed.invoke(input="Continue the checklist.")
+```
+
+Omitting `session_ref` creates a fresh conversation, even when storage contains earlier conversations. The saved reference contains the native session UUID and adapter identity. Each replacement receives a new NeMo Fabric runtime ID. The Gateway loads conversation history through supported native session methods. NeMo Fabric sends only the new turn and never replays prior prompts or tool calls.
+
+The retained home preserves native conversations, indexes, installed skills, caches, credentials, and channel state that OpenClaw stores there. Workspace memory files such as `MEMORY.md` and `memory/` remain in the configured workspace. Retain that workspace and any external native directories when replacing a sandbox. Generated configuration and Gateway authentication are recreated for each managed start. Protect and mount the complete retained storage root when replacing a sandbox. The reference must resolve within that storage. Missing sessions, changed native identity, and active native work fail startup. A native conversation reset can invalidate an older reference.
+
+An interrupted turn can have unknown external effects. When native history cannot confirm completion, startup returns `recovery_warnings` and invocation requires `acknowledge_recovery=True` after inspection. Earlier work is never automatically retried.
+
+A prepared service keeps the Gateway and retained-state lock until release. Stopping a connected runtime closes that runtime's client. The service continues serving native chat channels. A retained namespace allows one connected runtime at a time. Failed Gateway cleanup retains ownership and can be retried before a replacement starts. Caller-owned attached services reject retained sessions because the current service reference cannot verify a native storage boundary.
+
+With retention enabled, the dashboard token lives at `<state_dir>/interfaces/dashboard.token`, where `state_dir` is the retained home supplied by NeMo Fabric. Each managed start rotates the token and removes stale token material, including when the dashboard is disabled. The token is private and removed on stop. To remove retained data, stop all runtimes, release any owned service, then remove the selected retained home and its NeMo Fabric session metadata from the artifact storage.
 
 ## Gateway Health
 
@@ -262,14 +295,10 @@ shows a sanitized service handle:
 }
 ```
 
-You can start multiple runtimes with the same service. Each runtime uses its
-own `runtime_id` as the OpenClaw Chat Completions `user`, so turns remain in a
-runtime-specific session. Stop all connected runtimes before releasing the
+You can start multiple runtimes with the same service. Ephemeral runtimes use their `runtime_id` as the Chat Completions `user`. Retained runtimes select a native conversation through an explicit session key. Stop all connected runtimes before releasing the
 service. NeMo Fabric rejects release while a connected runtime is active.
 
-Service handles use a process-local registry. Reconstructing a service after
-the NeMo Fabric process exits is not supported yet; cold resume will define that
-behavior separately.
+Service handles use a process-local registry. After the service is released, retained conversations can be opened by a new managed runtime or prepared service using the same storage and saved `SessionRef`. Service handles cannot be reconstructed after the NeMo Fabric process exits.
 
 ## Attach to a Caller-Owned Gateway
 

@@ -177,7 +177,7 @@ For Hermes, embedded SDK execution is enabled and eager by default. Set `harness
 
 For Deep Agents, mini-SWE-agent, and the LangGraph custom-agent example, pass the same UUID string through `RunRequest.relay_session_root` on each conversation turn to group Relay trajectories under one session. Core forwards the typed field as `AgentRunRequest.relay_session_root`; context keys do not control Relay propagation. An unusable UUID preserves per-request behavior. The remaining adapters do not consume this field.
 
-For Hermes cold resume, configure `runtime.keep_state` and retain the complete
+For Hermes and OpenClaw cold resume, configure `runtime.keep_state` and retain the complete
 artifact state tree. Persist `Runtime.session_ref.to_mapping()` in caller-owned
 storage and pass `session_ref=SessionRef.from_mapping(saved_reference)`
 to `Fabric.start_runtime()`, `start_runtime_in()`, or `run()`. A new runtime ID
@@ -189,7 +189,11 @@ missing or incompatible session errors explicitly. Inspect
 `RunRequest(..., acknowledge_recovery=True)` only after inspecting native and
 external state. Do not replay an interrupted request automatically. Keep
 ownership and retry cleanup when stop is unconfirmed. Native Hermes API and
-dashboard behavior remains owned by Hermes.
+dashboard behavior remains owned by Hermes. OpenClaw supports retained managed
+runtimes and NeMo Fabric-owned services. A retained service keeps the Gateway
+and storage lock across connected-runtime stops. Caller-owned OpenClaw services
+reject retained sessions because their references cannot verify a native storage
+boundary. See the [OpenClaw guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/openclaw.mdx).
 
 Hermes `SessionRef` resume requires the SDK backend to be enabled. Native-only Hermes runtimes can retain state and report `RunPlan.capabilities.session_resume: false`. Explicit SDK session selection then fails with `session_resume_unsupported` before native startup.
 
