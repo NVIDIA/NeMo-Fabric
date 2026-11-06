@@ -19,6 +19,8 @@ from typing import Any
 from typing import Literal
 from typing import NoReturn
 from typing import cast
+from urllib.parse import parse_qsl
+from urllib.parse import urlsplit
 
 from pydantic import ConfigDict
 from pydantic import Field
@@ -83,6 +85,8 @@ try:
     from harbor.agents.options import AgentOptions
     from harbor.environments.base import BaseEnvironment
     from harbor.models.agent.context import AgentContext
+    from harbor.models.trial.result import AgentInfo
+    from harbor.models.trial.result import ModelInfo
     from harbor.utils.env import get_required_host_vars
     from harbor.utils.env import is_sensitive_env_key
     from harbor.utils.env import resolve_env_vars
@@ -157,6 +161,10 @@ else:
         )
         fabric_harness_settings: dict[str, Any] | None = Field(
             default=None, description="Selected adapter settings."
+        )
+        fabric_model_config: dict[str, Any] | ModelConfig | None = Field(
+            default=None,
+            description="Complete public Fabric ModelConfig, including descriptor-declared extensions; duplicate model options must agree.",
         )
         fabric_model_provider: str | None = Field(
             default=None,
@@ -235,6 +243,16 @@ else:
             if not value.strip():
                 raise ValueError("fabric_adapter_id must not be empty")
             return value
+
+        @field_validator("fabric_model_config", mode="before")
+        @classmethod
+        def normalize_model_config(cls, value: Any) -> Any:
+            """Keep the public model object and JSON inputs on the same wire path."""
+            return (
+                _model_config_mapping(value)
+                if isinstance(value, ModelConfig)
+                else value
+            )
 
         @field_validator("fabric_model_provider")
         @classmethod
@@ -352,6 +370,7 @@ else:
                 raise ValueError(
                     "fabric_package and fabric_install_command are mutually exclusive"
                 )
+            _inspect_configured_model(self)
             return self
 
     class FabricAgent(BaseAgent):
@@ -393,6 +412,7 @@ else:
             extra_env: dict[str, str] | None = None,
             *args: Any,
             fabric_model_api_key_env: str | None = None,
+            fabric_model_config: dict[str, Any] | ModelConfig | None = None,
             fabric_model_provider: str | None = None,
             fabric_model_settings: dict[str, Any] | None = None,
             fabric_discovery_paths: list[str] | None = None,
@@ -417,6 +437,7 @@ else:
                 fabric_target_descriptor=fabric_target_descriptor,
                 fabric_workspace=fabric_workspace,
                 fabric_harness_settings=fabric_harness_settings,
+                fabric_model_config=fabric_model_config,
                 fabric_model_provider=fabric_model_provider,
                 fabric_model_settings=fabric_model_settings,
                 fabric_model_base_url=fabric_model_base_url,
@@ -453,6 +474,7 @@ else:
             self.fabric_target_descriptor = options.fabric_target_descriptor
             self.fabric_workspace = options.fabric_workspace
             self.fabric_harness_settings = dict(options.fabric_harness_settings or {})
+            self.fabric_model_config = options.fabric_model_config
             self.fabric_model_provider = options.fabric_model_provider
             self.fabric_model_settings = options.fabric_model_settings
             self.fabric_model_base_url = options.fabric_model_base_url
@@ -562,6 +584,14 @@ else:
                     if field in AgentCapabilities.model_fields
                 }
             )
+
+        def to_agent_info(self) -> AgentInfo:
+            """Report the complete model's explicit identity through Harbor metadata."""
+            info = super().to_agent_info()
+            if self.fabric_model_config is not None:
+                model = _configured_model(self.fabric_model_config)
+                info.model_info = ModelInfo(name=model.model, provider=model.provider)
+            return info
 
         @staticmethod
         def name() -> str:
@@ -726,6 +756,7 @@ else:
                 adapter_id=self.fabric_adapter_id,
                 workspace=self.fabric_workspace,
                 harness_settings=self.fabric_harness_settings,
+                model_config=self.fabric_model_config,
                 model_provider_name=self.fabric_model_provider,
                 model_settings=self.fabric_model_settings,
                 workflow_target_id=self.fabric_workflow_target_id,
@@ -833,11 +864,128 @@ else:
             return env
 
 
+def _model_config_mapping(value: ModelConfig) -> dict[str, Any]:
+    """Preserve descriptor-owned extensions, including explicit empty values."""
+    return value.to_mapping() | value.model_dump(
+        mode="json", include=set(value.extra_fields)
+    )
+
+
+def _configured_model(
+    value: Mapping[str, Any] | ModelConfig,
+    *,
+    model_name: str | None = None,
+    model_provider_name: str | None = None,
+    model_settings: dict[str, Any] | None = None,
+    model_base_url: str | None = None,
+    model_api_key_env: str | None = None,
+) -> ModelConfig:
+    """Use the public model type; duplicate options must agree."""
+
+    def reject_credentials(item: Any, *, root: bool = False) -> None:
+        if isinstance(item, Mapping):
+            for key, entry in item.items():
+                if not (root and key == "api_key_env") and is_sensitive_env_key(
+                    str(key)
+                ):
+                    raise ValueError(
+                        "fabric_model_config requires credential references, not inline credentials"
+                    )
+                reject_credentials(entry)
+        elif isinstance(item, (list, tuple)):
+            for entry in item:
+                reject_credentials(entry)
+
+    document = (
+        _model_config_mapping(value) if isinstance(value, ModelConfig) else dict(value)
+    )
+    try:
+        json.dumps(document, allow_nan=False)
+        reject_credentials(document, root=True)
+        model = ModelConfig.model_validate(document)
+        if model.base_url is not None:
+            endpoint = urlsplit(model.base_url)
+            if (
+                endpoint.username is not None
+                or endpoint.password is not None
+                or any(
+                    is_sensitive_env_key(key) for key, _ in parse_qsl(endpoint.query)
+                )
+            ):
+                raise ValueError("Inline endpoint credentials are not supported")
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        raise ValueError(
+            "fabric_model_config must satisfy Fabric ModelConfig with JSON values"
+        ) from None
+    if model.api_key_env is not None:
+        FabricRunPayload.validate_env_names((model.api_key_env,))
+        if not is_sensitive_env_key(model.api_key_env):
+            raise ValueError(
+                "fabric_model_config.api_key_env must use a credential variable such as MODEL_API_KEY"
+            )
+    for field, alias in (
+        ("model", model_name),
+        ("provider", model_provider_name),
+        ("settings", model_settings),
+        ("base_url", model_base_url),
+        ("api_key_env", model_api_key_env),
+    ):
+        if alias is not None and alias != getattr(model, field):
+            raise ValueError(
+                f"fabric_model_config.{field} conflicts with the existing model option"
+            )
+    return model
+
+
+def _inspect_configured_model(options: FabricAgentOptions) -> None:
+    """Validate the complete model at Harbor preflight using Fabric metadata."""
+    if options.fabric_model_config is None:
+        return
+    model = _configured_model(
+        options.fabric_model_config,
+        model_provider_name=options.fabric_model_provider,
+        model_settings=options.fabric_model_settings,
+        model_base_url=options.fabric_model_base_url,
+        model_api_key_env=options.fabric_model_api_key_env,
+    )
+    try:
+        if options.fabric_adapter_descriptor is not None:
+            descriptor = json.loads(
+                options.fabric_adapter_descriptor.read_text(encoding="utf-8")
+            )
+        else:
+            from nemo_fabric_adapter_catalog import get_adapter_descriptor
+
+            descriptor = get_adapter_descriptor(options.fabric_adapter_id)
+    except (ImportError, KeyError, OSError, UnicodeError, ValueError):
+        raise ValueError(
+            "fabric_model_config requires a readable host adapter descriptor"
+        ) from None
+    try:
+        inspect_adapter(
+            FabricConfig(
+                metadata=MetadataConfig(name="harbor-model-preflight"),
+                harness=HarnessConfig(
+                    adapter_id=options.fabric_adapter_id,
+                    resolution="preinstalled",
+                    settings=dict(options.fabric_harness_settings or {}),
+                ),
+                models={"default": model},
+            ),
+            descriptor,
+        )
+    except (ValueError, FabricConfigError):
+        raise ValueError(
+            "fabric_model_config is invalid for the selected adapter descriptor"
+        ) from None
+
+
 def build_harbor_config(
     *,
     adapter_id: str,
     workspace: str,
     harness_settings: dict[str, Any] | None = None,
+    model_config: Mapping[str, Any] | ModelConfig | None = None,
     model_provider_name: str | None = None,
     model_settings: dict[str, Any] | None = None,
     workflow_target_id: str | None = None,
@@ -932,7 +1080,16 @@ def build_harbor_config(
             else None
         ),
     )
-    if model_name:
+    if model_config is not None:
+        config.models["default"] = _configured_model(
+            model_config,
+            model_name=model_name,
+            model_provider_name=model_provider_name,
+            model_settings=model_settings,
+            model_base_url=model_base_url,
+            model_api_key_env=model_api_key_env,
+        )
+    elif model_name:
         config.models["default"] = ModelConfig(
             provider=model_provider_name
             if model_provider_name is not None
