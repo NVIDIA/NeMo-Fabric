@@ -20,6 +20,7 @@ from nemo_fabric_adapters.openclaw import adapter
 
 @pytest.fixture(name="openclaw_package")
 def openclaw_package_fixture() -> Path:
+    """Require a supported native package when the dedicated CI step enables it."""
     configured = os.environ.get("OPENCLAW_TEST_PACKAGE")
     if configured is None:
         pytest.skip("OPENCLAW_TEST_PACKAGE must name the installed native package")
@@ -37,6 +38,7 @@ def test_configured_skill_is_loaded_by_native_openclaw(
     alternate_skill: Path,
     skill: str | None,
 ):
+    """Check native selection, source path, and content hash for supplied skills."""
     sources = {"default": default_skill, "alternate": alternate_skill}
     workspace = tmp_path / "workspace"
     workspace.mkdir()
