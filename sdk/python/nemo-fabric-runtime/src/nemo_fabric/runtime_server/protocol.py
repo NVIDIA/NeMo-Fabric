@@ -4,6 +4,7 @@
 """Versioned local requests and safe command responses."""
 
 import json
+import re
 import sys
 from typing import Any
 
@@ -18,6 +19,9 @@ READ_SECONDS = 10.0
 SHUTDOWN_SECONDS = 4.0
 SOCKET_PATH = "/sandbox/fabric.sock"
 OPERATIONS = ("start", "invoke", "stop", "serve", "check")
+# A cause is an SDK or adapter error code, never its message or other values.
+CAUSE = re.compile(r"[a-z][a-z0-9_]{0,63}")
+CAUSE_SUFFIX = re.compile(rf" Cause: ({CAUSE.pattern})\.\Z")
 CONFIG_OPERATIONS = ("start",)
 LIFECYCLE_OPERATIONS = ("start", "stop")
 
@@ -70,11 +74,15 @@ class ProtocolError(ValueError):
         stage: str = "request",
         *,
         unsupported: bool = False,
+        cause: str | None = None,
     ):
         self.code = code
         self.stage = stage
         self.unsupported = unsupported
-        super().__init__(MESSAGES[code])
+        message = MESSAGES[code]
+        if isinstance(cause, str) and CAUSE.fullmatch(cause):
+            message = f"{message} Cause: {cause}."
+        super().__init__(message)
 
 
 def envelope(
@@ -264,7 +272,15 @@ def validate_response(response: dict[str, Any], operation: str) -> None:
             or error["effects"] not in ("none", "applied", "unknown")
         ):
             raise invalid
-        error["message"] = MESSAGES[error["code"]]
+        # Replace server text with the fixed message, keeping only its cause code.
+        cause = (
+            CAUSE_SUFFIX.search(error["message"])
+            if isinstance(error["message"], str)
+            else None
+        )
+        error["message"] = str(
+            ProtocolError(error["code"], cause=cause[1] if cause else None)
+        )
         if operation != "check":
             return
     result = response["result"]

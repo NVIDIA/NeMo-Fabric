@@ -1,98 +1,92 @@
 ---
 title: "Use the Hermes Agent Adapter"
-description: "Install and configure the NeMo Fabric harness integration for Hermes Agent."
+description: "Configure Hermes Agent, understand its invocation paths, and serve native interfaces with NeMo Fabric."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-The NVIDIA NeMo Fabric `nvidia.fabric.hermes` adapter runs Hermes Agent through
-its Python SDK. The adapter maps normalized NeMo Fabric configuration into
-Hermes Agent models, tools, skills, Model Context Protocol (MCP) servers,
-sessions, and Relay telemetry.
+The NVIDIA NeMo Fabric `nvidia.fabric.hermes` adapter runs Hermes Agent through its Python SDK. It maps normalized configuration into an embedded agent, reuses its conversation across ordered invocations, and returns normalized results and telemetry references.
+
+For native API and browser access, invocation-path diagrams, and shared configuration behavior, see [Hermes native interfaces](./hermes-interfaces.mdx).
 
 ## Install the Adapter
 
-The adapter package supports Python 3.11 through 3.14. Use [Hermes Agent v0.22.5](https://github.com/NousResearch/hermes-agent/releases/tag/v0.22.5) with Python 3.14. This release includes dependency security fixes absent from v2026.9.24 and supports Relay telemetry and streaming. Hermes Agent 0.20 and later is not installable from PyPI. Follow the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation) and select v0.22.5.
+Use [Hermes Agent v0.22.5](https://github.com/NousResearch/hermes-agent/releases/tag/v0.22.5) with Python 3.14. The adapter package supports Python 3.11 through 3.14, but Hermes Agent must be installed separately from source; versions 0.20 and later are not available from PyPI. Follow the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation) and select v0.22.5.
 
-Install the NeMo Fabric runtime and bare Hermes adapter into the Python
-environment that runs Hermes Agent:
-
-```bash
-pip install "nemo-fabric[hermes-agent]"
-```
-
-These packages do not install Hermes Agent. If a different environment runs
-NeMo Fabric, install only the bare adapter in the Hermes Agent environment:
+Install the runtime and adapter in the environment that runs Hermes:
 
 ```bash
-python -m pip install nemo-fabric-adapters-hermes
+python -m pip install "nemo-fabric[hermes-agent]"
 ```
 
-The adapter's `relay` and `full` extras install `nemo-relay>=0.10,<0.11`. Install Hermes Agent separately in the same environment. Keep that environment separate from applications that use Relay 0.11 for other NeMo Fabric adapters. The adapter reports a compatibility error at startup if Relay telemetry is enabled with an unsupported Hermes or Relay installation.
+If the application runs NeMo Fabric in a separate environment, install `nemo-fabric-adapters-hermes` in the Hermes environment and set `ADAPTER_PYTHON` in the application's environment to that interpreter. Use matching runtime and adapter release versions unless a different pairing has been validated.
 
-For local NeMo Fabric development, run the following command from the repository root. The recipe checks out Hermes Agent v0.22.5 at commit `bf0203a794a07aac3ff764972ab9087baa4e4f4e` and creates an isolated Python 3.14 environment with the adapter's `relay` extra. Hermes declares its Python package version as `0.0.0`; use the Git tag and commit to identify the release when reviewing scanner results.
+For Relay, install the adapter's `relay` extra in the Hermes environment. It requires `nemo-relay>=0.10,<0.11`; keep this environment separate from applications using Relay 0.11 for other adapters. Startup rejects unsupported Hermes/Relay combinations.
+
+For repository development, the following recipe checks out v0.22.5 at `bf0203a794a07aac3ff764972ab9087baa4e4f4e` and prepares an isolated Python 3.14 environment with Relay support:
 
 ```bash
 just install-hermes-agent
 export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
 ```
 
-For separate environments, set `ADAPTER_PYTHON` in the runtime environment to
-the adapter environment's Python interpreter. Use
-matching NeMo Fabric release versions for the runtime and adapter package
-unless a different pairing has been explicitly validated.
+The installer preserves local checkout changes and stops rather than overwriting them. Set `HERMES_AGENT_CHECKOUT` to a separate clean checkout or a new directory to install without changing `external/hermes-agent`; the target environment remains `.venv-hermes`.
+
+Hermes reports its Python package version as `0.0.0`, so use its Git tag and commit to identify the installed release. The pinned release includes dependency security fixes absent from v2026.9.24.
 
 ## Configure the Adapter
 
-Select the Hermes Agent harness integration in `HarnessConfig`:
+Use normalized `FabricConfig` fields for the model, instructions, tools, skills, MCP servers, workspace, turn limit, and telemetry. Use `harness.settings` for Hermes-specific options and native interface selection.
+
+The following example configures an embedded SDK agent with file tools:
 
 ```python
-from nemo_fabric import HarnessConfig
+from nemo_fabric import FabricConfig
 
-harness = HarnessConfig(adapter_id="nvidia.fabric.hermes")
-```
-
-Use normalized `FabricConfig` fields to configure the model, workspace, skills,
-MCP servers, replacement system instructions, turn limit, and native tool
-selectors, and telemetry. The adapter rejects `append` system instructions.
-
-During run-plan resolution, NeMo Fabric Core validates the
-`models.<role>.top_p` (from 0 through 1) and positive
-`models.<role>.max_tokens` fields against the Hermes descriptor before
-runtime startup. Hermes reads these prevalidated values from `AgentConfig`. A
-model-level `max_tokens` overrides the harness-level default for the selected
-model role.
-
-The Hermes descriptor validates the following `harness.settings` fields:
-
-| Setting | Type | Default | Description |
-| --- | --- | --- | --- |
-| `reasoning_config` | object | `{"effort": "none"}` | Configures Hermes model reasoning. The closed object accepts an optional `enabled` boolean and an optional `effort` value of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
-| `plugins_enabled` | array of nonempty strings | `[]` | Enables Hermes plugins by identifier. Relay telemetry uses the generated `plugins.toml`; do not list the removed `observability/nemo_relay` plugin. |
-| `save_trajectories` | boolean | `false` | Enables Hermes-native JSONL conversation trajectory saving. This is separate from normalized NeMo Fabric telemetry. |
-| `max_tokens` | positive integer | `512` | Limits the number of tokens in each Hermes model response. |
-| `terminal_timeout` | positive number | `60` | Limits a Hermes terminal operation in seconds. |
-
-For example:
-
-```python
-from nemo_fabric import HarnessConfig
-
-harness = HarnessConfig(
-    adapter_id="nvidia.fabric.hermes",
-    settings={
-        "reasoning_config": {"enabled": True, "effort": "medium"},
-        "plugins_enabled": ["disk-cleanup"],
-        "save_trajectories": True,
-        "max_tokens": 1024,
-        "terminal_timeout": 90,
-    },
+config = FabricConfig.from_mapping(
+    {
+        "metadata": {"name": "hermes-agent"},
+        "harness": {
+            "adapter_id": "nvidia.fabric.hermes",
+        },
+        "models": {
+            "default": {
+                "provider": "openai",
+                "model": "your-model",
+                "base_url": "https://MODEL_HOST/v1",
+                "api_key_env": "MODEL_API_KEY",
+                "temperature": 0.0,
+                "top_p": 0.9,
+                "max_tokens": 1024,
+            }
+        },
+        "instructions": {
+            "system": {"mode": "replace", "content": "Help with files in the workspace."}
+        },
+        "tools": {"enabled": ["file"], "blocked": ["terminal"]},
+        "runtime": {"max_turns": 8},
+        "environment": {"provider": "local", "workspace": "."},
+    }
 )
 ```
 
-Use `runtime.max_turns` to set the Hermes agent-loop budget. The adapter maps
-that normalized field to `AIAgent.max_iterations`; `max_iterations` is not a
-Hermes harness setting.
+Replace the endpoint and model, and provide `MODEL_API_KEY` in the adapter environment before starting. To add native API or browser access, follow the [Hermes native interfaces guide](./hermes-interfaces.mdx).
+
+The adapter supports `instructions.system.mode: replace` and rejects `append`. Tool selectors are Hermes toolset names. `models.<role>.top_p` must be between 0 and 1, and `max_tokens` must be positive. A model-level token limit takes precedence over `harness.settings.max_tokens`. If both are omitted, the adapter passes `None` to preserve Hermes' native response token limit behavior for embedded and native interface agents. Use `runtime.max_turns`, not a `max_iterations` harness setting, to control the agent loop.
+
+### Hermes Settings
+
+The descriptor uses closed schemas, so unknown settings are rejected.
+
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| `reasoning_config` | `{"effort": "none"}` | Optional `enabled` boolean and `effort`: `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
+| `plugins_enabled` | `[]` | List of nonempty native plugin identifiers. Relay uses its generated plugin configuration; do not list the removed `observability/nemo_relay` plugin. |
+| `save_trajectories` | `false` | Save native JSONL trajectories; separate from normalized telemetry. |
+| `max_tokens` | Hermes native (`None`) | Positive response-token limit when the selected model has no limit. |
+| `terminal_timeout` | `60` | Positive timeout in seconds for a Hermes terminal tool operation; this does not enable a TUI. |
+
+Native interface settings are documented in the [Hermes native interfaces guide](./hermes-interfaces.mdx#enable-native-interfaces).
 
 By default, the Hermes home is
 `<artifact root>/.fabric/hermes/runtimes/<runtime_id>`, so runtimes don't share
@@ -105,72 +99,12 @@ API token that an earlier runtime left in the Hermes home.
 
 ## Understand the Runtime Lifecycle
 
-Each NeMo Fabric runtime creates one Hermes Agent `AIAgent` and one `SessionDB`.
-Ordered invocations reuse those objects and the conversation history until the
-runtime stops. The adapter finalizes and flushes Relay subscriber output after
-each invocation so ATOF and ATIF artifacts are complete when it returns.
+Each runtime creates one embedded Hermes `AIAgent` and one `SessionDB`. Ordered SDK invocations reuse these objects and their conversation history until stop closes them. The Hermes home is stored under `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`, or in the agent's state folder with `runtime.keep_state`; retaining files does not by itself establish cross-runtime conversation resume.
 
-With a live Relay runtime, Hermes emits `compaction` when a tracked compaction
-rewrites history or provider state. It emits `compaction.attempt` when the
-attempt is blocked, skipped, fails, or aborts without a rewrite.
-
-For the complete configuration and lifecycle reference, refer to the
-[Hermes Agent adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/hermes).
-
-## Serve the API Server and Dashboard
-
-A runtime can serve Hermes's API server and dashboard as child processes
-alongside its embedded agent:
-
-```python
-from nemo_fabric import HarnessConfig
-
-harness = HarnessConfig(
-    adapter_id="nvidia.fabric.hermes",
-    settings={"interfaces": {"api": {"port": 8642}, "dashboard": {"port": 9119}}},
-)
-```
-
-- The adapter starts `python -m hermes_cli.main gateway run` for the API server
-  and `python -m hermes_cli.main dashboard --skip-build --isolated`, on the
-  adapter's interpreter and the runtime's Hermes home, each on `127.0.0.1` at
-  its port. Each must pass its health check, `GET /health` or
-  `GET /api/status`, within `startup_timeout_seconds` (60 by default, at most
-  75) of the runtime's start. `start` fails if a port is in use or a child exits first; a failed
-  start stops the children it started and leaves no token. Set `enabled` to
-  `false` to keep a configured interface off.
-- The children inherit the adapter host's environment without its
-  `API_SERVER_*` variables. The gateway also starts any other Hermes platform
-  that this environment configures, such as Telegram with `TELEGRAM_BOT_TOKEN`
-  or webhooks with `WEBHOOK_ENABLED`.
-- Once every enabled interface passes, the adapter writes the API server's
-  bearer token, generated at each start, to `interfaces/api.token` in the
-  Hermes home with mode `0600`. Send it as `Authorization: Bearer <token>`. Only the
-  gateway child receives it. Processes that run as the runtime's user,
-  including the agent's own tools, can read it.
-- The dashboard has no sign-in. On loopback, Hermes embeds its session token in
-  the page, so anyone who can reach the port can use the dashboard and its
-  browser chat, which runs the agent. The adapter turns off none of its pages.
-  Browser chat needs Hermes's built terminal UI bundle.
-- With interfaces enabled, the adapter writes an `openai` or `custom` model
-  that has a `base_url` to `config.yaml` as Hermes's `custom` provider, with
-  its key as a reference to `api_key_env`, so the API server and browser chat
-  use the configured endpoint and key.
-- `stop` removes the token, sends SIGTERM to each child's process group, and
-  SIGKILL to what remains after 5 seconds. The gateway drains in-flight API
-  runs and cron jobs for 3 seconds. After start, a child that exits doesn't fail
-  the runtime check, and NeMo Fabric doesn't restart it.
-- The embedded agent, the gateway, the dashboard and browser chat share the
-  Hermes home, and Hermes coordinates their writes. The dashboard's gateway
-  actions, such as restart, start Hermes processes outside the runtime.
-- The API server needs `aiohttp`, from Hermes's `messaging` extra. The dashboard
-  needs a built frontend at `HERMES_WEB_DIST` or Hermes's own
-  `hermes_cli/web_dist`; the adapter never builds it. Interfaces need a POSIX
-  host: on Windows, `start` fails with `hermes_interfaces_unsupported_platform`
-  before any child starts.
+SDK invocations return normalized NeMo Fabric `RunResult` objects. The adapter finalizes the Hermes Relay session and flushes subscribers before returning, so available ATOF/ATIF artifacts are complete at that invocation boundary. Native interface responses follow a different path, described in [What NeMo Fabric Normalizes](./hermes-interfaces.mdx#what-nemo-fabric-normalizes).
 
 ## Runtime Health
 
-`Fabric.check()` supports `live`, `active`, and `ready`. The adapter checks native agent and database ownership, the initialized invocation interface, and a fresh `get_activity_summary()` diagnostic response.
+`Fabric.check()` supports `live`, `active`, and `ready`. It checks the embedded agent's session/database ownership, invocation interface, and a fresh `get_activity_summary()` diagnostic response. These checks do not establish native interface-child health after startup.
 
-Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) and the [Hermes adapter reference](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/hermes) for additional details.

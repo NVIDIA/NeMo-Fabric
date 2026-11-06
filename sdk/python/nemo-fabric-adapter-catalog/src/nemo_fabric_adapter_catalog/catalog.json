@@ -894,7 +894,6 @@
               "type": "object"
             },
             "max_tokens": {
-              "default": 512,
               "description": "Maximum number of tokens in each Hermes model response.",
               "minimum": 1,
               "type": "integer"
@@ -974,7 +973,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.7.0"
       },
-      "sha256": "4f5a4c237d9f1da355b1288d90b4749ac48ba67d14e795eab4e079ff917acc6e",
+      "sha256": "855ca764a2be962faa8ec02bca736d328e4db9142003b365d2dfa69a8bbfbdc3",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {

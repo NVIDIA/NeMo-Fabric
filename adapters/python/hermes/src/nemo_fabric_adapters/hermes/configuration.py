@@ -25,6 +25,30 @@ PROVIDER_DEFAULT_API_KEY_ENV = {
     "openai": "OPENAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
 }
+DEFAULT_MAX_ITERATIONS = 90
+
+
+def agent_behavior_kwargs(
+    config: AgentConfig, enabled_toolsets: list[str] | None
+) -> dict[str, Any]:
+    """Map behavioral settings for embedded and native Hermes agent instances."""
+    model = _selected_model(config)
+    settings = _settings(config)
+    max_tokens = model.max_tokens
+    if max_tokens is None:
+        max_tokens = settings.get("max_tokens")
+    overrides = common_utils.without_none(
+        {"temperature": model.temperature, "top_p": model.top_p}
+    )
+    return {
+        "max_iterations": _max_turns(config) or DEFAULT_MAX_ITERATIONS,
+        "enabled_toolsets": enabled_toolsets,
+        "disabled_toolsets": disabled_toolsets(config) or None,
+        "save_trajectories": bool(settings.get("save_trajectories", False)),
+        "max_tokens": max_tokens,
+        "request_overrides": overrides or None,
+        "reasoning_config": settings.get("reasoning_config", {"effort": "none"}),
+    }
 
 
 def _validate_client_secret(

@@ -609,6 +609,74 @@ def discard_stderr(_: str) -> None:
     """Consume Claude Code stderr without exposing it through Fabric artifacts."""
 
 
+class _StartupDiagnostics:
+    """Project native stderr onto fixed safe reasons, never arbitrary text.
+
+    A denylist cannot reliably scrub credentials, prompts, or environment
+    dumps from unknown CLI output. Retain only recognized reason summaries.
+    Memory is bounded by the fixed reason catalog, independent of stream size.
+    """
+
+    _REASONS = (
+        (
+            re.compile(
+                r"--dangerously-skip-permissions cannot be used with root/sudo"
+                r" privileges",
+                re.IGNORECASE,
+            ),
+            "Claude Code rejects --dangerously-skip-permissions with root/sudo privileges.",
+        ),
+        (
+            re.compile(
+                r"invalid model|model[^\n]{0,160}(?:not found|does not exist|"
+                r"not available|not supported)|unsupported model",
+                re.IGNORECASE,
+            ),
+            "Claude rejected the configured model; verify the model ID and provider access.",
+        ),
+        (
+            re.compile(
+                r"(?:invalid|unsupported)[^\n]{0,80}(?:reasoning )?effort|"
+                r"(?:reasoning )?effort[^\n]{0,80}(?:invalid|not supported)",
+                re.IGNORECASE,
+            ),
+            "Claude rejected reasoning effort; verify reasoning_effort for the selected model.",
+        ),
+    )
+
+    def __init__(self) -> None:
+        self._active = True
+        self._received = False
+        self._reasons: set[int] = set()
+
+    def capture(self, line: str) -> None:
+        if not self._active or not line:
+            return
+        self._received = True
+        # The SDK supplies lines. Bound scanning work and temporary copies for
+        # oversized lines as well as retained state; never retain native text.
+        line = line[:8192]
+        for index, (pattern, _) in enumerate(self._REASONS):
+            if pattern.search(line):
+                self._reasons.add(index)
+
+    def metadata(self) -> dict[str, Any]:
+        if not self._received:
+            return {}
+        reasons = [self._REASONS[index][1] for index in sorted(self._reasons)]
+        return {
+            "startup_diagnostics": reasons
+            or [
+                "Claude emitted startup stderr; unrecognized text omitted to protect sensitive data."
+            ]
+        }
+
+    def close(self) -> None:
+        self._active = False
+        self._reasons.clear()
+        self._received = False
+
+
 def tool_policy_hooks(config: AgentConfig) -> dict[str, list[HookMatcher]] | None:
     """Enforce the normalized tool policy across built-in, MCP, and plugin tools."""
 
@@ -1196,6 +1264,7 @@ class ClaudeRuntime:
                 "claude_runtime_already_started",
                 "Claude runtime is already started",
             )
+        diagnostics = _StartupDiagnostics()
         try:
             agent_config = payload["config"]
             runtime_context = _runtime_context(payload)
@@ -1219,6 +1288,7 @@ class ClaudeRuntime:
             if isinstance(options.mcp_servers, Path):
                 self._mcp_config_path = options.mcp_servers
 
+            options.stderr = diagnostics.capture
             client = ClaudeSDKClient(options)
             await client.connect()
         except ClaudeAdapterError as error:
@@ -1226,10 +1296,14 @@ class ClaudeRuntime:
             raise _as_lifecycle_error(error) from error
         except ClaudeSDKError as error:
             self._cleanup_failed_start()
-            raise _sdk_lifecycle_error(error) from error
+            reported = _sdk_lifecycle_error(error)
+            reported.metadata.update(diagnostics.metadata())
+            raise reported from error
         except BaseException:
             self._cleanup_failed_start()
             raise
+        finally:
+            diagnostics.close()
 
         self._agent_config = agent_config
         self._fabric_runtime_id = fabric_runtime_id

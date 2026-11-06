@@ -34,9 +34,6 @@ from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import local_interfaces
-from nemo_fabric_adapters.common.local_interfaces import (
-    port_available as _port_available,
-)
 from nemo_fabric_adapters.common import openai_chat
 from nemo_fabric_adapters.common import utils as common_utils
 from nemo_fabric_adapters.openclaw import _windows_job
@@ -360,6 +357,19 @@ def _resolve_command(settings: dict[str, Any], base_dir: Path) -> Path:
             metadata={"field": "harness.settings.openclaw_command"},
         )
     return candidate.resolve()
+
+
+def _port_available(port: int) -> bool:
+    """Return whether one loopback TCP port is available."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("127.0.0.1", port))
+        return True
+    except (OSError, OverflowError):
+        return False
+    finally:
+        sock.close()
 
 
 def _select_port(settings: dict[str, Any]) -> int:
