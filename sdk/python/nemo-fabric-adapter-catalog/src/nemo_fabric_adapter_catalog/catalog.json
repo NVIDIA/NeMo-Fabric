@@ -2274,6 +2274,7 @@
             ]
           },
           "service": true,
+          "session_resume": true,
           "streaming": false,
           "updates": false
         },
@@ -2285,6 +2286,7 @@
             "models.top_p",
             "models.max_tokens",
             "instructions.system",
+            "runtime.keep_state",
             "tools.enabled",
             "tools.blocked",
             "mcp",
@@ -2511,7 +2513,7 @@
               "properties": {
                 "dashboard": {
                   "additionalProperties": false,
-                  "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token.",
+                  "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <state_dir>/interfaces/dashboard.token with runtime.keep_state, or <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token for ephemeral state.",
                   "properties": {
                     "enabled": {
                       "default": true,
@@ -2706,7 +2708,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.7.0"
       },
-      "sha256": "9c971306d6d20496ab3890fddad722afccb32c8a2fc224690267b673063f9181",
+      "sha256": "222f1c32dfe5e1ba8c59deca807a3a5f2f37913fd34f192be5cdc4524c198c50",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {
