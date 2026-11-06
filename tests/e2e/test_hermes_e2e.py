@@ -280,18 +280,18 @@ async def test_skill_selection(
     if skill == "alternate":
         config.add_skill_path(alternate_skill)
 
-    if skill is not None:
-        scenario_response = requests.post(
-            f"{api_server}/_scenario",
-            json={
-                "tool_call": {
-                    "name": "skill_view",
-                    "arguments": {"name": skill},
-                }
-            },
-            timeout=5,
-        )
-        scenario_response.raise_for_status()
+    tool_name = "skill_view" if skill is not None else "skills_list"
+    scenario_response = requests.post(
+        f"{api_server}/_scenario",
+        json={
+            "tool_call": {
+                "name": tool_name,
+                "arguments": {"name": skill} if skill is not None else {},
+            }
+        },
+        timeout=5,
+    )
+    scenario_response.raise_for_status()
 
     result = await Fabric().run(
         config,
@@ -306,15 +306,17 @@ async def test_skill_selection(
         for record in atof_records(result["output"])
         if record["kind"] == "scope"
         and record["category"] == "tool"
-        and record["name"] == "skill_view"
+        and record["name"] == tool_name
         and record["scope_category"] == "end"
     ]
+    assert len(skill_results) == 1, skill_results
+    loaded = skill_results[0]
+    assert loaded["success"] is True, loaded
     if skill is None:
-        assert skill_results == []
+        assert not {"default", "alternate"}.intersection(
+            entry["name"] for entry in loaded["skills"]
+        ), loaded
     else:
-        assert len(skill_results) == 1, skill_results
-        loaded = skill_results[0]
-        assert loaded["success"] is True, loaded
         skill_dir = {"default": default_skill, "alternate": alternate_skill}[skill]
         assert loaded["content"] == (skill_dir / "SKILL.md").read_text(), loaded
 
