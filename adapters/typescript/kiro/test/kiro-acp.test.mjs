@@ -34,6 +34,7 @@ for (const fixtureType of process.platform === "win32" ? ["executable"] : ["shel
       TEST_ACP_FIXTURE: fixture,
       TEST_PROMPT_DELAY_MS: "100",
       TEST_PROMPT_STARTED: join(bin, "prompt-started"),
+      TEST_PROCESS_MARKER: join(bin, "native-pid"),
     };
     const session = await new KiroAcpSessionFactory().create({
       agentName: "kiro-test",
@@ -108,6 +109,19 @@ for (const fixtureType of process.platform === "win32" ? ["executable"] : ["shel
           total_tokens: 5,
         });
       }
+      const pid = Number(await readFile(environment.TEST_PROCESS_MARKER, "utf8"));
+      process.kill(pid, "SIGKILL");
+      const exitDeadline = Date.now() + 2000;
+      let exited;
+      do {
+        exited = await session.check("live");
+        if (exited.outcome === "failed") break;
+        assert.ok(Date.now() < exitDeadline, "native process exit was not observed");
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      } while (true);
+      assert.equal(exited.reason_code, "agent_exited");
+      assert.equal(exited.activity, "stopped");
+      assert.ok(Number.isFinite(Date.parse(exited.observed_at)));
     } finally {
       await session.stop();
       assert.equal((await session.check("live")).reason_code, "session_closed");

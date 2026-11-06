@@ -115,7 +115,10 @@ settings, and unknown built-in tool IDs fail instead of being ignored.
 `Fabric.check()` supports `live`. The adapter sends a fresh native
 `DroidSession.listTools()` request. A successful SDK response establishes that
 the selected Droid subprocess responds; a retained SDK handle is insufficient.
-A failed request returns unknown health and does not close the session.
+A failed request returns unknown health unless the SDK reports `ProcessExitError`,
+which confirms that the owned subprocess exited and returns `failed/agent_exited`.
+Later checks preserve that terminal observation and its original `observed_at`.
+Checks do not close the session.
 
 `active` and `ready` are unsupported. The pinned SDK does not expose a qualified
 read-only probe for prompt acceptance or native readiness. A busy invocation

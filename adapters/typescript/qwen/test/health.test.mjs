@@ -112,7 +112,7 @@ test("later Qwen checks reject a delayed observation from an expired caller", as
   assert.equal(calls, 2);
 });
 
-test("Qwen validates native closure when the health request rejects", async () => {
+test("Qwen preserves native closure when the health request rejects", async () => {
   const delayed = Promise.withResolvers();
   let closed = false;
   const query = { isClosed: () => closed, getSessionId: () => "native", supportedCommands: () => delayed.promise };
@@ -121,8 +121,62 @@ test("Qwen validates native closure when the health request rejects", async () =
   closed = true;
   delayed.reject(new Error("PRIVATE native failure"));
   const result = await pending;
-  assert.equal(result.reason_code, "observation_changed");
-  assert.equal(result.observed_at, null);
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.reason_code, "session_closed");
+  assert.equal(result.activity, "stopped");
+  assert.ok(Number.isFinite(Date.parse(result.observed_at)));
   assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
   assert.equal((await session.check("ready")).reason_code, "session_closed");
+});
+
+test("Qwen preserves native closure when a pending health request resolves", async () => {
+  const reply = Promise.withResolvers();
+  let closed = false;
+  const query = { isClosed: () => closed, getSessionId: () => "native", supportedCommands: () => reply.promise };
+  const session = new QwenSdkSession(query, {}, "unused", {});
+  const checking = session.check("live");
+  closed = true;
+  reply.resolve({ commands: [] });
+  const result = await checking;
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.reason_code, "session_closed");
+  assert.equal(result.activity, "stopped");
+  assert.ok(Number.isFinite(Date.parse(result.observed_at)));
+});
+
+test("Qwen native replacement invalidates a previous session's closure", async () => {
+  const reply = Promise.withResolvers();
+  let closed = false;
+  let id = "native";
+  const query = { isClosed: () => closed, getSessionId: () => id, supportedCommands: () => reply.promise };
+  const session = new QwenSdkSession(query, {}, "unused", {});
+  const checking = session.check("live");
+  closed = true;
+  id = "replacement";
+  reply.reject(new Error("PRIVATE-OLD-SESSION"));
+  const result = await checking;
+  assert.equal(result.outcome, "unknown");
+  assert.equal(result.reason_code, "observation_changed");
+  assert.equal(result.observed_at, null);
+});
+
+test("runtime health preserves confirmed native exit evidence without invoking or stopping", async (t) => {
+  const evidence = {
+    outcome: "failed", reason_code: "agent_exited", activity: "stopped",
+    source: "fabric.adapter.liveness", observed_at: new Date().toISOString(),
+  };
+  let stops = 0;
+  const runtime = new QwenAdapterRuntime({
+    create: async () => ({
+      id: "native-session",
+      check: async () => evidence,
+      prompt: async () => { throw new Error("health must not invoke"); },
+      stop: async () => { stops += 1; },
+      close: async () => { stops += 1; },
+    }),
+  });
+  await runtime.start(input);
+  t.after(() => runtime.stop());
+  assert.deepEqual(await runtime.check("live"), evidence);
+  assert.equal(stops, 0);
 });
