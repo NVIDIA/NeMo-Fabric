@@ -84,7 +84,7 @@
             },
             "required": ["port"],
             "additionalProperties": false,
-            "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token."
+            "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <state_dir>/interfaces/dashboard.token with runtime.keep_state, or <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token for ephemeral state."
           }
         },
         "additionalProperties": false,
@@ -184,6 +184,7 @@
       "models.top_p",
       "models.max_tokens",
       "instructions.system",
+      "runtime.keep_state",
       "tools.enabled",
       "tools.blocked",
       "mcp",
@@ -192,6 +193,7 @@
     "system_instruction_modes": ["replace"]
   },
   "capabilities": {
+    "session_resume": true,
     "service": true,
     "metadata": {"service_health_checks": ["live", "active", "ready"], "health_checks": ["live", "active", "ready"]},
     "streaming": false,

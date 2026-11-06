@@ -871,8 +871,10 @@ Only one runtime can use the folder at a time: `start_runtime(...)` fails while
 another runtime of the agent runs. A service and one runtime connected to it
 share the folder; the service holds it until `release_service(...)`, even with
 no runtime connected. Planning fails without an artifact directory, or for an
-adapter that doesn't declare `runtime.keep_state`; Hermes Agent's adapter
-declares it.
+adapter that does not declare `runtime.keep_state`. Hermes Agent and OpenClaw
+adapters declare retention and explicit session resume. See the
+[OpenClaw cold resume guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/python/openclaw/README.md#cold-resume)
+for native Gateway and service behavior.
 
 ### Resume a Hermes Conversation
 

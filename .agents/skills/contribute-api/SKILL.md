@@ -25,7 +25,7 @@ runtime or bindings.
 - Keep every affected public surface in parity
 - `RunRequest.relay_session_root` is forwarded as the typed `AgentRunRequest.relay_session_root` field. Keep Rust, Python, TypeScript, and schema representations in parity. Context keys do not control Relay propagation; preserve the adapter fallback for unusable UUIDs.
 - OpenShell task commands serialize public SDK config/request/handle/result mappings. Keep forwarding buffered and preserve task-generated IDs, normalized failed results, telemetry references, and declared artifacts. Do not normalize an SDK result as an adapter result. Task paths remain POSIX strings; host artifact destinations stay separate. Unknown outcomes bind the immutable sandbox identity through reattachment and must not be replayed.
-- Hermes cold resume takes an optional `session_ref` directly at runtime start. Omission starts a fresh conversation. `runtime.keep_state` controls retention. Keep SDK, managed commands, and adapter contexts aligned.
+- Hermes and OpenClaw cold resume take an optional `session_ref` directly at runtime start. Omission starts a fresh conversation. `runtime.keep_state` controls retention. Keep SDK, managed commands, and adapter contexts aligned.
 - Update docs and examples in the same branch
 
 ## Minimum Acceptance

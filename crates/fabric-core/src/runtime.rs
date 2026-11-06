@@ -1723,6 +1723,8 @@ fn service_binding(
     info: &AdapterServiceInfo,
 ) -> Result<String> {
     let mut binding_plan = plan.clone();
+    // Conversation selection belongs to the connected runtime.
+    binding_plan.session_ref = None;
     binding_plan.config.provenance = Default::default();
     stable_hash(
         "fabric-service-binding",
@@ -4231,22 +4233,6 @@ fn collect_workspace_artifacts(
     if status_text.trim().is_empty() {
         return Ok(());
     }
-    let mut patch = String::new();
-    let Ok(diff) = Command::new("git")
-        .arg("-C")
-        .arg(workspace)
-        .arg("diff")
-        .arg("--binary")
-        .arg("--")
-        .arg(".")
-        .output()
-    else {
-        return Ok(());
-    };
-    if !diff.status.success() {
-        return Ok(());
-    }
-    patch.push_str(&String::from_utf8_lossy(&diff.stdout));
     // Kept agent state can hold conversations and credentials; leave it out
     // when the artifact directory sits inside the workspace.
     let kept_state: Vec<PathBuf> = manifest
@@ -4254,6 +4240,9 @@ fn collect_workspace_artifacts(
         .iter()
         .map(|root| root.join(".fabric").join("state"))
         .collect();
+    let Some(mut patch) = tracked_workspace_patch(workspace, &kept_state) else {
+        return Ok(());
+    };
     patch.push_str(&untracked_workspace_patch(workspace, &kept_state)?);
     if patch.trim().is_empty() {
         return Ok(());
@@ -4291,6 +4280,40 @@ fn collect_workspace_artifacts(
         ]),
     ));
     Ok(())
+}
+
+fn tracked_workspace_patch(workspace: &Path, excluded: &[PathBuf]) -> Option<String> {
+    let diff = Command::new("git")
+        .arg("-C")
+        .arg(workspace)
+        .arg("diff")
+        .arg("--binary")
+        .arg("--")
+        .arg(".")
+        .args(excluded_pathspecs(workspace, excluded))
+        .output()
+        .ok()?;
+    if !diff.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&diff.stdout).into_owned())
+}
+
+/// Git pathspecs that leave out each excluded path inside the workspace.
+fn excluded_pathspecs(workspace: &Path, excluded: &[PathBuf]) -> Vec<std::ffi::OsString> {
+    let workspace_root = workspace
+        .canonicalize()
+        .unwrap_or_else(|_| workspace.to_path_buf());
+    excluded
+        .iter()
+        .filter_map(|path| {
+            let path = path.canonicalize().unwrap_or_else(|_| path.clone());
+            let relative = path.strip_prefix(&workspace_root).ok()?;
+            let mut pathspec = std::ffi::OsString::from(":(exclude)");
+            pathspec.push(relative);
+            Some(pathspec)
+        })
+        .collect()
 }
 
 fn untracked_workspace_patch(workspace: &Path, excluded: &[PathBuf]) -> Result<String> {
@@ -5370,6 +5393,60 @@ for line in sys.stdin:
         let _ = stop_runtime(&plan, &second);
         let _ = release_service(&plan, &service);
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cold_resume_selection_does_not_rebind_a_retained_service() {
+        let (root, plan) = local_host_plan_keeping_state();
+        let service = prepare_service(&plan).expect("prepare service");
+        let mut selected = plan.clone();
+        selected.session_ref = Some(SessionRef {
+            schema_version: SESSION_REF_SCHEMA_VERSION.to_string(),
+            adapter_id: "acme.fabric.local-host".to_string(),
+            session_id: "native-conversation".to_string(),
+        });
+        let validation = validate_service_handle(&selected, &service);
+        release_service(&plan, &service).expect("release service");
+        let _ = fs::remove_dir_all(root);
+        validation.expect("conversation selection does not change the service");
+    }
+
+    #[test]
+    fn cold_resume_kept_state_is_excluded_from_tracked_workspace_artifacts() {
+        let (root, plan) = local_host_plan_keeping_state();
+        let runtime = start_runtime(&plan).expect("start runtime");
+        let state = root.join("artifacts/.fabric/state/acme.fabric.local-host/assistant");
+        fs::write(root.join("notes.txt"), "public workspace note\n").unwrap();
+        fs::write(state.join("credentials.json"), "retained-private-marker\n").unwrap();
+        for arguments in [
+            vec!["init", "-q"],
+            vec!["add", "--intent-to-add", "--", "."],
+        ] {
+            assert!(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(&root)
+                    .args(arguments)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
+        let destination = root.join("captured");
+        fs::create_dir(&destination).unwrap();
+        let mut manifest = ArtifactManifest {
+            root: Some(root.join("artifacts")),
+            artifacts: Vec::new(),
+        };
+        let mut observed = runtime.clone();
+        observed.environment.workspace = Some(root.clone());
+        collect_workspace_artifacts(&mut manifest, &destination, &observed, &mut Vec::new())
+            .unwrap();
+        let patch = fs::read_to_string(destination.join("workspace.patch")).unwrap();
+        stop_runtime(&plan, &runtime).unwrap();
+        let _ = fs::remove_dir_all(root);
+        assert!(patch.contains("public workspace note"));
+        assert!(!patch.contains("retained-private-marker"));
     }
 
     fn local_host_plan_with_env_name(name: &str) -> (PathBuf, RunPlan) {

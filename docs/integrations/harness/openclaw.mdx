@@ -58,7 +58,7 @@ Before migration, copy every legacy session directory while the Gateway is stopp
 
 Run `openclaw doctor --fix` with the 2026.9.34 executable and the same path settings. The command imports legacy `sessions.json` files and JSONL session data into each agent's SQLite database. Restart the Gateway after the command succeeds. Keep the verified backup for rollback.
 
-Managed runtimes and NeMo Fabric-owned services use temporary state directories, so each new Gateway starts with fresh state.
+Managed runtimes and NeMo Fabric-owned services use temporary state by default. Set `runtime.keep_state=true` to retain the native Gateway home across restarts.
 
 ## Configure the Adapter
 
@@ -120,6 +120,16 @@ By default, the adapter chooses an available local port range. Set `port_range`
 to an inclusive consumer-allocated range with `start` and `end` fields. The
 range must span at least 111 ports. OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses `base_port + 2` for browser control and allocates browser CDP ports from `base_port + 11` through `base_port + 110`. The adapter verifies only that `base_port` and `base_port + 2` are available before startup. OpenClaw allocates the CDP ports on demand instead of reserving the complete range, so the adapter cannot guarantee that those ports will still be available when OpenClaw needs them. Keep the configured range reserved for the lifetime of the runtime or service when using OpenClaw browser features.
 
+## Resume a Retained Conversation
+
+Set `runtime.keep_state=true` and supply `runtime.artifacts`. Save the `SessionRef` returned as `runtime.session_ref`, then pass `session_ref=reference` to `Fabric.start_runtime()` when starting a replacement. Omitting the reference creates a fresh conversation. Each replacement gets a new NeMo Fabric runtime ID and uses the selected native conversation history without replaying earlier work.
+
+Managed runtimes and NeMo Fabric-owned services support retained sessions. A prepared service retains its Gateway and storage lock when connected runtimes stop. Release the service before starting an independent Gateway on the same storage. Caller-owned attached services reject retention because the current reference cannot identify a verifiable native storage boundary.
+
+Mount the complete retained storage root when replacing a sandbox. OpenClaw owns the native conversations, indexes, skills, cache, and credentials inside that home. Workspace memory files such as `MEMORY.md` and `memory/` remain in the configured workspace. Retain the workspace and any external native directories as needed. NeMo Fabric regenerates managed configuration and Gateway authentication at startup. A missing session or changed native identity fails startup. Native channels retain their own conversation-selection behavior.
+
+If startup returns `runtime.recovery_warnings`, inspect native and external state before invoking with `acknowledge_recovery=True`. NeMo Fabric never automatically replays an interrupted request. See [Cold Resume](https://github.com/NVIDIA/NeMo-Fabric/blob/main/adapters/python/openclaw/README.md#cold-resume) for an example and storage cleanup instructions.
+
 ## Serve the Control UI
 
 OpenClaw's Control UI is its browser dashboard and chat. A managed runtime
@@ -143,8 +153,8 @@ harness = HarnessConfig(
   a configured dashboard off.
 - After the Gateway starts, the adapter writes the sign-in token, generated at
   each start, to
-  `<artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token`
-  with mode `0600` on POSIX hosts; on Windows, the file inherits the artifact
+  `<artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token`.
+  With `runtime.keep_state=true`, the path is `<state_dir>/interfaces/dashboard.token` inside the retained home. The file uses mode `0600` on POSIX hosts; on Windows, the file inherits the artifact
   root's permissions. `stop` removes it; if the adapter host is killed, the file
   can remain.
 - Open `http://127.0.0.1:<port>/#token=<token>` through a forward to that
@@ -224,10 +234,9 @@ does not use the OpenClaw configuration RPC. The generated configuration:
 - uses a cryptographically generated one-time Gateway token;
 - applies the normalized workspace, model, skills, and MCP servers;
 - disables OpenClaw anonymous telemetry; and
-- uses a unique temporary state directory.
+- uses the retained state directory when configured, or a unique temporary directory.
 
-Each invocation sends a terminal request to `/v1/chat/completions` with the
-NeMo Fabric runtime ID as the stable OpenClaw session key. A managed runtime
+Each invocation sends a terminal request to `/v1/chat/completions`. Ephemeral runtimes use the NeMo Fabric runtime ID as the Chat Completions `user`. Retained runtimes use an explicit native session key for the selected conversation. A managed runtime
 stops its Gateway during runtime shutdown. A prepared service keeps its Gateway
 running until the service is released, so multiple runtimes can connect to it.
 
