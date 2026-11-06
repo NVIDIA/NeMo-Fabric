@@ -13,8 +13,14 @@ from nemo_fabric_adapters.hermes import native
 from nemo_fabric_adapters.hermes.native import configured_kwargs
 
 
-@pytest.mark.parametrize("model_limit", [None, 128])
-def test_native_agents_apply_behavior_without_losing_routing_or_identity(model_limit):
+@pytest.mark.parametrize(
+    ("model_limit", "harness_limit", "expected_limit"),
+    [(None, None, None), (None, 96, 96), (128, None, 128), (128, 96, 128)],
+    ids=["native-default", "harness-only", "model-only", "model-over-harness"],
+)
+def test_native_agents_apply_behavior_without_losing_routing_or_identity(
+    model_limit: int | None, harness_limit: int | None, expected_limit: int | None
+):
     model = {
         "provider": "openai",
         "model": "configured",
@@ -27,7 +33,14 @@ def test_native_agents_apply_behavior_without_losing_routing_or_identity(model_l
         {
             "models": {"default": model},
             "harness": {
-                "settings": {"max_tokens": 96, "reasoning_config": {"effort": "none"}}
+                "settings": {
+                    "reasoning_config": {"effort": "none"},
+                    **(
+                        {"max_tokens": harness_limit}
+                        if harness_limit is not None
+                        else {}
+                    ),
+                }
             },
             "runtime": {"max_turns": 2},
             "tools": {"enabled": ["file"], "blocked": ["terminal"]},
@@ -52,7 +65,7 @@ def test_native_agents_apply_behavior_without_losing_routing_or_identity(model_l
     assert result["enabled_toolsets"] == ["file"]
     assert result["disabled_toolsets"] == ["terminal"]
     assert result["ephemeral_system_prompt"] == "Fabric instruction"
-    assert result["max_tokens"] == (model_limit or 96)
+    assert result["max_tokens"] == expected_limit
     assert result["max_iterations"] == 2
     assert result["request_overrides"] == {
         "temperature": 0.0,
@@ -79,7 +92,7 @@ def test_native_behavior_preserves_native_prompt_when_fabric_has_none():
     assert result["ephemeral_system_prompt"] == "native"
     assert result["enabled_toolsets"] == []
     assert result["request_overrides"] is None
-    assert result["max_tokens"] == 512
+    assert result["max_tokens"] is None
     assert result["max_iterations"] == configuration.DEFAULT_MAX_ITERATIONS
 
 

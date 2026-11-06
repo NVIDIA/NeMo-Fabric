@@ -210,7 +210,9 @@ class RuntimeServer:
                     )
                     error = ProtocolError(code, "validation")
                 else:
-                    error = ProtocolError(f"{stage}_failed", stage)
+                    error = ProtocolError(
+                        f"{stage}_failed", stage, cause=getattr(error, "code", None)
+                    )
             return envelope(
                 operation, result, changed=changed, error=error, effects=effects
             )
