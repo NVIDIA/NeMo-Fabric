@@ -37,6 +37,7 @@ MESSAGES = {
     "start_failed": "Fabric could not establish an active runtime.",
     "start_uncertain": "A previous runtime start has an uncertain outcome; replace the sandbox before starting another.",
     "runtime_id_conflict": "Fabric returned a runtime ID that is already in use.",
+    "runtime_limit_reached": "The client runtime limit has been reached; stop an owned runtime before starting another.",
     "status_failed": "Fabric could not read the recorded runtime status.",
     "stop_failed": "Fabric could not complete the stop operation.",
     "invoke_failed": "Fabric did not report a successful invocation.",

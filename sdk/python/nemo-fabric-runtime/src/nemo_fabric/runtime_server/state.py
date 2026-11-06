@@ -156,6 +156,13 @@ class RuntimeServer:
                         runtime = await self.fabric.start_runtime(
                             config, base_dir=self.directory
                         )
+                    except FabricStateError as error:
+                        if error.code != "runtime_limit_reached":
+                            raise
+                        self.has_used_runtime = previously_used
+                        self.start_uncertain = False
+                        changed, effects = False, "none"
+                        raise ProtocolError("runtime_limit_reached", "start") from None
                     except FabricConfigError:
                         self.has_used_runtime = previously_used
                         self.start_uncertain = False

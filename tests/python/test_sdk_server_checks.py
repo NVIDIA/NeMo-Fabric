@@ -193,7 +193,11 @@ async def test_sdk_server_check_reaches_the_real_command_bridge(
 
 
 async def test_runtime_status_remote_reaches_sdk_in_the_original_server(
-    blocking_adapter_config, server_environment, server_sdk_bridge, tmp_path
+    blocking_adapter_config,
+    server_environment,
+    server_sdk_bridge,
+    tmp_path,
+    runtime_status_validator,
 ):
     host, log = server_sdk_bridge
     config = blocking_adapter_config.model_copy(deep=True)
@@ -218,6 +222,7 @@ async def test_runtime_status_remote_reaches_sdk_in_the_original_server(
         assert active.server_state == "running"
         assert active.handle.runtime_id == runtime_id
         assert active.handle.environment["provider"] == "local"
+        runtime_status_validator.validate(active.to_mapping())
         stopped = await host.handle(
             {
                 "interface_version": 2,
@@ -232,12 +237,51 @@ async def test_runtime_status_remote_reaches_sdk_in_the_original_server(
         )
         assert report.status == "stopped"
         assert report.handle is None
+        runtime_status_validator.validate(report.to_mapping())
         commands = [json.loads(line) for line in log.read_text().splitlines()]
         assert commands == [
             {"operation": "status", "agent": "blocking", "runtime_id": runtime_id},
             {"operation": "status", "agent": "blocking", "runtime_id": runtime_id},
         ]
         assert not (tmp_path / "entered").exists()
+    finally:
+        await host.shutdown()
+
+
+async def test_server_runtime_limit_has_no_effects_and_start_recovers_after_stop(
+    blocking_adapter_config, server_sdk_bridge, tmp_path, monkeypatch
+):
+    monkeypatch.setattr("nemo_fabric.client._MAX_RUNTIME_RECORDS", 1)
+    host, _ = server_sdk_bridge
+    config = blocking_adapter_config.model_copy(deep=True)
+    config.environment.workspace = str(tmp_path)
+    config.discovery.local_paths = [str(tmp_path / "blocking.fabric-adapter.json")]
+    command = {
+        "interface_version": 2,
+        "operation": "start",
+        "agent": "blocking",
+        "config": config.to_mapping(),
+    }
+    try:
+        first = await host.handle(command)
+        assert first["status"] == "succeeded", first
+        rejected = await host.handle(command)
+        assert rejected["error"]["code"] == "runtime_limit_reached", rejected
+        assert rejected["error"]["effects"] == "none"
+        assert rejected["changed"] is False
+        assert not host.start_uncertain
+        stopped = await host.handle(
+            {
+                "interface_version": 2,
+                "operation": "stop",
+                "agent": "blocking",
+                "runtime_id": first["result"]["runtime_id"],
+            }
+        )
+        assert stopped["status"] == "succeeded", stopped
+        replacement = await host.handle(command)
+        assert replacement["status"] == "succeeded", replacement
+        assert replacement["result"]["runtime_id"] != first["result"]["runtime_id"]
     finally:
         await host.shutdown()
 
