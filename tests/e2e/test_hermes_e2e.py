@@ -73,6 +73,7 @@ async def test_hermes_persistent_host_with_relay(
     code_review_agent_dir: Path,
     api_server: str,
 ):
+    """Verify reused Hermes sessions retain Relay artifacts across invocations."""
     os.environ["ADAPTER_PYTHON"] = sys.executable
     config = with_relay(hermes_config())
     config.models["default"].base_url = f"{api_server}/v1"
@@ -265,6 +266,7 @@ async def test_skill_selection(
     default_skill: Path,
     alternate_skill: Path,
 ):
+    """Verify Hermes returns the full supplied skill through a successful tool call."""
     os.environ["ADAPTER_PYTHON"] = sys.executable
     config = with_relay(hermes_config())
     config.models["default"].model = "fabric-echo"
