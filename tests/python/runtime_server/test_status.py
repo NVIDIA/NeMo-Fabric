@@ -5,6 +5,7 @@
 
 import asyncio
 import json
+import sys
 from unittest.mock import AsyncMock
 
 import pytest
@@ -76,6 +77,7 @@ async def test_status_server_delegates_to_sdk_without_invocation_lock(
         await host.shutdown()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix command bridge")
 async def test_status_process_bridge_reads_stopped_record_and_does_not_start_server(
     blocking_adapter_config, tmp_path, socket_path
 ):
@@ -176,6 +178,7 @@ def test_status_rejects_malformed_or_effectful_responses(field, value):
         protocol.validate_response(response, "status")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix socket transport")
 @pytest.mark.parametrize(
     "field,value", [("runtime_id", "other"), ("agent_name", "other")]
 )

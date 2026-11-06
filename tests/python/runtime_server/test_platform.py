@@ -10,7 +10,11 @@ import pytest
 
 @pytest.mark.parametrize(
     "arguments",
-    [["stop", "--agent", "review", "--runtime-id", "runtime-1"], ["check"]],
+    [
+        ["stop", "--agent", "review", "--runtime-id", "runtime-1"],
+        ["check"],
+        ["status", "--agent", "review", "--runtime-id", "runtime-1"],
+    ],
 )
 def test_windows_import_without_fcntl_and_deliberate_unsupported_command(arguments):
     code = """
