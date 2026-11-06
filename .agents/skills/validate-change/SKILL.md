@@ -62,6 +62,7 @@ surfaces touched by a change.
   Use `qualify-harbor` for real inference and container checks across the adapter catalog or a developer subset. Retain its complete catalog report; deterministic tests alone do not establish an all-harness integration pass.
   Run `tests/integrations/test_harbor_runner.py` and
   `tests/python/test_adapter_capabilities.py`, then `just test-python`.
+  For runner failure changes, verify bounded optional evidence, malformed sibling isolation, original exception identity, cancellation cleanup, unknown accounting, and legacy error-only documents. Match host/task transport versions.
   For host admission changes, verify metadata inspection without harness SDKs
   or task discovery, selected telemetry claims, and task-side descriptor drift
   rejection before startup.

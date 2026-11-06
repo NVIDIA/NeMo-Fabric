@@ -98,6 +98,8 @@ Agent task images by following the
 [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
 then install the bare Hermes adapter into the same Python environment.
 
+Failed task executions retain available guest observations beside the original runner error. Refer to [Failure Evidence](../../docs/integrations/consumer/harbor.mdx#failure-evidence) for coverage limits and matching host/task version requirements.
+
 ## How Harbor Inputs Become FabricConfig
 
 `FabricAgent` starts with the selected adapter and Harbor task workspace, then
