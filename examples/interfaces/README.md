@@ -22,6 +22,13 @@ export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
 
 This prepares pinned Hermes v0.22.5, the adapter, and Relay 0.10. The application interpreter also needs the NeMo Fabric SDK. The command below uses the prepared Hermes environment for both application and adapter.
 
+If `external/hermes-agent` contains local changes, preserve them and select a separate checkout instead. The installer creates the selected checkout if needed and still prepares `.venv-hermes`:
+
+```bash
+HERMES_AGENT_CHECKOUT="$PWD/.tmp/hermes-agent-v0.22.5" just install-hermes-agent
+export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
+```
+
 Set your OpenAI-compatible model endpoint, served model name, and credential:
 
 ```bash

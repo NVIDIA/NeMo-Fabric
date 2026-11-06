@@ -30,6 +30,8 @@ just install-hermes-agent
 export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
 ```
 
+The installer preserves local checkout changes and stops rather than overwriting them. Set `HERMES_AGENT_CHECKOUT` to a separate clean checkout or a new directory to install without changing `external/hermes-agent`; the target environment remains `.venv-hermes`.
+
 Hermes reports its Python package version as `0.0.0`, so use its Git tag and commit to identify the installed release. The pinned release includes dependency security fixes absent from v2026.9.24.
 
 ## Configure the Adapter

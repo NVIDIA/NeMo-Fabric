@@ -398,7 +398,7 @@ install-hermes-agent:
     #!/usr/bin/env bash
     set -euo pipefail
     hermes_commit="bf0203a794a07aac3ff764972ab9087baa4e4f4e"
-    hermes_checkout="$REPO_ROOT/external/hermes-agent"
+    hermes_checkout="${HERMES_AGENT_CHECKOUT:-$REPO_ROOT/external/hermes-agent}"
     hermes_diff_pathspec=()
 
     if [[ -e "$hermes_checkout" && ! -d "$hermes_checkout/.git" ]]; then
@@ -419,8 +419,8 @@ install-hermes-agent:
     if [[ "$hermes_head" != "$hermes_commit" ]]; then
         if [[ -n "$hermes_head" ]] && { ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}" || ! git -C "$hermes_checkout" diff --cached --quiet; }; then
             echo "ERROR: Hermes Agent checkout has tracked changes at an unpinned revision: $hermes_checkout" >&2
-            echo "If these are disposable changes from the old metadata-propagate.patch, run:" >&2
-            echo "  git -C \"$hermes_checkout\" restore --source=HEAD --staged --worktree -- ." >&2
+            echo "Preserve local changes and select a separate checkout:" >&2
+            echo '  HERMES_AGENT_CHECKOUT=/path/to/clean/hermes-agent just install-hermes-agent' >&2
             exit 1
         fi
         if ! git -C "$hermes_checkout" cat-file -e "$hermes_commit^{commit}" 2>/dev/null; then
@@ -430,8 +430,8 @@ install-hermes-agent:
     fi
     if ! git -C "$hermes_checkout" diff --cached --quiet || ! git -C "$hermes_checkout" diff --quiet "${hermes_diff_pathspec[@]}"; then
         echo "ERROR: Hermes Agent checkout has tracked changes: $hermes_checkout" >&2
-        echo "To discard only tracked changes that you do not need, run:" >&2
-        echo "  git -C \"$hermes_checkout\" restore --source=HEAD --staged --worktree -- ." >&2
+        echo "Preserve local changes and select a separate checkout:" >&2
+        echo '  HERMES_AGENT_CHECKOUT=/path/to/clean/hermes-agent just install-hermes-agent' >&2
         exit 1
     fi
     if [[ ! -x "$REPO_ROOT/.venv-hermes/bin/python" ]] ||
