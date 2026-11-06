@@ -106,6 +106,28 @@ def test_validate_hermes_telemetry_provider_rejects_native():
         )
 
 
+def test_native_relay_segment_does_not_fire_session_end_hooks(monkeypatch):
+    from agent import relay_runtime
+    from hermes_cli import lifecycle as hermes_lifecycle
+    from nemo_relay import subscribers
+
+    coordinator = MagicMock()
+    finalize_session = MagicMock()
+    flush = MagicMock()
+    monkeypatch.setattr(relay_runtime, "SESSION_COORDINATOR", coordinator)
+    monkeypatch.setattr(relay_runtime, "current_profile_key", lambda: "test-profile")
+    monkeypatch.setattr(hermes_lifecycle, "finalize_session", finalize_session)
+    monkeypatch.setattr(subscribers, "flush", flush)
+
+    telemetry.finalize_native_relay_segment("native-session")
+
+    coordinator.finalize_conversation.assert_called_once_with(
+        profile_key="test-profile", session_id="native-session"
+    )
+    flush.assert_called_once_with()
+    finalize_session.assert_not_called()
+
+
 def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
     with pytest.raises(
         ValueError, match="only relay telemetry is supported for Hermes"
