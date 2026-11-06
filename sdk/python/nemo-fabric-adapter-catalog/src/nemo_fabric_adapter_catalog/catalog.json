@@ -1012,6 +1012,28 @@
         },
         "contract_version": "fabric.adapter/v1alpha2",
         "extension_schemas": {
+          "run_error": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "cause_code": {
+                "const": "kilo_prompt_timeout"
+              },
+              "owner": {
+                "const": "adapter"
+              },
+              "timeout_seconds": {
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "required": [
+              "owner",
+              "timeout_seconds",
+              "cause_code"
+            ],
+            "type": "object"
+          },
           "usage": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
@@ -1184,7 +1206,7 @@
         "name": "nemo-fabric-adapters-kilo",
         "version": "0.7.0"
       },
-      "sha256": "6bf1bf8c3df7c62c7942c23c5b1639df54764773e2f4d945c19daf04c701a7a1",
+      "sha256": "bb236376f76d986c5b087952dd815e9c100dfa9ccd235964e25e8bc9f610cedd",
       "source": "adapters/typescript/kilo/kilo.fabric-adapter.json"
     },
     "nvidia.fabric.kiro": {
@@ -1210,6 +1232,28 @@
         },
         "contract_version": "fabric.adapter/v1alpha2",
         "extension_schemas": {
+          "run_error": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "cause_code": {
+                "const": "kiro_deadline_exceeded"
+              },
+              "deadline_millis": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "owner": {
+                "const": "adapter"
+              }
+            },
+            "required": [
+              "owner",
+              "deadline_millis",
+              "cause_code"
+            ],
+            "type": "object"
+          },
           "run_result": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
@@ -1299,7 +1343,7 @@
         "name": "nemo-fabric-adapters-kiro",
         "version": "0.7.0"
       },
-      "sha256": "e7393a07550505f23a3396128a29f5b078492ce7f1580f6f3b79d5872e4587a2",
+      "sha256": "7273f357f8f8f3d429f4127d06f29653c015d20fb4d82d3c8c0f4dee9f84ff2c",
       "source": "adapters/typescript/kiro/kiro.fabric-adapter.json"
     },
     "nvidia.fabric.langchain.deepagents": {
@@ -3095,6 +3139,28 @@
         },
         "contract_version": "fabric.adapter/v1alpha2",
         "extension_schemas": {
+          "run_error": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "cause_code": {
+                "const": "strands_deadline_exceeded"
+              },
+              "deadline_millis": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "owner": {
+                "const": "adapter"
+              }
+            },
+            "required": [
+              "owner",
+              "deadline_millis",
+              "cause_code"
+            ],
+            "type": "object"
+          },
           "run_result": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
@@ -3258,7 +3324,7 @@
         "name": "nemo-fabric-adapters-strands",
         "version": "0.7.0"
       },
-      "sha256": "37982ca315b241b03fce3edb1d49d2f1663e3224ebcf89824d3a976055ccd949",
+      "sha256": "3b6e7f1dec2fc416c30c00e24225b21a161160252b6aba3846028319478ca3c9",
       "source": "adapters/typescript/strands/strands.fabric-adapter.json"
     }
   },

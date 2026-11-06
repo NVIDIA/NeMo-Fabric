@@ -141,17 +141,23 @@ test("rejects an expired deadline before dispatch and keeps the session usable",
     runtimeContext: context,
   });
 
+  const deadline = Date.now() - 1;
   const expired = await runtime.invoke(
     { input: "expired" },
-    { ...context, deadline_millis: Date.now() - 1 },
+    { ...context, deadline_millis: deadline },
   );
   assert.deepEqual(expired, {
     status: "failed",
     output: null,
     error: {
-      code: "strands_deadline_exceeded",
-      message: "The Strands invocation deadline has already elapsed",
+      code: "timeout",
+      message: `Strands adapter invocation deadline ${deadline} (Unix milliseconds) has already elapsed`,
       retryable: false,
+      extensions: {
+        owner: "adapter",
+        deadline_millis: deadline,
+        cause_code: "strands_deadline_exceeded",
+      },
     },
   });
   assert.deepEqual(prompts, []);

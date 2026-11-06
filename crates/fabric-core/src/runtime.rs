@@ -931,7 +931,10 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
                 code: "runtime_stop_failed".to_string(),
                 message: error.to_string(),
                 retryable: false,
-                metadata: BTreeMap::new(),
+                metadata: match &error {
+                    FabricError::AdapterLifecycleOperation { metadata, .. } => metadata.clone(),
+                    _ => BTreeMap::new(),
+                },
             });
         }
         Err(_) => {}
@@ -2900,17 +2903,25 @@ fn exchange_lifecycle_message(
     let line = match host.responses.recv_timeout(timeout) {
         Ok(line) => line,
         Err(RecvTimeoutError::Timeout) => {
-            return Err(lifecycle_error(
-                operation,
-                runtime_id,
-                "host_timeout",
-                format!(
-                    "persistent local adapter host did not complete {} within {} ms",
+            return Err(FabricError::AdapterLifecycleOperation {
+                operation: operation.as_str(),
+                runtime_id: runtime_id.to_string(),
+                code: "host_timeout".to_string(),
+                message: format!(
+                    "Fabric runtime did not complete {} within {} seconds",
                     operation.as_str(),
-                    timeout.as_millis()
+                    timeout.as_secs_f64()
                 ),
-                local_host_diagnostics(host),
-            ));
+                diagnostics: local_host_diagnostics(host),
+                metadata: BTreeMap::from([
+                    ("owner".to_string(), serde_json::json!("fabric_runtime")),
+                    (
+                        "timeout_seconds".to_string(),
+                        serde_json::json!(timeout.as_secs_f64()),
+                    ),
+                    ("cause_code".to_string(), serde_json::json!("host_timeout")),
+                ]),
+            });
         }
         Err(RecvTimeoutError::Disconnected) => {
             return Err(lifecycle_error(
@@ -2999,13 +3010,14 @@ fn exchange_lifecycle_message(
                 diagnostics.push_str("adapter metadata: ");
                 diagnostics.push_str(&metadata);
             }
-            Err(lifecycle_error(
-                operation,
-                runtime_id,
-                error.code,
-                error.message,
+            Err(FabricError::AdapterLifecycleOperation {
+                operation: operation.as_str(),
+                runtime_id: runtime_id.to_string(),
+                code: error.code,
+                message: error.message,
                 diagnostics,
-            ))
+                metadata: error.metadata,
+            })
         }
     }
 }
@@ -3023,6 +3035,7 @@ fn lifecycle_error(
         code: code.into(),
         message: message.into(),
         diagnostics: diagnostics.into(),
+        metadata: BTreeMap::new(),
     }
 }
 
@@ -4528,6 +4541,13 @@ for line in sys.stdin:
             with open(os.environ["FABRIC_FAKE_HOST_STOP_MARKER"], "w", encoding="utf-8") as stream:
                 stream.write("started")
             time.sleep(0.25)
+        if MODE == "stop_deadline":
+            error = failure("stop", "timeout", "adapter stop deadline expired")
+            error["metadata"] = {
+                "owner": "adapter", "timeout_seconds": 300, "cause_code": "adapter_stop_timeout",
+            }
+            response("stop", error=error)
+            sys.exit(18)
         if MODE == "stop_failure":
             response("stop", error=failure("stop", "fake_stop", "stop rejected"))
             sys.exit(18)
@@ -5791,6 +5811,12 @@ for line in sys.stdin:
                 ..
             } if code == "host_timeout" && diagnostics.contains("invoke accepted without response")
         ));
+        let FabricError::AdapterLifecycleOperation { metadata, .. } = &error else {
+            panic!("expected lifecycle deadline error");
+        };
+        assert_eq!(metadata["owner"], "fabric_runtime");
+        assert_eq!(metadata["timeout_seconds"], 0.1);
+        assert_eq!(metadata["cause_code"], "host_timeout");
         assert!(!local_hosts().contains_key(&runtime.runtime_id));
         assert!(
             host.lock()
@@ -6501,19 +6527,28 @@ for line in sys.stdin:
 
     #[test]
     fn run_plan_preserves_completed_result_when_stop_fails() {
-        let (root, plan) = local_host_plan("stop_failure");
+        for (mode, cause) in [("stop_failure", "fake_stop"), ("stop_deadline", "timeout")] {
+            let (root, plan) = local_host_plan(mode);
 
-        let result = run_plan(&plan, RunRequest::text("completed"))
-            .expect("completed result with stop failure");
+            let result = run_plan(&plan, RunRequest::text("completed"))
+                .expect("completed result with stop failure");
 
-        assert_eq!(result.status, RunStatus::Failed);
-        assert_eq!(result.output["input"], "completed");
-        let error = result.error.expect("stop error");
-        assert_eq!(error.stage, ErrorStage::Stop);
-        assert_eq!(error.code, "runtime_stop_failed");
-        assert!(error.message.contains("fake_stop"), "{}", error.message);
+            assert_eq!(result.status, RunStatus::Failed);
+            assert_eq!(result.output["input"], "completed");
+            let error = result.error.expect("stop error");
+            assert_eq!(error.stage, ErrorStage::Stop);
+            assert_eq!(error.code, "runtime_stop_failed");
+            assert!(error.message.contains(cause), "{}", error.message);
+            if mode == "stop_deadline" {
+                assert_eq!(error.metadata["owner"], "adapter");
+                assert_eq!(error.metadata["timeout_seconds"], 300);
+                assert_eq!(error.metadata["cause_code"], "adapter_stop_timeout");
+            } else {
+                assert!(error.metadata.is_empty());
+            }
 
-        let _ = fs::remove_dir_all(root);
+            let _ = fs::remove_dir_all(root);
+        }
     }
     #[test]
     fn default_environment_prepares_through_local_provider() {

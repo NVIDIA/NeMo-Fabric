@@ -121,3 +121,6 @@ release. Public existence alone cannot verify trusted publishing. If the PR
 check reports HTTP 404, ask an authorized npm maintainer to bootstrap the exact
 manifest name, then rerun the check. Do not add CI write tokens or manually
 publish supported versions.
+
+
+For execution deadline failures, normalize target-native errors to canonical `timeout` at the adapter boundary. Retain the owning layer, enforced limit or absolute deadline, and stable native cause in lifecycle error metadata or normalized error extensions. Keep startup, shutdown, transport, and configuration failures distinct; consumer bridges must not contain harness-specific timeout code tables.

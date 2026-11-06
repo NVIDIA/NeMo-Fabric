@@ -77,3 +77,10 @@ The existing `FabricAgent` bridge follows this flow for `fabric_environment_env`
 `environment_env_names` is Harbor's existing transport field. `environment.env_names` is the core NeMo Fabric forwarding field described in [Set Environment Values Or Forward Them By Name](../../sdk/python.mdx#set-environment-values-or-forward-them-by-name). This addition does not migrate the Harbor bridge to the core field: Harbor's retained run specification contains names, but its runner still puts resolved values in `environment.env`, where values are serialized into the NeMo Fabric run plan.
 
 Keep using Harbor's managed environment and redaction rules for credentials. Core `env_names` does not replace Harbor's secret delivery or redaction.
+
+
+## Execution Deadlines
+
+Fabric runtime and normalized adapter invocation deadlines use code `timeout` at stage `invoke`. The bridge raises Harbor's `AgentTimeoutError`, so both remain eligible for the original verifier. Startup and shutdown deadlines retain runtime failure handling and skip verification. The collected `fabric-result-*.json` retains the owning layer, actual limit, and native cause in `runner_error.details` or normalized error metadata.
+
+Harbor also needs its [phase timeout ownership fix](https://github.com/harbor-framework/harbor/pull/3376) to preserve the inner exception in the trial summary. Older Harbor versions can relabel an inner 300-second deadline as the outer 1200-second task timeout even when the outer context has not expired. Fabric evidence keeps the original deadline on those versions; upgrading Fabric alone does not fix that Harbor summary.

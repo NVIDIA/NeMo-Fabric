@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 import re
+from typing import Any
 from typing import Literal
 from typing import Self
 
@@ -75,6 +76,7 @@ class FabricRunnerError(BaseModel):
     code: str | None = None
     message: str
     retryable: bool = False
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class FabricRunnerFailure(BaseModel):

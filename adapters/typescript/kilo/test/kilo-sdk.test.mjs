@@ -252,7 +252,10 @@ test("aborts the Kilo session when a prompt reaches its deadline", async () => {
         },
       },
     });
-    await assert.rejects(handle.prompt("wait forever"), (error) => error.code === "kilo_prompt_timeout");
+    await assert.rejects(handle.prompt("wait forever"), {
+      code: "timeout",
+      metadata: {owner: "adapter", timeout_seconds: 0, cause_code: "kilo_prompt_timeout"},
+    });
     assert.equal(promptSignal.aborted, true);
     assert.deepEqual(abortParameters, {sessionID: "session-timeout", directory: workspace});
     assert.ok(abortSignal instanceof AbortSignal);
@@ -338,7 +341,10 @@ for (const phase of ["headers", "body"]) {
         });
         const prompting = handle.prompt("wait for the result");
         if (expire) {
-          const rejected = assert.rejects(prompting, (error) => error.code === "kilo_prompt_timeout");
+          const rejected = assert.rejects(prompting, {
+            code: "timeout",
+            metadata: {owner: "adapter", timeout_seconds: 0.5, cause_code: "kilo_prompt_timeout"},
+          });
           await requestReady;
           await rejected;
           await Promise.all([sessionAborted, requestClosed]);

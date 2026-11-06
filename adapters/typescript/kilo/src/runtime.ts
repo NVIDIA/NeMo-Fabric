@@ -7,6 +7,7 @@ import type {
   AgentRunRequest,
   AgentRunResult,
   AgentUsage,
+  JsonObject,
   RuntimeContext,
 } from "nemo-fabric-adapter-contract";
 import {
@@ -19,7 +20,7 @@ import {
 /** Failed communication retains its usage snapshot while the session is retired. */
 export class KiloPromptError extends LifecycleError {
   constructor(error: LifecycleError, readonly usage: AgentUsage) {
-    super(error.code, error.message, { retryable: error.retryable });
+    super(error.code, error.message, { retryable: error.retryable, metadata: error.metadata });
   }
 }
 
@@ -27,8 +28,8 @@ export interface KiloPromptOutcome { text?: string; error?: boolean; usage?: Age
 export interface KiloSessionHandle { id: string; check(level: CheckLevel): Promise<AdapterCheckResult>; prompt(text: string, deadlineMillis?: number): Promise<KiloPromptOutcome>; stop(): Promise<void> }
 export interface KiloSessionFactory { create(input: AdapterStartInput): Promise<KiloSessionHandle> }
 
-function failed(code: string, message: string, usage?: AgentUsage): AgentRunResult {
-  return {status: "failed", output: null, error: {code, message, retryable: false}, ...(usage === undefined ? {} : {usage})};
+function failed(code: string, message: string, usage?: AgentUsage, metadata?: JsonObject): AgentRunResult {
+  return {status: "failed", output: null, error: {code, message, retryable: false, ...(metadata === undefined ? {} : {extensions: metadata})}, ...(usage === undefined ? {} : {usage})};
 }
 
 export class KiloAdapterRuntime implements AdapterRuntime {
@@ -57,7 +58,7 @@ export class KiloAdapterRuntime implements AdapterRuntime {
       this.generation += 1;
       this.session = undefined;
       try { await session.stop(); } catch { /* Preserve the prompt failure. */ }
-      if (error instanceof KiloPromptError) return failed(error.code, error.message, error.usage);
+      if (error instanceof KiloPromptError) return failed(error.code, error.message, error.usage, error.metadata);
       if (error instanceof LifecycleError) throw error;
       throw new LifecycleError("kilo_session_failed", "Kilo Code session communication failed", {retryable: true});
     } finally {

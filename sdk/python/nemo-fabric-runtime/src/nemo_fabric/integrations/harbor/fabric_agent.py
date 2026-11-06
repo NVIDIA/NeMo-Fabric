@@ -1057,8 +1057,14 @@ def raise_run_failure(status: str, error: dict[str, Any] | None) -> NoReturn:
         # An invocation outcome must not cancel Harbor's job orchestration.
         # Actual task cancellation still propagates from the awaited operations.
         raise RuntimeError(message)
-    if error is not None and error.get("code") == "timeout":
-        raise TimeoutError(message)
+    if (
+        error is not None
+        and error.get("code") == "timeout"
+        and error.get("stage") == "invoke"
+    ):
+        from harbor.trial.errors import AgentTimeoutError
+
+        raise AgentTimeoutError(message)
     raise RuntimeError(message)
 
 

@@ -371,12 +371,14 @@ async def test_completed_wrong_answer_is_not_an_execution_failure(bridge):
 
 
 @pytest.mark.parametrize(
-    ("code", "exception"),
-    [("timeout", TimeoutError), ("connection_failed", RuntimeError)],
+    ("code", "is_timeout"),
+    [("timeout", True), ("connection_failed", False)],
 )
-async def test_bridge_classifies_only_canonical_deadline(bridge, code, exception):
+async def test_bridge_classifies_only_canonical_deadline(bridge, code, is_timeout):
     from harbor.models.agent.context import AgentContext
+    from harbor.trial.errors import AgentTimeoutError
 
+    exception = AgentTimeoutError if is_timeout else RuntimeError
     agent, environment, document = bridge
     document["status"] = "failed"
     document["error"] = {
@@ -392,7 +394,7 @@ async def test_bridge_classifies_only_canonical_deadline(bridge, code, exception
 
 @pytest.mark.parametrize(
     ("code", "exception"),
-    [("timeout", TimeoutError), ("configuration_failed", RuntimeError)],
+    [("timeout", RuntimeError), ("configuration_failed", RuntimeError)],
 )
 async def test_bridge_retains_runner_failure_record(bridge, code, exception):
     from harbor.models.agent.context import AgentContext
@@ -410,7 +412,10 @@ async def test_bridge_retains_runner_failure_record(bridge, code, exception):
     with pytest.raises(exception):
         await agent.run("test", environment, context)
     agent.populate_context_post_run(context)
-    assert context.metadata["fabric"]["runner_error"] == document["runner_error"]
+    assert context.metadata["fabric"]["runner_error"] == {
+        "details": {},
+        **document["runner_error"],
+    }
 
 
 @pytest.mark.parametrize("runner_failure", [False, True])
@@ -455,8 +460,10 @@ async def test_inner_deadline_enters_harbor_agent_timeout_path(
             user=None,
         )
 
-    assert type(caught.value.__cause__) is TimeoutError
-    assert "inner invocation deadline" in str(caught.value.__cause__)
+    # Older Harbor releases wrap this error; ownership-aware versions retain it.
+    inner = caught.value.__cause__ or caught.value
+    assert isinstance(inner, AgentTimeoutError)
+    assert "inner invocation deadline" in str(inner)
     assert target.agent_execution.finished_at is not None
     agent.populate_context_post_run(target.agent_result)
     failure = target.agent_result.metadata["fabric"]
@@ -484,6 +491,7 @@ def test_runner_serializes_structured_deadline(runner_cli, monkeypatch, stage):
         "code": "timeout",
         "message": "deadline",
         "retryable": False,
+        "details": {},
     }
 
 
@@ -510,3 +518,100 @@ def test_runner_invalid_spec_preserves_safe_evidence(runner_cli):
         runner.main()
     assert "secret-sentinel" not in runner_cli.read_text()
     assert "ValidationError" in runner_cli.read_text()
+
+
+@pytest.mark.parametrize("stage", ["start", "invoke", "stop"])
+async def test_bridge_deadline_policy_preserves_owner_and_cause(bridge, stage):
+    from harbor.models.agent.context import AgentContext
+    from harbor.trial.errors import AgentTimeoutError
+
+    agent, environment, document = bridge
+    document.clear()
+    document["runner_error"] = {
+        "stage": stage,
+        "code": "timeout",
+        "message": "Fabric runtime invoke deadline expired after 300 seconds",
+        "retryable": False,
+        "details": {
+            "owner": "fabric_runtime",
+            "timeout_seconds": 300,
+            "cause_code": "host_timeout",
+        },
+    }
+    context = AgentContext()
+    expected = AgentTimeoutError if stage == "invoke" else RuntimeError
+    with pytest.raises(expected) as caught:
+        async with asyncio.timeout(1200):
+            await agent.run("test", environment, context)
+    assert type(caught.value) is expected
+    assert "300 seconds" in str(caught.value)
+    assert "1200" not in str(caught.value)
+    agent.populate_context_post_run(context)
+    assert context.metadata["fabric"]["runner_error"] == {
+        "details": {},
+        **document["runner_error"],
+    }
+
+
+@pytest.mark.parametrize("runner_failure", [False, True])
+@pytest.mark.parametrize(
+    "code,stage,verifier_calls",
+    [
+        ("timeout", "invoke", 1),
+        ("connection_failed", "invoke", 0),
+        ("timeout", "start", 0),
+        ("timeout", "stop", 0),
+    ],
+)
+async def test_deadline_verifier_policy_and_cleanup(
+    bridge, runner_failure, code, stage, verifier_calls
+):
+    from functools import partial
+    from harbor.models.agent.context import AgentContext
+    from harbor.models.task.config import TaskConfig
+    from harbor.models.task.task import Task
+    from harbor.models.trial.result import TrialResult
+    from harbor.trial.single_step import SingleStepTrial
+
+    agent, environment, document = bridge
+    error = {
+        "stage": stage,
+        "code": code,
+        "message": "adapter invocation exceeded 300 seconds",
+        "retryable": False,
+    }
+    if runner_failure:
+        document.clear()
+        document["runner_error"] = error
+    else:
+        document.update(status="failed", error=error)
+    trial = MagicMock(spec=SingleStepTrial)
+    trial.result = MagicMock(spec=TrialResult)
+    trial.result.agent_result = AgentContext()
+    trial.task = MagicMock(spec=Task)
+    trial.task.config = TaskConfig()
+    trial.task.instruction = "test"
+    trial._load_trajectory = None
+    trial._agent_timeout_sec = 1200
+    trial._run_agent.side_effect = partial(SingleStepTrial._run_agent, trial)
+
+    # Model Harbor's ownership-preserving phase contract. Its upstream fix
+    # is tracked separately in harbor-framework/harbor#3376.
+    async def phase(**kwargs):
+        async with asyncio.timeout(kwargs["timeout_sec"]):
+            await agent.run("test", environment, kwargs["target"].agent_result)
+
+    trial._run_agent_phase.side_effect = phase
+    if verifier_calls:
+        await SingleStepTrial._run(trial)
+    else:
+        with pytest.raises(RuntimeError):
+            await SingleStepTrial._run(trial)
+    assert trial._run_verifier.await_count == verifier_calls
+    trial._sync_agent_output.assert_awaited_once()
+    if verifier_calls:
+        failure = trial._record_exception.call_args.args[0]
+        assert "300 seconds" in str(failure)
+        assert "1200" not in str(failure)
+    else:
+        trial._record_exception.assert_not_called()
