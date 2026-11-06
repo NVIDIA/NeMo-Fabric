@@ -234,12 +234,16 @@ async def test_pi_sdk_health_is_independent_of_an_active_invocation(
             checks = [
                 command for command in commands if command["operation"] == "check"
             ]
-            assert checks[0].get("runtime_id") is None
+            assert len(checks) == 4
+            for command in checks[:2]:
+                assert set(command) == {"operation", "timeout_seconds"}
+            assert 0 < checks[0]["timeout_seconds"] <= 3
+            assert 3 < checks[1]["timeout_seconds"] <= 105
             assert all(
                 command["runtime_id"] == runtime.runtime_id
                 and command["level"] == "ready"
                 and command["agent"] == pi_check_config.metadata.name
-                for command in checks[1:]
+                for command in checks[2:]
             )
     finally:
         release.set()
