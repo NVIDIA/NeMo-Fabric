@@ -23,6 +23,7 @@ from examples.code_review_agent import (
 )
 from nemo_fabric import (
     Fabric,
+    FabricRuntimeError,
     RelayAtofConfig,
     RelayAtofFileSinkConfig,
     RelayObservabilityConfig,
@@ -319,6 +320,110 @@ async def test_skill_selection(
     else:
         skill_dir = {"default": default_skill, "alternate": alternate_skill}[skill]
         assert loaded["content"] == (skill_dir / "SKILL.md").read_text(), loaded
+
+
+def _write_skill(directory: Path, name: str) -> Path:
+    directory.mkdir(parents=True)
+    (directory / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: Use the {name} test skill.\n---\n\n"
+        f"Reply with `{name} loaded`.\n",
+        encoding="utf-8",
+    )
+    return directory
+
+
+def _skill_folder_config(api_server: str, *paths: Path):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = with_relay(hermes_config())
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.tools.enabled = None
+    for path in paths:
+        config.add_skill_path(path)
+    return config
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+@pytest.mark.parametrize("layout", ["folder", "folder_and_skill", "empty"])
+async def test_skill_folders(
+    code_review_agent_dir: Path,
+    api_server: str,
+    tmp_path: Path,
+    layout: str,
+):
+    """Verify Hermes lists each skill directly inside a folder, plus separate skills."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    expected: set[str] = set()
+    if layout != "empty":
+        _write_skill(shared / "one", "fabric-one")
+        _write_skill(shared / "two", "fabric-two")
+        (shared / "notes.md").write_text("Not a skill.\n", encoding="utf-8")
+        _write_skill(shared / "group" / "nested", "fabric-nested")
+        expected = {"fabric-one", "fabric-two"}
+    paths = [shared]
+    if layout == "folder_and_skill":
+        paths.append(_write_skill(tmp_path / "mounted" / "three", "fabric-three"))
+        expected.add("fabric-three")
+    config = _skill_folder_config(api_server, *paths)
+    requests.post(
+        f"{api_server}/_scenario",
+        json={"tool_call": {"name": "skills_list", "arguments": {}}},
+        timeout=5,
+    ).raise_for_status()
+
+    result = await Fabric().run(
+        config, base_dir=code_review_agent_dir, input="List your skills."
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    listed = [
+        json.loads(record["data"])
+        for record in atof_records(result["output"])
+        if record["kind"] == "scope"
+        and record["category"] == "tool"
+        and record["name"] == "skills_list"
+        and record["scope_category"] == "end"
+    ]
+    assert len(listed) == 1, listed
+    assert listed[0]["success"] is True, listed[0]
+    assert {
+        entry["name"]
+        for entry in listed[0]["skills"]
+        if entry["name"].startswith("fabric-")
+    } == expected
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+async def test_missing_skill_path_fails_start(
+    code_review_agent_dir: Path, api_server: str, tmp_path: Path
+):
+    """Verify Hermes refuses a configured skill entry that does not exist."""
+    missing = tmp_path / "missing"
+    config = _skill_folder_config(api_server, missing)
+
+    with pytest.raises(FabricRuntimeError) as caught:
+        await Fabric().run(config, base_dir=code_review_agent_dir, input="Hi.")
+
+    assert caught.value.code == "hermes_skill_not_found"
+    assert str(missing) in str(caught.value)
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+async def test_duplicate_skill_names_fail_start(
+    code_review_agent_dir: Path, api_server: str, tmp_path: Path
+):
+    """Verify Hermes refuses two configured skills that share a name."""
+    first = _write_skill(tmp_path / "shared" / "review", "fabric-review")
+    second = _write_skill(tmp_path / "mounted" / "review", "fabric-review")
+    config = _skill_folder_config(api_server, tmp_path / "shared", second)
+
+    with pytest.raises(FabricRuntimeError) as caught:
+        await Fabric().run(config, base_dir=code_review_agent_dir, input="Hi.")
+
+    assert caught.value.code == "hermes_skill_invalid"
+    assert str(first.resolve()) in str(caught.value)
+    assert str(second.resolve()) in str(caught.value)
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")

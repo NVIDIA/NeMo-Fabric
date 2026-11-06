@@ -31,6 +31,7 @@ from urllib.parse import urlsplit
 
 import httpx
 from nemo_fabric_adapter_contract import models as contract
+from nemo_fabric_adapter_contract import skills as contract_skills
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import local_interfaces
@@ -309,24 +310,17 @@ def _channel_secret_env_names(value: Any) -> set[str]:
 
 
 def _resolve_skill_paths(config: contract.AgentConfig, base_dir: Path) -> list[str]:
-    paths: list[str] = []
-    for index, path in enumerate(config.skills.paths if config.skills else []):
-        try:
-            directory = (base_dir / path).resolve(strict=True)
-        except (OSError, RuntimeError):
-            raise lifecycle.LifecycleError(
-                "openclaw_skill_not_found",
-                "A configured NeMo Fabric skill path does not exist",
-                metadata={"field": f"skills.paths[{index}]"},
-            ) from None
-        if not directory.is_dir() or not (directory / "SKILL.md").is_file():
-            raise lifecycle.LifecycleError(
-                "openclaw_skill_invalid",
-                "NeMo Fabric skill paths must be directories containing a SKILL.md file",
-                metadata={"field": f"skills.paths[{index}]"},
-            )
-        paths.append(str(directory))
-    return paths
+    try:
+        skills = contract_skills.resolve_skills(
+            config.skills.paths if config.skills else [], base_dir
+        )
+    except contract_skills.SkillPathError as error:
+        code = "not_found" if error.reason == "not_found" else "invalid"
+        raise lifecycle.LifecycleError(
+            f"openclaw_skill_{code}", str(error), metadata={"field": error.field}
+        ) from None
+    # OpenClaw loads an extra directory that contains SKILL.md as one skill.
+    return [str(skill.path) for skill in skills]
 
 
 def _resolve_command(settings: dict[str, Any], base_dir: Path) -> Path:

@@ -553,7 +553,6 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     [
         ("missing", "openclaw_skill_not_found"),
         ("file", "openclaw_skill_invalid"),
-        ("missing_manifest", "openclaw_skill_invalid"),
     ],
 )
 def test_openclaw_rejects_invalid_skill_paths(
@@ -565,8 +564,6 @@ def test_openclaw_rejects_invalid_skill_paths(
     skill_path = tmp_path / "skills"
     if invalid_path == "file":
         skill_path.write_text("not a directory", encoding="utf-8")
-    elif invalid_path == "missing_manifest":
-        skill_path.mkdir()
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
         adapter._openclaw_config(
@@ -579,6 +576,22 @@ def test_openclaw_rejects_invalid_skill_paths(
 
     assert caught.value.code == expected_code
     assert caught.value.metadata == {"field": "skills.paths[0]"}
+
+
+def test_openclaw_loads_no_skills_from_an_empty_skill_folder(
+    mock_openclaw: Path, tmp_path: Path
+):
+    (tmp_path / "skills").mkdir()
+
+    generated = adapter._openclaw_config(
+        _config(mock_openclaw, with_skills=True),
+        _context(tmp_path),
+        base_dir=tmp_path,
+        port=20_000,
+        token_env="OPENCLAW_GATEWAY_TOKEN",
+    )
+
+    assert "skills" not in generated
 
 
 def test_openclaw_preserves_context_injection_without_system_instruction(

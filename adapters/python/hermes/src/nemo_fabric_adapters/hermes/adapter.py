@@ -154,6 +154,7 @@ class HermesRuntime:
                 self._hermes_home,
                 # Workspace belongs to the per-runtime context, not AgentConfig.
                 workspace=str(runtime_context.environment.workspace or "."),
+                base_dir=common_utils.base_dir(payload),
                 relay_enabled=relay_enabled,
                 interfaces=interface_ports,
             )

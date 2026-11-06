@@ -139,6 +139,7 @@ def test_hermes_interfaces_read_the_model_endpoint_and_key_from_config():
     config = configuration.build_hermes_config(
         _agent_config({}, base_url="http://127.0.0.1:9/v1"),
         workspace=".",
+        base_dir=".",
         interfaces={"api": 8642},
     )
 

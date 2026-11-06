@@ -73,6 +73,17 @@ list maps to a wildcard `tools.deny` policy, and `tools.blocked` maps to
 isolated temporary OpenClaw state directory. The Gateway is stopped and its
 temporary configuration is removed when the NeMo Fabric runtime stops.
 
+Each `skills.paths` entry is a skill or a folder of skills. An entry that
+contains `SKILL.md` is one skill. Otherwise each folder directly inside the
+entry that contains `SKILL.md` is a skill, and other files and folders are
+ignored. Mix the two forms to combine a shared folder of skills with a skill
+mounted on its own. An entry that exists but holds no skills, such as a new,
+empty volume, loads nothing. Start fails with `openclaw_skill_not_found` when an
+entry does not exist and with `openclaw_skill_invalid` when an entry is not a
+folder or two skills share a name; the error names the entry or both skill
+folders. The adapter passes each skill folder to OpenClaw's
+`skills.load.extraDirs`.
+
 For custom OpenAI-compatible providers, set `models.<role>.base_url`; the
 adapter generates an OpenClaw custom provider using the
 `openai-completions` API adapter. Set `api_key_env` when that provider requires

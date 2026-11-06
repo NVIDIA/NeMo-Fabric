@@ -20,10 +20,14 @@ if importlib.util.find_spec("run_agent") is not None:
 
 def test_hermes_config_mapping(tmp_path: Path):
     hermes_home = tmp_path / "home"
+    skill = tmp_path / "skills" / "code-review"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# Code review\n", encoding="utf-8")
     config_path, config = configuration.write_hermes_config(
-        agent_config(),
+        agent_config(skill),
         hermes_home,
         workspace=str(tmp_path / "workspace"),
+        base_dir=tmp_path,
         relay_enabled=True,
     )
 
@@ -40,7 +44,7 @@ def test_hermes_config_mapping(tmp_path: Path):
     assert config["terminal"]["backend"] == "local"
     assert Path(config["terminal"]["cwd"]) == tmp_path / "workspace"
     assert config["terminal"]["timeout"] == 30
-    assert config["skills"]["external_dirs"] == ["/tmp/fabric-skills/code-review"]
+    assert config["skills"]["external_dirs"] == [str(skill.resolve())]
     assert config["mcp_servers"]["github"] == {
         "enabled": True,
         "url": "https://mcp.github.example/mcp",
@@ -50,7 +54,7 @@ def test_hermes_config_mapping(tmp_path: Path):
     assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
 
 
-def agent_config() -> AgentConfig:
+def agent_config(skill: Path) -> AgentConfig:
     return AgentConfig.from_mapping(
         {
             "harness": {"settings": {"terminal_timeout": 30}},
@@ -63,7 +67,7 @@ def agent_config() -> AgentConfig:
                 }
             },
             "tools": {"enabled": []},
-            "skills": {"paths": ["/tmp/fabric-skills/code-review"]},
+            "skills": {"paths": [str(skill)]},
             "mcp": {
                 "servers": {
                     "github": {
