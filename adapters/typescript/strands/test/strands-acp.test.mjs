@@ -245,7 +245,11 @@ test("retains a timed-out runtime session until process cleanup succeeds", { ski
   });
   await assert.rejects(
     runtime.invoke({ input: "hang" }, { ...input.runtimeContext, deadline_millis: Date.now() + 50 }),
-    { code: "timeout" },
+    (error) =>
+      error.code === "timeout" &&
+      error.metadata?.owner === "adapter" &&
+      error.metadata?.cause_code === "strands_prompt_timeout" &&
+      error.metadata?.native_code === "acp_prompt_timeout",
   );
   originalKill(child, 0);
   await assert.rejects(runtime.invoke({ input: "next" }, input.runtimeContext), { code: "strands_not_started" });
