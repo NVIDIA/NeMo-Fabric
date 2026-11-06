@@ -218,6 +218,7 @@ class RuntimeServer:
     async def _check_runtime(
         self, command: dict[str, Any], started: float
     ) -> dict[str, Any]:
+        """Report known lifecycle state or probe health without invoking the agent."""
         request = CheckRequest(
             scope="runtime",
             runtime_id=command["runtime_id"],
@@ -238,9 +239,14 @@ class RuntimeServer:
             or runtime is None
             or runtime.status != RuntimeStatus.ACTIVE
         ):
-            return check_response(
-                runtime_report(request, "runtime_unavailable", started)
-            )
+            report = runtime_report(request, "runtime_unavailable", started)
+            if owned.state == "stopped" or (
+                runtime is not None and runtime.status == RuntimeStatus.STOPPED
+            ):
+                report["runtime"] = {"state": "stopped", "activity": "stopped"}
+            elif runtime is not None and runtime.status == RuntimeStatus.FAILED:
+                report["runtime"] = {"state": "failed", "activity": "unknown"}
+            return check_response(report)
         generation = owned.generation
         remaining = request.timeout_seconds - (time.monotonic() - started)
         if remaining <= 0:
