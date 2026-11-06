@@ -69,6 +69,18 @@ def repo_root_fixture() -> Path:
     return CUR_DIR.parent.resolve()
 
 
+@pytest.fixture(name="runtime_status_validator")
+def runtime_status_validator_fixture(repo_root):
+    import json
+    from jsonschema import Draft202012Validator
+
+    schema = json.loads(
+        (repo_root / "schemas/sdk/runtime-status-report.schema.json").read_text()
+    )
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema)
+
+
 @pytest.fixture(name="default_skill")
 def default_skill_fixture() -> Path:
     return CUR_DIR / "fixtures" / "default"
