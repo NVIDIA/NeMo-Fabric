@@ -1,0 +1,31 @@
+---
+slug: "/integrations/harness/nooa"
+title: "Use the NOOA Adapters"
+description: "Choose the interactive or benchmark-oriented NOOA adapter."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+NVIDIA NeMo Fabric packages two NVIDIA-labs Object Oriented Agents (NOOA) adapters. Choose the adapter that matches the agent's execution model.
+
+| Adapter ID | Target | Supported surface |
+| --- | --- | --- |
+| `nvidia.fabric.nooa` | InteractiveAgent and registered workflow targets | Models, replacement instructions, skills, whole MCP servers, and supported Relay telemetry |
+| `nvidia.fabric.nooa.bench-agent` | Benchmark-oriented BenchAgent | Models, replacement instructions, and supported Relay telemetry; no normalized skills or MCP |
+
+## Install
+
+NOOA requires Python 3.12 or 3.13. Install the runtime and supported harness in that environment:
+
+```bash
+python -m pip install 'nemo-fabric[nooa]'
+```
+
+For Relay support, follow the package choices in the [NOOA adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/nooa). The root extra can be omitted by environment markers on other Python versions; a successful package installation does not establish NOOA availability.
+
+## Choose a Workflow
+
+- Use the [NOOA adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/nooa) for complete interactive configuration and registered target requirements.
+- Use the [Harbor NOOA BenchAgent walkthrough](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/harbor/nooa_bench) to run the benchmark-oriented agent and inspect task rewards and Relay evidence.
+
+Validate the final configuration against the selected adapter. The two adapter IDs expose different capabilities; they are not interchangeable names for the same runtime.

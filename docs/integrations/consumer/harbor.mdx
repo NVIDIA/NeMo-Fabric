@@ -1,4 +1,5 @@
 ---
+slug: "/integrations/consumer-integrations/harbor"
 title: Harbor
 description: Run agent harnesses selected by NVIDIA NeMo Fabric in Harbor evaluations.
 ---
@@ -74,6 +75,6 @@ The existing `FabricAgent` bridge follows this flow for `fabric_environment_env`
 3. Harbor supplies the values to the task runner's execution environment.
 4. The task runner looks up the names and inserts the values into `config.environment.env` before calling NeMo Fabric.
 
-`environment_env_names` is Harbor's existing transport field. `environment.env_names` is the core NeMo Fabric forwarding field described in [Set Environment Values Or Forward Them By Name](../../sdk/python.mdx#set-environment-values-or-forward-them-by-name). This addition does not migrate the Harbor bridge to the core field: Harbor's retained run specification contains names, but its runner still puts resolved values in `environment.env`, where values are serialized into the NeMo Fabric run plan.
+`environment_env_names` is Harbor's existing transport field. `environment.env_names` is the core NeMo Fabric forwarding field described in [Set Environment Values Or Forward Them By Name](../../sdk/configure.mdx#set-environment-values-or-forward-them-by-name). This addition does not migrate the Harbor bridge to the core field: Harbor's retained run specification contains names, but its runner still puts resolved values in `environment.env`, where values are serialized into the NeMo Fabric run plan.
 
 Keep using Harbor's managed environment and redaction rules for credentials. Core `env_names` does not replace Harbor's secret delivery or redaction.

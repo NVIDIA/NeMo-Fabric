@@ -1,0 +1,48 @@
+---
+slug: "/troubleshooting"
+title: "Troubleshooting"
+description: "Find the next diagnostic step from the symptom you observe."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Start with the symptom and inspect the relevant NVIDIA NeMo Fabric evidence. Configuration validation, live health checks, normalized failures, and SDK exceptions describe different stages.
+
+| Symptom | Inspect | Next step |
+| --- | --- | --- |
+| The SDK cannot import or the native extension is unavailable | Application Python interpreter and installed runtime wheel | Check [runtime installation](getting-started/install-fabric-runtime.mdx) and [supported platforms](getting-started/install.mdx#requirements-and-supported-platforms) |
+| Adapter cannot be resolved | Adapter ID, installed descriptor, discovery paths, and `ADAPTER_PYTHON` | Follow the chosen [harness guide](integrations/harness/overview.mdx); task-side paths must exist in the task environment |
+| A setting works on one harness but planning rejects another | Named field in the compatibility error and selected descriptor | Consult [Harness Compatibility](reference/compatibility.mdx); remove or replace the unsupported setting |
+| Startup or model authentication fails | Failed diagnostics, SDK error stage, and harness authentication requirements | Use [Plan and Diagnose](sdk/plan.mdx) and the harness's authentication instructions |
+| A request returns without the expected output | `result.status`, `result.error`, events, and declared artifacts | Follow [Results and Errors](sdk/results.mdx); do not read success-only output blindly |
+| Streaming yields no records | Which streaming API is used, Relay instrumentation, collector configuration, and correlation | Use the [Streaming chooser](sdk/streaming.mdx); native chunks and Relay records have separate requirements |
+| A second invocation is rejected | Whether the same runtime has an active request or unclosed stream | Finish or close the stream; use independent runtimes for [parallel work](sdk/runtimes.mdx) |
+| A sandbox file cannot be found | Host versus task path, declared artifact manifest, and provider limits | Follow [Environments and Sandboxes](sdk/environments.mdx) |
+| A health result is `unknown` or `unsupported` | Scope, selected level, deadline, and native evidence | Read [Health Checks](sdk/health-checks.mdx); an unsupported probe is not a failed agent |
+| Usage or measurement fields are missing | Availability and coverage, adapter support, and collection controls | Read [Resource Usage](sdk/system-stats.mdx) or [Software Evidence](sdk/evidence.mdx); missing is not zero |
+
+## Optional Diagnostics
+
+Use `plan()` and `doctor()` when you need to investigate adapter selection, an unsupported setting, or a missing declared dependency. They are not required installation steps: `run()` and runtime startup resolve and validate configuration as part of execution.
+
+Use the configuration for the harness your application actually runs. For example, call this helper from an async application when investigating a setup problem:
+
+```python
+from nemo_fabric import Fabric
+
+async def diagnose(config):
+    fabric = Fabric()
+    plan = fabric.plan(config)
+    print(plan.adapter.adapter_id)
+    report = await fabric.doctor(config)
+    print(report.status)
+    print(report)
+```
+
+For separate Python environments, check that `ADAPTER_PYTHON` selects the interpreter containing the adapter and harness. A successful diagnostic does not prove model access or task success. Refer to [Plan and Diagnose](sdk/plan.mdx) for interpreting the report.
+
+## Collect a Useful Failure Report
+
+Record the installed NeMo Fabric and adapter versions, the selected adapter ID, the operation and error stage, and available runtime, invocation, and request IDs. Include a sanitized configuration and the relevant diagnostic or result fields. Do not paste credentials, environment values, private model inputs, or sensitive telemetry.
+
+Applications decide retry and recovery policy. A lost response or an uncertain sandbox start must not be treated as proof that nothing executed. Consult the [advanced integration boundaries](sdk/advanced.mdx) and the selected environment's recovery guidance before retrying.

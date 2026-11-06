@@ -1,0 +1,28 @@
+---
+slug: "/contributing/documentation"
+title: "Documentation Contributions"
+description: "Keep task guides, navigation, and generated references aligned with public behavior."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Write NVIDIA NeMo Fabric documentation around a reader's task. Keep tutorials, task guides, explanations, and reference material distinct, and verify commands and capability claims against the current implementation.
+
+## Edit the Right Source
+
+- Author-facing pages live under `docs/`; navigation is in `docs/index.yml` and site settings are in `fern/docs.yml`.
+- Generated pages under `docs/reference/api/` come from source docstrings and Rust documentation comments. Update their source and regenerate them instead of editing generated files directly.
+- Preserve repository-relative `.mdx` links between documentation files and JSX-style SPDX comments in MDX.
+- Update relevant entry points and examples when a public workflow changes.
+
+## Validate the Site
+
+Run the maintained validation recipe from the repository root:
+
+```bash
+just docs
+```
+
+The recipe regenerates references, validates Fern configuration, and checks links in the staged publishing layout. Inspect rendered pages as well, particularly navigation, parent landing pages, examples, and diagrams. Keep contribution and release procedures in their existing repository guides.
+
+Refer to the [contribution guide](../../CONTRIBUTING.md) and [documentation maintainer skill](../../.agents/skills/contribute-docs/SKILL.md) for the full workflow.

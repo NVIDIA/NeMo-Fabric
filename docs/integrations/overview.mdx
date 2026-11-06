@@ -1,0 +1,22 @@
+---
+slug: "/integrations/overview"
+title: "Integrations"
+description: "Choose a consumer integration or a supported agent harness."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+NVIDIA NeMo Fabric connects applications and evaluation systems to the agent harnesses that execute their tasks. A consumer submits work through NeMo Fabric; a harness adapter translates that work into the selected agent's native configuration and execution interface, then returns a common result format.
+
+Use this section to connect an existing system or choose a supported harness. Consumer guides explain how a framework uses NeMo Fabric. Harness guides cover installation, credentials, configuration, and the capabilities each adapter supports. Choose the side that matches your task.
+
+<CardGroup cols={2}>
+  <Card title="Consumer Integrations" icon="fa-solid fa-layer-group" href="consumer/overview.mdx">
+    Use NeMo Fabric from an application, evaluation framework, or platform. The consumer keeps its task and scheduling policy.
+  </Card>
+  <Card title="Harness Integrations" icon="fa-solid fa-robot" href="harness/overview.mdx">
+    Run an existing harness through its adapter. Choose by model protocol, capabilities, credentials, and environment requirements.
+  </Card>
+</CardGroup>
+
+If you are building an ordinary application, start with the [Python SDK](../sdk/python.mdx). If you need to expose a custom agent or add a harness, start with the [Adapter Contract](../adapter-contract/README.md).

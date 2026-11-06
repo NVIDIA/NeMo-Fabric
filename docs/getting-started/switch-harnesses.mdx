@@ -1,0 +1,71 @@
+---
+slug: "/getting-started/quickstart/switch-harnesses"
+title: "2. Switch Harnesses"
+description: "Run explicit harness variants while retaining one application result contract."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+This second quickstart demonstrates the central reason to use NVIDIA NeMo Fabric: your application can keep its execution and result-handling contract while changing harnesses. Complete [1. Install One Harness](quickstart.mdx) first and retain its `config` in `first_agent.py`.
+
+<Steps toc={true} tocDepth={2}>
+
+<Step title="Install the Second Harness" id="install-the-second-harness">
+
+This example compares Deep Agents with Hermes Agent. Hermes requires its own supported installation and Python 3.14 environment. Follow the [Hermes adapter guide](../integrations/harness/hermes.mdx) and [separate-environment installation](install-adapter-harness.mdx#select-the-adapter-environment). Set `HERMES_ADAPTER_PYTHON` to that interpreter; the script explicitly uses the quickstart interpreter for Deep Agents and the Hermes interpreter for Hermes. Both variants use the NVIDIA model and credential already configured in the quickstart.
+
+</Step>
+
+<Step title="Construct Explicit Variants" id="construct-explicit-variants">
+
+Save the following as `compare_agents.py`. Set `HERMES_ADAPTER_PYTHON` to the supported Hermes environment's absolute Python path before running it:
+
+```python
+import asyncio
+import os
+import sys
+
+from first_agent import config
+from nemo_fabric import Fabric, HarnessConfig
+
+async def main():
+    original_python = os.environ.get("ADAPTER_PYTHON")
+    for name, adapter_id, interpreter in [
+        ("deepagents", "nvidia.fabric.langchain.deepagents", sys.executable),
+        ("hermes", "nvidia.fabric.hermes", os.environ["HERMES_ADAPTER_PYTHON"]),
+    ]:
+        variant = config.model_copy(deep=True)
+        variant.harness = HarnessConfig(adapter_id=adapter_id)
+        os.environ["ADAPTER_PYTHON"] = interpreter
+        try:
+            result = await Fabric().run(
+                variant, input="Explain how you would review a small Python project. Do not use tools."
+            )
+            print(name, result.status, result.output, result.error)
+        finally:
+            if original_python is None:
+                os.environ.pop("ADAPTER_PYTHON", None)
+            else:
+                os.environ["ADAPTER_PYTHON"] = original_python
+
+asyncio.run(main())
+```
+
+```bash
+export HERMES_ADAPTER_PYTHON='/absolute/path/to/hermes-environment/bin/python'
+python compare_agents.py
+```
+
+The environment-variable switch is sequential and intended for this local lesson. Do not mutate shared process environment variables around concurrent runtime starts. Production launchers should establish consistent execution environments.
+
+</Step>
+
+</Steps>
+
+## Interpret the Results
+
+Both variants return the same `RunResult` contract. Their responses and behavior can differ because prompts, defaults, tools, and native execution semantics differ. This exercise establishes common invocation and result handling; it is not a benchmark or proof of equivalent behavior.
+
+Before changing another configuration field, consult [Harness Compatibility](../reference/compatibility.mdx). For a controlled task and verifier, use [Harbor](../integrations/consumer/harbor.mdx). The maintained [variations notebook](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/02_variations.ipynb) expands this pattern to additional harnesses, capabilities, and telemetry.
+
+Continue to [3. Add Skills and MCP](skills-and-mcp.mdx) to extend the original Deep Agents configuration from `first_agent.py`.

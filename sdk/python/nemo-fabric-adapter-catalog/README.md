@@ -37,7 +37,7 @@ The bundle is a package resource, not an installed descriptor under `share/nemo-
 
 A snapshot claim is not proof of the task environment's capabilities. Pin compatible releases and compare the snapshot with the actual task descriptor before relying on it. A provider declaring ATIF support does not establish that it is enabled or that an artifact was produced. Capability normalization, host/task compatibility enforcement, and runtime-observed provenance are separate concerns, not implemented by this package.
 
-The runtime's public [host inspection API](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#inspect-metadata-on-a-separate-host)
+The runtime's public [host inspection API](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/advanced.mdx#inspect-metadata-on-a-separate-host)
 can validate supplied metadata and derive standalone admission claims. Pass its
 descriptor fingerprint to task-side execution to reject mismatched metadata.
 The catalog itself remains dependency-free and does not perform runtime inspection.

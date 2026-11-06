@@ -1,0 +1,18 @@
+---
+slug: "/contributing/testing"
+title: "Testing and Validation"
+description: "Select validation appropriate to the repository change."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Validate the behavior changed in your NVIDIA NeMo Fabric contribution. The [repository testing guide](../../CONTRIBUTING.md#testing) is authoritative for current setup and commands.
+
+| Change | Validation |
+| --- | --- |
+| Rust core, CLI, or shared execution behavior | `just test-rust`; also Python checks when the behavior crosses that binding |
+| Python SDK or adapter | `just test-python` and focused tests for the affected component |
+| TypeScript contract or adapter | `just test-typescript` and relevant adapter checks |
+| Documentation site | `just docs` for reference generation, Fern validation, and strict broken-link checks |
+
+Model-backed and container integration checks have additional dependencies and credentials. A passing model-free test does not establish a live deployment pass. Keep evidence and limitations with the contribution, and follow the repository's maintainer skills for the affected surface.

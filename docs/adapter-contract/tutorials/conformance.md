@@ -1,3 +1,6 @@
+---
+slug: "/adapter-contract/tutorials/verify-adapter"
+---
 {/*
 SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0
@@ -20,7 +23,7 @@ Before you start, complete the following:
 
 ## Concepts Overview
 
-NVIDIA NeMo Fabric 0.2 runs adapter-contract checks through `just test-python`
+NVIDIA NeMo Fabric runs adapter-contract checks through `just test-python`
 and `just test-typescript`; the installed adapter lifecycle and optional
 capability checks below remain manual.
 

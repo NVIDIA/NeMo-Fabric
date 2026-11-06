@@ -1,4 +1,5 @@
 ---
+slug: "/integrations/harness-integrations/remote-agent"
 title: "Use the Remote Agent Adapter"
 description: "Configure a remote OpenAI- or Anthropic-compatible agent for NVIDIA NeMo Fabric."
 ---
@@ -129,7 +130,10 @@ Both sides must use the same collector. The adapter does not send the collector
 URL to the remote service. The Fabric sink uses the collector base URL. The
 remote Relay sink publishes to `<collector-base-url>/v1/atof`. For correlation,
 the adapter puts the Fabric request ID in `metadata.nemo_fabric_request_id` in
-each mapped OpenAI or Anthropic request body. The remote endpoint must carry it
+each mapped OpenAI request body. Relay streaming supports `openai-responses` and
+`openai-completions` only; startup rejects `relay_streaming=True` with
+`anthropic-messages`. Ordinary Anthropic Messages invocations remain supported.
+The remote endpoint must carry the request ID
 into its Relay turn correlation metadata. The adapter sends no correlation
 headers.
 
@@ -155,6 +159,8 @@ constructed. The adapter normalizes only `models`, `models.temperature`,
 settings. MCP, skills, tool policy, and subagents can be configured by the
 remote deployment, but the adapter does not expose them through `FabricConfig`.
 
-`capabilities.streaming` remains false because that descriptor flag represents
-adapter-native OpenAI Chat Completions chunks. The adapter still reduces native
+The current descriptor advertises `capabilities.streaming`, but the adapter
+does not implement `invoke_openai_stream`. Do not rely on that native streaming
+claim. The supported Relay-backed `invoke_stream()` path described above is
+independent of native OpenAI chunk streaming. Ordinary invocations reduce native
 OpenAI and Anthropic streams to a terminal result.

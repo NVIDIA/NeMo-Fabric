@@ -1,0 +1,48 @@
+---
+slug: "/sdk/plan"
+title: "Plan and Diagnose"
+description: "Validate configuration and diagnose declared runtime requirements before execution."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Planning and diagnostics are optional inspection tools. You do not need to call them separately before a first run: execution resolves and validates configuration as part of startup. Use them when you want to inspect a configuration or investigate a setup problem.
+
+The examples in this guide extend the typed `config` from [Configure Agents](configure.mdx#start-with-one-run). Install the selected harness and its adapter before invoking it.
+
+## Feature Support Across Harness Adapters
+
+The SDK presents one consistent shape across adapters, but adapters differ in
+their runtime requirements, accepted configuration, and optional capabilities.
+
+Use `plan(...)` and `doctor(...)` before relying on optional features:
+
+```python
+fabric = Fabric()
+plan = fabric.plan(config)
+report = await fabric.doctor(config)
+
+print(plan.adapter.adapter_id)
+print(report.status)
+```
+
+Use the plan to confirm adapter selection and capability routing. Use the doctor
+report to catch unresolved adapter descriptors, unsupported normalized
+capabilities, missing declared requirements, and environment problems before
+starting a runtime.
+
+Capability routes assign execution ownership; they do not describe network
+routing. `harness_native` means the selected adapter executes the capability
+through its harness. `fabric_managed` means NeMo Fabric executes it outside the
+harness-native surface. `unsupported` means neither side can execute it.
+Routes apply to tools, skills, and MCP servers. Scalar fields such as
+`instructions.system` and `runtime.max_turns` are validated separately against
+the adapter descriptor.
+
+## Inspect Before You Execute
+
+`plan()` validates configuration and resolves metadata without starting an agent. `doctor()` checks declared requirements and reports diagnostic evidence. Neither guarantees that credentials, a remote model, or a task will succeed at invocation time.
+
+When planning rejects a field, inspect the selected adapter's guide and remove or replace that unsupported setting. For example, a Hermes configuration with `runtime.max_turns` cannot be switched directly to Codex, which does not accept that limit. Omit it for the Codex variant instead of assuming it was ignored.
+
+Use [Health Checks](health-checks.mdx) to observe an already started runtime. For admission on a separate host, refer to [Advanced Integration](advanced.mdx).

@@ -1,0 +1,114 @@
+---
+slug: "/sdk/results"
+title: "Results, Errors, and Run Artifacts"
+description: "Read terminal outcomes, handle failures, and locate retained execution evidence."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+## Unified Run Results
+
+Every invocation that reaches the adapter boundary returns a normalized
+`RunResult`, even when the harness invocation itself failed. Inspect `status`,
+`error`, `events`, and `artifacts` first, then process `output` when the status
+is successful.
+
+Important fields:
+
+| Field | Meaning |
+| --- | --- |
+| `status` | Terminal invocation status such as success, failure, or cancellation. |
+| `output` | Harness output normalized to the configured output schema. |
+| `error` | Structured failure metadata when available. |
+| `usage` | Optional `RunUsage` with invocation-local input, cached-input, output, and total token counts, reported cost in USD, and provider metadata. |
+| `system_stats` | Optional `InvocationSystemStats`: monotonic adapter exchange duration, before/after observations with availability, and an optional CPU counter difference estimate. |
+| `resource_snapshot` | Optional `RuntimeResourceSnapshot` of the runtime, read once after the adapter returned the result. |
+| `artifacts` | Output files, logs, patches, native artifacts, and other materialized references. |
+| `telemetry` | References to NeMo Relay or other telemetry streams produced by the run. |
+| `events` | Ordered normalized lifecycle and invocation events. |
+| `metadata` | Result-specific structured metadata. |
+| `runtime_id`, `invocation_id`, `request_id` | IDs for correlation across runtimes, logs, telemetry, and artifacts. |
+
+These are structured correlation fields, not interchangeable metadata:
+`runtime_id` identifies the runtime lifecycle, `invocation_id` identifies one
+invocation within that runtime, and `request_id` correlates the caller's
+request. NeMo Fabric-generated values use type-specific prefixes such as `runtime-`,
+`invocation-`, and `request-`; callers may provide their own `request_id`.
+Consumers should store and log each field separately and otherwise treat its
+value as opaque rather than parsing the identifier encoding.
+
+Usage is absent when the target does not report it. Read the typed values only
+when `usage` is available:
+
+```python
+if result.usage is not None:
+    print(result.usage.get("input_tokens"))
+    print(result.usage.get("cached_input_tokens"))
+    print(result.usage.get("input_tokens_include_cache"))
+    print(result.usage.get("output_tokens"))
+    print(result.usage.get("total_tokens"))
+    print(result.usage.get("cost_usd"))
+```
+
+Each counter is optional: missing values are unknown, not zero. `cached_input_tokens` reports cached prompt tokens. `input_tokens_include_cache` is `True` when those tokens are already included in `input_tokens`, `False` when they are excluded, and absent when the adapter cannot establish the semantics. Consumers must not add cached tokens to an inclusive input count. Adapters can report cache-write, reasoning, peak request, and per-model detail through the descriptor-declared `usage.extensions["nemo_fabric.detailed_token_usage.v1"]` object. NeMo Fabric preserves that object at `RunUsage.metadata["nemo_fabric.detailed_token_usage.v1"]`. Consumers treat detailed input and output independently: any detailed accounting field for a dimension makes that dimension authoritative, with no fallback to its top-level counters. The views can diverge, and an inclusive total remains unknown when the selected detailed counters do not provide enough information to calculate it. `cost_usd` contains reported cost only; keep estimates separately in provider metadata rather than presenting them as measured charges.
+
+If NeMo Fabric cannot resolve config, start a runtime, or obtain a normalized result,
+the SDK raises a `FabricError` subclass instead of returning a partial
+`RunResult`.
+
+## Events
+
+Each `RunResult` includes the normalized events collected for that invocation.
+Event kinds and detail may vary by adapter, but their lifecycle and correlation
+fields use the common NeMo Fabric contract.
+
+Events are useful for:
+
+- rendering invocation history in application or service UIs;
+- forwarding logs and status to evaluation harnesses;
+- correlating runtime, invocation, adapter, and telemetry IDs;
+- reporting structured failures alongside the terminal result.
+
+## Errors
+
+All public SDK errors inherit from `FabricError`.
+
+| Error | Meaning |
+| --- | --- |
+| `FabricConfigError` | Invalid config, request, or override. |
+| `FabricCapabilityError` | Selected adapter does not support the requested operation. |
+| `FabricRuntimeError` | Runtime startup, invocation, or shutdown failed before a normalized result could be returned. |
+| `FabricStateError` | Invalid runtime state transition, such as invoking after stop or starting overlapping invocations. |
+| `FabricNativeUnavailableError` | Native extension is not installed or importable. |
+| `ResourceObservationUnavailableError` | `Runtime.resource_snapshot()` cannot read the runtime because it stopped, is stopping, its adapter host exited, a live process in its tree or the process table cannot be read, or the process tree kept changing during the read. Subclass of `FabricRuntimeError`. |
+| `ResourceObservationUnsupportedError` | The runtime's adapter kind, environment provider, or operating system has no resource reader. Subclass of `FabricRuntimeError`. |
+
+Consumers own job-level retries and rollout-level failure policy.
+Core host-operation deadlines (`host_timeout`) become Python `TimeoutError`, then
+`FabricRuntimeError` with `code == "timeout"` and the failed lifecycle stage.
+If invocation succeeds in `Fabric.run()` but stop reaches this deadline,
+it returns a failed `RunResult` with `error.stage == "stop"` and
+`error.code == "timeout"`. Check the returned result as well as raised errors.
+Adapters can report execution deadlines in normalized results with
+`result.error.code == "timeout"`. Other adapter-specific timeout codes are not
+automatically reclassified. Diagnostic text is not a timeout classifier.
+Single-invocation runs attempt to stop the runtime before returning. A `Runtime`
+used with `async with` also attempts cleanup after an invocation error; if cleanup
+fails, that failure is attached to the original exception rather than replacing
+it. NeMo Fabric records structured error metadata when possible and returns enough
+detail for the consumer to decide what to do next.
+
+## Find the Evidence for One Invocation
+
+Retain `runtime_id`, `invocation_id`, and `request_id` alongside the result. Inspect `result.artifacts` for declared files and `result.telemetry` for telemetry references; the location and available evidence depend on the selected adapter and configuration.
+
+```python
+print(result.status, result.error)
+print(result.runtime_id, result.invocation_id, result.request_id)
+print(result.artifacts)
+print(result.telemetry)
+```
+
+Check status before reading an expected output field. A normalized failed result and a raised SDK exception are different failure paths. Optional usage, software evidence, and measurements can be absent; missing evidence is not a zero measurement.
+
+For live records, refer to [Streaming](streaming.mdx). For resource artifacts, refer to [Resource Usage and Stats](system-stats.mdx). Software versions and their coverage are described in [Software Execution Evidence](evidence.mdx).

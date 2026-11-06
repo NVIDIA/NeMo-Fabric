@@ -1,0 +1,28 @@
+---
+slug: "/reference/catalog"
+title: "Adapter Metadata Catalog"
+description: "Inspect release metadata without installing harness SDKs."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+## Inspect Adapter Metadata Without Harness SDKs
+
+The optional `nemo-fabric-adapter-catalog` package provides release snapshots of bundled Python and TypeScript adapter descriptors and their registered targets, without installing the runtime or harness SDKs:
+
+```bash
+pip install nemo-fabric-adapter-catalog
+```
+
+Look up a descriptor by its exact ID; unknown IDs raise `KeyError`:
+
+```python
+from nemo_fabric_adapter_catalog import get_adapter_descriptor
+
+descriptor = get_adapter_descriptor("nvidia.fabric.codex")
+print(descriptor["config"]["accepts"])
+```
+
+Catalog resources do not register execution runners or change task-side discovery. Install actual adapters and harness dependencies separately, and verify snapshot claims against the task's descriptor before relying on them. A catalog package version or fingerprint is not runtime-observed provenance.
+
+For separate-host admission and task-side descriptor checks, refer to [Advanced Integration](../sdk/advanced.mdx).

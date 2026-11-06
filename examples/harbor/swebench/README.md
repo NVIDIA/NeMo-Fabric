@@ -50,7 +50,7 @@ image preparation.
 
 The curl command downloads and installs the standalone NeMo Relay 0.11.0 CLI tool
 and verifies its checksum. For other installation methods, refer to the
-[NeMo Relay installation instructions](../../../docs/getting-started/install.mdx#install-nemo-relay).
+[NeMo Relay installation instructions](../../../docs/getting-started/install-relay.mdx#install-nemo-relay).
 
 The generated files are ignored by Git. The uploaded bundle contains the example
 MCP server and Relay; it does not contain a persisted `FabricConfig`.

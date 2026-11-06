@@ -1,0 +1,92 @@
+---
+slug: "/sdk/services"
+title: "Shared Services"
+description: "Prepare or attach an OpenClaw Gateway and connect independent runtimes."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+## Configure an OpenClaw Service
+
+Shared services require an adapter that advertises and implements service support. The bundled OpenClaw adapter provides this surface. The Hermes configuration used in other SDK examples does not.
+
+Install and configure OpenClaw as described in [Use the OpenClaw Adapter](../integrations/harness/openclaw.mdx), then construct the service configuration:
+
+```python
+from nemo_fabric import Fabric, FabricConfig, HarnessConfig, MetadataConfig, ModelConfig
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="shared-openclaw"),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.openclaw"),
+    models={
+        "default": ModelConfig(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            base_url="https://integrate.api.nvidia.com/v1",
+            api_key_env="NVIDIA_API_KEY",
+        )
+    },
+)
+```
+
+Set `NVIDIA_API_KEY` in the application environment before preparing the Gateway. For a caller-owned Gateway, its deployment must already supply the model and agent configuration. The attachment example below uses a separate configuration that omits deployment-owned fields.
+
+## Shared Services
+
+Use `prepare_service(...)` when NeMo Fabric should create and supervise a
+long-lived service. Start independent runtimes against the returned service,
+then stop every runtime before releasing it.
+
+```python
+import asyncio
+
+from nemo_fabric import Fabric
+
+async def main():
+    fabric = Fabric()
+    async with await fabric.prepare_service(config) as service:
+        async with await fabric.start_runtime(config, service=service) as first:
+            async with await fabric.start_runtime(config, service=service) as second:
+                first_result = await first.invoke(input="Inspect the repository")
+                second_result = await second.invoke(input="Review the latest patch")
+
+asyncio.run(main())
+```
+
+Use `attach_service(...)` when another system owns deployment and supervision.
+The adapter defines the required `ServiceReference.connection` fields. The
+reference contains locators and secret references, not secret values. Releasing
+an attachment only removes NeMo Fabric-owned clients and temporary state.
+
+```python
+import asyncio
+
+from nemo_fabric import Fabric, ServiceReference
+
+async def main():
+    attached_config = FabricConfig(
+        metadata=MetadataConfig(name="attached-openclaw"),
+        harness=HarnessConfig(adapter_id="nvidia.fabric.openclaw"),
+    )
+    reference = ServiceReference.from_mapping(
+        {
+            "adapter_id": "nvidia.fabric.openclaw",
+            "service_type": "openclaw_gateway",
+            "connection": {
+                "gateway_url": "https://openclaw.example.com",
+                "gateway_token_env": "OPENCLAW_GATEWAY_TOKEN",
+                "agent_id": "default",
+            },
+        }
+    )
+
+    fabric = Fabric()
+    async with await fabric.attach_service(attached_config, reference) as service:
+        async with await fabric.start_runtime(attached_config, service=service) as runtime:
+            result = await runtime.invoke(input="Review the latest patch")
+
+asyncio.run(main())
+```
+
+`Service.handle` is safe to inspect but is valid only in the process that
+created it. Cold-resume behavior will be defined separately.

@@ -1,0 +1,30 @@
+---
+title: "Install the NeMo Fabric Runtime"
+description: "Install the runtime that coordinates harness execution, with an optional streaming collector."
+slug: "/getting-started/installation/fabric-runtime"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Install the [NVIDIA NeMo Fabric runtime](../about-nemo-fabric/overview.mdx), which coordinates agent execution through harness adapters and returns results to your application. This guide installs the runtime and, if needed, its streaming collector. Choose an adapter and harness separately to run agent tasks.
+
+Install the runtime package:
+
+```bash
+pip install nemo-fabric
+```
+
+The `nemo-fabric` package installs the matching NeMo Fabric runtime
+unconditionally.
+
+Install the matching collector when an application uses the default
+embedded collector for NeMo Relay ATOF streaming:
+
+```bash
+pip install "nemo-fabric[streaming]"
+```
+
+Applications that set `launch_collector=False` and use an externally managed
+collector do not need this extra.
+
+Choose an adapter and harness from the [Installation Overview](install.mdx), or follow the [Quickstart](quickstart.mdx) for a complete Deep Agents task.

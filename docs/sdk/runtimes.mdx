@@ -1,0 +1,69 @@
+---
+slug: "/sdk/runtimes"
+title: "Multi-Turn Runtimes and Parallel Work"
+description: "Keep harness state across ordered turns and create independent runtimes for parallel work."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+The examples in this guide extend the typed `config` from [Configure Agents](configure.mdx#start-with-one-run). Install the selected harness and its adapter before invoking it.
+
+## Multi-Turn Runtimes
+
+Use `start_runtime(...)` when the selected harness should keep state across
+turns. Every call creates a new logical NeMo Fabric runtime; callers reuse the
+returned object rather than selecting it with a job or session ID. The runtime
+stops when its async context exits.
+
+```python
+from nemo_fabric import Fabric
+
+fabric = Fabric()
+async with await fabric.start_runtime(
+    config,
+    base_dir="/workspace/review-agent",
+) as runtime:
+    first = await runtime.invoke(input="Inspect the repository")
+    second = await runtime.invoke(input="Now review the latest patch")
+
+print(first.status, second.status)
+```
+
+The adapter reuses its native state between calls. Codex maps the calls to turns
+on one live thread, Deep Agents invokes one compiled graph and checkpointer,
+Hermes Agent reuses one agent and session database, and Claude keeps one connected SDK
+client. Harness-native identifiers remain adapter-internal.
+
+## Application-Owned Parallelism
+
+Applications create independent runtimes when they want parallel work. NeMo Fabric
+does not own a queue, worker pool, semaphore, retry policy, timeout policy, or
+numeric concurrency limit. Each `Runtime` accepts one invocation at a time so
+its ordered harness state cannot be changed by two calls at once. If an
+application overlaps calls on the same `Runtime`, the second call raises
+`FabricStateError`. To perform work in parallel, start independent runtimes;
+the application decides how many to run.
+
+Async lifecycle calls run blocking native work outside the Python event loop,
+so independent runtimes can make progress concurrently. This does not add a
+NeMo Fabric concurrency limit or scheduler.
+
+```python
+import asyncio
+
+async def review_one(prompt: str):
+    return await Fabric().run(config, input=prompt)
+
+async def main() -> None:
+    results = await asyncio.gather(
+        review_one("Review patch A"),
+        review_one("Review patch B"),
+    )
+    print([result.status for result in results])
+
+asyncio.run(main())
+```
+
+For example, each Harbor job starts an independent NeMo Fabric runtime. Harbor owns
+job IDs and concurrency policy; NeMo Fabric does not use a job ID to select or
+resume runtime state.

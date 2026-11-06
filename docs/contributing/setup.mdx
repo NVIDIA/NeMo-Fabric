@@ -1,0 +1,54 @@
+---
+slug: "/contributing/setup"
+title: "Development Setup and Building from Source"
+description: "Prepare a checkout and build the public packages."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use a source checkout when developing NVIDIA NeMo Fabric. For ordinary application usage, prefer the [package installation routes](../getting-started/install.mdx).
+
+```bash
+git clone https://github.com/NVIDIA/NeMo-Fabric.git
+cd NeMo-Fabric
+```
+
+## Build From Source
+
+
+
+**Prerequisites:**
+- Rust and Cargo
+- Python 3.11 through 3.14
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
+- `just` 1.50.0+
+
+1. Create a Python virtual environment and activate it (replace `3.13` with your preferred Python version):
+
+```bash
+uv venv -p 3.13 --seed .venv
+source .venv/bin/activate
+just install-hermes-agent
+```
+
+2. Build the Rust core and Python libraries.
+
+```bash
+just build-all
+```
+
+The above command will install only those dependencies that are strictly necessary for the build.
+Alternately If you want to install all optional dependencies, you can run:
+
+```bash
+uv sync --all-groups --all-extras
+```
+
+Then run the build command with the `no_uv=true` flag to avoid re-installing the dependencies:
+
+```bash
+just no_uv=true build-all
+```
+
+
+Follow the full [contribution guide](../../CONTRIBUTING.md) for current repository setup and toolchain requirements.

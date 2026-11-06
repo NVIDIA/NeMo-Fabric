@@ -1,0 +1,51 @@
+---
+title: "Install a Complete Runtime and Harness"
+description: "Prepare a shared Python environment for NeMo Fabric and your selected harness."
+slug: "/getting-started/installation/complete"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Prepare one Python environment to run agent tasks through NVIDIA NeMo Fabric. A [harness integration](../integrations/harness/overview.mdx) connects NeMo Fabric to the agent that executes your tasks; this guide installs the runtime and a selected adapter with its supported dependencies. Some harnesses also require a separate installation, as described below.
+
+Choose the command for your harness. Use a `nemo-fabric` harness extra when the runtime, adapter, and harness run in the same Python environment:
+
+```bash
+pip install "nemo-fabric[claude]"
+pip install "nemo-fabric[codex]"
+pip install "nemo-fabric[deepagents]"
+pip install "nemo-fabric[mini-swe-agent]"
+pip install "nemo-fabric[nooa]"
+pip install "nemo-fabric[openclaw]"
+pip install "nemo-fabric[openhands]"
+```
+
+The root extras install the dependencies selected for each adapter. Some include
+the harness; OpenClaw, OpenHands, and Hermes require separate harness installation
+as described in the individual harness guides. You can combine independent `nemo-fabric` extras. For
+example, the following command also installs Harbor; the Claude harness extra
+supplies the Relay CLI, while `relay` supplies the Relay Python package:
+
+```bash
+pip install "nemo-fabric[claude,harbor,relay]"
+```
+
+The NOOA extra supports Python 3.12 and 3.13 only. On another supported Python
+version, the command can succeed while its environment marker omits the NOOA
+adapter.
+
+The OpenClaw extra installs its adapter and HTTP client, but not OpenClaw.
+Install the `openclaw` npm package separately before using that adapter.
+
+OpenHands requires Python 3.12 or later. The root extra installs the adapter
+but not OpenHands. Install the supported `openhands-sdk` and `openhands-tools`
+packages separately as described in the
+[OpenHands adapter guide](../integrations/harness/openhands.mdx).
+
+The Claude and Codex harness extras install the `nemo-relay` CLI required for
+Relay-enabled runs. The root `relay` extra installs only the Relay Python
+package for SDK-native integrations.
+
+Use the dedicated guides for [Hermes Agent](install-hermes.mdx), [Cline](install-cline.mdx), [Factory Droid](install-droid.mdx), and [Kiro](install-kiro.mdx).
+
+Continue with your selected [harness integration guide](../integrations/harness/overview.mdx) to configure and run a task. The [Quickstart](quickstart.mdx) provides a complete Deep Agents walkthrough.
