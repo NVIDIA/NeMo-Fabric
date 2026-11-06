@@ -157,7 +157,7 @@ The adapter prepares three configuration surfaces from the resolved `AgentConfig
 
 The model credential value is supplied through the child's environment; the native model configuration references `api_key_env`.
 
-Children inherit the adapter host's environment after ambient `API_SERVER_*` variables are removed. The API gateway can also activate other Hermes platforms configured by that environment, such as Telegram through `TELEGRAM_BOT_TOKEN` or webhooks through `WEBHOOK_ENABLED`.
+Children inherit the adapter host's environment after ambient `API_SERVER_*` variables are removed. When the API interface is enabled, the generated configuration explicitly disables other known gateway platforms and profile multiplexing. Inherited settings such as `TELEGRAM_BOT_TOKEN` or `WEBHOOK_ENABLED` therefore do not start messaging adapters or their dependency installers. This restriction applies to the managed runtime home; independently launched gateways outside that home retain their own configuration.
 
 ### Native Launcher and Constructor Mapping
 

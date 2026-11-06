@@ -140,6 +140,7 @@ async def run(args: argparse.Namespace) -> None:
     prompt = f"Read {source} and create {checklist} containing a concise five-item rollout validation checklist based on the release notes. Use file tools to read and write. Then report the created file path."
     api = f"http://127.0.0.1:{args.port}"
     print(f"Evidence directory: {output}", flush=True)
+    print("Starting managed Hermes API (startup budget: 60 seconds)...", flush=True)
     async with await Fabric().start_runtime(config, base_dir=output) as runtime:
         token_path = (
             output
@@ -148,6 +149,7 @@ async def run(args: argparse.Namespace) -> None:
             / "interfaces/api.token"
         )
         print(f"API: {api}\nToken file: {token_path}", flush=True)
+        print("Running the file task (API request timeout: 180 seconds)...", flush=True)
         response = await asyncio.to_thread(
             call_api, api, token_path.read_text(), prompt
         )

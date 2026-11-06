@@ -211,6 +211,20 @@ class HermesRuntime:
                     )
                 )
             if interface_ports:
+                if "api" in interface_ports:
+                    from hermes_cli.profile_channels import platform_ids
+
+                    # This gateway serves the managed API, not ambient chat bots.
+                    # Explicit disables beat Hermes's credential-based enablement.
+                    self._hermes_config["platforms"] = {
+                        name: {"enabled": False}
+                        for name in platform_ids(self._hermes_home)
+                        if name != "api_server"
+                    }
+                    self._hermes_config["gateway"] = {"multiplex_profiles": False}
+                    self._hermes_config_path.write_text(
+                        common_utils.dump_yaml(self._hermes_config), encoding="utf-8"
+                    )
                 environment = dict(os.environ)
                 if (
                     str(model_config.provider or "").lower() == "openai"

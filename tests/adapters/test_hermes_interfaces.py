@@ -208,6 +208,39 @@ async def test_hermes_gateway_agents_receive_fabric_behavior(
     assert not config_path.exists()
 
 
+async def test_managed_api_does_not_enable_inherited_messaging_platforms(
+    tmp_path, api_server
+):
+    os.environ["TELEGRAM_BOT_TOKEN"] = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi"
+    os.environ["WEBHOOK_ENABLED"] = "true"
+    os.environ["HERMES_DISABLE_LAZY_INSTALLS"] = "1"
+    port = _free_port()
+    runtime = adapter.HermesRuntime()
+    try:
+        await runtime.start(
+            _payload(
+                tmp_path, _interface("api", port=port), base_url=f"{api_server}/v1"
+            )
+        )
+        from gateway.config import Platform, load_gateway_config
+
+        config = load_gateway_config()
+        assert config.platforms[Platform.TELEGRAM].enabled is False
+        assert config.platforms[Platform.WEBHOOK].enabled is False
+        assert config.multiplex_profiles is False
+        # Only the child receives API_SERVER_KEY; no other platform may connect.
+        assert set(config.get_connected_platforms()) <= {Platform.API_SERVER}
+        reply = await asyncio.to_thread(
+            requests.get, f"http://127.0.0.1:{port}/health", timeout=5
+        )
+        assert reply.status_code == 200
+        log = (runtime._hermes_home / "logs/fabric-interface-api.log").read_text()
+        assert "attempting install" not in log
+        assert os.environ["TELEGRAM_BOT_TOKEN"].startswith("123456789:")
+    finally:
+        await runtime.stop()
+
+
 async def test_api_turns_export_atif_without_resetting_native_conversation(
     tmp_path: Path, api_server: str
 ):
