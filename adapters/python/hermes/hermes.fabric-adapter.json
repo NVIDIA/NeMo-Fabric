@@ -106,6 +106,26 @@
             ],
             "additionalProperties": false,
             "description": "Hermes's dashboard, which has no sign-in when bound to loopback. It needs a built frontend at HERMES_WEB_DIST."
+          },
+          "terminal": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535,
+                "description": "TUI backend loopback port. Must match dashboard.port when both interfaces are enabled."
+              }
+            },
+            "required": [
+              "port"
+            ],
+            "additionalProperties": false,
+            "description": "Terminal attachment to a managed TUI backend. Uses headless serve without dashboard assets, or shares the dashboard process. Writes interfaces/tui.json and tui.token."
           }
         },
         "additionalProperties": false,
@@ -132,7 +152,81 @@
       }
     },
     "required": [],
-    "additionalProperties": false
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "if": {
+          "required": [
+            "sdk"
+          ],
+          "properties": {
+            "sdk": {
+              "required": [
+                "enabled"
+              ],
+              "properties": {
+                "enabled": {
+                  "const": false
+                }
+              }
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "interfaces"
+          ],
+          "properties": {
+            "interfaces": {
+              "anyOf": [
+                {
+                  "required": [
+                    "api"
+                  ],
+                  "properties": {
+                    "api": {
+                      "properties": {
+                        "enabled": {
+                          "const": true
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "dashboard"
+                  ],
+                  "properties": {
+                    "dashboard": {
+                      "properties": {
+                        "enabled": {
+                          "const": true
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "terminal"
+                  ],
+                  "properties": {
+                    "terminal": {
+                      "properties": {
+                        "enabled": {
+                          "const": true
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
   },
   "extension_schemas": {
     "run_error": {

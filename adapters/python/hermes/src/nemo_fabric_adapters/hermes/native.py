@@ -27,17 +27,15 @@ from nemo_fabric_adapters.hermes import telemetry
 LOGGER = logging.getLogger(__name__)
 
 
-def finalize_api_turn(agent: Any) -> None:
-    """Close the API turn's Relay segment without deleting native conversation state."""
-    if agent.platform != "api_server" or not os.environ.get(
-        "HERMES_NEMO_RELAY_PLUGINS_TOML"
-    ):
+def finalize_native_turn(agent: Any) -> None:
+    """Close the native turn's Relay segment without deleting native conversation state."""
+    if not os.environ.get("HERMES_NEMO_RELAY_PLUGINS_TOML"):
         return
     try:
         telemetry.finalize_native_relay_segment(agent.session_id)
     except Exception:
         # A telemetry failure must not replace an execution result or its error.
-        LOGGER.exception("Hermes API turn Relay finalization failed")
+        LOGGER.exception("Hermes native turn Relay finalization failed")
 
 
 def configured_kwargs(
@@ -88,7 +86,7 @@ def main() -> None:
             try:
                 return super().run_conversation(*args, **kwargs)
             finally:
-                finalize_api_turn(self)
+                finalize_native_turn(self)
 
     run_agent.AIAgent = ConfiguredAIAgent
     from hermes_cli.main import main as hermes_main

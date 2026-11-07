@@ -842,6 +842,80 @@
         "settings_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "sdk": {
+                    "properties": {
+                      "enabled": {
+                        "const": false
+                      }
+                    },
+                    "required": [
+                      "enabled"
+                    ]
+                  }
+                },
+                "required": [
+                  "sdk"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "interfaces": {
+                    "anyOf": [
+                      {
+                        "properties": {
+                          "api": {
+                            "properties": {
+                              "enabled": {
+                                "const": true
+                              }
+                            }
+                          }
+                        },
+                        "required": [
+                          "api"
+                        ]
+                      },
+                      {
+                        "properties": {
+                          "dashboard": {
+                            "properties": {
+                              "enabled": {
+                                "const": true
+                              }
+                            }
+                          }
+                        },
+                        "required": [
+                          "dashboard"
+                        ]
+                      },
+                      {
+                        "properties": {
+                          "terminal": {
+                            "properties": {
+                              "enabled": {
+                                "const": true
+                              }
+                            }
+                          }
+                        },
+                        "required": [
+                          "terminal"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "interfaces"
+                ]
+              }
+            }
+          ],
           "properties": {
             "interfaces": {
               "additionalProperties": false,
@@ -879,6 +953,26 @@
                     },
                     "port": {
                       "description": "Exact loopback port for the dashboard. Start fails if it is in use.",
+                      "maximum": 65535,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "port"
+                  ],
+                  "type": "object"
+                },
+                "terminal": {
+                  "additionalProperties": false,
+                  "description": "Terminal attachment to a managed TUI backend. Uses headless serve without dashboard assets, or shares the dashboard process. Writes interfaces/tui.json and tui.token.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "type": "boolean"
+                    },
+                    "port": {
+                      "description": "TUI backend loopback port. Must match dashboard.port when both interfaces are enabled.",
                       "maximum": 65535,
                       "minimum": 1,
                       "type": "integer"
@@ -984,7 +1078,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.7.0"
       },
-      "sha256": "0f3751140d29588ab7100f9f86fe5050ac06b758554612ebe258e6024f26fdd0",
+      "sha256": "1efbf6c4c6d7064b96d7c6d88ace9471e7589537214991d4e3005e76fd32988c",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {

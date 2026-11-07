@@ -122,9 +122,15 @@ def test_native_tool_defaults_survive_without_explicit_policy(tools, enabled, bl
 
 @pytest.mark.parametrize(
     "platform,relay_enabled,expected",
-    [("api_server", True, True), ("api_server", False, False), ("cli", True, False)],
+    [
+        ("api_server", True, True),
+        ("api_server", False, False),
+        ("tui", True, True),
+        ("desktop", True, True),
+        ("cli", True, True),
+    ],
 )
-def test_only_relay_enabled_api_turns_finalize(
+def test_relay_enabled_native_turns_finalize(
     monkeypatch, platform, relay_enabled, expected
 ):
     if relay_enabled:
@@ -135,7 +141,7 @@ def test_only_relay_enabled_api_turns_finalize(
     monkeypatch.setattr(native.telemetry, "finalize_native_relay_segment", finalize)
     agent = MagicMock(platform=platform, session_id="native-session")
 
-    native.finalize_api_turn(agent)
+    native.finalize_native_turn(agent)
 
     if expected:
         finalize.assert_called_once_with("native-session")
@@ -143,15 +149,15 @@ def test_only_relay_enabled_api_turns_finalize(
         finalize.assert_not_called()
 
 
-def test_api_relay_finalization_failure_is_reported_without_raising(
+def test_native_relay_finalization_failure_is_reported_without_raising(
     monkeypatch, caplog
 ):
     os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] = "/test/plugins.toml"
     finalize = MagicMock(side_effect=RuntimeError("test export failure"))
     monkeypatch.setattr(native.telemetry, "finalize_native_relay_segment", finalize)
 
-    native.finalize_api_turn(
+    native.finalize_native_turn(
         MagicMock(platform="api_server", session_id="native-session")
     )
 
-    assert "Hermes API turn Relay finalization failed" in caplog.text
+    assert "Hermes native turn Relay finalization failed" in caplog.text
