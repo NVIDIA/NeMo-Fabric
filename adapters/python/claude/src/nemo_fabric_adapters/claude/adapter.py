@@ -36,6 +36,7 @@ from claude_agent_sdk import HookMatcher
 from claude_agent_sdk._errors import MessageParseError
 from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
 from claude_agent_sdk.types import EffortLevel
+from nemo_fabric_adapter_contract import skills as contract_skills
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
@@ -432,8 +433,13 @@ def _cleanup_mcp_config(config_path: Path | None) -> None:
 
 
 def _native_skill_paths(config: AgentConfig, base_dir: str) -> list[Path]:
-    values = config.skills.paths if config.skills is not None else []
-    return [_resolve_path(base_dir, value) for value in values]
+    try:
+        skills = contract_skills.resolve_skills(
+            config.skills.paths if config.skills is not None else [], base_dir
+        )
+    except contract_skills.SkillPathError as error:
+        raise AdapterConfigError("claude_invalid_configuration", str(error)) from None
+    return [skill.path for skill in skills]
 
 
 def _stage_skill_plugin(
@@ -446,16 +452,13 @@ def _stage_skill_plugin(
     skills: list[tuple[str, Path]] = []
     names: set[str] = set()
     for skill_path in skill_paths:
-        if not skill_path.is_dir() or not (skill_path / "SKILL.md").is_file():
-            raise AdapterConfigError(
-                "claude_invalid_configuration",
-                f"NeMo Fabric skill path must be a directory containing SKILL.md: {skill_path}",
-            )
+        # The plugin keeps each skill under its folder name, so two skills
+        # from different folders with the same folder name cannot both load.
         name = skill_path.name
         if name in names:
             raise AdapterConfigError(
                 "claude_invalid_configuration",
-                f"NeMo Fabric skill names must be unique: {name}",
+                f"NeMo Fabric skill folder names must be unique: {name}",
             )
         names.add(name)
         skills.append((name, skill_path))
