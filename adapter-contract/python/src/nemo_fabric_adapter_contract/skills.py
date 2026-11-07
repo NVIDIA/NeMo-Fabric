@@ -29,7 +29,8 @@ SKILL_FILE = "SKILL.md"
 
 SkillPathFailure = Literal["not_found", "invalid", "duplicate"]
 
-_NAME = re.compile(r"name:\s*(.*?)\s*")
+_NAME = re.compile(r"name:(?:[ \t]+(.*?))?[ \t]*")
+_COMMENT = re.compile(r"[ \t]+#")
 
 
 @dataclass(frozen=True)
@@ -66,13 +67,18 @@ def resolve_skills(
 ) -> list[Skill]:
     """Return the skills named by ``paths``, resolving relative entries against ``base_dir``.
 
+    A folder inside an entry that cannot be read is not a skill. The same
+    folder reached through several entries loads once.
+
     Raises:
-        SkillPathError: If an entry does not exist or is not a folder, or two
-            skills share a name.
+        SkillPathError: If an entry does not exist, is not a folder, or cannot
+            be read, if a skill's ``SKILL.md`` cannot be read, or if two skills
+            share a name.
     """
 
     skills: list[Skill] = []
     by_name: dict[str, Skill] = {}
+    folders: set[tuple[int, int]] = set()
     for index, value in enumerate(paths):
         field = f"skills.paths[{index}]"
         configured = Path(base_dir) / value
@@ -92,13 +98,16 @@ def resolve_skills(
                 field=field,
                 paths=(configured,),
             )
-        for directory in _skill_directories(entry):
-            skill = Skill(name=_skill_name(directory), path=directory, field=field)
+        for directory in _skill_directories(entry, field, configured):
+            folder = _folder_identity(directory)
+            if folder in folders:
+                continue
+            folders.add(folder)
+            skill = Skill(
+                name=_skill_name(directory, field), path=directory, field=field
+            )
             existing = by_name.get(skill.name)
-            if existing is None:
-                by_name[skill.name] = skill
-                skills.append(skill)
-            elif existing.path != skill.path:
+            if existing is not None:
                 raise SkillPathError(
                     "duplicate",
                     f"NeMo Fabric skill {skill.name!r} is configured twice: "
@@ -106,31 +115,82 @@ def resolve_skills(
                     field=field,
                     paths=(existing.path, skill.path),
                 )
+            by_name[skill.name] = skill
+            skills.append(skill)
     return skills
 
 
-def _skill_directories(entry: Path) -> list[Path]:
-    if (entry / SKILL_FILE).is_file():
-        return [entry]
-    return [
-        child.resolve()
-        for child in sorted(entry.iterdir(), key=lambda child: child.name)
-        if child.is_dir() and (child / SKILL_FILE).is_file()
-    ]
+def _skill_directories(entry: Path, field: str, configured: Path) -> list[Path]:
+    try:
+        if (entry / SKILL_FILE).is_file():
+            return [entry]
+        children = sorted(entry.iterdir(), key=lambda child: child.name)
+    except OSError:
+        raise SkillPathError(
+            "invalid",
+            f"NeMo Fabric skill path {field} cannot be read: {configured}",
+            field=field,
+            paths=(configured,),
+        ) from None
+    return [child.resolve() for child in children if _is_skill(child)]
 
 
-def _skill_name(directory: Path) -> str:
-    text = (directory / SKILL_FILE).read_text(encoding="utf-8-sig", errors="replace")
-    front_matter = text.splitlines()
-    if front_matter[:1] == ["---"]:
-        for line in front_matter[1:]:
-            if line.strip() == "---":
-                break
-            match = _NAME.fullmatch(line)
-            if match:
-                name = match.group(1)
-                if len(name) >= 2 and name[0] == name[-1] and name[0] in "\"'":
-                    name = name[1:-1]
-                if name:
-                    return name
-    return directory.name
+def _is_skill(child: Path) -> bool:
+    # A folder that cannot be read, such as a volume's lost+found, is not a skill.
+    try:
+        return child.is_dir() and (child / SKILL_FILE).is_file()
+    except OSError:
+        return False
+
+
+def _folder_identity(directory: Path) -> tuple[int, int]:
+    # Compare folders by identity so that spellings resolve() keeps apart, such
+    # as a different case on a case-insensitive file system, still match.
+    stat = directory.stat()
+    return stat.st_dev, stat.st_ino
+
+
+def _skill_name(directory: Path, field: str) -> str:
+    skill_file = directory / SKILL_FILE
+    try:
+        with skill_file.open(encoding="utf-8-sig", errors="replace") as lines:
+            name = _front_matter_name(lines)
+    except OSError:
+        raise SkillPathError(
+            "invalid",
+            f"NeMo Fabric skill path {field} has a {SKILL_FILE} that cannot be "
+            f"read: {skill_file}",
+            field=field,
+            paths=(skill_file,),
+        ) from None
+    return name or directory.name
+
+
+def _front_matter_name(lines: Iterable[str]) -> str | None:
+    """Return the ``name`` scalar of a ``---`` front matter block, if any."""
+
+    lines = iter(lines)
+    if next(lines, "").rstrip() != "---":
+        return None
+    name: str | None = None
+    for line in lines:
+        line = line.rstrip()
+        if line == "---":
+            return name
+        match = _NAME.fullmatch(line)
+        if match and not name:
+            name = _scalar(match.group(1) or "")
+    # Without its closing line the block is not front matter.
+    return None
+
+
+def _scalar(value: str) -> str:
+    if value[:1] in ("'", '"'):
+        end = value.find(value[0], 1)
+        rest = value[end + 1 :].strip() if end > 0 else ""
+        if end > 0 and (not rest or rest.startswith("#")):
+            return value[1:end]
+        return value
+    if value.startswith("#"):
+        return ""
+    return _COMMENT.split(value, maxsplit=1)[0]

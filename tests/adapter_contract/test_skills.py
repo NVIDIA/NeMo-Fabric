@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+import os
 from pathlib import Path
 
 import pytest
@@ -139,4 +141,125 @@ def test_same_skill_listed_twice_loads_once(tmp_path: Path):
 
     assert resolve_skills([shared, review], tmp_path) == [
         Skill(name="review", path=review.resolve(), field="skills.paths[0]")
+    ]
+
+
+_POSIX_PERMISSIONS = pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="needs POSIX permissions enforced for a non-root user",
+)
+
+
+@pytest.fixture(name="lock")
+def lock_fixture() -> Iterator[Callable[[Path], Path]]:
+    """Remove all permissions from a path and restore them after the test."""
+    locked: list[Path] = []
+
+    def lock(path: Path) -> Path:
+        path.chmod(0)
+        locked.append(path)
+        return path
+
+    yield lock
+    for path in reversed(locked):
+        path.chmod(0o700)
+
+
+@_POSIX_PERMISSIONS
+def test_unreadable_folder_inside_entry_is_ignored(
+    tmp_path: Path, lock: Callable[[Path], Path]
+):
+    shared = tmp_path / "shared"
+    one = _skill(shared / "one", "one")
+    (shared / "lost+found").mkdir()
+    lock(shared / "lost+found")
+
+    assert resolve_skills([shared], tmp_path) == [
+        Skill(name="one", path=one.resolve(), field="skills.paths[0]")
+    ]
+
+
+@_POSIX_PERMISSIONS
+def test_unreadable_entry_fails_naming_it(tmp_path: Path, lock: Callable[[Path], Path]):
+    review = _skill(tmp_path / "review", "review")
+    entry = tmp_path / "locked"
+    entry.mkdir()
+    lock(entry)
+
+    with pytest.raises(SkillPathError) as caught:
+        resolve_skills([review, entry], tmp_path)
+
+    assert caught.value.reason == "invalid"
+    assert caught.value.field == "skills.paths[1]"
+    assert caught.value.paths == (entry,)
+    assert "skills.paths[1]" in str(caught.value)
+    assert str(entry) in str(caught.value)
+
+
+@_POSIX_PERMISSIONS
+def test_unreadable_skill_file_fails_naming_it(
+    tmp_path: Path, lock: Callable[[Path], Path]
+):
+    shared = tmp_path / "shared"
+    review = _skill(shared / "review", "review")
+    lock(review / "SKILL.md")
+
+    with pytest.raises(SkillPathError) as caught:
+        resolve_skills([shared], tmp_path)
+
+    assert caught.value.reason == "invalid"
+    assert caught.value.field == "skills.paths[0]"
+    assert caught.value.paths == (review.resolve() / "SKILL.md",)
+    assert str(review.resolve() / "SKILL.md") in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("text", "name"),
+    [
+        ("---\nname: code-review # main skill\n---\n", "code-review"),
+        ("---\nname: 'code-review' # quoted\n---\n", "code-review"),
+        ("---\nname: code#review\n---\n", "code#review"),
+        ("--- \nname: code-review\n---\n", "code-review"),
+        ("---\nname:\n---\n", "review"),
+        ("---\ndescription: Front matter without an end.\nname: code-review\n", "review"),
+        ("# Review\n\nname: code-review\n", "review"),
+    ],
+)
+def test_skill_name_follows_front_matter(tmp_path: Path, text: str, name: str):
+    review = tmp_path / "review"
+    review.mkdir()
+    (review / "SKILL.md").write_text(text, encoding="utf-8")
+
+    assert [skill.name for skill in resolve_skills([review], tmp_path)] == [name]
+
+
+def test_skill_md_folder_does_not_make_a_skill(tmp_path: Path):
+    shared = tmp_path / "shared"
+    (shared / "SKILL.md").mkdir(parents=True)
+    one = _skill(shared / "one", "one")
+
+    assert resolve_skills([shared], tmp_path) == [
+        Skill(name="one", path=one.resolve(), field="skills.paths[0]")
+    ]
+
+
+@pytest.mark.parametrize("spelling", ["review/", "./review", "other/../review", "link"])
+def test_same_skill_spelled_differently_loads_once(tmp_path: Path, spelling: str):
+    review = _skill(tmp_path / "review", "review")
+    (tmp_path / "other").mkdir()
+    if spelling == "link":
+        (tmp_path / "link").symlink_to(review, target_is_directory=True)
+
+    assert resolve_skills(["review", spelling], tmp_path) == [
+        Skill(name="review", path=review.resolve(), field="skills.paths[0]")
+    ]
+
+
+def test_same_skill_in_another_case_loads_once(tmp_path: Path):
+    review = _skill(tmp_path / "Review")
+    if not (tmp_path / "review").exists():
+        pytest.skip("needs a case-insensitive file system")
+
+    assert resolve_skills(["Review", "review"], tmp_path) == [
+        Skill(name="Review", path=review.resolve(), field="skills.paths[0]")
     ]

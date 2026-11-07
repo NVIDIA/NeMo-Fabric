@@ -71,7 +71,7 @@ skill folders exist. An entry that contains `SKILL.md` is one skill. Otherwise
 each folder directly inside the entry that contains `SKILL.md` is a skill, and
 other files and folders are ignored. An entry that exists but holds no skills
 loads nothing. Fail start when an entry does not exist, when an entry is not a
-folder, or when two skills share a name, and name the entry or both skill
+readable folder, or when two skills share a name, and name the entry or both skill
 folders. A skill's name is the `name` field of its `SKILL.md` front matter, or
 its folder name. Python adapters can call
 `nemo_fabric_adapter_contract.skills.resolve_skills(paths, base_dir)`, which

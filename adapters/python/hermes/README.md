@@ -82,7 +82,7 @@ ignored. Mix the two forms to combine a shared folder of skills with a skill
 mounted on its own. An entry that exists but holds no skills, such as a new,
 empty volume, loads nothing. Start fails with `hermes_skill_not_found` when an
 entry does not exist and with `hermes_skill_invalid` when an entry is not a
-folder or two skills share a name; the error names the entry or both skill
+readable folder or two skills share a name; the error names the entry or both skill
 folders. The adapter passes each skill folder to Hermes Agent's
 `skills.external_dirs`, so Hermes does not search the rest of a configured
 folder.
