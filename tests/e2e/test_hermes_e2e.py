@@ -319,7 +319,9 @@ async def test_skill_selection(
         ), loaded
     else:
         skill_dir = {"default": default_skill, "alternate": alternate_skill}[skill]
-        assert loaded["content"] == (skill_dir / "SKILL.md").read_text(), loaded
+        assert loaded["content"] == (skill_dir / "SKILL.md").read_text(
+            encoding="utf-8"
+        ), loaded
 
 
 def _write_skill(directory: Path, name: str) -> Path:

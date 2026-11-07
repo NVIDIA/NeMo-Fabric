@@ -717,7 +717,9 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     )
     payload["config"] = agent_config.to_mapping()
     (tmp_path / "skills" / "review").mkdir(parents=True)
-    (tmp_path / "skills" / "review" / "SKILL.md").write_text("# Review\n")
+    (tmp_path / "skills" / "review" / "SKILL.md").write_text(
+        "# Review\n", encoding="utf-8"
+    )
 
     config = configuration.build_hermes_config(
         agent_config,

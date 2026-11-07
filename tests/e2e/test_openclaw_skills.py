@@ -25,7 +25,7 @@ def openclaw_package_fixture() -> Path:
     if configured is None:
         pytest.skip("OPENCLAW_TEST_PACKAGE must name the installed native package")
     package = Path(configured).resolve()
-    manifest = json.loads((package / "package.json").read_text())
+    manifest = json.loads((package / "package.json").read_text(encoding="utf-8"))
     assert manifest["version"] in adapter.SUPPORTED_OPENCLAW_VERSIONS
     return package
 
@@ -75,7 +75,7 @@ def _load_natively(
 ) -> list[dict]:
     native = _native_config(tmp_path, paths)
     config_path = tmp_path / "openclaw.json"
-    config_path.write_text(json.dumps(native))
+    config_path.write_text(json.dumps(native), encoding="utf-8")
     home = tmp_path / "home"
     home.mkdir()
     probe = Path(__file__).parents[1] / "_utils" / "openclaw_skills.mjs"
