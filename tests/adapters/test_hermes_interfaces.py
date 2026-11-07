@@ -928,3 +928,133 @@ async def test_tui_turns_export_atif_while_client_stays_connected(
         assert runtime._agent is None
     finally:
         await runtime.stop()
+
+
+async def test_tui_readiness_times_out_after_websocket_upgrade():
+    from aiohttp import web
+
+    async def silent_backend(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        async for _ in ws:
+            pass
+        return ws
+
+    app = web.Application()
+    app.router.add_get("/api/ws", silent_backend)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = _free_port()
+    try:
+        await web.TCPSite(runner, "127.0.0.1", port).start()
+        started = time.monotonic()
+        assert not await asyncio.wait_for(
+            interfaces.tui_ready(port, "test-token"), timeout=4
+        )
+        assert time.monotonic() - started < 3
+    finally:
+        await runner.cleanup()
+
+
+async def test_four_paths_keep_conversations_separate_and_restart_cleanly(
+    tmp_path, api_server, web_dist
+):
+    import aiohttp
+    from nemo_fabric_adapter_contract.models import AgentRunRequest
+
+    api_port, tui_port = _free_port(), _free_port()
+    payload = _payload(
+        tmp_path,
+        {
+            "interfaces": {
+                "api": {"port": api_port},
+                "dashboard": {"port": tui_port},
+                "terminal": {"port": tui_port},
+            }
+        },
+        base_url=f"{api_server}/v1",
+    )
+    runtime = adapter.HermesRuntime()
+    labels = [
+        "sdk-concurrent-marker",
+        "api-concurrent-marker",
+        "browser-concurrent-marker",
+        "terminal-concurrent-marker",
+    ]
+
+    async def tui_turn(client, token, label):
+        async with client.ws_connect(
+            f"http://127.0.0.1:{tui_port}/api/ws", params={"token": token}
+        ) as ws:
+            await ws.send_json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "session.create",
+                    "params": {"cwd": str(tmp_path)},
+                }
+            )
+            while True:
+                frame = await ws.receive_json(timeout=30)
+                if frame.get("id") == 1:
+                    session_id = frame["result"]["session_id"]
+                    break
+            await ws.send_json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "prompt.submit",
+                    "params": {"session_id": session_id, "text": label},
+                }
+            )
+            while True:
+                frame = await ws.receive_json(timeout=60)
+                if (
+                    frame.get("method") == "event"
+                    and frame["params"]["type"] == "message.complete"
+                ):
+                    return session_id
+
+    try:
+        await runtime.start(payload)
+        token = _token_path(tmp_path).read_text()
+        tui_token = _token_path(tmp_path).with_name("tui.token").read_text()
+        assert len(runtime._interfaces._children) == 2
+        async with aiohttp.ClientSession() as client:
+
+            async def api_turn():
+                async with client.post(
+                    f"http://127.0.0.1:{api_port}/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={
+                        "model": "hermes-agent",
+                        "messages": [{"role": "user", "content": labels[1]}],
+                    },
+                ) as response:
+                    assert response.status == 200
+                    await response.read()
+
+            results = await asyncio.gather(
+                runtime.invoke(
+                    AgentRunRequest.from_mapping({"input": labels[0]}),
+                    RuntimeContext.from_mapping(payload["runtime_context"]),
+                ),
+                api_turn(),
+                tui_turn(client, tui_token, labels[2]),
+                tui_turn(client, tui_token, labels[3]),
+            )
+            assert results[2] != results[3]
+            async with client.get(f"{api_server}/_requests") as response:
+                captured = await response.json()
+        turns = [request for request in captured if request.get("tools")]
+        assert len(turns) == 4
+        for request in turns:
+            history = json.dumps(request["messages"])
+            assert sum(label in history for label in labels) == 1
+        await runtime.stop()
+        assert interfaces.local_interfaces.port_available(api_port)
+        assert interfaces.local_interfaces.port_available(tui_port)
+        await runtime.start(payload)
+        assert (await runtime.check("ready"))["outcome"] == "passed"
+    finally:
+        await runtime.stop()

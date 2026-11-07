@@ -362,9 +362,10 @@ async def tui_ready(port: int, token: str) -> bool:
     import aiohttp
 
     try:
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=2)
-        ) as client:
+        async with (
+            asyncio.timeout(2),
+            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2)) as client,
+        ):
             async with client.ws_connect(
                 f"http://127.0.0.1:{port}/api/ws", params={"token": token}
             ) as ws:
