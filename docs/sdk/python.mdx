@@ -864,10 +864,13 @@ By default, each runtime keeps its native state in its own folder, so a new
 runtime starts empty. Set `"keep_state": true` in the config's `runtime`
 mapping to give every runtime of the agent one folder instead:
 `<artifact root>/.fabric/state/<adapter id>/<agent name>`. The config needs an
-artifact directory, and `metadata.name` must be usable as one folder name.
-Only one runtime can use the folder at a time: `start_runtime(...)` fails while
-another runtime of the agent runs. A service and one runtime connected to it
-share the folder; the service holds it until `release_service(...)`, even with
+artifact directory, and `metadata.name` and the adapter ID must each be usable
+as one folder name on Linux, macOS, and Windows: no `/`, `\`, `<>:"|?*`, or
+control characters, no trailing space or `.`, and not a Windows device name such
+as `CON` or `NUL`. On Linux and macOS, only the folder's owner can read it.
+Only one runtime can use the folder at a time: `Fabric.start_runtime(...)` fails
+while another runtime of the agent runs. A service and one runtime connected to
+it share the folder; the service holds it until `Service.release()`, even with
 no runtime connected. Planning fails without an artifact directory, or for an
 adapter that doesn't declare `runtime.keep_state`.
 
