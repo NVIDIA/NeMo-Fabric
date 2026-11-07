@@ -115,14 +115,14 @@ class HermesRuntime:
             model_config = configuration._selected_model(agent_config)
             self._model_config = model_config
             self._runtime_id = runtime_context.runtime_id
-            self._hermes_home = (
-                _artifact_root(runtime_context, common_utils.base_dir(payload))
-                / ".fabric"
-                / "hermes"
-                / "runtimes"
-                / runtime_context.runtime_id
+            self._hermes_home = _hermes_home(
+                runtime_context, common_utils.base_dir(payload)
             )
             self._hermes_home.mkdir(parents=True, exist_ok=True)
+            # A runtime that ended without stop can leave its API token in a
+            # kept Hermes home, for a server that no longer runs.
+            token_path = self._hermes_home / "interfaces" / "api.token"
+            token_path.unlink(missing_ok=True)
             os.environ["HOME"] = str(self._hermes_home)
             os.environ["HERMES_HOME"] = str(self._hermes_home)
             os.environ.setdefault("HERMES_YOLO_MODE", "1")
@@ -242,7 +242,7 @@ class HermesRuntime:
                 await self._interfaces.start(
                     interface_ports,
                     hermes_home=self._hermes_home,
-                    token_path=self._hermes_home / "interfaces" / "api.token",
+                    token_path=token_path,
                     timeout=max(
                         interfaces.startup_timeout(self._settings)
                         - (asyncio.get_running_loop().time() - started_at),
@@ -698,6 +698,20 @@ class HermesRuntime:
                 "hermes_runtime_stop_failed",
                 "Hermes runtime failed to stop cleanly",
             ) from errors[0]
+
+
+def _hermes_home(runtime_context: RuntimeContext, base_dir: str) -> Path:
+    """Return the agent's state folder when Fabric keeps state across runtimes,
+    otherwise this runtime's own folder."""
+    if runtime_context.state_dir:
+        return Path(runtime_context.state_dir)
+    return (
+        _artifact_root(runtime_context, base_dir)
+        / ".fabric"
+        / "hermes"
+        / "runtimes"
+        / runtime_context.runtime_id
+    )
 
 
 def _artifact_root(runtime_context: RuntimeContext, base_dir: str) -> Path:

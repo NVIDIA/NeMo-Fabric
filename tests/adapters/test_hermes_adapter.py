@@ -203,6 +203,7 @@ def test_descriptor_uses_the_typed_agent_config_contract():
         "models.max_tokens",
         "instructions.system",
         "runtime.max_turns",
+        "runtime.keep_state",
         "tools.enabled",
         "tools.blocked",
         "mcp",
@@ -1242,6 +1243,24 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
 
     with pytest.raises(RuntimeError, match="stop after environment setup"):
         await adapter.HermesRuntime().start(payload)
+
+
+@pytest.mark.parametrize("kept", [False, True])
+def test_hermes_home_is_the_agents_state_folder_when_fabric_keeps_state(
+    tmp_path: Path, kept: bool
+):
+    state_dir = tmp_path / "artifacts/.fabric/state/nvidia.fabric.hermes/assistant"
+    context = _runtime_context(artifact_root="artifacts").to_mapping()
+    if kept:
+        context["state_dir"] = str(state_dir)
+
+    home = adapter._hermes_home(RuntimeContext.from_mapping(context), str(tmp_path))
+
+    assert home == (
+        state_dir
+        if kept
+        else tmp_path / "artifacts/.fabric/hermes/runtimes/runtime-1"
+    )
 
 
 def test_artifact_root_resolves_relative_to_base_dir(tmp_path: Path):

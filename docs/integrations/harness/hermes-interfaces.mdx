@@ -72,11 +72,13 @@ An absent interface is off. A present interface is on unless `enabled` is `false
 
 ### API Access
 
-The API server binds to `127.0.0.1` at its configured port. After every enabled interface passes readiness, the adapter writes a per-start bearer token with mode `0600` to:
+The API server binds to `127.0.0.1` at its configured port. After every enabled interface passes readiness, the adapter writes a per-start bearer token with mode `0600` to `interfaces/api.token` in the Hermes home. By default, that is:
 
 ```text
 <artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/api.token
 ```
+
+With `runtime.keep_state`, the Hermes home is the agent's state folder, `<artifact root>/.fabric/state/nvidia.fabric.hermes/<agent name>`.
 
 Clients calling the native API must read the generated token file and include `Authorization: Bearer <token>` in each HTTP request. Only the API gateway child receives it in its environment. Processes running as the runtime's user, including agent tools, can read the token file.
 
@@ -88,7 +90,7 @@ Open the configured loopback port in a browser. The dashboard has no sign-in: He
 
 Ordered SDK invocations reuse the embedded agent's conversation. Native clients use Hermes's native session mechanisms and receive native responses; these do not pass through `Runtime.invoke()` or become NeMo Fabric `RunResult` objects.
 
-The runtime's Hermes home is stored under `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. Sharing that home gives access to persisted resources, but does not select a shared live conversation or establish cross-runtime resume.
+The runtime's Hermes home is stored under `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`, or in the agent's state folder with `runtime.keep_state`. Sharing that home gives access to persisted resources, but does not select a shared live conversation or establish cross-runtime resume.
 
 ## 4. What NeMo Fabric Manages
 
