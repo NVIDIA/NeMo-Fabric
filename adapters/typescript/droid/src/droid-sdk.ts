@@ -17,6 +17,7 @@ import type {
 import {
   unobservedHealth,
   LifecycleError,
+  resolveSkillFolders,
   type AdapterStartInput,
 } from "nemo-fabric-adapters-common";
 
@@ -402,7 +403,11 @@ async function prepareRuntimeProfile(
   if (input.config.skills?.extensions !== undefined) {
     throw new LifecycleError("droid_skill_extensions_unsupported", "Droid does not support skill extensions");
   }
-  const configured = input.config.skills?.paths ?? [];
+  const configured = await resolveSkillFolders(input.config.skills?.paths ?? [], input.baseDir, {
+    not_found: "droid_skill_invalid",
+    invalid: "droid_skill_invalid",
+    duplicate: "droid_skill_invalid",
+  });
   const sourceHome = settingsHome(input, parentEnvironment);
   const settingsEnvironment = await customModelSettingsEnvironment(input, model, sourceHome, parentEnvironment);
   if (configured.length === 0 && !hasMcpServers) return { entrypoints: [], settingsEnvironment };
@@ -433,20 +438,8 @@ async function prepareRuntimeProfile(
     if (configured.length > 0) await mkdir(skillsRoot, { recursive: true });
     const names = new Set<string>();
     const entrypoints: string[] = [];
-    for (const configuredPath of configured) {
-      let source: string;
-      try {
-        source = await realpath(resolve(input.baseDir, configuredPath));
-        if (!(await stat(source)).isDirectory() || !(await stat(join(source, "SKILL.md"))).isFile()) {
-          throw new Error("invalid skill directory");
-        }
-      } catch {
-        throw new LifecycleError(
-          "droid_skill_invalid",
-          "Droid skill paths must be directories containing a SKILL.md file",
-          { metadata: { path: configuredPath } },
-        );
-      }
+    for (const source of configured) {
+      // Droid's home keeps each skill under its folder name.
       const name = basename(source);
       if (name.length === 0 || names.has(name)) {
         throw new LifecycleError("droid_skill_collision", "Configured Droid skills must use distinct directory names", {

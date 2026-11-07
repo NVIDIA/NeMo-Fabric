@@ -13,6 +13,7 @@ import {
   modelAwareCompactionReserveTokens,
   PiSdkSessionFactory,
   resolveCustomTools,
+  resolveSkillPaths,
   selectPiMcpServers,
   withCustomBaseUrl,
 } from "../dist/pi-sdk.js";
@@ -1505,4 +1506,34 @@ test("accepts a well-formed extensions.cost", async () => {
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
+});
+
+async function skillFolder(root, ...names) {
+  for (const name of names) {
+    await mkdir(join(root, name), { recursive: true });
+    await writeFile(join(root, name, "SKILL.md"), `---\nname: ${name}\ndescription: Test skill.\n---\n`, "utf8");
+  }
+  await mkdir(root, { recursive: true });
+  return root;
+}
+
+test("resolves each skill directly inside a configured skill folder", async (t) => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fabric-pi-skill-folder-")));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const shared = await skillFolder(join(root, "shared"), "lint", "review");
+  await mkdir(join(shared, "notes"));
+  const separate = await skillFolder(join(root, "mounted"), "test");
+
+  assert.deepEqual(await resolveSkillPaths(root, ["shared", join(separate, "test")]), [
+    join(shared, "lint"),
+    join(shared, "review"),
+    join(separate, "test"),
+  ]);
+  await mkdir(join(root, "empty"));
+  assert.deepEqual(await resolveSkillPaths(root, ["empty"]), []);
+  await assert.rejects(resolveSkillPaths(root, ["missing"]), (error) => {
+    assert.equal(error.code, "pi_skill_not_found");
+    assert.deepEqual(error.metadata, { field: "skills.paths[0]" });
+    return true;
+  });
 });

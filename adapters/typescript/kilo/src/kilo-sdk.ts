@@ -16,7 +16,7 @@ import type {
   AgentUsage,
 } from "nemo-fabric-adapter-contract";
 import type { AdapterStartInput } from "nemo-fabric-adapters-common";
-import { unobservedHealth, LifecycleError } from "nemo-fabric-adapters-common";
+import { unobservedHealth, LifecycleError, resolveSkillFolders } from "nemo-fabric-adapters-common";
 
 import { KiloPromptError } from "./runtime.js";
 import { KiloUsageEvents } from "./usage-events.js";
@@ -94,19 +94,13 @@ async function workspacePath(input: AdapterStartInput): Promise<string> {
   }
 }
 
-async function skillPaths(input: AdapterStartInput): Promise<string[]> {
-  const paths: string[] = [];
-  for (const entry of input.config.skills?.paths ?? []) {
+/** Resolve skills.paths to the skill folders that Kilo Code loads through its skills.paths setting. */
+export async function skillPaths(input: Pick<AdapterStartInput, "baseDir" | "config">): Promise<string[]> {
+  const configured = input.config.skills?.paths ?? [];
+  for (const entry of configured) {
     if (typeof entry !== "string") throw new LifecycleError("kilo_invalid_skill", "Kilo Code skill paths must be strings");
-    try {
-      const directory = await realpath(resolve(input.baseDir, entry));
-      if (!(await stat(directory)).isDirectory() || !(await stat(join(directory, "SKILL.md"))).isFile()) throw new Error("invalid");
-      paths.push(directory);
-    } catch {
-      throw new LifecycleError("kilo_skill_invalid", "NeMo Fabric skill paths must be directories that contain SKILL.md");
-    }
   }
-  return paths;
+  return resolveSkillFolders(configured, input.baseDir, {not_found: "kilo_skill_invalid", invalid: "kilo_skill_invalid", duplicate: "kilo_skill_invalid"});
 }
 
 /** Map normalized tool policy to non-interactive Kilo permissions, with blocked tools taking precedence. */

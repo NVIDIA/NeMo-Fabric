@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
-import { selectModel, selectSystemPrompt, selectPermissionMode, selectBlockedTools, selectMcpServers, rejectUnclaimedConfig } from "../dist/configuration.js";
+import { selectModel, selectSystemPrompt, selectPermissionMode, selectBlockedTools, selectMcpServers, rejectUnclaimedConfig, selectSkillPaths } from "../dist/configuration.js";
 
 const descriptor = JSON.parse(await readFile(new URL("../qwen.fabric-adapter.json", import.meta.url)));
 const model = { provider: "openai", model: "test-model", api_key_env: "TEST_KEY", base_url: "http://127.0.0.1:1234/v1" };
@@ -93,4 +95,22 @@ test("HTTP host settings compose with Qwen permissions without relaxing MCP trus
   assert.equal(selectPermissionMode(config), "plan");
   config.mcp = { servers: { gateway: { transport: "streamable-http", url: "http://gateway/mcp" } } };
   assert.throws(() => selectMcpServers(config, {}, {}), (error) => error.code === "qwen_mcp_invalid_server");
+});
+
+test("selects each skill directly inside a configured skill folder, once", async (t) => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "qwen-skill-folder-")));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const name of ["lint", "review"]) {
+    await mkdir(join(root, "skills", name), { recursive: true });
+    await writeFile(join(root, "skills", name, "SKILL.md"), `# ${name}\n`, "utf8");
+  }
+
+  assert.deepEqual(
+    await selectSkillPaths({ skills: { paths: ["skills", "skills/review"] } }, root),
+    [join(root, "skills", "lint"), join(root, "skills", "review")],
+  );
+  await assert.rejects(
+    selectSkillPaths({ skills: { paths: ["missing"] } }, root),
+    (error) => error.code === "qwen_skill_not_found" && error.metadata.field === "skills.paths[0]",
+  );
 });

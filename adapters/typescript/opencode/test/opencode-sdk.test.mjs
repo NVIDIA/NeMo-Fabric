@@ -2106,3 +2106,53 @@ test("leaves later root observations unknown when an opaque plugin can resume ea
     assert.deepEqual(second.usage.extensions["nvidia.fabric.opencode.usage_evidence.v1"].observed, {});
   } finally { await fixture.handle.stop(); }
 });
+
+test("stages each skill directly inside a configured skill folder for OpenCode", async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), "fabric-opencode-skill-folder-"));
+  try {
+    for (const name of ["lint", "review"]) {
+      await mkdir(join(baseDir, "skills", name), { recursive: true });
+      await writeFile(join(baseDir, "skills", name, "SKILL.md"), `---\nname: ${name}\n---\nUse ${name}.\n`, "utf8");
+    }
+    await writeFile(join(baseDir, "skills", "notes.txt"), "Not a skill.\n", "utf8");
+    let staged;
+    const factory = new OpenCodeSdkSessionFactory(async () => ({
+      OpenCode: {
+        async create(options) {
+          staged = JSON.parse(options.config.content).skills;
+          return {
+            skill: {
+              async list() {
+                return {
+                  data: await Promise.all(staged.map(async (directory, index) => ({
+                    name: ["lint", "review"][index],
+                    path: await realpath(join(directory, "SKILL.md")),
+                  }))),
+                };
+              },
+            },
+            sessions: {
+              async create() { return { id: "session-skill-folder" }; },
+              async remove() {},
+            },
+            async close() {},
+          };
+        },
+      },
+    }));
+    const input = startInput();
+    input.baseDir = baseDir;
+    input.config.skills = { paths: ["skills"] };
+
+    const handle = await factory.create(input);
+
+    assert.equal(staged.length, 2);
+    assert.deepEqual(
+      await Promise.all(staged.map((directory) => readFile(join(directory, "SKILL.md"), "utf8"))),
+      ["---\nname: lint\n---\nUse lint.\n", "---\nname: review\n---\nUse review.\n"],
+    );
+    await handle.stop();
+  } finally {
+    await rm(baseDir, { recursive: true, force: true });
+  }
+});
