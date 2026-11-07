@@ -1,0 +1,37 @@
+---
+title: "Hermes Dashboard and Browser TUI"
+description: "Use browser chat through a managed TUI service, optionally shared with terminal clients."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+NVIDIA NeMo Fabric starts Hermes's dashboard as a managed FastAPI/Uvicorn service. Browser chat uses a prebuilt terminal renderer through a PTY/WebSocket bridge, attached to that service's in-process TUI backend. It does not call the native API gateway or embedded SDK agent.
+
+## Installation
+
+Complete the [shared installation](./hermes.mdx#install-the-adapter) and install the pinned Hermes `web` extra. Build the browser and terminal frontends in that same pinned source checkout. The [interfaces example setup](../../../examples/interfaces/README.md#build-the-tui-frontends) provides the commands. The dashboard needs `hermes_cli/web_dist/index.html` or `HERMES_WEB_DIST`, plus a built terminal renderer and supported Node runtime. The adapter uses prebuilt assets and does not install another runtime for browser chat.
+
+## Configuration
+
+Use normalized model, workspace, tools, and telemetry fields with these harness settings:
+
+```python
+settings = {
+    "sdk": {"enabled": False},
+    "interfaces": {"dashboard": {"port": 9119}},
+}
+```
+
+Open `http://127.0.0.1:9119`. The native API interface is optional. To attach terminal clients too, add `"terminal": {"port": 9119}`; both client paths share one backend process and start separate conversations by default. An absent `sdk` setting retains eager SDK startup.
+
+## Access and Ownership
+
+The dashboard has no separate sign-in on loopback: Hermes embeds its native session credential in the served page. Anyone reaching the port can use its pages and browser chat. Limit access to the runtime user; port forwarding must have its own access controls. A terminal attachment credential does not change browser access policy.
+
+The adapter pins browser chat to the managed runtime profile and its existing TUI service. Named-profile chat is unsupported. Other dashboard pages remain native; gateway replacement, profile/configuration edits, and restart/migrate actions are outside the qualified ownership model and can bypass generated configuration.
+
+## Conversations, Relay, and Testing
+
+Browser turns use native conversations and responses. They do not become SDK invocations or normalized `RunResult` objects. Managed native agent turns finalize and flush Relay segments when execution returns, preserving native history. Check ATIF after a completed turn while the browser remains connected; shared Relay configuration alone is not proof of export.
+
+See the [TUI example](../../../examples/interfaces/README.md#hermes-terminal-and-browser-tui) for browser input and artifact inspection. A successful `/api/status` response proves neither rendered chat nor model/tool functionality. Refer to the [shared limitations](./hermes.mdx#limitations-and-planned-work) for approvals, health/activity, and lifecycle boundaries.

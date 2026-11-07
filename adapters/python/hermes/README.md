@@ -87,7 +87,7 @@ The descriptor validates the following `harness.settings` fields:
 | `save_trajectories` | boolean | `false` | Enables Hermes-native JSONL conversation trajectory saving. This is separate from normalized NeMo Fabric telemetry. |
 | `max_tokens` | positive integer | Hermes native (`None`) | Limits the number of tokens in each Hermes model response. |
 | `terminal_timeout` | positive number | `60` | Limits a Hermes terminal operation in seconds. |
-| `interfaces.api`, `interfaces.dashboard` | object | None | Serve Hermes's API server or dashboard from a runtime, each with an exact `port` and optional `enabled`; see [Access and Use](../../../docs/integrations/harness/hermes-interfaces.mdx#3-access-and-use). |
+| `interfaces.api`, `interfaces.dashboard` | object | None | Serve Hermes's API server or dashboard from a runtime, each with an exact `port` and optional `enabled`; see [Hermes invocation paths](../../../docs/integrations/harness/hermes.mdx). |
 | `startup_timeout_seconds` | number, greater than 0 and at most 75 | `60` | Time from the start of the runtime for every enabled interface to pass its health check. |
 
 For example:
@@ -146,3 +146,8 @@ model, skills, MCP, tools, telemetry, and runtime behavior through complete
 typed `FabricConfig` values and ordinary Python composition. The adapter
 descriptor describes adapter capabilities; it is not an agent configuration.
 Add descriptor fields only when NeMo Fabric core or the SDK actually uses them.
+
+
+### Execution Paths
+
+The [Hermes guide](../../../docs/integrations/harness/hermes.mdx) describes SDK, API, dashboard/browser TUI, and terminal TUI clients. Set `sdk.enabled: false` for native-only execution; existing configurations retain eager SDK initialization. `interfaces.terminal` requires a port, matching `interfaces.dashboard.port` when both are enabled, and shares that TUI backend. Terminal-only uses headless `hermes serve`. The [manual TUI example](../../../examples/interfaces/README.md#hermes-terminal-and-browser-tui) covers installation and attachment. Native responses are not normalized SDK results.

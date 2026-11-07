@@ -9,7 +9,7 @@ This example is a work in progress. Its structure and user experience will be re
 
 Use native harness interfaces alongside a NeMo Fabric-managed runtime. Each harness example uses the public Python SDK for configuration and lifecycle, then sends input through the harness's native interface.
 
-## Hermes API and Relay
+## Hermes API Example
 
 [`hermes.py`](hermes.py) starts one managed Hermes API server, submits a real file task, verifies the generated file, and checks Relay ATOF events and ATIF tool steps. Its API response remains native; the SDK manages the runtime but does not convert this response into a NeMo Fabric `RunResult`.
 
@@ -94,3 +94,45 @@ jq -r 'select(.kind == "scope" and
 The pinned Hermes API path leaves its Relay conversation scope open after a turn. ATOF events can therefore exist without ATIF export. The managed native launcher finalizes and flushes an API turn's Relay segment when execution returns, including failed turns. It does not fire native conversation-end plugin hooks or delete conversation state. The conversation can continue; subsequent turns create new Relay segments and ATIF files. Finalization errors are logged without replacing the execution outcome, so consumers should check their artifacts explicitly.
 
 This example exercises the managed API path. It does not qualify browser chat, TUI, independently restarted gateways, approvals, or complete native-result and artifact normalization. Refer to [Hermes Native Interfaces](../../docs/integrations/harness/hermes-interfaces.mdx) for the configuration and ownership boundaries.
+
+
+## Build the TUI Frontends
+
+Use the same pinned Hermes checkout selected during installation. `HERMES_AGENT_CHECKOUT` defaults to `external/hermes-agent`; if you installed from a separate clean checkout, use that path here too. Run from the NeMo Fabric repository root:
+
+```bash
+export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
+export HERMES_AGENT_CHECKOUT="${HERMES_AGENT_CHECKOUT:-$PWD/external/hermes-agent}"
+"$ADAPTER_PYTHON" -c "import fastapi, uvicorn"
+(
+  cd "$HERMES_AGENT_CHECKOUT"
+  npm ci --ignore-scripts --workspace ui-tui --workspace web --include-workspace-root
+  npm run build --workspace ui-tui
+  npm run build --workspace web
+)
+export HERMES_WEB_DIST="$HERMES_AGENT_CHECKOUT/hermes_cli/web_dist"
+export HERMES_TUI_DIR="$HERMES_AGENT_CHECKOUT/ui-tui"
+```
+
+These commands build both clients. Terminal-only use does not need the web build or `HERMES_WEB_DIST`. Use a Node version supported by pinned Hermes (`^22.22.0`, `^24.11.0`, or `>=26.0.0`); the live client checks used Node 22.22.2. The pinned Python 3.14 installation recipe supplies the web-serving imports checked above; other source installations need the pinned Hermes `web` dependencies. Native interface startup does not install or build frontend assets.
+
+## Hermes Terminal and Browser TUI
+
+[`hermes_tui.py`](hermes_tui.py) starts a backend for manual interaction and keeps it running until you stop it. It explicitly disables the embedded SDK agent by default; add `--sdk` for a mixed runtime. It does not submit a task automatically.
+
+After frontend setup, export your model endpoint, name, and credential as in the API example. Start terminal-only mode in the first terminal:
+
+```bash
+.venv-hermes/bin/python examples/interfaces/hermes_tui.py \
+  --base-url "$MODEL_BASE_URL" \
+  --model "$MODEL_NAME" \
+  --port 19119
+```
+
+The script prints its evidence directory and an exact `python -m nemo_fabric_adapters.hermes.terminal --connection .../interfaces/tui.json` command. Run that command in a second interactive terminal. The renderer attaches to the existing backend; it does not create another backend or embedded SDK agent.
+
+To test browser and terminal clients together, stop the first runtime and rerun with `--dashboard`. Open the printed browser URL and run its printed terminal attachment command. Both clients use one TUI service, with separate conversations. Add `--api-port 18642 --sdk` to enable all four invocation paths; API and TUI ports must differ. Choose available ports rather than stopping unrelated services.
+
+Submit the printed file task in each client, choosing distinct output filenames. The task reads `workspace/notes.txt` and writes a checklist with file tools. Send a follow-up in the same client to check conversation continuity. Verify the generated files and inspect the new evidence directory's `relay/atof` and `relay/atif` while clients remain connected. Completed turns must have populated ATIF steps with `read_file`/`write_file` calls and observations; a file existing is not sufficient evidence of correct trajectory content. Native responses remain native, with native session identities.
+
+Detaching a client leaves the backend running. Press Enter in the first terminal to stop the runtime and remove attachment files. Active-turn detach/cancellation and interactive approvals are not fully qualified; the adapter defaults `HERMES_YOLO_MODE` to enabled. Browser profile switching, remote terminal attachment, and same-conversation multi-client control are outside this example's supported flow. Existing API example limitations and its WIP status still apply.
