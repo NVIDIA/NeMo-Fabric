@@ -79,6 +79,29 @@ test "${RELEASE_SHA}" = "${REMOTE_RELEASE_SHA}"
 test "$(just normalize-release-tag "${RELEASE_TAG}")" = "${RELEASE_VERSION}"
 CURRENT_VERSION="$(python -c "import tomllib; print(tomllib.load(open('Cargo.toml', 'rb'))['workspace']['package']['version'])")"
 test "${CURRENT_VERSION}" = "${RELEASE_VERSION}"
+```
+
+## Validate the Stable Release
+
+In this verified checkout, complete [Local Validation](../../../RELEASING.md#local-validation).
+Use the separate [runtime deadline qualification skill](../qualify-runtime-deadlines/SKILL.md)
+to prepare and execute the saved inference plan against `RELEASE_SHA`. Require its
+machine-verified full report; developer subsets and skipped tests are nonpasses.
+Keep all run evidence local or external, never committed.
+
+```bash
+python3 .agents/skills/qualify-runtime-deadlines/scripts/qualify.py verify \
+  --report "${DEADLINE_QUALIFICATION_REPORT:?Set the full qualification report path}" \
+  --revision "${RELEASE_SHA}" --release
+```
+
+Continue in the same shell only after qualification succeeds. Recheck the checkout and upstream branch before creating or pushing the tag; stop if either changed during validation.
+
+```bash
+test "$(git rev-parse HEAD)" = "${RELEASE_SHA}"
+test -z "$(git status --porcelain)"
+git fetch upstream "${RELEASE_BRANCH}"
+test "$(git rev-parse "upstream/${RELEASE_BRANCH}^{commit}")" = "${RELEASE_SHA}"
 
 if git rev-parse --verify --quiet "refs/tags/${RELEASE_TAG}" >/dev/null; then
   echo "Error: local tag ${RELEASE_TAG} already exists" >&2

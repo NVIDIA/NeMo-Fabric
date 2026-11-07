@@ -329,7 +329,7 @@ async def test_busy_shutdown_and_timeout_keep_sandbox_owned(
             if shutdown_mode == "invoke_timeout":
                 invoke_stdout, _ = await asyncio.wait_for(invocation.communicate(), 5)
                 assert invocation.returncode == 1
-                assert json.loads(invoke_stdout)["error"]["code"] == "invoke_failed"
+                assert json.loads(invoke_stdout)["error"]["code"] == "timeout"
                 with pytest.raises(ProcessLookupError):
                     os.kill(pid, 0)
                 # Native timeout teardown now terminates the adapter's tree,

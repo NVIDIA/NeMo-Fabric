@@ -1434,6 +1434,8 @@ All public SDK errors inherit from `FabricError`.
 | `ResourceObservationUnsupportedError` | The runtime's adapter kind, environment provider, or operating system has no resource reader. Subclass of `FabricRuntimeError`. |
 
 Consumers own job-level retries and rollout-level failure policy.
+`runtime.timeout_seconds` sets a positive, finite total invocation limit. Omit it or set it to `None` to disable NeMo Fabric's total invocation deadline. The same configuration applies whether the agent executes on the host or inside a sandbox such as OpenShell. `runtime.max_turns` independently limits harness turns where supported. Startup, health checks, and cleanup retain separate deadlines; harness-native limits still apply.
+
 Core host-operation deadlines (`host_timeout`) become Python `TimeoutError`, then
 `FabricRuntimeError` with `code == "timeout"` and the failed lifecycle stage.
 If invocation succeeds in `Fabric.run()` but stop reaches this deadline,

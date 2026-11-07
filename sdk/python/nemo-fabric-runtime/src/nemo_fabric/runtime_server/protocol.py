@@ -38,6 +38,7 @@ MESSAGES = {
     "start_uncertain": "A previous runtime start has an uncertain outcome; replace the sandbox before starting another.",
     "runtime_id_conflict": "Fabric returned a runtime ID that is already in use.",
     "stop_failed": "Fabric could not complete the stop operation.",
+    "timeout": "The invocation exceeded runtime.timeout_seconds.",
     "invoke_failed": "Fabric did not report a successful invocation.",
     "host_stopping": "The Fabric host is shutting down.",
     "runtime_unavailable": "No active Fabric runtime is available.",

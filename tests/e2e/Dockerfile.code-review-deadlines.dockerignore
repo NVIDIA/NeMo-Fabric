@@ -1,0 +1,11 @@
+# Include only the second harness and the controlled source-reader fixture.
+**
+!adapters/
+!adapters/python/
+!adapters/python/deepagents/
+!adapters/python/deepagents/**
+!tests/
+!tests/e2e/
+!tests/e2e/deadline_review_source.py
+**/__pycache__
+**/*.pyc
