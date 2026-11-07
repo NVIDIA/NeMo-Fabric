@@ -52,8 +52,10 @@ The adapter supports the following configuration:
 - **Models:** Selects the `default` role, or the only configured role. `api_key_env`
   may use any portable environment-variable name.
 - **Instructions:** Supports `instructions.system` with `mode: replace`.
-- **Skills:** Each `skills.paths` entry must be a directory containing `SKILL.md`.
-  Startup verifies that only those `SKILL.md` files load and that names are unique.
+- **Skills:** Each `skills.paths` entry is a skill folder or a folder of skills;
+  refer to [Load Skills from Folders](../../../docs/integrations/harness/skills.mdx). Startup verifies that only those
+  `SKILL.md` files load and that names are unique, so a skill folder that
+  contains another skill fails start.
 - **MCP:** Supports `stdio` and `streamable-http`. Startup fails if a configured
   server cannot connect.
 

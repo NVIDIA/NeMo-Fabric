@@ -70,7 +70,9 @@ config.add_skill_path("./skills/code-review")
 
 For a source build, use
 `adapters/typescript/cline/cline.fabric-adapter.json`. Relative skill paths
-resolve from the `base_dir` passed to `plan()`, `doctor()`, or `run()`.
+resolve from the `base_dir` passed to `plan()`, `doctor()`, or `run()`. Each
+skill path is a skill folder or a folder of skills; refer to
+[Load Skills from Folders](../../../docs/integrations/harness/skills.mdx).
 
 The initial adapter supports a configured model, an API-key environment
 reference, an optional model base URL, replacement system instructions, Cline

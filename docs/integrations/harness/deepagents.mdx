@@ -103,6 +103,11 @@ MCP-reported tool errors (`ToolException`) and argument validation failures retu
 
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, replacement system instructions, blocked tools, and telemetry.
+Each `skills.paths` entry becomes a Deep Agents skill source: a folder of
+skills that Deep Agents reads through its backend. Unlike the other adapters,
+this adapter does not resolve entries as described in
+[Load Skills from Folders](./skills.mdx), because a backend path can be
+virtual and need not exist in the task environment.
 The adapter rejects `append` system instructions. Use
 `harness.settings.deepagents` to configure the JSON-serializable Deep
 Agents-native `interrupt_on` and `subagents` options:

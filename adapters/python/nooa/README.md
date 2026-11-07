@@ -15,7 +15,8 @@ lifecycle contract. Choose the integration that matches the agent interface:
 
 The shared `nvidia.fabric.nooa` adapter owns the common NOOA queue dispatcher.
 It also maps normalized skill paths and whole MCP servers into compatible
-registered targets.
+registered targets. Each skill path is a skill folder or a folder of skills;
+refer to [Load Skills from Folders](../../../docs/integrations/harness/skills.mdx).
 The dedicated `nvidia.fabric.nooa.bench-agent` adapter maps the benchmark-native
 `BenchAgent` task contract directly into a NeMo Fabric invocation. Its
 [observed token usage](docs/bench-agent.md#observed-token-usage) preserves the

@@ -20,7 +20,7 @@ The following rules apply to each entry:
 
 Relative entries resolve against the agent's base directory. NeMo Fabric does not expand `~` or environment variables such as `${VAR}`.
 
-The OpenClaw and Hermes Agent adapters follow these rules. They pass each resolved skill folder to the harness's native skill loader. Other adapters that accept `skills.paths` still require each entry to contain `SKILL.md`; refer to each adapter's guide.
+The adapters that ship with NeMo Fabric follow these rules and pass each resolved skill folder to the harness's native skill loader. The exception is the [Deep Agents adapter](./deepagents.mdx), which passes each entry to Deep Agents as a skill source, a folder of skills read through the Deep Agents backend.
 
 ## Harness Differences
 
@@ -34,6 +34,8 @@ NeMo Fabric decides which folders are skills, but the harness loads them. The ha
 | A skill's file is `skill.md` or uses another case | On a case-insensitive file system, NeMo Fabric accepts the folder as a skill. Hermes Agent requires exactly `SKILL.md` and does not load the skill. |
 | A skill's name is longer than 64 characters | Hermes Agent cuts the name to 64 characters, so two names that share their first 64 characters collide. |
 | A folder of skills contains a hidden folder, such as `.archive` | NeMo Fabric loads a hidden folder that contains `SKILL.md` as a skill. Hermes Agent's own scans skip folders such as `.archive`, `.git`, and `.hub`. |
+| Two skills in different folders share a folder name | The Claude Code, Cline, and Factory Droid adapters copy each skill into one folder under its folder name, so start fails. |
+| A skill folder contains another skill, or a Markdown file other than `SKILL.md` at its top level | The OpenCode adapter fails start, because OpenCode would load the extra file as a skill. |
 | A Hermes Agent configuration used relative paths, `~`, or `${VAR}` | Relative entries resolve against the agent's base directory, not the Hermes home folder. NeMo Fabric does not expand `~` or `${VAR}`, which Hermes Agent's own `skills.external_dirs` setting does. |
 
 To avoid these differences, keep one skill per folder, do not nest skill folders, give each skill a name that differs from every skill folder name, and name the file `SKILL.md`.

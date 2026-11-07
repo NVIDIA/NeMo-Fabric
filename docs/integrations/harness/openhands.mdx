@@ -69,8 +69,8 @@ prefix while preserving the served model ID, including its `nvidia/`
 namespace. This also supports self-hosted NIM endpoints through `base_url`.
 An existing `nvidia_nim/` prefix is retained once.
 
-Skill paths resolve from the configuration base directory and must contain a
-`SKILL.md` file. The adapter disables ambient OpenHands user, public, project,
+Skill paths resolve from the configuration base directory. Each is a skill
+folder or a folder of skills; refer to [Load Skills from Folders](./skills.mdx). The adapter disables ambient OpenHands user, public, project,
 and memory loading, so only explicitly configured NeMo Fabric skills load.
 
 The adapter configures the OpenHands SDK standard summarizing condenser,

@@ -35,8 +35,9 @@ The adapter supports the following normalized configuration:
   step limit.
 - **Tools:** Maps native Kilo Code tool names in `tools.enabled` and
   `tools.blocked`. Tool definitions are unsupported.
-- **Skills:** Each `skills.paths` entry must be a directory containing
-  `SKILL.md`. Startup verifies that Kilo Code loaded every configured skill.
+- **Skills:** Each `skills.paths` entry is a skill folder or a folder of
+  skills; refer to [Load Skills from Folders](../../../docs/integrations/harness/skills.mdx). Startup verifies that Kilo
+  Code loaded every resolved skill.
 - **MCP:** Supports stdio, streamable HTTP, and SSE server configurations.
   Startup requires every configured server to report `connected`.
 

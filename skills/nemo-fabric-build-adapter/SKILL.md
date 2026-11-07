@@ -124,9 +124,9 @@ adapter boundary:
   skills with the same name. Python adapters can use
   `nemo_fabric_adapter_contract.skills.resolve_skills`, and TypeScript adapters
   can use `resolveSkills` from `nemo-fabric-adapter-contract/skills`. Pass each
-  resolved skill folder to the harness's native skill loader. Of the adapters
-  that ship with NeMo Fabric, the OpenClaw and Hermes Agent adapters follow this
-  rule; the others still require each entry to contain `SKILL.md`. Refer to
+  resolved skill folder to the harness's native skill loader. The adapters that
+  ship with NeMo Fabric follow this rule, except Deep Agents, whose skill
+  sources are backend paths. Refer to
   [Load Skills from Folders](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/skills.mdx)
   for how harnesses can differ from the rule.
 - Resolve workflow entry points and construction settings during `start` in

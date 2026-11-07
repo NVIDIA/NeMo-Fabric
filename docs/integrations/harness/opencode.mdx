@@ -83,8 +83,10 @@ The adapter supports the following configuration:
 - **Instructions:** Supports `instructions.system` with `mode: replace`.
   A replacement instruction replaces OpenCode's base prompt. OpenCode may still
   append runtime context.
-- **Skills:** Each `skills.paths` entry must be a directory containing `SKILL.md`.
-  Startup verifies that only those `SKILL.md` files load and that names are unique.
+- **Skills:** Each `skills.paths` entry is a skill folder or a folder of skills;
+  refer to [Load Skills from Folders](./skills.mdx). Startup verifies that only those
+  `SKILL.md` files load and that names are unique, so a skill folder that
+  contains another skill fails start.
 - **MCP:** Supports `stdio` and `streamable-http`. Startup fails if a configured
   server cannot connect.
 

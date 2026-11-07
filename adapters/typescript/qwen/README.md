@@ -43,8 +43,8 @@ The adapter supports the following normalized configuration:
   `mode: append`.
 - **Tools:** Maps Qwen-native tool names from `tools.blocked`. Tool definitions
   and `tools.enabled` are unsupported.
-- **Skills:** Each `skills.paths` entry must be a directory containing
-  `SKILL.md`.
+- **Skills:** Each `skills.paths` entry is a skill folder or a folder of
+  skills; refer to [Load Skills from Folders](../../../docs/integrations/harness/skills.mdx).
 - **MCP:** Supports stdio and streamable HTTP servers, including per-server
   allowed and blocked tool filters.
 - **Harness settings:** Maps `permission_mode` to Qwen Code's `default`, `plan`,
