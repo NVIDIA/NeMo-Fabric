@@ -1938,7 +1938,7 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
     if config.runtime.keep_state && !is_one_folder_name(&config.metadata.name) {
         return invalid_config(
             "metadata.name",
-            "must be usable as one folder name when runtime.keep_state is set: not empty, `.` or `..`, and without `/` or `\\`",
+            "must be usable as one folder name on Linux, macOS, and Windows when runtime.keep_state is set: not empty, `.` or `..`, without `/`, `\\`, `<>:\"|?*` or control characters, not ending in a space or `.`, and not a Windows device name such as `CON` or `NUL`",
         );
     }
     if let Some(timeout) = config.runtime.timeout_seconds
@@ -2402,9 +2402,45 @@ fn validate_names(field: &str, names: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Whether a name can be one path component on every platform Fabric runs on.
+/// Whether a name can be one path component on every platform Fabric runs on,
+/// including Windows: not empty, `.` or `..`, without a path separator,
+/// `<>:"|?*` or a control character, not ending in a space or `.`, and not a
+/// Windows device name such as `CON` or `NUL.txt`.
 pub(crate) fn is_one_folder_name(name: &str) -> bool {
-    !name.trim().is_empty() && name != "." && name != ".." && !name.contains(['/', '\\'])
+    !name.trim().is_empty()
+        && name != "."
+        && name != ".."
+        && !name.chars().any(|character| {
+            matches!(
+                character,
+                '/' | '\\' | '<' | '>' | ':' | '"' | '|' | '?' | '*'
+            ) || character.is_control()
+        })
+        && !name.ends_with([' ', '.'])
+        && !is_windows_device_name(name)
+}
+
+/// Windows reserves these names, with or without an extension, in any folder.
+fn is_windows_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).trim_end_matches(' ');
+    let upper = stem.to_ascii_uppercase();
+    if matches!(
+        upper.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) {
+        return true;
+    }
+    let Some(number) = upper
+        .strip_prefix("COM")
+        .or_else(|| upper.strip_prefix("LPT"))
+    else {
+        return false;
+    };
+    let mut characters = number.chars();
+    matches!(
+        (characters.next(), characters.next()),
+        (Some('0'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}'), None)
+    )
 }
 
 fn invalid_config<T>(field: impl Into<String>, reason: impl Into<String>) -> Result<T> {
