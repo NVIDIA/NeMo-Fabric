@@ -17,6 +17,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+from nemo_fabric_adapter_contract import skills as contract_skills
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentRunError
 from nemo_fabric_adapter_contract.models import AgentRunRequest
@@ -125,16 +126,21 @@ def _path(value: Any, *, default: Path | None = None) -> Path | None:
 
 
 def _resolved_skill_paths(config: AgentConfig, base_dir: Path) -> tuple[Path, ...]:
-    values = config.skills.paths if config.skills is not None else []
-    paths: list[Path] = []
-    seen: set[Path] = set()
-    for value in values:
-        path = Path(value)
-        resolved = path if path.is_absolute() else base_dir / path
-        if resolved not in seen:
-            paths.append(resolved)
-            seen.add(resolved)
-    return tuple(paths)
+    try:
+        skills = contract_skills.resolve_skills(
+            config.skills.paths if config.skills is not None else [], base_dir
+        )
+    except contract_skills.SkillPathError as error:
+        code = (
+            "nooa_skill_not_found"
+            if error.reason == "not_found"
+            else "nooa_skill_invalid"
+        )
+        raise lifecycle.LifecycleError(
+            code, str(error), metadata={"field": error.field}
+        ) from None
+    # Targets load each skill from its own folder.
+    return tuple(skill.path for skill in skills)
 
 
 def _mcp_registry(agent: Any) -> Any:

@@ -43,6 +43,7 @@ from openai_codex.generated.v2_all import (
 )
 from openai_codex.types import Personality, ReasoningEffort, TurnStatus
 
+from nemo_fabric_adapter_contract import skills as contract_skills
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
@@ -294,32 +295,14 @@ def _mcp_oauth_callback_url(config: AgentConfig) -> str | None:
 
 
 def _native_skill_paths(config: AgentConfig, base_dir: str) -> list[Path]:
-    values = config.skills.paths if config.skills else []
-
-    paths: list[Path] = []
-    names: set[str] = set()
-    config_root = Path(base_dir)
-    for value in values:
-        skill_path = Path(value)
-        if not skill_path.is_absolute():
-            skill_path = config_root / skill_path
-        skill_path = skill_path.resolve()
-        skill_file = skill_path / "SKILL.md"
-        if not skill_path.is_dir() or not skill_file.is_file():
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                "NeMo Fabric skill path must be a directory containing SKILL.md: "
-                f"{skill_path}",
-            )
-        name = skill_path.name
-        if not name or name in names:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                f"NeMo Fabric skill names must be unique: {name}",
-            )
-        names.add(name)
-        paths.append(skill_path)
-    return paths
+    try:
+        skills = contract_skills.resolve_skills(
+            config.skills.paths if config.skills else [], base_dir
+        )
+    except contract_skills.SkillPathError as error:
+        raise AdapterConfigError("codex_invalid_configuration", str(error)) from None
+    # Each skill folder becomes its own Codex skill root.
+    return [skill.path for skill in skills]
 
 
 async def _register_skill_roots(codex: AsyncCodex, skill_paths: list[Path]) -> None:

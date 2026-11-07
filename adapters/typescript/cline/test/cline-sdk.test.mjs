@@ -509,3 +509,35 @@ test("rejects unsupported MCP authentication and tool filters", async () => {
     (error) => error.code === "cline_mcp_blocklist_unsupported",
   );
 });
+
+test("stages each skill directly inside a configured skill folder in the Cline plugin", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fabric-cline-skill-folder-"));
+  try {
+    for (const name of ["lint", "review-code"]) {
+      await mkdir(join(root, "skills", name), { recursive: true });
+      await writeFile(join(root, "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: Test.\n---\n`, "utf8");
+    }
+    await mkdir(join(root, "skills", "notes"));
+    const sdk = fakeSdk();
+    const baseModule = await sdk.loader();
+    sdk.loader = async () => ({
+      ...baseModule,
+      async loadAgentPluginPackages(value) {
+        sdk.calls.plugins.push(value);
+        return { skills: [{}, {}], mcpServers: [], diagnostics: [] };
+      },
+    });
+    const configured = input({ skills: { paths: ["skills"] } });
+    configured.baseDir = root;
+
+    const handle = await new ClineSdkSessionFactory(sdk.loader).create(configured);
+
+    const pluginRoot = sdk.calls.start[0].config.agentPluginPaths[0];
+    for (const name of ["lint", "review-code"]) {
+      await access(join(pluginRoot, "skills", name, "SKILL.md"));
+    }
+    await handle.stop();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

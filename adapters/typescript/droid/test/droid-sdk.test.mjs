@@ -547,3 +547,32 @@ test("native health failures remain unknown and never close a session", async ()
   assert.equal((await handle.prompt("one")).status, "completed");
   await handle.stop();
 });
+
+test("stages each skill directly inside a configured skill folder in the Droid home", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "fabric-droid-skill-folder-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const name of ["lint", "review-code"]) {
+    await mkdir(join(root, "shared", name), { recursive: true });
+    await writeFile(join(root, "shared", name, "SKILL.md"), `---\nname: ${name}\ndescription: Test.\n---\n`);
+  }
+  await mkdir(join(root, "shared", "notes"));
+  const sdk = fakeSdk({
+    skillReport: (created) => ({
+      skills: ["lint", "review-code"].map((name) => ({
+        name,
+        filePath: join(created.env.HOME, ".agents", "skills", name, "SKILL.md"),
+        enabled: true,
+      })),
+    }),
+  });
+
+  const handle = await new DroidSdkSessionFactory(sdk.loader).create(input({
+    tools: undefined,
+    skills: { paths: [join(root, "shared")] },
+  }));
+  const created = sdk.calls.create[0];
+  for (const name of ["lint", "review-code"]) {
+    assert.equal((await stat(join(created.env.HOME, ".agents", "skills", name, "SKILL.md"))).isFile(), true);
+  }
+  await handle.stop();
+});

@@ -812,6 +812,7 @@
             "models.max_tokens",
             "instructions.system",
             "runtime.max_turns",
+            "runtime.keep_state",
             "tools.enabled",
             "tools.blocked",
             "mcp",
@@ -849,7 +850,7 @@
               "properties": {
                 "api": {
                   "additionalProperties": false,
-                  "description": "Hermes's API server, run by a gateway child. After every enabled interface starts, the adapter writes its bearer token to <artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/api.token.",
+                  "description": "Hermes's API server, run by a gateway child. After every enabled interface starts, the adapter writes its bearer token to interfaces/api.token in the Hermes home: <artifact root>/.fabric/hermes/runtimes/<runtime-id>, or the agent's state folder with runtime.keep_state.",
                   "properties": {
                     "enabled": {
                       "default": true,
@@ -972,7 +973,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.7.0"
       },
-      "sha256": "3370179a56673b6261c38653c42f049970eae696f9e88464c1757e8dc15348f0",
+      "sha256": "855ca764a2be962faa8ec02bca736d328e4db9142003b365d2dfa69a8bbfbdc3",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {
@@ -2056,6 +2057,17 @@
         "settings_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
+          "dependentSchemas": {
+            "port_range": {
+              "properties": {
+                "interfaces": {
+                  "properties": {
+                    "dashboard": false
+                  }
+                }
+              }
+            }
+          },
           "properties": {
             "agent_id": {
               "default": "default",
@@ -2107,6 +2119,34 @@
               "description": "Timeout for connecting to the local OpenClaw Gateway.",
               "exclusiveMinimum": 0,
               "type": "number"
+            },
+            "interfaces": {
+              "additionalProperties": false,
+              "description": "Native interfaces served by a managed runtime. Services reject interfaces.",
+              "properties": {
+                "dashboard": {
+                  "additionalProperties": false,
+                  "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Serve the Control UI. A present dashboard is on unless this is false.",
+                      "type": "boolean"
+                    },
+                    "port": {
+                      "description": "Exact loopback Gateway base port, which serves the Control UI. Start fails if it or port + 2 is in use. OpenClaw allocates browser ports through port + 110 on demand, so keep that range free. Can't be combined with port_range.",
+                      "maximum": 65425,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "port"
+                  ],
+                  "type": "object"
+                }
+              },
+              "type": "object"
             },
             "openclaw_command": {
               "description": "OpenClaw executable name or path. Relative paths containing a directory are resolved from the NeMo Fabric base directory.",
@@ -2161,7 +2201,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.7.0"
       },
-      "sha256": "27af873589f481bd85f2e8e5fd32826879d5d1ba1dbdd1ff0c1e1d1298bb5be0",
+      "sha256": "f2420e753b7efff19d6c56a8ff00f428f07f2f0761d77f49a031e90aa7f3a057",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {

@@ -16,6 +16,7 @@ from typing import Any
 from typing import NamedTuple
 
 from nemo_fabric_adapter_contract import models as contract
+from nemo_fabric_adapter_contract import skills as contract_skills
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import utils as common_utils
@@ -167,20 +168,21 @@ def _workspace(context: contract.RuntimeContext, base_dir: str) -> Path:
 
 
 def _skill_paths(config: contract.AgentConfig, base_dir: str) -> list[Path]:
-    paths: list[Path] = []
-    for value in config.skills.paths if config.skills is not None else []:
-        path = Path(value)
-        if not path.is_absolute():
-            path = Path(base_dir) / path
-        path = path.resolve()
-        if not path.is_dir() or not (path / "SKILL.md").is_file():
-            raise lifecycle.LifecycleError(
-                "openhands_skill_invalid",
-                "An OpenHands skill path must be a directory containing "
-                f"SKILL.md: {path}",
-            )
-        paths.append(path)
-    return paths
+    try:
+        skills = contract_skills.resolve_skills(
+            config.skills.paths if config.skills is not None else [], base_dir
+        )
+    except contract_skills.SkillPathError as error:
+        code = (
+            "openhands_skill_duplicate"
+            if error.reason == "duplicate"
+            else "openhands_skill_invalid"
+        )
+        raise lifecycle.LifecycleError(
+            code, str(error), metadata={"field": error.field}
+        ) from None
+    # OpenHands loads each skill from its own SKILL.md.
+    return [skill.path for skill in skills]
 
 
 def _skills(

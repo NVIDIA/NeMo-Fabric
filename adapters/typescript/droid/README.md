@@ -82,8 +82,11 @@ Each NeMo Fabric runtime owns one SDK session. Ordered invocations call
 history. `stop()` closes the session and its CLI subprocess. Independent
 runtimes create separate sessions.
 
-Configured skill directories are copied into a runtime-scoped temporary home
-using Droid's compatible personal `.agents/skills` layout. The adapter verifies
+Each configured skill path is a skill folder or a folder of skills; refer to
+[Load Skills from Folders](../../../docs/integrations/harness/skills.mdx). Each skill folder is copied into a
+runtime-scoped temporary home using Droid's compatible personal
+`.agents/skills` layout, under its folder name, so two skills with the same
+folder name fail start. The adapter verifies
 them with `listSkills()` and removes the temporary home during shutdown. This
 keeps Fabric-provided skills isolated without modifying the workspace.
 The isolated profile preserves Factory `settings.json` and

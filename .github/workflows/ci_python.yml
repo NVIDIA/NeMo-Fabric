@@ -122,6 +122,17 @@ jobs:
           set -euo pipefail
           just --set no_uv true test-python
 
+      - name: Test skill loading with pinned native OpenClaw
+        if: matrix.platform == 'linux-amd64' && matrix.python-version == '3.12'
+        run: |
+          set -euo pipefail
+          openclaw_root="$RUNNER_TEMP/fabric-openclaw-skills"
+          npm exec --yes --package=npm@11.16.0 -- npm install --global \
+            --prefix "$openclaw_root" --no-audit --no-fund \
+            --allow-scripts=openclaw openclaw@2026.9.34
+          export OPENCLAW_TEST_PACKAGE="$openclaw_root/lib/node_modules/openclaw"
+          uv run --no-sync pytest tests/e2e/test_openclaw_skills.py -q
+
       - name: Test Kiro health with the pinned native CLI
         if: matrix.platform == 'linux-amd64' && matrix.python-version == '3.12'
         env:

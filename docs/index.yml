@@ -66,6 +66,8 @@ navigation:
         contents:
           - page: Overview
             path: ./integrations/harness/overview.mdx
+          - page: Skill Folders
+            path: ./integrations/harness/skills.mdx
           - page: Claude Code
             path: ./integrations/harness/claude.mdx
           - page: Codex

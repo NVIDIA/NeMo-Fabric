@@ -117,9 +117,9 @@ config.add_mcp_server(
 ```
 
 The adapter maps stdio, HTTP, and streamable HTTP servers into the Codex
-thread's `mcp_servers` configuration. It resolves each skill directory, verifies
-that it contains `SKILL.md`, and registers it as a process-scoped Codex skill
-root. Codex uses its normal skill discovery behavior. Invalid skill directories
+thread's `mcp_servers` configuration. It resolves each skill path to skill
+folders, as [Load Skills from Folders](./skills.mdx) describes, and registers
+each skill folder as a process-scoped Codex skill root. Codex uses its normal skill discovery behavior. Invalid skill directories
 and MCP transports fail before the SDK runtime starts.
 
 For `Fabric.start_runtime(...)`, the model provider, MCP configuration, and

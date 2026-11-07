@@ -118,8 +118,10 @@ absolute paths in user input.
 ## Configure MCP Servers and Skills
 
 Normalized skill paths are staged into a runtime-scoped Agent Plugins v1
-package and loaded through Cline's native skill discovery. Each path must name
-a directory containing `SKILL.md`.
+package and loaded through Cline's native skill discovery. Each path is a skill
+folder or a folder of skills; refer to [Load Skills from Folders](./skills.mdx). The
+package keeps each skill under its folder name, so two skills with the same
+folder name fail start.
 
 Normalized MCP servers use the same runtime-scoped native plugin. The adapter
 supports unauthenticated stdio, SSE, and streamable HTTP servers.

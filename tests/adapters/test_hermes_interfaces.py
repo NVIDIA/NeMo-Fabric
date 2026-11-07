@@ -139,6 +139,7 @@ def test_hermes_interfaces_read_the_model_endpoint_and_key_from_config():
     config = configuration.build_hermes_config(
         _agent_config({}, base_url="http://127.0.0.1:9/v1"),
         workspace=".",
+        base_dir=".",
         interfaces={"api": 8642},
     )
 
@@ -481,6 +482,28 @@ async def test_hermes_interface_port_in_use_fails_start(
         "port": port,
     }
     assert not _token_path(tmp_path).exists()
+
+
+async def test_hermes_failed_interface_start_removes_a_token_left_in_kept_state(
+    tmp_path: Path, api_server: str
+):
+    state_dir = tmp_path / "artifacts/.fabric/state/nvidia.fabric.hermes/assistant"
+    stale_token = state_dir / "interfaces" / "api.token"
+    stale_token.parent.mkdir(parents=True)
+    stale_token.write_text("token-from-a-crashed-runtime", encoding="utf-8")
+    runtime = adapter.HermesRuntime()
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        payload = _payload(
+            tmp_path,
+            {"interfaces": {"api": {"port": server.getsockname()[1]}}},
+            base_url=f"{api_server}/v1",
+        )
+        payload["runtime_context"]["state_dir"] = str(state_dir)
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.start(payload)
+
+    assert caught.value.code == "hermes_interface_port_unavailable"
+    assert not stale_token.exists()
 
 
 def test_hermes_disabled_interface_is_not_started():

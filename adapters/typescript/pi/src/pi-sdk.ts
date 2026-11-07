@@ -21,7 +21,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti/static";
 import type { AdapterCheckResult, CheckLevel, CheckSource, AgentConfig, AgentModelConfig, AgentToolDefinition, JsonObject } from "nemo-fabric-adapter-contract";
-import { LifecycleError, unobservedHealth, type AdapterStartInput } from "nemo-fabric-adapters-common";
+import { LifecycleError, resolveSkillFolders, unobservedHealth, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 import {
   PiRelayFactory,
@@ -808,37 +808,13 @@ async function resolveExtensionPaths(workspace: string, configured: string[]): P
   return resolved;
 }
 
-async function resolveSkillPaths(baseDir: string, configured: string[]): Promise<string[]> {
-  const resolved: string[] = [];
-  for (const entry of configured) {
-    let candidate: string;
-    try {
-      candidate = await realpath(resolve(baseDir, entry));
-    } catch {
-      throw new LifecycleError("pi_skill_not_found", "A configured NeMo Fabric skill path does not exist");
-    }
-    let info;
-    try {
-      info = await stat(candidate);
-    } catch {
-      throw new LifecycleError("pi_skill_not_found", "A configured NeMo Fabric skill path does not exist");
-    }
-    if (!info.isDirectory()) {
-      throw new LifecycleError("pi_skill_invalid", "NeMo Fabric skill paths must be directories");
-    }
-    try {
-      if (!(await stat(join(candidate, "SKILL.md"))).isFile()) {
-        throw new Error("not a file");
-      }
-    } catch {
-      throw new LifecycleError(
-        "pi_skill_invalid",
-        "NeMo Fabric skill directories must contain a SKILL.md file",
-      );
-    }
-    resolved.push(candidate);
-  }
-  return resolved;
+/** Resolve skills.paths to skill folders; Pi loads a folder with SKILL.md as one skill. */
+export async function resolveSkillPaths(baseDir: string, configured: string[]): Promise<string[]> {
+  return resolveSkillFolders(configured, baseDir, {
+    not_found: "pi_skill_not_found",
+    invalid: "pi_skill_invalid",
+    duplicate: "pi_skill_invalid",
+  });
 }
 
 function credentialValue(input: AdapterStartInput, name: string): string | undefined {

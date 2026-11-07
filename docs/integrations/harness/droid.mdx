@@ -126,9 +126,10 @@ server's explicit `env`; unrelated variables from the adapter host are removed.
 
 ## Configure Skills
 
-The adapter supports normalized `skills.paths`. It validates each configured
-directory and its `SKILL.md`, copies the skill into a runtime-scoped temporary
-home using Droid's compatible personal `.agents/skills` layout, and verifies
+The adapter supports normalized `skills.paths`; each entry is a skill folder
+or a folder of skills, as [Load Skills from Folders](./skills.mdx) describes.
+It copies each skill folder, under its folder name, into a runtime-scoped
+temporary home using Droid's compatible personal `.agents/skills` layout, and verifies
 discovery through the SDK. Runtime shutdown removes the temporary files.
 Project skills already placed in Droid's documented discovery locations remain
 Droid-owned ambient configuration.

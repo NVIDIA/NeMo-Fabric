@@ -14,7 +14,7 @@ import type {
   AgentUsage,
   JsonObject,
 } from "nemo-fabric-adapter-contract";
-import { LifecycleError, unobservedHealth, type AdapterStartInput } from "nemo-fabric-adapters-common";
+import { LifecycleError, resolveSkillFolders, unobservedHealth, type AdapterStartInput } from "nemo-fabric-adapters-common";
 
 import type { ClinePromptOutcome, ClineSessionFactory, ClineSessionHandle } from "./runtime.js";
 import { RawUsageCollector } from "./raw-usage.js";
@@ -267,9 +267,13 @@ interface RuntimeFiles {
 }
 
 async function prepareRuntimeFiles(input: AdapterStartInput): Promise<RuntimeFiles> {
+  const skillPaths = await resolveSkillFolders(input.config.skills?.paths ?? [], input.baseDir, {
+    not_found: "cline_skill_invalid",
+    invalid: "cline_skill_invalid",
+    duplicate: "cline_skill_invalid",
+  });
   const root = await mkdtemp(join(tmpdir(), "nemo-fabric-cline-"));
   const dataDir = join(root, "data");
-  const skillPaths = input.config.skills?.paths ?? [];
   const mcpServers = input.config.mcp?.servers ?? {};
   if (skillPaths.length === 0 && Object.keys(mcpServers).length === 0) {
     return { root, dataDir, skillCount: 0, mcpServerCount: 0 };
@@ -293,20 +297,8 @@ async function prepareRuntimeFiles(input: AdapterStartInput): Promise<RuntimeFil
       const skillsRoot = join(pluginRoot, "skills");
       await mkdir(skillsRoot);
       const names = new Set<string>();
-      for (const configured of skillPaths) {
-        let source: string;
-        try {
-          source = await realpath(resolve(input.baseDir, configured));
-          if (!(await stat(source)).isDirectory() || !(await stat(join(source, "SKILL.md"))).isFile()) {
-            throw new Error("invalid skill directory");
-          }
-        } catch {
-          throw new LifecycleError(
-            "cline_skill_invalid",
-            "Cline skill paths must be directories containing a SKILL.md file",
-            { metadata: { path: configured } },
-          );
-        }
+      for (const source of skillPaths) {
+        // The plugin keeps each skill under its folder name.
         const name = basename(source);
         if (names.has(name)) {
           throw new LifecycleError("cline_skill_collision", "Two configured Cline skills use the same directory name", {

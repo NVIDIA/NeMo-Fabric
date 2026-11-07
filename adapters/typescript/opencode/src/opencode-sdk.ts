@@ -7,9 +7,9 @@
 
 import type { AdapterCheckResult, CheckLevel, AgentUsage } from "nemo-fabric-adapter-contract";
 import type { AdapterStartInput } from "nemo-fabric-adapters-common";
-import { LifecycleError } from "nemo-fabric-adapters-common";
+import { LifecycleError, resolveSkillFolders } from "nemo-fabric-adapters-common";
 import { randomUUID } from "node:crypto";
-import { cp, mkdtemp, readdir, realpath, rm, stat } from "node:fs/promises";
+import { cp, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -184,7 +184,17 @@ async function rejectAdditionalDiscoverableSkills(directory: string, root = dire
 }
 
 async function prepareRuntimeSkills(baseDir: string, configured: string[]): Promise<RuntimeSkills> {
-  if (configured.length === 0) {
+  for (const entry of configured) {
+    if (typeof entry !== "string") {
+      throw new LifecycleError("opencode_invalid_skill", "OpenCode skill paths must be strings");
+    }
+  }
+  const sources = await resolveSkillFolders(configured, baseDir, {
+    not_found: "opencode_skill_not_found",
+    invalid: "opencode_skill_invalid",
+    duplicate: "opencode_skill_name_duplicate",
+  });
+  if (sources.length === 0) {
     return { skills: [] };
   }
   // OpenCode reports canonical skill paths. Canonicalize the temporary root as
@@ -193,34 +203,7 @@ async function prepareRuntimeSkills(baseDir: string, configured: string[]): Prom
   const root = await realpath(await mkdtemp(join(tmpdir(), "nemo-fabric-opencode-skills-")));
   const skills: OpenCodeSkill[] = [];
   try {
-    for (const [index, entry] of configured.entries()) {
-      if (typeof entry !== "string") {
-        throw new LifecycleError("opencode_invalid_skill", "OpenCode skill paths must be strings");
-      }
-      let source: string;
-      try {
-        source = await realpath(resolve(baseDir, entry));
-      } catch {
-        throw new LifecycleError("opencode_skill_not_found", "A configured NeMo Fabric skill path does not exist");
-      }
-      try {
-        if (!(await stat(source)).isDirectory()) {
-          throw new Error("not a directory");
-        }
-      } catch {
-        throw new LifecycleError("opencode_skill_invalid", "NeMo Fabric skill paths must be directories");
-      }
-      try {
-        const sourceLocation = await realpath(join(source, "SKILL.md"));
-        if (!(await stat(sourceLocation)).isFile()) {
-          throw new Error("not a file");
-        }
-      } catch {
-        throw new LifecycleError(
-          "opencode_skill_invalid",
-          "NeMo Fabric skill directories must contain a SKILL.md file",
-        );
-      }
+    for (const [index, source] of sources.entries()) {
       const directory = join(root, String(index));
       try {
         await cp(source, directory, { recursive: true, dereference: true, errorOnExist: true });

@@ -103,6 +103,11 @@ NeMo Fabric maps the following into the harness:
   confines filesystem tools to the workspace: absolute paths and `..` cannot
   escape `root_dir`.
 - Routed `skills` (`native.skill_paths`) become the Deep Agents `skills` sources.
+  A Deep Agents source is a folder of skills read through the Deep Agents
+  backend, which can be virtual, so this adapter passes each entry unchanged
+  instead of resolving it as a skill folder or a folder of skills as the other
+  adapters do; refer to
+  [Load Skills from Folders](../../../docs/integrations/harness/skills.mdx).
 - Configured MCP servers are loaded as Deep Agents tools via
   `langchain-mcp-adapters`. A misconfigured server (non-mapping, empty target,
   unsupported transport) is a normalized configuration failure, not a silent drop.

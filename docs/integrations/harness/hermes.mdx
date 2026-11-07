@@ -74,6 +74,8 @@ Replace the endpoint and model, and provide `MODEL_API_KEY` in the adapter envir
 
 The adapter supports `instructions.system.mode: replace` and rejects `append`. Tool selectors are Hermes toolset names. `models.<role>.top_p` must be between 0 and 1, and `max_tokens` must be positive. A model-level token limit takes precedence over `harness.settings.max_tokens`. If both are omitted, the adapter passes `None` to preserve Hermes' native response token limit behavior for embedded and native interface agents. Use `runtime.max_turns`, not a `max_iterations` harness setting, to control the agent loop.
 
+Each `skills.paths` entry is a skill or a folder of skills. An entry that contains `SKILL.md` is one skill. Otherwise each folder directly inside the entry that contains `SKILL.md` is a skill, and other files and folders are ignored. Mix the two forms to combine a shared folder of skills with a skill mounted on its own. An entry that exists but holds no skills, such as a new, empty volume, loads nothing. Start fails with `hermes_skill_not_found` when an entry does not exist and with `hermes_skill_invalid` when an entry is not a readable folder or two skills share a name; the error names the entry or both skill folders. The adapter passes each skill folder to Hermes Agent's `skills.external_dirs`, so Hermes does not search the rest of a configured folder. Hermes Agent still loads skills nested inside a skill folder; refer to [Load Skills from Folders](./skills.mdx) for this and other differences in how Hermes Agent loads skills.
+
 ### Hermes Settings
 
 The descriptor uses closed schemas, so unknown settings are rejected.
@@ -88,9 +90,18 @@ The descriptor uses closed schemas, so unknown settings are rejected.
 
 Native interface settings are documented in the [Hermes native interfaces guide](./hermes-interfaces.mdx#enable-native-interfaces).
 
+By default, the Hermes home is
+`<artifact root>/.fabric/hermes/runtimes/<runtime_id>`, so runtimes don't share
+config or the session database. With `runtime.keep_state`, it is the agent's
+state folder, `<artifact root>/.fabric/state/nvidia.fabric.hermes/<agent name>`:
+every runtime of the agent then uses the same session database, memory, skills
+and logs. Each runtime starts a new session, and earlier sessions stay in the
+database. At each start, the adapter rewrites `config.yaml` and removes an
+API token that an earlier runtime left in the Hermes home.
+
 ## Understand the Runtime Lifecycle
 
-Each runtime creates one embedded Hermes `AIAgent` and one `SessionDB`. Ordered SDK invocations reuse these objects and their conversation history until stop closes them. The Hermes home is stored under `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`; retaining files does not by itself establish cross-runtime conversation resume.
+Each runtime creates one embedded Hermes `AIAgent` and one `SessionDB`. Ordered SDK invocations reuse these objects and their conversation history until stop closes them. The Hermes home is stored under `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`, or in the agent's state folder with `runtime.keep_state`; retaining files does not by itself establish cross-runtime conversation resume.
 
 SDK invocations return normalized NeMo Fabric `RunResult` objects. The adapter finalizes the Hermes Relay session and flushes subscribers before returning, so available ATOF/ATIF artifacts are complete at that invocation boundary. Native interface responses follow a different path, described in [What NeMo Fabric Normalizes](./hermes-interfaces.mdx#what-nemo-fabric-normalizes).
 

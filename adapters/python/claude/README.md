@@ -101,8 +101,10 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
 - `mcp` configures stdio, HTTP, streamable HTTP, or SSE servers. For stdio,
   set `url` to the executable and pass each command-line argument as a separate
   `args` element.
-- `skills.paths` names skill directories that contain `SKILL.md`. The adapter
-  stages these directories as a local Claude plugin for the runtime.
+- `skills.paths` names skill folders or folders of skills; refer to
+  [Load Skills from Folders](../../../docs/integrations/harness/skills.mdx). The adapter stages each skill folder in a local Claude
+  plugin for the runtime, under its folder name, so two skills with the same
+  folder name fail start.
 
 Only Claude-specific controls belong in `harness.settings`:
 

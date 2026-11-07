@@ -1495,6 +1495,10 @@
           "description": "Input schema label.",
           "type": "string"
         },
+        "keep_state": {
+          "description": "Keep the adapter's native state in a folder named after the agent, so\nevery runtime of the agent uses the same folder. Requires an artifact\ndirectory and an adapter that accepts `runtime.keep_state`.",
+          "type": "boolean"
+        },
         "max_turns": {
           "description": "Maximum number of harness turns within one invocation.",
           "format": "uint32",

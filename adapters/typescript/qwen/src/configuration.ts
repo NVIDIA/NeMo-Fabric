@@ -2,9 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { AgentConfig, AgentMcpServerConfig, AgentModelConfig } from "nemo-fabric-adapter-contract";
-import { LifecycleError, insecureHttpModelHosts, modelEndpointAllowed } from "nemo-fabric-adapters-common";
-import { realpath, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { LifecycleError, insecureHttpModelHosts, modelEndpointAllowed, resolveSkillFolders } from "nemo-fabric-adapters-common";
 
 export interface QwenModel {
   id: string;
@@ -202,26 +200,18 @@ export async function selectSkillPaths(config: AgentConfig, baseDir: string): Pr
   if (config.skills?.extensions !== undefined) {
     throw new LifecycleError("qwen_unsupported_skills", "Qwen does not support skill extensions");
   }
-  const paths: string[] = [];
-  const seen = new Set<string>();
-  for (const entry of config.skills?.paths ?? []) {
+  const configured = config.skills?.paths ?? [];
+  for (const entry of configured) {
     if (typeof entry !== "string" || entry.trim().length === 0) {
       throw new LifecycleError("qwen_invalid_skill", "Qwen skill paths must be non-empty strings");
     }
-    let directory: string;
-    try {
-      directory = await realpath(resolve(baseDir, entry));
-      if (!(await stat(directory)).isDirectory() || !(await stat(join(directory, "SKILL.md"))).isFile()) {
-        throw new Error("not a skill directory");
-      }
-    } catch {
-      throw new LifecycleError("qwen_skill_not_found", "A configured Qwen skill directory or SKILL.md is missing");
-    }
-    if (seen.has(directory)) throw new LifecycleError("qwen_skill_duplicate", "Qwen skill paths must be unique");
-    seen.add(directory);
-    paths.push(directory);
   }
-  return paths;
+  // Qwen loads each skill from its own folder.
+  return resolveSkillFolders(configured, baseDir, {
+    not_found: "qwen_skill_not_found",
+    invalid: "qwen_skill_not_found",
+    duplicate: "qwen_skill_duplicate",
+  });
 }
 
 export function rejectUnclaimedConfig(config: AgentConfig): void {

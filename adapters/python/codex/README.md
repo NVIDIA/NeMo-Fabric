@@ -110,9 +110,10 @@ Use normalized `FabricConfig` fields for portable configuration:
 - `mcp` maps stdio, HTTP, and streamable HTTP servers into the Codex thread's
   `mcp_servers` configuration. For stdio, set `url` to the executable and pass
   each command-line argument as a separate `args` element.
-- `skills.paths` names skill directories that contain `SKILL.md`. The adapter
-  registers each directory as a process-scoped Codex skill root so Codex can
-  select matching skills through its normal discovery behavior.
+- `skills.paths` names skill folders or folders of skills; refer to
+  [Load Skills from Folders](../../../docs/integrations/harness/skills.mdx). The adapter registers each skill folder as a
+  process-scoped Codex skill root so Codex can select matching skills through
+  its normal discovery behavior.
 - `telemetry` enables native OpenTelemetry or NeMo Relay observability.
 
 Invocation deadlines return the normalized error code `timeout`, including when the deadline expires during MCP authentication; a Codex SDK request that times out earlier returns `codex_timed_out`. The adapter interrupts the active turn and closes the SDK before returning either outcome. With a timeout under 10 seconds, NeMo Fabric's own timeout can stop the adapter host before the interrupt finishes, which fails the invocation with a core `host_timeout` error instead.

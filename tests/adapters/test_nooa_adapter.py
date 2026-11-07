@@ -1971,3 +1971,30 @@ async def test_incompatible_relay_fails_before_target_execution(
     assert result.called is False
     assert result.report.error == "Relay setup failed (RuntimeError)"
     call.assert_not_awaited()
+
+
+def test_skill_folder_resolves_each_skill_directly_inside_it(tmp_path: Path):
+    shared = tmp_path / "shared"
+    for name in ("code-review", "security-review"):
+        (shared / name).mkdir(parents=True)
+        (shared / name / "SKILL.md").write_text(
+            f"---\nname: {name}\n---\n", encoding="utf-8"
+        )
+    (shared / "notes").mkdir()
+    config = AgentConfig.from_mapping({"skills": {"paths": ["shared"]}})
+
+    assert adapter._resolved_skill_paths(config, tmp_path) == (
+        (shared / "code-review").resolve(),
+        (shared / "security-review").resolve(),
+    )
+
+
+def test_missing_skill_path_fails_naming_it(tmp_path: Path):
+    config = AgentConfig.from_mapping({"skills": {"paths": ["missing"]}})
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        adapter._resolved_skill_paths(config, tmp_path)
+
+    assert caught.value.code == "nooa_skill_not_found"
+    assert caught.value.metadata == {"field": "skills.paths[0]"}
+    assert str(tmp_path / "missing") in caught.value.message

@@ -1151,7 +1151,8 @@ def test_sdk_rejects_invalid_native_skill_path(codex_payload, mock_codex, tmp_pa
     error = runtime_start_error(codex_payload)
 
     assert error.code == "codex_invalid_configuration"
-    assert "directory containing SKILL.md" in error.message
+    assert "skills.paths[0] does not exist" in error.message
+    assert str(missing) in error.message
     mock_codex.assert_not_called()
 
 
@@ -2579,3 +2580,44 @@ def test_codex_relay_reports_invalid_or_unsupported_http_model_hosts(
     assert caught.value.code == "codex_relay_invalid_http_model_hosts"
     assert isinstance(caught.value.__cause__, adapter.RelayHttpModelError)
     write_configs.assert_not_called()
+
+
+def test_sdk_registers_each_skill_in_a_skill_folder(
+    codex_payload, mock_codex, tmp_path
+):
+    shared = tmp_path / "shared"
+    for name in ("review", "test"):
+        (shared / name).mkdir(parents=True)
+        (shared / name / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Test skill.\n---\n", encoding="utf-8"
+        )
+    (shared / "notes").mkdir()
+    separate = tmp_path / "mounted" / "lint"
+    separate.mkdir(parents=True)
+    (separate / "SKILL.md").write_text("# Lint\n", encoding="utf-8")
+    codex_payload["config"]["skills"] = {"paths": ["shared", str(separate)]}
+
+    invoke_once(codex_payload)
+
+    mock_codex.instances[0]._client.request.assert_awaited_once_with(
+        "skills/extraRoots/set",
+        {
+            "extraRoots": [
+                str((shared / "review").resolve()),
+                str((shared / "test").resolve()),
+                str(separate.resolve()),
+            ]
+        },
+        response_model=adapter.SkillsExtraRootsSetResponse,
+    )
+
+
+def test_sdk_registers_no_skill_roots_for_an_empty_skill_folder(
+    codex_payload, mock_codex, tmp_path
+):
+    (tmp_path / "empty").mkdir()
+    codex_payload["config"]["skills"] = {"paths": ["empty"]}
+
+    invoke_once(codex_payload)
+
+    mock_codex.instances[0]._client.request.assert_not_awaited()

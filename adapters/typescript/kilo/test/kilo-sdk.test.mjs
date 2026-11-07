@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import {EventEmitter} from "node:events";
 import test from "node:test";
-import {mkdtemp, mkdir, rm, writeFile} from "node:fs/promises";
+import {mkdtemp, mkdir, realpath, rm, writeFile} from "node:fs/promises";
 import {createServer} from "node:http";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
@@ -14,7 +14,7 @@ import {setImmediate as nextTurn} from "node:timers/promises";
 import {createKiloClient} from "@kilocode/sdk/v2";
 import undiciTimers from "undici/lib/util/timers.js";
 
-import {classifySpawnError, closeChild, extractPromptOutcome, kiloFetch, KiloSdkSessionFactory, startKiloServer} from "../dist/kilo-sdk.js";
+import {classifySpawnError, closeChild, extractPromptOutcome, kiloFetch, KiloSdkSessionFactory, skillPaths, startKiloServer} from "../dist/kilo-sdk.js";
 
 test("extracts Kilo Code terminal text without treating final-message counters as invocation usage", () => {
   assert.deepEqual(extractPromptOutcome({
@@ -369,3 +369,25 @@ for (const phase of ["headers", "body"]) {
     });
   }
 }
+
+test("projects each skill directly inside a configured skill folder", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "kilo-skill-folder-")));
+  try {
+    for (const name of ["lint", "review"]) {
+      await mkdir(join(root, "skills", name), {recursive: true});
+      await writeFile(join(root, "skills", name, "SKILL.md"), `# ${name}\n`, "utf8");
+    }
+    await mkdir(join(root, "skills", "notes"));
+
+    assert.deepEqual(
+      await skillPaths({baseDir: root, config: {skills: {paths: ["skills"]}}}),
+      [join(root, "skills", "lint"), join(root, "skills", "review")],
+    );
+    await assert.rejects(
+      skillPaths({baseDir: root, config: {skills: {paths: ["missing"]}}}),
+      (error) => error.code === "kilo_skill_invalid" && error.metadata.field === "skills.paths[0]",
+    );
+  } finally {
+    await rm(root, {recursive: true, force: true});
+  }
+});

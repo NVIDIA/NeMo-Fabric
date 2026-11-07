@@ -66,6 +66,10 @@ dependency graph. The private TypeScript workspace uses a local
 `nemo-fabric-adapter-contract` file link so source builds test the checked-out
 contract. Published package manifests use the registry version instead.
 
+## Skill Paths
+
+`resolveSkillFolders(paths, baseDir, codes)` resolves `skills.paths` with the adapter contract's `resolveSkills` and returns each skill's folder. An entry that contains `SKILL.md` is one skill; otherwise each folder directly inside it that contains `SKILL.md` is a skill. Failures become a `LifecycleError` with the adapter's code for `not_found`, `invalid`, or `duplicate` and the failing `skills.paths[N]` field in its metadata.
+
 ## Model Endpoint Policy
 
 `insecureHttpModelHosts(settings, errorCode)` validates and normalizes the explicit `insecure_http_model_hosts` setting. `modelEndpointAllowed(url, hosts, allowPrivateHttp)` applies the shared HTTPS, loopback HTTP, and exact HTTP host policy used by OpenCode, Qwen, and Kilo. The optional private IPv4 argument preserves Kilo's existing opt-in. These utilities do not apply to MCP endpoints.

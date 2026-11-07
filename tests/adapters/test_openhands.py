@@ -1094,3 +1094,64 @@ def test_usage_retains_only_complete_cost_when_token_coverage_is_partial(
         assert result.total_tokens is None
     else:
         assert result is None
+
+
+def _skill_folder(root: Path, *names: str) -> Path:
+    for name in names:
+        (root / name).mkdir(parents=True)
+        (root / name / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Test skill.\n---\n", encoding="utf-8"
+        )
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def test_skill_folder_loads_each_skill_directly_inside_it(tmp_path: Path):
+    shared = _skill_folder(tmp_path / "shared", "lint", "review")
+    (shared / "notes").mkdir()
+    skill_type = MagicMock()
+    skill_type.load.side_effect = lambda path, **_kwargs: SimpleNamespace(
+        name=path.parent.name
+    )
+    config = AgentConfig.from_mapping({"skills": {"paths": ["shared"]}})
+
+    skills = adapter._skills(SimpleNamespace(Skill=skill_type), config, str(tmp_path))
+
+    assert [skill.name for skill in skills] == ["lint", "review"]
+    assert [call.args[0] for call in skill_type.load.call_args_list] == [
+        (shared / "lint" / "SKILL.md").resolve(),
+        (shared / "review" / "SKILL.md").resolve(),
+    ]
+
+
+def test_empty_skill_folder_loads_no_skills(tmp_path: Path):
+    (tmp_path / "empty").mkdir()
+    skill_type = MagicMock()
+    config = AgentConfig.from_mapping({"skills": {"paths": ["empty"]}})
+
+    assert (
+        adapter._skills(SimpleNamespace(Skill=skill_type), config, str(tmp_path)) == []
+    )
+    skill_type.load.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("layout", "code"),
+    [
+        ("missing", "openhands_skill_invalid"),
+        ("duplicate", "openhands_skill_duplicate"),
+    ],
+)
+def test_skill_paths_fail_naming_the_entry(tmp_path: Path, layout: str, code: str):
+    paths = ["missing"]
+    if layout == "duplicate":
+        _skill_folder(tmp_path / "one", "review")
+        _skill_folder(tmp_path / "two", "review")
+        paths = ["one", "two"]
+    config = AgentConfig.from_mapping({"skills": {"paths": paths}})
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        adapter._skills(SimpleNamespace(Skill=MagicMock()), config, str(tmp_path))
+
+    assert caught.value.code == code
+    assert caught.value.metadata == {"field": f"skills.paths[{len(paths) - 1}]"}

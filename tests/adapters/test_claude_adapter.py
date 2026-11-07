@@ -884,11 +884,19 @@ def test_build_options_maps_blocked_tools_to_disallowed_tools(claude_payload):
     assert options.disallowed_tools == ["Bash", "WebFetch"]
 
 
-def test_build_options_rejects_skill_path_without_skill_manifest(claude_payload):
+def test_build_options_loads_nothing_from_a_folder_without_skills(claude_payload):
     skill_path = Path(claude_payload["config"]["skills"]["paths"][0])
     (skill_path / "SKILL.md").unlink()
 
-    with pytest.raises(adapter.AdapterConfigError, match=r"SKILL\.md"):
+    assert build_options(claude_payload).skills is None
+
+
+def test_build_options_rejects_a_missing_skill_path(claude_payload, tmp_path):
+    claude_payload["config"]["skills"]["paths"] = [str(tmp_path / "missing")]
+
+    with pytest.raises(
+        adapter.AdapterConfigError, match=r"skills\.paths\[0\] does not exist"
+    ):
         build_options(claude_payload)
 
 
@@ -2421,3 +2429,33 @@ def test_claude_relay_reports_invalid_or_unsupported_http_model_hosts(
     assert caught.value.code == "claude_relay_invalid_http_model_hosts"
     assert isinstance(caught.value.__cause__, adapter.RelayHttpModelError)
     write_configs.assert_not_called()
+
+
+def test_build_options_stages_each_skill_in_a_skill_folder(claude_payload, tmp_path):
+    shared = tmp_path / "shared"
+    for name in ("lint", "security"):
+        (shared / name).mkdir(parents=True)
+        (shared / name / "SKILL.md").write_text(f"# {name}\n", encoding="utf-8")
+    (shared / "notes.md").write_text("Not a skill.\n", encoding="utf-8")
+    claude_payload["config"]["skills"]["paths"].append(str(shared))
+
+    options = build_options(claude_payload)
+
+    staged = Path(options.plugins[0]["path"]) / "skills"
+    assert sorted(path.name for path in staged.iterdir()) == [
+        "lint",
+        "review",
+        "security",
+    ]
+    assert (staged / "lint" / "SKILL.md").read_text(encoding="utf-8") == "# lint\n"
+
+
+def test_build_options_stages_no_plugin_for_an_empty_skill_folder(
+    claude_payload, tmp_path
+):
+    (tmp_path / "empty").mkdir()
+    claude_payload["config"]["skills"]["paths"] = [str(tmp_path / "empty")]
+
+    options = build_options(claude_payload)
+
+    assert options.skills is None

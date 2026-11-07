@@ -286,7 +286,13 @@ export interface AgentSkillConfig {
    */
   extensions?: JsonObject;
   /**
-   * Skill paths resolved for the task environment.
+   * Skill paths resolved for the task environment. An entry that contains
+   * `SKILL.md` is one skill; otherwise each folder directly inside it that
+   * contains `SKILL.md` is a skill. An entry that holds no skills loads
+   * nothing. An entry that is missing, is not a folder, or cannot be read,
+   * or two resolved skills with the same name, fails. The adapters that
+   * ship with NeMo Fabric follow this rule, except Deep Agents, which passes
+   * each entry to Deep Agents as a skill source.
    */
   paths?: string[];
 }
