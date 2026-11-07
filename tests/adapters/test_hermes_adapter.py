@@ -203,6 +203,7 @@ def test_descriptor_uses_the_typed_agent_config_contract():
         "models.max_tokens",
         "instructions.system",
         "runtime.max_turns",
+        "runtime.keep_state",
         "tools.enabled",
         "tools.blocked",
         "mcp",
@@ -537,8 +538,11 @@ async def test_runtime_rechecks_ambient_relay_config_before_each_turn(
     mock_finalize.assert_not_called()
 
 
-def test_build_hermes_config_maps_fabric_config_to_hermes_config():
+def test_build_hermes_config_maps_fabric_config_to_hermes_config(tmp_path: Path):
     os.environ["MCP_URL"] = "http://localhost:9000/mcp"
+    review = tmp_path / "skills" / "review"
+    review.mkdir(parents=True)
+    (review / "SKILL.md").write_text("# Review\n", encoding="utf-8")
     agent_config = _agent_config(
         {
             "harness": {
@@ -575,6 +579,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
     config = configuration.build_hermes_config(
         agent_config,
         workspace="/workspace/repo",
+        base_dir=tmp_path,
     )
 
     assert config == {
@@ -592,7 +597,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
             "cwd": "/workspace/repo",
             "timeout": 90,
         },
-        "skills": {"external_dirs": ["skills/review"]},
+        "skills": {"external_dirs": [str(review.resolve())]},
         "mcp_servers": {
             "github": {
                 "enabled": True,
@@ -620,7 +625,9 @@ def test_build_hermes_config_omits_max_turns_when_fabric_limit_unset():
         }
     )
 
-    config = configuration.build_hermes_config(agent_config, workspace=".")
+    config = configuration.build_hermes_config(
+        agent_config, workspace=".", base_dir="."
+    )
 
     assert "max_turns" not in config["agent"]
 
@@ -636,7 +643,9 @@ def test_build_hermes_config_omits_max_turns_when_fabric_limit_null():
         }
     )
 
-    config = configuration.build_hermes_config(agent_config, workspace=".")
+    config = configuration.build_hermes_config(
+        agent_config, workspace=".", base_dir="."
+    )
 
     assert "max_turns" not in config["agent"]
 
@@ -707,10 +716,15 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         }
     )
     payload["config"] = agent_config.to_mapping()
+    (tmp_path / "skills" / "review").mkdir(parents=True)
+    (tmp_path / "skills" / "review" / "SKILL.md").write_text(
+        "# Review\n", encoding="utf-8"
+    )
 
     config = configuration.build_hermes_config(
         agent_config,
         workspace=str(tmp_path / "workspace"),
+        base_dir=tmp_path,
     )
     plugin_config = common_utils.load_relay_plugin_config(payload)
     observability = plugin_config["components"][0]["config"]
@@ -720,7 +734,9 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         "default": "nvidia/review-model",
     }
     assert config["terminal"]["cwd"] == str(tmp_path / "workspace")
-    assert config["skills"]["external_dirs"] == [str(tmp_path / "skills" / "review")]
+    assert config["skills"]["external_dirs"] == [
+        str((tmp_path / "skills" / "review").resolve())
+    ]
     assert config["mcp_servers"] == {
         "github": {
             "enabled": True,
@@ -773,6 +789,7 @@ def test_build_hermes_config_maps_stdio_mcp_args_and_env_from_agent_config(
     config = configuration.build_hermes_config(
         agent_config,
         workspace=str(tmp_path / "workspace"),
+        base_dir=tmp_path,
     )
 
     assert config["mcp_servers"] == {
@@ -1100,9 +1117,11 @@ def test_build_hermes_config_disables_session_title_generation_only_for_relay():
         }
     )
 
-    ordinary_config = configuration.build_hermes_config(agent_config, workspace=".")
+    ordinary_config = configuration.build_hermes_config(
+        agent_config, workspace=".", base_dir="."
+    )
     relay_config = configuration.build_hermes_config(
-        agent_config, workspace=".", relay_enabled=True
+        agent_config, workspace=".", base_dir=".", relay_enabled=True
     )
 
     assert "auxiliary" not in ordinary_config
@@ -1121,6 +1140,7 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
         agent_config,
         tmp_path / "hermes-home",
         workspace=".",
+        base_dir=tmp_path,
     )
 
     assert config_path == tmp_path / "hermes-home" / "config.yaml"
@@ -1242,6 +1262,24 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
 
     with pytest.raises(RuntimeError, match="stop after environment setup"):
         await adapter.HermesRuntime().start(payload)
+
+
+@pytest.mark.parametrize("kept", [False, True])
+def test_hermes_home_is_the_agents_state_folder_when_fabric_keeps_state(
+    tmp_path: Path, kept: bool
+):
+    state_dir = tmp_path / "artifacts/.fabric/state/nvidia.fabric.hermes/assistant"
+    context = _runtime_context(artifact_root="artifacts").to_mapping()
+    if kept:
+        context["state_dir"] = str(state_dir)
+
+    home = adapter._hermes_home(RuntimeContext.from_mapping(context), str(tmp_path))
+
+    assert home == (
+        state_dir
+        if kept
+        else tmp_path / "artifacts/.fabric/hermes/runtimes/runtime-1"
+    )
 
 
 def test_artifact_root_resolves_relative_to_base_dir(tmp_path: Path):

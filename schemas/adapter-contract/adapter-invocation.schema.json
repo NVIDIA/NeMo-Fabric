@@ -210,6 +210,13 @@
           "description": "Runtime handle id.",
           "type": "string"
         },
+        "state_dir": {
+          "description": "Absolute folder for the adapter's native state, present when\n`runtime.keep_state` is set. Every runtime of the agent gets the same\nfolder, and Fabric lets only one running runtime use it at a time.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "telemetry": {
           "anyOf": [
             {

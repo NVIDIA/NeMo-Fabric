@@ -39,6 +39,11 @@
           "type": "string"
         },
         {
+          "const": "runtime.keep_state",
+          "description": "Agent-named state folder kept across runtimes.",
+          "type": "string"
+        },
+        {
           "const": "tools.enabled",
           "description": "Adapter-native tool names to expose.",
           "type": "string"

@@ -286,7 +286,13 @@ export interface AgentSkillConfig {
    */
   extensions?: JsonObject;
   /**
-   * Skill paths resolved for the task environment.
+   * Skill paths resolved for the task environment. An entry that contains
+   * `SKILL.md` is one skill; otherwise each folder directly inside it that
+   * contains `SKILL.md` is a skill. An entry that holds no skills loads
+   * nothing. An entry that is missing, is not a folder, or cannot be read,
+   * or two resolved skills with the same name, fails. The OpenClaw and
+   * Hermes Agent adapters follow this rule; other adapters require each
+   * entry to contain `SKILL.md`.
    */
   paths?: string[];
 }

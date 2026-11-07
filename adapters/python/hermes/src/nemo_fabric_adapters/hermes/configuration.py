@@ -15,6 +15,8 @@ from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
 from nemo_fabric_adapter_contract.models import McpOAuth2Config
 from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
+from nemo_fabric_adapter_contract import skills as contract_skills
+from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapters.hermes.interfaces import GATEWAY_DRAIN_TIMEOUT_SECONDS
 
@@ -129,6 +131,7 @@ def build_hermes_config(
     agent_config: AgentConfig,
     *,
     workspace: str,
+    base_dir: str | Path,
     relay_enabled: bool = False,
     interfaces: Collection[str] = (),
 ) -> dict[str, Any]:
@@ -172,11 +175,7 @@ def build_hermes_config(
         # Hermes makes an extra model call for titles, which skews Relay telemetry.
         config["auxiliary"] = {"title_generation": {"enabled": False}}
 
-    skill_dirs = (
-        [str(path) for path in agent_config.skills.paths]
-        if agent_config.skills is not None
-        else []
-    )
+    skill_dirs = _skill_dirs(agent_config, base_dir)
     if skill_dirs:
         config["skills"] = {"external_dirs": skill_dirs}
 
@@ -197,11 +196,27 @@ def build_hermes_config(
     return config
 
 
+def _skill_dirs(agent_config: AgentConfig, base_dir: str | Path) -> list[str]:
+    try:
+        skills = contract_skills.resolve_skills(
+            agent_config.skills.paths if agent_config.skills else [], base_dir
+        )
+    except contract_skills.SkillPathError as error:
+        code = "not_found" if error.reason == "not_found" else "invalid"
+        raise lifecycle.LifecycleError(
+            f"hermes_skill_{code}", str(error), metadata={"field": error.field}
+        ) from None
+    # Hermes walks each external directory for SKILL.md files, including nested
+    # folders, so pass each skill's own folder rather than the configured entry.
+    return [str(skill.path) for skill in skills]
+
+
 def write_hermes_config(
     agent_config: AgentConfig,
     hermes_home: Path,
     *,
     workspace: str,
+    base_dir: str | Path,
     relay_enabled: bool = False,
     interfaces: Collection[str] = (),
 ) -> tuple[Path, dict[str, Any]]:
@@ -209,6 +224,7 @@ def write_hermes_config(
     config = build_hermes_config(
         agent_config,
         workspace=workspace,
+        base_dir=base_dir,
         relay_enabled=relay_enabled,
         interfaces=interfaces,
     )

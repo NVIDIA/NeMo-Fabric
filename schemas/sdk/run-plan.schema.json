@@ -39,6 +39,11 @@
           "type": "string"
         },
         {
+          "const": "runtime.keep_state",
+          "description": "Agent-named state folder kept across runtimes.",
+          "type": "string"
+        },
+        {
           "const": "tools.enabled",
           "description": "Adapter-native tool names to expose.",
           "type": "string"
@@ -764,7 +769,7 @@
           "type": "object"
         },
         "paths": {
-          "description": "Skill paths resolved for the task environment.",
+          "description": "Skill paths resolved for the task environment. An entry that contains\n`SKILL.md` is one skill; otherwise each folder directly inside it that\ncontains `SKILL.md` is a skill. An entry that holds no skills loads\nnothing. An entry that is missing, is not a folder, or cannot be read,\nor two resolved skills with the same name, fails. The OpenClaw and\nHermes Agent adapters follow this rule; other adapters require each\nentry to contain `SKILL.md`.",
           "items": {
             "type": "string"
           },
@@ -2963,6 +2968,10 @@
           "default": "text",
           "description": "Input schema label.",
           "type": "string"
+        },
+        "keep_state": {
+          "description": "Keep the adapter's native state in a folder named after the agent, so\nevery runtime of the agent uses the same folder. Requires an artifact\ndirectory and an adapter that accepts `runtime.keep_state`.",
+          "type": "boolean"
         },
         "max_turns": {
           "description": "Maximum number of harness turns within one invocation.",
