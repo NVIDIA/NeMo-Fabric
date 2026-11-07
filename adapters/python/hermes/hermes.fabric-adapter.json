@@ -19,7 +19,14 @@
           },
           "effort": {
             "type": "string",
-            "enum": ["none", "minimal", "low", "medium", "high", "xhigh"],
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ],
             "description": "Hermes model reasoning effort."
           }
         },
@@ -73,7 +80,9 @@
                 "description": "Exact loopback port for the API server. Start fails if it is in use."
               }
             },
-            "required": ["port"],
+            "required": [
+              "port"
+            ],
             "additionalProperties": false,
             "description": "Hermes's API server, run by a gateway child. After every enabled interface starts, the adapter writes its bearer token to <artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/api.token."
           },
@@ -92,7 +101,9 @@
                 "description": "Exact loopback port for the dashboard. Start fails if it is in use."
               }
             },
-            "required": ["port"],
+            "required": [
+              "port"
+            ],
             "additionalProperties": false,
             "description": "Hermes's dashboard, which has no sign-in when bound to loopback. It needs a built frontend at HERMES_WEB_DIST."
           }
@@ -106,6 +117,18 @@
         "maximum": 75,
         "default": 60,
         "description": "Time from the start of the runtime for every enabled interface to pass its health check, within NeMo Fabric's 90-second start limit."
+      },
+      "sdk": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Initialize the embedded SDK agent during startup. Disable for native-only execution; SDK invocation then fails explicitly."
+          }
+        },
+        "additionalProperties": false,
+        "description": "Embedded SDK execution, enabled by default. Runtime management remains available when disabled."
       }
     },
     "required": [],
@@ -116,7 +139,9 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "provider": {"type": "string"}
+        "provider": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     }
@@ -136,7 +161,9 @@
       "mcp.auth.oauth2",
       "skills"
     ],
-    "system_instruction_modes": ["replace"]
+    "system_instruction_modes": [
+      "replace"
+    ]
   },
   "telemetry": {
     "providers": {
@@ -150,6 +177,12 @@
     }
   },
   "capabilities": {
-    "metadata": {"health_checks": ["live", "active", "ready"]}
+    "metadata": {
+      "health_checks": [
+        "live",
+        "active",
+        "ready"
+      ]
+    }
   }
 }

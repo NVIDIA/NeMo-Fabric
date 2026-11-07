@@ -80,6 +80,7 @@ The descriptor uses closed schemas, so unknown settings are rejected.
 
 | Setting | Default | Behavior |
 | --- | --- | --- |
+| `sdk.enabled` | `true` | Eagerly initialize the embedded SDK agent. Set to `false` for native-only execution; enable at least one native interface. SDK invocation then fails with `hermes_sdk_disabled`, while runtime management remains available. |
 | `reasoning_config` | `{"effort": "none"}` | Optional `enabled` boolean and `effort`: `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
 | `plugins_enabled` | `[]` | List of nonempty native plugin identifiers. Relay uses its generated plugin configuration; do not list the removed `observability/nemo_relay` plugin. |
 | `save_trajectories` | `false` | Save native JSONL trajectories; separate from normalized telemetry. |
@@ -90,7 +91,7 @@ Native interface settings are documented in the [Hermes native interfaces guide]
 
 ## Understand the Runtime Lifecycle
 
-Each runtime creates one embedded Hermes `AIAgent` and one `SessionDB`. Ordered SDK invocations reuse these objects and their conversation history until stop closes them. The Hermes home is stored under `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`; retaining files does not by itself establish cross-runtime conversation resume.
+With SDK execution enabled (the default), each runtime creates one embedded Hermes `AIAgent` and one `SessionDB`. Ordered SDK invocations reuse these objects and their conversation history until stop closes them. The Hermes home is stored under `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`; retaining files does not by itself establish cross-runtime conversation resume.
 
 SDK invocations return normalized NeMo Fabric `RunResult` objects. The adapter finalizes the Hermes Relay session and flushes subscribers before returning, so available ATOF/ATIF artifacts are complete at that invocation boundary. Native interface responses follow a different path, described in [What NeMo Fabric Normalizes](./hermes-interfaces.mdx#what-nemo-fabric-normalizes).
 

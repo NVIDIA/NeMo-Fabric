@@ -672,3 +672,73 @@ async def test_hermes_dashboard_without_a_built_frontend_fails_start(
         )
 
     assert caught.value.code == "hermes_dashboard_frontend_missing"
+
+
+@pytest.mark.parametrize("sdk_enabled", [True, False])
+async def test_sdk_selection_preserves_eager_default(
+    tmp_path, monkeypatch, sdk_enabled
+):
+    import run_agent
+    import hermes_state
+
+    agent = MagicMock()
+    database = MagicMock()
+    monkeypatch.setattr(run_agent, "AIAgent", agent)
+    monkeypatch.setattr(hermes_state, "SessionDB", database)
+    monkeypatch.setattr(interfaces.InterfaceChildren, "start", AsyncMock())
+    settings = {"interfaces": {"api": {"port": 18642}}}
+    if not sdk_enabled:
+        settings["sdk"] = {"enabled": False}
+    runtime = adapter.HermesRuntime()
+    try:
+        await runtime.start(_payload(tmp_path, settings))
+        assert agent.call_count == int(sdk_enabled)
+        assert database.call_count == int(sdk_enabled)
+        if not sdk_enabled:
+            with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+                await runtime.invoke(MagicMock(), MagicMock())
+            assert error.value.code == "hermes_sdk_disabled"
+            agent.assert_not_called()
+    finally:
+        await runtime.stop()
+
+
+async def test_sdk_disabled_requires_an_enabled_native_path(tmp_path):
+    runtime = adapter.HermesRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        await runtime.start(
+            _payload(
+                tmp_path,
+                {
+                    "sdk": {"enabled": False},
+                    "interfaces": {"api": {"port": 18642, "enabled": False}},
+                },
+            )
+        )
+    assert error.value.code == "hermes_no_execution_path"
+
+
+@pytest.mark.parametrize("level", ["live", "active", "ready"])
+async def test_sdk_disabled_health_observes_native_backend(
+    tmp_path, monkeypatch, level
+):
+    monkeypatch.setattr(interfaces.InterfaceChildren, "start", AsyncMock())
+    probe = AsyncMock(return_value=None)
+    monkeypatch.setattr(interfaces.InterfaceChildren, "check", probe)
+    runtime = adapter.HermesRuntime()
+    try:
+        await runtime.start(
+            _payload(
+                tmp_path,
+                {"sdk": {"enabled": False}, "interfaces": {"api": {"port": 18642}}},
+            )
+        )
+        result = await runtime.check(level)
+        assert result["outcome"] == "passed"
+        assert result["activity"] == "unknown"
+        assert runtime._agent is None
+        probe.assert_awaited_once_with(level)
+        probe.return_value = "agent_exited"
+        assert (await runtime.check(level))["reason_code"] == "agent_exited"
+    finally:
+        await runtime.stop()

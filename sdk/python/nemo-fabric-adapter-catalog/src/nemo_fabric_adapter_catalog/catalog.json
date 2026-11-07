@@ -938,6 +938,18 @@
               "description": "Whether Hermes saves its native conversation trajectories as JSONL.",
               "type": "boolean"
             },
+            "sdk": {
+              "additionalProperties": false,
+              "description": "Embedded SDK execution, enabled by default. Runtime management remains available when disabled.",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Initialize the embedded SDK agent during startup. Disable for native-only execution; SDK invocation then fails explicitly.",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
             "startup_timeout_seconds": {
               "default": 60,
               "description": "Time from the start of the runtime for every enabled interface to pass its health check, within NeMo Fabric's 90-second start limit.",
@@ -972,7 +984,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.7.0"
       },
-      "sha256": "3370179a56673b6261c38653c42f049970eae696f9e88464c1757e8dc15348f0",
+      "sha256": "0f3751140d29588ab7100f9f86fe5050ac06b758554612ebe258e6024f26fdd0",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {

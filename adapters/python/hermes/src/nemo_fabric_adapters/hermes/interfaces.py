@@ -139,6 +139,23 @@ class InterfaceChildren:
             await self.stop()
             raise
 
+    async def check(self, level: str) -> str | None:
+        """Return a contract health reason for owned processes and endpoints."""
+        children = tuple(self._children)
+        if not children:
+            return "runtime_unavailable"
+        for child in children:
+            if child.process.returncode is not None:
+                return "agent_exited"
+            if (
+                level != "live"
+                and await _http_status(child.port, HEALTH_PATHS[child.name]) != 200
+            ):
+                return "endpoint_unavailable"
+        if children != tuple(self._children):
+            return "observation_changed"
+        return None
+
     async def stop(self) -> None:
         """Remove the API token, then stop every interface process group."""
         self._remove_private_file("_token_path")
