@@ -97,12 +97,15 @@ def main() -> None:
         parser.exit(1, "Run terminal attachment from an interactive terminal\n")
     try:
         environment = attachment_environment(options.connection)
-        arguments = frontend_command()
     except (OSError, ValueError, KeyError):
         parser.exit(
             1,
             "Cannot attach to the managed TUI backend; check the runtime and private attachment files\n",
         )
+    try:
+        arguments = frontend_command()
+    except ValueError as error:
+        parser.exit(1, f"{error}\n")
     # The explicit URL makes the native renderer an attaching client, never a
     # backend owner. Credentials stay in its environment, not process arguments.
     os.execvpe(arguments[0], arguments, environment)

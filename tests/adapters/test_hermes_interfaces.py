@@ -106,6 +106,15 @@ def _interface(name: str, **fields: object) -> dict[str, object]:
 
 # Settings that the descriptor's schema rejects during planning.
 INVALID_SETTINGS = [
+    pytest.param({"sdk": {"enabled": False}}, id="no-execution-path"),
+    pytest.param({"sdk": {"enabled": "false"}}, id="sdk-not-boolean"),
+    pytest.param(
+        {
+            "sdk": {"enabled": False},
+            "interfaces": {"terminal": {"port": 19119, "enabled": False}},
+        },
+        id="disabled-native-is-not-execution",
+    ),
     pytest.param(_interface("unknown"), id="unsupported"),
     pytest.param(_interface("api", port=8642, key="x"), id="unknown-field"),
     pytest.param(_interface("api"), id="missing-port"),

@@ -10,6 +10,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from nemo_fabric_adapters.hermes import terminal
 
+pytestmark = pytest.mark.skipif(
+    os.name != "posix", reason="Hermes native interfaces require POSIX"
+)
+
 
 @pytest.fixture(name="connection")
 def connection_fixture(tmp_path):
