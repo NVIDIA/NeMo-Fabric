@@ -103,6 +103,7 @@ class InterfaceChildren:
         environment: dict[str, str],
         agent_config: AgentConfig,
         terminal_enabled: bool = False,
+        workspace: str = ".",
     ) -> None:
         """Start the enabled interfaces and write the API token once all pass health."""
         require_supported_platform()
@@ -170,6 +171,7 @@ class InterfaceChildren:
                             else "headless",
                             "port": ports[tui_name],
                             "token_file": "tui.token",
+                            "workspace": str(Path(workspace).resolve()),
                         }
                     ),
                 )

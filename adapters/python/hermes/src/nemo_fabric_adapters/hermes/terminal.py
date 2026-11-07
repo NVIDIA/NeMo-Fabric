@@ -10,6 +10,7 @@ import asyncio
 import json
 import os
 import stat
+import shutil
 import sys
 from pathlib import Path
 from urllib.parse import urlencode
@@ -28,6 +29,26 @@ def _read_private(path: Path) -> str:
         ):
             raise ValueError("TUI attachment files must be owner-only regular files")
         return stream.read()
+
+
+def frontend_command() -> list[str]:
+    """Use installed assets directly; never install/build another Hermes runtime."""
+    import hermes_cli
+
+    cli = Path(hermes_cli.__file__).parent
+    configured = os.environ.get("HERMES_TUI_DIR")
+    candidates = (
+        [Path(configured) / "dist/entry.js"]
+        if configured
+        else [cli / "tui_dist/entry.js", cli.parent / "ui-tui/dist/entry.js"]
+    )
+    entry = next((path for path in candidates if path.is_file()), None)
+    node = os.environ.get("HERMES_NODE") or shutil.which("node")
+    if entry is None or not node or not os.access(node, os.X_OK):
+        raise ValueError(
+            "Install the pinned Hermes terminal bundle and Node runtime before attaching"
+        )
+    return [str(node), "--expose-gc", str(entry.resolve())]
 
 
 def attachment_environment(connection: Path) -> dict[str, str]:
@@ -51,6 +72,9 @@ def attachment_environment(connection: Path) -> dict[str, str]:
         if key
         not in {"HERMES_TUI_SIDECAR_URL", "HERMES_DESKTOP", "HERMES_SERVE_HEADLESS"}
     }
+    environment["HERMES_PYTHON"] = sys.executable
+    environment["HERMES_TUI_CWD"] = payload["workspace"]
+    environment["HERMES_CWD"] = payload["workspace"]
     environment["HERMES_HOME"] = str(connection.resolve().parent.parent)
     environment["HERMES_TUI_GATEWAY_URL"] = (
         f"ws://127.0.0.1:{port}/api/ws?{urlencode({'token': token})}"
@@ -73,6 +97,7 @@ def main() -> None:
         parser.exit(1, "Run terminal attachment from an interactive terminal\n")
     try:
         environment = attachment_environment(options.connection)
+        arguments = frontend_command()
     except (OSError, ValueError, KeyError):
         parser.exit(
             1,
@@ -80,8 +105,7 @@ def main() -> None:
         )
     # The explicit URL makes the native renderer an attaching client, never a
     # backend owner. Credentials stay in its environment, not process arguments.
-    arguments = [sys.executable, "-m", "hermes_cli.main", "--tui"]
-    os.execvpe(sys.executable, arguments, environment)
+    os.execvpe(arguments[0], arguments, environment)
 
 
 if __name__ == "__main__":

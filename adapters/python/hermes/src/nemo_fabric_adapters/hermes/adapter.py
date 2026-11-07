@@ -260,6 +260,7 @@ class HermesRuntime:
                     ),
                     environment=environment,
                     agent_config=agent_config,
+                    workspace=str(runtime_context.environment.workspace or "."),
                     terminal_enabled=self._settings.get("interfaces", {})
                     .get("terminal", {})
                     .get("enabled", True)
