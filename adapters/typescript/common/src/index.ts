@@ -29,6 +29,7 @@ export {
   type AcpSessionReadinessNotification,
 } from "./acp-runner.js";
 export { unobservedHealth } from "./health.js";
+export { resolveSkillFolders, type SkillPathErrorCodes } from "./skills.js";
 
 export type { SoftwareSelection } from "./provenance.js";
 
