@@ -3529,7 +3529,14 @@ fn agent_state_dir(plan: &RunPlan, artifacts: &ArtifactManifest) -> Result<Optio
             reason: "must be one folder name when runtime.keep_state is set".to_string(),
         });
     }
+    // A local descriptor can declare any adapter ID, so check it the same way.
     let adapter = adapter_id(plan).unwrap_or_else(|| harness(plan));
+    if !is_one_folder_name(&adapter) {
+        return Err(FabricError::InvalidConfig {
+            field: "adapter_id".to_string(),
+            reason: "must be one folder name when runtime.keep_state is set".to_string(),
+        });
+    }
     absolute_path(
         root.join(".fabric")
             .join("state")
@@ -3550,6 +3557,18 @@ fn lock_agent_state(plan: &RunPlan, artifacts: &ArtifactManifest) -> Result<Opti
         path: state_dir.clone(),
         source,
     })?;
+    // Kept state can hold conversations and credentials: only its owner may
+    // read it, including a folder that an earlier runtime created.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&state_dir, std::fs::Permissions::from_mode(0o700)).map_err(
+            |source| FabricError::Write {
+                path: state_dir.clone(),
+                source,
+            },
+        )?;
+    }
     // The lock sits beside the folder, which the adapter owns and may replace.
     let mut lock_name = std::ffi::OsString::from(".");
     lock_name.push(state_dir.file_name().unwrap_or_default());
@@ -4100,7 +4119,9 @@ fn excluded_pathspecs(workspace: &Path, excluded: &[PathBuf]) -> Vec<std::ffi::O
         .filter_map(|path| {
             let path = path.canonicalize().unwrap_or_else(|_| path.clone());
             let relative = path.strip_prefix(&workspace_root).ok()?;
-            let mut pathspec = std::ffi::OsString::from(":(exclude)");
+            // Match the path literally: a folder name such as "artifacts[1]"
+            // would otherwise be a pattern that also leaves out other paths.
+            let mut pathspec = std::ffi::OsString::from(":(exclude,literal)");
             pathspec.push(relative);
             Some(pathspec)
         })
@@ -4997,58 +5018,89 @@ for line in sys.stdin:
         let _ = fs::remove_dir_all(root);
     }
 
+    // A bracket in the artifact folder's name must not act as a pathspec pattern.
+    const ARTIFACT_FOLDERS: [&str; 2] = ["artifacts", "artifacts[1]"];
+
     #[test]
     fn workspace_patch_leaves_out_kept_agent_state() {
-        let root = std::env::temp_dir().join(new_id("fabric-workspace-patch-test"));
-        let state = root.join("artifacts/.fabric/state/acme.agent/assistant");
-        fs::create_dir_all(&state).expect("create state folder");
-        assert!(
-            Command::new("git")
-                .arg("init")
-                .arg("-q")
-                .arg(&root)
-                .status()
-                .expect("run git init")
-                .success()
-        );
-        fs::write(root.join("notes.txt"), "note\n").expect("write workspace file");
-        fs::write(state.join("state.db"), "private\n").expect("write state file");
+        for artifacts in ARTIFACT_FOLDERS {
+            let root = std::env::temp_dir().join(new_id("fabric-workspace-patch-test"));
+            let state = root
+                .join(artifacts)
+                .join(".fabric/state/acme.agent/assistant");
+            fs::create_dir_all(&state).expect("create state folder");
+            assert!(
+                Command::new("git")
+                    .arg("init")
+                    .arg("-q")
+                    .arg(&root)
+                    .status()
+                    .expect("run git init")
+                    .success()
+            );
+            fs::write(root.join("notes.txt"), "note\n").expect("write workspace file");
+            fs::write(state.join("state.db"), "private\n").expect("write state file");
+            // Under glob matching, "artifacts[1]" would also match "artifacts1".
+            let lookalike = root.join("artifacts1/.fabric/state");
+            fs::create_dir_all(lookalike.parent().expect("parent"))
+                .expect("create lookalike folder");
+            fs::write(&lookalike, "workspace\n").expect("write lookalike");
 
-        let patch = untracked_workspace_patch(&root, &[root.join("artifacts/.fabric/state")])
-            .expect("untracked patch");
+            let patch =
+                untracked_workspace_patch(&root, &[root.join(artifacts).join(".fabric/state")])
+                    .expect("untracked patch");
 
-        assert!(patch.contains("notes.txt"), "{patch}");
-        assert!(!patch.contains("state.db"), "{patch}");
-        let _ = fs::remove_dir_all(root);
+            assert!(patch.contains("notes.txt"), "{artifacts}: {patch}");
+            assert!(
+                patch.contains("artifacts1/.fabric/state"),
+                "{artifacts}: {patch}"
+            );
+            assert!(!patch.contains("state.db"), "{artifacts}: {patch}");
+            let _ = fs::remove_dir_all(root);
+        }
     }
 
     #[test]
     fn workspace_patch_leaves_out_tracked_kept_agent_state() {
-        let root = std::env::temp_dir().join(new_id("fabric-workspace-patch-test"));
-        let state = root.join("artifacts/.fabric/state/acme.agent/assistant");
-        fs::create_dir_all(&state).expect("create state folder");
-        let git = |args: &[&str]| {
+        for artifacts in ARTIFACT_FOLDERS {
+            let root = std::env::temp_dir().join(new_id("fabric-workspace-patch-test"));
+            let state = root
+                .join(artifacts)
+                .join(".fabric/state/acme.agent/assistant");
+            fs::create_dir_all(&state).expect("create state folder");
+            let git = |args: &[&str]| {
+                assert!(
+                    Command::new("git")
+                        .arg("-C")
+                        .arg(&root)
+                        .args(args)
+                        .status()
+                        .expect("run git")
+                        .success()
+                );
+            };
+            git(&["init", "-q"]);
+            fs::write(root.join("notes.txt"), "note\n").expect("write workspace file");
+            fs::write(state.join("state.db"), "private\n").expect("write state file");
+            // Under glob matching, "artifacts[1]" would also match "artifacts1".
+            let lookalike = root.join("artifacts1/.fabric/state");
+            fs::create_dir_all(lookalike.parent().expect("parent"))
+                .expect("create lookalike folder");
+            fs::write(&lookalike, "workspace\n").expect("write lookalike");
+            git(&["add", "--intent-to-add", "--", "."]);
+
+            let patch =
+                tracked_workspace_patch(&root, &[root.join(artifacts).join(".fabric/state")])
+                    .expect("tracked patch");
+
+            assert!(patch.contains("notes.txt"), "{artifacts}: {patch}");
             assert!(
-                Command::new("git")
-                    .arg("-C")
-                    .arg(&root)
-                    .args(args)
-                    .status()
-                    .expect("run git")
-                    .success()
+                patch.contains("artifacts1/.fabric/state"),
+                "{artifacts}: {patch}"
             );
-        };
-        git(&["init", "-q"]);
-        fs::write(root.join("notes.txt"), "note\n").expect("write workspace file");
-        fs::write(state.join("state.db"), "private\n").expect("write state file");
-        git(&["add", "--intent-to-add", "--", "."]);
-
-        let patch = tracked_workspace_patch(&root, &[root.join("artifacts/.fabric/state")])
-            .expect("tracked patch");
-
-        assert!(patch.contains("notes.txt"), "{patch}");
-        assert!(!patch.contains("state.db"), "{patch}");
-        let _ = fs::remove_dir_all(root);
+            assert!(!patch.contains("state.db"), "{artifacts}: {patch}");
+            let _ = fs::remove_dir_all(root);
+        }
     }
 
     #[test]
@@ -5061,7 +5113,27 @@ for line in sys.stdin:
         let mut without_artifacts = accepting.config.clone();
         without_artifacts.runtime.artifacts = None;
         cases.push((&root, without_artifacts, "runtime.keep_state"));
-        for name in ["..", "a/b", "a\\b"] {
+        for name in [
+            "..",
+            "a/b",
+            "a\\b",
+            "a:b",
+            "a*b",
+            "a?b",
+            "a|b",
+            "a<b",
+            "a>b",
+            "a\"b",
+            "a\u{1}b",
+            "name.",
+            "name ",
+            "CON",
+            "nul",
+            "Aux.txt",
+            "COM1",
+            "lpt9",
+            "COM\u{b9}",
+        ] {
             let mut config = accepting.config.clone();
             config.metadata.name = name.to_string();
             cases.push((&root, config, "metadata.name"));
@@ -5087,6 +5159,68 @@ for line in sys.stdin:
             "{error}"
         );
         assert!(!root.join("artifacts/.fabric/outside").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn one_folder_name_accepts_names_that_are_folders_on_every_platform() {
+        for name in [
+            "assistant",
+            "my agent",
+            "a.b",
+            ".hidden",
+            "CONSOLE",
+            "COM10",
+            "nul-agent",
+        ] {
+            assert!(is_one_folder_name(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn keep_state_rejects_an_adapter_id_that_leaves_the_state_folder() {
+        for adapter_id in ["../../outside", "/outside", "a/b", "CON"] {
+            let (root, mut plan) = local_host_plan_keeping_state();
+            plan.adapter_descriptor
+                .as_mut()
+                .expect("adapter descriptor")
+                .descriptor
+                .adapter_id = adapter_id.to_string();
+
+            let error = start_runtime(&plan).expect_err(adapter_id);
+            assert!(
+                matches!(&error, FabricError::InvalidConfig { field, .. } if field == "adapter_id"),
+                "{adapter_id}: {error}"
+            );
+            assert!(!root.join("artifacts/outside").exists(), "{adapter_id}");
+            assert!(!Path::new("/outside").exists(), "{adapter_id}");
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn keep_state_creates_the_state_folder_for_its_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (root, plan) = local_host_plan_keeping_state();
+        let state_dir = root.join("artifacts/.fabric/state/acme.fabric.local-host/assistant");
+        let mode = |path: &Path| {
+            fs::metadata(path)
+                .expect("state folder")
+                .permissions()
+                .mode()
+                & 0o777
+        };
+
+        let first = start_runtime(&plan).expect("start runtime");
+        assert_eq!(mode(&state_dir), 0o700);
+        stop_runtime(&plan, &first).expect("stop runtime");
+
+        fs::set_permissions(&state_dir, fs::Permissions::from_mode(0o755)).expect("widen");
+        let second = start_runtime(&plan).expect("start runtime again");
+        assert_eq!(mode(&state_dir), 0o700, "an existing folder is narrowed");
+        stop_runtime(&plan, &second).expect("stop runtime again");
         let _ = fs::remove_dir_all(root);
     }
 
