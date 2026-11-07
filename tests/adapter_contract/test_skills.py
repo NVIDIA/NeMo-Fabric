@@ -220,6 +220,7 @@ def test_unreadable_skill_file_fails_naming_it(
         ("---\nname: 'code-review' # quoted\n---\n", "code-review"),
         ("---\nname: code#review\n---\n", "code#review"),
         ("--- \nname: code-review\n---\n", "code-review"),
+        ("\ufeff---\nname: code-review\n---\n", "code-review"),
         ("---\nname:\n---\n", "review"),
         (
             "---\ndescription: Front matter without an end.\nname: code-review\n",

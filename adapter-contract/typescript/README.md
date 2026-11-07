@@ -60,6 +60,25 @@ Use the maintained
 for the implementation sequence and the bundled schemas for runtime
 validation.
 
+## Skill Paths
+
+The `nemo-fabric-adapter-contract/skills` entry point resolves `skills.paths`
+in the task environment with Node.js file system APIs. Each entry is a skill
+folder or a folder of skills:
+
+```typescript
+import { resolveSkills, SkillPathError } from "nemo-fabric-adapter-contract/skills";
+
+const skills = await resolveSkills(config.skills?.paths ?? [], baseDir);
+```
+
+The helper returns each skill's name, resolved folder, and `skills.paths[N]`
+field. It rejects with `SkillPathError` when an entry does not exist or is not
+a readable folder, when a skill's `SKILL.md` cannot be read, or when two skills
+share a name. It applies the same rules as the Python contract's
+`nemo_fabric_adapter_contract.skills.resolve_skills`; refer to the
+[normalized configuration tutorial](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/adapter-contract/tutorials/normalized-configuration.md).
+
 ## Invocation Types
 
 The package root also exports the same request and result models as the Python
