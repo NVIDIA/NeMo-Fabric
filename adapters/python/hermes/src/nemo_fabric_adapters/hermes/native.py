@@ -27,17 +27,15 @@ from nemo_fabric_adapters.hermes import telemetry
 LOGGER = logging.getLogger(__name__)
 
 
-def finalize_api_turn(agent: Any) -> None:
-    """Close the API turn's Relay segment without deleting native conversation state."""
-    if agent.platform != "api_server" or not os.environ.get(
-        "HERMES_NEMO_RELAY_PLUGINS_TOML"
-    ):
+def finalize_native_turn(agent: Any) -> None:
+    """Close the native turn's Relay segment without deleting native conversation state."""
+    if not os.environ.get("HERMES_NEMO_RELAY_PLUGINS_TOML"):
         return
     try:
         telemetry.finalize_native_relay_segment(agent.session_id)
     except Exception:
         # A telemetry failure must not replace an execution result or its error.
-        LOGGER.exception("Hermes API turn Relay finalization failed")
+        LOGGER.exception("Hermes native turn Relay finalization failed")
 
 
 def configured_kwargs(
@@ -64,6 +62,41 @@ def configured_kwargs(
     return result
 
 
+def configure_browser_attachment() -> None:
+    """Keep browser PTYs on this runtime's backend, including its default profile."""
+    from hermes_cli import web_server_chat
+    from nemo_fabric_adapters.hermes.terminal import frontend_command
+
+    original = web_server_chat._resolve_chat_argv
+    signature = inspect.signature(original)
+
+    @wraps(original)
+    def managed_chat(*args: Any, **kwargs: Any) -> Any:
+        bound = signature.bind(*args, **kwargs)
+        profile = bound.arguments.get("profile")
+        if profile not in {None, "", "current", "default"}:
+            raise ValueError(
+                "Managed Hermes browser chat supports only the runtime's profile"
+            )
+        # The pinned resolver skips its in-process backend for explicit profile
+        # names, even 'default'. Select this process's home instead.
+        bound.arguments["profile"] = "current"
+        command = frontend_command()
+        # Force the prebuilt branch in the native resolver to avoid PM/build.
+        os.environ["HERMES_NODE"] = command[0]
+        entry = Path(command[-1])
+        if entry.parent.name == "dist":
+            os.environ["HERMES_TUI_DIR"] = str(entry.parent.parent)
+        argv, cwd, environment = original(*bound.args, **bound.kwargs)
+        if not environment.get("HERMES_TUI_GATEWAY_URL"):
+            raise ValueError(
+                "Managed Hermes browser backend has no attachment endpoint"
+            )
+        return command, cwd, environment
+
+    web_server_chat._resolve_chat_argv = managed_chat
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--fabric-config", type=Path, required=True)
@@ -88,9 +121,11 @@ def main() -> None:
             try:
                 return super().run_conversation(*args, **kwargs)
             finally:
-                finalize_api_turn(self)
+                finalize_native_turn(self)
 
     run_agent.AIAgent = ConfiguredAIAgent
+    if arguments and arguments[0] in {"dashboard", "serve"}:
+        configure_browser_attachment()
     from hermes_cli.main import main as hermes_main
 
     sys.argv = ["hermes", *arguments]

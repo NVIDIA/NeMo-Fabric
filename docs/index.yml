@@ -76,7 +76,15 @@ navigation:
             path: ./integrations/harness/droid.mdx
           - page: Hermes Agent
             path: ./integrations/harness/hermes.mdx
-          - page: Hermes Native Interfaces
+          - page: Hermes SDK
+            path: ./integrations/harness/hermes-sdk.mdx
+          - page: Hermes API
+            path: ./integrations/harness/hermes-api.mdx
+          - page: Hermes Dashboard
+            path: ./integrations/harness/hermes-dashboard.mdx
+          - page: Hermes Terminal TUI
+            path: ./integrations/harness/hermes-tui.mdx
+          - page: Hermes Interfaces
             path: ./integrations/harness/hermes-interfaces.mdx
           - page: LangChain Deep Agents
             path: ./integrations/harness/deepagents.mdx

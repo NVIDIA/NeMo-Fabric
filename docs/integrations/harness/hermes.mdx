@@ -1,13 +1,22 @@
 ---
 title: "Use the Hermes Agent Adapter"
-description: "Configure Hermes Agent, understand its invocation paths, and serve native interfaces with NeMo Fabric."
+description: "Choose SDK, HTTP API, browser chat, or terminal TUI with explicit runtime ownership."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-The NVIDIA NeMo Fabric `nvidia.fabric.hermes` adapter runs Hermes Agent through its Python SDK. It maps normalized configuration into an embedded agent, reuses its conversation across ordered invocations, and returns normalized results and telemetry references.
+NVIDIA NeMo Fabric runs Hermes Agent through four client invocation paths. Choose the embedded SDK for normalized invocation results, the native API for HTTP clients, or native TUI clients in a browser or terminal. SDK execution is enabled by default; native interfaces are explicit options.
 
-For native API and browser access, invocation-path diagrams, and shared configuration behavior, see [Hermes native interfaces](./hermes-interfaces.mdx).
+![Four client invocation paths share three Hermes execution backends within one NeMo Fabric runtime: embedded SDK, API gateway, and a TUI service shared by browser and terminal clients.](../../../assets/hermes-invocation-paths.png)
+
+| Path | Execution backend | Guide |
+| --- | --- | --- |
+| SDK | Embedded `AIAgent` in the adapter host; initialized eagerly when enabled | [Hermes SDK](./hermes-sdk.mdx) |
+| Native HTTP API | Managed API gateway process using `aiohttp` | [Hermes API](./hermes-api.mdx) |
+| Dashboard/browser TUI | Managed FastAPI/Uvicorn TUI service with browser assets and a PTY bridge | [Hermes Dashboard and Browser TUI](./hermes-dashboard.mdx) |
+| Terminal TUI | Terminal renderer attaches over WebSocket to the same TUI service; headless `serve` when dashboard is off | [Hermes Terminal TUI](./hermes-tui.mdx) |
+
+The paths use the same Hermes agent-loop implementation, with separate live agents and conversations. One runtime owns up to three backend processes, including its adapter host. Browser and terminal clients share one TUI service, not one live conversation. The API gateway is a separate service; it is not required for either TUI client.
 
 ## Install the Adapter
 
@@ -34,68 +43,62 @@ The installer preserves local checkout changes and stops rather than overwriting
 
 Hermes reports its Python package version as `0.0.0`, so use its Git tag and commit to identify the installed release. The pinned release includes dependency security fixes absent from v2026.9.24.
 
-## Configure the Adapter
+## Select Execution Paths
 
-Use normalized `FabricConfig` fields for the model, instructions, tools, skills, MCP servers, workspace, turn limit, and telemetry. Use `harness.settings` for Hermes-specific options and native interface selection.
-
-The following example configures an embedded SDK agent with file tools:
+Use normalized `FabricConfig` fields for model credentials/routing, instructions, tools, MCP, skills, workspace, turn limits, and telemetry. The [SDK guide](./hermes-sdk.mdx#configure-the-adapter) shows a complete model configuration. Use `harness.settings` to select Hermes execution paths:
 
 ```python
-from nemo_fabric import FabricConfig
-
-config = FabricConfig.from_mapping(
-    {
-        "metadata": {"name": "hermes-agent"},
-        "harness": {
-            "adapter_id": "nvidia.fabric.hermes",
-        },
-        "models": {
-            "default": {
-                "provider": "openai",
-                "model": "your-model",
-                "base_url": "https://MODEL_HOST/v1",
-                "api_key_env": "MODEL_API_KEY",
-                "temperature": 0.0,
-                "top_p": 0.9,
-                "max_tokens": 1024,
-            }
-        },
-        "instructions": {
-            "system": {"mode": "replace", "content": "Help with files in the workspace."}
-        },
-        "tools": {"enabled": ["file"], "blocked": ["terminal"]},
-        "runtime": {"max_turns": 8},
-        "environment": {"provider": "local", "workspace": "."},
-    }
-)
+settings = {
+    "sdk": {"enabled": False},
+    "interfaces": {
+        "api": {"port": 8642},
+        "dashboard": {"port": 9119},
+        "terminal": {"port": 9119},
+    },
+    "startup_timeout_seconds": 60,
+}
 ```
 
-Replace the endpoint and model, and provide `MODEL_API_KEY` in the adapter environment before starting. To add native API or browser access, follow the [Hermes native interfaces guide](./hermes-interfaces.mdx).
+This example enables three native client paths without an embedded SDK agent. Omit `sdk` to preserve the default eager SDK agent. Omit an interface to turn it off; a present interface is on unless `enabled` is `false`. Current closed schemas require a port even for a disabled interface. Native interfaces require POSIX. Reject a configuration with no enabled execution path.
 
-The adapter supports `instructions.system.mode: replace` and rejects `append`. Tool selectors are Hermes toolset names. `models.<role>.top_p` must be between 0 and 1, and `max_tokens` must be positive. A model-level token limit takes precedence over `harness.settings.max_tokens`. If both are omitted, the adapter passes `None` to preserve Hermes' native response token limit behavior for embedded and native interface agents. Use `runtime.max_turns`, not a `max_iterations` harness setting, to control the agent loop.
+Dashboard and terminal ports must match when both are enabled: they identify one shared TUI service. The API port must be distinct. Terminal-only starts `hermes serve` without browser assets; dashboard starts `hermes dashboard --isolated --skip-build`. Runtime startup does not build frontends. The positive startup budget defaults to 60 seconds and must not exceed 75 seconds.
 
-### Hermes Settings
+## What NeMo Fabric Normalizes
 
-The descriptor uses closed schemas, so unknown settings are rejected.
-
-| Setting | Default | Behavior |
+| Surface | SDK | Native API, Browser, and Terminal |
 | --- | --- | --- |
-| `reasoning_config` | `{"effort": "none"}` | Optional `enabled` boolean and `effort`: `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
-| `plugins_enabled` | `[]` | List of nonempty native plugin identifiers. Relay uses its generated plugin configuration; do not list the removed `observability/nemo_relay` plugin. |
-| `save_trajectories` | `false` | Save native JSONL trajectories; separate from normalized telemetry. |
-| `max_tokens` | Hermes native (`None`) | Positive response-token limit when the selected model has no limit. |
-| `terminal_timeout` | `60` | Positive timeout in seconds for a Hermes terminal tool operation; this does not enable a TUI. |
+| Configuration | Normalized fields mapped to the embedded agent | Same explicit behavioral mapping and generated native configuration in adapter-owned processes |
+| Lifecycle | Eager startup and runtime-owned shutdown when enabled | Managed child startup/readiness and shutdown; terminal detach does not stop the runtime |
+| Results | Normalized `RunResult` | Native protocol/UI responses; no normalized invocation result |
+| Relay evidence | Standard ATOF/ATIF, finalized/flushed per invocation | Standard native-session evidence, finalized/flushed per completed agent turn; verify export contents |
+| Session artifacts | SDK invocation artifact collection | Complete session-scoped transcript/generated-file collection remains planned work |
 
-Native interface settings are documented in the [Hermes native interfaces guide](./hermes-interfaces.mdx#enable-native-interfaces).
+## Shared Configuration and Ownership
 
-## Understand the Runtime Lifecycle
+NeMo Fabric resolves `FabricConfig` into `AgentConfig`. The adapter writes native `config.yaml`, an owner-only `interfaces/agent-config.json` snapshot, and optional Relay plugin configuration under the runtime's Hermes home. Credentials go to child environments; they are not embedded in public attachment metadata. Managed native children run through the adapter's launcher, which applies the same explicit instructions and behavioral settings before constructing native agents. The installed Hermes source is unchanged.
 
-Each runtime creates one embedded Hermes `AIAgent` and one `SessionDB`. Ordered SDK invocations reuse these objects and their conversation history until stop closes them. The Hermes home is stored under `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`; retaining files does not by itself establish cross-runtime conversation resume.
+Instructions and configured turn/token/sampling/reasoning values override native defaults. Explicit enabled tools, including an empty list, override native tool selection; a nonempty blocked list overrides native exclusions. Unspecified native tool policy can differ from SDK CLI defaults. Use explicit policies when comparing parity. With OpenAI and no explicit base URL, inherited `OPENAI_BASE_URL` is removed from managed children to prevent credential redirection.
 
-SDK invocations return normalized NeMo Fabric `RunResult` objects. The adapter finalizes the Hermes Relay session and flushes subscribers before returning, so available ATOF/ATIF artifacts are complete at that invocation boundary. Native interface responses follow a different path, described in [What NeMo Fabric Normalizes](./hermes-interfaces.mdx#what-nemo-fabric-normalizes).
+The runtime home is `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. Sharing it provides persisted resources, not shared live history or cross-runtime resume. An independently started process does not automatically receive the adapter's constructor mapping.
 
-## Runtime Health
+The managed API gateway disables ambient messaging platforms and profile multiplexing. Environment variables such as `TELEGRAM_BOT_TOKEN` must not start chat-channel dependency installers in this runtime.
 
-`Fabric.check()` supports `live`, `active`, and `ready`. It checks the embedded agent's session/database ownership, invocation interface, and a fresh `get_activity_summary()` diagnostic response. These checks do not establish native interface-child health after startup.
+## Health and Shutdown
 
-Refer to the [SDK health-check overview](../../sdk/health-checks.mdx) and the [Hermes adapter reference](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/python/hermes) for additional details.
+Startup checks API `/health` and TUI `/api/status`; TUI startup also verifies an authenticated RPC without creating a conversation. Runtime checks inspect enabled native children/endpoints as well as an enabled embedded SDK agent. Native activity remains unknown rather than being inferred from SDK idle state. There is no unified live-agent inventory.
+
+Stop removes API/TUI credentials and attachment descriptors, sends SIGTERM to owned interface process groups, and escalates to SIGKILL after five seconds. API gateway drain is three seconds. The configuration snapshot is removed and owned SDK resources are closed. Cleanup errors are logged; failed private-file removal is retried on a later stop.
+
+## Limitations and Planned Work
+
+- Native response normalization, complete native usage accounting, and session-scoped artifact collection remain separate work.
+- Child crash recovery, listener process-ownership checks, and stronger descendant cleanup when process-group signals are denied remain planned. HTTP/RPC readiness is not a live model or tool execution check.
+- Browser chat is restricted to the managed runtime profile. Named-profile switching, gateway restart/migrate controls, and other dashboard operations can escape the supported ownership/configuration model. Do not use those controls to replace managed processes.
+- Dashboard pages have no separate NeMo Fabric sign-in on loopback. Terminal credentials do not add a browser sign-in gate. Clients share filesystem/tools; separate conversations do not provide user isolation.
+- TUI approvals and client detach/cancellation behavior need their own qualification; the adapter currently inherits `HERMES_YOLO_MODE` (defaulting to enabled). Detaching is not an explicit stop/cancel operation.
+- Relay export errors are logged without replacing the execution outcome. Verify completed artifacts. Standard formatting does not establish complete telemetry coverage for every native control or background operation.
+- Runtime-wide native activity discovery, same-conversation multi-client policy, cold resume, and SDK/native conversation handoff remain planned work.
+
+## Try the Interfaces
+
+See the [interfaces examples](../../../examples/interfaces/README.md) for manual startup, real input, output checks, and Relay trajectory inspection. Coverage and remaining qualification limits are described there.

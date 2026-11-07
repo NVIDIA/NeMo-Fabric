@@ -1,169 +1,45 @@
 ---
-title: "Hermes Native Interfaces"
-description: "Run Hermes native interfaces alongside SDK invocations, with shared configuration and distinct conversations."
+title: "Hermes Interfaces"
+description: "Find the SDK, API, browser, and terminal invocation guides."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-NVIDIA NeMo Fabric can start Hermes's native API server and dashboard alongside its embedded SDK agent. One NeMo Fabric runtime owns these execution paths, while each retains its own agent instances and conversations. Start with the [Hermes adapter guide](./hermes.mdx) for installation and normalized SDK configuration.
+NVIDIA NeMo Fabric's Hermes documentation now starts with [Hermes invocation paths](./hermes.mdx). Choose [SDK](./hermes-sdk.mdx), [API](./hermes-api.mdx), [dashboard/browser TUI](./hermes-dashboard.mdx), or [terminal TUI](./hermes-tui.mdx).
 
 ## 1. Overview
 
-The following diagram shows the two invocation paths within one runtime.
+See [Four invocation paths](./hermes.mdx).
 
-![One NeMo Fabric runtime owns an embedded Hermes agent and a managed Hermes Gateway. SDK calls use the embedded agent; native clients use gateway agents with separate conversations. The dashed TUI path is proposed.](../../../assets/hermes-runtime-invocation.png)
+## What NeMo Fabric Normalizes
 
-The TUI path is proposed; the adapter currently exposes API and dashboard settings only.
-
-| Path | Execution | Conversation and result |
-| --- | --- | --- |
-| `Runtime.invoke()` or `Runtime.invoke_stream()` | The embedded Hermes `AIAgent` in the adapter host | Reuses the NeMo Fabric conversation and produces a normalized NeMo Fabric `RunResult`; for streaming, retrieve it through `stream.result()`. |
-| Native API | Hermes creates gateway-side agent instances | Uses native conversations and returns native API responses. |
-| Browser chat | Hermes's dashboard and native gateway facilities | Uses native conversation behavior and browser responses. |
-
-These agents run the same Hermes agent-loop implementation. Sharing a Hermes home gives them access to persisted resources; it does not combine their live state or attach a native conversation to NeMo Fabric's embedded conversation.
-
-### What NeMo Fabric Normalizes
-
-| Surface | SDK invocation | Native interfaces |
-| --- | --- | --- |
-| Configuration | Mapped from `FabricConfig` | Managed child processes receive the same behavioral mapping and generated native configuration. |
-| Lifecycle | Managed by the runtime | The adapter starts and stops its child processes. Descendant cleanup and independently started gateways have limits described below. |
-| Results | Normalized `RunResult`, including available usage and artifact references | Native responses are not converted into NeMo Fabric `RunResult` objects. |
-| Relay evidence | Standard Relay artifacts and invocation telemetry references | Supported native events use Relay's standard formats and native session identities. Emitting those records does not create a normalized invocation result. |
-| Session artifacts | Collected through the SDK invocation path | Native session storage is shared, but session-scoped collection into NeMo Fabric's artifact model remains separate work. |
+See [Configuration, results, and Relay boundaries](./hermes.mdx#what-nemo-fabric-normalizes).
 
 ## 2. Configuration
 
-### Prerequisites
+See [Execution path selection](./hermes.mdx#select-execution-paths).
 
-Both interfaces are optional and require a POSIX host. The API server needs `aiohttp` from Hermes's `messaging` extra. The dashboard needs a built frontend at `HERMES_WEB_DIST` or `hermes_cli/web_dist`; browser chat also needs Hermes's built terminal UI bundle. The adapter does not build these frontends. Windows startup fails with `hermes_interfaces_unsupported_platform` before native setup.
+## Enable Native Interfaces
 
-### Enable Native Interfaces
-
-Select interfaces through the Hermes adapter's `harness.settings`:
-
-```python
-from nemo_fabric import HarnessConfig
-
-harness = HarnessConfig(
-    adapter_id="nvidia.fabric.hermes",
-    settings={
-        "interfaces": {
-            "api": {"port": 8642},
-            "dashboard": {"port": 9119},
-        },
-        "startup_timeout_seconds": 60,
-    },
-)
-```
-
-Use this harness selection with the rest of your `FabricConfig`. The model, instructions, tools, MCP, skills, workspace, and telemetry remain in their existing normalized configuration fields; do not duplicate them under `interfaces`.
-
-| Setting | Default | Behavior |
-| --- | --- | --- |
-| `interfaces.api` | Absent | API settings: required integer `port` from 1 through 65535, optional `enabled` boolean defaulting to `true`. |
-| `interfaces.dashboard` | Absent | Dashboard settings with the same `port` and `enabled` requirements. |
-| `startup_timeout_seconds` | `60` | Positive budget of at most 75 seconds, counted from the beginning of runtime startup. |
-
-An absent interface is off. A present interface is on unless `enabled` is `false`; its closed schema currently requires a port even when disabled. Choose distinct, available ports for enabled interfaces. Ports bind to loopback in the adapter environment. No terminal interface setting is implemented yet.
+See [Native interface settings](./hermes.mdx#select-execution-paths).
 
 ## 3. Access and Use
 
-### API Access
-
-The API server binds to `127.0.0.1` at its configured port. After every enabled interface passes readiness, the adapter writes a per-start bearer token with mode `0600` to:
-
-```text
-<artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/api.token
-```
-
-Clients calling the native API must read the generated token file and include `Authorization: Bearer <token>` in each HTTP request. Only the API gateway child receives it in its environment. Processes running as the runtime's user, including agent tools, can read the token file.
-
-### Dashboard Access
-
-Open the configured loopback port in a browser. The dashboard has no sign-in: Hermes embeds its session token in the page, so anyone who can reach that port can use its pages and browser chat. The adapter does not disable individual dashboard pages.
-
-### Conversations and Responses
-
-Ordered SDK invocations reuse the embedded agent's conversation. Native clients use Hermes's native session mechanisms and receive native responses; these do not pass through `Runtime.invoke()` or become NeMo Fabric `RunResult` objects.
-
-The runtime's Hermes home is stored under `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. Sharing that home gives access to persisted resources, but does not select a shared live conversation or establish cross-runtime resume.
+See [API authentication](./hermes-api.mdx#authentication).
 
 ## 4. What NeMo Fabric Manages
 
-### Configuration Mapping and Precedence
-
-NeMo Fabric resolves `FabricConfig` into a validated `AgentConfig`. The adapter uses it for the embedded agent and for agent instances created inside managed native processes. Instructions, enabled and blocked toolsets, turn limit, token limit, temperature, top-p, reasoning configuration, and trajectory settings use the same behavioral mapping.
-
-Instructions and behavioral values configured by NeMo Fabric take precedence over native constructor defaults. Explicit `tools.enabled` (including an empty list) overrides native tool selection; a nonempty `tools.blocked` overrides native exclusions. When these policies are unspecified, native interface tool defaults remain in effect; the embedded SDK path retains its existing CLI defaults. Set both policies explicitly when comparing tool parity. Native routing, conversation identity, execution, and protocol remain Hermes behavior. The model credential is supplied through the child's environment. For OpenAI without an explicit `base_url`, managed children discard inherited `OPENAI_BASE_URL` so it cannot redirect the configured credential. An explicit endpoint uses the generated native model routing. Refer to [Implementation Details](#7-implementation-details) for the generated files and launcher mechanism.
-
-### Startup, Readiness, and Shutdown
-
-Startup launches enabled interfaces as child processes on the adapter's interpreter. The API server must pass `GET /health`, and the dashboard must pass `GET /api/status`, within the remaining startup budget. An occupied port, early child exit, or readiness timeout fails startup. Failed startup attempts clean up the children they started.
-
-Stop removes the API token, sends SIGTERM to running interface process groups, and escalates to SIGKILL after a five-second grace. The API gateway is configured with a three-second drain for API work and cron jobs. The agent configuration snapshot is removed during cleanup, and the adapter closes the embedded agent and session database. If token or snapshot deletion fails, the adapter logs the error and continues stopping children; a later stop retries removal.
-
-### Relay Evidence and Artifact Boundaries
-
-Enable Relay through the normal NeMo Fabric telemetry configuration. The embedded and managed native paths receive the generated Relay plugin configuration. Native sessions retain their own trace roots rather than being assigned to the embedded NeMo Fabric invocation.
-
-For SDK invocations, the adapter finalizes the Hermes Relay session and flushes subscribers before returning, so available ATOF/ATIF artifacts are complete at the invocation boundary. Managed native API turns also finalize and flush a Relay segment when execution returns. This makes ATIF available per turn without deleting the native conversation; subsequent turns can continue it and produce separate segments. Export failures are logged, so consumers must verify artifact contents. With a live Relay runtime, Hermes emits `compaction` when tracked compaction rewrites history or provider state; `compaction.attempt` describes an attempt that is blocked, skipped, fails, or aborts without a rewrite.
-
-Native API responses remain native responses. Relay's standard artifact format provides common execution evidence, but does not by itself provide NeMo Fabric result normalization, complete usage accounting, or session-scoped collection of native transcripts and generated files.
+See [Shared ownership and configuration](./hermes.mdx#shared-configuration-and-ownership).
 
 ## 5. Testing
 
-See the [Hermes interfaces example](../../../examples/interfaces/README.md) for setup, manual testing, output verification, and Relay trajectory inspection.
+See [Runnable interface examples](../../../examples/interfaces/README.md).
 
 ## 6. Limitations and Planned Work
 
-### Operational Limits
-
-- Denied process-group signals fall back to the direct child. This does not guarantee that all descendants have stopped.
-- The adapter does not restart an interface child after a crash. Dashboard gateway actions can start processes outside the adapter launcher and its configuration mapping.
-- Filesystem permission errors can leave the token or configuration snapshot on disk after stop. Child shutdown continues, and removal is retried on a later stop; inspect cleanup errors and remove retained files after correcting permissions.
-- Readiness currently checks the HTTP response without verifying that the child owns the listening port.
-- NeMo Fabric's `check()` reports embedded SDK agent health and activity only. It does not aggregate native interface health or active native turns. Startup probes check API `/health` and dashboard `/api/status`; the adapter does not monitor child health continuously.
-- There is no unified inventory of all agent instances in a runtime. SDK invocation tracking covers SDK requests; native API run status and persisted sessions are exposed through Hermes endpoints. Persisted sessions do not identify all live agent objects, which can exist only for a turn.
-- Child processes inherit the embedded adapter's `HERMES_YOLO_MODE` environment setting. Interactive approval behavior requires separate review and validation.
-- Native responses and complete usage accounting are not normalized into NeMo Fabric invocation results by these interfaces.
-
-### Unqualified Paths
-
-The API configuration-parity tests do not qualify browser interaction, explicit resume, or gateway replacement. Each needs its own behavioral and lifecycle evidence.
-
-The no-URL OpenAI regression checks child environment isolation with a mocked embedded constructor, not provider authentication or a live request to OpenAI. Hosted-model tests use an explicit OpenAI-compatible endpoint; provider login and fallback routing without an explicit endpoint require separate qualification.
-
-### Planned Work
-
-Native TUI support remains proposed and is shown as a dashed path in the diagram. Session-scoped collection of native transcripts and generated files into NeMo Fabric's artifact model remains separate work; standard Relay formatting alone does not provide it.
-
-Add runtime-wide health and discovery that covers the embedded agent and managed native interfaces. Report process health and readiness separately from active runs and persisted sessions, include child failures and native activity in aggregate status, and provide a way to discover native runs and sessions alongside SDK invocations. Hermes's authenticated `/health/detailed`, `/v1/runs/{run_id}`, and `/api/sessions` endpoints provide native diagnostics today; they do not provide a unified NeMo Fabric inventory.
-
-Follow-up lifecycle work should verify listener ownership during readiness, strengthen descendant cleanup when process-group signals are denied, and define ownership and configuration guarantees for gateway replacement. Qualify interactive approvals and browser chat separately before extending their support claims. Cross-runtime resume and SDK/native conversation handoff remain deferred.
+See [Current limitations](./hermes.mdx#limitations-and-planned-work).
 
 ## 7. Implementation Details
 
-### Generated Files and Environment
-
-The adapter prepares three configuration surfaces from the resolved `AgentConfig` for managed native children:
-
-| Surface | Contents | Delivery |
-| --- | --- | --- |
-| Hermes `config.yaml` | Native model routing, workspace, MCP servers, skills, plugins, and toolset configuration | Written in the runtime's Hermes home, selected through `HERMES_HOME`. |
-| `interfaces/agent-config.json` | The validated agent configuration, including instructions and behavioral settings | Owner-only snapshot passed by path to the adapter-owned native launcher. Removed on stop. |
-| Relay plugin configuration | Resolved Relay components and output configuration | Generated by the adapter; its path is passed through `HERMES_NEMO_RELAY_PLUGINS_TOML`. |
-
-The model credential value is supplied through the child's environment; the native model configuration references `api_key_env`.
-
-Children inherit the adapter host's environment after ambient `API_SERVER_*` variables are removed. When the API interface is enabled, the generated configuration explicitly disables other known gateway platforms and profile multiplexing. Inherited settings such as `TELEGRAM_BOT_TOKEN` or `WEBHOOK_ENABLED` therefore do not start messaging adapters or their dependency installers. This restriction applies to the managed runtime home; independently launched gateways outside that home retain their own configuration.
-
-### Native Launcher and Constructor Mapping
-
-Hermes v0.22.5's API constructor does not read every behavioral setting from `config.yaml`. The adapter therefore launches managed children through `nemo_fabric_adapters.hermes.native`, which installs a process-local subclass of Hermes's `AIAgent` before entering the native CLI.
-
-The subclass applies the shared behavioral mapping before calling the native constructor. It preserves native routing and session identity and does not modify the installed Hermes source.
-
-This mapping applies within adapter-launched processes. A gateway independently spawned by Hermes does not automatically inherit the constructor mapping, even if it uses the same home. Sharing a configuration directory alone does not establish configuration parity.
+See [Generated files and native mapping](./hermes.mdx#shared-configuration-and-ownership).
 
