@@ -171,6 +171,11 @@ shows this pattern end to end with complete Hermes Agent, Codex, Deep Agents,
 environment, MCP, and telemetry variants. Reuse it rather than duplicating config
 construction.
 
+`runtime.response_limits` is SDK-owned and applies equally to host and OpenShell
+execution. Author it with `ResponseLimits`; omitted fields retain defaults.
+Check for failed results with `error.code == "response_limit_exceeded"` before
+reading output or artifact paths. See the [SDK counting rules](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#response-and-artifact-limits).
+
 ## Choose A Lifecycle
 
 For Deep Agents, mini-SWE-agent, and the LangGraph custom-agent example, pass the same UUID string through `RunRequest.relay_session_root` on each conversation turn to group Relay trajectories under one session. Core forwards the typed field as `AgentRunRequest.relay_session_root`; context keys do not control Relay propagation. An unusable UUID preserves per-request behavior. The remaining adapters do not consume this field.

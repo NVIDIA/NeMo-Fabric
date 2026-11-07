@@ -590,3 +590,51 @@ async def test_invocation_timeout_is_preserved_without_a_provider_cap(
 def test_invalid_invocation_timeouts_are_rejected(timeout):
     with pytest.raises(ValueError):
         RuntimeConfig(timeout_seconds=timeout)
+
+
+async def test_collection_limit_preserves_failed_result_and_active_runtime(
+    remote_config, tmp_path, monkeypatch
+):
+    configured = 1024 * 1024
+    monkeypatch.setenv(
+        "FABRIC_TEST_ARTIFACT_LIMIT",
+        json.dumps(
+            dict(
+                limit="max_artifact_file_bytes",
+                configured=configured,
+                observed=configured + 1,
+                asset="echo.json",
+            )
+        ),
+    )
+    fabric = Fabric()
+    environment = await fabric.attach_environment(
+        remote_config,
+        EnvironmentReference.from_mapping(
+            {
+                "provider": "openshell",
+                "resource": {
+                    "sandbox_name": "echo",
+                    "sandbox_id": remote_config.environment.connection["sandbox_id"],
+                },
+            }
+        ),
+    )
+    runtime = await fabric.start_runtime_in(remote_config, environment)
+    try:
+        await runtime.invoke(input="first")
+        result = await runtime.invoke(input="second")
+        assert result.status == "failed"
+        assert result.error.code == "response_limit_exceeded"
+        assert result.error.metadata == dict(
+            limit="max_artifact_file_bytes",
+            configured=configured,
+            observed=configured + 1,
+            asset="echo.json",
+        )
+        assert result.output is None
+        assert not result.artifacts.artifacts
+        assert not list((tmp_path / "host-artifacts").rglob("echo.json"))
+        assert (await runtime.invoke(input="third")).status == "succeeded"
+    finally:
+        await runtime.stop()
