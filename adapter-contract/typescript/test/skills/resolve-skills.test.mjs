@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Resolve skills.paths entries that name a skill or a folder of skills. These
+// run against the build in dist/, so test:skills builds first.
 // cases mirror tests/adapter_contract/test_skills.py for the Python contract.
 
 import assert from "node:assert/strict";
@@ -11,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { resolveSkills, SkillPathError } from "../dist/skills.js";
+import { resolveSkills, SkillPathError } from "../../dist/skills.js";
 
 const posixPermissions =
   typeof process.geteuid === "function" && process.geteuid() !== 0

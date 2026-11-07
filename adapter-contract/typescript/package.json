@@ -30,7 +30,7 @@
     "build": "node scripts/clean.mjs && tsc -p tsconfig.build.json",
     "test:generator": "node --test test/*.test.mjs",
     "test:types": "tsc -p test/tsconfig.json --noEmit",
-    "test:skills": "npm run build && node --test test/skills.test.mjs",
+    "test:skills": "npm run build && node --test test/skills/resolve-skills.test.mjs",
     "test:dependencies": "node scripts/check-dependencies.mjs && npm ls --all && npm audit --audit-level=high",
     "pack:check": "npm run build && node scripts/check-package.mjs",
     "test": "npm run generate:check && npm run test:generator && npm run test:types && npm run test:skills && npm run test:dependencies && npm run pack:check",
