@@ -402,6 +402,34 @@ def openhands_config() -> FabricConfig:
     return config
 
 
+def goose_config() -> FabricConfig:
+    """Return the complete Goose CLI adapter variant."""
+
+    config = base_config().model_copy(deep=True)
+    config.harness = HarnessConfig(
+        adapter_id="nvidia.fabric.goose",
+        resolution="preinstalled",
+        settings={},
+    )
+    config.models = {"default": _nvidia_code_review_model()}
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(content=CODE_REVIEW_INSTRUCTION, mode="append")
+    )
+    config.runtime = RuntimeConfig(
+        input_schema="text",
+        output_schema="message",
+        artifacts="./artifacts/goose",
+        max_turns=20,
+    )
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=WORKSPACE,
+        artifacts="./artifacts/goose",
+    )
+    config.remove_skill_path(SKILL_PATH)
+    return config
+
+
 def claude_config() -> FabricConfig:
     """Return the complete Claude adapter variant.
 

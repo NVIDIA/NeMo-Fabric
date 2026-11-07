@@ -28,6 +28,9 @@ ADAPTER_DESCRIPTORS = {
     "nvidia.fabric.langchain.deepagents": (
         ROOT / "adapters" / "python" / "deepagents" / "deepagents.fabric-adapter.json"
     ),
+    "nvidia.fabric.goose": (
+        ROOT / "adapters" / "python" / "goose" / "goose.fabric-adapter.json"
+    ),
     "nvidia.fabric.hermes": (
         ROOT / "adapters" / "python" / "hermes" / "hermes.fabric-adapter.json"
     ),
@@ -162,6 +165,11 @@ _config = partial(
                 },
             },
             id="openclaw",
+        ),
+        pytest.param(
+            "nvidia.fabric.goose",
+            {"goose_command": "/opt/goose/bin/goose"},
+            id="goose",
         ),
         pytest.param(
             "nvidia.fabric.openhands",
@@ -538,6 +546,12 @@ def test_openclaw_rejects_relay(tmp_path: Path):
             {"terminal_timeout": False},
             "harness.settings.terminal_timeout",
             id="hermes-terminal-timeout",
+        ),
+        pytest.param(
+            "nvidia.fabric.goose",
+            {"goose_command": ""},
+            "harness.settings.goose_command",
+            id="goose-command",
         ),
         pytest.param(
             "nvidia.fabric.openhands",

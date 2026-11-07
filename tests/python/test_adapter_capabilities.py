@@ -48,6 +48,7 @@ def custom_config_fixture():
     [
         ("nvidia.fabric.claude", True, True),
         ("nvidia.fabric.codex", True, True),
+        ("nvidia.fabric.goose", False, True),
         ("nvidia.fabric.hermes", True, True),
         ("nvidia.fabric.langchain.deepagents", True, True),
         ("nvidia.fabric.mini-swe-agent", False, False),
