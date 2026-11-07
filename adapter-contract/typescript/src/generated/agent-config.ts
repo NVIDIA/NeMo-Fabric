@@ -289,7 +289,8 @@ export interface AgentSkillConfig {
    * Skill paths resolved for the task environment. An entry that contains
    * `SKILL.md` is one skill; otherwise each folder directly inside it that
    * contains `SKILL.md` is a skill. An entry that holds no skills loads
-   * nothing. A missing entry, or two skills with the same name, fails.
+   * nothing. An entry that is missing or is not a folder, or two skills
+   * with the same name, fails.
    */
   paths?: string[];
 }
