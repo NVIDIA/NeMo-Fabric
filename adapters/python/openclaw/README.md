@@ -82,7 +82,9 @@ empty volume, loads nothing. Start fails with `openclaw_skill_not_found` when an
 entry does not exist and with `openclaw_skill_invalid` when an entry is not a
 readable folder or two skills share a name; the error names the entry or both skill
 folders. The adapter passes each skill folder to OpenClaw's
-`skills.load.extraDirs`.
+`skills.load.extraDirs`. Refer to
+[Load Skills from Folders](../../../docs/integrations/harness/skills.mdx) for
+how harnesses differ when they load skills.
 
 For custom OpenAI-compatible providers, set `models.<role>.base_url`; the
 adapter generates an OpenClaw custom provider using the

@@ -74,9 +74,14 @@ loads nothing. Fail start when an entry does not exist, when an entry is not a
 readable folder, or when two skills share a name, and name the entry or both skill
 folders. A skill's name is the `name` field of its `SKILL.md` front matter, or
 its folder name. Python adapters can call
-`nemo_fabric_adapter_contract.skills.resolve_skills(paths, base_dir)`, which
-applies these rules, returns each skill's name and folder, and raises
-`SkillPathError` with the failing `skills.paths[N]` field.
+`nemo_fabric_adapter_contract.skills.resolve_skills(paths, base_dir)`, and
+TypeScript adapters can call `resolveSkills(paths, baseDir)` from
+`nemo-fabric-adapter-contract/skills`. Both apply these rules, return each
+skill's name and folder, and raise `SkillPathError` with the failing
+`skills.paths[N]` field. Pass each resolved skill folder to the harness's
+native skill loader, and document how the harness differs from the rule, as
+[Load Skills from Folders](../../integrations/harness/skills.mdx) does for
+Hermes Agent and OpenClaw.
 
 ## To Map the Normalized Configuration
 

@@ -85,7 +85,9 @@ entry does not exist and with `hermes_skill_invalid` when an entry is not a
 readable folder or two skills share a name; the error names the entry or both skill
 folders. The adapter passes each skill folder to Hermes Agent's
 `skills.external_dirs`, so Hermes does not search the rest of a configured
-folder.
+folder. Hermes Agent still loads skills nested inside a skill folder; refer to
+[Load Skills from Folders](../../../docs/integrations/harness/skills.mdx) for
+this and other differences in how Hermes Agent loads skills.
 
 During run-plan resolution, NeMo Fabric Core validates the
 `models.<role>.top_p` (from 0 through 1) and positive

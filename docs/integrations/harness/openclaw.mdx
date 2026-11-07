@@ -103,7 +103,8 @@ empty volume, loads nothing. Start fails with `openclaw_skill_not_found` when an
 entry does not exist and with `openclaw_skill_invalid` when an entry is not a
 readable folder or two skills share a name; the error names the entry or both skill
 folders. The adapter passes each skill folder to OpenClaw's
-`skills.load.extraDirs`.
+`skills.load.extraDirs`. Refer to [Load Skills from Folders](./skills.mdx)
+for how harnesses differ when they load skills.
 
 For an endpoint that supports `stream_options.include_usage`, set
 `models.<role>.settings.supports_usage_in_streaming` to `true`. This maps to
