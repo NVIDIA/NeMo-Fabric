@@ -31,7 +31,7 @@ Mitigation: Review and scan skill before deployment. <br>
 - [NeMo Fabric Python SDK](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx) <br>
 - [NeMo Fabric Installation Guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx) <br>
 - [NeMo Fabric Overview](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/about-nemo-fabric/overview.mdx) <br>
-- [Hermes Integration Guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes.mdx) <br>
+- [Hermes Integration Guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes/hermes.mdx) <br>
 - [System Stats](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/system-stats.mdx) <br>
 - [nemo_fabric.client API Reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.client.md) <br>
 - [nemo_fabric.runtime API Reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.runtime.md) <br>

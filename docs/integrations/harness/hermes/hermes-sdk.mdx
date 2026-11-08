@@ -5,6 +5,8 @@ description: "Invoke the embedded Hermes agent with normalized configuration and
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
+Start with [hermes.mdx](./hermes.mdx) for shared setup and an overview of all four invocation paths.
+
 NVIDIA NeMo Fabric's Hermes SDK path executes requests through an embedded Hermes `AIAgent` in the adapter host. It returns normalized results and reuses conversation history across ordered invocations. Start with the [shared installation](./hermes.mdx#install-the-adapter).
 
 ## Configure the Adapter
@@ -74,7 +76,7 @@ async with await Fabric().start_runtime(config) as runtime:
     print(result.output)
 ```
 
-`Runtime.invoke_stream()` uses Relay-backed event streaming; retrieve its normalized result with `stream.result()`. Refer to [streaming](../../sdk/python.mdx#nemo-relay-streaming) for the SDK usage pattern.
+`Runtime.invoke_stream()` uses Relay-backed event streaming; retrieve its normalized result with `stream.result()`. Refer to [streaming](../../../sdk/python.mdx#nemo-relay-streaming) for the SDK usage pattern.
 
 ## Lifecycle and Conversations
 
@@ -92,4 +94,4 @@ SDK invocations return normalized NeMo Fabric `RunResult` objects. With Relay en
 
 For SDK-only runtimes, `check()` supports `live`, `active`, and `ready`, using session/database ownership, the invocation interface, and fresh `get_activity_summary()` diagnostics. Mixed runtimes also inspect managed native processes/endpoints and report activity as unknown because native activity is not fully aggregated. Checks do not run an agent turn.
 
-Refer to [SDK health checks](../../sdk/health-checks.mdx) and the [shared limitations](./hermes.mdx#limitations-and-planned-work).
+Refer to [SDK health checks](../../../sdk/health-checks.mdx) and the [shared limitations](./hermes.mdx#limitations-and-planned-work).

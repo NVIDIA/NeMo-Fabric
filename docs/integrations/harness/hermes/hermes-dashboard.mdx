@@ -5,11 +5,13 @@ description: "Use browser chat through a managed TUI service, optionally shared 
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
+Start with [hermes.mdx](./hermes.mdx) for shared setup and an overview of all four invocation paths.
+
 NVIDIA NeMo Fabric starts Hermes's dashboard as a managed FastAPI/Uvicorn service. Browser chat uses a prebuilt terminal renderer through a PTY/WebSocket bridge, attached to that service's in-process TUI backend. It does not call the native API gateway or embedded SDK agent.
 
 ## Installation
 
-Complete the [shared installation](./hermes.mdx#install-the-adapter) and install the pinned Hermes `web` extra. Build the browser and terminal frontends in that same pinned source checkout. The [interfaces example setup](../../../examples/interfaces/README.md#build-the-tui-frontends) provides the commands. The dashboard needs `hermes_cli/web_dist/index.html` or `HERMES_WEB_DIST`, plus a built terminal renderer and supported Node runtime. The adapter uses prebuilt assets and does not install another runtime for browser chat.
+Complete the [shared installation](./hermes.mdx#install-the-adapter) and install the pinned Hermes `web` extra. Build the browser and terminal frontends in that same pinned source checkout. The [interfaces example setup](../../../../examples/interfaces/README.md#build-the-tui-frontends) provides the commands. The dashboard needs `hermes_cli/web_dist/index.html` or `HERMES_WEB_DIST`, plus a built terminal renderer and supported Node runtime. The adapter uses prebuilt assets and does not install another runtime for browser chat.
 
 ## Configuration
 
@@ -34,4 +36,4 @@ The adapter pins browser chat to the managed runtime profile and its existing TU
 
 Browser turns use native conversations and responses. They do not become SDK invocations or normalized `RunResult` objects. Managed native agent turns finalize and flush Relay segments when execution returns, preserving native history. Check ATIF after a completed turn while the browser remains connected; shared Relay configuration alone is not proof of export.
 
-See the [TUI example](../../../examples/interfaces/README.md#hermes-terminal-and-browser-tui) for browser input and artifact inspection. A successful `/api/status` response proves neither rendered chat nor model/tool functionality. Refer to the [shared limitations](./hermes.mdx#limitations-and-planned-work) for approvals, health/activity, and lifecycle boundaries.
+See the [TUI example](../../../../examples/interfaces/README.md#hermes-terminal-and-browser-tui) for browser input and artifact inspection. A successful `/api/status` response proves neither rendered chat nor model/tool functionality. Refer to the [shared limitations](./hermes.mdx#limitations-and-planned-work) for approvals, health/activity, and lifecycle boundaries.

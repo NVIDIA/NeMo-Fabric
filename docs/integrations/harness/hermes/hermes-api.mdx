@@ -5,6 +5,8 @@ description: "Run the managed native HTTP gateway with independent Hermes conver
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
+Start with [hermes.mdx](./hermes.mdx) for shared setup and an overview of all four invocation paths.
+
 NVIDIA NeMo Fabric can host Hermes's native HTTP API as a managed `hermes gateway run` process. Requests execute through native agents, independently of the embedded SDK and TUI backend. The HTTP service uses `aiohttp`; it is separate from the FastAPI dashboard service.
 
 ## Installation
@@ -50,4 +52,4 @@ With Relay enabled, managed API turns finalize and flush a segment when native e
 
 Startup probes `/health`. Runtime checks additionally observe the owned process and its endpoint; they do not execute a model request. Hermes exposes authenticated `/health/detailed`, run status, and persisted sessions, but these are not a unified inventory of live agents in NeMo Fabric.
 
-See the [API example](../../../examples/interfaces/README.md#hermes-api-example) for requests and trajectory inspection, and the [shared limitations](./hermes.mdx#limitations-and-planned-work) for lifecycle and artifact boundaries.
+See the [API example](../../../../examples/interfaces/README.md#hermes-api-example) for requests and trajectory inspection, and the [shared limitations](./hermes.mdx#limitations-and-planned-work) for lifecycle and artifact boundaries.
