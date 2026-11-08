@@ -267,3 +267,24 @@ def test_same_skill_in_another_case_loads_once(tmp_path: Path):
     assert resolve_skills(["Review", "review"], tmp_path) == [
         Skill(name="Review", path=review.resolve(), field="skills.paths[0]")
     ]
+
+
+def test_folders_without_inode_numbers_compare_by_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    shared = tmp_path / "shared"
+    one = _skill(shared / "one", "one")
+    two = _skill(shared / "two", "two")
+    stat = Path.stat
+
+    def without_inode(path: Path, *args, **kwargs) -> os.stat_result:
+        # Some file systems report inode 0 for every folder.
+        result = stat(path, *args, **kwargs)
+        return os.stat_result((result.st_mode, 0, *tuple(result)[2:]))
+
+    monkeypatch.setattr(Path, "stat", without_inode)
+
+    assert resolve_skills([shared, one], tmp_path) == [
+        Skill(name="one", path=one.resolve(), field="skills.paths[0]"),
+        Skill(name="two", path=two.resolve(), field="skills.paths[0]"),
+    ]
