@@ -94,17 +94,11 @@ MCP configuration. Normalized MCP authentication is not supported. For a
 custom OpenAI-compatible endpoint, set the model's `base_url` and, when needed,
 `api_key_env`.
 
-Each `skills.paths` entry is a skill or a folder of skills. An entry that
-contains `SKILL.md` is one skill. Otherwise each folder directly inside the
-entry that contains `SKILL.md` is a skill, and other files and folders are
-ignored. Mix the two forms to combine a shared folder of skills with a skill
-mounted on its own. An entry that exists but holds no skills, such as a new,
-empty volume, loads nothing. Start fails with `openclaw_skill_not_found` when an
-entry does not exist and with `openclaw_skill_invalid` when an entry is not a folder, when an entry
-without `SKILL.md` cannot be listed, or when two skills share a name; the error names the entry or both skill
-folders. The adapter passes each skill folder to OpenClaw's
-`skills.load.extraDirs`. Refer to [Load Skills from Folders](./skills.mdx)
-for how harnesses differ when they load skills.
+Each `skills.paths` entry is a skill or a folder of skills, as
+[Load Skills from Folders](./skills.mdx) describes. Start fails with
+`openclaw_skill_not_found` for a missing entry and `openclaw_skill_invalid` for
+the other failures. The adapter passes each skill folder to OpenClaw's
+`skills.load.extraDirs`.
 
 For an endpoint that supports `stream_options.include_usage`, set
 `models.<role>.settings.supports_usage_in_streaming` to `true`. This maps to

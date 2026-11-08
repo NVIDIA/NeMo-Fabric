@@ -11,10 +11,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./skills": {
-      "types": "./dist/skills.d.ts",
-      "import": "./dist/skills.js"
-    },
     "./schemas/*": "./schemas/*.schema.json",
     "./package.json": "./package.json"
   },
@@ -30,10 +26,9 @@
     "build": "node scripts/clean.mjs && tsc -p tsconfig.build.json",
     "test:generator": "node --test test/*.test.mjs",
     "test:types": "tsc -p test/tsconfig.json --noEmit",
-    "test:skills": "npm run build && node --test test/skills/resolve-skills.test.mjs",
     "test:dependencies": "node scripts/check-dependencies.mjs && npm ls --all && npm audit --audit-level=high",
     "pack:check": "npm run build && node scripts/check-package.mjs",
-    "test": "npm run generate:check && npm run test:generator && npm run test:types && npm run test:skills && npm run test:dependencies && npm run pack:check",
+    "test": "npm run generate:check && npm run test:generator && npm run test:types && npm run test:dependencies && npm run pack:check",
     "prepack": "npm run generate:check && npm run build"
   },
   "publishConfig": {
@@ -53,7 +48,6 @@
     "node": ">=20.18.3"
   },
   "devDependencies": {
-    "@types/node": "20.19.43",
     "json-schema-to-typescript": "15.0.4",
     "typescript": "5.6.3"
   }

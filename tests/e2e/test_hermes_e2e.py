@@ -74,7 +74,6 @@ async def test_hermes_persistent_host_with_relay(
     code_review_agent_dir: Path,
     api_server: str,
 ):
-    """Verify reused Hermes sessions retain Relay artifacts across invocations."""
     os.environ["ADAPTER_PYTHON"] = sys.executable
     config = with_relay(hermes_config())
     config.models["default"].base_url = f"{api_server}/v1"
@@ -106,7 +105,8 @@ async def test_hermes_persistent_host_with_relay(
     ]
     assert (
         sum(
-            record["name"] == "hermes.session" and record.get("scope_category") == "end"
+            record["name"] == "hermes.session"
+            and record.get("scope_category") == "end"
             for record in atof_records
         )
         == 2
@@ -267,7 +267,6 @@ async def test_skill_selection(
     default_skill: Path,
     alternate_skill: Path,
 ):
-    """Verify Hermes returns the full supplied skill through a successful tool call."""
     os.environ["ADAPTER_PYTHON"] = sys.executable
     config = with_relay(hermes_config())
     config.models["default"].model = "fabric-echo"
@@ -346,28 +345,16 @@ def _skill_folder_config(api_server: str, *paths: Path):
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
-@pytest.mark.parametrize("layout", ["folder", "folder_and_skill", "empty"])
 async def test_skill_folders(
-    code_review_agent_dir: Path,
-    api_server: str,
-    tmp_path: Path,
-    layout: str,
+    code_review_agent_dir: Path, api_server: str, tmp_path: Path
 ):
-    """Verify Hermes lists each skill directly inside a folder, plus separate skills."""
+    """Verify Hermes lists each skill directly inside a folder, plus a separate skill."""
     shared = tmp_path / "shared"
-    shared.mkdir()
-    expected: set[str] = set()
-    if layout != "empty":
-        _write_skill(shared / "one", "fabric-one")
-        _write_skill(shared / "two", "fabric-two")
-        (shared / "notes.md").write_text("Not a skill.\n", encoding="utf-8")
-        _write_skill(shared / "group" / "nested", "fabric-nested")
-        expected = {"fabric-one", "fabric-two"}
-    paths = [shared]
-    if layout == "folder_and_skill":
-        paths.append(_write_skill(tmp_path / "mounted" / "three", "fabric-three"))
-        expected.add("fabric-three")
-    config = _skill_folder_config(api_server, *paths)
+    _write_skill(shared / "one", "fabric-one")
+    _write_skill(shared / "two", "fabric-two")
+    (shared / "notes.md").write_text("Not a skill.\n", encoding="utf-8")
+    separate = _write_skill(tmp_path / "mounted" / "three", "fabric-three")
+    config = _skill_folder_config(api_server, shared, separate)
     requests.post(
         f"{api_server}/_scenario",
         json={"tool_call": {"name": "skills_list", "arguments": {}}},
@@ -393,7 +380,7 @@ async def test_skill_folders(
         entry["name"]
         for entry in listed[0]["skills"]
         if entry["name"].startswith("fabric-")
-    } == expected
+    } == {"fabric-one", "fabric-two", "fabric-three"}
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")

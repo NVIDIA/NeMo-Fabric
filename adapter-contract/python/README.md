@@ -38,8 +38,8 @@ skills = resolve_skills(config.skills.paths if config.skills else [], base_dir)
 ```
 
 The helper returns each skill's name and resolved folder. It raises
-`SkillPathError` when an entry does not exist or is not a readable folder, or when two
-skills share a name.
+`SkillPathError` with the failing `skills.paths[N]` field when an entry cannot
+be loaded or two skills share a name.
 
 An adapter descriptor opts into the southbound configuration with
 `config.input=agent_config`. Python adapters using the optional common

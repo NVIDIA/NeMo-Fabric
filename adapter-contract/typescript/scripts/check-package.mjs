@@ -54,8 +54,6 @@ try {
     "dist/index.js",
     "dist/json.d.ts",
     "dist/json.js",
-    "dist/skills.d.ts",
-    "dist/skills.js",
     "dist/version.d.ts",
     "dist/version.js",
     "package.json",
@@ -136,8 +134,6 @@ import agentConfigSchema from "nemo-fabric-adapter-contract/schemas/agent-config
 import type { AdapterDescriptor } from "nemo-fabric-adapter-contract";
 import type { AdapterTargetDescriptor } from "nemo-fabric-adapter-contract";
 import type { AgentRunResult } from "nemo-fabric-adapter-contract";
-import { resolveSkills, SkillPathError } from "nemo-fabric-adapter-contract/skills";
-import type { Skill } from "nemo-fabric-adapter-contract/skills";
 
 const descriptor: AdapterDescriptor = {
   adapter_id: "example",
@@ -151,8 +147,6 @@ const target: AdapterTargetDescriptor = {
   spec: { entrypoint: { kind: "factory", ref: "example.agent" } },
   type: "workflow",
 };
-const skills: Skill[] = [];
-void skills;
 const result: AgentRunResult = {
   output: ["ok", null],
   status: "succeeded",
@@ -161,9 +155,7 @@ if (
   descriptor.contract_version !== ADAPTER_CONTRACT_VERSION ||
   target.adapter_id !== descriptor.adapter_id ||
   result.status !== "succeeded" ||
-  agentConfigSchema.title !== "AgentConfig" ||
-  (await resolveSkills([], "/")).length !== 0 ||
-  new SkillPathError("invalid", "example", { field: "skills.paths[0]", paths: [] }).reason !== "invalid"
+  agentConfigSchema.title !== "AgentConfig"
 ) {
   throw new Error("Unexpected adapter contract values");
 }
