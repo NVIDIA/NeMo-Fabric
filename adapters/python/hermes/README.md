@@ -111,14 +111,11 @@ Use `runtime.max_turns` to set the Hermes agent-loop budget. The adapter maps
 that normalized field to `AIAgent.max_iterations`; `max_iterations` is not a
 Hermes harness setting.
 
-By default, the adapter derives Hermes state from the NeMo Fabric artifact root
-and creates a child under `runtimes/<runtime_id>`, so invocations in one NeMo
-Fabric runtime share state without sharing config or the session database with
-another runtime. With `runtime.keep_state`, the Hermes home is the agent's
-state folder, `<artifact root>/.fabric/state/nvidia.fabric.hermes/<agent name>`,
-so every runtime of the agent uses the same session database, memory, skills
-and logs. Each runtime still starts a new session, and earlier sessions stay in
-the database.
+The adapter derives Hermes state from the NeMo Fabric artifact root and creates
+a child under `runtimes/<runtime_id>`, so invocations in one NeMo Fabric runtime
+share state without sharing config or the session database with another
+runtime. With `runtime.keep_state`, the Hermes home is the agent's state folder
+instead; see the [Hermes Agent guide](../../../docs/integrations/harness/hermes.mdx).
 
 ## Execution Model
 
