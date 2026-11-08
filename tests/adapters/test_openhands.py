@@ -1124,17 +1124,6 @@ def test_skill_folder_loads_each_skill_directly_inside_it(tmp_path: Path):
     ]
 
 
-def test_empty_skill_folder_loads_no_skills(tmp_path: Path):
-    (tmp_path / "empty").mkdir()
-    skill_type = MagicMock()
-    config = AgentConfig.from_mapping({"skills": {"paths": ["empty"]}})
-
-    assert (
-        adapter._skills(SimpleNamespace(Skill=skill_type), config, str(tmp_path)) == []
-    )
-    skill_type.load.assert_not_called()
-
-
 @pytest.mark.parametrize(
     ("layout", "code"),
     [

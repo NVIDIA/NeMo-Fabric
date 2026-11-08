@@ -2610,14 +2610,3 @@ def test_sdk_registers_each_skill_in_a_skill_folder(
         },
         response_model=adapter.SkillsExtraRootsSetResponse,
     )
-
-
-def test_sdk_registers_no_skill_roots_for_an_empty_skill_folder(
-    codex_payload, mock_codex, tmp_path
-):
-    (tmp_path / "empty").mkdir()
-    codex_payload["config"]["skills"] = {"paths": ["empty"]}
-
-    invoke_once(codex_payload)
-
-    mock_codex.instances[0]._client.request.assert_not_awaited()

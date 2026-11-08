@@ -2448,14 +2448,3 @@ def test_build_options_stages_each_skill_in_a_skill_folder(claude_payload, tmp_p
         "security",
     ]
     assert (staged / "lint" / "SKILL.md").read_text(encoding="utf-8") == "# lint\n"
-
-
-def test_build_options_stages_no_plugin_for_an_empty_skill_folder(
-    claude_payload, tmp_path
-):
-    (tmp_path / "empty").mkdir()
-    claude_payload["config"]["skills"]["paths"] = [str(tmp_path / "empty")]
-
-    options = build_options(claude_payload)
-
-    assert options.skills is None

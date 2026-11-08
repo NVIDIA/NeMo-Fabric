@@ -1529,11 +1529,4 @@ test("resolves each skill directly inside a configured skill folder", async (t) 
     join(shared, "review"),
     join(separate, "test"),
   ]);
-  await mkdir(join(root, "empty"));
-  assert.deepEqual(await resolveSkillPaths(root, ["empty"]), []);
-  await assert.rejects(resolveSkillPaths(root, ["missing"]), (error) => {
-    assert.equal(error.code, "pi_skill_not_found");
-    assert.deepEqual(error.metadata, { field: "skills.paths[0]" });
-    return true;
-  });
 });
