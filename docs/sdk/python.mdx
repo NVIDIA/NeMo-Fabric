@@ -871,7 +871,11 @@ as `CON` or `NUL`. On Linux and macOS, only the folder's owner can read it.
 Only one runtime can use the folder at a time: `Fabric.start_runtime(...)` fails
 while another runtime of the agent runs. A service and one runtime connected to
 it share the folder; the service holds it until `Service.release()`, even with
-no runtime connected. Planning fails without an artifact directory, or for an
+no runtime connected. On Linux and macOS, the adapter host also holds the
+folder, so it stays locked until both the process that started the runtime and
+the host have exited. If the host itself is killed while a native process it
+started in its own session keeps running, the folder is unlocked while that
+process runs. Planning fails without an artifact directory, or for an
 adapter that doesn't declare `runtime.keep_state`.
 
 ## Runtime Resource Snapshots
