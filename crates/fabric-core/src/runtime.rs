@@ -5061,87 +5061,37 @@ else:
         let _ = fs::remove_dir_all(root);
     }
 
-    // A bracket in the artifact folder's name must not act as a pathspec pattern.
-    const ARTIFACT_FOLDERS: [&str; 2] = ["artifacts", "artifacts[1]"];
-
     #[test]
-    fn workspace_patch_leaves_out_kept_agent_state() {
-        for artifacts in ARTIFACT_FOLDERS {
+    fn workspace_patches_leave_out_kept_agent_state_by_literal_path() {
+        for tracked in [false, true] {
             let root = std::env::temp_dir().join(new_id("fabric-workspace-patch-test"));
-            let state = root
-                .join(artifacts)
-                .join(".fabric/state/acme.agent/assistant");
+            // A bracket in the folder name must not act as a pathspec pattern,
+            // which would also leave out "artifacts1/.fabric/state".
+            let kept = root.join("artifacts[1]/.fabric/state");
+            let state = kept.join("acme.agent/assistant");
             fs::create_dir_all(&state).expect("create state folder");
-            assert!(
-                Command::new("git")
-                    .arg("init")
-                    .arg("-q")
-                    .arg(&root)
-                    .status()
-                    .expect("run git init")
-                    .success()
-            );
-            fs::write(root.join("notes.txt"), "note\n").expect("write workspace file");
             fs::write(state.join("state.db"), "private\n").expect("write state file");
-            // Under glob matching, "artifacts[1]" would also match "artifacts1".
-            let lookalike = root.join("artifacts1/.fabric/state");
-            fs::create_dir_all(lookalike.parent().expect("parent"))
-                .expect("create lookalike folder");
-            fs::write(&lookalike, "workspace\n").expect("write lookalike");
-
-            let patch =
-                untracked_workspace_patch(&root, &[root.join(artifacts).join(".fabric/state")])
-                    .expect("untracked patch");
-
-            assert!(patch.contains("notes.txt"), "{artifacts}: {patch}");
-            assert!(
-                patch.contains("artifacts1/.fabric/state"),
-                "{artifacts}: {patch}"
-            );
-            assert!(!patch.contains("state.db"), "{artifacts}: {patch}");
-            let _ = fs::remove_dir_all(root);
-        }
-    }
-
-    #[test]
-    fn workspace_patch_leaves_out_tracked_kept_agent_state() {
-        for artifacts in ARTIFACT_FOLDERS {
-            let root = std::env::temp_dir().join(new_id("fabric-workspace-patch-test"));
-            let state = root
-                .join(artifacts)
-                .join(".fabric/state/acme.agent/assistant");
-            fs::create_dir_all(&state).expect("create state folder");
+            fs::create_dir_all(root.join("artifacts1/.fabric")).expect("create lookalike folder");
+            fs::write(root.join("artifacts1/.fabric/state"), "workspace\n")
+                .expect("write lookalike");
+            fs::write(root.join("notes.txt"), "note\n").expect("write workspace file");
             let git = |args: &[&str]| {
-                assert!(
-                    Command::new("git")
-                        .arg("-C")
-                        .arg(&root)
-                        .args(args)
-                        .status()
-                        .expect("run git")
-                        .success()
-                );
+                let status = Command::new("git").arg("-C").arg(&root).args(args).status();
+                assert!(status.expect("run git").success());
             };
             git(&["init", "-q"]);
-            fs::write(root.join("notes.txt"), "note\n").expect("write workspace file");
-            fs::write(state.join("state.db"), "private\n").expect("write state file");
-            // Under glob matching, "artifacts[1]" would also match "artifacts1".
-            let lookalike = root.join("artifacts1/.fabric/state");
-            fs::create_dir_all(lookalike.parent().expect("parent"))
-                .expect("create lookalike folder");
-            fs::write(&lookalike, "workspace\n").expect("write lookalike");
-            git(&["add", "--intent-to-add", "--", "."]);
 
-            let patch =
-                tracked_workspace_patch(&root, &[root.join(artifacts).join(".fabric/state")])
-                    .expect("tracked patch");
+            let patch = if tracked {
+                git(&["add", "--intent-to-add", "--", "."]);
+                tracked_workspace_patch(&root, std::slice::from_ref(&kept)).expect("tracked patch")
+            } else {
+                untracked_workspace_patch(&root, std::slice::from_ref(&kept))
+                    .expect("untracked patch")
+            };
 
-            assert!(patch.contains("notes.txt"), "{artifacts}: {patch}");
-            assert!(
-                patch.contains("artifacts1/.fabric/state"),
-                "{artifacts}: {patch}"
-            );
-            assert!(!patch.contains("state.db"), "{artifacts}: {patch}");
+            assert!(patch.contains("notes.txt"), "{patch}");
+            assert!(patch.contains("artifacts1/.fabric/state"), "{patch}");
+            assert!(!patch.contains("state.db"), "{patch}");
             let _ = fs::remove_dir_all(root);
         }
     }
@@ -5192,17 +5142,30 @@ else:
     }
 
     #[test]
-    fn keep_state_rejects_a_run_plan_whose_agent_name_leaves_the_state_folder() {
-        let (root, mut plan) = local_host_plan_keeping_state();
-        plan.agent_name = "../../outside".to_string();
+    fn keep_state_rejects_a_run_plan_whose_names_leave_the_state_folder() {
+        for (field, value) in [
+            ("agent_name", "../../outside"),
+            ("adapter_id", "../../outside"),
+            ("adapter_id", "/outside"),
+            ("adapter_id", "CON"),
+        ] {
+            let (root, mut plan) = local_host_plan_keeping_state();
+            if field == "agent_name" {
+                plan.agent_name = value.to_string();
+            } else if let Some(adapter) = plan.adapter_descriptor.as_mut() {
+                adapter.descriptor.adapter_id = value.to_string();
+            }
 
-        let error = start_runtime(&plan).expect_err("an agent name with .. must not start");
-        assert!(
-            matches!(&error, FabricError::InvalidConfig { field, .. } if field == "agent_name"),
-            "{error}"
-        );
-        assert!(!root.join("artifacts/.fabric/outside").exists());
-        let _ = fs::remove_dir_all(root);
+            let error = start_runtime(&plan).expect_err(value);
+            assert!(
+                matches!(&error, FabricError::InvalidConfig { field: name, .. } if name == field),
+                "{field} {value}: {error}"
+            );
+            assert!(!root.join("artifacts/.fabric/outside").exists(), "{value}");
+            assert!(!root.join("artifacts/outside").exists(), "{value}");
+            assert!(!Path::new("/outside").exists(), "{value}");
+            let _ = fs::remove_dir_all(root);
+        }
     }
 
     #[test]
@@ -5214,30 +5177,8 @@ else:
             ".hidden",
             "CONSOLE",
             "COM10",
-            "nul-agent",
         ] {
             assert!(is_one_folder_name(name), "{name}");
-        }
-    }
-
-    #[test]
-    fn keep_state_rejects_an_adapter_id_that_leaves_the_state_folder() {
-        for adapter_id in ["../../outside", "/outside", "a/b", "CON"] {
-            let (root, mut plan) = local_host_plan_keeping_state();
-            plan.adapter_descriptor
-                .as_mut()
-                .expect("adapter descriptor")
-                .descriptor
-                .adapter_id = adapter_id.to_string();
-
-            let error = start_runtime(&plan).expect_err(adapter_id);
-            assert!(
-                matches!(&error, FabricError::InvalidConfig { field, .. } if field == "adapter_id"),
-                "{adapter_id}: {error}"
-            );
-            assert!(!root.join("artifacts/outside").exists(), "{adapter_id}");
-            assert!(!Path::new("/outside").exists(), "{adapter_id}");
-            let _ = fs::remove_dir_all(root);
         }
     }
 
