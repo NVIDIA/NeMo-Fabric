@@ -2698,6 +2698,24 @@ fn spawn_local_host(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::from(stderr));
+    // The host inherits the state lock, so the state stays locked until the
+    // host exits too, even when this process exits or crashes first.
+    #[cfg(unix)]
+    if let Some(lock) = &state_lock {
+        use std::os::fd::AsRawFd;
+        use std::os::unix::process::CommandExt;
+        let fd = lock.as_raw_fd();
+        // SAFETY: the closure runs between fork and exec and only calls
+        // fcntl, which is async-signal-safe.
+        unsafe {
+            command.pre_exec(move || {
+                if libc::fcntl(fd, libc::F_SETFD, 0) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
     if let Some(root) = artifacts.root.as_ref() {
         command.env("FABRIC_ARTIFACTS", root);
     }
@@ -3547,8 +3565,9 @@ fn agent_state_dir(plan: &RunPlan, artifacts: &ArtifactManifest) -> Result<Optio
 }
 
 /// Takes the agent's state folder for one runtime. The lock lasts while the
-/// returned file is open, and the operating system releases it when this
-/// process exits, so a crashed runtime leaves no stale lock behind.
+/// returned file is open here or, on Unix, in the adapter host that inherits
+/// it, and the operating system releases it when both have exited, so a
+/// crashed runtime leaves no stale lock behind.
 fn lock_agent_state(plan: &RunPlan, artifacts: &ArtifactManifest) -> Result<Option<File>> {
     let Some(state_dir) = agent_state_dir(plan, artifacts)? else {
         return Ok(None);
@@ -3583,15 +3602,30 @@ fn lock_agent_state(plan: &RunPlan, artifacts: &ArtifactManifest) -> Result<Opti
             path: lock_path.clone(),
             source,
         })?;
-    match file.try_lock() {
-        Ok(()) => Ok(Some(file)),
-        Err(std::fs::TryLockError::WouldBlock) => Err(FabricError::StateInUse { path: state_dir }),
-        Err(std::fs::TryLockError::Error(source)) => Err(FabricError::Write {
-            path: lock_path,
-            source,
-        }),
+    // A process that forks while another runtime holds the lock, such as one
+    // starting another host, keeps the lock until it execs, so wait briefly
+    // before deciding that the state is in use.
+    let deadline = Instant::now() + STATE_LOCK_WAIT;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(Some(file)),
+            Err(std::fs::TryLockError::WouldBlock) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(std::fs::TryLockError::WouldBlock) => {
+                return Err(FabricError::StateInUse { path: state_dir });
+            }
+            Err(std::fs::TryLockError::Error(source)) => {
+                return Err(FabricError::Write {
+                    path: lock_path,
+                    source,
+                });
+            }
+        }
     }
 }
+
+const STATE_LOCK_WAIT: Duration = Duration::from_millis(250);
 
 fn resolve_named_environment(plan: &RunPlan, env: &mut BTreeMap<String, String>) -> Result<()> {
     for name in plan
@@ -4678,6 +4712,15 @@ for line in sys.stdin:
             sys.exit(18)
         response("stop")
         break
+else:
+    if MODE == "linger_after_exit":
+        # Outlive the process that started this host, as a host still
+        # stopping its harness after that process crashed would.
+        root = os.path.dirname(os.environ["FABRIC_FAKE_HOST_STOP_MARKER"])
+        with open(os.path.join(root, "host.pid.tmp"), "w", encoding="utf-8") as stream:
+            stream.write(str(os.getpid()))
+        os.replace(os.path.join(root, "host.pid.tmp"), os.path.join(root, "host.pid"))
+        time.sleep(30)
 "#,
         )
         .expect("write fake host");
@@ -5221,6 +5264,61 @@ for line in sys.stdin:
         let second = start_runtime(&plan).expect("start runtime again");
         assert_eq!(mode(&state_dir), 0o700, "an existing folder is narrowed");
         stop_runtime(&plan, &second).expect("stop runtime again");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn keep_state_stays_locked_while_a_host_outlives_the_process_that_started_it() {
+        const APP_PLAN: &str = "FABRIC_KEEP_STATE_TEST_APP_PLAN";
+        if let Ok(path) = std::env::var(APP_PLAN) {
+            // The app: start a runtime, then exit without stopping it.
+            let plan: RunPlan =
+                serde_json::from_str(&fs::read_to_string(path).expect("read plan")).expect("plan");
+            start_runtime(&plan).expect("start runtime in the app");
+            std::process::exit(0);
+        }
+        let (root, plan) = local_host_plan_keeping_state_in("linger_after_exit");
+        let plan_path = root.join("plan.json");
+        fs::write(&plan_path, serde_json::to_string(&plan).expect("plan JSON"))
+            .expect("write plan");
+        let app = Command::new(std::env::current_exe().expect("test binary"))
+            .args([
+                "runtime::tests::keep_state_stays_locked_while_a_host_outlives_the_process_that_started_it",
+                "--exact",
+                "--nocapture",
+            ])
+            .env(APP_PLAN, &plan_path)
+            .status()
+            .expect("run the app");
+        assert!(app.success(), "{app}");
+        let pid_path = root.join("host.pid");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !pid_path.exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        let host: libc::pid_t = fs::read_to_string(&pid_path)
+            .expect("the host outlives the app")
+            .trim()
+            .parse()
+            .expect("host pid");
+
+        let second = start_runtime(&plan);
+        // SAFETY: kill has no memory-safety preconditions.
+        unsafe { libc::kill(host, libc::SIGKILL) };
+        let error = second.expect_err("the surviving host still uses the state");
+        assert!(matches!(error, FabricError::StateInUse { .. }), "{error}");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let runtime = loop {
+            match start_runtime(&plan) {
+                Ok(runtime) => break runtime,
+                Err(FabricError::StateInUse { .. }) if Instant::now() < deadline => {
+                    thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => panic!("start after the host exited: {error}"),
+            }
+        };
+        stop_runtime(&plan, &runtime).expect("stop runtime");
         let _ = fs::remove_dir_all(root);
     }
 
