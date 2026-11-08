@@ -5,18 +5,27 @@ description: "Choose SDK, HTTP API, browser chat, or terminal TUI with explicit 
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-NVIDIA NeMo Fabric runs Hermes Agent through four client invocation paths. Choose the embedded SDK for normalized invocation results, the native API for HTTP clients, or native TUI clients in a browser or terminal. SDK execution is enabled by default; native interfaces are explicit options.
+You can use Hermes Agent through the NVIDIA NeMo Fabric adapter in four ways:
+
+- **SDK:** Invoke the embedded agent programmatically and receive normalized NeMo Fabric results.
+- **HTTP API:** Send requests to Hermes's native API and receive native HTTP responses.
+- **Dashboard/browser TUI:** Chat with Hermes through its dashboard in a browser.
+- **Terminal TUI:** Chat with Hermes from a terminal attached to the managed TUI backend.
+
+SDK execution is enabled by default; native interfaces are explicit options. All four paths use the normalized `FabricConfig`, which the adapter translates into Hermes's native configuration and agent settings.
 
 ![Four client invocation paths share three Hermes execution backends within one NeMo Fabric runtime: embedded SDK, API gateway, and a TUI service shared by browser and terminal clients.](../../../../assets/hermes-invocation-paths.png)
 
 | Path | Execution backend | Guide |
 | --- | --- | --- |
-| SDK | Embedded `AIAgent` in the adapter host; initialized eagerly when enabled | [Hermes SDK](./hermes-sdk.mdx) |
+| SDK | Embedded `AIAgent` in the adapter host | [Hermes SDK](./hermes-sdk.mdx) |
 | Native HTTP API | Managed API gateway process using `aiohttp` | [Hermes API](./hermes-api.mdx) |
 | Dashboard/browser TUI | Managed FastAPI/Uvicorn TUI service with browser assets and a PTY bridge | [Hermes Dashboard and Browser TUI](./hermes-dashboard.mdx) |
 | Terminal TUI | Terminal renderer attaches over WebSocket to the same TUI service; headless `serve` when dashboard is off | [Hermes Terminal TUI](./hermes-tui.mdx) |
 
-The paths use the same Hermes agent-loop implementation, with separate live agents and conversations. One runtime owns up to three backend processes, including its adapter host. Browser and terminal clients share one TUI service, not one live conversation. The API gateway is a separate service; it is not required for either TUI client.
+- **Agent execution:** All four paths use the same Hermes agent loop, with separate live agents and conversations.
+- **Runtime ownership:** One NeMo Fabric runtime owns up to three backend processes: the adapter host, API gateway, and TUI service.
+- **TUI clients:** Browser and terminal clients share the TUI service and use separate conversations. Neither requires the API gateway.
 
 ## Install the Adapter
 
@@ -59,9 +68,11 @@ settings = {
 }
 ```
 
-This example enables three native client paths without an embedded SDK agent. Omit `sdk` to preserve the default eager SDK agent. Omit an interface to turn it off; a present interface is on unless `enabled` is `false`. Current closed schemas require a port even for a disabled interface. Native interfaces require POSIX. Reject a configuration with no enabled execution path.
+This example enables three native client paths without an embedded SDK agent. Omit `sdk` to preserve the default SDK agent. Omit an interface to turn it off; a present interface is on unless `enabled` is `false`. Current closed schemas require a port even for a disabled interface. Native interfaces require POSIX. Reject a configuration with no enabled execution path.
 
-Dashboard and terminal ports must match when both are enabled: they identify one shared TUI service. The API port must be distinct. Terminal-only starts `hermes serve` without browser assets; dashboard starts `hermes dashboard --isolated --skip-build`. Runtime startup does not build frontends. The positive startup budget defaults to 60 seconds and must not exceed 75 seconds.
+- **Ports:** Dashboard and terminal must use the same port when both are enabled because they share one TUI service. The API requires a separate port.
+- **Startup:** Terminal-only mode starts `hermes serve`; dashboard mode starts `hermes dashboard --isolated --skip-build`. Build the required frontends before runtime startup; terminal-only mode needs no browser assets.
+- **Startup timeout:** Defaults to 60 seconds and must be greater than zero and no more than 75 seconds.
 
 ## What NeMo Fabric Normalizes
 
@@ -75,13 +86,29 @@ Dashboard and terminal ports must match when both are enabled: they identify one
 
 ## Shared Configuration and Ownership
 
-NeMo Fabric resolves `FabricConfig` into `AgentConfig`. The adapter writes native `config.yaml`, an owner-only `interfaces/agent-config.json` snapshot, and optional Relay plugin configuration under the runtime's Hermes home. Credentials go to child environments; they are not embedded in public attachment metadata. Managed native children run through the adapter's launcher, which applies the same explicit instructions and behavioral settings before constructing native agents. The installed Hermes source is unchanged.
+### Configuration Translation
 
-Instructions and configured turn/token/sampling/reasoning values override native defaults. Explicit enabled tools, including an empty list, override native tool selection; a nonempty blocked list overrides native exclusions. Unspecified native tool policy can differ from SDK CLI defaults. Use explicit policies when comparing parity. With OpenAI and no explicit base URL, inherited `OPENAI_BASE_URL` is removed from managed children to prevent credential redirection.
+NeMo Fabric resolves `FabricConfig` into `AgentConfig`. The adapter translates it into Hermes's native configuration and agent settings, applying the same explicit instructions and behavioral settings to agents in managed native processes.
 
-The runtime home is `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. Sharing it provides persisted resources, not shared live history or cross-runtime resume. An independently started process does not automatically receive the adapter's constructor mapping.
+The adapter writes native `config.yaml` and optional NeMo Relay plugin configuration under the runtime's Hermes home. When native interfaces are enabled, it also writes an owner-only `interfaces/agent-config.json` snapshot for the managed processes.
 
-The managed API gateway disables ambient messaging platforms and profile multiplexing. Environment variables such as `TELEGRAM_BOT_TOKEN` must not start chat-channel dependency installers in this runtime.
+Model credentials are supplied through child process environments, not public attachment metadata. For OpenAI without an explicit base URL, the adapter removes inherited `OPENAI_BASE_URL` from managed children so it cannot redirect the configured credential.
+
+### Setting Precedence
+
+- Configured instructions, turn/token limits, sampling, and reasoning settings override Hermes's native defaults.
+- Explicit enabled tools, including an empty list, override native tool selection. A nonempty blocked list overrides native exclusions.
+- Unspecified native tool policies can differ from SDK defaults. Set explicit policies when comparing behavior across paths.
+
+### Shared Runtime Home
+
+The runtime home is `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. Agents share persisted resources in this directory while retaining separate live conversations. Keeping these files does not establish cross-runtime resume.
+
+### Process Ownership
+
+Managed native processes run through the adapter's launcher without modifying the installed Hermes source. Independently started processes do not automatically receive the adapter's configuration mapping.
+
+The managed API gateway disables ambient messaging platforms and profile multiplexing. Inherited settings such as `TELEGRAM_BOT_TOKEN` do not start chat-channel dependency installers in this runtime.
 
 ## Health and Shutdown
 
