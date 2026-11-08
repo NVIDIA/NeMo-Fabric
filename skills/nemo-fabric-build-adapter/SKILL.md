@@ -117,18 +117,13 @@ adapter boundary:
   planning; `replace` discards the harness default, while `append` preserves it
   and adds the configured content after it.
 - Convert MCP servers, tool definitions, tool policy, and skills into native
-  target constructs. Treat each `skills.paths` entry as one skill when it
-  contains `SKILL.md`, otherwise as a folder whose direct subfolders that
-  contain `SKILL.md` are skills; load nothing from an entry without skills, and
-  fail start on a missing, non-folder, or unreadable entry or on two resolved
-  skills with the same name. Python adapters can use
-  `nemo_fabric_adapter_contract.skills.resolve_skills`, and TypeScript adapters
-  can use `resolveSkills` from `nemo-fabric-adapter-contract/skills`. Pass each
-  resolved skill folder to the harness's native skill loader. The adapters that
-  ship with NeMo Fabric follow this rule, except Deep Agents, whose skill
-  sources are backend paths. Refer to
+  target constructs. Each `skills.paths` entry is a skill or a folder of
+  skills, as
   [Load Skills from Folders](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/skills.mdx)
-  for how harnesses can differ from the rule.
+  describes; Python adapters can resolve them with
+  `nemo_fabric_adapter_contract.skills.resolve_skills`, and TypeScript adapters
+  with `resolveSkills` from `nemo-fabric-adapter-contract/skills`. Pass each
+  skill folder to the harness's native skill loader.
 - Resolve workflow entry points and construction settings during `start` in
   the task environment.
 - Read identity, environment, artifacts, telemetry, and the invocation

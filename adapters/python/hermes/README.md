@@ -63,8 +63,7 @@ The adapter receives a normalized payload from NeMo Fabric and materializes a na
 - replacement `instructions.system` and `runtime.max_turns`;
 - workspace and explicit environment variables through `environment`;
 - invocation timeout through `runtime.timeout_seconds`;
-- NeMo Fabric skills as Hermes Agent `skills.external_dirs`, one folder per
-  skill (refer to [Skills](#skills));
+- NeMo Fabric skills as external skill directories for Hermes Agent;
 - NeMo Fabric MCP servers as Hermes Agent MCP server config;
 - `tools.enabled` and `tools.blocked` as Hermes-native toolset selection and
   blocking policy;
@@ -73,21 +72,11 @@ The adapter receives a normalized payload from NeMo Fabric and materializes a na
 Tool selectors are Hermes toolset names because that is the native policy
 surface Hermes exposes.
 
-### Skills
-
-Each `skills.paths` entry is a skill or a folder of skills. An entry that
-contains `SKILL.md` is one skill. Otherwise each folder directly inside the
-entry that contains `SKILL.md` is a skill, and other files and folders are
-ignored. Mix the two forms to combine a shared folder of skills with a skill
-mounted on its own. An entry that exists but holds no skills, such as a new,
-empty volume, loads nothing. Start fails with `hermes_skill_not_found` when an
-entry does not exist and with `hermes_skill_invalid` when an entry is not a folder, when an entry
-without `SKILL.md` cannot be listed, or when two skills share a name; the error names the entry or both skill
-folders. The adapter passes each skill folder to Hermes Agent's
-`skills.external_dirs`, so Hermes does not search the rest of a configured
-folder. Hermes Agent still loads skills nested inside a skill folder; refer to
-[Load Skills from Folders](../../../docs/integrations/harness/skills.mdx) for
-this and other differences in how Hermes Agent loads skills.
+Each `skills.paths` entry is a skill or a folder of skills, as
+[Load Skills from Folders](../../../docs/integrations/harness/skills.mdx)
+describes. Start fails with `hermes_skill_not_found` for a missing entry and
+`hermes_skill_invalid` for the other failures. The adapter passes each skill
+folder to Hermes Agent's `skills.external_dirs`.
 
 During run-plan resolution, NeMo Fabric Core validates the
 `models.<role>.top_p` (from 0 through 1) and positive
@@ -128,14 +117,11 @@ Use `runtime.max_turns` to set the Hermes agent-loop budget. The adapter maps
 that normalized field to `AIAgent.max_iterations`; `max_iterations` is not a
 Hermes harness setting.
 
-By default, the adapter derives Hermes state from the NeMo Fabric artifact root
-and creates a child under `runtimes/<runtime_id>`, so invocations in one NeMo
-Fabric runtime share state without sharing config or the session database with
-another runtime. With `runtime.keep_state`, the Hermes home is the agent's
-state folder, `<artifact root>/.fabric/state/nvidia.fabric.hermes/<agent name>`,
-so every runtime of the agent uses the same session database, memory, skills
-and logs. Each runtime still starts a new session, and earlier sessions stay in
-the database.
+The adapter derives Hermes state from the NeMo Fabric artifact root and creates
+a child under `runtimes/<runtime_id>`, so invocations in one NeMo Fabric runtime
+share state without sharing config or the session database with another
+runtime. With `runtime.keep_state`, the Hermes home is the agent's state folder
+instead; see the [Hermes Agent guide](../../../docs/integrations/harness/hermes.mdx).
 
 ## Execution Model
 

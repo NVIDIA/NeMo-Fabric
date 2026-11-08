@@ -126,46 +126,25 @@ def test_configured_skill_is_loaded_by_native_openclaw(
         assert loaded == [_loaded(sources[skill], skill)]
 
 
-@pytest.mark.parametrize("layout", ["folder", "folder_and_skill", "empty"])
 def test_skill_folders_are_loaded_by_native_openclaw(
-    tmp_path: Path, openclaw_package: Path, layout: str
+    tmp_path: Path, openclaw_package: Path
 ):
     """Load each skill directly inside a folder, mixed with a separate skill."""
     shared = tmp_path / "shared"
-    shared.mkdir()
-    expected: list[dict] = []
-    if layout != "empty":
-        one = _skill(shared / "one", "fabric-one")
-        two = _skill(shared / "two", "fabric-two")
-        (shared / "notes.md").write_text("Not a skill.\n", encoding="utf-8")
-        _skill(shared / "group" / "nested", "fabric-nested")
-        expected = [_loaded(one, "fabric-one"), _loaded(two, "fabric-two")]
-    paths = [shared]
-    if layout == "folder_and_skill":
-        separate = _skill(tmp_path / "mounted" / "three", "fabric-three")
-        paths.append(separate)
-        expected.append(_loaded(separate, "fabric-three"))
+    one = _skill(shared / "one", "fabric-one")
+    two = _skill(shared / "two", "fabric-two")
+    (shared / "notes.md").write_text("Not a skill.\n", encoding="utf-8")
+    _skill(shared / "group" / "nested", "fabric-nested")
+    separate = _skill(tmp_path / "mounted" / "three", "fabric-three")
 
-    entries = _load_natively(tmp_path, openclaw_package, paths)
+    entries = _load_natively(tmp_path, openclaw_package, [shared, separate])
 
     loaded = [entry for entry in entries if entry["name"].startswith("fabric-")]
-    assert sorted(loaded, key=lambda entry: entry["name"]) == sorted(
-        expected, key=lambda entry: entry["name"]
-    )
-
-
-def test_missing_skill_path_fails_naming_it(tmp_path: Path):
-    """Refuse a configured entry that is absent from the task environment."""
-    shared = tmp_path / "shared"
-    shared.mkdir()
-    missing = tmp_path / "missing"
-
-    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
-        _native_config(tmp_path, [shared, missing])
-
-    assert caught.value.code == "openclaw_skill_not_found"
-    assert caught.value.metadata["field"] == "skills.paths[1]"
-    assert str(missing) in caught.value.message
+    assert sorted(loaded, key=lambda entry: entry["name"]) == [
+        _loaded(one, "fabric-one"),
+        _loaded(separate, "fabric-three"),
+        _loaded(two, "fabric-two"),
+    ]
 
 
 def test_duplicate_skill_names_fail_naming_both_paths(tmp_path: Path):

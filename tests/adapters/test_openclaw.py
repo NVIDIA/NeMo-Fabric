@@ -113,6 +113,22 @@ def _dashboard_token(base_dir: Path) -> Path:
     )
 
 
+async def _start(
+    runtime: adapter.OpenClawRuntime,
+    tmp_path: Path,
+    config: AgentConfig,
+    **payload: object,
+) -> None:
+    await runtime.start(
+        {
+            "config": config,
+            "runtime_context": _context(tmp_path).to_mapping(),
+            "base_dir": str(tmp_path),
+            **payload,
+        }
+    )
+
+
 @pytest.fixture(name="mock_openclaw")
 def mock_openclaw_fixture(repo_root: Path) -> Path:
     return repo_root / "tests/_utils/mock_openclaw.py"
@@ -212,7 +228,9 @@ def test_openclaw_rejects_invalid_port_range(settings: dict[str, object]):
             id="unknown-field",
         ),
         pytest.param({"interfaces": {"dashboard": {}}}, id="missing-port"),
-        pytest.param({"interfaces": {"dashboard": {"port": 65_426}}}, id="port-too-high"),
+        pytest.param(
+            {"interfaces": {"dashboard": {"port": 65_426}}}, id="port-too-high"
+        ),
         pytest.param(
             {
                 "interfaces": {"dashboard": {"port": 20_000}},
@@ -1409,12 +1427,8 @@ async def test_openclaw_dashboard_serves_control_ui_with_a_token_file(
     token_path = _dashboard_token(tmp_path)
     runtime = adapter.OpenClawRuntime()
 
-    await runtime.start(
-        {
-            "config": _dashboard_config(mock_openclaw, {"port": dashboard_port}),
-            "runtime_context": _context(tmp_path).to_mapping(),
-            "base_dir": str(tmp_path),
-        }
+    await _start(
+        runtime, tmp_path, _dashboard_config(mock_openclaw, {"port": dashboard_port})
     )
     try:
         gateway_token = runtime._token
@@ -1450,14 +1464,10 @@ async def test_openclaw_dashboard_disabled_serves_no_control_ui(
     os.environ["FAKE_OPENCLAW_CAPTURE"] = str(capture)
     runtime = adapter.OpenClawRuntime()
 
-    await runtime.start(
-        {
-            "config": _dashboard_config(
-                mock_openclaw, {"port": dashboard_port, "enabled": False}
-            ),
-            "runtime_context": _context(tmp_path).to_mapping(),
-            "base_dir": str(tmp_path),
-        }
+    await _start(
+        runtime,
+        tmp_path,
+        _dashboard_config(mock_openclaw, {"port": dashboard_port, "enabled": False}),
     )
     try:
         gateway_port = runtime._port
@@ -1494,12 +1504,10 @@ async def test_openclaw_dashboard_removes_the_token_when_start_fails_after_writi
     runtime = adapter.OpenClawRuntime()
 
     with pytest.raises(RuntimeError, match="after writing the token"):
-        await runtime.start(
-            {
-                "config": _dashboard_config(mock_openclaw, {"port": dashboard_port}),
-                "runtime_context": _context(tmp_path).to_mapping(),
-                "base_dir": str(tmp_path),
-            }
+        await _start(
+            runtime,
+            tmp_path,
+            _dashboard_config(mock_openclaw, {"port": dashboard_port}),
         )
 
     assert token_written == [True]
@@ -1521,12 +1529,8 @@ async def test_openclaw_dashboard_stop_retries_a_token_it_could_not_remove(
     os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
     token_path = _dashboard_token(tmp_path)
     runtime = adapter.OpenClawRuntime()
-    await runtime.start(
-        {
-            "config": _dashboard_config(mock_openclaw, {"port": dashboard_port}),
-            "runtime_context": _context(tmp_path).to_mapping(),
-            "base_dir": str(tmp_path),
-        }
+    await _start(
+        runtime, tmp_path, _dashboard_config(mock_openclaw, {"port": dashboard_port})
     )
     unlink = Path.unlink
 
@@ -1548,7 +1552,9 @@ async def test_openclaw_dashboard_stop_retries_a_token_it_could_not_remove(
     assert not token_path.exists()
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock openclaw script directly")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Runs the mock openclaw script directly"
+)
 @pytest.mark.parametrize("offset", [0, 2])
 async def test_openclaw_dashboard_port_in_use_fails_start(
     mock_openclaw: Path, tmp_path: Path, dashboard_port: int, offset: int
@@ -1557,14 +1563,10 @@ async def test_openclaw_dashboard_port_in_use_fails_start(
 
     with socket.create_server(("127.0.0.1", dashboard_port + offset)):
         with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
-            await runtime.start(
-                {
-                    "config": _dashboard_config(
-                        mock_openclaw, {"port": dashboard_port}
-                    ),
-                    "runtime_context": _context(tmp_path).to_mapping(),
-                    "base_dir": str(tmp_path),
-                }
+            await _start(
+                runtime,
+                tmp_path,
+                _dashboard_config(mock_openclaw, {"port": dashboard_port}),
             )
 
     assert caught.value.code == "openclaw_interface_port_unavailable"
@@ -1583,46 +1585,15 @@ async def test_openclaw_services_reject_interfaces(
     runtime = adapter.OpenClawRuntime()
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
-        await runtime.start(
-            {
-                "config": _dashboard_config(mock_openclaw, {"port": 20_000}),
-                "runtime_context": _context(tmp_path).to_mapping(),
-                "base_dir": str(tmp_path),
-                "service": {"operation": operation},
-            }
+        await _start(
+            runtime,
+            tmp_path,
+            _dashboard_config(mock_openclaw, {"port": 20_000}),
+            service={"operation": operation},
         )
 
     assert caught.value.code == "openclaw_interfaces_require_managed_runtime"
     assert runtime._process is None
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock openclaw script directly")
-async def test_openclaw_startup_timeout_bounds_all_of_start(
-    mock_openclaw: Path,
-    tmp_path: Path,
-    dashboard_port: int,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    # Each command finishes within the timeout, but the two together don't.
-    monkeypatch.setenv("FAKE_OPENCLAW_COMMAND_DELAY", "0.6")
-    monkeypatch.setenv("FAKE_OPENCLAW_CAPTURE", str(tmp_path / "config.json"))
-    config = _dashboard_config(mock_openclaw, {"port": dashboard_port})
-    assert config.harness is not None
-    config.harness.settings["startup_timeout_seconds"] = 1
-    runtime = adapter.OpenClawRuntime()
-
-    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
-        await runtime.start(
-            {
-                "config": config,
-                "runtime_context": _context(tmp_path).to_mapping(),
-                "base_dir": str(tmp_path),
-            }
-        )
-
-    assert caught.value.code == "openclaw_command_timeout"
-    assert runtime._process is None
-    assert not (tmp_path / "artifacts").exists()
 
 
 @pytest.mark.skipif(
@@ -1801,6 +1772,37 @@ async def test_openclaw_stop_does_not_kill_a_gateway_that_exited_during_cancella
     assert group_signals == [(1234, signal.SIGTERM), (1234, signal.SIGKILL)]
     # Once the Gateway is reaped, only the process group may be signaled.
     assert pid_signals == ([(1234, signal.SIGTERM)] if group_signals_denied else [])
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Runs the mock openclaw script directly"
+)
+async def test_openclaw_startup_timeout_bounds_all_of_start(
+    mock_openclaw: Path,
+    tmp_path: Path,
+    dashboard_port: int,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # Each command finishes within the timeout, but the two together don't.
+    monkeypatch.setenv("FAKE_OPENCLAW_COMMAND_DELAY", "0.6")
+    monkeypatch.setenv("FAKE_OPENCLAW_CAPTURE", str(tmp_path / "config.json"))
+    config = _dashboard_config(mock_openclaw, {"port": dashboard_port})
+    assert config.harness is not None
+    config.harness.settings["startup_timeout_seconds"] = 1
+    runtime = adapter.OpenClawRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(
+            {
+                "config": config,
+                "runtime_context": _context(tmp_path).to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+
+    assert caught.value.code == "openclaw_command_timeout"
+    assert runtime._process is None
+    assert not (tmp_path / "artifacts").exists()
 
 
 async def test_openclaw_startup_deadline_bounds_a_pending_readiness_request():

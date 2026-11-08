@@ -14,7 +14,7 @@ The following rules apply to each entry:
 - An entry that contains `SKILL.md` is one skill.
 - Otherwise, each folder directly inside the entry that contains `SKILL.md` is a skill. Other files and folders, including folders that cannot be read, are ignored.
 - An entry that exists but holds no skills, such as a new, empty volume, loads nothing.
-- Start fails when an entry does not exist, is not a folder, or cannot be read, and when two resolved skills share a name. The error names the entry or both skill folders.
+- Start fails when an entry does not exist or is not a folder, when an entry without `SKILL.md` cannot be listed, when a skill's `SKILL.md` cannot be read, or when two resolved skills share a name. The error names the entry or both skill folders.
 - The same folder listed through several entries loads once.
 - A skill's name is the `name` field of its `SKILL.md` front matter, or its folder name when the front matter has none.
 
@@ -24,7 +24,7 @@ The adapters that ship with NeMo Fabric follow these rules and pass each resolve
 
 ## Harness Differences
 
-NeMo Fabric decides which folders are skills, but the harness loads them. The harness can find more skills inside those folders or name them differently. The following table lists the known differences:
+NeMo Fabric decides which folders are skills, but the harness loads them, and it can find more skills or name them differently:
 
 | Situation | What Happens |
 | --- | --- |
@@ -36,6 +36,6 @@ NeMo Fabric decides which folders are skills, but the harness loads them. The ha
 | A folder of skills contains a hidden folder, such as `.archive` | NeMo Fabric loads a hidden folder that contains `SKILL.md` as a skill. Hermes Agent's own scans skip folders such as `.archive`, `.git`, and `.hub`. |
 | Two skills in different folders share a folder name | The Claude Code, Cline, and Factory Droid adapters copy each skill into one folder under its folder name, so start fails. |
 | A skill folder contains another skill, or a Markdown file other than `SKILL.md` at its top level | The OpenCode adapter fails start, because OpenCode would load the extra file as a skill. |
-| A Hermes Agent configuration used relative paths, `~`, or `${VAR}` | Relative entries resolve against the agent's base directory, not the Hermes home folder. NeMo Fabric does not expand `~` or `${VAR}`, which Hermes Agent's own `skills.external_dirs` setting does. |
+| A Hermes Agent configuration used relative paths, `~`, or `${VAR}` | Hermes Agent's own `skills.external_dirs` resolves relative paths against the Hermes home and expands `~` and `${VAR}`; NeMo Fabric does neither. |
 
 To avoid these differences, keep one skill per folder, do not nest skill folders, give each skill a name that differs from every skill folder name, and name the file `SKILL.md`.
