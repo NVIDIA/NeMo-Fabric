@@ -78,7 +78,7 @@ def resolve_skills(
 
     skills: list[Skill] = []
     by_name: dict[str, Skill] = {}
-    folders: set[tuple[int, int]] = set()
+    folders: set[tuple[int, int] | Path] = set()
     for index, value in enumerate(paths):
         field = f"skills.paths[{index}]"
         configured = Path(base_dir) / value
@@ -143,11 +143,12 @@ def _is_skill(child: Path) -> bool:
         return False
 
 
-def _folder_identity(directory: Path) -> tuple[int, int]:
+def _folder_identity(directory: Path) -> tuple[int, int] | Path:
     # Compare folders by identity so that spellings resolve() keeps apart, such
-    # as a different case on a case-insensitive file system, still match.
+    # as a different case on a case-insensitive file system, still match. An
+    # inode of 0 identifies nothing, so fall back to the resolved path.
     stat = directory.stat()
-    return stat.st_dev, stat.st_ino
+    return (stat.st_dev, stat.st_ino) if stat.st_ino else directory
 
 
 def _skill_name(directory: Path, field: str) -> str:

@@ -200,9 +200,10 @@ function errorCode(error: unknown): string {
 
 async function folderIdentity(directory: string): Promise<string> {
   // Compare folders by identity so that spellings realpath keeps apart, such
-  // as a different case on a case-insensitive file system, still match.
+  // as a different case on a case-insensitive file system, still match. An
+  // inode of 0 identifies nothing, so fall back to the resolved path.
   const info = await stat(directory, { bigint: true });
-  return `${info.dev}:${info.ino}`;
+  return info.ino === 0n ? `path:${directory}` : `inode:${info.dev}:${info.ino}`;
 }
 
 async function skillName(directory: string, field: string): Promise<string> {

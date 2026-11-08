@@ -7,7 +7,8 @@
 
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import fs, { existsSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -275,5 +276,29 @@ test("the same skill in another case loads once", async (t) => {
 
   assert.deepEqual(await resolveSkills(["Review", "review"], root), [
     { name: "Review", path: review, field: "skills.paths[0]" },
+  ]);
+});
+
+test("folders without inode numbers compare by path", async (t) => {
+  const { root } = await temporary(t);
+  const shared = join(root, "shared");
+  const one = await skill(join(shared, "one"), "one");
+  const two = await skill(join(shared, "two"), "two");
+  // Some file systems report inode 0 for every folder.
+  const stat = fs.promises.stat;
+  fs.promises.stat = async (path, options) => {
+    const info = await stat(path, options);
+    info.ino = typeof info.ino === "bigint" ? 0n : 0;
+    return info;
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.promises.stat = stat;
+    syncBuiltinESMExports();
+  });
+
+  assert.deepEqual(await resolveSkills([shared, one], root), [
+    { name: "one", path: one, field: "skills.paths[0]" },
+    { name: "two", path: two, field: "skills.paths[0]" },
   ]);
 });
