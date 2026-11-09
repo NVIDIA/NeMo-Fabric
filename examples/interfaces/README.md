@@ -93,7 +93,7 @@ jq -r 'select(.kind == "scope" and
 
 The pinned Hermes API path leaves its Relay conversation scope open after a turn. ATOF events can therefore exist without ATIF export. The managed native launcher finalizes and flushes an API turn's Relay segment when execution returns, including failed turns. It does not fire native conversation-end plugin hooks or delete conversation state. The conversation can continue; subsequent turns create new Relay segments and ATIF files. Finalization errors are logged without replacing the execution outcome, so consumers should check their artifacts explicitly.
 
-This example exercises the managed API path. It does not qualify browser chat, TUI, independently restarted gateways, approvals, or complete native-result and artifact normalization. Refer to [Hermes Native Interfaces](../../docs/integrations/harness/hermes/hermes-interfaces.mdx) for the configuration and ownership boundaries.
+This example exercises the managed API path. It does not qualify browser chat, TUI, independently restarted gateways, approvals, or complete native-result and artifact normalization. Refer to [Hermes invocation paths](../../docs/integrations/harness/hermes/hermes.mdx) for the configuration and ownership boundaries.
 
 
 ## Build the TUI Frontends

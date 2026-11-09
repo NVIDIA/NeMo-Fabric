@@ -84,8 +84,6 @@ navigation:
             path: ./integrations/harness/hermes/hermes-dashboard.mdx
           - page: Hermes Terminal TUI
             path: ./integrations/harness/hermes/hermes-tui.mdx
-          - page: Hermes Interfaces
-            path: ./integrations/harness/hermes/hermes-interfaces.mdx
           - page: LangChain Deep Agents
             path: ./integrations/harness/deepagents.mdx
           - page: Kilo Code

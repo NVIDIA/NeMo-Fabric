@@ -11,7 +11,19 @@ NVIDIA NeMo Fabric's terminal path attaches a prebuilt Hermes terminal renderer 
 
 ## Installation
 
-Complete the [shared installation](./hermes.mdx#install-the-adapter). The backend requires pinned Hermes web-serving dependencies and POSIX process groups. The terminal client needs the pinned built terminal bundle and a compatible Node runtime. Terminal-only mode requires no browser assets. See [frontend setup](../../../../examples/interfaces/README.md#build-the-tui-frontends).
+Complete the [shared installation](./hermes.mdx#install-the-adapter) first. Terminal attachment additionally requires:
+
+- **Backend dependencies:** FastAPI, Uvicorn, and the other dependencies in pinned Hermes's `web` extra. The repository's Python 3.14 `just install-hermes-agent` recipe already provides them.
+- **Client assets:** The built terminal renderer and a supported Node runtime on the machine running the client. Terminal-only mode needs no browser assets.
+- **Host:** POSIX, for the managed backend and terminal attachment helper.
+
+For a separately prepared Hermes environment, set `ADAPTER_PYTHON` to its interpreter and `HERMES_AGENT_CHECKOUT` to your pinned v0.22.5 source checkout, then install the web extra:
+
+```bash
+uv pip install --python "$ADAPTER_PYTHON" --editable "${HERMES_AGENT_CHECKOUT}[web]"
+```
+
+Follow the [frontend setup commands](../../../../examples/interfaces/README.md#build-the-tui-frontends) to build the terminal bundle. For terminal-only use, skip the browser build and `HERMES_WEB_DIST` setting. If the dashboard backend is already enabled, reuse it; terminal attachment does not require another backend installation.
 
 The helper uses `HERMES_TUI_DIR/dist/entry.js` when configured; otherwise it looks for `hermes_cli/tui_dist/entry.js` or the pinned checkout's `ui-tui/dist/entry.js`. `HERMES_NODE` can select an executable Node runtime; otherwise it uses Node from `PATH`. It does not build or install missing assets.
 
