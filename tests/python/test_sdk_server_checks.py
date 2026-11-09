@@ -392,6 +392,7 @@ async def test_runtime_status_remote_during_invocation_keeps_the_original_runtim
         "{",
         "x" * (4 * 1024 * 1024 + 1),
     ],
+    ids=["duplicate-fields", "null", "array", "malformed", "oversized"],
 )
 async def test_runtime_status_remote_rejects_malformed_or_oversized_json(
     server_environment, monkeypatch, raw
