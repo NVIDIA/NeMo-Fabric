@@ -1455,6 +1455,37 @@ mod tests {
     }
 
     #[test]
+    fn unknown_activity_does_not_upgrade_nonpassing_health() {
+        let runtime = runtime();
+        register(&runtime, vec![CheckLevel::Live]);
+        let peer = peer(&runtime, 2, |index, level| {
+            let mut observation = gateway_passed(level);
+            observation["outcome"] = if index == 0 { "unknown" } else { "failed" }.into();
+            observation["reason_code"] = if index == 0 {
+                "probe_error"
+            } else {
+                "agent_exited"
+            }
+            .into();
+            observation
+        });
+        for (outcome, state) in [
+            (CheckOutcome::Unknown, CheckRuntimeState::Unknown),
+            (CheckOutcome::Failed, CheckRuntimeState::Failed),
+        ] {
+            let report = check_environment(
+                &runtime.environment,
+                &request(&runtime, CheckLevel::Live, 3.0),
+            )
+            .unwrap();
+            assert_eq!(report.outcome, outcome);
+            assert_eq!(report.runtime.unwrap().state, state);
+        }
+        assert_eq!(peer.join().unwrap().len(), 2);
+        cleanup(&runtime);
+    }
+
+    #[test]
     fn shutdown_activity_cannot_pass_runtime_health() {
         let runtime = runtime();
         register(&runtime, vec![CheckLevel::Live]);

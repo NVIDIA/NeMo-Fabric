@@ -49,7 +49,9 @@ The report uses one of these outcomes:
 | `unknown`     | The check could not establish the result, for example because of a timeout, unavailable target, invalid native response, or ownership change. |
 | `unsupported` | The installed adapter or execution mode does not provide the requested check.                                                                 |
 
-Runtime `activity` is separate from health. A runtime can report `busy` and pass every supported level while an invocation waits for a model response. It can also pass with `activity: unknown` when native health is established but the adapter cannot observe all browser or terminal work. Passing health requires an active runtime; `stopping` or `stopped` activity cannot pass. Activity does not establish that an agent will accept a second concurrent prompt.
+Runtime `activity` is separate from health. A runtime can report `busy` and pass every supported level while an invocation waits for a model response. It can also pass with `activity: unknown` when the adapter has positive native health evidence but cannot observe whether work is in progress. A passing runtime check reports `state: active`; activity may be `idle`, `busy`, or `unknown`. An unknown activity value alone does not establish health, and `stopping` or `stopped` activity cannot pass.
+
+This rule applies to every adapter. It does not change which native evidence each adapter must collect, or turn an `outcome: unknown` into a pass. Consumers waiting for an idle runtime must require `activity: idle`; a passing health result with unknown activity does not establish that an agent will accept another prompt.
 
 ## Native Evidence by Adapter
 
