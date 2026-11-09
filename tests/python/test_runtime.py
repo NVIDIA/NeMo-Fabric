@@ -1182,7 +1182,7 @@ async def test_runtime_status_reads_owned_state_without_native_work(
 
 
 async def test_runtime_status_does_not_disclose_environment_secrets(
-    native_client, mock_native
+    native_client, mock_native, tmp_path
 ):
     handle = _runtime()
     handle["environment"].update(
@@ -1192,8 +1192,10 @@ async def test_runtime_status_does_not_disclose_environment_secrets(
             "metadata": {"token": "TEST_ONLY_METADATA_SECRET"},
         }
     )
-    handle["environment"]["workspace"] = "/workspace"
-    handle["environment"]["artifacts"] = "/artifacts"
+    workspace = str(tmp_path / "workspace")
+    artifacts = str(tmp_path / "artifacts")
+    handle["environment"]["workspace"] = workspace
+    handle["environment"]["artifacts"] = artifacts
     handle["service_id"] = "service-1"
     handle["unknown_token"] = "TEST_ONLY_EXTENSION_SECRET"
     mock_native.start_runtime.return_value = json.dumps(handle)
@@ -1206,8 +1208,8 @@ async def test_runtime_status_does_not_disclose_environment_secrets(
     assert serialized["handle"]["runtime_binding"] == handle["runtime_binding"]
     assert serialized["handle"]["environment"]["environment_id"] == "environment-1"
     assert serialized["handle"]["service_id"] == "service-1"
-    assert serialized["handle"]["environment"]["workspace"] == "/workspace"
-    assert serialized["handle"]["environment"]["artifacts"] == "/artifacts"
+    assert serialized["handle"]["environment"]["workspace"] == workspace
+    assert serialized["handle"]["environment"]["artifacts"] == artifacts
     assert runtime.handle.environment["env"]["API_KEY"] == "TEST_ONLY_ENV_SECRET"
 
 
