@@ -79,7 +79,7 @@ This example enables three native client paths without an embedded SDK agent. Om
 | Surface | SDK | Native API, Browser, and Terminal |
 | --- | --- | --- |
 | Configuration | Normalized fields mapped to the embedded agent | Same explicit behavioral mapping and generated native configuration in adapter-owned processes |
-| Lifecycle | Eager startup and runtime-owned shutdown when enabled | Managed child startup/readiness and shutdown; terminal detach does not stop the runtime |
+| Lifecycle | Runtime startup and owned shutdown when enabled | Managed child startup/readiness and shutdown; terminal detach does not stop the runtime |
 | Results | Normalized `RunResult` | Native protocol/UI responses; no normalized invocation result |
 | Relay evidence | Standard ATOF/ATIF, finalized/flushed per invocation | Standard native-session evidence, finalized/flushed per completed agent turn; verify export contents |
 | Session artifacts | SDK invocation artifact collection | Complete session-scoped transcript/generated-file collection remains planned work |

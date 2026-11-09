@@ -76,6 +76,12 @@ class HermesRuntime:
         self._interfaces = interfaces.InterfaceChildren()
 
     async def start(self, payload: dict[str, Any]) -> None:
+        """Apply shared configuration and start the selected SDK/native backends.
+
+        SDK execution remains enabled by default. A native-only runtime skips
+        SDK agent, database, and MCP initialization; failed startup cleans up
+        any resources already created.
+        """
         if self._started:
             raise lifecycle.LifecycleError(
                 "hermes_runtime_already_started",
@@ -278,6 +284,11 @@ class HermesRuntime:
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
     ) -> AgentRunResult:
+        """Invoke the embedded agent and return its normalized result.
+
+        Native-only runtimes reject SDK invocation without constructing an
+        agent. Enabled SDK runtimes retain their conversation between calls.
+        """
         if self._started and not self._sdk_enabled:
             raise lifecycle.LifecycleError(
                 "hermes_sdk_disabled",
@@ -670,6 +681,12 @@ class HermesRuntime:
         return observed("passed", None)
 
     async def stop(self) -> None:
+        """Stop owned native processes and close resources created by the SDK.
+
+        Cleanup attempts every resource even after a failure, then reports
+        errors without closing parent MCP resources that this runtime never
+        initialized.
+        """
         self._stopping = True
         active_invoke_task = self._active_invoke_task
         errors: list[BaseException] = []

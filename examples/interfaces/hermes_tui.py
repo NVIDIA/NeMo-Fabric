@@ -20,6 +20,7 @@ from nemo_fabric import RelayObservabilityConfig
 
 
 def build_config(args: argparse.Namespace, output: Path) -> FabricConfig:
+    """Prepare a file-task workspace and explicit native paths with optional Relay."""
     workspace = output / "workspace"
     workspace.mkdir(parents=True, exist_ok=True)
     (workspace / "notes.txt").write_text(
@@ -86,6 +87,7 @@ def build_config(args: argparse.Namespace, output: Path) -> FabricConfig:
 
 
 async def run(args: argparse.Namespace) -> None:
+    """Own the runtime until Enter, keeping browser/terminal clients independent."""
     output = (
         args.output_dir or Path("outputs/interfaces") / f"tui-{uuid.uuid4().hex[:12]}"
     ).resolve()
@@ -135,6 +137,7 @@ async def run(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    """Validate endpoint and port arguments before starting the interactive host."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=os.environ.get("MODEL_BASE_URL"))
     parser.add_argument("--model", default=os.environ.get("MODEL_NAME"))

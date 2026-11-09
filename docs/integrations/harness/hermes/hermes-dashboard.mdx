@@ -13,17 +13,17 @@ NVIDIA NeMo Fabric starts Hermes's dashboard as a managed FastAPI/Uvicorn servic
 
 Complete the [shared installation](./hermes.mdx#install-the-adapter) first. The dashboard path additionally requires:
 
-- **Backend dependencies:** FastAPI, Uvicorn, and the other dependencies in pinned Hermes's `web` extra. The repository's Python 3.14 `just install-hermes-agent` recipe already provides them.
+- **Backend dependencies:** FastAPI, Uvicorn, and the other dependencies in pinned Hermes's `web` extra, plus `aiohttp` for authenticated readiness checks. The repository's Python 3.14 `just install-hermes-agent` recipe already provides them.
 - **Frontend assets:** Both the built browser assets and terminal renderer used by browser chat, plus a supported Node runtime.
 - **Host:** POSIX, for the managed backend and browser terminal bridge.
 
-For a separately prepared Hermes environment, set `ADAPTER_PYTHON` to its interpreter and `HERMES_AGENT_CHECKOUT` to your pinned v0.22.5 source checkout, then install the web extra:
+For a separately prepared Hermes environment, set `ADAPTER_PYTHON` to its interpreter and `HERMES_AGENT_CHECKOUT` to your pinned v0.22.5 source checkout, then install the web extra and the pinned readiness dependency:
 
 ```bash
-uv pip install --python "$ADAPTER_PYTHON" --editable "${HERMES_AGENT_CHECKOUT}[web]"
+uv pip install --python "$ADAPTER_PYTHON" --editable "${HERMES_AGENT_CHECKOUT}[web]" "aiohttp==3.14.5"
 ```
 
-Follow the [frontend setup commands](../../../../examples/interfaces/README.md#build-the-tui-frontends) to build both frontends in that pinned checkout. Browser assets must be available at `hermes_cli/web_dist/index.html` or the directory selected by `HERMES_WEB_DIST`. Runtime startup uses these prebuilt assets; it does not install or build them.
+Keep this `ADAPTER_PYTHON` value when following the [frontend setup commands](../../../../examples/interfaces/README.md#build-the-tui-frontends) to build both frontends in that pinned checkout. Browser assets must be available at `hermes_cli/web_dist/index.html` or the directory selected by `HERMES_WEB_DIST`. Runtime startup uses these prebuilt assets; it does not install or build them.
 
 ## Configuration
 
@@ -36,7 +36,7 @@ settings = {
 }
 ```
 
-Open `http://127.0.0.1:9119`. The native API interface is optional. To attach terminal clients too, add `"terminal": {"port": 9119}`; both client paths share one backend process and start separate conversations by default. Omit `sdk` to also start the embedded Hermes `AIAgent` alongside the dashboard process.
+Open `http://127.0.0.1:9119`. The native API is optional. To attach terminal clients too, add `"terminal": {"port": 9119}`; both client paths share one backend process and start separate conversations by default. Omit `sdk` to also start the embedded Hermes `AIAgent` alongside the dashboard process.
 
 ## Access and Ownership
 

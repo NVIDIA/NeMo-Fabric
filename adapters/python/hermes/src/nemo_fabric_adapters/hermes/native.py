@@ -72,6 +72,7 @@ def configure_browser_attachment() -> None:
 
     @wraps(original)
     def managed_chat(*args: Any, **kwargs: Any) -> Any:
+        """Attach the prebuilt renderer only to this runtime's default profile."""
         bound = signature.bind(*args, **kwargs)
         profile = bound.arguments.get("profile")
         if profile not in {None, "", "current", "default"}:
@@ -98,6 +99,7 @@ def configure_browser_attachment() -> None:
 
 
 def main() -> None:
+    """Apply runtime-owned agent settings before entering the native CLI."""
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--fabric-config", type=Path, required=True)
     options, arguments = parser.parse_known_args()
@@ -111,6 +113,7 @@ def main() -> None:
 
     class ConfiguredAIAgent(native_agent):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
+            """Apply normalized behavior while retaining native agent identity."""
             bound = signature.bind(*args, **kwargs)
             super().__init__(
                 **configured_kwargs(config, bound.arguments, load_config())
@@ -118,6 +121,7 @@ def main() -> None:
 
         @wraps(native_agent.run_conversation)
         def run_conversation(self, *args: Any, **kwargs: Any) -> Any:
+            """Run a native turn and finalize its Relay segment on every exit."""
             try:
                 return super().run_conversation(*args, **kwargs)
             finally:

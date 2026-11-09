@@ -24,8 +24,10 @@ Run commands from the NeMo Fabric repository root, including commands in additio
 
 ```bash
 just install-hermes-agent
-export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
+export ADAPTER_PYTHON="${ADAPTER_PYTHON:-$PWD/.venv-hermes/bin/python}"
 ```
+
+The export preserves a separately selected adapter interpreter; otherwise it uses `.venv-hermes`. The example scripts below run in `.venv-hermes`, which provides their NeMo Fabric SDK host.
 
 This prepares pinned Hermes v0.22.5, the NeMo Fabric adapter/SDK, and NeMo Relay 0.10 in `.venv-hermes`. The API dependency `aiohttp` and the Python web-serving dependencies needed by the TUI backend are included. Use `jq` for the JSON inspection commands below.
 
@@ -49,7 +51,7 @@ Use the same pinned Hermes checkout selected during installation. If `HERMES_AGE
 
 ```bash
 export HERMES_AGENT_CHECKOUT="${HERMES_AGENT_CHECKOUT:-$PWD/external/hermes-agent}"
-"$ADAPTER_PYTHON" -c "import fastapi, uvicorn"
+"$ADAPTER_PYTHON" -c "import aiohttp, fastapi, uvicorn"
 (
   cd "$HERMES_AGENT_CHECKOUT"
   npm ci --ignore-scripts --workspace ui-tui --workspace web --include-workspace-root

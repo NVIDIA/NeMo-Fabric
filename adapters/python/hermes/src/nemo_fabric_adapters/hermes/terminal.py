@@ -19,6 +19,7 @@ from nemo_fabric_adapters.hermes.interfaces import tui_ready
 
 
 def _read_private(path: Path) -> str:
+    """Read an owner-only regular file without following a leaf symlink."""
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(descriptor) as stream:
         info = os.fstat(stream.fileno())
@@ -83,6 +84,7 @@ def attachment_environment(connection: Path) -> dict[str, str]:
 
 
 def main() -> None:
+    """Validate a local attachment and replace this client with the renderer."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--connection",

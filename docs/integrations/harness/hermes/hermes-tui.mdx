@@ -13,17 +13,17 @@ NVIDIA NeMo Fabric's terminal path attaches a prebuilt Hermes terminal renderer 
 
 Complete the [shared installation](./hermes.mdx#install-the-adapter) first. Terminal attachment additionally requires:
 
-- **Backend dependencies:** FastAPI, Uvicorn, and the other dependencies in pinned Hermes's `web` extra. The repository's Python 3.14 `just install-hermes-agent` recipe already provides them.
+- **Backend dependencies:** FastAPI, Uvicorn, and the other dependencies in pinned Hermes's `web` extra, plus `aiohttp` for authenticated readiness checks. The repository's Python 3.14 `just install-hermes-agent` recipe already provides them.
 - **Client assets:** The built terminal renderer and a supported Node runtime on the machine running the client. Terminal-only mode needs no browser assets.
 - **Host:** POSIX, for the managed backend and terminal attachment helper.
 
-For a separately prepared Hermes environment, set `ADAPTER_PYTHON` to its interpreter and `HERMES_AGENT_CHECKOUT` to your pinned v0.22.5 source checkout, then install the web extra:
+For a separately prepared Hermes environment, set `ADAPTER_PYTHON` to its interpreter and `HERMES_AGENT_CHECKOUT` to your pinned v0.22.5 source checkout, then install the web extra and the pinned readiness dependency:
 
 ```bash
-uv pip install --python "$ADAPTER_PYTHON" --editable "${HERMES_AGENT_CHECKOUT}[web]"
+uv pip install --python "$ADAPTER_PYTHON" --editable "${HERMES_AGENT_CHECKOUT}[web]" "aiohttp==3.14.5"
 ```
 
-Follow the [frontend setup commands](../../../../examples/interfaces/README.md#build-the-tui-frontends) to build the terminal bundle. For terminal-only use, skip the browser build and `HERMES_WEB_DIST` setting. If the dashboard backend is already enabled, reuse it; terminal attachment does not require another backend installation.
+Keep this `ADAPTER_PYTHON` value when following the [frontend setup commands](../../../../examples/interfaces/README.md#build-the-tui-frontends) to build the terminal bundle. For terminal-only use, skip the browser build and `HERMES_WEB_DIST` setting. If the dashboard backend is already enabled, reuse it; terminal attachment does not require another backend installation.
 
 The helper uses `HERMES_TUI_DIR/dist/entry.js` when configured; otherwise it looks for `hermes_cli/tui_dist/entry.js` or the pinned checkout's `ui-tui/dist/entry.js`. `HERMES_NODE` can select an executable Node runtime; otherwise it uses Node from `PATH`. It does not build or install missing assets.
 

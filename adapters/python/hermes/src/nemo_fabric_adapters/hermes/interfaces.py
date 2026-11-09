@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Serve Hermes's API server and dashboard as children of a managed runtime."""
+"""Own Hermes API and shared browser/terminal TUI backend processes."""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ class InterfaceChildren:
         terminal_enabled: bool = False,
         workspace: str = ".",
     ) -> None:
-        """Start the enabled interfaces and write the API token once all pass health."""
+        """Start each backend once and publish credentials after all are ready."""
         require_supported_platform()
         for name, port in ports.items():
             if not local_interfaces.port_available(port):
@@ -206,7 +206,7 @@ class InterfaceChildren:
         return None
 
     async def stop(self) -> None:
-        """Remove the API token, then stop every interface process group."""
+        """Remove attachment credentials and stop every owned process group."""
         self._remove_private_file("_token_path")
         self._remove_private_file("_tui_descriptor_path")
         self._remove_private_file("_tui_token_path")
@@ -232,6 +232,7 @@ class InterfaceChildren:
             await asyncio.wait(pending)
 
     def _remove_private_file(self, attribute: str) -> None:
+        """Remove a private file, retaining its path for retry after a failure."""
         path = getattr(self, attribute)
         if path is not None:
             try:
@@ -244,6 +245,7 @@ class InterfaceChildren:
 
 
 def _web_dist() -> Path:
+    """Resolve built browser assets without installing or building a frontend."""
     configured = os.environ.get("HERMES_WEB_DIST")
     if configured:
         dist = Path(configured)
@@ -262,6 +264,7 @@ def _web_dist() -> Path:
 
 
 async def _wait_healthy(child: _Child, deadline: float) -> None:
+    """Wait for native health and TUI authentication within the shared budget."""
     loop = asyncio.get_running_loop()
     while loop.time() < deadline:
         if child.process.returncode is not None:
