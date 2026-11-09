@@ -92,7 +92,7 @@ The embedded SDK agent is enabled by default and initializes during runtime star
 
 Ordered SDK invocations reuse the same agent and conversation until stop closes them. API, browser, and terminal conversations do not execute through this agent or inherit its live history. Persisted files do not establish cross-runtime resume.
 
-Set `harness.settings.sdk.enabled` to `false` only when at least one native interface is enabled. Disabling the embedded Hermes agent does not affect runtime management: your application can still start, check, and stop the native interfaces through the NeMo Fabric SDK. Calling `runtime.invoke()` fails with `hermes_sdk_disabled`.
+Set `harness.settings.sdk.enabled` to `false` only when at least one native interface is enabled. Disabling the embedded Hermes agent does not affect runtime management: your application can still start, check, and stop the native interfaces through the NeMo Fabric SDK. SDK invocation returns a failed `RunResult` with `hermes_sdk_disabled`; the native interfaces and their health checks remain available.
 
 ## Results and Relay
 

@@ -21,6 +21,7 @@ import pytest
 import requests
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
+from nemo_fabric import CheckRequest
 from nemo_fabric.errors import FabricConfigError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
@@ -704,9 +705,9 @@ async def test_sdk_selection_preserves_eager_default(
         assert agent.call_count == int(sdk_enabled)
         assert database.call_count == int(sdk_enabled)
         if not sdk_enabled:
-            with pytest.raises(adapter.lifecycle.LifecycleError) as error:
-                await runtime.invoke(MagicMock(), MagicMock())
-            assert error.value.code == "hermes_sdk_disabled"
+            result = await runtime.invoke(MagicMock(), MagicMock())
+            assert result.status == "failed"
+            assert result.error.code == "hermes_sdk_disabled"
             agent.assert_not_called()
     finally:
         await runtime.stop()
@@ -751,6 +752,95 @@ async def test_sdk_disabled_health_observes_native_backend(
         assert (await runtime.check(level))["reason_code"] == "agent_exited"
     finally:
         await runtime.stop()
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("sdk_enabled", [False, True])
+async def test_sdk_invocation_preserves_native_runtime_health(
+    tmp_path, api_server, streaming, sdk_enabled
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    os.environ["FABRIC_TEST_MODEL_KEY"] = MODEL_KEY
+    port = _free_port()
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "native-only-health"},
+            "harness": {
+                "adapter_id": "nvidia.fabric.hermes",
+                "settings": {
+                    "sdk": {"enabled": sdk_enabled},
+                    "interfaces": {"api": {"port": port}},
+                },
+            },
+            "models": {
+                "default": {
+                    "provider": "openai",
+                    "model": "fabric-echo",
+                    "base_url": f"{api_server}/v1",
+                    "api_key_env": "FABRIC_TEST_MODEL_KEY",
+                }
+            },
+            "tools": {"enabled": []},
+            "environment": {
+                "provider": "local",
+                "workspace": str(tmp_path),
+                "artifacts": str(tmp_path / "artifacts"),
+            },
+        }
+    )
+    if streaming:
+        config.enable_relay(output_dir=str(tmp_path / "relay"))
+    fabric = Fabric()
+    environment = await fabric.prepare_environment(config, base_dir=tmp_path)
+    try:
+        async with await fabric.start_runtime_in(
+            config, environment, base_dir=tmp_path, streaming=streaming
+        ) as runtime:
+            for _ in range(2):
+                if streaming:
+                    stream = runtime.invoke_stream(input="Check the SDK path.")
+                    async for _ in stream:
+                        pass
+                    result = await stream.result()
+                else:
+                    result = await runtime.invoke(input="Check the SDK path.")
+                if sdk_enabled:
+                    assert result.status == "succeeded", result.to_mapping()
+                    assert result.error is None
+                else:
+                    assert result.status == "failed"
+                    assert result.error.code == "hermes_sdk_disabled"
+                for level in ("live", "active", "ready"):
+                    report = await fabric.check(
+                        environment=environment,
+                        request=CheckRequest(
+                            scope="runtime",
+                            runtime_id=runtime.runtime_id,
+                            level=level,
+                        ),
+                    )
+                    assert report.outcome == "passed", json.dumps(report.to_mapping())
+                    assert report.runtime["activity"] == "unknown"
+            token = (
+                tmp_path
+                / "artifacts/.fabric/hermes/runtimes"
+                / runtime.runtime_id
+                / "interfaces/api.token"
+            ).read_text()
+            response = await asyncio.to_thread(
+                requests.post,
+                f"http://127.0.0.1:{port}/v1/chat/completions",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "model": "hermes-agent",
+                    "messages": [{"role": "user", "content": "native still works"}],
+                },
+                timeout=30,
+            )
+            assert response.status_code == 200, response.text
+            assert response.json()["choices"][0]["message"]["content"]
+    finally:
+        await fabric.release_environment(environment)
 
 
 @pytest.mark.parametrize(

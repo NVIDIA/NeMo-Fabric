@@ -22,7 +22,7 @@ The adapter supports the following client paths:
 
 Browser and terminal clients share one backend process and use separate conversations. Neither requires the API gateway.
 
-Set `harness.settings.sdk.enabled` to `false` for native-only execution, with at least one native interface enabled. Your application can still start, check, and stop that runtime through the NeMo Fabric SDK; `runtime.invoke()` fails with `hermes_sdk_disabled`.
+Set `harness.settings.sdk.enabled` to `false` for native-only execution, with at least one native interface enabled. Your application can still start, check, and stop that runtime through the NeMo Fabric SDK. SDK invocation returns a failed `RunResult` with `hermes_sdk_disabled`, leaving native interfaces and health checks available.
 
 ## Runtime Health
 

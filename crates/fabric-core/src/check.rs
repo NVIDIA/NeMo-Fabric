@@ -616,7 +616,7 @@ fn valid_remote_report(report: &CheckReport, request: &CheckRequest) -> bool {
                 runtime.state == CheckRuntimeState::Active
                     && matches!(
                         runtime.activity,
-                        RuntimeActivity::Idle | RuntimeActivity::Busy
+                        RuntimeActivity::Idle | RuntimeActivity::Busy | RuntimeActivity::Unknown
                     )
             }))
     {
@@ -960,6 +960,9 @@ pub fn check_environment(
                             RuntimeActivity::Idle | RuntimeActivity::Busy => {
                                 CheckRuntimeState::Active
                             }
+                            RuntimeActivity::Unknown if result.outcome == CheckOutcome::Passed => {
+                                CheckRuntimeState::Active
+                            }
                             RuntimeActivity::Stopped => CheckRuntimeState::Stopped,
                             _ => CheckRuntimeState::Unknown,
                         },
@@ -1178,7 +1181,9 @@ fn probe_target(
                     || scope != CheckScope::Service
                         && !matches!(
                             observation.activity,
-                            RuntimeActivity::Idle | RuntimeActivity::Busy
+                            RuntimeActivity::Idle
+                                | RuntimeActivity::Busy
+                                | RuntimeActivity::Unknown
                         )))
             || observation.observed_at.is_some() && !valid_time
         {
@@ -1392,6 +1397,51 @@ mod tests {
         let mut wrong_stage = report;
         wrong_stage.checks[1].source = CheckSource::AdapterLiveness;
         assert!(!valid_remote_report(&wrong_stage, &request));
+        cleanup(&runtime);
+    }
+
+    #[test]
+    fn healthy_runtime_can_have_unknown_activity() {
+        let runtime = runtime();
+        register(
+            &runtime,
+            vec![CheckLevel::Live, CheckLevel::Active, CheckLevel::Ready],
+        );
+        let peer = peer(&runtime, 3, |_, level| gateway_passed(level));
+        let request = request(&runtime, CheckLevel::Ready, 3.0);
+        let mut report = check_environment(&runtime.environment, &request).unwrap();
+        assert_eq!(report.outcome, CheckOutcome::Passed);
+        let observation = report.runtime.as_ref().unwrap();
+        assert_eq!(observation.state, CheckRuntimeState::Active);
+        assert_eq!(observation.activity, RuntimeActivity::Unknown);
+        assert!(valid_remote_report(&report, &request));
+        assert_eq!(peer.join().unwrap().len(), 3);
+        for activity in [RuntimeActivity::Stopping, RuntimeActivity::Stopped] {
+            report.runtime.as_mut().unwrap().activity = activity;
+            assert!(!valid_remote_report(&report, &request));
+        }
+        cleanup(&runtime);
+    }
+
+    #[test]
+    fn shutdown_activity_cannot_pass_runtime_health() {
+        let runtime = runtime();
+        register(&runtime, vec![CheckLevel::Live]);
+        let peer = peer(&runtime, 2, |index, level| {
+            let mut observation = passed(level);
+            observation["activity"] = if index == 0 { "stopping" } else { "stopped" }.into();
+            observation
+        });
+        for _ in 0..2 {
+            let report = check_environment(
+                &runtime.environment,
+                &request(&runtime, CheckLevel::Live, 3.0),
+            )
+            .unwrap();
+            assert_eq!(report.outcome, CheckOutcome::Unknown);
+            assert_eq!(report.reason_code, Some(CheckReason::ProbeError));
+        }
+        assert_eq!(peer.join().unwrap().len(), 2);
         cleanup(&runtime);
     }
 

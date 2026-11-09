@@ -290,9 +290,13 @@ class HermesRuntime:
         agent. Enabled SDK runtimes retain their conversation between calls.
         """
         if self._started and not self._sdk_enabled:
-            raise lifecycle.LifecycleError(
-                "hermes_sdk_disabled",
-                "Embedded Hermes SDK execution is disabled; use an enabled native interface",
+            return AgentRunResult(
+                status=AgentRunStatus.FAILED,
+                output={},
+                error=AgentRunError(
+                    code="hermes_sdk_disabled",
+                    message="Embedded Hermes SDK execution is disabled; use an enabled native interface",
+                ),
             )
         agent_config = self._agent_config
         model_config = self._model_config
@@ -562,7 +566,11 @@ class HermesRuntime:
             "outcome": "passed" if reason is None else "failed",
             "reason_code": reason,
             "activity": "unknown",
-            "source": "fabric.adapter.interface",
+            "source": {
+                "live": "fabric.adapter.liveness",
+                "active": "fabric.adapter.interface",
+                "ready": "fabric.adapter.readiness",
+            }[level],
             "observed_at": datetime.now(timezone.utc)
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z"),
