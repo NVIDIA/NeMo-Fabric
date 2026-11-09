@@ -150,7 +150,8 @@ export class QwenSdkSession implements QwenSession {
 
   async check(level: CheckLevel): Promise<AdapterCheckResult> {
     const source = level === "live" ? "fabric.adapter.liveness" : level === "active" ? "fabric.adapter.interface" : "fabric.adapter.readiness";
-    if (this.closed || this.query.isClosed()) return { outcome: "failed", reason_code: "session_closed", source, observed_at: new Date().toISOString(), activity: "stopped" };
+    const closure = (): AdapterCheckResult => ({ outcome: "failed", reason_code: "session_closed", source, observed_at: new Date().toISOString(), activity: "stopped" });
+    if (this.closed || this.query.isClosed()) return closure();
     if (this.healthObservation !== undefined) return { outcome: "unknown", reason_code: "probe_timeout", source, observed_at: null, activity: "unknown" };
     const sessionId = this.query.getSessionId();
     try {
@@ -158,12 +159,15 @@ export class QwenSdkSession implements QwenSession {
       this.healthObservation = observation;
       void observation.finally(() => { if (this.healthObservation === observation) this.healthObservation = undefined; }).catch(() => { });
       const valid = await observation;
-      if (this.closed || this.query.isClosed() || this.query.getSessionId() !== sessionId) return { outcome: "unknown", reason_code: "observation_changed", source, observed_at: null, activity: "unknown" };
+      if (this.closed || this.query.getSessionId() !== sessionId) return { outcome: "unknown", reason_code: "observation_changed", source, observed_at: null, activity: "unknown" };
+      if (this.query.isClosed()) return closure();
       return valid
         ? { outcome: "passed", reason_code: null, source, observed_at: new Date().toISOString(), activity: "idle" }
         : { outcome: "unknown", reason_code: "probe_error", source, observed_at: new Date().toISOString(), activity: "unknown" };
     } catch {
-      return { outcome: "unknown", reason_code: this.closed || this.query.isClosed() || this.query.getSessionId() !== sessionId ? "observation_changed" : "probe_error", source, observed_at: null, activity: "unknown" };
+      if (this.closed || this.query.getSessionId() !== sessionId) return { outcome: "unknown", reason_code: "observation_changed", source, observed_at: null, activity: "unknown" };
+      if (this.query.isClosed()) return closure();
+      return { outcome: "unknown", reason_code: "probe_error", source, observed_at: null, activity: "unknown" };
     }
   }
 
