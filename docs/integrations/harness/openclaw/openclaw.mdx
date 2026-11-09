@@ -1,0 +1,148 @@
+---
+title: "Use the OpenClaw Adapter"
+description: "Four client paths through one managed OpenClaw Gateway."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+You can use OpenClaw through the NVIDIA NeMo Fabric adapter in four ways:
+
+- **[SDK](./openclaw-sdk.mdx):** invoke through the NeMo Fabric SDK and receive a normalized `RunResult`.
+- **[HTTP API](./openclaw-api.mdx):** call the owned Gateway directly and receive its native HTTP response.
+- **[Browser dashboard](./openclaw-dashboard.mdx):** use OpenClaw's native Control UI for chat and session management.
+- **[Terminal TUI](./openclaw-tui.mdx):** attach OpenClaw's native terminal client to the running Gateway.
+
+![OpenClaw invocation paths](../../../../assets/openclaw-invocation-paths.png)
+
+## Shared Configuration
+
+All four paths execute through one OpenClaw Gateway and its native agent runtime. NeMo Fabric translates `FabricConfig` into one private `openclaw.json`, with a fresh state directory, configured model/endpoint/credential references, generation parameters, workspace, tool policy, MCP servers, and skill paths.
+
+When a native interface is enabled, a small adapter-owned plugin applies replacement system instructions at OpenClaw's public `before_prompt_build` hook for the selected agent. SDK requests then omit their separate instruction injection, so all clients receive the configured prompt once. Pinned OpenClaw appends its native model-identity sentence after that prompt. Without native interfaces, existing SDK instruction handling is preserved. Omitted instructions preserve the native prompt; `append` remains unsupported.
+
+The generated configuration is read-only. Native clients share the configured backend but keep separate conversations when they select different native sessions. Filesystem access and Gateway credentials are shared within the runtime; this is not a user-isolation boundary. Native session/model overrides are not qualified; shared defaults do not enforce immutable policy. Native reconfiguration controls do not provide a supported way to change the Fabric-owned configuration.
+
+## Ownership and Normalization
+
+The adapter host starts, checks, and stops one Gateway. The SDK remains available when browser or terminal clients are enabled; no separate embedded SDK agent or additional API/TUI server is created. Attaching or detaching a client does not start or stop the Gateway.
+
+| Surface | Behavior |
+| --- | --- |
+| Configuration | Shared Fabric translation for the selected managed agent across all four paths. |
+| Lifecycle | Fabric owns the managed Gateway; clients attach independently. |
+| Responses | SDK returns a normalized `RunResult`; HTTP, browser, and terminal responses remain native. |
+| Activity | With native interfaces enabled, activity is `unknown`; healthy native endpoints can still pass normalized health checks. |
+| Relay artifacts | NeMo Relay integration and ATIF/ATOF export are deferred. |
+
+Native interfaces are opt-in and supported only on managed runtimes. Prepared and attached services retain their existing SDK lifecycle and reject `interfaces`; refer to the [SDK guide](./openclaw-sdk.mdx#use-a-shared-service). Cold resume and prior-runtime conversation restoration are outside this feature.
+
+## Install OpenClaw and the Adapter
+
+Refer to the official OpenClaw [installation documentation](https://docs.openclaw.ai/install) for detailed installation and usage instructions.
+
+To install OpenClaw from an npm package, then install the NeMo Fabric runtime and adapter run the following commands.
+
+```bash
+# Requires Node.js >=24.22.1 <25 or >=26.12.1, and npm 11.16+
+npm install --global openclaw@2026.9.34 --allow-scripts=openclaw
+pip install "nemo-fabric[openclaw]"
+```
+
+To install the adapter without the NeMo Fabric runtime, use
+`nemo-fabric-adapters-openclaw`. The adapter package does not install OpenClaw.
+
+### Upgrade a Gateway With Retained State
+
+When upgrading a caller-owned Gateway from OpenClaw 2026.9.4, stop the Gateway and run `openclaw backup create --verify` with the Gateway's existing `OPENCLAW_STATE_DIR` and `OPENCLAW_CONFIG_PATH` before upgrading. The backup must include the active config, its include files, and all configured agent directories, including paths outside the state directory. Protect the archive because it can contain credentials.
+
+Before upgrading, check the backup result and manifest for the active config, its include files, and every configured agent directory. For paths marked `covered`, confirm that the archive contains the data under a parent directory. Fix missing required paths and rerun the backup. Continue with the upgrade after confirming that all required data is backed up.
+
+Before migration, copy every legacy session directory while the Gateway is stopped. Include `sessions.json`, `.jsonl` transcripts, and session directories outside `OPENCLAW_STATE_DIR`. The backup command excludes legacy `.jsonl` transcripts. Protect these copies and keep them with the verified archive for rollback.
+
+Run `openclaw doctor --fix` with the 2026.9.34 executable and the same path settings. The command imports legacy `sessions.json` files and JSONL session data into each agent's SQLite database. Restart the Gateway after the command succeeds. Keep the verified backup for rollback.
+
+Managed runtimes and NeMo Fabric-owned services use temporary state directories, so each new Gateway starts with fresh state.
+
+## Configure the Adapter
+
+Select the adapter and, when necessary, specify the OpenClaw executable:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.openclaw",
+    settings={
+        "openclaw_command": "/opt/openclaw/bin/openclaw",
+        "startup_timeout_seconds": 60,
+    },
+)
+```
+
+Omit `openclaw_command` to resolve `openclaw` from `PATH`. A relative path that
+contains a directory is resolved from the NeMo Fabric base directory. The adapter
+uses the resolved executable for its version check, configuration validation,
+and Gateway startup.
+
+`startup_timeout_seconds` sets one deadline for all of start, from checking the
+`openclaw` command to the Gateway becoming ready. It defaults to 60 seconds and
+can be at most 75 seconds, which keeps start within NeMo Fabric's 90-second
+start limit.
+
+The adapter supports only OpenClaw's default `openclaw` agent runtime.
+
+The adapter accepts normalized model provider, model, base URL, temperature,
+`top_p`, `max_tokens`, replacement system instruction, workspace, skills, and
+MCP configuration. Normalized MCP authentication is not supported. For a
+custom OpenAI-compatible endpoint, set the model's `base_url` and, when needed,
+`api_key_env`.
+
+For an endpoint that supports `stream_options.include_usage`, set
+`models.<role>.settings.supports_usage_in_streaming` to `true`. This maps to
+OpenClaw's native `compat.supportsUsageInStreaming` and requires `base_url`.
+Use `false` for an endpoint that rejects streaming usage, or omit the setting
+to retain OpenClaw's endpoint capability detection. Attached services own
+their model configuration and do not accept this setting.
+
+OpenClaw 2026.9.4's Gateway does not distinguish aggregate usage from its
+last-call fallback, and converts missing usage to zero counters. NeMo Fabric
+leaves standard complete counters unknown and preserves the Gateway's counts
+in `usage.extensions["nvidia.fabric.openclaw.usage_evidence.v1"].observed`.
+The evidence includes `scope_unverified` in `gaps`, plus `missing_usage` or
+`zero_unverified` when applicable. Reported counts do not establish complete
+coverage of retries, compaction, child agents, or background work.
+
+For a NeMo Fabric-owned service, `harness.settings.channel_config` accepts
+OpenClaw-native `channels` and `bindings`. This supports multiple accounts for
+Telegram and other OpenClaw channels without a NeMo Fabric-specific channel schema.
+Every binding must target the configured `agent_id`; OpenClaw validates the
+nested channel settings. Chat-channel traffic goes directly between the
+channel and OpenClaw rather than through a NeMo Fabric runtime.
+
+By default, the adapter chooses an available local port range. Set `port_range`
+to an inclusive consumer-allocated range with `start` and `end` fields. The
+range must span at least 111 ports. OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses `base_port + 2` for browser control and allocates browser CDP ports from `base_port + 11` through `base_port + 110`. The adapter verifies only that `base_port` and `base_port + 2` are available before startup. OpenClaw allocates the CDP ports on demand instead of reserving the complete range, so the adapter cannot guarantee that those ports will still be available when OpenClaw needs them. Keep the configured range reserved for the lifetime of the runtime or service when using OpenClaw browser features.
+
+
+## Select Native Interfaces
+
+An absent interface is off. A present interface is enabled unless `enabled` is `false`:
+
+```python
+settings = {
+    "interfaces": {
+        "dashboard": {"port": 18789, "public_origins": []},
+        "terminal": {},
+    }
+}
+```
+
+The dashboard selects the existing Gateway's base port. Terminal has no port; it discovers that same Gateway, or uses the existing allocator when dashboard is absent. The dashboard port conflicts with `port_range`. Both clients can attach in parallel with SDK and native HTTP clients; use distinct sessions to keep conversations separate.
+
+After readiness, the adapter publishes private connection material under `<artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/`. `gateway.json` contains endpoints, selected agent, executable, workspace, and a credential-file reference. The token is in `dashboard.token` when the dashboard is enabled, otherwise `gateway.token`. Terminal adds an executable `terminal` and `terminal.running` marker. Stop removes the marker first and revokes discovery and credentials before stopping the Gateway. An abrupt host kill can leave files; attachment also checks authenticated Gateway availability.
+
+## Testing and Limitations
+
+Follow the [four-path OpenClaw examples](../../../../examples/interfaces/README-openclaw.md) for repeatable manual tests. The opt-in native qualification uses a recording model endpoint, a rendered browser, and a PTY to verify actual configuration and tool execution.
+
+Terminal attachment currently requires POSIX. On Windows, dashboard tokens inherit directory ACLs; mode bits do not enforce owner-only ACLs. Interactive approvals, detach during active work, remote terminal attachment, and full native activity/inventory are not qualified. The pinned TUI can use an exit-code-130 fallback during `/quit`; this does not stop the managed Gateway. NeMo Relay integration and trajectory export remain separate work.

@@ -1,0 +1,24 @@
+---
+title: "OpenClaw HTTP API"
+description: "Send native HTTP requests to the managed OpenClaw Gateway."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Start with the [OpenClaw overview](./openclaw.mdx) for installation and configuration ownership.
+
+## API Ownership
+
+The managed Gateway already serves `/v1/chat/completions` for SDK invocation. Native HTTP clients can call that same endpoint; there is no separate API server or `interfaces.api` setting.
+
+Enable a dashboard or terminal interface to publish native connection discovery and credentials. Terminal-only is the headless option and does not require browser assets. Read `http_url`, `agent_id`, and `token_file` from the private `interfaces/gateway.json`; read the referenced token file and send the token as `Authorization: Bearer <token>`. The HTTP client sends this header on each request.
+
+## Requests and Conversations
+
+Set `model` to `openclaw/<agent_id>` and supply a stable, distinct `user` for each HTTP conversation. Reusing the SDK runtime's selector can share its native session. Omission does not establish conversation isolation.
+
+The selected managed agent uses the shared model, endpoint, credentials, supported generation parameters, instructions, workspace, tools, MCP, and skills. The HTTP caller does not need to copy system instructions into the request. Responses and any native streaming remain OpenClaw's HTTP behavior rather than Fabric `RunResult` or Relay streams.
+
+## Testing and Boundaries
+
+Follow the [HTTP manual test](../../../../examples/interfaces/README-openclaw.md#2-http-api). Direct requests do not increment SDK invocation accounting. There is no ATIF/ATOF export in this iteration. Fabric runtime shutdown revokes discovery and stops the owned Gateway; a client cannot retain the runtime merely by staying connected.

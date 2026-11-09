@@ -5,6 +5,11 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric Native Interface Examples
 
+Choose the harness to test:
+
+- **Hermes:** the native-interface instructions below.
+- **OpenClaw:** the [four-path OpenClaw examples](README-openclaw.md), sharing one native Gateway.
+
 This example is a work in progress. Its structure and user experience will be reworked as part of OpenClaw TUI support.
 
 Use native harness interfaces alongside a NeMo Fabric-managed runtime. Each harness example uses the public Python SDK for configuration and lifecycle, then sends input through the harness's native interface.

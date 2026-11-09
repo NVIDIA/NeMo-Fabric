@@ -89,7 +89,15 @@ navigation:
           - page: mini-SWE-agent
             path: ./integrations/harness/mini-swe-agent.mdx
           - page: OpenClaw
-            path: ./integrations/harness/openclaw.mdx
+            path: ./integrations/harness/openclaw/openclaw.mdx
+          - page: OpenClaw SDK
+            path: ./integrations/harness/openclaw/openclaw-sdk.mdx
+          - page: OpenClaw HTTP API
+            path: ./integrations/harness/openclaw/openclaw-api.mdx
+          - page: OpenClaw Dashboard
+            path: ./integrations/harness/openclaw/openclaw-dashboard.mdx
+          - page: OpenClaw Terminal TUI
+            path: ./integrations/harness/openclaw/openclaw-tui.mdx
           - page: OpenHands
             path: ./integrations/harness/openhands.mdx
           - page: OpenCode

@@ -1,0 +1,26 @@
+---
+title: "OpenClaw Terminal TUI"
+description: "Attach the native terminal renderer to the managed Gateway."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Start with the [OpenClaw overview](./openclaw.mdx) for shared installation, configuration, and ownership.
+
+## Additional Setup
+
+Terminal attachment requires POSIX and the pinned OpenClaw executable with a supported Node runtime. The npm package provides the terminal renderer; no Fabric-specific frontend build is required. Browser assets are unnecessary when dashboard is disabled.
+
+Enable `harness.settings.interfaces.terminal: {}`. There is no terminal port setting. The adapter starts one Gateway and publishes an owner-executable `interfaces/terminal` launcher after readiness. Run that launcher from a real terminal or use `openshell sandbox exec -n SANDBOX --tty -- <launcher path>` when the runtime is inside an OpenShell sandbox. Local terminal attachment is qualified separately from the OpenShell transport.
+
+## Attachment and Conversations
+
+The launcher reads owner-only discovery, marker, and credential files and checks the authenticated endpoint. It starts native `openclaw tui` using a private remote-client configuration and an environment SecretRef. No token is placed in command-line arguments, and ambient OpenClaw target settings are removed. Attachment does not start another Gateway, use native local embedded mode, or install dependencies.
+
+Each attachment selects the configured agent and creates a new session by default. Pass `--session NAME` to intentionally reuse a native session on that agent. This is a session name, not an agent override or a connection to a previous Fabric runtime. Browser and terminal can select the same conversation explicitly; they are not isolated users.
+
+## Detach, Health, and Testing
+
+Use `/quit` to leave a completed conversation. The managed Gateway and other clients remain available. The pinned native TUI sometimes invokes its own shutdown fallback and exits with code 130; the adapter preserves that native exit status. Runtime stop removes `terminal.running` before the remaining connection files and stops the Gateway. Health checks use native endpoint evidence and report activity as unknown while interactive access is enabled.
+
+Follow the [terminal manual test](../../../../examples/interfaces/README-openclaw.md#4-terminal-tui). Active-turn detach, approval interaction, remote attachment, and native activity aggregation remain unqualified. NeMo Relay integration is deferred.
