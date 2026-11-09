@@ -318,5 +318,11 @@ def validate_response(response: dict[str, Any], operation: str) -> None:
                 raise invalid
         else:
             raise invalid
-    except (FabricConfigError, TypeError, ValueError, KeyError) as error:
+    except (
+        FabricConfigError,
+        TypeError,
+        ValueError,
+        KeyError,
+        RecursionError,
+    ) as error:
         raise invalid from error

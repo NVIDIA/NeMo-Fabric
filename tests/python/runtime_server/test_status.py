@@ -15,6 +15,64 @@ from nemo_fabric.runtime_server import cli, protocol, transport
 from nemo_fabric.runtime_server.state import RuntimeServer
 
 
+@pytest.fixture(name="recursive_status_response")
+def recursive_status_response_fixture(runtime_factory):
+    private = "TEST_ONLY_PRIVATE"
+    for _ in range(600):
+        private = [private]
+    handle = runtime_factory("runtime-1").handle.to_mapping()
+    handle["environment"]["metadata"] = {"private": private}
+    response = protocol.envelope(
+        "status",
+        {
+            "runtime_id": "runtime-1",
+            "agent_name": "researcher",
+            "status": "active",
+            "handle": handle,
+            "server_state": "running",
+        },
+    )
+    return protocol.encode_response(response)
+
+
+def test_status_validation_rejects_recursive_metadata(recursive_status_response):
+    response = protocol.decode_object(recursive_status_response)
+    with pytest.raises(protocol.ProtocolError) as caught:
+        protocol.validate_response(response, "status")
+    assert caught.value.code == "invalid_response"
+    assert caught.value.stage == "transport"
+    assert str(caught.value) == protocol.MESSAGES["invalid_response"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix socket transport")
+async def test_status_transport_rejects_recursive_metadata(
+    socket_path, recursive_status_response
+):
+    request = {
+        "interface_version": 2,
+        "operation": "status",
+        "agent": "researcher",
+        "runtime_id": "runtime-1",
+    }
+
+    async def answer(reader, writer):
+        await reader.readline()
+        writer.write(recursive_status_response)
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_unix_server(answer, path=socket_path)
+    async with server:
+        response = await transport.client(request, socket_path=socket_path, timeout=1)
+    assert response["status"] == "failed"
+    assert response["result"] is None
+    assert response["error"]["code"] == "invalid_response"
+    assert response["error"]["effects"] == "none"
+    assert response["changed"] is False
+    assert "TEST_ONLY_PRIVATE" not in json.dumps(response)
+
+
 @pytest.mark.parametrize("extra", [[], ["--live"], ["--config", "private.json"]])
 def test_status_command_requires_only_agent_and_runtime(extra):
     arguments = ["status", "--agent", "researcher", "--runtime-id", "runtime-1", *extra]
