@@ -68,7 +68,8 @@ With Relay enabled, managed API turns finalize and flush a segment when native e
 
 - **Native health endpoint:** `/health` belongs to Hermes's API server. Calling it directly checks that native service; it does not return a normalized NeMo Fabric health report or check the embedded SDK agent and TUI backend.
 - **Startup readiness:** The adapter polls the API server's `/health` endpoint and waits for HTTP 200 before declaring that interface ready. Startup fails if the process exits or readiness is not established within the startup budget.
-- **Normalized health checks:** Use `Fabric.check()` to check the managed runtime across its enabled backends. For the API backend, `live` checks the owned process; `active` and `ready` also probe `/health`. When the embedded SDK agent or TUI backend is enabled, the adapter checks those as well. Native activity is reported as unknown because active native turns are not fully aggregated.
+- **Normalized health with the SDK enabled:** `Fabric.check()` observes the embedded SDK agent and preserves its `idle`/`busy` activity. A failed API child does not fail that SDK health check. Probe the API `/health` endpoint or inspect its interface log separately to diagnose the API service.
+- **Normalized health with the SDK disabled:** `Fabric.check()` observes the enabled native backends. For the API backend, `live` checks the owned process; `active` and `ready` also probe `/health`. An enabled TUI backend is checked too. Activity is `unknown` because native turns are not fully aggregated.
 
 Neither the native endpoint nor the normalized checks execute a model/tool turn. Hermes also exposes authenticated `/health/detailed`, run status, and persisted sessions for native diagnostics; these do not provide a unified inventory of live agents in NeMo Fabric.
 

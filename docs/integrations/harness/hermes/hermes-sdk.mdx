@@ -92,7 +92,9 @@ The embedded SDK agent is enabled by default and initializes during runtime star
 
 Ordered SDK invocations reuse the same agent and conversation until stop closes them. API, browser, and terminal conversations do not execute through this agent or inherit its live history. Persisted files do not establish cross-runtime resume.
 
-Set `harness.settings.sdk.enabled` to `false` only when at least one native interface is enabled. Disabling the embedded Hermes agent does not affect runtime management: your application can still start, check, and stop the native interfaces through the NeMo Fabric SDK. SDK invocation returns a failed `RunResult` with `hermes_sdk_disabled`; the native interfaces and their health checks remain available.
+Set `harness.settings.sdk.enabled` to `false` only when at least one native interface is enabled. Disabling the embedded Hermes agent does not affect runtime management: your application can still start, check, and stop the native interfaces through the NeMo Fabric SDK. SDK invocation returns a failed `RunResult` with the stable error code `hermes_sdk_disabled` and `retryable: false`. This is a configuration mismatch: enable the SDK agent before invoking through the SDK. The native interfaces and their health checks remain available.
+
+Evaluation consumers, including Harbor, must keep `sdk.enabled: true` (or omit `sdk`). A native-only configuration is for hosting interfaces; it cannot run SDK evaluation trials. Current adapter metadata and `RunPlan` do not expose this invocation restriction before startup, so metadata-based admission can accept a configuration whose trials will fail. Exposing this restriction before invocation is planned work.
 
 ## Results and Relay
 
@@ -100,6 +102,8 @@ SDK invocations return normalized NeMo Fabric `RunResult` objects. With Relay en
 
 ## Health and Limitations
 
-For SDK-only runtimes, `check()` supports `live`, `active`, and `ready`, using session/database ownership, the invocation interface, and fresh `get_activity_summary()` diagnostics. Mixed runtimes also inspect managed native processes/endpoints and report activity as unknown because native activity is not fully aggregated. Checks do not run an agent turn.
+Whenever the SDK agent is enabled, `check()` supports `live`, `active`, and `ready` using SDK session/database ownership, the invocation interface, and fresh `get_activity_summary()` diagnostics. This includes mixed runtimes: SDK activity remains `idle` or `busy`, and a separate API or TUI process failure does not fail SDK runtime health. SDK activity does not describe native conversations.
+
+With `sdk.enabled: false`, checks observe the enabled native processes and endpoints, with activity reported as `unknown`. Check native endpoints or interface logs separately to diagnose a native interface in a mixed runtime; a normalized interface health target is planned under [#566](https://github.com/NVIDIA/NeMo-Fabric/issues/566). Checks do not run an agent turn.
 
 Refer to [SDK health checks](../../../sdk/health-checks.mdx) and the [shared limitations](./hermes.mdx#limitations-and-planned-work).

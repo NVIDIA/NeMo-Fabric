@@ -9,6 +9,7 @@ import asyncio
 import importlib.util
 import json
 import os
+import signal
 import socket
 import sqlite3
 import sys
@@ -755,9 +756,23 @@ async def test_sdk_disabled_health_observes_native_backend(
 
 
 @pytest.mark.parametrize("streaming", [False, True])
-@pytest.mark.parametrize("sdk_enabled", [False, True])
+@pytest.mark.parametrize(
+    "sdk_enabled,kill_api",
+    [
+        (False, False),
+        (True, False),
+        pytest.param(
+            True,
+            True,
+            marks=pytest.mark.skipif(
+                sys.platform != "linux", reason="owned child lookup uses /proc"
+            ),
+            id="sdk-survives-api-exit",
+        ),
+    ],
+)
 async def test_sdk_invocation_preserves_native_runtime_health(
-    tmp_path, api_server, streaming, sdk_enabled
+    tmp_path, api_server, streaming, sdk_enabled, kill_api
 ):
     os.environ["ADAPTER_PYTHON"] = sys.executable
     os.environ["FABRIC_TEST_MODEL_KEY"] = MODEL_KEY
@@ -810,6 +825,7 @@ async def test_sdk_invocation_preserves_native_runtime_health(
                 else:
                     assert result.status == "failed"
                     assert result.error.code == "hermes_sdk_disabled"
+                    assert result.error.retryable is False
                 for level in ("live", "active", "ready"):
                     report = await fabric.check(
                         environment=environment,
@@ -820,7 +836,9 @@ async def test_sdk_invocation_preserves_native_runtime_health(
                         ),
                     )
                     assert report.outcome == "passed", json.dumps(report.to_mapping())
-                    assert report.runtime["activity"] == "unknown"
+                    assert report.runtime["activity"] == (
+                        "idle" if sdk_enabled else "unknown"
+                    )
             token = (
                 tmp_path
                 / "artifacts/.fabric/hermes/runtimes"
@@ -839,6 +857,48 @@ async def test_sdk_invocation_preserves_native_runtime_health(
             )
             assert response.status_code == 200, response.text
             assert response.json()["choices"][0]["message"]["content"]
+            if kill_api:
+                host_pid = result.metadata["host_pid"]
+                child_pids = (
+                    Path(f"/proc/{host_pid}/task/{host_pid}/children")
+                    .read_text()
+                    .split()
+                )
+                api_children = []
+                for pid in child_pids:
+                    arguments = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+                    if b"nemo_fabric_adapters.hermes.native" in arguments:
+                        assert any(
+                            runtime.runtime_id.encode() in argument
+                            for argument in arguments
+                        )
+                        api_children.append(int(pid))
+                assert len(api_children) == 1
+                os.kill(api_children[0], signal.SIGKILL)
+                async with asyncio.timeout(5):
+                    while not interfaces.local_interfaces.port_available(port):
+                        await asyncio.sleep(0.01)
+                for level in ("live", "active", "ready"):
+                    report = await fabric.check(
+                        environment=environment,
+                        request=CheckRequest(
+                            scope="runtime", runtime_id=runtime.runtime_id, level=level
+                        ),
+                    )
+                    assert report.outcome == "passed", report.to_mapping()
+                    assert report.runtime == {"state": "active", "activity": "idle"}
+                result = await runtime.invoke(input="SDK after interface failure.")
+                assert result.status == "succeeded", result.to_mapping()
+                assert result.metadata["host_pid"] == host_pid
+                captured = await asyncio.to_thread(
+                    requests.get, f"{api_server}/_requests", timeout=5
+                )
+                assert any(
+                    "Check the SDK path." in json.dumps(request["messages"])
+                    and "SDK after interface failure."
+                    in json.dumps(request["messages"])
+                    for request in captured.json()
+                )
     finally:
         await fabric.release_environment(environment)
 

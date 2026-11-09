@@ -546,9 +546,10 @@ class HermesRuntime:
         self._relay_finalize_hook_invoked = False
 
     async def check(self, level: str) -> dict[str, Any]:
-        """Observe every enabled execution backend without creating agents."""
+        """Observe SDK health when enabled, otherwise the native backends."""
         if (
-            not self._started
+            self._sdk_enabled
+            or not self._started
             or self._stopping
             or level not in {"live", "active", "ready"}
         ):
@@ -559,9 +560,6 @@ class HermesRuntime:
         reason = await self._interfaces.check(level)
         if self._stopping or not self._started:
             reason = "observation_changed"
-        if reason is None and self._sdk_enabled:
-            result = await self._check_sdk(level)
-            return {**result, "activity": "unknown"}
         return {
             "outcome": "passed" if reason is None else "failed",
             "reason_code": reason,

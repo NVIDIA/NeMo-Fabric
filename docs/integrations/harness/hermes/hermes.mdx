@@ -123,7 +123,11 @@ The managed API gateway disables ambient messaging platforms and profile multipl
 
 ## Health and Shutdown
 
-Startup checks API `/health` and TUI `/api/status`; TUI startup also verifies an authenticated RPC without creating a conversation. Runtime checks inspect enabled native children/endpoints as well as an enabled embedded SDK agent. Native activity remains unknown rather than being inferred from SDK idle state. There is no unified live-agent inventory.
+Startup checks every enabled interface: API `/health` and TUI `/api/status`; TUI startup also verifies an authenticated RPC without creating a conversation. An enabled interface that fails startup still fails runtime startup.
+
+When the SDK agent is enabled, runtime health and `idle`/`busy` activity describe that SDK agent. A separate API or TUI process failure does not fail SDK runtime health. Observe native endpoints and interface logs separately; a normalized interface health target is planned under [#566](https://github.com/NVIDIA/NeMo-Fabric/issues/566).
+
+With `sdk.enabled: false`, runtime checks inspect the enabled native children and endpoints. Native activity remains `unknown` because native turns are not fully aggregated. There is no unified live-agent inventory.
 
 Stop removes API/TUI credentials and attachment descriptors, sends SIGTERM to owned interface process groups, and escalates to SIGKILL after five seconds. API gateway drain is three seconds. The configuration snapshot is removed and owned SDK resources are closed. Cleanup errors are logged; failed private-file removal is retried on a later stop.
 

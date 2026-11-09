@@ -26,15 +26,15 @@ Set `harness.settings.sdk.enabled` to `false` for native-only execution, with at
 
 ## Runtime Health
 
-`Fabric.check()` reports normalized `live`, `active`, and `ready` results across the enabled backends:
+`Fabric.check()` reports normalized `live`, `active`, and `ready` results for the SDK agent when enabled, or for the native backends when the SDK is disabled:
 
-| Level | Embedded SDK Agent, When Enabled | Managed Native Backends, When Enabled |
+| Level | SDK Enabled (Including Mixed Runtimes) | SDK Disabled: Managed Native Backends |
 | --- | --- | --- |
 | `live` | Session/database ownership and fresh native diagnostics | Owned API/TUI processes have not exited |
 | `active` | Available `run_conversation()` interface and fresh native diagnostics | Process checks plus API `/health` or TUI `/api/status`; TUI also requires an authenticated RPC |
 | `ready` | A valid `get_activity_summary()` response after session/interface checks | The same native process and endpoint checks used for `active` |
 
-Hermes's `/health` and `/api/status` are native endpoints. The adapter probes them during startup and uses them as evidence for normalized checks. An intentionally disabled SDK agent is not treated as a failed agent. Native-only and mixed runtimes report activity as unknown because active native turns are not fully aggregated.
+Hermes's `/health` and `/api/status` are native endpoints. Startup probes every enabled interface. After startup, mixed-runtime health and `idle`/`busy` activity describe the SDK agent; a failed API/TUI child does not fail SDK runtime health. Probe native endpoints and interface logs separately to diagnose those services. Native-only runtimes check native backends and report activity as `unknown` because native turns are not fully aggregated.
 
 Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) and [Hermes API health guidance](../../../docs/integrations/harness/hermes/hermes-api.mdx#health-testing-and-limitations) for the distinction between native health and normalized checks.
 
