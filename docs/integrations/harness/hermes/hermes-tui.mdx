@@ -40,11 +40,17 @@ settings = {
 
 Terminal-only mode starts `hermes serve --isolated`, which runs the backend without serving the browser dashboard. If dashboard is also enabled, give it the same port: the terminal attaches to that existing service instead. API, if enabled, needs a distinct port. SDK remains enabled by default unless explicitly disabled.
 
+## Authentication
+
+After readiness, the adapter publishes owner-only attachment files under `<artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/`: `tui.json` describes the port/mode/workspace, and `tui.token` contains the TUI backend credential.
+
+The attachment helper reads these files, verifies backend authentication, and passes an authenticated WebSocket URL through the environment. The native terminal renderer presents the credential when connecting. The token is not placed in command arguments or entered manually.
+
+This credential is shared with the browser dashboard when both use the same TUI backend. It is distinct from the API gateway's `api.token` and the model-provider API key. Terminal clients share the credential; separate conversations do not provide per-user isolation.
+
 ## Attach and Detach
 
-After readiness, the adapter publishes owner-only attachment files under `<artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/`: `tui.json` describes the port/mode/workspace, and `tui.token` contains a separate TUI credential. The [runnable example](../../../../examples/interfaces/README.md#4-terminal-tui) prints the exact attachment command using that runtime's descriptor.
-
-Run the helper from an interactive terminal with the Hermes interpreter. It validates the files and authenticated backend, then executes the prebuilt renderer with an explicit WebSocket attachment URL. The token is supplied through the environment, not command arguments. It never falls back to spawning an unmanaged backend. The API token is not used for TUI attachment.
+Run the helper from an interactive terminal with the Hermes interpreter. The [runnable example](../../../../examples/interfaces/README.md#4-terminal-tui) prints the exact attachment command using that runtime's descriptor. The helper executes the prebuilt renderer against the managed backend and never falls back to spawning an unmanaged backend.
 
 Terminal clients start independent native conversations by default. Detaching leaves the backend/runtime running; it is not an instruction to cancel a turn. The runtime owner stops its backend and removes attachment files. Same-conversation multi-client control and detach during active work require explicit qualification; use the runtime owner's stop action for final cleanup.
 

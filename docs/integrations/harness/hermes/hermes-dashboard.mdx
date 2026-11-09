@@ -38,9 +38,13 @@ settings = {
 
 Open `http://127.0.0.1:9119`. The native API is optional. To attach terminal clients too, add `"terminal": {"port": 9119}`; both client paths share one backend process and start separate conversations by default. Omit `sdk` to also start the embedded Hermes `AIAgent` alongside the dashboard process.
 
-## Access and Ownership
+## Authentication
 
-The dashboard has no separate sign-in on loopback: Hermes embeds its native session credential in the served page. Anyone reaching the port can use its pages and browser chat. Limit access to the runtime user; port forwarding must have its own access controls. A terminal attachment credential does not change browser access policy.
+The adapter generates a per-start credential for the TUI backend. Hermes embeds that credential in the served page, and the browser uses it automatically. The dashboard has no separate user sign-in on loopback: anyone reaching the port can use its pages and browser chat. Limit access to the runtime user; port forwarding must have its own access controls.
+
+The TUI credential is distinct from the model-provider API key and the API gateway's `api.token`. When terminal attachment is also enabled, the same TUI credential is published in `interfaces/tui.token` for the attachment helper. This does not add a browser sign-in gate or per-user isolation.
+
+## Ownership
 
 The adapter pins browser chat to the managed runtime profile and its existing TUI service. Named-profile chat is unsupported. Other dashboard pages remain native; gateway replacement, profile/configuration edits, and restart/migrate actions are outside the qualified ownership model and can bypass generated configuration.
 
