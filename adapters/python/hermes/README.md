@@ -9,6 +9,8 @@ Start with [hermes.mdx](../../../docs/integrations/harness/hermes/hermes.mdx) fo
 
 This adapter hosts Hermes Agent SDK, API, browser, and terminal invocation paths within one NeMo Fabric runtime. All four use normalized `FabricConfig`, translated into Hermes's native configuration and agent settings.
 
+**Experimental terminal interface:** `interfaces.terminal` (including `terminal.port`), the `tui.json` / `tui.token` attachment files, and the `nemo_fabric_adapters.hermes.terminal` helper may change across releases as the [#579 launcher contract](https://github.com/NVIDIA/NeMo-Fabric/issues/579) is adopted. Compatibility is not guaranteed for these surfaces; see the [terminal guide](../../../docs/integrations/harness/hermes/hermes-tui.mdx).
+
 ## Execution Paths
 
 The adapter supports the following client paths:

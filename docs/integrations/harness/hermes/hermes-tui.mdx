@@ -9,6 +9,8 @@ Start with [hermes.mdx](./hermes.mdx) for shared setup and an overview of all fo
 
 NVIDIA NeMo Fabric's terminal path attaches a prebuilt Hermes terminal renderer to a runtime-owned TUI service. This fourth client path shares the dashboard's execution backend; it does not create a fourth backend or invoke the embedded SDK agent.
 
+**Experimental terminal interface:** The `interfaces.terminal` configuration, including `terminal.port`, the `tui.json` and `tui.token` attachment files, and the `nemo_fabric_adapters.hermes.terminal` helper may change as NeMo Fabric adopts the [launcher contract in #579](https://github.com/NVIDIA/NeMo-Fabric/issues/579). Compatibility across releases is not guaranteed for these surfaces.
+
 ## Installation
 
 Complete the [shared installation](./hermes.mdx#install-the-adapter) first. Terminal attachment additionally requires:

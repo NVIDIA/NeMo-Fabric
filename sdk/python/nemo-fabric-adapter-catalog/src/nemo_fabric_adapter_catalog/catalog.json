@@ -965,14 +965,14 @@
                 },
                 "terminal": {
                   "additionalProperties": false,
-                  "description": "Terminal attachment to a managed TUI backend. Uses headless serve without dashboard assets, or shares the dashboard process. Writes interfaces/tui.json and tui.token.",
+                  "description": "Experimental terminal attachment to a managed TUI backend. Uses headless serve without dashboard assets, or shares the dashboard process. The configuration (including terminal.port), interfaces/tui.json, interfaces/tui.token, and the nemo_fabric_adapters.hermes.terminal helper may change across releases as the #579 launcher contract is adopted; compatibility is not guaranteed for these surfaces.",
                   "properties": {
                     "enabled": {
                       "default": true,
                       "type": "boolean"
                     },
                     "port": {
-                      "description": "TUI backend loopback port. Must match dashboard.port when both interfaces are enabled.",
+                      "description": "Experimental TUI backend loopback port. Must match dashboard.port when both interfaces are enabled. This required field may be removed when the #579 launcher contract is adopted.",
                       "maximum": 65535,
                       "minimum": 1,
                       "type": "integer"
@@ -1078,7 +1078,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.7.0"
       },
-      "sha256": "1efbf6c4c6d7064b96d7c6d88ace9471e7589537214991d4e3005e76fd32988c",
+      "sha256": "6b75b6803c8a4fac6cac5b96aa68b32e7a1b058a4c33f24041d22124b9caae85",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {

@@ -118,14 +118,14 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 65535,
-                "description": "TUI backend loopback port. Must match dashboard.port when both interfaces are enabled."
+                "description": "Experimental TUI backend loopback port. Must match dashboard.port when both interfaces are enabled. This required field may be removed when the #579 launcher contract is adopted."
               }
             },
             "required": [
               "port"
             ],
             "additionalProperties": false,
-            "description": "Terminal attachment to a managed TUI backend. Uses headless serve without dashboard assets, or shares the dashboard process. Writes interfaces/tui.json and tui.token."
+            "description": "Experimental terminal attachment to a managed TUI backend. Uses headless serve without dashboard assets, or shares the dashboard process. The configuration (including terminal.port), interfaces/tui.json, interfaces/tui.token, and the nemo_fabric_adapters.hermes.terminal helper may change across releases as the #579 launcher contract is adopted; compatibility is not guaranteed for these surfaces."
           }
         },
         "additionalProperties": false,

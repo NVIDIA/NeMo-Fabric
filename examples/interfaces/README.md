@@ -162,6 +162,8 @@ Press Enter in the owner terminal. The runtime stops its TUI service and removes
 
 ## 4. Terminal TUI
 
+**Experimental:** The terminal configuration, attachment files, and helper may change across releases. Read the [terminal interface notice](../../docs/integrations/harness/hermes/hermes-tui.mdx) before relying on their compatibility.
+
 Architecture: [Hermes Terminal TUI](../../docs/integrations/harness/hermes/hermes-tui.mdx). Terminal-only mode uses the managed TUI backend without serving the browser dashboard.
 
 ### Start the Backend
