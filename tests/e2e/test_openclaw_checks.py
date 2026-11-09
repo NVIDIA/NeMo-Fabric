@@ -551,11 +551,18 @@ async def test_owned_runtime_checks_through_sdk_and_sandbox_command_bridge(
             checks = [
                 command for command in commands if command["operation"] == "check"
             ]
-            assert checks
+            server_checks = [
+                command for command in checks if "runtime_id" not in command
+            ]
+            runtime_checks = [command for command in checks if "runtime_id" in command]
+            assert server_checks
+            assert all("agent" not in command for command in server_checks)
+            assert len(runtime_checks) == 2
             assert all(
                 command["agent"] == config.metadata.name
                 and command["runtime_id"] == runtime.runtime_id
-                for command in checks
+                and command["level"] == "ready"
+                for command in runtime_checks
             )
     finally:
         await runtime.stop()
