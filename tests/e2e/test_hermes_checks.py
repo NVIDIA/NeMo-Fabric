@@ -4,6 +4,7 @@
 """Native Hermes health checks during a blocked local model request."""
 
 import asyncio
+from functools import partial
 import os
 from pathlib import Path
 import signal
@@ -189,7 +190,11 @@ async def test_hermes_sdk_health_during_invocation(health_model, tmp_path):
         await fabric.release_environment(environment)
 
 
-async def test_hermes_native_session_health_and_closure(health_model, tmp_path):
+async def test_hermes_native_session_health_and_closure(
+    health_model, tmp_path, monkeypatch
+):
+    from agent import session_activity
+
     endpoint, _, _, requests = health_model
     os.environ["FABRIC_NATIVE_HEALTH_TEST_KEY"] = "local-test-only"
     os.environ["HOME"] = str(tmp_path)
@@ -222,12 +227,26 @@ async def test_hermes_native_session_health_and_closure(health_model, tmp_path):
         startup_requests = list(requests)
         assert ("POST", "/v1/chat/completions") not in startup_requests
         before = native._agent.get_activity_summary()
+
+        # Advance only the snapshot clock, leaving stored activity untouched.
+        monkeypatch.setattr(
+            session_activity,
+            "build_activity_snapshot",
+            partial(
+                session_activity.build_activity_snapshot,
+                now=before["last_activity_at"] + before["seconds_since_activity"] + 1.0,
+            ),
+        )
         for level in ("live", "active", "ready"):
             async with asyncio.timeout(3):
                 result = await native.check(level)
             AdapterCheckResult.from_mapping(result)
             assert (result["outcome"], result["activity"]) == ("passed", "idle")
-        assert before == native._agent.get_activity_summary()
+        after = native._agent.get_activity_summary()
+        assert after.pop("seconds_since_activity") > before.pop(
+            "seconds_since_activity"
+        )
+        assert before == after
         assert native._conversation_history is None
         assert requests == startup_requests
         await asyncio.to_thread(native._agent.close)
