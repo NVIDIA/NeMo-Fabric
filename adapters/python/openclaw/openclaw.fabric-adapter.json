@@ -18,7 +18,7 @@
         "type": "string",
         "minLength": 1,
         "default": "default",
-        "description": "OpenClaw agent selected for NeMo Fabric-originated invocations."
+        "description": "OpenClaw agent selected for SDK invocations and managed native clients."
       },
       "channel_config": {
         "type": "object",
@@ -80,11 +80,34 @@
                 "minimum": 1,
                 "maximum": 65425,
                 "description": "Exact loopback Gateway base port, which serves the Control UI. Start fails if it or port + 2 is in use. OpenClaw allocates browser ports through port + 110 on demand, so keep that range free. Can't be combined with port_range."
+              },
+              "public_origins": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^https?://[^/\\s?#@]+$"
+                },
+                "uniqueItems": true,
+                "default": [],
+                "description": "Additional browser HTTP(S) origins. OpenClaw also permits loopback origins; the token is always required."
               }
             },
-            "required": ["port"],
+            "required": [
+              "port"
+            ],
             "additionalProperties": false,
             "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token."
+          },
+          "terminal": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              }
+            },
+            "additionalProperties": false,
+            "description": "Attach the native terminal to the existing Gateway. No terminal port; publishes a private executable launcher and terminal.running marker."
           }
         },
         "additionalProperties": false,

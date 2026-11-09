@@ -2070,7 +2070,7 @@
           "properties": {
             "agent_id": {
               "default": "default",
-              "description": "OpenClaw agent selected for NeMo Fabric-originated invocations.",
+              "description": "OpenClaw agent selected for SDK invocations and managed native clients.",
               "minLength": 1,
               "type": "string"
             },
@@ -2137,11 +2137,32 @@
                       "maximum": 65425,
                       "minimum": 1,
                       "type": "integer"
+                    },
+                    "public_origins": {
+                      "default": [],
+                      "description": "Additional browser HTTP(S) origins. OpenClaw also permits loopback origins; the token is always required.",
+                      "items": {
+                        "pattern": "^https?://[^/\\s?#@]+$",
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "uniqueItems": true
                     }
                   },
                   "required": [
                     "port"
                   ],
+                  "type": "object"
+                },
+                "terminal": {
+                  "additionalProperties": false,
+                  "description": "Attach the native terminal to the existing Gateway. No terminal port; publishes a private executable launcher and terminal.running marker.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "type": "boolean"
+                    }
+                  },
                   "type": "object"
                 }
               },
@@ -2200,7 +2221,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.7.0"
       },
-      "sha256": "f2420e753b7efff19d6c56a8ff00f428f07f2f0761d77f49a031e90aa7f3a057",
+      "sha256": "e09e634bdd1f9ac1c32bb6aa35e7bf572de3c7ed8c5ac610b0528ef4d996ebb1",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {

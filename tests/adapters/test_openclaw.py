@@ -222,7 +222,9 @@ def test_openclaw_rejects_invalid_port_range(settings: dict[str, object]):
 @pytest.mark.parametrize(
     "settings",
     [
-        pytest.param({"interfaces": {"terminal": {}}}, id="unsupported-interface"),
+        pytest.param(
+            {"interfaces": {"terminal": {"port": 20_000}}}, id="terminal-has-no-port"
+        ),
         pytest.param(
             {"interfaces": {"dashboard": {"port": 20_000, "token": "x"}}},
             id="unknown-field",
@@ -2487,3 +2489,51 @@ async def test_openclaw_gateway_stream_keeps_usage_observational():
         "observed": {"input_tokens": 42, "output_tokens": 8, "total_tokens": 50},
         "gaps": ["scope_unverified"],
     }
+
+
+@pytest.mark.skipif(os.name != "posix", reason="The native terminal requires POSIX")
+@pytest.mark.parametrize(
+    "selection, shared",
+    [
+        ({}, False),
+        ({"terminal": {"enabled": False}}, False),
+        ({"terminal": {}}, True),
+    ],
+)
+async def test_native_configuration_owns_prompt_once(
+    mock_openclaw, tmp_path, selection, shared
+):
+    capture = tmp_path / "config.json"
+    request_capture = tmp_path / "request.json"
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(capture)
+    os.environ["FAKE_OPENCLAW_REQUEST"] = str(request_capture)
+    config = _config(mock_openclaw)
+    config.harness.settings["interfaces"] = selection
+    runtime = adapter.OpenClawRuntime()
+    await _start(runtime, tmp_path, config)
+    try:
+        result = await runtime.invoke(
+            AgentRunRequest(input="Check shared configuration."), _context(tmp_path)
+        )
+        assert result.status == "succeeded"
+        request = json.loads(request_capture.read_text())
+        assert [message["role"] for message in request["messages"]] == (
+            ["user"] if shared else ["system", "user"]
+        )
+        generated = json.loads(capture.read_text())
+        if shared:
+            entry = generated["plugins"]["entries"]["fabric-shared-config"]
+            assert entry["config"] == {
+                "agentId": "default",
+                "systemInstruction": "Be concise.",
+            }
+            directory = _dashboard_token(tmp_path).parent
+            assert (directory / "terminal.running").exists()
+            assert (directory / "gateway.json").exists()
+            assert (await runtime.check("ready"))["activity"] == "unknown"
+        else:
+            assert "plugins" not in generated
+            assert not _dashboard_token(tmp_path).parent.exists()
+    finally:
+        await runtime.stop()
+    assert not (_dashboard_token(tmp_path).parent / "terminal.running").exists()
