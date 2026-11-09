@@ -138,16 +138,20 @@ async def test_sdk_example_runs_task_agent_and_collects_receipt(
     ]
     assert [record["frame"]["command"]["operation"] for record in runtime_commands] == [
         "check",
+        "check",
         "start",
         "invoke",
         "invoke",
         "stop",
     ]
-    assert set(runtime_commands[0]["frame"]["command"]) == {
-        "operation",
-        "timeout_seconds",
-    }
-    first_request = runtime_commands[2]["frame"]["command"]["request"]
+    for record in runtime_commands[:2]:
+        assert set(record["frame"]["command"]) == {
+            "operation",
+            "timeout_seconds",
+        }
+        assert record["output"]["value"]["scope"] == "server"
+        assert record["output"]["value"]["outcome"] == "passed"
+    first_request = runtime_commands[3]["frame"]["command"]["request"]
     assert first_request["request_id"] == "openshell-echo-first"
     assert first_request["context"] == {"turn": 1}
     assert runtime_commands[-1]["frame"]["command"]["operation"] == "stop"

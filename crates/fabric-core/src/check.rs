@@ -956,11 +956,14 @@ pub fn check_environment(
                     report.outcome = result.outcome;
                     report.reason_code = result.reason_code;
                     report.runtime = Some(RuntimeObservation {
-                        state: match result.activity {
-                            RuntimeActivity::Idle | RuntimeActivity::Busy => {
+                        state: match (result.outcome, result.reason_code, result.activity) {
+                            (CheckOutcome::Failed, Some(CheckReason::AgentExited), _) => {
+                                CheckRuntimeState::Failed
+                            }
+                            (_, _, RuntimeActivity::Idle | RuntimeActivity::Busy) => {
                                 CheckRuntimeState::Active
                             }
-                            RuntimeActivity::Stopped => CheckRuntimeState::Stopped,
+                            (_, _, RuntimeActivity::Stopped) => CheckRuntimeState::Stopped,
                             _ => CheckRuntimeState::Unknown,
                         },
                         activity: result.activity,
@@ -1066,7 +1069,35 @@ fn verify_health_mac(
 }
 
 fn probe_runtime(runtime: &RuntimeHandle, level: CheckLevel, timeout: f64) -> AdapterCheckResult {
-    probe_target(&runtime.runtime_id, level, timeout, CheckScope::Runtime)
+    let started = Instant::now();
+    // An exited owned host cannot serve its managed runtime, even if a native
+    // child or attached service survives. This does not establish descendant cleanup.
+    let has_exited = || crate::runtime::local_host_has_exited(&runtime.runtime_id) == Some(true);
+    let exit_observation = || AdapterCheckResult {
+        outcome: CheckOutcome::Failed,
+        reason_code: Some(CheckReason::AgentExited),
+        activity: RuntimeActivity::Stopped,
+        source: CheckSource::AdapterLiveness,
+        observed_at: Some(utc_now()),
+    };
+    let exited = has_exited();
+    let remaining = timeout - started.elapsed().as_secs_f64();
+    if remaining <= 0.0 {
+        return unobserved(CheckReason::ProbeTimeout);
+    }
+    if exited {
+        return exit_observation();
+    }
+    let result = probe_target(&runtime.runtime_id, level, remaining, CheckScope::Runtime);
+    // A host can exit after the first read and take the health connection with it.
+    // Preserve fresh exit evidence without extending the probe's deadline.
+    if started.elapsed().as_secs_f64() < timeout
+        && has_exited()
+        && started.elapsed().as_secs_f64() < timeout
+    {
+        return exit_observation();
+    }
+    result
 }
 
 fn probe_target(
