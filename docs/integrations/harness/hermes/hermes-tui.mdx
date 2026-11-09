@@ -42,7 +42,7 @@ Terminal-only mode starts `hermes serve --isolated`, which runs the backend with
 
 ## Attach and Detach
 
-After readiness, the adapter publishes owner-only attachment files under `<artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/`: `tui.json` describes the port/mode/workspace, and `tui.token` contains a separate TUI credential. The [runnable example](../../../../examples/interfaces/README.md#hermes-terminal-and-browser-tui) prints the exact attachment command using that runtime's descriptor.
+After readiness, the adapter publishes owner-only attachment files under `<artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/`: `tui.json` describes the port/mode/workspace, and `tui.token` contains a separate TUI credential. The [runnable example](../../../../examples/interfaces/README.md#4-terminal-tui) prints the exact attachment command using that runtime's descriptor.
 
 Run the helper from an interactive terminal with the Hermes interpreter. It validates the files and authenticated backend, then executes the prebuilt renderer with an explicit WebSocket attachment URL. The token is supplied through the environment, not command arguments. It never falls back to spawning an unmanaged backend. The API token is not used for TUI attachment.
 
@@ -52,4 +52,4 @@ Terminal clients start independent native conversations by default. Detaching le
 
 Terminal output is native; it is not a normalized NeMo Fabric `RunResult`. With Relay enabled, managed agent turns finalize/flush native segments without deleting conversation history. Verify populated ATIF tool steps after each completed turn without detaching or stopping the runtime.
 
-Use the [TUI example](../../../../examples/interfaces/README.md#hermes-terminal-and-browser-tui) for manual input, repeated turns, and artifact inspection. Read the [shared limitations](./hermes.mdx#limitations-and-planned-work), including approval policy, shared filesystem access, native activity visibility, and cleanup limits. The initial attachment helper supports local loopback clients; remote discovery and credential transport are outside this iteration.
+Use the [TUI example](../../../../examples/interfaces/README.md#4-terminal-tui) for manual input, repeated turns, and artifact inspection. Read the [shared limitations](./hermes.mdx#limitations-and-planned-work), including approval policy, shared filesystem access, native activity visibility, and cleanup limits. The initial attachment helper supports local loopback clients; remote discovery and credential transport are outside this iteration.
