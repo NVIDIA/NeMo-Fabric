@@ -88,6 +88,17 @@ This example enables three native client paths without an embedded SDK agent. Om
 
 ### Configuration Translation
 
+Use a single `FabricConfig` to define supported settings for all four Hermes paths through NeMo Fabric's common configuration schema:
+
+- **Model:** provider, model, endpoint, credential references, and sampling settings.
+- **System instructions:** the replacement system prompt.
+- **Tool filters:** enabled and blocked Hermes toolsets.
+- **MCP:** server definitions and supported authentication settings.
+- **Skills:** skill search paths.
+- **Workspace:** the agent's working directory.
+- **Execution limits:** maximum agent turns and response tokens.
+- **NeMo Relay:** telemetry and export configuration, when enabled.
+
 NeMo Fabric resolves `FabricConfig` into `AgentConfig`. The adapter translates it into Hermes's native configuration and agent settings, applying the same explicit instructions and behavioral settings to agents in managed native processes.
 
 The adapter writes native `config.yaml` and optional NeMo Relay plugin configuration under the runtime's Hermes home. When native interfaces are enabled, it also writes an owner-only `interfaces/agent-config.json` snapshot for the managed processes.
