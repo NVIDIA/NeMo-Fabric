@@ -290,3 +290,24 @@ test("health uses the owned ACP child while the prompt remains blocked", { timeo
   assert.equal(stopped.outcome, "unknown");
   assert.equal(stopped.reason_code, "runtime_unavailable");
 });
+
+test("health reports an owned ACP child exit before another invocation", { timeout: 10_000 }, async (t) => {
+  const input = await fixture(t);
+  const runtime = new StrandsAdapterRuntime(new StrandsAcpSessionFactory());
+  await runtime.start(input);
+  t.after(() => runtime.stop());
+  const { pid } = JSON.parse(await readFile(input.runtimeContext.environment.env.TEST_STRANDS_STATE, "utf8"));
+  assert.equal((await runtime.check("live")).outcome, "passed");
+  process.kill(pid, "SIGKILL");
+  const deadline = Date.now() + 2000;
+  let result;
+  do {
+    result = await runtime.check("live");
+    if (result.outcome === "failed") break;
+    assert.ok(Date.now() < deadline, "native process exit was not observed");
+    await delay(5);
+  } while (true);
+  assert.equal(result.reason_code, "agent_exited");
+  assert.equal(result.activity, "stopped");
+  assert.ok(Number.isFinite(Date.parse(result.observed_at)));
+});

@@ -1483,13 +1483,13 @@ class CodexRuntime:
                 or native._sync is not transport
                 or transport._proc is not process
                 or thread.id != thread_id
-                or self._unusable != unusable
-                or client._initialized != initialized
                 or thread._codex is not thread_owner
             ):
                 return {**result, "reason_code": "observation_changed"}
             if process.poll() is not None:
                 outcome, reason = "failed", "agent_exited"
+            elif self._unusable != unusable or client._initialized != initialized:
+                return {**result, "reason_code": "observation_changed"}
             return {
                 **result,
                 "outcome": outcome,

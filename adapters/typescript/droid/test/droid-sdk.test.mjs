@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import test from "node:test";
 
+import { ProcessExitError } from "@factory/droid-sdk/node";
+
 import { DroidSdkSessionFactory } from "../dist/droid-sdk.js";
 
 function input(overrides = {}) {
@@ -546,4 +548,47 @@ test("native health failures remain unknown and never close a session", async ()
   assert.equal(sdk.calls.close, 0);
   assert.equal((await handle.prompt("one")).status, "completed");
   await handle.stop();
+});
+
+test("health retains the SDK's confirmed process exit without repeating requests", async (t) => {
+  const sdk = fakeSdk();
+  const loader = async () => ({ ...await sdk.loader(), ProcessExitError });
+  const handle = await new DroidSdkSessionFactory(loader).create(input());
+  t.after(() => handle.stop());
+  let calls = 0;
+  sdk.session.listTools = async () => {
+    calls += 1;
+    throw new ProcessExitError("PRIVATE-EXIT-DETAILS", { exitCode: 7 });
+  };
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await handle.check("live");
+    assert.equal(result.outcome, "failed");
+    assert.equal(result.reason_code, "agent_exited");
+    assert.equal(result.activity, "stopped");
+    assert.equal(result.source, "fabric.adapter.liveness");
+    assert.ok(Number.isFinite(Date.parse(result.observed_at)));
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
+  }
+  assert.equal(calls, 1);
+  assert.equal(sdk.calls.close, 0);
+  assert.deepEqual(sdk.calls.stream, []);
+});
+
+test("health leaves transport errors and same-named errors inconclusive", async (t) => {
+  const sdk = fakeSdk();
+  const loader = async () => ({ ...await sdk.loader(), ProcessExitError });
+  const handle = await new DroidSdkSessionFactory(loader).create(input());
+  t.after(() => handle.stop());
+  const misleading = new Error("PRIVATE process exited");
+  misleading.name = "ProcessExitError";
+  for (const error of [new Error("PRIVATE connection lost"), misleading]) {
+    sdk.session.listTools = async () => { throw error; };
+    const result = await handle.check("live");
+    assert.equal(result.outcome, "unknown");
+    assert.equal(result.reason_code, "probe_error");
+    assert.equal(result.observed_at, null);
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
+  }
+  assert.equal(sdk.calls.close, 0);
+  assert.deepEqual(sdk.calls.stream, []);
 });

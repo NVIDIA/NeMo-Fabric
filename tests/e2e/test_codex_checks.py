@@ -192,10 +192,12 @@ async def test_codex_sdk_health_during_invocation(codex_model, tmp_path):
                 assert result.output["response"] == "finished"
             # A transcript can appear after the first turn. Checks must preserve
             # its contents and native configuration files throughout each phase.
+            # Codex can remove temporary Git directories while this scan runs.
             files = [
                 path
-                for path in Path(tmp_path).rglob("*")
-                if path.is_file()
+                for directory, _, filenames in os.walk(tmp_path)
+                for name in filenames
+                if (path := Path(directory) / name).is_file()
                 and (
                     path.suffix == ".jsonl"
                     and "sessions" in path.parts

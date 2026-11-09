@@ -10,6 +10,7 @@ forwarding, artifacts, and uncertain command results.
 
 import asyncio
 import json
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -137,6 +138,12 @@ async def test_real_task_sdk_retains_state_and_collects_declared_artifacts(
             for record in records
             if record["frame"]["operation"] == "runtime_command"
         ]
+        assert commands[0]["frame"]["command"]["operation"] == "check"
+        commands = [
+            record
+            for record in commands
+            if record["frame"]["command"]["operation"] != "check"
+        ]
         assert commands[0]["output"]["value"]["runtime_id"] == runtime.runtime_id
         task_config = commands[0]["frame"]["command"]["config"]
         assert task_config["environment"]["provider"] == "local"
@@ -163,6 +170,86 @@ async def test_real_task_sdk_retains_state_and_collects_declared_artifacts(
     finally:
         await restarted.stop()
         await fabric.release_environment(rebound)
+
+
+@pytest.mark.parametrize(
+    "initial_state", ["unavailable", "stopping", "unknown", "malformed"]
+)
+async def test_start_waits_for_a_passing_server_check(
+    remote_config, tmp_path, initial_state
+):
+    os.environ["FABRIC_TEST_SERVER_SEQUENCE"] = json.dumps(
+        [initial_state, "responding"]
+    )
+    fabric = Fabric()
+    environment = await fabric.attach_environment(
+        remote_config,
+        EnvironmentReference.from_mapping(
+            {"provider": "openshell", "resource": {"sandbox_name": "echo"}}
+        ),
+    )
+    runtime = await fabric.start_runtime_in(remote_config, environment)
+    try:
+        records = [
+            json.loads(line)
+            for line in (tmp_path / "provider.jsonl").read_text().splitlines()
+        ]
+        commands = [
+            record
+            for record in records
+            if record["frame"]["operation"] == "runtime_command"
+        ]
+        assert [record["frame"]["command"]["operation"] for record in commands] == [
+            "check",
+            "check",
+            "start",
+        ]
+        for record in commands[:2]:
+            command = record["frame"]["command"]
+            assert set(command) == {"operation", "timeout_seconds"}
+            assert 0 < command["timeout_seconds"] <= 105
+        assert (
+            commands[1]["frame"]["command"]["timeout_seconds"]
+            < commands[0]["frame"]["command"]["timeout_seconds"]
+        )
+        assert commands[1]["output"]["value"]["outcome"] == "passed"
+        assert commands[2]["frame"]["timeout_seconds"] == 105
+    finally:
+        await runtime.stop()
+        await fabric.release_environment(environment)
+
+
+async def test_start_accepts_a_slow_server_check(remote_config, tmp_path, monkeypatch):
+    delay_seconds = 3.25
+    monkeypatch.setenv("FABRIC_TEST_SERVER_DELAY_SECONDS", str(delay_seconds))
+    fabric = Fabric()
+    environment = await fabric.attach_environment(
+        remote_config,
+        EnvironmentReference.from_mapping(
+            {"provider": "openshell", "resource": {"sandbox_name": "echo"}}
+        ),
+    )
+    runtime = await fabric.start_runtime_in(remote_config, environment)
+    try:
+        records = [
+            json.loads(line)
+            for line in (tmp_path / "provider.jsonl").read_text().splitlines()
+        ]
+        commands = [
+            record["frame"]
+            for record in records
+            if record["frame"]["operation"] == "runtime_command"
+        ]
+        assert [frame["command"]["operation"] for frame in commands] == [
+            "check",
+            "start",
+        ]
+        check_budget = commands[0]["command"]["timeout_seconds"]
+        assert delay_seconds < check_budget <= 105
+        assert commands[1]["timeout_seconds"] == 105
+    finally:
+        await runtime.stop()
+        await fabric.release_environment(environment)
 
 
 @pytest.mark.parametrize("partial", [None, {"partial": "review"}])
