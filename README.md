@@ -47,7 +47,7 @@ NeMo Fabric includes adapters for the following harnesses and execution targets.
 | [Qwen Code](adapters/typescript/qwen/README.md) | ✅ | ✅ | ✅ | — | — |
 | [Remote Agent](adapters/python/remote-agent/README.md) | — | — | — | ✅ | — |
 
-Native interfaces are Fabric-managed API, dashboard, or terminal entry points.
+Native interfaces: harness-native API, dashboard, or TUI access enabled through Fabric.
 
 ✅ Supported · — Not supported. Support may come through normalized configuration, native harness behavior, or a specific target. Refer to each adapter guide or the [complete compatibility matrix](adapters/README.md#configuration-compatibility) for details and limitations.
 
