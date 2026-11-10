@@ -8,7 +8,8 @@ and report those servers in each result under ``output.mcp.unavailable_servers``
 Every entry has the same shape across adapters:
 
 - ``name``: the configured server name.
-- ``transport``: the configured transport.
+- ``transport``: the configured transport, lowercase with ``-`` separators
+  (for example ``stdio`` or ``streamable-http``).
 - ``reason``: one of :data:`UNAVAILABLE_REASONS`.
 - ``error_type``: the failure's exception type, when the adapter observed one.
 
@@ -18,7 +19,9 @@ other credentials.
 
 from __future__ import annotations
 
+import asyncio
 import sys
+from collections.abc import Awaitable
 from collections.abc import Iterable
 from collections.abc import Mapping
 from typing import Any
@@ -39,10 +42,45 @@ def unavailable_server(
 
     if reason not in UNAVAILABLE_REASONS:
         raise ValueError(f"unknown MCP unavailability reason {reason!r}")
-    entry = {"name": name, "transport": transport, "reason": reason}
+    entry = {
+        "name": name,
+        "transport": transport.strip().lower().replace("_", "-"),
+        "reason": reason,
+    }
     if error_type:
         entry["error_type"] = error_type
     return entry
+
+
+async def wait_bounded(
+    awaitable: Awaitable[Any], *, timeout: float, grace: float
+) -> tuple[asyncio.Future[Any], bool]:
+    """Wait for one server's connection attempt without letting it stall startup.
+
+    Returns the attempt's task and whether it timed out. After a timeout the task
+    is cancelled and given ``grace`` seconds to close its connection; a task that
+    is still closing then finishes in the background with its outcome discarded.
+    Cancelling the caller cancels the attempt and propagates.
+    """
+
+    task = asyncio.ensure_future(awaitable)
+    try:
+        done, _ = await asyncio.wait({task}, timeout=timeout)
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
+    if done:
+        return task, False
+    task.cancel()
+    task.add_done_callback(_discard_outcome)
+    await asyncio.wait({task}, timeout=grace)
+    return task, True
+
+
+def _discard_outcome(task: asyncio.Future[Any]) -> None:
+    """Retrieve an abandoned task's outcome so asyncio does not log it."""
+    if not task.cancelled():
+        task.exception()
 
 
 def exception_type(error: BaseException) -> str:

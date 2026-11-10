@@ -111,7 +111,7 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
   they can carry credentials. Servers that are still connecting are not
   reported. Each result reflects the current state, so a server that
   reconnects within the runtime leaves the report, and a new runtime connects
-  every server again. The `mcp` key is absent when every server is connected.
+  every server again.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter
   stages these directories as a local Claude plugin for the runtime.
 

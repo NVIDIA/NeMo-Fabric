@@ -440,18 +440,12 @@ async def _load_server_tools(
     client: Any, name: str, transport: str
 ) -> tuple[list[Any], dict[str, str] | None]:
     """List one server's tools, reporting an unreachable server instead of raising."""
-    task = asyncio.ensure_future(client.get_tools(server_name=name))
-    try:
-        done, _ = await asyncio.wait({task}, timeout=MCP_DISCOVERY_TIMEOUT_SECONDS)
-    except asyncio.CancelledError:
-        task.cancel()
-        raise
-    if not done:
-        # Give the connection a bounded chance to close, then move on. A task that
-        # is still cleaning up finishes in the background; its outcome is ignored.
-        task.cancel()
-        task.add_done_callback(_discard_task_outcome)
-        await asyncio.wait({task}, timeout=MCP_DISCOVERY_CANCEL_GRACE_SECONDS)
+    task, timed_out = await mcp_availability.wait_bounded(
+        client.get_tools(server_name=name),
+        timeout=MCP_DISCOVERY_TIMEOUT_SECONDS,
+        grace=MCP_DISCOVERY_CANCEL_GRACE_SECONDS,
+    )
+    if timed_out:
         if not task.done():
             print(
                 f"NeMo Fabric Deep Agents: MCP server {name!r} is still closing its "
@@ -462,8 +456,8 @@ async def _load_server_tools(
             name, transport, mcp_availability.TIMED_OUT, "TimeoutError"
         )
     if task.cancelled():
-        # Caller cancellation is re-raised above, so this cancellation came from
-        # inside the MCP client; treat the server as failed rather than abort start.
+        # Caller cancellation is re-raised by wait_bounded, so this cancellation
+        # came from inside the MCP client; treat the server as failed.
         return [], mcp_availability.unavailable_server(
             name, transport, mcp_availability.FAILED, "CancelledError"
         )
@@ -477,12 +471,6 @@ async def _load_server_tools(
             mcp_availability.exception_type(error),
         )
     return list(tools), None
-
-
-def _discard_task_outcome(task: asyncio.Task[Any]) -> None:
-    """Retrieve an abandoned task's outcome so asyncio does not log it."""
-    if not task.cancelled():
-        task.exception()
 
 
 async def resolve_mcp_tools(config: AgentConfig) -> McpToolResolution:

@@ -111,7 +111,7 @@ reported, and a server that is still connecting is not reported. The adapter
 does not cache failures: each new runtime connects every server again. Hermes
 Agent records only an error message for a failed connection, which is omitted
 because it can carry credentials, so the report has no `error_type` and does
-not distinguish timeouts. The `mcp` key is absent when no server has failed.
+not distinguish timeouts.
 An OAuth server that cannot be authenticated still fails the invocation with
 `hermes_mcp_authentication_failed`.
 

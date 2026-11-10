@@ -119,9 +119,8 @@ Use normalized `FabricConfig` fields for portable configuration:
   credentials need reauthentication), and the adapter writes a warning to
   standard error. Codex error messages are omitted because they can carry
   credentials. A server that is still starting is not reported, and a new
-  runtime starts every server again. The `mcp` key is absent when every server
-  started. Invalid server configuration, such as an unsupported transport or
-  authentication mode, still fails startup.
+  runtime starts every server again. Invalid server configuration, such as an
+  unsupported transport or authentication mode, still fails startup.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter
   registers each directory as a process-scoped Codex skill root so Codex can
   select matching skills through its normal discovery behavior.

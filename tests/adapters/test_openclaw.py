@@ -2849,3 +2849,43 @@ async def test_openclaw_mcp_status_cancellation_propagates(
 
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process groups are POSIX-only")
+async def test_status_command_timeout_stops_children_holding_the_pipes(tmp_path):
+    """A stalled status command whose child keeps the pipes open stops promptly."""
+    child_pid_file = tmp_path / "child.pid"
+    script = tmp_path / "stall.py"
+    script.write_text(
+        "import pathlib, subprocess, sys, time\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"pathlib.Path({str(child_pid_file)!r}).write_text(str(child.pid))\n"
+        "time.sleep(60)\n"
+    )
+    command = tmp_path / "openclaw"
+    command.write_text(f"#!/bin/sh\nexec {sys.executable} {script}\n")
+    command.chmod(0o755)
+
+    started = time.monotonic()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        await adapter._command_output(
+            command,
+            "gateway",
+            "call",
+            env=dict(os.environ),
+            timeout=1,
+            process_group=True,
+        )
+
+    assert error.value.code == "openclaw_command_timeout"
+    assert time.monotonic() - started < 1 + adapter.COMMAND_REAP_SECONDS + 2
+    child_pid = int(child_pid_file.read_text())
+    for _ in range(50):
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        os.kill(child_pid, signal.SIGKILL)
+        pytest.fail("the status command's child kept running")

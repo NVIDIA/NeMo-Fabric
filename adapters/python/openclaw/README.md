@@ -83,8 +83,7 @@ inventory for the session and reports the servers OpenClaw could not use under
 first time a server is reported unavailable in a runtime. Error messages are
 omitted because they can carry credentials, and OpenClaw does not expose an
 error type. The report reflects the latest attempt, so a recovered server
-disappears from later results, and the `mcp` key is absent when every server
-is usable. Reading the inventory runs one OpenClaw CLI command per invocation
+disappears from later results. Reading the inventory runs one OpenClaw CLI command per invocation
 when MCP servers are configured. Runtimes that connect to a prepared service
 do not report MCP availability.
 

@@ -1638,6 +1638,30 @@ async def test_claude_runtime_omits_mcp_report_when_status_is_unobservable(
     assert "mcp" not in result.output
 
 
+async def test_claude_runtime_caps_wait_for_unanswered_mcp_status(
+    claude_payload, monkeypatch
+):
+    """A CLI that never answers the status request does not hold the result."""
+    monkeypatch.setattr(adapter, "MCP_STATUS_TIMEOUT_SECONDS", 0.05)
+    clients = install_fake_client(
+        monkeypatch, lambda _client: (message async for message in _one_result())
+    )
+    runtime = await start_runtime(claude_payload)
+
+    async def never_answer():
+        await asyncio.Event().wait()
+
+    clients[0].get_mcp_status.side_effect = never_answer
+
+    result = await asyncio.wait_for(
+        runtime.invoke(*lifecycle_invocation(claude_payload)), timeout=5
+    )
+    await runtime.stop()
+
+    assert result.status is AgentRunStatus.SUCCEEDED
+    assert "mcp" not in result.output
+
+
 async def test_claude_runtime_skips_mcp_status_without_mcp_servers(
     claude_payload, monkeypatch
 ):

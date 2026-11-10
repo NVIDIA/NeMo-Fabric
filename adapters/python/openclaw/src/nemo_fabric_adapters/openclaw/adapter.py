@@ -59,6 +59,8 @@ MAX_DERIVED_PORT_OFFSET = 110
 MAX_TCP_PORT = 65_535
 # Upper bound for reading OpenClaw's MCP server status after an invocation.
 MCP_STATUS_TIMEOUT_SECONDS = 15.0
+# Upper bound on reaping a killed status command whose pipes stay open.
+COMMAND_REAP_SECONDS = 2.0
 # OpenClaw's tools.effective notice for an MCP server whose last connection or
 # tool listing failed in the session.
 MCP_SERVER_DIAGNOSTIC_PREFIX = "mcp-server-diagnostic:"
@@ -740,18 +742,27 @@ async def _command_output(
     *args: str,
     env: dict[str, str],
     timeout: float,
+    process_group: bool = False,
 ) -> str:
+    """Run one OpenClaw CLI command and return its standard output.
+
+    With ``process_group``, the command runs in its own process group so a
+    timeout or cancellation also stops any child it started, and reaping is
+    bounded even if a descendant keeps the output pipes open.
+    """
+    own_group = process_group and os.name != "nt"
     process = await asyncio.create_subprocess_exec(
         str(command),
         *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=env,
+        start_new_session=own_group,
     )
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
     except TimeoutError as error:
-        await _kill_and_reap(process)
+        await _kill_and_reap(process, process_group=process_group)
         command_context = " ".join(args)
         raise lifecycle.LifecycleError(
             "openclaw_command_timeout",
@@ -760,7 +771,7 @@ async def _command_output(
             metadata={"command": command_context, "timeout_seconds": timeout},
         ) from error
     except asyncio.CancelledError:
-        await _kill_and_reap(process)
+        await _kill_and_reap(process, process_group=process_group)
         raise
     if process.returncode != 0:
         stderr_detail = stderr.decode(errors="replace").strip()
@@ -774,13 +785,28 @@ async def _command_output(
     return stdout.decode(errors="replace").strip()
 
 
-async def _kill_and_reap(process: asyncio.subprocess.Process) -> None:
+async def _kill_and_reap(
+    process: asyncio.subprocess.Process, *, process_group: bool = False
+) -> None:
+    """Kill a command (and its process group when requested) and reap it."""
+    if process_group and os.name != "nt":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
     if process.returncode is None:
         try:
             process.kill()
         except ProcessLookupError:
             pass
-    await process.communicate()
+    if not process_group:
+        await process.communicate()
+        return
+    try:
+        await asyncio.wait_for(process.communicate(), timeout=COMMAND_REAP_SECONDS)
+    except TimeoutError:
+        # A descendant outside the group still holds the pipes; stop waiting.
+        logger.warning("OpenClaw command output pipes stayed open after kill")
 
 
 async def _capture_stream(
@@ -1933,6 +1959,7 @@ class OpenClawRuntime:
                     json.dumps({"sessionKey": _session_key(self._agent_id, user)}),
                     env=env,
                     timeout=timeout,
+                    process_group=True,
                 )
             )
         except (lifecycle.LifecycleError, OSError, ValueError):

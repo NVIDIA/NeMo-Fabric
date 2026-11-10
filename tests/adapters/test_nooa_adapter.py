@@ -2278,3 +2278,45 @@ async def test_incompatible_relay_fails_before_target_execution(
     assert result.called is False
     assert result.report.error == "Relay setup failed (RuntimeError)"
     call.assert_not_awaited()
+
+
+async def test_mcp_connection_timeout_does_not_wait_for_slow_cleanup(monkeypatch):
+    """A stalled server that is slow to close is skipped within the grace period."""
+    from nemo_fabric_adapters.nooa import adapter as nooa_adapter
+
+    monkeypatch.setattr(nooa_adapter, "MCP_CONNECT_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(nooa_adapter, "MCP_CONNECT_CANCEL_GRACE_SECONDS", 0.05)
+    cleanup_started = asyncio.Event()
+
+    class StallingManager:
+        """Accept the connection, never list tools, then close slowly."""
+
+        async def create_url_server(self, *args, **kwargs):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cleanup_started.set()
+                await asyncio.sleep(30)
+                raise
+
+    server = nooa_adapter._McpServer(
+        name="slow",
+        transport="streamable-http",
+        target="http://127.0.0.1:9/mcp",
+        args=[],
+        env={},
+        headers={},
+    )
+
+    tool, failure = await asyncio.wait_for(
+        nooa_adapter._connect_mcp_server(StallingManager(), server), timeout=5
+    )
+
+    assert tool is None
+    assert cleanup_started.is_set()
+    assert failure == {
+        "name": "slow",
+        "transport": "streamable-http",
+        "reason": "timed_out",
+        "error_type": "TimeoutError",
+    }

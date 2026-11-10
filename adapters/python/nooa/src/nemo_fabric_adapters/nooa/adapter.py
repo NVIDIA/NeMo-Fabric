@@ -43,6 +43,8 @@ _TERMINAL_REASONS = frozenset({"DONE", "NEED_INPUT", "GET_USER_INPUT"})
 # Unreachable servers usually fail fast; this bounds a server that accepts the
 # connection but never answers, so it is reported instead of stalling startup.
 MCP_CONNECT_TIMEOUT_SECONDS = 60.0
+# How long a timed-out connection may spend closing before startup moves on.
+MCP_CONNECT_CANCEL_GRACE_SECONDS = 5.0
 
 LOGGER = logging.getLogger(__name__)
 
@@ -265,15 +267,24 @@ async def _connect_mcp_server(
             transport=server.transport,
         )
 
-    try:
-        tool = await asyncio.wait_for(create(), timeout=MCP_CONNECT_TIMEOUT_SECONDS)
-    except TimeoutError:
+    task, timed_out = await mcp_availability.wait_bounded(
+        create(),
+        timeout=MCP_CONNECT_TIMEOUT_SECONDS,
+        grace=MCP_CONNECT_CANCEL_GRACE_SECONDS,
+    )
+    if timed_out:
         return None, mcp_availability.unavailable_server(
             server.name,
             server.transport,
             mcp_availability.TIMED_OUT,
             "TimeoutError",
         )
+    if task.cancelled():
+        return None, mcp_availability.unavailable_server(
+            server.name, server.transport, mcp_availability.FAILED, "CancelledError"
+        )
+    try:
+        tool = task.result()
     except Exception as error:
         # NOOA wraps connection failures in a RuntimeError whose cause is the
         # transport error; report that cause's type, never the message.

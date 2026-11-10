@@ -338,6 +338,9 @@ def _mcp_servers(config: AgentConfig) -> dict[str, Any]:
 # Claude Code connection states that leave a configured server unusable.
 # ``pending`` servers are still connecting and ``disabled`` servers were turned
 # off on purpose, so neither is reported.
+# Upper bound on reading MCP status after a turn. The report is diagnostic, so a
+# CLI that does not answer must not hold back an otherwise completed result.
+MCP_STATUS_TIMEOUT_SECONDS = 5.0
 _UNAVAILABLE_MCP_STATUSES = {
     "failed": mcp_availability.FAILED,
     "needs-auth": mcp_availability.AUTHENTICATION_REQUIRED,
@@ -1488,7 +1491,12 @@ class ClaudeRuntime:
 
         if not self._unusable:
             unavailable = await self._unavailable_mcp_servers(
-                client, agent_config, _remaining_timeout(invocation_deadline)
+                client,
+                agent_config,
+                min(
+                    MCP_STATUS_TIMEOUT_SECONDS,
+                    _remaining_timeout(invocation_deadline),
+                ),
             )
             if mcp := mcp_availability.output_block(unavailable or []):
                 output["mcp"] = mcp
