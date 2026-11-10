@@ -2881,11 +2881,24 @@ async def test_status_command_timeout_stops_children_holding_the_pipes(tmp_path)
     assert time.monotonic() - started < 1 + adapter.COMMAND_REAP_SECONDS + 2
     child_pid = int(child_pid_file.read_text())
     for _ in range(50):
-        try:
-            os.kill(child_pid, 0)
-        except ProcessLookupError:
+        if not _process_running(child_pid):
             break
         time.sleep(0.05)
     else:
         os.kill(child_pid, signal.SIGKILL)
         pytest.fail("the status command's child kept running")
+
+
+def _process_running(pid: int) -> bool:
+    """Return whether ``pid`` is alive, counting a zombie as exited."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    stat = Path(f"/proc/{pid}/stat")
+    try:
+        # The state follows the parenthesized command name; "Z" is a zombie.
+        return stat.read_text().rsplit(")", 1)[1].split()[0] != "Z"
+    except (FileNotFoundError, IndexError):
+        # No /proc on this platform, or the process exited while reading.
+        return stat.exists() or not sys.platform.startswith("linux")

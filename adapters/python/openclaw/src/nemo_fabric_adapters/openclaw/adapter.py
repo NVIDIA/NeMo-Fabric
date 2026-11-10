@@ -1939,9 +1939,10 @@ class OpenClawRuntime:
         command, env, port = self._command, self._command_env, self._port
         if not self._mcp_transports or command is None or env is None or port is None:
             return {}
+        # Leave room to reap a killed status command before the invocation deadline.
         timeout = min(
             MCP_STATUS_TIMEOUT_SECONDS,
-            deadline - asyncio.get_running_loop().time(),
+            deadline - asyncio.get_running_loop().time() - COMMAND_REAP_SECONDS,
         )
         if timeout <= 0:
             return {}

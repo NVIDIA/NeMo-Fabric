@@ -1203,6 +1203,40 @@ async def test_runtime_reports_current_unavailable_mcp_servers_on_each_result(
     get_mcp_status.assert_called_with(runtime._hermes_config["mcp_servers"])
 
 
+async def test_runtime_omits_mcp_report_when_hermes_status_fails(monkeypatch):
+    """A failing status read leaves the completed turn intact without a report."""
+    mock_turn = MagicMock(
+        return_value=({"final_response": "done", "completed": True}, "")
+    )
+    monkeypatch.setattr(adapter, "_invoke_hermes_turn", mock_turn)
+    agent_config = _partial_mcp_config()
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._agent_config = agent_config
+    runtime._model_config = agent_config.models["default"]
+    runtime._runtime_id = "runtime-partial-mcp"
+    runtime._agent = MagicMock()
+    runtime._hermes_config = configuration.build_hermes_config(
+        agent_config, workspace="."
+    )
+    get_mcp_status = _install_mcp_status(monkeypatch)
+    get_mcp_status.side_effect = RuntimeError("status secret-token")
+    request, context = _invocation(
+        {
+            "runtime_context": _runtime_context(
+                runtime_id="runtime-partial-mcp"
+            ).to_mapping(),
+            "request": {"input": "what time is it"},
+        }
+    )
+
+    result = await runtime.invoke(request, context)
+
+    assert result.status is AgentRunStatus.SUCCEEDED
+    assert "mcp" not in result.output
+    assert "secret-token" not in json.dumps(result.output)
+
+
 async def test_runtime_starts_when_mcp_servers_are_unavailable(
     monkeypatch, tmp_path: Path, capsys
 ):

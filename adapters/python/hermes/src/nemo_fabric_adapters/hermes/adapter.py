@@ -469,13 +469,19 @@ class HermesRuntime:
             return []
 
         try:
-            from tools.mcp_tool_discovery import get_mcp_status
-        except ModuleNotFoundError as error:
-            if error.name != "tools.mcp_tool_discovery":
-                raise
-            from tools.mcp_tool import get_mcp_status
+            try:
+                from tools.mcp_tool_discovery import get_mcp_status
+            except ModuleNotFoundError as error:
+                if error.name != "tools.mcp_tool_discovery":
+                    raise
+                from tools.mcp_tool import get_mcp_status
 
-        statuses = await asyncio.to_thread(get_mcp_status, configured)
+            statuses = await asyncio.to_thread(get_mcp_status, configured)
+        except Exception:
+            # The report is diagnostic: omit it rather than fail start or a turn.
+            LOGGER.warning("Hermes MCP server status could not be observed")
+            self._mcp_unavailable = []
+            return []
         servers = agent_config.mcp.servers
         unavailable = [
             mcp_availability.unavailable_server(

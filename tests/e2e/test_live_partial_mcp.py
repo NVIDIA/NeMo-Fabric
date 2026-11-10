@@ -187,7 +187,10 @@ async def test_harness_starts_with_unavailable_mcp_servers(
         [MCP_PYTHON, "-c", "import mcp_server_time"], capture_output=True
     )
     if probe.returncode != 0:
-        pytest.skip(f"{MCP_PYTHON} cannot import mcp_server_time")
+        pytest.fail(
+            f"{MCP_PYTHON} cannot import mcp_server_time; set FABRIC_LIVE_MCP_PYTHON "
+            "to an interpreter that has it"
+        )
 
     from examples.code_review_agent import with_relay
     from nemo_fabric import (
