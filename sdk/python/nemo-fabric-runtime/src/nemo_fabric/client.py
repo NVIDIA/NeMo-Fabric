@@ -557,9 +557,24 @@ class Fabric:
             request=request,
         )
         native = self._require_native_module("run")
-        return RunResult.from_mapping(
-            await _run_native_lifecycle(native, plan.to_mapping(), request_payload)
-        )
+        try:
+            return RunResult.from_mapping(
+                await _run_native_lifecycle(native, plan.to_mapping(), request_payload)
+            )
+        except (FabricError, asyncio.CancelledError) as error:
+            # The selected report already includes the caller and guest SDK facts.
+            # Optional evidence must not change the lifecycle exception or cause.
+            if isinstance(error, FabricError):
+                evidence = error.details.get("runtime_evidence")
+                if not isinstance(evidence, dict):
+                    evidence = error.details["runtime_evidence"] = {}
+            else:
+                evidence = getattr(error, "_fabric_runtime_evidence", {})
+                error._fabric_runtime_evidence = evidence
+            evidence["execution"] = (
+                plan.to_mapping()["config"].get("provenance", {}).get("reports")
+            )
+            raise
 
     async def start_runtime(
         self,

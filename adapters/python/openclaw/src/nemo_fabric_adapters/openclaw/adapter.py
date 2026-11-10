@@ -34,6 +34,7 @@ from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import local_interfaces
+from nemo_fabric_adapters.common import mcp_availability
 from nemo_fabric_adapters.common import openai_chat
 from nemo_fabric_adapters.common import utils as common_utils
 from nemo_fabric_adapters.openclaw import _windows_job
@@ -56,6 +57,13 @@ SUPPORTED_OPENCLAW_VERSIONS = frozenset({"2026.9.34"})
 MAX_PORT_ATTEMPTS = 20
 MAX_DERIVED_PORT_OFFSET = 110
 MAX_TCP_PORT = 65_535
+# Upper bound for reading OpenClaw's MCP server status after an invocation.
+MCP_STATUS_TIMEOUT_SECONDS = 15.0
+# Upper bound on reaping a killed status command whose pipes stay open.
+COMMAND_REAP_SECONDS = 2.0
+# OpenClaw's tools.effective notice for an MCP server whose last connection or
+# tool listing failed in the session.
+MCP_SERVER_DIAGNOSTIC_PREFIX = "mcp-server-diagnostic:"
 
 
 logger = logging.getLogger(__name__)
@@ -489,6 +497,41 @@ def _mcp_config(config: contract.AgentConfig) -> dict[str, Any]:
     return result
 
 
+def _session_key(agent_id: str, user: str) -> str:
+    """Return the session key OpenClaw derives for a Chat Completions ``user``."""
+
+    return f"agent:{agent_id}:openai-user:{user}".lower()
+
+
+def _unavailable_mcp_servers(
+    inventory: Any, transports: dict[str, str]
+) -> list[dict[str, str]]:
+    """Return configured servers that OpenClaw's tool inventory reports as failed."""
+
+    notices = inventory.get("notices") if isinstance(inventory, dict) else None
+    entries: dict[str, dict[str, str]] = {}
+    for notice in notices if isinstance(notices, list) else []:
+        notice_id = notice.get("id") if isinstance(notice, dict) else None
+        if not isinstance(notice_id, str) or not notice_id.startswith(
+            MCP_SERVER_DIAGNOSTIC_PREFIX
+        ):
+            continue
+        name = notice_id.removeprefix(MCP_SERVER_DIAGNOSTIC_PREFIX)
+        if name not in transports or name in entries:
+            continue
+        # The message is used only to classify the failure and is never reported.
+        message = notice.get("message")
+        timed_out = isinstance(message, str) and re.search(
+            r"\btimed out\b", message, re.IGNORECASE
+        )
+        entries[name] = mcp_availability.unavailable_server(
+            name,
+            transports[name],
+            mcp_availability.TIMED_OUT if timed_out else mcp_availability.FAILED,
+        )
+    return list(entries.values())
+
+
 def _openclaw_config(
     config: contract.AgentConfig,
     context: contract.RuntimeContext,
@@ -699,18 +742,27 @@ async def _command_output(
     *args: str,
     env: dict[str, str],
     timeout: float,
+    process_group: bool = False,
 ) -> str:
+    """Run one OpenClaw CLI command and return its standard output.
+
+    With ``process_group``, the command runs in its own process group so a
+    timeout or cancellation also stops any child it started, and reaping is
+    bounded even if a descendant keeps the output pipes open.
+    """
+    own_group = process_group and os.name != "nt"
     process = await asyncio.create_subprocess_exec(
         str(command),
         *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=env,
+        start_new_session=own_group,
     )
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
     except TimeoutError as error:
-        await _kill_and_reap(process)
+        await _kill_and_reap(process, process_group=process_group)
         command_context = " ".join(args)
         raise lifecycle.LifecycleError(
             "openclaw_command_timeout",
@@ -719,7 +771,7 @@ async def _command_output(
             metadata={"command": command_context, "timeout_seconds": timeout},
         ) from error
     except asyncio.CancelledError:
-        await _kill_and_reap(process)
+        await _kill_and_reap(process, process_group=process_group)
         raise
     if process.returncode != 0:
         stderr_detail = stderr.decode(errors="replace").strip()
@@ -733,13 +785,28 @@ async def _command_output(
     return stdout.decode(errors="replace").strip()
 
 
-async def _kill_and_reap(process: asyncio.subprocess.Process) -> None:
+async def _kill_and_reap(
+    process: asyncio.subprocess.Process, *, process_group: bool = False
+) -> None:
+    """Kill a command (and its process group when requested) and reap it."""
+    if process_group and os.name != "nt":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
     if process.returncode is None:
         try:
             process.kill()
         except ProcessLookupError:
             pass
-    await process.communicate()
+    if not process_group:
+        await process.communicate()
+        return
+    try:
+        await asyncio.wait_for(process.communicate(), timeout=COMMAND_REAP_SECONDS)
+    except TimeoutError:
+        # A descendant outside the group still holds the pipes; stop waiting.
+        logger.warning("OpenClaw command output pipes stayed open after kill")
 
 
 async def _capture_stream(
@@ -892,6 +959,7 @@ class OpenClawRuntime:
     """One OpenClaw Gateway lifecycle or runtime-scoped connection."""
 
     def __init__(self) -> None:
+        """Create an unstarted runtime with no OpenClaw Gateway."""
         self._client: httpx.AsyncClient | None = None
         self._config: contract.AgentConfig | None = None
         self._context: contract.RuntimeContext | None = None
@@ -916,6 +984,10 @@ class OpenClawRuntime:
         self._windows_job: int | None = None
         self._service_host = False
         self._active_invoke_task: asyncio.Task | None = None
+        self._command_env: dict[str, str] | None = None
+        self._mcp_transports: dict[str, str] = {}
+        self._mcp_warned: set[str] = set()
+        self._mcp_status_failed = False
 
     async def check(self, level: str) -> dict[str, Any]:
         """Check Gateway or runtime health using native endpoints.
@@ -1097,6 +1169,7 @@ class OpenClawRuntime:
         return observed("passed", None)
 
     async def start(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        """Write the OpenClaw configuration and start or attach to the Gateway."""
         config: contract.AgentConfig = payload["config"]
         context = contract.RuntimeContext.from_mapping(payload["runtime_context"])
         settings = config.harness.settings if config.harness else {}
@@ -1324,6 +1397,11 @@ class OpenClawRuntime:
         self._config = config
         self._context = context
         self._command = command
+        self._command_env = child_env
+        self._mcp_transports = {
+            name: server["transport"]
+            for name, server in generated.get("mcp", {}).get("servers", {}).items()
+        }
         self._port = port
         self._token = token
         self._gateway_url = f"http://127.0.0.1:{port}"
@@ -1765,6 +1843,7 @@ class OpenClawRuntime:
         request: contract.AgentRunRequest,
         context: contract.RuntimeContext,
     ) -> contract.AgentRunResult:
+        """Run one Gateway turn and report MCP availability with its result."""
         gateway_url = self._gateway_url
         if gateway_url is None and self._port is not None:
             gateway_url = f"http://127.0.0.1:{self._port}"
@@ -1796,8 +1875,9 @@ class OpenClawRuntime:
             }
         )
         model = _selected_model(self._config)
+        deadline = lifecycle.invocation_deadline(context)
         try:
-            async with asyncio.timeout_at(lifecycle.invocation_deadline(context)):
+            async with asyncio.timeout_at(deadline):
                 text, usage = await self._invoke_monitored_gateway(
                     self._client,
                     f"{gateway_url}/v1/chat/completions",
@@ -1813,7 +1893,7 @@ class OpenClawRuntime:
         except httpx.HTTPStatusError as error:
             return contract.AgentRunResult(
                 status=contract.AgentRunStatus.FAILED,
-                output={},
+                output=await self._mcp_output(context.runtime_id, deadline),
                 error=contract.AgentRunError(
                     code="openclaw_http_error",
                     message=f"OpenClaw Gateway returned HTTP status {error.response.status_code}",
@@ -1844,11 +1924,66 @@ class OpenClawRuntime:
             ) from error
         return contract.AgentRunResult(
             status=contract.AgentRunStatus.SUCCEEDED,
-            output={"response": text},
+            output={
+                "response": text,
+                **await self._mcp_output(context.runtime_id, deadline),
+            },
             usage=usage,
         )
 
+    async def _mcp_output(self, user: str, deadline: float) -> dict[str, Any]:
+        """Return the ``mcp`` output block from OpenClaw's own session tool inventory.
+
+        OpenClaw connects MCP servers per session, skips a server that fails to
+        start, and retries it on a later run. Its ``tools.effective`` Gateway
+        method reports the current failures without reconnecting any server.
+        """
+
+        command, env, port = self._command, self._command_env, self._port
+        if not self._mcp_transports or command is None or env is None or port is None:
+            return {}
+        # Leave room to reap a killed status command before the invocation deadline.
+        timeout = min(
+            MCP_STATUS_TIMEOUT_SECONDS,
+            deadline - asyncio.get_running_loop().time() - COMMAND_REAP_SECONDS,
+        )
+        if timeout <= 0:
+            return {}
+        try:
+            inventory = json.loads(
+                await _command_output(
+                    command,
+                    "gateway",
+                    "call",
+                    "tools.effective",
+                    "--json",
+                    "--port",
+                    str(port),
+                    "--params",
+                    json.dumps({"sessionKey": _session_key(self._agent_id, user)}),
+                    env=env,
+                    timeout=timeout,
+                    process_group=True,
+                )
+            )
+        except (lifecycle.LifecycleError, OSError, ValueError):
+            if not self._mcp_status_failed:
+                self._mcp_status_failed = True
+                logger.warning(
+                    "OpenClaw could not report MCP server availability", exc_info=True
+                )
+            return {}
+        unavailable = _unavailable_mcp_servers(inventory, self._mcp_transports)
+        mcp_availability.warn(
+            "OpenClaw",
+            [entry for entry in unavailable if entry["name"] not in self._mcp_warned],
+        )
+        self._mcp_warned.update(entry["name"] for entry in unavailable)
+        block = mcp_availability.output_block(unavailable)
+        return {"mcp": block} if block else {}
+
     async def stop(self) -> None:
+        """Stop the owned Gateway and release runtime state."""
         cancellation: asyncio.CancelledError | None = None
         self._stopping = True
         if self._interface_directory is not None:
@@ -1966,6 +2101,8 @@ class OpenClawRuntime:
         self._config = None
         self._context = None
         self._command = None
+        self._command_env = None
+        self._mcp_transports = {}
         self._port = None
         self._token = None
         self._gateway_url = None

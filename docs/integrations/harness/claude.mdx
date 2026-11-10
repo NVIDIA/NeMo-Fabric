@@ -72,6 +72,8 @@ MCP servers, instructions, turn limit, tool policy, and telemetry. The
 resolved Claude descriptor accepts only these Claude-specific
 `harness.settings` keys:
 
+The runtime starts even when some configured MCP servers cannot connect. After each turn, the adapter reads Claude Code's own MCP connection state (`get_mcp_status()`). Each result lists the configured servers that Claude Code could not use under `output.mcp.unavailable_servers`, with the server `name`, `transport`, and `reason` (`failed`, or `authentication_required` for a server that needs authentication). The adapter also writes a warning to standard error the first time a server is unavailable in a runtime. Error messages are not reported, because they can contain URLs, headers or other credentials. Servers that are still connecting are not reported. Each result reflects the current state, so a server that reconnects within the runtime leaves the report, and every new runtime connects all servers again. Invalid server configuration, such as an unsupported transport or authentication mode, still fails startup.
+
 Claude supports both `replace` and `append` system instructions. `append`
 preserves the `claude_code` preset and adds the configured content after it.
 

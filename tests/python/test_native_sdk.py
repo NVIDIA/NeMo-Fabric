@@ -149,8 +149,9 @@ async def test_native_deadline_keeps_type_and_evicts_runtime(
     assert runtime.status == RuntimeStatus.STOPPED
 
 
+@pytest.mark.parametrize("sampling", [False, True])
 def test_runner_real_inner_deadline_preserves_failure_evidence(
-    hermes_shim_agent_dir, tmp_path
+    hermes_shim_agent_dir, tmp_path, sampling
 ):
     from nemo_fabric.integrations.harbor.models import FabricRunPayload
     from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
@@ -163,7 +164,10 @@ def test_runner_real_inner_deadline_preserves_failure_evidence(
                 "resolution": "preinstalled",
             },
             "discovery": {"local_paths": ["adapters"]},
-            "runtime": {"timeout_seconds": 1},
+            "runtime": {"timeout_seconds": 1, "artifacts": str(tmp_path / "artifacts")},
+            "system_stats": {"sampling": {"interval_ms": 100, "max_samples": 8}}
+            if sampling
+            else {},
         }
     )
     payload = FabricRunPayload(
@@ -193,12 +197,30 @@ def test_runner_real_inner_deadline_preserves_failure_evidence(
     failure = FabricRunnerFailure.model_validate_json(result.read_text())
     assert failure.runner_error.code == "timeout"
     assert failure.runner_error.stage == "invoke"
-    assert failure.runner_error.details == {
-        "owner": "fabric_runtime",
-        "timeout_seconds": 1.0,
-        "cause_code": "host_timeout",
-    }
+    assert failure.runner_error.details["owner"] == "fabric_runtime"
+    assert failure.runner_error.details["timeout_seconds"] == 1.0
+    assert failure.runner_error.details["cause_code"] == "host_timeout"
     assert not failure.runner_error.retryable
+
+    assert failure.evidence.runtime_id.startswith("runtime-")
+    assert failure.evidence.request_id == payload.request.request_id
+    assert failure.evidence.cleanup == "completed"
+    assert failure.evidence.usage is None
+    assert failure.evidence.coverage["usage"] == "missing"
+    assert failure.evidence.execution is not None
+    assert failure.evidence.partial_result is None
+    assert "status" not in json.loads(result.read_text())
+    if sampling:
+        assert failure.evidence.system_stats["elapsed_seconds"] > 0
+        assert failure.evidence.system_stats["sampled"]["sample_count"] > 0
+        assert failure.evidence.coverage["system_stats"] == "partial"
+        assert {ref["kind"] for ref in failure.evidence.artifacts} >= {
+            "system_stats_summary",
+            "system_stats_samples",
+        }
+    else:
+        assert failure.evidence.system_stats is None
+        assert failure.evidence.coverage["system_stats"] == "missing"
 
 
 async def test_adapter_python_selects_python_adapter_interpreter(
@@ -460,11 +482,10 @@ async def test_adapter_deadline_keeps_normalized_code_and_native_cause(
         )
     assert caught.value.code == "timeout"
     assert caught.value.stage == "invoke"
-    assert caught.value.details == {
-        "owner": "adapter",
-        "timeout_seconds": 300,
-        "cause_code": "strands_prompt_timeout",
-    }
+    assert caught.value.details["owner"] == "adapter"
+    assert caught.value.details["timeout_seconds"] == 300
+    assert caught.value.details["cause_code"] == "strands_prompt_timeout"
+    assert caught.value.details["runtime_evidence"]["cleanup"] == "completed"
     assert isinstance(caught.value.__cause__, TimeoutError)
 
 

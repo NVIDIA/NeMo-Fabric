@@ -59,6 +59,14 @@ Workflow selection preserves the existing skill, MCP, environment, and lifecycle
 contracts. Capability admission is a metadata claim; verify task execution,
 accounting, and any requested skill/MCP behavior separately.
 
+## Failure Evidence
+
+Raised lifecycle failures retain an optional versioned `evidence` object beside `runner_error`. It records only obtained identities, cleanup events, selected software evidence, validated persisted stats and artifact references. Each dimension has explicit coverage; missing usage and cost remain unknown, and absent samples are not reconstructed. A result obtained before a later publication failure is retained as `partial_result`, without changing the failure into a successful run. Partial usage remains evidence and does not populate Harbor's final accounting totals.
+
+The envelope limits inline evidence to 256 KiB, artifact and telemetry references to 64 entries each, and lifecycle events to 256. Malformed optional observations are marked invalid while the original runner error and valid sibling observations remain available. Stats recovery reads only a matching invocation summary under the obtained runtime's configured artifact root; it does not parse raw invocation payloads or scan shared temporary storage. Sampling-disabled failures can therefore lack persisted stats. Abrupt process termination can prevent any failure envelope from being written.
+
+Use matching host bridge and task runner versions when enabling this transport. The new consumer accepts legacy error-only documents. Older consumers reject the new optional field rather than silently interpreting an incompatible failure document.
+
 ## Resource Stats
 
 For an example of collecting resource stats inside a task container, follow the [SWE-bench walkthrough](../../../examples/harbor/swebench/README.md#run-deep-agents-with-resource-stats). The [Resource Usage and Stats](../../sdk/system-stats.mdx) guide explains the configuration model, collection scope, and metric interpretation.

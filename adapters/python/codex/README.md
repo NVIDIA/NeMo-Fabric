@@ -110,6 +110,17 @@ Use normalized `FabricConfig` fields for portable configuration:
 - `mcp` maps stdio, HTTP, and streamable HTTP servers into the Codex thread's
   `mcp_servers` configuration. For stdio, set `url` to the executable and pass
   each command-line argument as a separate `args` element.
+- Codex starts the configured MCP servers itself when the runtime starts and
+  leaves out the tools of a server that fails; the runtime starts with the
+  tools of the remaining servers. Every result from that runtime reports the
+  servers whose latest Codex startup status is failed under
+  `output.mcp.unavailable_servers` (`name`, `transport`, and `reason` of
+  `failed`, or `authentication_required` when Codex reports that stored OAuth
+  credentials need reauthentication), and the adapter writes a warning to
+  standard error. Codex error messages are omitted because they can carry
+  credentials. A server that is still starting is not reported, and a new
+  runtime starts every server again. Invalid server configuration, such as an
+  unsupported transport or authentication mode, still fails startup.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter
   registers each directory as a process-scoped Codex skill root so Codex can
   select matching skills through its normal discovery behavior.

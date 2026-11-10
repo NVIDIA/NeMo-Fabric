@@ -30,6 +30,12 @@ export interface RuntimeContext {
    */
   runtime_id: string;
   /**
+   * Absolute folder for the adapter's native state, present when
+   * `runtime.keep_state` is set. Every runtime of the agent gets the same
+   * folder, and Fabric lets only one running runtime use it at a time.
+   */
+  state_dir?: string | null;
+  /**
    * Runtime telemetry context generated for this invocation.
    */
   telemetry?: RuntimeTelemetryContext | null;

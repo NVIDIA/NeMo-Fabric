@@ -257,6 +257,14 @@ pub enum FabricError {
         /// Service handle id.
         service_id: String,
     },
+    /// Another runtime holds the agent's kept state folder.
+    #[error(
+        "agent state folder {path} is in use by another runtime; stop that runtime before starting another"
+    )]
+    StateInUse {
+        /// The agent's state folder.
+        path: PathBuf,
+    },
     /// A service cannot be released while runtimes still use it.
     #[error("service `{service_id}` has active runtimes: {runtime_ids:?}")]
     ServiceInUse {

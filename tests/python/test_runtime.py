@@ -1197,7 +1197,10 @@ async def test_native_deadline_details_survive_sdk_and_cleanup(
     mock_native.invoke_runtime.side_effect = native_error
     with pytest.raises(FabricRuntimeError) as caught:
         await native_client.run(_config(), input="test")
-    assert caught.value.details == native_error.details
+    for name, value in native_error.details.items():
+        assert caught.value.details[name] == value
+    assert caught.value.details["runtime_evidence"]["runtime_id"] == "runtime-1"
+    assert caught.value.details["runtime_evidence"]["cleanup"] == "completed"
     assert caught.value.__cause__ is native_error
     mock_native.stop_runtime.assert_called_once()
 
@@ -1625,10 +1628,15 @@ async def test_runtime_status_cancelled_invocation_releases_live_index(
     )
     assert report.status == "stopped"
     assert report.handle is None
+    assert runtime.runtime_id not in native_client._runtimes
     del task
     del runtime
-    await asyncio.sleep(0)
-    gc.collect()
+    # Executor threads can briefly retain completed work after waking the loop.
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 2
+    while reference() is not None and loop.time() < deadline:
+        gc.collect()
+        await asyncio.sleep(0.01)
     assert reference() is None
 
 

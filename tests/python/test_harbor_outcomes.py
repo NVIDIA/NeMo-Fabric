@@ -615,3 +615,453 @@ async def test_deadline_verifier_policy_and_cleanup(
         assert "1200" not in str(failure)
     else:
         trial._record_exception.assert_not_called()
+
+
+@pytest.mark.parametrize("stage", ["start", "invoke"])
+def test_runner_retains_obtained_failure_evidence(runner_cli, monkeypatch, stage):
+    from nemo_fabric import FabricRuntimeError
+    from nemo_fabric.integrations.harbor import runner
+
+    error = FabricRuntimeError(
+        "original",
+        stage=stage,
+        code="timeout",
+        details={
+            "owner": "fabric_runtime",
+            "timeout_seconds": 300,
+            "cause_code": "host_timeout",
+            "runtime_evidence": {
+                "request_id": "request-test",
+                "runtime_id": "runtime-test" if stage == "invoke" else None,
+                "execution": "x" * 262145,
+                "private": "EVIDENCE_PRIVATE_SENTINEL",
+            },
+        },
+    )
+    monkeypatch.setattr(runner, "run", AsyncMock(side_effect=error))
+    with pytest.raises(SystemExit):
+        runner.main()
+    document = json.loads(runner_cli.read_text())
+    assert document["runner_error"]["message"] == "original"
+    assert document["runner_error"]["details"] == {
+        "owner": "fabric_runtime",
+        "timeout_seconds": 300,
+        "cause_code": "host_timeout",
+    }
+    assert document["evidence"]["execution"] is None
+    assert document["evidence"]["coverage"]["execution"] in {"invalid", "truncated"}
+    serialized = json.dumps(document)
+    assert "EVIDENCE_PRIVATE_SENTINEL" not in serialized
+    assert len(serialized.encode()) < 262144
+    assert document["evidence"]["request_id"] == "request-test"
+    assert document["evidence"]["runtime_id"] == (
+        "runtime-test" if stage == "invoke" else None
+    )
+    assert document["evidence"]["coverage"]["usage"] == "missing"
+    assert document["evidence"]["usage"] is None
+
+
+async def test_native_failure_retains_runtime_identity_and_cleanup(monkeypatch):
+    from nemo_fabric import FabricRuntimeError
+    from nemo_fabric.runtime import _run_native_lifecycle
+
+    native = MagicMock()
+    original = FabricRuntimeError(
+        "original",
+        stage="invoke",
+        code="timeout",
+        details={"runtime_evidence": {"usage": {"output_tokens": 7}}},
+    )
+    native.start_runtime.return_value = json.dumps({"runtime_id": "runtime-test"})
+    native.invoke_runtime.side_effect = original
+    native.stop_runtime.return_value = "[]"
+    with pytest.raises(FabricRuntimeError) as caught:
+        await _run_native_lifecycle(native, {}, {"request_id": "request-test"})
+    assert caught.value is original
+    assert caught.value.details["runtime_evidence"]["runtime_id"] == "runtime-test"
+    assert caught.value.details["runtime_evidence"]["cleanup"] == "completed"
+    assert caught.value.details["runtime_evidence"]["usage"]["output_tokens"] == 7
+    native.stop_runtime.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        {"system_stats": {"elapsed_seconds": -1}},
+        {"usage": {"input_tokens": -1}},
+        {
+            "artifacts": [
+                {},
+                {"name": "trace", "kind": "atof", "path": "/logs/agent/trace.jsonl"},
+            ]
+        },
+        {"events": [{}]},
+        {"runtime_id": {"secret": "sentinel"}},
+        {"usage": {"cost_usd": float("nan")}},
+        {"execution": "x" * 262145},
+    ],
+)
+def test_malformed_optional_evidence_preserves_original_failure(malformed):
+    from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
+
+    failure = FabricRunnerFailure.model_validate(
+        {
+            "runner_error": {
+                "stage": "invoke",
+                "code": "timeout",
+                "message": "original",
+            },
+            "evidence": malformed,
+        }
+    )
+    assert failure.runner_error.code == "timeout"
+    assert failure.runner_error.message == "original"
+    assert any(
+        state in ("invalid", "truncated")
+        for state in failure.evidence.coverage.values()
+    )
+    if "artifacts" in malformed:
+        assert len(failure.evidence.artifacts) == 1
+
+
+def test_failure_evidence_without_observations_is_explicit(runner_cli, monkeypatch):
+    from nemo_fabric.integrations.harbor import runner
+
+    monkeypatch.setattr(runner, "run", AsyncMock(side_effect=RuntimeError("secret")))
+    with pytest.raises(SystemExit):
+        runner.main()
+    evidence = json.loads(runner_cli.read_text())["evidence"]
+    assert evidence["partial_result"] is None
+    assert evidence["usage"] is None
+    assert evidence["system_stats"] is None
+    assert evidence["runtime_id"] is None
+    assert evidence["request_id"] is not None
+    assert evidence["coverage"]["identity"] == "partial"
+    assert evidence["events"] == []
+    assert evidence["coverage"]["usage"] == "missing"
+
+
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+async def test_cancellation_retains_completed_native_cleanup(cleanup_fails):
+    import threading
+    from nemo_fabric.runtime import _run_native_lifecycle
+
+    ready, release = threading.Event(), threading.Event()
+    native = MagicMock()
+    native.start_runtime.return_value = json.dumps({"runtime_id": "runtime-test"})
+
+    def invoke(*args):
+        ready.set()
+        assert release.wait(5)
+        raise RuntimeError("invoke failed")
+
+    native.invoke_runtime.side_effect = invoke
+    if cleanup_fails:
+        native.stop_runtime.side_effect = RuntimeError("stop failed")
+    else:
+        native.stop_runtime.return_value = "[]"
+    task = asyncio.create_task(
+        _run_native_lifecycle(native, {}, {"request_id": "request-test"})
+    )
+    assert await asyncio.to_thread(ready.wait, 5)
+    task.cancel()
+    release.set()
+    with pytest.raises(asyncio.CancelledError) as caught:
+        await task
+    native.stop_runtime.assert_called_once()
+    evidence = caught.value._fabric_runtime_evidence
+    assert evidence["runtime_id"] == "runtime-test"
+    assert evidence["cleanup"] == ("failed" if cleanup_fails else "completed")
+
+
+def test_runner_serializes_cancellation_without_turning_it_into_success(
+    runner_cli, monkeypatch
+):
+    from nemo_fabric.integrations.harbor import runner
+
+    error = asyncio.CancelledError()
+    error._fabric_runtime_evidence = {
+        "runtime_id": "runtime-test",
+        "cleanup": "completed",
+    }
+    monkeypatch.setattr(runner, "run", AsyncMock(side_effect=error))
+    with pytest.raises(asyncio.CancelledError):
+        runner.main()
+    document = json.loads(runner_cli.read_text())
+    assert document["evidence"]["cleanup"] == "completed"
+    assert "status" not in document
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        None,
+        "identity",
+        "json",
+        "oversized",
+        "negative_stats",
+        "nonfinite_stats",
+        "overflow_stats",
+    ],
+)
+def test_failure_recovers_only_matching_bounded_stats(tmp_path, malformed):
+    from nemo_fabric import FabricRuntimeError
+    from nemo_fabric.integrations.harbor.failure import failure_evidence
+    from nemo_fabric.integrations.harbor.models import FabricRunPayload
+    from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
+
+    payload = FabricRunPayload(
+        config=build_harbor_config(adapter_id="test.adapter", workspace=str(tmp_path)),
+        config_base_dir=str(tmp_path),
+        request={"request_id": "request-test", "input": "test"},
+    )
+    payload.config.runtime.artifacts = str(tmp_path / "artifacts")
+    home = tmp_path / "artifacts" / ".fabric" / "runtime-test" / "invocation-test"
+    home.mkdir(parents=True)
+    (home.parent / "startup").mkdir()
+    stats = {
+        "elapsed_seconds": 0.25,
+        "before": {"status": "unavailable", "reason": "not available"},
+        "after": {"status": "unsupported", "reason": "not supported"},
+    }
+    if malformed == "negative_stats":
+        stats["elapsed_seconds"] = -1
+    elif malformed == "nonfinite_stats":
+        stats["elapsed_seconds"] = float("nan")
+    elif malformed == "overflow_stats":
+        stats["elapsed_seconds"] = 10**400
+    summary = {
+        "schema_version": "fabric.system_stats/v1alpha1",
+        "runtime_id": "runtime-test",
+        "invocation_id": "invocation-test",
+        "request_id": "wrong" if malformed == "identity" else "request-test",
+        "system_stats": stats,
+    }
+    summary_json = json.dumps(summary)
+    if malformed == "json":
+        summary_json = "invalid JSON"
+    elif malformed == "oversized":
+        summary_json += " " * 262145
+    (home / "system-stats-summary.json").write_text(summary_json)
+    (home / "adapter-invocation.json").write_text("secret sentinel")
+    (home / "system-stats.jsonl").write_text("unparsed samples")
+    error = FabricRuntimeError(
+        "original", details={"runtime_evidence": {"runtime_id": "runtime-test"}}
+    )
+    evidence = failure_evidence(error, payload)
+    assert evidence["runtime_id"] == "runtime-test"
+    assert evidence["request_id"] == "request-test"
+    expected_kinds = {"fabric_invocation", "system_stats_samples"}
+    if malformed is None:
+        expected_kinds.add("system_stats_summary")
+    assert {item["kind"] for item in evidence["artifacts"]} == expected_kinds
+    assert "secret sentinel" not in json.dumps(evidence)
+    assert "unparsed samples" not in json.dumps(evidence)
+    if malformed:
+        assert evidence["system_stats"] is None
+        assert evidence["coverage"]["system_stats"] == (
+            "truncated" if malformed == "oversized" else "invalid"
+        )
+    else:
+        assert evidence["system_stats"]["elapsed_seconds"] == 0.25
+        assert evidence["coverage"]["system_stats"] == "partial"
+    assert evidence["usage"] is None
+    assert evidence["coverage"]["usage"] == "missing"
+
+
+async def test_failure_consumer_keeps_partial_usage_out_of_totals(bridge):
+    from harbor.models.agent.context import AgentContext
+
+    agent, environment, document = bridge
+    document.clear()
+    document.update(
+        runner_error={"stage": "start", "code": "timeout", "message": "original"},
+        evidence={"usage": {"output_tokens": 7}},
+    )
+    context = AgentContext(
+        n_output_tokens=100,
+        cost_usd=1,
+        metadata={
+            "caller": {"source": "kept"},
+            "fabric": {"telemetry_validation": {"status": "missing"}},
+        },
+    )
+    environment.exec.return_value.return_code = 1
+    with pytest.raises(RuntimeError, match="original"):
+        await agent.run("test", environment, context)
+    agent.populate_context_post_run(context)
+    assert context.metadata["fabric"]["evidence"]["usage"]["output_tokens"] == 7
+    assert context.n_output_tokens is None
+    assert context.cost_usd is None
+    assert context.metadata["caller"] == {"source": "kept"}
+    assert context.metadata["fabric"]["telemetry_validation"] == {"status": "missing"}
+    specs = list(agent.logs_dir.glob("fabric-run-*.json"))
+    assert len(specs) == 1
+    spec = json.loads(specs[0].read_text())
+    assert spec["config"]["harness"]["adapter_id"] == "test.adapter"
+    assert spec["request"]["input"] == "test"
+
+
+def test_runner_retains_result_obtained_before_publication_failure(
+    runner_cli, monkeypatch, run_result
+):
+    from nemo_fabric import Fabric
+    from nemo_fabric.integrations.harbor import runner
+
+    monkeypatch.setattr(Fabric, "run", AsyncMock(return_value=run_result))
+    monkeypatch.setattr(
+        runner, "publish_telemetry_evidence", MagicMock(side_effect=OSError("secret"))
+    )
+    with pytest.raises(SystemExit):
+        runner.main()
+    document = json.loads(runner_cli.read_text())
+    assert document["runner_error"]["message"] == "Fabric runner failed (OSError)"
+    assert document["evidence"]["partial_result"]["output"] == {"response": "done"}
+    assert "status" not in document
+    assert document["evidence"]["coverage"]["partial_result"] == "partial"
+
+
+def test_failure_evidence_preserves_cause_types_without_raw_diagnostics():
+    from nemo_fabric import FabricRuntimeError
+    from nemo_fabric.integrations.harbor.failure import failure_evidence
+
+    try:
+        try:
+            raise OSError("credential sentinel")
+        except OSError as cause:
+            raise FabricRuntimeError("original", code="timeout") from cause
+    except FabricRuntimeError as error:
+        evidence = failure_evidence(error, None)
+    assert evidence["exception_type"] == "FabricRuntimeError"
+    assert evidence["cause_types"] == ["OSError"]
+    assert "credential sentinel" not in json.dumps(evidence)
+
+
+def test_oversized_optional_dimension_keeps_valid_siblings():
+    from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
+
+    failure = FabricRunnerFailure.model_validate(
+        {
+            "runner_error": {"message": "original"},
+            "evidence": {
+                "usage": {"output_tokens": 7},
+                "artifacts": [
+                    {
+                        "name": "trace",
+                        "kind": "atof",
+                        "path": "/logs/trace",
+                        "metadata": {"large": "x" * 262145},
+                    }
+                ],
+            },
+        }
+    )
+    assert failure.evidence.usage["output_tokens"] == 7
+    assert failure.evidence.artifacts == []
+    assert failure.evidence.coverage["artifacts"] == "truncated"
+
+
+def test_reference_limits_survive_producer_consumer_roundtrip():
+    from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
+
+    failure = FabricRunnerFailure.model_validate(
+        {
+            "runner_error": {"message": "original"},
+            "evidence": {
+                "artifacts": [
+                    {"name": "trace", "kind": "atof", "path": f"/logs/{n}"}
+                    for n in range(70)
+                ]
+            },
+        }
+    )
+    received = FabricRunnerFailure.model_validate_json(failure.model_dump_json())
+    assert len(received.evidence.artifacts) == 64
+    assert received.evidence.coverage["artifacts"] == "truncated"
+
+
+def test_unsupported_failure_evidence_keeps_error_without_interpreting_payload():
+    from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
+
+    failure = FabricRunnerFailure.model_validate(
+        {
+            "runner_error": {"message": "original"},
+            "evidence": {"schema_version": "future", "usage": {"output_tokens": 100}},
+        }
+    )
+    assert failure.runner_error.message == "original"
+    assert failure.evidence.usage is None
+    assert failure.evidence.coverage["usage"] == "unsupported"
+
+
+def test_malformed_identity_does_not_drop_valid_observations():
+    from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
+
+    failure = FabricRunnerFailure.model_validate(
+        {
+            "runner_error": {"message": "original"},
+            "evidence": {"runtime_id": {}, "usage": {"output_tokens": 7}},
+        }
+    )
+    assert failure.evidence.runtime_id is None
+    assert failure.evidence.usage["output_tokens"] == 7
+    assert failure.evidence.coverage["identity"] == "invalid"
+
+
+@pytest.mark.parametrize("message", ["", "progress"])
+def test_failure_evidence_preserves_valid_event_messages(message):
+    from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
+    from nemo_fabric.types import FabricEvent
+
+    event = {
+        "event_id": "event-test",
+        "kind": "runtime_stop",
+        "timestamp_millis": 1,
+        "message": message,
+    }
+    FabricEvent.from_mapping(event)
+    failure = FabricRunnerFailure.model_validate(
+        {"runner_error": {"message": "original"}, "evidence": {"events": [event]}}
+    )
+    assert failure.evidence.events[0]["message"] == message
+    assert failure.evidence.coverage["events"] == "partial"
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+@pytest.mark.parametrize("collection_error", [OSError, RuntimeError])
+def test_optional_evidence_collection_failure_preserves_primary_diagnostic(
+    runner_cli, monkeypatch, cancelled, collection_error
+):
+    from nemo_fabric import FabricRuntimeError
+    from nemo_fabric.integrations.harbor import runner
+
+    original = (
+        asyncio.CancelledError("cancelled")
+        if cancelled
+        else FabricRuntimeError("original", stage="invoke", code="timeout")
+    )
+    monkeypatch.setattr(runner, "run", AsyncMock(side_effect=original))
+    monkeypatch.setattr(
+        runner,
+        "failure_evidence",
+        MagicMock(side_effect=collection_error("secret sentinel")),
+    )
+    expected = asyncio.CancelledError if cancelled else SystemExit
+    with pytest.raises(expected) as caught:
+        runner.main()
+    if cancelled:
+        assert caught.value is original
+    else:
+        assert caught.value.code == 1
+    document = json.loads(runner_cli.read_text())
+    assert "secret sentinel" not in json.dumps(document)
+    assert "status" not in document
+    if not cancelled:
+        assert document["runner_error"] == {
+            "stage": "invoke",
+            "code": "timeout",
+            "message": "original",
+            "retryable": False,
+            "details": {},
+        }
+    assert "evidence" not in document
