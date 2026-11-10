@@ -54,6 +54,10 @@ VALID_MCP_TRANSPORTS = {"stdio", "sse", "streamable_http", "websocket"}
 # usually fail fast; this bounds a server that accepts the connection but never
 # answers, so it is reported as unavailable instead of stalling startup.
 MCP_DISCOVERY_TIMEOUT_SECONDS = 60.0
+# How long a timed-out discovery may spend cleaning up its connection before
+# startup moves on. Transport cleanup (for example a streamable HTTP session
+# DELETE) can otherwise hold startup well past the discovery timeout.
+MCP_DISCOVERY_CANCEL_GRACE_SECONDS = 5.0
 # create_deep_agent arguments Fabric derives from normalized config; the
 # harness.settings.deepagents passthrough must not override them (doing so would
 # bypass the normalized model config, MCP tool resolution, workspace confinement,
@@ -442,16 +446,30 @@ async def _load_server_tools(
     client: Any, name: str
 ) -> tuple[list[Any], dict[str, str] | None]:
     """List one server's tools, reporting an unreachable server instead of raising."""
+    task = asyncio.ensure_future(client.get_tools(server_name=name))
     try:
-        tools = await asyncio.wait_for(
-            client.get_tools(server_name=name),
-            timeout=MCP_DISCOVERY_TIMEOUT_SECONDS,
-        )
-    except TimeoutError:
+        done, _ = await asyncio.wait({task}, timeout=MCP_DISCOVERY_TIMEOUT_SECONDS)
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
+    if not done:
+        # Give the connection a bounded chance to close, then move on. A task that
+        # is still cleaning up finishes in the background; its outcome is ignored.
+        task.cancel()
+        task.add_done_callback(_discard_task_outcome)
+        await asyncio.wait({task}, timeout=MCP_DISCOVERY_CANCEL_GRACE_SECONDS)
         return [], {"reason": "timed_out", "error_type": "TimeoutError"}
+    try:
+        tools = task.result()
     except Exception as error:
         return [], {"reason": "failed", "error_type": _error_type(error)}
     return list(tools), None
+
+
+def _discard_task_outcome(task: asyncio.Task[Any]) -> None:
+    """Retrieve an abandoned task's outcome so asyncio does not log it."""
+    if not task.cancelled():
+        task.exception()
 
 
 async def resolve_mcp_tools(config: AgentConfig) -> McpToolResolution:
@@ -517,6 +535,11 @@ def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
     if transport not in VALID_MCP_TRANSPORTS:
         raise AdapterConfigError(
             f"MCP server '{name}' has unsupported transport '{transport}'."
+        )
+    if transport == "websocket" and spec.custom_headers:
+        raise AdapterConfigError(
+            f"MCP server '{name}' does not support custom headers with the "
+            "websocket transport."
         )
     connection = {"transport": transport, "url": target}
     if headers := spec.custom_headers:

@@ -114,8 +114,7 @@ NeMo Fabric maps the following into the harness:
   `failed` or `timed_out`, and `error_type`), and the adapter writes a warning to
   standard error. Error messages are omitted because they can carry
   credentials. Discovery runs again on each runtime start, so a recovered server
-  is picked up by the next runtime. The `mcp` key is absent when every server
-  loaded.
+  is picked up by the next runtime.
 - `tools.enabled` and `tools.blocked` are enforced by middleware across the full
   tool surface: Deep Agents built-ins (including `task`), MCP tools, and
   **delegated subagents** alike. Use Deep Agents-native tool names.

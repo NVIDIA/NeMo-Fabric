@@ -2213,6 +2213,62 @@ async def test_mcp_server_that_never_answers_is_reported_as_timed_out(
     ]
 
 
+async def test_timed_out_discovery_does_not_wait_for_slow_cleanup(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
+    """A server that is slow to close after a timeout is skipped within the grace."""
+    monkeypatch.setattr(adapter, "MCP_DISCOVERY_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(adapter, "MCP_DISCOVERY_CANCEL_GRACE_SECONDS", 0.05)
+    cleanup_started = asyncio.Event()
+
+    async def hang_then_clean_up_slowly(*, server_name: str) -> list[Any]:
+        """Never answer, then take far longer than the grace to close."""
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cleanup_started.set()
+            await asyncio.sleep(30)
+            raise
+        return []
+
+    mock_client = _install_mcp_client(monkeypatch, {"slow": []})
+    mock_client.get_tools = AsyncMock(side_effect=hang_then_clean_up_slowly)
+    payload = make_payload(tmp_path)
+    payload["config"]["mcp"] = {
+        "servers": {"slow": {"transport": "sse", "url": "http://localhost:9/slow"}}
+    }
+
+    output = await asyncio.wait_for(invoke_once(payload), timeout=5)
+
+    assert cleanup_started.is_set()
+    assert output["failed"] is False
+    assert output["mcp"]["unavailable_servers"] == [
+        {
+            "name": "slow",
+            "transport": "sse",
+            "reason": "timed_out",
+            "error_type": "TimeoutError",
+        }
+    ]
+
+
+async def test_websocket_custom_headers_fail_startup(tmp_path, make_payload):
+    """Unsupported websocket headers are a configuration error, not an outage."""
+    payload = make_payload(tmp_path)
+    payload["config"]["mcp"] = {
+        "servers": {
+            "ws": {
+                "transport": "websocket",
+                "url": "ws://localhost:9/mcp",
+                "custom_headers": {"Authorization": "Bearer token"},
+            }
+        }
+    }
+
+    with pytest.raises(adapter.AdapterConfigError, match="websocket transport"):
+        await adapter.resolve_tools(AgentConfig.from_mapping(payload["config"]))
+
+
 async def test_runtime_starts_when_no_mcp_server_is_available(
     tmp_path, make_payload, monkeypatch, fake_sdks
 ):
