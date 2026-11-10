@@ -43,6 +43,7 @@ be managed separately.
 | `nemo-fabric-adapters-deepagents[full]` | No | No | Yes | Yes | Yes | No |
 | `nemo-fabric-adapters-mini-swe-agent[full]` | No | No | Yes | Yes | Yes | No |
 | `nemo-fabric-adapters-nooa[full]` | No | No | Yes | Yes | Yes | No |
+| `nemo-fabric-adapters-goose` | No | No | Yes | No | No | No |
 | `nemo-fabric-adapters-openclaw` | No | No | Yes | No | No | No |
 | `nemo-fabric-adapters-openhands` | No | No | Yes | No | No | No |
 | `nemo-fabric-adapters-hermes[full]` | No | No | Yes | No | Yes | No |
@@ -105,6 +106,7 @@ the same Python environment:
 pip install "nemo-fabric[claude]"
 pip install "nemo-fabric[codex]"
 pip install "nemo-fabric[deepagents]"
+pip install "nemo-fabric[goose]"
 pip install "nemo-fabric[mini-swe-agent]"
 pip install "nemo-fabric[nooa]"
 pip install "nemo-fabric[openclaw]"
@@ -126,6 +128,10 @@ adapter.
 
 The OpenClaw extra installs its adapter and HTTP client, but not OpenClaw.
 Install the `openclaw` npm package separately before using that adapter.
+
+The Goose extra installs its adapter, but not the Goose CLI. Install Goose
+separately as described in the
+[Goose adapter guide](../integrations/harness/goose.mdx).
 
 OpenHands requires Python 3.12 or later. The root extra installs the adapter
 but not OpenHands. Install the supported `openhands-sdk` and `openhands-tools`
@@ -225,6 +231,9 @@ separately.
 The OpenHands adapter also omits `harness` and `full` extras. Install the bare
 adapter and the supported OpenHands packages separately.
 
+The Goose adapter also omits `harness` and `full` extras. Install
+`nemo-fabric-adapters-goose` directly and install the Goose CLI separately.
+
 ### Add an Adapter to an Existing Harness Environment
 
 Install an adapter package without an extra when the environment already
@@ -234,6 +243,7 @@ supplies and manages a compatible harness:
 pip install nemo-fabric-adapters-claude
 pip install nemo-fabric-adapters-codex
 pip install nemo-fabric-adapters-deepagents
+pip install nemo-fabric-adapters-goose
 pip install nemo-fabric-adapters-hermes
 pip install nemo-fabric-adapters-nooa
 pip install nemo-fabric-adapters-openclaw

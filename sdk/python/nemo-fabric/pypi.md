@@ -60,6 +60,7 @@ The following table shows the install target for each supported agent harness:
 | --- | --- | --- | --- |
 | [Claude Code](https://pypi.org/project/nemo-fabric-adapters-claude/) | `nemo-fabric[claude]` | `nemo-fabric-adapters-claude[harness]` | `nemo-fabric-adapters-claude` |
 | [Codex](https://pypi.org/project/nemo-fabric-adapters-codex/) | `nemo-fabric[codex]` | `nemo-fabric-adapters-codex[harness]` | `nemo-fabric-adapters-codex` |
+| [Goose](https://pypi.org/project/nemo-fabric-adapters-goose/) | Install Goose separately, then install `nemo-fabric[goose]` | Install Goose separately, then install `nemo-fabric-adapters-goose` | `nemo-fabric-adapters-goose` |
 | [Hermes Agent](https://pypi.org/project/nemo-fabric-adapters-hermes/) | Install Hermes Agent separately, then install `nemo-fabric` and `nemo-fabric-adapters-hermes` | Install Hermes Agent separately, then install `nemo-fabric-adapters-hermes` | `nemo-fabric-adapters-hermes` |
 | [LangChain Deep Agents](https://pypi.org/project/nemo-fabric-adapters-deepagents/) | `nemo-fabric[deepagents]` | `nemo-fabric-adapters-deepagents[harness]` | `nemo-fabric-adapters-deepagents` |
 | [mini-SWE-agent](https://pypi.org/project/nemo-fabric-adapters-mini-swe-agent/) | `nemo-fabric[mini-swe-agent]` | `nemo-fabric-adapters-mini-swe-agent[harness]` | `nemo-fabric-adapters-mini-swe-agent` |
@@ -75,6 +76,7 @@ environment, choose one of the following `nemo-fabric` harness extras:
 pip install "nemo-fabric[claude]"
 pip install "nemo-fabric[codex]"
 pip install "nemo-fabric[deepagents]"
+pip install "nemo-fabric[goose]"
 pip install "nemo-fabric[mini-swe-agent]"
 pip install "nemo-fabric[nooa]"
 pip install "nemo-fabric[openclaw]"
@@ -102,8 +104,8 @@ not install the NeMo Fabric runtime. For Claude, Codex, and mini-SWE-agent,
 `full` installs the same dependencies as `harness`. For LangChain Deep Agents
 and NOOA, `full` also installs the NeMo Relay Python package. The Hermes
 adapter's `full` extra installs NeMo Relay but does not install Hermes Agent.
-The OpenClaw and OpenHands adapters provide neither `harness` nor `full`
-because their harnesses must be installed separately.
+The Goose, OpenClaw, and OpenHands adapters provide neither `harness` nor
+`full` because their harnesses must be installed separately.
 
 If the environment already manages a compatible harness, choose one of the
 following bare adapter packages:
@@ -112,6 +114,7 @@ following bare adapter packages:
 pip install nemo-fabric-adapters-claude
 pip install nemo-fabric-adapters-codex
 pip install nemo-fabric-adapters-deepagents
+pip install nemo-fabric-adapters-goose
 pip install nemo-fabric-adapters-hermes
 pip install nemo-fabric-adapters-mini-swe-agent
 pip install nemo-fabric-adapters-nooa
@@ -120,7 +123,7 @@ pip install nemo-fabric-adapters-openhands
 ```
 
 The OpenClaw adapter package does not install OpenClaw; install its npm package
-separately. The OpenHands adapter likewise requires separately installed
+separately. The Goose adapter package does not install the Goose CLI. The OpenHands adapter likewise requires separately installed
 `openhands-sdk==1.50.0`, `openhands-tools==1.50.0`, `litellm==1.100.1`, and
 `mcp==1.28.1`.
 

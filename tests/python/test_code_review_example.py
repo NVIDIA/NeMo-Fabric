@@ -22,6 +22,7 @@ from examples.code_review_agent import cline_config
 from examples.code_review_agent import codex_config
 from examples.code_review_agent import deepagents_config
 from examples.code_review_agent import droid_config
+from examples.code_review_agent import goose_config
 from examples.code_review_agent import hermes_config
 from examples.code_review_agent import kilo_config
 from examples.code_review_agent import kiro_config
@@ -52,6 +53,7 @@ def test_variant_builders_return_independent_complete_configs():
     cline = cline_config()
     deepagents = deepagents_config()
     droid = droid_config()
+    goose = goose_config()
     nooa = nooa_config()
     openclaw = openclaw_config()
     openhands = openhands_config()
@@ -68,6 +70,7 @@ def test_variant_builders_return_independent_complete_configs():
         cline,
         deepagents,
         droid,
+        goose,
         nooa,
         openclaw,
         openhands,
@@ -161,6 +164,11 @@ def test_variant_builders_return_independent_complete_configs():
     assert openclaw.skills.paths == ["./skills/code-review"]
     assert openclaw.tools is not None
     assert openclaw.tools.enabled == ["read"]
+    assert goose.harness.adapter_id == "nvidia.fabric.goose"
+    assert goose.models["default"].base_url == "https://integrate.api.nvidia.com/v1"
+    assert goose.instructions.system.mode == "append"
+    assert goose.runtime.max_turns == 20
+    assert not goose.skills or not goose.skills.paths
     assert openhands.harness.adapter_id == "nvidia.fabric.openhands"
     assert openhands.models["default"].provider == "nvidia"
     assert openhands.skills is not None
@@ -299,6 +307,7 @@ def test_variants_plan_from_complete_configs():
         claude_config(),
         cline_config(),
         deepagents_config(),
+        goose_config(),
         openclaw_config(),
         openhands_config(),
         pi_config(),
@@ -332,6 +341,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         ("claude", "nvidia.fabric.claude"),
         ("cline", "nvidia.fabric.cline"),
         ("deepagents", "nvidia.fabric.langchain.deepagents"),
+        ("goose", "nvidia.fabric.goose"),
         ("nooa", "nvidia.fabric.nooa"),
         ("openclaw", "nvidia.fabric.openclaw"),
         ("openhands", "nvidia.fabric.openhands"),
@@ -346,7 +356,8 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         )
         for variant, adapter_id in variants
         for relay_enabled in (False, True)
-        if variant not in {"cline", "kilo", "kiro", "openclaw", "openhands", "qwen"}
+        if variant
+        not in {"cline", "goose", "kilo", "kiro", "openclaw", "openhands", "qwen"}
         or not relay_enabled
     )
 

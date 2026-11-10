@@ -98,7 +98,7 @@ def workflow_row_fixture(qualification_plan):
 @pytest.mark.usefixtures("clean_qualification_checkout")
 def test_workflow_selection_keeps_the_full_catalog(qualification_plan, workflow_row):
     qualify.validate_plan(qualification_plan)
-    assert len(qualification_plan["adapters"]) == 18
+    assert len(qualification_plan["adapters"]) == 19
     assert workflow_row["action"] == "run"
     assert "nvidia.nooa.coding-agent" in workflow_row["registered_targets"]
 
@@ -206,7 +206,7 @@ def test_workflow_command_payload_and_report_agree(
     )
     assert selected["workflow_target_id"] == workflow_row["workflow_target_id"]
     assert selected["workflow_settings"] == {}
-    assert len(report["adapters"]) == 18
+    assert len(report["adapters"]) == 19
 
 
 @pytest.mark.parametrize(

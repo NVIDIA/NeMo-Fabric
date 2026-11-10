@@ -33,6 +33,7 @@ NeMo Fabric includes adapters for the following harnesses and execution targets.
 | [Cline](adapters/typescript/cline/README.md) | ✅ | ✅ | ✅ | — |
 | [Codex](adapters/python/codex/README.md) | — | ✅ | ✅ | ✅ |
 | [Factory Droid](adapters/typescript/droid/README.md) | ✅ | ✅ | ✅ | — |
+| [Goose](adapters/python/goose/README.md) | — | ✅ | — | — |
 | [Hermes Agent](adapters/python/hermes/README.md) | ✅ | ✅ | ✅ | ✅ |
 | [Kilo Code](adapters/typescript/kilo/README.md) | ✅ | ✅ | ✅ | — |
 | [AWS Kiro](adapters/typescript/kiro/README.md) | — | ✅ | — | — |
