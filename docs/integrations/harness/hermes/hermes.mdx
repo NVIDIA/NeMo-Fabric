@@ -29,7 +29,7 @@ SDK execution is enabled by default; native interfaces are explicit options. All
 
 ## Install the Adapter
 
-Use [Hermes Agent v0.22.5](https://github.com/NousResearch/hermes-agent/releases/tag/v0.22.5) with Python 3.14. The adapter package supports Python 3.11 through 3.14, but Hermes Agent must be installed separately from source; versions 0.20 and later are not available from PyPI. Follow the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation) and select v0.22.5.
+Use [Hermes Agent v0.22.7](https://github.com/NousResearch/hermes-agent/releases/tag/v0.22.7) with Python 3.14. The adapter package supports Python 3.11 through 3.14, but Hermes Agent must be installed separately from source; versions 0.20 and later are not available from PyPI. Follow the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation) and select v0.22.7.
 
 Install the runtime and adapter in the environment that runs Hermes:
 
@@ -39,9 +39,16 @@ python -m pip install "nemo-fabric[hermes-agent]"
 
 If the application runs NeMo Fabric in a separate environment, install `nemo-fabric-adapters-hermes` in the Hermes environment and set `ADAPTER_PYTHON` in the application's environment to that interpreter. Use matching runtime and adapter release versions unless a different pairing has been validated.
 
-For Relay, install the adapter's `relay` extra in the Hermes environment. It requires `nemo-relay>=0.10,<0.11`; keep this environment separate from applications using Relay 0.11 for other adapters. Startup rejects unsupported Hermes/Relay combinations.
+For Relay, install the adapter's `relay` extra in the Hermes environment. It accepts `nemo-relay>=0.10,<0.12`; select the Relay line required by the installed Hermes release:
 
-For repository development, the following recipe checks out v0.22.5 at `bf0203a794a07aac3ff764972ab9087baa4e4f4e` and prepares an isolated Python 3.14 environment with Relay support:
+| Hermes Agent | NeMo Relay Python Package |
+| --- | --- |
+| v0.22.7 | `>=0.11,<0.12` |
+| v0.22.5 | `>=0.10,<0.11` |
+
+Startup requires a stable Relay 0.10 or 0.11 release and Hermes's callable `agent.relay_runtime.resolve_plugin_sources` hook. Keep environments using the legacy pairing separate from applications requiring Relay 0.11.
+
+For repository development, the following recipe checks out v0.22.7 at `b200f5bc60e31588ba2cb60e288029c4a54ba5fa` and prepares an isolated Python 3.14 environment with Relay support:
 
 ```bash
 just install-hermes-agent
