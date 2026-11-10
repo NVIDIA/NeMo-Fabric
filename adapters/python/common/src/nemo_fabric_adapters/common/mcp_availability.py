@@ -68,6 +68,9 @@ async def wait_bounded(
         done, _ = await asyncio.wait({task}, timeout=timeout)
     except asyncio.CancelledError:
         task.cancel()
+        # Cleanup can still raise; retrieve that outcome so asyncio never logs
+        # its message, which may carry credentials.
+        task.add_done_callback(_discard_outcome)
         raise
     if done:
         return task, False

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 
 import pytest
 from nemo_fabric_adapters.common import mcp_availability
@@ -129,3 +130,38 @@ async def test_wait_bounded_propagates_caller_cancellation():
         await waiter
     await asyncio.sleep(0)
     assert attempt_cancelled.is_set()
+
+
+async def test_wait_bounded_retrieves_cleanup_errors_after_caller_cancellation():
+    """A cleanup error after caller cancellation is never logged with its message."""
+    loop = asyncio.get_running_loop()
+    reported = []
+    previous_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: reported.append(context))
+    cleanup_done = asyncio.Event()
+
+    async def stall_then_fail_cleanup():
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cleanup_done.set()
+            raise RuntimeError("cleanup failed with token=fixture-secret")
+
+    try:
+        waiter = asyncio.create_task(
+            mcp_availability.wait_bounded(
+                stall_then_fail_cleanup(), timeout=30, grace=1
+            )
+        )
+        await asyncio.sleep(0.01)
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        await cleanup_done.wait()
+        await asyncio.sleep(0)
+        gc.collect()
+        await asyncio.sleep(0)
+    finally:
+        loop.set_exception_handler(previous_handler)
+
+    assert not [context for context in reported if "fixture-secret" in repr(context)]
