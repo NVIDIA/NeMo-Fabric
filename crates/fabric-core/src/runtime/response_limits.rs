@@ -137,10 +137,16 @@ pub(super) fn enforce_local_artifacts(
             );
             return Ok(());
         }
-        let metadata = std::fs::metadata(&artifact.path).map_err(|source| FabricError::Read {
-            path: artifact.path.clone(),
-            source,
-        })?;
+        let metadata = match std::fs::metadata(&artifact.path) {
+            Ok(metadata) => metadata,
+            Err(source) if source.kind() == ErrorKind::NotFound => continue,
+            Err(source) => {
+                return Err(FabricError::Read {
+                    path: artifact.path.clone(),
+                    source,
+                });
+            }
+        };
         // Directories and non-file references do not have transferable bytes.
         // The OpenShell collector additionally validates regular-file identity.
         if !metadata.is_file() {
@@ -317,6 +323,31 @@ mod tests {
             result.error.unwrap().metadata["limit"],
             "max_response_bytes"
         );
+    }
+
+    #[test]
+    fn missing_local_artifacts_preserve_results_but_other_io_errors_remain_failures() {
+        let root = std::env::temp_dir().join(new_id("missing-artifact"));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut original = result();
+        original.artifacts.artifacts.push(ArtifactRef {
+            name: "optional".into(),
+            kind: "file".into(),
+            path: root.join("missing.png"),
+            media_type: None,
+            metadata: BTreeMap::new(),
+        });
+        let mut result = original.clone();
+        enforce_local_artifacts(&mut result, ResponseLimits::default()).unwrap();
+        assert_eq!(result, original);
+        // A non-directory parent is a real I/O error, not a missing optional file.
+        std::fs::write(root.join("file"), "data").unwrap();
+        result.artifacts.artifacts[0].path = root.join("file/child");
+        assert!(matches!(
+            enforce_local_artifacts(&mut result, ResponseLimits::default()),
+            Err(FabricError::Read { .. })
+        ));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

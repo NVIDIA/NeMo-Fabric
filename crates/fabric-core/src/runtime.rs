@@ -6353,9 +6353,6 @@ for line in sys.stdin:
     #[test]
     fn local_host_enriches_typed_usage_artifacts_and_extensions() {
         let (root, plan) = local_host_plan("typed_result");
-        fs::create_dir_all(root.join("artifacts/reports")).unwrap();
-        fs::write(root.join("artifacts/reports/result.json"), "{}").unwrap();
-
         let result = run_plan(&plan, RunRequest::text("enrich")).expect("normalized result");
 
         assert_eq!(result.status, RunStatus::Succeeded);

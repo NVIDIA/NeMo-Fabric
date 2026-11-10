@@ -1490,6 +1490,7 @@ defaults; omit `response_limits` or use `None` to keep all defaults. Unknown lim
 names are rejected. File and aggregate byte budgets are independent, so raising
 one does not raise the other. SDK diagnostics under `.fabric/`, workspace patches,
 and workspace status files do not consume the declared-agent artifact budgets.
+On the host, missing files and non-file references contribute no artifact bytes; their declared paths still count toward the path budget. OpenShell collection requires readable regular files.
 Provider transport allowances scale with these budgets; compression does not add
 a separate screenshot size limit. The 32-bit schema ceiling is not a guaranteed
 transfer capacity: OpenShell buffers compressed artifacts as JSON byte arrays,
