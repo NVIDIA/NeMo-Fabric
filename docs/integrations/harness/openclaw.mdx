@@ -58,7 +58,7 @@ Before migration, copy every legacy session directory while the Gateway is stopp
 
 Run `openclaw doctor --fix` with the 2026.9.34 executable and the same path settings. The command imports legacy `sessions.json` files and JSONL session data into each agent's SQLite database. Restart the Gateway after the command succeeds. Keep the verified backup for rollback.
 
-Managed runtimes and NeMo Fabric-owned services use temporary state directories, so each new Gateway starts with fresh state.
+Managed runtimes and NeMo Fabric-owned services use temporary state directories by default, so each new Gateway starts with fresh state. To keep OpenClaw's state across runtimes, set `runtime.keep_state` as [Keep OpenClaw State Across Runtimes](#keep-openclaw-state-across-runtimes) describes.
 
 ## Configure the Adapter
 
@@ -148,8 +148,9 @@ harness = HarnessConfig(
   `port` can't be combined with `port_range`; set `enabled` to `false` to keep
   a configured dashboard off.
 - After the Gateway starts, the adapter writes the sign-in token, generated at
-  each start, to
-  `<artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token`
+  each start, to `interfaces/dashboard.token` in
+  `<artifact root>/.fabric/openclaw/runtimes/<runtime-id>`, or in the agent's
+  state folder with `runtime.keep_state`,
   with mode `0600` on POSIX hosts; on Windows, the file inherits the artifact
   root's permissions. `stop` removes it; if the adapter host is killed, the file
   can remain.
@@ -163,6 +164,62 @@ harness = HarnessConfig(
   read-only, so changes made through the Control UI don't survive a restart.
 - Prepared and attached services reject `interfaces` with
   `openclaw_interfaces_require_managed_runtime`.
+
+## Keep OpenClaw State Across Runtimes
+
+By default, each Gateway that the adapter starts uses a temporary
+`OPENCLAW_STATE_DIR` that `stop` removes, so the sessions, memory, and skills
+that the agent writes there are lost when the runtime stops. Set `keep_state`
+in the config's `runtime` mapping to keep that folder:
+
+```python
+from nemo_fabric import FabricConfig
+
+config = FabricConfig.from_mapping(
+    {
+        "metadata": {"name": "assistant"},
+        "harness": {"adapter_id": "nvidia.fabric.openclaw"},
+        "models": {"default": {"provider": "nvidia", "model": "<model>"}},
+        "runtime": {"artifacts": "/data/artifacts", "keep_state": True},
+    }
+)
+```
+
+With `runtime.keep_state`, the Gateway's `OPENCLAW_STATE_DIR` is the agent's
+state folder, `<artifact root>/.fabric/state/nvidia.fabric.openclaw/<agent name>`,
+for every runtime of the agent and for a NeMo Fabric-owned service:
+
+- Skills that the agent writes through OpenClaw's Skill Workshop stay at the
+  path where OpenClaw saved them,
+  `agents/<agent id>/agent/workshop-skills/<skill>/SKILL.md` in that folder,
+  and the next Gateway discovers them there. The adapter doesn't copy, move, or
+  recreate them.
+- The generated `openclaw.json` and the Gateway token remain specific to one
+  runtime: the adapter writes the configuration to a temporary folder at each
+  start and removes it at stop. The dashboard token is written to
+  `interfaces/dashboard.token` in the state folder, removed by `stop`, and
+  removed at the next start if an earlier runtime ended without `stop`.
+- `stop` and a failed start never remove the state folder or its contents.
+- NeMo Fabric lets one runtime at a time use the folder, as
+  [Keep Agent State Across Runtimes](../../sdk/python.mdx#keep-agent-state-across-runtimes)
+  describes. A second runtime of the agent fails to start while the first runs.
+- An attached caller-owned Gateway keeps its state where its deployment puts
+  it, so attaching a service with `runtime.keep_state` fails with
+  `openclaw_keep_state_requires_managed_gateway`.
+
+Kept state lasts as long as the artifact root does. When the runtime runs in a
+container or sandbox that is replaced, put the artifact root on durable storage,
+such as a Kubernetes persistent volume. The folder can hold sessions,
+credentials, and sign-ins, so protect it like a home directory. To discard it,
+stop every runtime and service of the agent, then remove the folder.
+
+Keeping files doesn't by itself keep a plugin that the agent installed enabled
+and usable: the adapter generates a read-only `openclaw.json` at each start, and
+plugin use after a restart is not yet qualified.
+
+Keeping state doesn't continue an earlier conversation: each invocation still
+uses the NeMo Fabric runtime ID as its OpenClaw session key, so a new runtime
+starts a new session, and earlier sessions stay in the state folder.
 
 ## Use a Shared Service
 
@@ -230,7 +287,8 @@ does not use the OpenClaw configuration RPC. The generated configuration:
 - uses a cryptographically generated one-time Gateway token;
 - applies the normalized workspace, model, skills, and MCP servers;
 - disables OpenClaw anonymous telemetry; and
-- uses a unique temporary state directory.
+- uses a unique temporary state directory, or the agent's state folder with
+  `runtime.keep_state`.
 
 Each invocation sends a terminal request to `/v1/chat/completions` with the
 NeMo Fabric runtime ID as the stable OpenClaw session key. A managed runtime
