@@ -1,0 +1,55 @@
+---
+title: "Hermes Dashboard and Browser TUI"
+description: "Use browser chat through a managed TUI service, optionally shared with terminal clients."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Start with [hermes.mdx](./hermes.mdx) for shared setup and an overview of all four invocation paths.
+
+NVIDIA NeMo Fabric starts Hermes's dashboard as a managed FastAPI/Uvicorn service. Browser chat uses a prebuilt terminal renderer through a PTY/WebSocket bridge, attached to that service's in-process TUI backend. It does not call the native API gateway or embedded SDK agent.
+
+## Installation
+
+Complete the [shared installation](./hermes.mdx#install-the-adapter) first. The dashboard path additionally requires:
+
+- **Backend dependencies:** FastAPI, Uvicorn, and the other dependencies in pinned Hermes's `web` extra, plus `aiohttp` for authenticated readiness checks. The repository's Python 3.14 `just install-hermes-agent` recipe already provides them.
+- **Frontend assets:** Both the built browser assets and terminal renderer used by browser chat, plus a supported Node runtime.
+- **Host:** POSIX, for the managed backend and browser terminal bridge.
+
+For a separately prepared Hermes environment, set `ADAPTER_PYTHON` to its interpreter and `HERMES_AGENT_CHECKOUT` to your pinned v0.22.5 source checkout, then install the web extra and the pinned readiness dependency:
+
+```bash
+uv pip install --python "$ADAPTER_PYTHON" --editable "${HERMES_AGENT_CHECKOUT}[web]" "aiohttp==3.14.5"
+```
+
+Keep this `ADAPTER_PYTHON` value when following the [frontend setup commands](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/interfaces/hermes/README.md#build-the-tui-frontends) to build both frontends in that pinned checkout. Browser assets must be available at `hermes_cli/web_dist/index.html` or the directory selected by `HERMES_WEB_DIST`. Runtime startup uses these prebuilt assets; it does not install or build them.
+
+## Configuration
+
+Use normalized model, workspace, tools, and telemetry fields with these harness settings:
+
+```python
+settings = {
+    "sdk": {"enabled": False},
+    "interfaces": {"dashboard": {"port": 9119}},
+}
+```
+
+Open `http://127.0.0.1:9119`. The native API is optional. To attach terminal clients too, add `"terminal": {"port": 9119}`; both client paths share one backend process and start separate conversations by default. Omit `sdk` to also start the embedded Hermes `AIAgent` alongside the dashboard process.
+
+## Authentication
+
+The adapter generates a per-start credential for the TUI backend. Hermes embeds that credential in the served page, and the browser uses it automatically. The dashboard has no separate user sign-in on loopback: anyone reaching the port can use its pages and browser chat. Limit access to the runtime user; port forwarding must have its own access controls.
+
+The TUI credential is distinct from the model-provider API key and the API gateway's `api.token`. When terminal attachment is also enabled, the same TUI credential is published in `interfaces/tui.token` for the attachment helper. This does not add a browser sign-in gate or per-user isolation.
+
+## Ownership
+
+The adapter pins browser chat to the managed runtime profile and its existing TUI service. Named-profile chat is unsupported. Other dashboard pages remain native; gateway replacement, profile/configuration edits, and restart/migrate actions are outside the qualified ownership model and can bypass generated configuration.
+
+## Conversations, Relay, and Testing
+
+Browser turns use native conversations and responses. They do not become SDK invocations or normalized `RunResult` objects. Managed native agent turns finalize and flush Relay segments when execution returns, preserving native history.
+
+See the [TUI example](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/interfaces/hermes/README.md#3-browser-dashboard) for browser input and artifact inspection. Refer to the [shared limitations](./hermes.mdx#limitations-and-planned-work) for approvals, health/activity, and lifecycle boundaries.

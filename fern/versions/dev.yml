@@ -75,9 +75,15 @@ navigation:
     - page: Factory Droid
       path: ../pages-dev/integrations/harness/droid.mdx
     - page: Hermes Agent
-      path: ../pages-dev/integrations/harness/hermes.mdx
-    - page: Hermes Native Interfaces
-      path: ../pages-dev/integrations/harness/hermes-interfaces.mdx
+      path: ../pages-dev/integrations/harness/hermes/hermes.mdx
+    - page: Hermes SDK
+      path: ../pages-dev/integrations/harness/hermes/hermes-sdk.mdx
+    - page: Hermes API
+      path: ../pages-dev/integrations/harness/hermes/hermes-api.mdx
+    - page: Hermes Dashboard
+      path: ../pages-dev/integrations/harness/hermes/hermes-dashboard.mdx
+    - page: Hermes Terminal TUI
+      path: ../pages-dev/integrations/harness/hermes/hermes-tui.mdx
     - page: LangChain Deep Agents
       path: ../pages-dev/integrations/harness/deepagents.mdx
     - page: Kilo Code
