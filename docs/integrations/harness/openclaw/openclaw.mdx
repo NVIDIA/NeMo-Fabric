@@ -65,6 +65,8 @@ Managed runtimes and NeMo Fabric-owned services use temporary state directories,
 
 ## Configure the Adapter
 
+### Runtime Startup
+
 Select the adapter and, when necessary, specify the OpenClaw executable:
 
 ```python
@@ -79,50 +81,48 @@ harness = HarnessConfig(
 )
 ```
 
-Omit `openclaw_command` to resolve `openclaw` from `PATH`. A relative path that
-contains a directory is resolved from the NeMo Fabric base directory. The adapter
-uses the resolved executable for its version check, configuration validation,
-and Gateway startup.
+| Harness Setting | Behavior |
+| --- | --- |
+| `openclaw_command` | Omit to find `openclaw` on `PATH`. A relative path containing a directory is resolved from the NeMo Fabric base directory. The same executable is used for version checks, configuration validation, and Gateway startup. |
+| `startup_timeout_seconds` | One deadline covering the executable check through Gateway readiness. Defaults to 60 seconds; maximum 75 seconds, within NeMo Fabric's 90-second start limit. |
 
-`startup_timeout_seconds` sets one deadline for all of start, from checking the
-`openclaw` command to the Gateway becoming ready. It defaults to 60 seconds and
-can be at most 75 seconds, which keeps start within NeMo Fabric's 90-second
-start limit.
+The adapter supports OpenClaw's default `openclaw` execution runtime.
 
-The adapter supports only OpenClaw's default `openclaw` agent runtime.
+### Agent Configuration
 
-The adapter accepts normalized model provider, model, base URL, temperature,
-`top_p`, `max_tokens`, replacement system instruction, workspace, skills, and
-MCP configuration. Normalized MCP authentication is not supported. For a
-custom OpenAI-compatible endpoint, set the model's `base_url` and, when needed,
-`api_key_env`.
+Set model provider, model, endpoint, generation parameters (`temperature`, `top_p`, and `max_tokens`), replacement system instructions, workspace, skills, and MCP servers through normalized `FabricConfig`. See [Shared Configuration](#shared-configuration) for how these settings reach all four client paths. Normalized MCP authentication is not supported.
 
-For an endpoint that supports `stream_options.include_usage`, set
-`models.<role>.settings.supports_usage_in_streaming` to `true`. This maps to
-OpenClaw's native `compat.supportsUsageInStreaming` and requires `base_url`.
-Use `false` for an endpoint that rejects streaming usage, or omit the setting
-to retain OpenClaw's endpoint capability detection. Attached services own
-their model configuration and do not accept this setting.
+For a custom OpenAI-compatible endpoint, set the model's `base_url` and, when credentials are required, `api_key_env`.
 
-OpenClaw 2026.9.4's Gateway does not distinguish aggregate usage from its
-last-call fallback, and converts missing usage to zero counters. NeMo Fabric
-leaves standard complete counters unknown and preserves the Gateway's counts
-in `usage.extensions["nvidia.fabric.openclaw.usage_evidence.v1"].observed`.
-The evidence includes `scope_unverified` in `gaps`, plus `missing_usage` or
-`zero_unverified` when applicable. Reported counts do not establish complete
-coverage of retries, compaction, child agents, or background work.
+The optional `models.<role>.settings.supports_usage_in_streaming` setting controls OpenClaw's native `compat.supportsUsageInStreaming`:
 
-For a NeMo Fabric-owned service, `harness.settings.channel_config` accepts
-OpenClaw-native `channels` and `bindings`. This supports multiple accounts for
-Telegram and other OpenClaw channels without a NeMo Fabric-specific channel schema.
-Every binding must target the configured `agent_id`; OpenClaw validates the
-nested channel settings. Chat-channel traffic goes directly between the
-channel and OpenClaw rather than through a NeMo Fabric runtime.
+- Set `true` when the endpoint supports `stream_options.include_usage`.
+- Set `false` when the endpoint rejects streaming usage.
+- Omit it to retain OpenClaw's endpoint capability detection.
 
-By default, the adapter chooses an available local port range. Set `port_range`
-to an inclusive consumer-allocated range with `start` and `end` fields. The
-range must span at least 111 ports. OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses `base_port + 2` for browser control and allocates browser CDP ports from `base_port + 11` through `base_port + 110`. The adapter verifies only that `base_port` and `base_port + 2` are available before startup. OpenClaw allocates the CDP ports on demand instead of reserving the complete range, so the adapter cannot guarantee that those ports will still be available when OpenClaw needs them. Keep the configured range reserved for the lifetime of the runtime or service when using OpenClaw browser features.
+This setting requires `base_url`. Attached services own their model configuration and do not accept it. Reported usage has separate completeness limits; see [SDK Usage Accounting](./openclaw-sdk.mdx#usage-accounting).
 
+### Gateway Ports
+
+By default, the adapter selects a local Gateway port range. To allocate the range yourself, set `port_range` with inclusive `start` and `end` values spanning at least 111 ports.
+
+OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses:
+
+| Purpose | Port |
+| --- | --- |
+| Gateway | Selected base port |
+| Browser control | Base port + 2 |
+| Browser CDP connections | Base port + 11 through base port + 110 |
+
+Startup checks availability of the base port and base port + 2. OpenClaw allocates CDP ports on demand, so startup does not reserve or guarantee the rest of the range. Keep the full range reserved for the runtime or service lifetime when using browser features.
+
+For an exact dashboard base port, use the [native interface settings](#select-native-interfaces) instead of `port_range`.
+
+### Chat Channels
+
+For a [NeMo Fabric-owned service](./openclaw-sdk.mdx#use-a-shared-service), `harness.settings.channel_config` accepts OpenClaw-native `channels` and `bindings`, including multiple accounts for Telegram and other channels.
+
+Every binding must target the configured `agent_id`. OpenClaw validates the nested channel settings. Channel traffic flows directly between the channel and OpenClaw; it does not pass through a NeMo Fabric runtime.
 
 ## Select Native Interfaces
 

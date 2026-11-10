@@ -13,6 +13,14 @@ Use the [Code Review Example](../../../../examples/code_review_agent/README.md) 
 
 SDK-only configurations retain existing behavior. When native interfaces are enabled, the same Gateway applies the configured system prompt through the shared plugin. Model, workspace, tools, MCP, and skills are generated once for that Gateway. SDK requests retain their configured generation parameters. Native turns do not create SDK invocation records.
 
+## Usage Accounting
+
+The adapter treats Gateway usage as observed evidence. Reported counts do not establish whether they cover aggregate usage or a last-call fallback, and zero counters do not prove that no usage occurred.
+
+NeMo Fabric leaves standard complete counters unknown and preserves reported counts in `usage.extensions["nvidia.fabric.openclaw.usage_evidence.v1"].observed`. The evidence includes `scope_unverified` in `gaps`, plus `missing_usage` or `zero_unverified` when applicable.
+
+These counts do not establish complete coverage of retries, compaction, child agents, or background work. For endpoint streaming-usage settings, see [Agent Configuration](./openclaw.mdx#agent-configuration).
+
 ## Use a Shared Service
 
 Call `prepare_service()` to map the normalized `FabricConfig` to
