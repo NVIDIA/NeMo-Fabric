@@ -105,6 +105,12 @@ The integration projects normalized `RunResult.usage` into Harbor's `AgentContex
 
 **Reporting limitation:** Native Harbor trial and job totals sum available values and skip unknown fields. A displayed total can therefore omit usage or cost from steps or trials with unknown values. Do not interpret these aggregates as complete benchmark usage or expenditure when any contributing value is unknown.
 
+## Config Bundles And Discovery
+
+Set `fabric_config_bundle` to upload a host directory to `fabric_config_target` (default: `/tmp/nemo-fabric-config`). The task-side target becomes the configuration base directory. A bundle can contain only installation assets; it does not require an empty `adapters` directory.
+
+When the bundle contains an `adapters` directory, the bridge prepends `adapters` to discovery. An `adapters` child that is a file is invalid. Explicit `fabric_discovery_paths` are preserved in order and resolved inside the task against the configuration base directory, including when the bundle has no adapters. Relative adapter executables retain their descriptor-directory resolution. Missing explicit discovery paths and malformed descriptors still fail during task-side planning.
+
 ## Host Admission And Task Execution
 
 The `nemo-fabric[harbor]` extra installs a matching
