@@ -1503,19 +1503,14 @@ A breach returns `status == "failed"` with
 `error.code == "response_limit_exceeded"`. The error names the limit, configured
 value, observed value and offending asset in both its message and metadata.
 The rejected output and artifact manifest are replaced by this diagnostic;
-there is no partial successful result or silent truncation. Only the SDK's minimal canonical limit diagnostic is exempt from the response
-budget, so even a one-byte budget reports why it failed. Additional payloads or
-shutdown metadata are checked normally. A limit failure does not undo agent side effects and is not automatically
-retried.
+there is no partial successful result or silent truncation. Only the SDK's minimal canonical limit diagnostic is exempt from the response budget, so even a one-byte budget reports why it failed. Additional payloads or shutdown metadata are checked normally. A limit failure does not undo agent side effects and is not automatically retried.
 
 For a large screenshot, keep the image in a declared artifact instead of embedding
 base64 in the response. Raise both `max_artifact_file_bytes` and
 `max_artifact_bytes` enough to hold the complete file and the other artifacts,
 then invoke again. On success, read its returned `ArtifactRef.path`; OpenShell
 copies the complete bytes into the host `runtime.artifacts` destination. Local
-execution keeps the original file path. A result that exceeds its response
-budget must also fit after artifact paths and execution metadata are added on
-the host. These are returned-result budgets, not limits on intermediate model
+execution keeps the original file path. The result must still fit its response budget after artifact paths and execution metadata are added on the host. These are returned-result budgets, not limits on intermediate model
 messages or streaming chunks already delivered to a consumer.
 
 ## Errors

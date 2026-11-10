@@ -718,11 +718,7 @@ fn validated_artifact_limit_failure(
         "max_artifact_files" => limits.max_artifact_files,
         _ => return None,
     } as usize;
-    if !paths.contains(&error.asset)
-        || error.asset.chars().any(char::is_control)
-        || error.asset.len() > 4096
-        || error.observed <= configured
-    {
+    if !paths.contains(&error.asset) || error.asset.contains('\0') || error.observed <= configured {
         return None;
     }
     Some(artifact_limit_error(
@@ -742,8 +738,7 @@ async fn collect_artifacts<F: GatewayFactory>(
     if paths.iter().any(|path| {
         path.is_empty()
             || path.contains('\\')
-            || path.chars().any(char::is_control)
-            || path.len() > 4096
+            || path.contains('\0')
             || path
                 .split('/')
                 .any(|part| part.is_empty() || part == "." || part == "..")
@@ -2734,7 +2729,12 @@ mod tests {
     #[tokio::test]
     async fn artifact_limit_observations_cross_the_provider_boundary_as_structured_data() {
         let limits = ArtifactLimits::default();
-        for asset in ["screenshot.png", "undeclared.png"] {
+        for asset in [
+            "screenshot.png".to_string(),
+            "line\nname.png".to_string(),
+            "dir/".repeat(1100) + "file.png",
+            "undeclared.png".to_string(),
+        ] {
             let factory = MockFactory {
                 calls: Arc::new(Mutex::new(Vec::new())),
                 ready_id: "sandbox-id-1",
@@ -2752,13 +2752,17 @@ mod tests {
             let outcome = handle_operation(
                 ProviderOperation::CollectArtifacts {
                     environment: environment_handle_fixture(),
-                    paths: vec!["screenshot.png".into()],
+                    paths: if asset == "undeclared.png" {
+                        vec!["screenshot.png".into()]
+                    } else {
+                        vec![asset.clone()]
+                    },
                     limits,
                 },
                 &factory,
             )
             .await;
-            if asset == "screenshot.png" {
+            if asset != "undeclared.png" {
                 assert_eq!(
                     outcome.unwrap(),
                     json!({"limit": "max_artifact_file_bytes", "configured": limits.max_artifact_file_bytes,
@@ -2792,6 +2796,17 @@ mod tests {
             }
             other => panic!("unexpected error: {other}"),
         }
+        let nul_asset = "screenshot\0.png".to_string();
+        let mut invalid = valid.clone();
+        invalid["asset"] = json!(nul_asset);
+        assert!(
+            validated_artifact_limit_failure(
+                &serde_json::to_vec(&invalid).unwrap(),
+                &[nul_asset],
+                limits
+            )
+            .is_none()
+        );
         for (field, value) in [
             ("asset", json!("other.png")),
             ("asset", json!("screenshot.png\nPRIVATE")),

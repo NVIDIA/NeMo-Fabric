@@ -46,6 +46,22 @@ def test_export_preserves_complete_binary_files(tmp_path):
     assert zlib.decompress(bytes(file["content"])) == contents
 
 
+def test_export_preserves_newline_path_and_structured_limit_failure(tmp_path):
+    path = "review\nresult.png"
+    (tmp_path / path).write_bytes(b"abc")
+    code, result, stderr = read(tmp_path, [path])
+    assert code == 0
+    assert stderr == ""
+    assert result["files"][0]["path"] == path
+    assert zlib.decompress(bytes(result["files"][0]["content"])) == b"abc"
+    code, result, stderr = read(tmp_path, [path], {"max_artifact_file_bytes": 2})
+    assert code == 1
+    assert stderr == ""
+    assert result == dict(
+        limit="max_artifact_file_bytes", configured=2, observed=3, asset=path
+    )
+
+
 @pytest.mark.parametrize(
     "path",
     [

@@ -808,8 +808,7 @@ fn collect_result_artifacts(
             if error.configured != configured
                 || error.observed <= configured
                 || !unique.contains(&error.asset)
-                || error.asset.len() > 4096
-                || error.asset.chars().any(char::is_control)
+                || error.asset.contains('\0')
             {
                 return Err(invalid_environment("artifact.limit"));
             }

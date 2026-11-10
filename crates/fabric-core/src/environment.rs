@@ -1613,6 +1613,7 @@ for line in sys.stdin:
                         environment: &environment,
                         command: &task,
                         timeout_seconds: Some(10),
+                        response_limit_bytes: MAX_PROVIDER_RESPONSE_BYTES,
                     },
                 );
                 sender.send(result).unwrap();

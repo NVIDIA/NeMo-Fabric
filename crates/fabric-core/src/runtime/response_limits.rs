@@ -95,8 +95,7 @@ fn is_sdk_limit_diagnostic(result: &RunResult) -> bool {
         || configured > u64::from(u32::MAX)
         || observed <= configured
         || asset.is_empty()
-        || asset.len() > 4096
-        || asset.chars().any(char::is_control)
+        || asset.contains('\0')
         || (limit == "max_response_bytes" && asset != "RunResult")
     {
         return false;
@@ -262,6 +261,30 @@ mod tests {
         let mut result = original;
         result.error.as_mut().unwrap().message = "arbitrary payload".into();
         assert!(!is_sdk_limit_diagnostic(&result));
+    }
+
+    #[test]
+    fn artifact_diagnostics_preserve_valid_posix_paths_with_tiny_response_budgets() {
+        for asset in [
+            "line\nname.png".to_string(),
+            "dir/".repeat(1100) + "file.png",
+        ] {
+            let mut result = result();
+            reject(&mut result, "max_artifact_file_bytes", 1, 2, &asset);
+            enforce_response(
+                &mut result,
+                ResponseLimits {
+                    max_response_bytes: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(result.error.as_ref().unwrap().metadata["asset"], asset);
+            assert_eq!(
+                result.error.as_ref().unwrap().metadata["limit"],
+                "max_artifact_file_bytes"
+            );
+        }
     }
 
     #[test]
