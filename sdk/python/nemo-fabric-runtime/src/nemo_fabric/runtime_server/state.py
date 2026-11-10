@@ -16,6 +16,7 @@ from nemo_fabric import (
     Fabric,
     FabricConfig,
     FabricConfigError,
+    FabricStateError,
     CheckRequest,
     EnvironmentHandle,
     RunRequest,
@@ -120,6 +121,19 @@ class RuntimeServer:
                     if self.shutting_down
                     else None,
                 )
+            if operation == "status":
+                owned = self._owned(request)
+                stage = "status"
+                report = await self.fabric.runtime_status(
+                    runtime_id=request["runtime_id"], agent_name=request["agent"]
+                )
+                return envelope(
+                    operation,
+                    {
+                        **report.to_mapping(),
+                        "server_state": owned.state,
+                    },
+                )
             if self.shutting_down:
                 raise ProtocolError("host_stopping")
 
@@ -142,6 +156,13 @@ class RuntimeServer:
                         runtime = await self.fabric.start_runtime(
                             config, base_dir=self.directory
                         )
+                    except FabricStateError as error:
+                        if error.code != "runtime_limit_reached":
+                            raise
+                        self.has_used_runtime = previously_used
+                        self.start_uncertain = False
+                        changed, effects = False, "none"
+                        raise ProtocolError("runtime_limit_reached", "start") from None
                     except FabricConfigError:
                         self.has_used_runtime = previously_used
                         self.start_uncertain = False
@@ -200,6 +221,15 @@ class RuntimeServer:
                 result = (await owned.runtime.invoke(**invoke_arguments)).to_mapping()
                 return envelope(operation, result, changed=None)
         except Exception as error:
+            if isinstance(error, FabricStateError) and error.code in (
+                "wrong_agent",
+                "runtime_unavailable",
+                "runtime_id_conflict",
+            ):
+                error = ProtocolError(
+                    error.code,
+                    "start" if error.code == "runtime_id_conflict" else "status",
+                )
             if not isinstance(error, ProtocolError):
                 if isinstance(error, (FabricConfigError, ValidationError)):
                     code = (
@@ -210,7 +240,9 @@ class RuntimeServer:
                     )
                     error = ProtocolError(code, "validation")
                 else:
-                    error = ProtocolError(f"{stage}_failed", stage)
+                    error = ProtocolError(
+                        f"{stage}_failed", stage, cause=getattr(error, "code", None)
+                    )
             return envelope(
                 operation, result, changed=changed, error=error, effects=effects
             )
@@ -218,6 +250,7 @@ class RuntimeServer:
     async def _check_runtime(
         self, command: dict[str, Any], started: float
     ) -> dict[str, Any]:
+        """Report known lifecycle state or probe health without invoking the agent."""
         request = CheckRequest(
             scope="runtime",
             runtime_id=command["runtime_id"],
@@ -238,9 +271,14 @@ class RuntimeServer:
             or runtime is None
             or runtime.status != RuntimeStatus.ACTIVE
         ):
-            return check_response(
-                runtime_report(request, "runtime_unavailable", started)
-            )
+            report = runtime_report(request, "runtime_unavailable", started)
+            if owned.state == "stopped" or (
+                runtime is not None and runtime.status == RuntimeStatus.STOPPED
+            ):
+                report["runtime"] = {"state": "stopped", "activity": "stopped"}
+            elif runtime is not None and runtime.status == RuntimeStatus.FAILED:
+                report["runtime"] = {"state": "failed", "activity": "unknown"}
+            return check_response(report)
         generation = owned.generation
         remaining = request.timeout_seconds - (time.monotonic() - started)
         if remaining <= 0:

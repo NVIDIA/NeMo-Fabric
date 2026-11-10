@@ -104,17 +104,27 @@ The following settings are specific to the OpenClaw adapter:
 | Setting | Default | Description |
 | --- | --- | --- |
 | `openclaw_command` | `openclaw` | Executable name or path. |
-| `agent_id` | `default` | OpenClaw agent for NeMo Fabric-originated invocations. |
+| `agent_id` | `default` | Selected agent for SDK and managed native clients. |
 | `channel_config` | None | OpenClaw-native `channels` and `bindings` for a prepared service. Every binding must target `agent_id`. Managed runtimes reject this setting. |
 | `port_range` | Random available range | Inclusive consumer-allocated range with `start` and `end` fields; it must span at least 111 ports. |
-| `startup_timeout_seconds` | `30` | Gateway startup timeout. |
+| `interfaces.dashboard` | None | Serve the Control UI on a managed runtime, with an exact `port`, optional `enabled`, and `public_origins`; refer to the [dashboard guide](../../../docs/integrations/harness/openclaw/openclaw-dashboard.mdx). |
+| `interfaces.terminal` | None | Attach the native terminal to the existing Gateway, without a separate port. Refer to the [terminal guide](../../../docs/integrations/harness/openclaw/openclaw-tui.mdx). |
+| `startup_timeout_seconds` | `60` | One deadline for all of start, from checking the `openclaw` command to the Gateway becoming ready; at most 75 seconds. |
 | `shutdown_timeout_seconds` | `5` | Graceful shutdown timeout. |
 | `connect_timeout_seconds` | `10` | Local HTTP connection timeout. |
 | `read_timeout_seconds` | None | Local HTTP response timeout. When unset, the invocation timeout bounds the response. |
 
 OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses `base_port + 2` for browser control and allocates browser CDP ports from `base_port + 11` through `base_port + 110`. Set `port_range` when the consumer reserves a port range before configuring NeMo Fabric; the adapter selects a base whose complete derived footprint fits inside that range. The adapter verifies only that `base_port` and `base_port + 2` are available before startup. OpenClaw allocates the CDP ports on demand instead of reserving the complete range, so the adapter cannot guarantee that those ports will still be available when OpenClaw needs them. Keep the configured range reserved for the lifetime of the runtime when using OpenClaw browser features.
 
-Relay telemetry and native OpenTelemetry are not supported.
+With native interfaces enabled, one Gateway owns all four client paths. A small adapter-owned plugin adds the configured instruction for the selected agent through the public `before_prompt_build` hook while preserving OpenClaw's native prompt and tool guidance. SDK requests omit duplicate instruction injection in that mode; SDK-only and service behavior are preserved. The existing `replace` mode selects the Fabric instruction without replacing OpenClaw's internal prompt. Model, workspace, tools, MCP, and skill configuration are shared; native responses remain native.
+
+Startup verifies the loaded hook through an authenticated, model-free probe before publishing connection files. Missing, blocked, or mismatched hooks fail with `openclaw_shared_configuration_unavailable`. The plugin requires both `allowConversationAccess` and `allowPromptInjection`: pinned OpenClaw gates `before_prompt_build` behind both permissions for external plugins.
+
+After readiness, private `interfaces/gateway.json` discovery references `dashboard.token` or `gateway.token`. Terminal selection adds an executable `interfaces/terminal` and `terminal.running` marker; the marker is removed first on stop. The launcher uses private client configuration and an environment SecretRef, not token arguments. Terminal attachment currently requires POSIX. Pinned TUI `/quit` can use a native exit-code-130 fallback while the Gateway stays usable.
+
+Refer to the [four-path architecture](../../../docs/integrations/harness/openclaw/openclaw.mdx) and [repeatable examples](../../../examples/interfaces/openclaw/README.md). Relay telemetry, ATIF/ATOF export, and native OpenTelemetry are not supported.
+
+With native browser or terminal access enabled, runtime activity is `unknown`; healthy endpoints can still pass normalized checks. SDK invocation state alone cannot account for native work.
 
 ## Gateway Health
 

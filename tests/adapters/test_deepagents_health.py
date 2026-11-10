@@ -195,7 +195,10 @@ async def test_deepagents_unsupported_level_has_no_probe(deepagents_health):
 
 
 @pytest.mark.parametrize("change", ["close", "stop"])
-async def test_deepagents_health_detects_closure_during_read(deepagents_health, change):
+@pytest.mark.parametrize("raises", [False, True])
+async def test_deepagents_health_detects_closure_during_read(
+    deepagents_health, change, raises
+):
     runtime, agent, _, connection = deepagents_health
 
     async def changed(_config):
@@ -203,6 +206,8 @@ async def test_deepagents_health_detects_closure_during_read(deepagents_health, 
             connection._running = False
         else:
             runtime._stopping = True
+        if raises:
+            raise RuntimeError("private-native-probe-detail")
         return agent.aget_state.return_value
 
     agent.aget_state.side_effect = changed
@@ -213,6 +218,7 @@ async def test_deepagents_health_detects_closure_during_read(deepagents_health, 
         else ("unknown", "observation_changed")
     )
     assert (result["outcome"], result["reason_code"]) == expected
+    assert "private-native-probe-detail" not in str(result)
 
 
 async def test_deepagents_health_distinguishes_cleanup_from_completed_stop(

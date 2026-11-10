@@ -16,6 +16,25 @@ Refer to the [Harbor example](../../../../../../../examples/harbor/README.md)
 for runnable SWE-Bench commands, configuration variations, reward checks, and
 Relay artifacts.
 
+## Complete Model Configuration
+
+Use `fabric_model_config` for a complete public [`ModelConfig`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/sdk/python/nemo-fabric-runtime/src/nemo_fabric/models.py), including `max_tokens`, `temperature`, `top_p`, `settings`, and adapter-declared top-level extensions. The selected descriptor determines which fields the adapter supports. Unknown fields and invalid values fail host preflight. This option requires host descriptor metadata from the matching catalog or `fabric_adapter_descriptor`.
+
+For programmatic jobs on Harbor 0.24, set `AgentConfig.kwargs["fabric_model_config"]` to `model.model_dump(mode="json")` and include the selected `fabric_adapter_id` in the same kwargs mapping. That Harbor version can reject job resume when a kwarg retains a typed Pydantic object because its saved defaults differ. Direct `FabricAgent` construction also accepts a `ModelConfig` instance.
+
+For example, after installing the matching Pi adapter and harness in your task image, configure an unknown model with Pi's top-level catalog metadata:
+
+```bash
+harbor run --path ./task --agent-import-path nemo_fabric.integrations.harbor.fabric_agent:FabricAgent \
+  --ak fabric_adapter_id=nvidia.fabric.pi \
+  --ak 'fabric_model_config={"provider":"openai","model":"example/custom-model","base_url":"https://model.example.com/v1","api_key_env":"MODEL_API_KEY","api":"openai-completions","context_window":32768,"max_tokens":2048,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0}}' \
+  --ae 'MODEL_API_KEY=${MODEL_API_KEY}'
+```
+
+Replace the model ID, endpoint, and limits with your served model's values. The host and task must use compatible NeMo Fabric packages and descriptor metadata. Pi's `api`, `context_window`, `input`, and `cost` are top-level extensions; putting them under `settings` is invalid. Set all four cost rates to the model's known per-million-token prices; use zero only for a model you explicitly treat as unpriced. Descriptor admission validates supplied fields. Pi's installed catalog membership and completeness checks for unknown models remain startup checks; native catalog models can inherit their metadata.
+
+Existing `--model`, `fabric_model_provider`, `fabric_model_base_url`, `fabric_model_api_key_env`, and `fabric_model_settings` calls remain supported. When combined with `fabric_model_config`, each explicitly supplied duplicate must equal the corresponding field in the complete object; conflicts are errors. The complete object's provider is explicit, with no provider inference or field merging. Keep credentials in Harbor's managed environment and name them with `api_key_env`; inline keys and credentials in endpoint URLs are rejected.
+
 ## Model Provider
 
 Omit `fabric_model_provider` to retain provider inference from the model name. Override it only when the selected adapter requires a different value; an OpenAI-compatible endpoint alone is not a reason to set `openai`. For adapters that honor `models.default.provider`, such as Qwen, use `fabric_model_provider=openai` for an OpenAI-compatible endpoint whose served model ID starts with another vendor prefix. For example, combine it with `model_name="nvidia/nemotron-3-ultra-550b-a55b"` and `fabric_model_base_url` to select the OpenAI protocol while preserving the exact served model ID. Without an override, the provider is inferred from the model prefix as before. The override requires a model and remains subject to the selected adapter’s model schema. Mini-SWE and OpenHands construct their LiteLLM model name from both the provider and model ID. With provider `nvidia`, both adapters prepend `nvidia_nim/` unless that prefix is already present. With other providers, they prepend `<provider>/` only to slash-free model IDs and preserve IDs that contain `/`. Selecting `openai` for the `nvidia/...` example therefore prevents adding `nvidia_nim/`; it does not add an `openai/` prefix. LiteLLM cannot infer a provider from that unchanged `nvidia/...` ID, so keep the inferred `nvidia` provider for Mini-SWE and OpenHands in this example.
@@ -91,6 +110,12 @@ These options configure NeMo Fabric rather than harness settings or Relay. The r
 The integration projects normalized `RunResult.usage` into Harbor's `AgentContext` without requiring NeMo Relay or ATIF. Harbor input counts include cache: inclusive NeMo Fabric input is copied unchanged, while exclusive input is combined with cache only when both counts are known. If input semantics are unknown, Harbor input remains unknown unless the adapter explicitly reports zero cache tokens. Legacy results remain valid, but their input count needs explicit cache semantics to populate Harbor's inclusive count; the original values remain in result metadata. Unknown counts and costs remain `None` and reported zeros remain zero; estimates are not promoted to reported cost. When the runner exits without a NeMo Fabric result, the integration sets all four Harbor accounting fields to `None`. ATIF `final_metrics` never fill these fields, because their scope and cache conventions are not verified against the invocation. They are kept under `metadata.fabric.atif_final_metrics` with `source: atif` and `coverage: unverified`. The same collection path applies to unsuccessful results that contain usage.
 
 **Reporting limitation:** Native Harbor trial and job totals sum available values and skip unknown fields. A displayed total can therefore omit usage or cost from steps or trials with unknown values. Do not interpret these aggregates as complete benchmark usage or expenditure when any contributing value is unknown.
+
+## Config Bundles And Discovery
+
+Set `fabric_config_bundle` to upload a host directory to `fabric_config_target` (default: `/tmp/nemo-fabric-config`). The task-side target becomes the configuration base directory. A bundle can contain only installation assets; it does not require an empty `adapters` directory.
+
+When the bundle contains an `adapters` directory, the bridge prepends `adapters` to discovery. An `adapters` child that is a file is invalid. Explicit `fabric_discovery_paths` are preserved in order and resolved inside the task against the configuration base directory, including when the bundle has no adapters. Relative adapter executables retain their descriptor-directory resolution. Missing explicit discovery paths and malformed descriptors still fail during task-side planning.
 
 ## Host Admission And Task Execution
 

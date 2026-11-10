@@ -106,6 +106,7 @@ NeMo Fabric maps the following into the harness:
 - Configured MCP servers are loaded as Deep Agents tools via
   `langchain-mcp-adapters`. A misconfigured server (non-mapping, empty target,
   unsupported transport) is a normalized configuration failure, not a silent drop.
+  MCP-reported tool errors (`ToolException`) and argument validation failures return error tool messages to the model so it can correct a call. Local argument-validation feedback includes field paths and reasons, such as `command: Field required`, without dumping argument payloads. This does not automatically retry or replay commands; other exceptions still propagate.
 - `tools.enabled` and `tools.blocked` are enforced by middleware across the full
   tool surface: Deep Agents built-ins (including `task`), MCP tools, and
   **delegated subagents** alike. Use Deep Agents-native tool names.

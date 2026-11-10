@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -98,9 +99,44 @@ def _config(command: Path, *, with_skills: bool = False) -> AgentConfig:
     )
 
 
+def _dashboard_config(command: Path, dashboard: dict[str, object]) -> AgentConfig:
+    config = _config(command)
+    assert config.harness is not None
+    config.harness.settings["interfaces"] = {"dashboard": dashboard}
+    return config
+
+
+def _dashboard_token(base_dir: Path) -> Path:
+    return (
+        base_dir
+        / "artifacts/.fabric/openclaw/runtimes/openclaw-runtime/interfaces/dashboard.token"
+    )
+
+
+async def _start(
+    runtime: adapter.OpenClawRuntime,
+    tmp_path: Path,
+    config: AgentConfig,
+    **payload: object,
+) -> None:
+    await runtime.start(
+        {
+            "config": config,
+            "runtime_context": _context(tmp_path).to_mapping(),
+            "base_dir": str(tmp_path),
+            **payload,
+        }
+    )
+
+
 @pytest.fixture(name="mock_openclaw")
 def mock_openclaw_fixture(repo_root: Path) -> Path:
     return repo_root / "tests/_utils/mock_openclaw.py"
+
+
+@pytest.fixture(name="dashboard_port")
+def dashboard_port_fixture() -> int:
+    return adapter._select_port({})
 
 
 def test_openclaw_port_availability_checks_one_port(
@@ -181,6 +217,53 @@ def test_openclaw_rejects_invalid_port_range(settings: dict[str, object]):
 
     assert caught.value.code == "openclaw_invalid_configuration"
     assert caught.value.metadata == {"field": "harness.settings.port_range"}
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        pytest.param(
+            {"interfaces": {"terminal": {"port": 20_000}}}, id="terminal-has-no-port"
+        ),
+        pytest.param(
+            {"interfaces": {"dashboard": {"port": 20_000, "token": "x"}}},
+            id="unknown-field",
+        ),
+        pytest.param({"interfaces": {"dashboard": {}}}, id="missing-port"),
+        pytest.param(
+            {"interfaces": {"dashboard": {"port": 65_426}}}, id="port-too-high"
+        ),
+        pytest.param(
+            {
+                "interfaces": {"dashboard": {"port": 20_000}},
+                "port_range": {"start": 20_000, "end": 20_200},
+            },
+            id="port-range-with-dashboard",
+        ),
+        pytest.param({"startup_timeout_seconds": 76}, id="startup-timeout-too-long"),
+        pytest.param({"agent_id": "my agent"}, id="agent-id-spaces"),
+        pytest.param({"agent_id": "a" * 65}, id="agent-id-too-long"),
+        pytest.param({"agent_id": "-agent"}, id="agent-id-prefix"),
+    ],
+)
+def test_openclaw_plan_rejects_invalid_settings(
+    tmp_path: Path, settings: dict[str, object]
+):
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "openclaw-interfaces"},
+            "harness": {
+                "adapter_id": "nvidia.fabric.openclaw",
+                "resolution": "preinstalled",
+                "settings": settings,
+            },
+            "models": {"default": {"provider": "test", "model": "fabric-echo"}},
+            "environment": {"provider": "local", "workspace": "."},
+        }
+    )
+
+    with pytest.raises(FabricConfigError):
+        Fabric().plan(config, base_dir=tmp_path)
 
 
 @pytest.mark.parametrize("raw", ["2026.9.34 extra", "2026.9.34\nuntrusted suffix"])
@@ -481,6 +564,10 @@ async def test_openclaw_runtime_generates_config_invokes_and_cleans_up(
     assert generated["mcp"]["servers"]["local"]["command"] == "python"
     assert generated["mcp"]["servers"]["remote"]["transport"] == ("streamable-http")
     assert "auth" not in generated["mcp"]["servers"]["remote"]
+    assert generated["gateway"]["controlUi"] == {"enabled": False}
+    assert not (tmp_path / "artifacts").exists()
+    # The sandbox would deny OpenClaw's model catalog lookup anyway.
+    assert generated["models"]["catalogRefresh"] == {"enabled": False}
     assert not state_root.exists()
 
 
@@ -1312,7 +1399,7 @@ async def test_openclaw_stop_continues_after_cleanup_failures(
     await runtime.stop()
 
     mock_client.aclose.assert_awaited_once_with()
-    mock_process.wait.assert_awaited_once_with()
+    mock_process.wait.assert_awaited()
     mock_close_job.assert_called_once_with(1234)
     assert log_task.cancelled()
     mock_temp_dir.cleanup.assert_called_once_with()
@@ -1321,6 +1408,416 @@ async def test_openclaw_stop_continues_after_cleanup_failures(
     assert runtime._windows_job is None
     assert runtime._log_tasks == []
     assert runtime._temp_dir is None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Requires POSIX file permissions")
+async def test_openclaw_dashboard_serves_control_ui_with_a_token_file(
+    mock_openclaw: Path, tmp_path: Path, dashboard_port: int
+):
+    capture = tmp_path / "config.json"
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(capture)
+    token_path = _dashboard_token(tmp_path)
+    runtime = adapter.OpenClawRuntime()
+
+    await _start(
+        runtime, tmp_path, _dashboard_config(mock_openclaw, {"port": dashboard_port})
+    )
+    try:
+        gateway_token = runtime._token
+        stored_token = token_path.read_text(encoding="utf-8")
+        token_mode = token_path.stat().st_mode & 0o777
+        directory_mode = token_path.parent.stat().st_mode & 0o777
+    finally:
+        await runtime.stop()
+
+    generated = json.loads(capture.read_text(encoding="utf-8"))
+    assert generated["gateway"]["port"] == dashboard_port
+    assert generated["gateway"]["controlUi"] == {
+        "enabled": True,
+        "allowedOrigins": [
+            f"http://127.0.0.1:{dashboard_port}",
+            f"http://localhost:{dashboard_port}",
+        ],
+    }
+    assert stored_token == gateway_token
+    assert token_mode == 0o600
+    assert directory_mode == 0o700
+    assert not token_path.exists()
+
+
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "win32"},
+    reason="Starts the mock Gateway, which CI runs only on Linux",
+)
+async def test_openclaw_dashboard_disabled_serves_no_control_ui(
+    mock_openclaw: Path, tmp_path: Path, dashboard_port: int
+):
+    capture = tmp_path / "config.json"
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(capture)
+    runtime = adapter.OpenClawRuntime()
+
+    await _start(
+        runtime,
+        tmp_path,
+        _dashboard_config(mock_openclaw, {"port": dashboard_port, "enabled": False}),
+    )
+    try:
+        gateway_port = runtime._port
+        token_exists = _dashboard_token(tmp_path).exists()
+    finally:
+        await runtime.stop()
+
+    generated = json.loads(capture.read_text(encoding="utf-8"))
+    assert generated["gateway"]["controlUi"] == {"enabled": False}
+    assert gateway_port != dashboard_port
+    assert not token_exists
+
+
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "win32"},
+    reason="Starts the mock Gateway, which CI runs only on Linux",
+)
+async def test_openclaw_dashboard_removes_the_token_when_start_fails_after_writing_it(
+    mock_openclaw: Path,
+    tmp_path: Path,
+    dashboard_port: int,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    token_path = _dashboard_token(tmp_path)
+    token_written: list[bool] = []
+
+    # Start reads the HTTP read timeout only after it writes the token.
+    def fail_after_token_write(_settings):
+        token_written.append(token_path.exists())
+        raise RuntimeError("start failed after writing the token")
+
+    monkeypatch.setattr(adapter, "_read_timeout", fail_after_token_write)
+    runtime = adapter.OpenClawRuntime()
+
+    with pytest.raises(RuntimeError, match="after writing the token"):
+        await _start(
+            runtime,
+            tmp_path,
+            _dashboard_config(mock_openclaw, {"port": dashboard_port}),
+        )
+
+    assert token_written == [True]
+    assert not token_path.exists()
+    assert runtime._process is None
+
+
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "win32"},
+    reason="Starts the mock Gateway, which CI runs only on Linux",
+)
+async def test_openclaw_dashboard_stop_retries_a_token_it_could_not_remove(
+    mock_openclaw: Path,
+    tmp_path: Path,
+    dashboard_port: int,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    token_path = _dashboard_token(tmp_path)
+    runtime = adapter.OpenClawRuntime()
+    await _start(
+        runtime, tmp_path, _dashboard_config(mock_openclaw, {"port": dashboard_port})
+    )
+    unlink = Path.unlink
+
+    def fail_token_unlink(path: Path, missing_ok: bool = False) -> None:
+        if path == token_path:
+            raise PermissionError("token is locked")
+        unlink(path, missing_ok=missing_ok)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "unlink", fail_token_unlink)
+        await runtime.stop()
+
+    assert runtime._process is None
+    assert token_path.exists()
+    assert "could not remove its dashboard token" in caplog.text
+
+    await runtime.stop()
+
+    assert not token_path.exists()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Runs the mock openclaw script directly"
+)
+@pytest.mark.parametrize("offset", [0, 2])
+async def test_openclaw_dashboard_port_in_use_fails_start(
+    mock_openclaw: Path, tmp_path: Path, dashboard_port: int, offset: int
+):
+    runtime = adapter.OpenClawRuntime()
+
+    with socket.create_server(("127.0.0.1", dashboard_port + offset)):
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await _start(
+                runtime,
+                tmp_path,
+                _dashboard_config(mock_openclaw, {"port": dashboard_port}),
+            )
+
+    assert caught.value.code == "openclaw_interface_port_unavailable"
+    assert caught.value.metadata == {
+        "field": "harness.settings.interfaces.dashboard.port",
+        "port": dashboard_port + offset,
+    }
+    assert runtime._process is None
+    assert not (tmp_path / "artifacts").exists()
+
+
+@pytest.mark.parametrize("operation", ["prepare", "attach", "connect"])
+async def test_openclaw_services_reject_interfaces(
+    mock_openclaw: Path, tmp_path: Path, operation: str
+):
+    runtime = adapter.OpenClawRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await _start(
+            runtime,
+            tmp_path,
+            _dashboard_config(mock_openclaw, {"port": 20_000}),
+            service={"operation": operation},
+        )
+
+    assert caught.value.code == "openclaw_interfaces_require_managed_runtime"
+    assert runtime._process is None
+
+
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "win32"},
+    reason="Starts the mock Gateway, which CI runs only on Linux",
+)
+async def test_openclaw_stop_ends_the_gateway_where_group_signals_are_denied(
+    mock_openclaw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    runtime = adapter.OpenClawRuntime()
+    await runtime.start(
+        {
+            "config": _config(mock_openclaw),
+            "runtime_context": _context(tmp_path).to_mapping(),
+            "base_dir": str(tmp_path),
+        }
+    )
+    gateway = runtime._process
+
+    # OpenShell's sandbox denies signals to a process group with EPERM.
+    def deny_group_signals(_pgid: int, _signum: int) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "killpg", deny_group_signals)
+    try:
+        await runtime.stop()
+
+        assert gateway.returncode is not None
+    finally:
+        if gateway.returncode is None:
+            gateway.kill()
+            await gateway.wait()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+async def test_openclaw_stop_kills_a_gateway_that_ignores_sigterm_where_group_signals_are_denied(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = adapter.OpenClawRuntime()
+    runtime._shutdown_timeout = 0.01
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.pid = 1234
+    mock_process.returncode = None
+    wait_calls = 0
+
+    async def wait_for_process():
+        nonlocal wait_calls
+        wait_calls += 1
+        if wait_calls == 1:
+            await asyncio.Event().wait()
+
+    mock_process.wait = AsyncMock(side_effect=wait_for_process)
+    runtime._process = mock_process
+    signals: list[tuple[int, int]] = []
+
+    def deny_group_signals(_pgid: int, _signum: int) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(adapter.os, "killpg", deny_group_signals)
+    monkeypatch.setattr(
+        adapter.os, "kill", lambda pid, signum: signals.append((pid, signum))
+    )
+
+    await runtime.stop()
+
+    assert signals == [(1234, signal.SIGTERM), (1234, signal.SIGKILL)]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+@pytest.mark.parametrize("group_signals_denied", [False, True])
+async def test_openclaw_stop_is_bounded_with_descendant_holding_gateway_pipes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    group_signals_denied: bool,
+):
+    marker = tmp_path / "descendant.ready"
+    descendant_code = """
+import signal
+import sys
+import time
+from pathlib import Path
+
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+Path(sys.argv[1]).touch()
+time.sleep(60)
+"""
+    gateway_code = """
+import signal
+import subprocess
+import sys
+import time
+
+if sys.argv[3] == "ignore-term":
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+subprocess.Popen([sys.executable, "-c", sys.argv[1], sys.argv[2]])
+time.sleep(60)
+"""
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        gateway_code,
+        descendant_code,
+        str(marker),
+        "ignore-term" if group_signals_denied else "exit-on-term",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    runtime = adapter.OpenClawRuntime()
+    runtime._process = process
+    runtime._shutdown_timeout = 0.1
+    original_killpg = os.killpg
+
+    def deny_group_signals(_pgid: int, _signum: int) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    try:
+        async with asyncio.timeout(5):
+            while not marker.exists():
+                await asyncio.sleep(0.01)
+
+        if group_signals_denied:
+            monkeypatch.setattr(os, "killpg", deny_group_signals)
+
+        await asyncio.wait_for(runtime.stop(), timeout=2)
+
+        assert process.returncode is not None
+        assert process.stdout is not None
+        assert process.stderr is not None
+        if not group_signals_denied:
+            # EOF proves the descendant closed the inherited pipes, whether
+            # Process.wait returns at leader exit or waits for pipe closure.
+            async with asyncio.timeout(1):
+                await asyncio.gather(process.stdout.read(), process.stderr.read())
+    finally:
+        with suppress(ProcessLookupError):
+            original_killpg(process.pid, signal.SIGKILL)
+        await process.wait()
+        if process.stdout is not None and process.stderr is not None:
+            await asyncio.gather(process.stdout.read(), process.stderr.read())
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+@pytest.mark.parametrize("group_signals_denied", [False, True])
+async def test_openclaw_stop_does_not_kill_a_gateway_that_exited_during_cancellation(
+    monkeypatch: pytest.MonkeyPatch, group_signals_denied: bool
+):
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.pid = 1234
+    mock_process.returncode = None
+
+    async def exit_then_cancel():
+        mock_process.returncode = 0
+        raise asyncio.CancelledError
+
+    mock_process.wait = AsyncMock(side_effect=exit_then_cancel)
+    runtime._process = mock_process
+    group_signals: list[tuple[int, int]] = []
+    pid_signals: list[tuple[int, int]] = []
+
+    def signal_group(pid: int, signum: int) -> None:
+        group_signals.append((pid, signum))
+        if group_signals_denied:
+            raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(adapter.os, "killpg", signal_group)
+    monkeypatch.setattr(
+        adapter.os, "kill", lambda pid, signum: pid_signals.append((pid, signum))
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await runtime.stop()
+
+    assert group_signals == [(1234, signal.SIGTERM), (1234, signal.SIGKILL)]
+    # Once the Gateway is reaped, only the process group may be signaled.
+    assert pid_signals == ([(1234, signal.SIGTERM)] if group_signals_denied else [])
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Runs the mock openclaw script directly"
+)
+async def test_openclaw_startup_timeout_bounds_all_of_start(
+    mock_openclaw: Path,
+    tmp_path: Path,
+    dashboard_port: int,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # Each command finishes within the timeout, but the two together don't.
+    monkeypatch.setenv("FAKE_OPENCLAW_COMMAND_DELAY", "0.6")
+    monkeypatch.setenv("FAKE_OPENCLAW_CAPTURE", str(tmp_path / "config.json"))
+    config = _dashboard_config(mock_openclaw, {"port": dashboard_port})
+    assert config.harness is not None
+    config.harness.settings["startup_timeout_seconds"] = 1
+    runtime = adapter.OpenClawRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(
+            {
+                "config": config,
+                "runtime_context": _context(tmp_path).to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+
+    assert caught.value.code == "openclaw_command_timeout"
+    assert runtime._process is None
+    assert not (tmp_path / "artifacts").exists()
+
+
+async def test_openclaw_startup_deadline_bounds_a_pending_readiness_request():
+    async def never_respond(reader, _writer):
+        await reader.read()
+
+    server = await asyncio.start_server(never_respond, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = None
+    runtime._process = mock_process
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime._wait_started(port, "token", 0.2)
+    finally:
+        server.close()
+
+    assert caught.value.code == "openclaw_gateway_start_timeout"
+    # Each readiness request otherwise waits up to 1 second for a response.
+    assert loop.time() - started < 0.8
 
 
 @pytest.mark.parametrize("phase", ["client", "process", "logs"])
@@ -1570,6 +2067,35 @@ def test_openclaw_signal_handler_forwards_to_gateway_process_group(
         runtime._restore_signal_handlers()
 
     assert caught.value.code == 128 + signal.SIGTERM
+    assert forwarded == [(1234, signal.SIGTERM)]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX signal forwarding")
+def test_openclaw_signal_handler_forwards_to_gateway_where_group_signals_are_denied(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.pid = 1234
+    mock_process.returncode = None
+    runtime._process = mock_process
+    forwarded: list[tuple[int, int]] = []
+
+    def deny_group_signals(_pgid: int, _signum: int) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(adapter.os, "killpg", deny_group_signals)
+    monkeypatch.setattr(
+        adapter.os, "kill", lambda pid, signum: forwarded.append((pid, signum))
+    )
+
+    runtime._install_signal_handlers()
+    try:
+        with pytest.raises(SystemExit):
+            runtime._signal_handler(signal.SIGTERM, None)
+    finally:
+        runtime._restore_signal_handlers()
+
     assert forwarded == [(1234, signal.SIGTERM)]
 
 
@@ -1966,3 +2492,147 @@ async def test_openclaw_gateway_stream_keeps_usage_observational():
         "observed": {"input_tokens": 42, "output_tokens": 8, "total_tokens": 50},
         "gaps": ["scope_unverified"],
     }
+
+
+@pytest.mark.skipif(os.name != "posix", reason="The native terminal requires POSIX")
+@pytest.mark.parametrize(
+    "selection, shared",
+    [
+        ({}, False),
+        ({"terminal": {"enabled": False}}, False),
+        ({"terminal": {}}, True),
+    ],
+)
+@pytest.mark.parametrize("agent_id", ["default", "Reviewer"])
+async def test_native_configuration_owns_prompt_once(
+    mock_openclaw, tmp_path, selection, shared, agent_id
+):
+    capture = tmp_path / "config.json"
+    request_capture = tmp_path / "request.json"
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(capture)
+    os.environ["FAKE_OPENCLAW_REQUEST"] = str(request_capture)
+    config = _config(mock_openclaw)
+    config.harness.settings["interfaces"] = selection
+    config.harness.settings["agent_id"] = agent_id
+    runtime = adapter.OpenClawRuntime()
+    await _start(runtime, tmp_path, config)
+    try:
+        result = await runtime.invoke(
+            AgentRunRequest(input="Check shared configuration."), _context(tmp_path)
+        )
+        assert result.status == "succeeded"
+        request = json.loads(request_capture.read_text())
+        assert [message["role"] for message in request["messages"]] == (
+            ["user"] if shared else ["system", "user"]
+        )
+        generated = json.loads(capture.read_text())
+        if shared:
+            entry = generated["plugins"]["entries"]["fabric-shared-config"]
+            assert entry["config"] == {
+                "agentId": agent_id,
+                "systemInstruction": "Be concise.",
+            }
+            directory = _dashboard_token(tmp_path).parent
+            assert (directory / "terminal.running").exists()
+            assert (directory / "gateway.json").exists()
+            assert (await runtime.check("ready"))["activity"] == "unknown"
+        else:
+            assert "plugins" not in generated
+            assert not _dashboard_token(tmp_path).parent.exists()
+        for level in ("live", "active", "ready"):
+            report = await runtime.check(level)
+            assert report["outcome"] == "passed", report
+    finally:
+        await runtime.stop()
+    assert not (_dashboard_token(tmp_path).parent / "terminal.running").exists()
+
+
+@pytest.mark.parametrize(
+    "agent_id", ["my agent", "-agent", "_agent", "a" * 65, "é", " reviewer "]
+)
+async def test_openclaw_rejects_noncanonical_agent_ids(
+    mock_openclaw, tmp_path, agent_id
+):
+    config = _config(mock_openclaw)
+    config.harness.settings["agent_id"] = agent_id
+    runtime = adapter.OpenClawRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await _start(runtime, tmp_path, config)
+    assert caught.value.code == "openclaw_invalid_configuration"
+    assert caught.value.metadata == {"field": "harness.settings.agent_id"}
+    assert runtime._process is None
+
+
+@pytest.mark.skipif(os.name != "posix", reason="The native terminal requires POSIX")
+@pytest.mark.parametrize("mode", ["missing", "inactive", "wrong-agent"])
+async def test_shared_instruction_probe_fails_before_publishing_interfaces(
+    mock_openclaw, tmp_path, mode
+):
+    os.environ["FAKE_OPENCLAW_SHARED_CONFIG"] = mode
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    config = _config(mock_openclaw)
+    config.harness.settings["interfaces"] = {"terminal": {}}
+    runtime = adapter.OpenClawRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await _start(runtime, tmp_path, config)
+    assert caught.value.code == "openclaw_shared_configuration_unavailable"
+    assert runtime._process is None
+    assert not (_dashboard_token(tmp_path).parent / "gateway.json").exists()
+    assert not (_dashboard_token(tmp_path).parent / "terminal.running").exists()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("FABRIC_OPENCLAW_TEST_COMMAND"),
+    reason="Set FABRIC_OPENCLAW_TEST_COMMAND for actual plugin failure qualification",
+)
+@pytest.mark.parametrize(
+    "failure",
+    ["missing", "renamed", "conversation-denied", "prompt-denied", "wrong-agent"],
+)
+async def test_native_shared_hook_failures_reject_startup(
+    tmp_path, api_server, monkeypatch, failure
+):
+    plugin = tmp_path / "plugin"
+    shutil.copytree(Path(adapter.__file__).with_name("native_config"), plugin)
+    entrypoint = plugin / "index.mjs"
+    if failure == "missing":
+        entrypoint.write_text(
+            'throw new Error("plugin load failure for qualification");'
+        )
+    elif failure == "renamed":
+        entrypoint.write_text(
+            entrypoint.read_text().replace(
+                'api.on("before_prompt_build"', 'api.on("agent_end"'
+            )
+        )
+    original = adapter._openclaw_config
+
+    def generated_config(*args, **kwargs):
+        generated = original(*args, **kwargs)
+        generated["plugins"]["load"]["paths"] = [str(plugin)]
+        shared = generated["plugins"]["entries"]["fabric-shared-config"]
+        if failure == "conversation-denied":
+            shared["hooks"]["allowConversationAccess"] = False
+        elif failure == "prompt-denied":
+            shared["hooks"]["allowPromptInjection"] = False
+        elif failure == "wrong-agent":
+            shared["config"]["agentId"] = "other"
+        return generated
+
+    monkeypatch.setattr(adapter, "_openclaw_config", generated_config)
+    config = _config(Path(os.environ["FABRIC_OPENCLAW_TEST_COMMAND"]))
+    config.harness.settings["interfaces"] = {"terminal": {}}
+    config.models["default"].base_url = f"{api_server}/v1"
+    runtime = adapter.OpenClawRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await _start(runtime, tmp_path, config)
+    assert caught.value.code == "openclaw_shared_configuration_unavailable"
+    assert runtime._process is None
+    assert not (_dashboard_token(tmp_path).parent / "gateway.json").exists()
+    async with httpx.AsyncClient(trust_env=False) as client:
+        assert (await client.get(f"{api_server}/_requests")).json() == []
+
+
+@pytest.mark.parametrize("agent_id", ["Reviewer", "agent_1-A", "a" * 64])
+def test_openclaw_preserves_valid_agent_id_spelling(agent_id):
+    assert adapter._agent_id({"agent_id": agent_id}) == agent_id

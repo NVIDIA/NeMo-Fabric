@@ -842,9 +842,151 @@
         "settings_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "sdk": {
+                    "properties": {
+                      "enabled": {
+                        "const": false
+                      }
+                    },
+                    "required": [
+                      "enabled"
+                    ]
+                  }
+                },
+                "required": [
+                  "sdk"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "interfaces": {
+                    "anyOf": [
+                      {
+                        "properties": {
+                          "api": {
+                            "properties": {
+                              "enabled": {
+                                "const": true
+                              }
+                            }
+                          }
+                        },
+                        "required": [
+                          "api"
+                        ]
+                      },
+                      {
+                        "properties": {
+                          "dashboard": {
+                            "properties": {
+                              "enabled": {
+                                "const": true
+                              }
+                            }
+                          }
+                        },
+                        "required": [
+                          "dashboard"
+                        ]
+                      },
+                      {
+                        "properties": {
+                          "terminal": {
+                            "properties": {
+                              "enabled": {
+                                "const": true
+                              }
+                            }
+                          }
+                        },
+                        "required": [
+                          "terminal"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "interfaces"
+                ]
+              }
+            }
+          ],
           "properties": {
+            "interfaces": {
+              "additionalProperties": false,
+              "description": "Native interfaces served by the runtime as child processes.",
+              "properties": {
+                "api": {
+                  "additionalProperties": false,
+                  "description": "Hermes's API server, run by a gateway child. After every enabled interface starts, the adapter writes its bearer token to <artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/api.token.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Serve Hermes's OpenAI-compatible API server. A present api interface is on unless this is false.",
+                      "type": "boolean"
+                    },
+                    "port": {
+                      "description": "Exact loopback port for the API server. Start fails if it is in use.",
+                      "maximum": 65535,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "port"
+                  ],
+                  "type": "object"
+                },
+                "dashboard": {
+                  "additionalProperties": false,
+                  "description": "Hermes's dashboard, which has no sign-in when bound to loopback. It needs a built frontend at HERMES_WEB_DIST.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Serve Hermes's dashboard and browser chat. A present dashboard is on unless this is false.",
+                      "type": "boolean"
+                    },
+                    "port": {
+                      "description": "Exact loopback port for the dashboard. Start fails if it is in use.",
+                      "maximum": 65535,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "port"
+                  ],
+                  "type": "object"
+                },
+                "terminal": {
+                  "additionalProperties": false,
+                  "description": "Experimental terminal attachment to a managed TUI backend. Uses headless serve without dashboard assets, or shares the dashboard process. The configuration (including terminal.port), interfaces/tui.json, interfaces/tui.token, and the nemo_fabric_adapters.hermes.terminal helper may change across releases as the #579 launcher contract is adopted; compatibility is not guaranteed for these surfaces.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "type": "boolean"
+                    },
+                    "port": {
+                      "description": "Experimental TUI backend loopback port. Must match dashboard.port when both interfaces are enabled. This required field may be removed when the #579 launcher contract is adopted.",
+                      "maximum": 65535,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "port"
+                  ],
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
             "max_tokens": {
-              "default": 512,
               "description": "Maximum number of tokens in each Hermes model response.",
               "minimum": 1,
               "type": "integer"
@@ -890,6 +1032,25 @@
               "description": "Whether Hermes saves its native conversation trajectories as JSONL.",
               "type": "boolean"
             },
+            "sdk": {
+              "additionalProperties": false,
+              "description": "Embedded SDK execution, enabled by default. Runtime management remains available when disabled.",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Initialize the embedded SDK agent during startup. Disable for native-only execution; SDK invocation then fails explicitly.",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "startup_timeout_seconds": {
+              "default": 60,
+              "description": "Time from the start of the runtime for every enabled interface to pass its health check, within NeMo Fabric's 90-second start limit.",
+              "exclusiveMinimum": 0,
+              "maximum": 75,
+              "type": "number"
+            },
             "terminal_timeout": {
               "default": 60,
               "description": "Maximum number of seconds for a Hermes terminal operation.",
@@ -917,7 +1078,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.7.0"
       },
-      "sha256": "6539b80cd3dbc76f2db58640bb957dcbe5f9e45421a2d7f9a45785325f354f38",
+      "sha256": "6b75b6803c8a4fac6cac5b96aa68b32e7a1b058a4c33f24041d22124b9caae85",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {
@@ -2001,11 +2162,23 @@
         "settings_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
+          "dependentSchemas": {
+            "port_range": {
+              "properties": {
+                "interfaces": {
+                  "properties": {
+                    "dashboard": false
+                  }
+                }
+              }
+            }
+          },
           "properties": {
             "agent_id": {
               "default": "default",
-              "description": "OpenClaw agent selected for NeMo Fabric-originated invocations.",
+              "description": "OpenClaw agent selected for SDK invocations and managed native clients.",
               "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$",
               "type": "string"
             },
             "channel_config": {
@@ -2053,6 +2226,55 @@
               "exclusiveMinimum": 0,
               "type": "number"
             },
+            "interfaces": {
+              "additionalProperties": false,
+              "description": "Native interfaces served by a managed runtime. Services reject interfaces.",
+              "properties": {
+                "dashboard": {
+                  "additionalProperties": false,
+                  "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Serve the Control UI. A present dashboard is on unless this is false.",
+                      "type": "boolean"
+                    },
+                    "port": {
+                      "description": "Exact loopback Gateway base port, which serves the Control UI. Start fails if it or port + 2 is in use. OpenClaw allocates browser ports through port + 110 on demand, so keep that range free. Can't be combined with port_range.",
+                      "maximum": 65425,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "public_origins": {
+                      "default": [],
+                      "description": "Additional browser HTTP(S) origins. OpenClaw also permits loopback origins; the token is always required.",
+                      "items": {
+                        "pattern": "^https?://[^/\\s?#@]+$",
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "uniqueItems": true
+                    }
+                  },
+                  "required": [
+                    "port"
+                  ],
+                  "type": "object"
+                },
+                "terminal": {
+                  "additionalProperties": false,
+                  "description": "Attach the native terminal to the existing Gateway. No terminal port; publishes a private executable launcher and terminal.running marker.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
             "openclaw_command": {
               "description": "OpenClaw executable name or path. Relative paths containing a directory are resolved from the NeMo Fabric base directory.",
               "minLength": 1,
@@ -2091,9 +2313,10 @@
               "type": "number"
             },
             "startup_timeout_seconds": {
-              "default": 30,
-              "description": "Maximum time to wait for the OpenClaw Gateway to become ready.",
+              "default": 60,
+              "description": "One deadline for all of start, from checking the OpenClaw command to the Gateway becoming ready, within NeMo Fabric's 90-second start limit.",
               "exclusiveMinimum": 0,
+              "maximum": 75,
               "type": "number"
             }
           },
@@ -2105,7 +2328,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.7.0"
       },
-      "sha256": "bc95c4dfeee7638a490df68073543d8632b1eb7d9957c4874d72dd8522e99c56",
+      "sha256": "dbfb74e0d2a2ba4db50bdc0d93140c0de3abc07d90f6551b9dd1f28458b9cc59",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {

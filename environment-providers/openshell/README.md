@@ -90,6 +90,12 @@ finally:
     await fabric.release_environment(environment)
 ```
 
+Before starting a runtime, the host polls `fabric-agent-ctl check` without a
+runtime target until the NeMo Fabric runtime server reports a passing server check.
+Sandbox readiness alone does not authorize startup. Server checks have a 105-second allowance after configuration and optional software-evidence collection. A passing check gives the following remote start its own full 105-second allowance. The provider retains its bounded gateway and response transport grace. A server that never passes produces
+`host_unavailable` without sending `start`, and a later startup attempt can retry
+the server check. NeMo Fabric sends `start` once and never replays an uncertain start.
+
 The host sends a task-local `FabricConfig` to `fabric-agent-ctl start`, then full
 `RunRequest` values to invoke. The task SDK owns runtime IDs, state, and normalized
 results, including failed results with partial output. Host gateway settings and

@@ -50,7 +50,7 @@ runtime assumptions but never installs harnesses or credentials at run time.
   `nemo-fabric[claude]`, `nemo-fabric[codex]`,
   or `nemo-fabric[deepagents]`.
 - Install Hermes Agent separately from the Fabric adapter. Follow the
-  [Hermes integration guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes.mdx)
+  [Hermes integration guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes/hermes.mdx)
   for the current compatible interpreter, source checkout, Relay dependencies,
   and adapter installation. The `nemo-fabric[hermes-agent]` extra does not
   install Hermes Agent.
@@ -173,6 +173,8 @@ construction.
 
 ## Choose A Lifecycle
 
+For Hermes, embedded SDK execution is enabled and eager by default. Set `harness.settings.sdk.enabled=False` only for native-only runtimes with an enabled API, dashboard, or terminal interface; management through the SDK remains available, but invocation fails explicitly. Browser and terminal clients share one managed TUI backend. Native responses remain native even when Relay emits standard ATOF/ATIF; do not treat them as SDK `RunResult` objects. Follow the [Hermes invocation guides](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes/hermes.mdx) for interface-specific installation and attachment.
+
 For Deep Agents, mini-SWE-agent, and the LangGraph custom-agent example, pass the same UUID string through `RunRequest.relay_session_root` on each conversation turn to group Relay trajectories under one session. Core forwards the typed field as `AgentRunRequest.relay_session_root`; context keys do not control Relay propagation. An unusable UUID preserves per-request behavior. The remaining adapters do not consume this field.
 
 Pick the smallest lifecycle the consumer needs:
@@ -229,6 +231,8 @@ Use typed `EnvironmentHandle` and `EnvironmentReference` objects. Stop the
 runtime before calling `release_environment(environment)` separately. Provider
 availability and reuse limits vary; task paths must remain strings for non-local
 environments. See the [environment lifecycle guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#explicit-environment-lifecycle).
+
+Use `await fabric.runtime_status(runtime_id=runtime_id, agent_name=name)` to read recorded state and a safe discovery handle for a runtime started by the same `Fabric` instance. The client retains live runtime objects until successful stop. Add `environment=environment` for an OpenShell lookup through `fabric-agent-ctl status`, including from a later client process while the original server remains alive. `RuntimeStatusReport` reports `active`, `stopped`, or `failed`; `server_state` is present for server reads and null for direct local reads. Each client holds at most 128 runtime records, including pending starts. New starts evict the oldest successfully stopped records first; when active, failed, and pending runtimes fill the limit, startup raises `FabricStateError` with `code="runtime_limit_reached"`. Retained stopped records have a null handle. Discovery handles omit environment variable values and arbitrary provider metadata; use the original `Runtime` for invocation and cleanup. Status reads perform no lifecycle operation or health probe. Use `Fabric.check()` when the consumer needs fresh health evidence.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,

@@ -6,7 +6,8 @@
 import asyncio
 
 import pytest
-from nemo_fabric import FabricConfigError, RunRequest, RuntimeStatus
+from nemo_fabric import FabricConfigError, FabricStateError, RunRequest, RuntimeStatus
+from nemo_fabric.errors import FabricRuntimeError
 from nemo_fabric.runtime_server.protocol import ProtocolError
 
 
@@ -30,6 +31,27 @@ async def test_start_delegates_to_existing_sdk(
     assert args[0].to_mapping()["metadata"]["name"] == config["metadata"]["name"]
     assert kwargs == {"base_dir": host.directory}
     mock_fabric.start_runtime.assert_awaited_once()
+
+
+@pytest.mark.parametrize("previously_used", [False, True])
+async def test_capacity_rejection_preserves_server_ownership_and_fixed_diagnostics(
+    host, host_request, mock_fabric, runtime_factory, previously_used
+):
+    if previously_used:
+        assert (await host.handle(host_request("start")))["status"] == "succeeded"
+    mock_fabric.start_runtime.side_effect = FabricStateError(
+        "TEST_ONLY_PRIVATE", stage="start", code="runtime_limit_reached"
+    )
+    response = await host.handle(host_request("start"))
+    assert response["error"]["code"] == "runtime_limit_reached"
+    assert response["error"]["effects"] == "none"
+    assert response["changed"] is False
+    assert not host.start_uncertain
+    assert host.has_used_runtime is previously_used
+    assert "TEST_ONLY_PRIVATE" not in str(response)
+    mock_fabric.start_runtime.side_effect = None
+    mock_fabric.start_runtime.return_value = runtime_factory("replacement")
+    assert (await host.handle(host_request("start")))["status"] == "succeeded"
 
 
 @pytest.mark.parametrize(
@@ -172,6 +194,58 @@ async def test_sdk_preflight_rejection_does_not_consume_lifecycle(
     )
     assert response["error"]["effects"] == "none"
     assert not host.has_used_runtime
+    assert "PRIVATE" not in str(response)
+
+
+FAILURE_MESSAGES = {
+    "start": "Fabric could not establish an active runtime.",
+    "invoke": "Fabric did not report a successful invocation.",
+    "stop": "Fabric could not complete the stop operation.",
+}
+
+
+async def fail_operation(
+    host, host_request, mock_fabric, mock_runtime, operation, error
+):
+    if operation == "start":
+        mock_fabric.start_runtime.side_effect = error
+        return await host.handle(host_request("start"))
+    await host.handle(host_request("start"))
+    getattr(mock_runtime, operation).side_effect = error
+    fields = {"input": {}} if operation == "invoke" else {}
+    return await host.handle(host_request(operation, **fields))
+
+
+@pytest.mark.parametrize("operation", ["start", "invoke", "stop"])
+async def test_failed_operation_names_the_runtime_error_code_without_its_message(
+    host, host_request, mock_fabric, mock_runtime, operation
+):
+    error = FabricRuntimeError(
+        f"adapter lifecycle {operation} failed: PRIVATE",
+        stage=operation,
+        code="openclaw_gateway_start_timeout",
+    )
+    response = await fail_operation(
+        host, host_request, mock_fabric, mock_runtime, operation, error
+    )
+    assert response["error"]["code"] == f"{operation}_failed"
+    assert response["error"]["message"] == (
+        f"{FAILURE_MESSAGES[operation]} Cause: openclaw_gateway_start_timeout."
+    )
+    assert "PRIVATE" not in str(response)
+
+
+@pytest.mark.parametrize("operation", ["start", "invoke", "stop"])
+@pytest.mark.parametrize("code", ["PRIVATE value", "x" * 65])
+async def test_failed_operation_omits_a_cause_that_is_not_an_identifier(
+    host, host_request, mock_fabric, mock_runtime, operation, code
+):
+    error = FabricRuntimeError("failed", stage=operation, code=code)
+    response = await fail_operation(
+        host, host_request, mock_fabric, mock_runtime, operation, error
+    )
+    assert response["error"]["code"] == f"{operation}_failed"
+    assert response["error"]["message"] == FAILURE_MESSAGES[operation]
     assert "PRIVATE" not in str(response)
 
 

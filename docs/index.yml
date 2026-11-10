@@ -75,7 +75,15 @@ navigation:
           - page: Factory Droid
             path: ./integrations/harness/droid.mdx
           - page: Hermes Agent
-            path: ./integrations/harness/hermes.mdx
+            path: ./integrations/harness/hermes/hermes.mdx
+          - page: Hermes SDK
+            path: ./integrations/harness/hermes/hermes-sdk.mdx
+          - page: Hermes API
+            path: ./integrations/harness/hermes/hermes-api.mdx
+          - page: Hermes Dashboard
+            path: ./integrations/harness/hermes/hermes-dashboard.mdx
+          - page: Hermes Terminal TUI
+            path: ./integrations/harness/hermes/hermes-tui.mdx
           - page: LangChain Deep Agents
             path: ./integrations/harness/deepagents.mdx
           - page: Kilo Code
@@ -87,7 +95,15 @@ navigation:
           - page: mini-SWE-agent
             path: ./integrations/harness/mini-swe-agent.mdx
           - page: OpenClaw
-            path: ./integrations/harness/openclaw.mdx
+            path: ./integrations/harness/openclaw/openclaw.mdx
+          - page: OpenClaw SDK
+            path: ./integrations/harness/openclaw/openclaw-sdk.mdx
+          - page: OpenClaw HTTP API
+            path: ./integrations/harness/openclaw/openclaw-api.mdx
+          - page: OpenClaw Dashboard
+            path: ./integrations/harness/openclaw/openclaw-dashboard.mdx
+          - page: OpenClaw Terminal TUI
+            path: ./integrations/harness/openclaw/openclaw-tui.mdx
           - page: OpenHands
             path: ./integrations/harness/openhands.mdx
           - page: OpenCode

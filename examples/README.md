@@ -48,6 +48,10 @@ Pi's startup `model_redirect` marks are not included in `atof_records`.
 
 The [OpenShell Code Review example](code_review_agent/README.md#run-hermes-in-openshell) packages Hermes Agent inside the sandbox and uses the normal SDK/provider lifecycle from the host. It runs two review turns and can collect NeMo Relay evidence.
 
+## Native Interfaces
+
+The [native interface examples](interfaces/README.md) are organized by harness. Each harness README provides setup, runnable commands, and manual checks for its supported interfaces.
+
 ## LangGraph Custom Agent
 
 [`langgraph_custom_agent`](langgraph_custom_agent/README.md) demonstrates how
@@ -95,3 +99,8 @@ Start with the shared setup and execution model in the
 ## Software Evidence
 
 [Selected software evidence](provenance/README.md) reproduces six execution paths, separate venvs, disabled collection and stable version comparison with explicit coverage limits.
+
+
+## Native Hermes Interfaces
+
+The [interfaces examples](interfaces/hermes/README.md) exercise the managed Hermes API and provide a manual terminal/browser TUI host. Terminal and browser clients share one runtime-owned TUI service; SDK execution can be disabled explicitly for native-only use.
