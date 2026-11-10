@@ -468,6 +468,42 @@ async def test_adapter_deadline_keeps_normalized_code_and_native_cause(
     assert isinstance(caught.value.__cause__, TimeoutError)
 
 
+@pytest.mark.parametrize(
+    "attachment_error_type", [RecursionError, ValueError, KeyboardInterrupt, SystemExit]
+)
+def test_native_deadline_attachment_failure_preserves_exception_kind(
+    hermes_shim_agent_dir, monkeypatch, attachment_error_type
+):
+    plan = native.plan_config(
+        json.dumps(hermes_shim_config().to_mapping()), str(hermes_shim_agent_dir)
+    )
+    runtime = native.start_runtime(plan)
+    request = json.dumps(
+        RunRequest(input="test", context={"normalized_deadline": True}).to_mapping()
+    )
+    attachment_error = attachment_error_type("metadata attachment failed")
+    ordinary_error = isinstance(attachment_error, Exception)
+    expected = TimeoutError if ordinary_error else attachment_error_type
+    calls = []
+
+    def fail_attachment(*args, **kwargs):
+        calls.append(args)
+        raise attachment_error
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(json, "loads", fail_attachment)
+            with pytest.raises(expected) as caught:
+                native.invoke_runtime(plan, runtime, request)
+        assert len(calls) == 1
+        if ordinary_error:
+            assert "300 seconds" in str(caught.value)
+        else:
+            assert caught.value is attachment_error
+    finally:
+        native.stop_runtime(plan, runtime)
+
+
 @pytest.mark.parametrize("adapter", ["strands", "kiro", "kilo"])
 @pytest.mark.parametrize("invalid_metadata", [False, True])
 async def test_committed_deadline_schema_survives_core_result_validation(

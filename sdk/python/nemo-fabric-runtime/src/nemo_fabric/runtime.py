@@ -1012,14 +1012,14 @@ async def _run_native_lifecycle(
                     if result is None:
                         raise
                     if result.get("status") == "succeeded":
+                        stop_error = _runtime_error(error, stage="stop")
                         result["status"] = "failed"
                         result["error"] = {
                             "stage": "stop",
-                            "code": _runtime_error(error, stage="stop").code
-                            or "runtime_stop_failed",
+                            "code": stop_error.code or "runtime_stop_failed",
                             "message": str(error) or "runtime shutdown failed",
                             "retryable": False,
-                            "metadata": _runtime_error(error, stage="stop").details,
+                            "metadata": stop_error.details,
                         }
                 stop_events = []
             if result is not None and isinstance(stop_events, list):

@@ -16,7 +16,7 @@ use nemo_fabric_core::{
     resolve_diagnostic_plan_from_config_with_adapter_directories,
     resolve_run_plan_from_config_with_adapter_directories, run_plan,
 };
-use pyo3::exceptions::{PyRuntimeError, PyTimeoutError};
+use pyo3::exceptions::{PyException, PyRuntimeError, PyTimeoutError};
 use pyo3::prelude::*;
 
 pyo3::create_exception!(
@@ -434,17 +434,22 @@ fn to_py_error(error: nemo_fabric_core::FabricError) -> PyErr {
         FabricError::AdapterLifecycleOperation { code, metadata, .. }
             if code == "host_timeout" || code == "timeout" =>
         {
+            let timeout = PyTimeoutError::new_err(error.to_string());
             Python::attach(|py| {
-                let timeout = PyTimeoutError::new_err(error.to_string());
-                let details = py.import("json")?.call_method1(
-                    "loads",
-                    (serde_json::to_string(metadata)
-                        .map_err(|error| PyRuntimeError::new_err(error.to_string()))?,),
-                )?;
-                timeout.value(py).setattr("details", details)?;
-                Ok::<_, PyErr>(timeout)
+                let attachment = (|| -> PyResult<()> {
+                    let details = py.import("json")?.call_method1(
+                        "loads",
+                        (serde_json::to_string(metadata)
+                            .map_err(|error| PyRuntimeError::new_err(error.to_string()))?,),
+                    )?;
+                    timeout.value(py).setattr("details", details)
+                })();
+                // Metadata enrichment must not change the timeout classification.
+                match attachment {
+                    Err(error) if !error.is_instance_of::<PyException>(py) => error,
+                    _ => timeout,
+                }
             })
-            .unwrap_or_else(|error| error)
         }
         FabricError::ResourceObservationUnavailable { .. } => {
             ResourceObservationUnavailableError::new_err(error.to_string())
