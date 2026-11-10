@@ -171,11 +171,6 @@ shows this pattern end to end with complete Hermes Agent, Codex, Deep Agents,
 environment, MCP, and telemetry variants. Reuse it rather than duplicating config
 construction.
 
-`runtime.response_limits` is SDK-owned and applies equally to host and OpenShell
-execution. Author it with `ResponseLimits`; omitted fields retain defaults.
-Check for failed results with `error.code == "response_limit_exceeded"` before
-reading output or artifact paths. See the [SDK counting rules](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#response-and-artifact-limits).
-
 ## Choose A Lifecycle
 
 For Hermes, embedded SDK execution is enabled and eager by default. Set `harness.settings.sdk.enabled=False` only for native-only runtimes with an enabled API, dashboard, or terminal interface; management through the SDK remains available, but invocation fails explicitly. Browser and terminal clients share one managed TUI backend. Native responses remain native even when Relay emits standard ATOF/ATIF; do not treat them as SDK `RunResult` objects. Follow the [Hermes invocation guides](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes/hermes.mdx) for interface-specific installation and attachment.
