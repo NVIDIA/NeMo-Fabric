@@ -2214,7 +2214,7 @@ async def test_mcp_server_that_never_answers_is_reported_as_timed_out(
 
 
 async def test_timed_out_discovery_does_not_wait_for_slow_cleanup(
-    tmp_path, make_payload, monkeypatch, fake_sdks
+    tmp_path, make_payload, monkeypatch, fake_sdks, capsys
 ):
     """A server that is slow to close after a timeout is skipped within the grace."""
     monkeypatch.setattr(adapter, "MCP_DISCOVERY_TIMEOUT_SECONDS", 0.01)
@@ -2241,6 +2241,7 @@ async def test_timed_out_discovery_does_not_wait_for_slow_cleanup(
     output = await asyncio.wait_for(invoke_once(payload), timeout=5)
 
     assert cleanup_started.is_set()
+    assert "'slow' is still closing its connection" in capsys.readouterr().err
     assert output["failed"] is False
     assert output["mcp"]["unavailable_servers"] == [
         {

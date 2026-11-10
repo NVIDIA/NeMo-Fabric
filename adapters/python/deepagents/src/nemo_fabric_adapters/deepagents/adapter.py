@@ -458,6 +458,12 @@ async def _load_server_tools(
         task.cancel()
         task.add_done_callback(_discard_task_outcome)
         await asyncio.wait({task}, timeout=MCP_DISCOVERY_CANCEL_GRACE_SECONDS)
+        if not task.done():
+            print(
+                f"NeMo Fabric Deep Agents: MCP server {name!r} is still closing its "
+                "connection after the discovery timeout; continuing startup",
+                file=sys.stderr,
+            )
         return [], {"reason": "timed_out", "error_type": "TimeoutError"}
     try:
         tools = task.result()
@@ -513,6 +519,7 @@ async def resolve_mcp_tools(config: AgentConfig) -> McpToolResolution:
 
 
 def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
+    """Translate one Fabric MCP server into a langchain-mcp-adapters connection."""
     # A misconfigured server must fail loudly, not be silently dropped.
     transport = spec.transport.strip().lower().replace("-", "_")
     # AgentMcpServerConfig carries the command in ``url`` and stdio extensions.
@@ -608,6 +615,7 @@ async def build_agent_kwargs(
     settings: dict[str, Any],
     unavailable_mcp_servers: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
+    """Build the ``create_deep_agent`` arguments from the normalized config."""
     instruction = common_instructions.system_instruction(
         config,
         adapter="Deep Agents",
@@ -772,6 +780,7 @@ class DeepAgentsRuntime:
     """One compiled Deep Agents graph and checkpointer owned by a Fabric runtime."""
 
     def __init__(self) -> None:
+        """Create an unstarted runtime with no graph or checkpointer."""
         self._started = False
         self._stopping = False
         self._active_invoke_task: asyncio.Task[Any] | None = None
@@ -797,6 +806,7 @@ class DeepAgentsRuntime:
         self._telemetry_quarantine_cause: str | None = None
 
     async def start(self, payload: dict[str, Any]) -> None:
+        """Build the graph, open the checkpointer and load MCP tools."""
         if self._started:
             raise lifecycle.LifecycleError(
                 "deepagents_runtime_already_started",
@@ -916,6 +926,7 @@ class DeepAgentsRuntime:
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
     ) -> AgentRunResult:
+        """Run one turn on the started graph and normalize its result."""
         start_payload = self._start_payload
         if not self._started or self._agent is None or start_payload is None:
             raise lifecycle.LifecycleError(
@@ -1276,6 +1287,7 @@ class DeepAgentsRuntime:
         return observed("passed", None)
 
     async def stop(self) -> None:
+        """Release the graph and checkpointer; safe to call more than once."""
         self._stopping = True
         checkpointer = self._checkpointer
         self._start_payload = None
@@ -1508,6 +1520,7 @@ def normalize_output(
     telemetry_quarantine_cause: str | None = None,
     unavailable_mcp_servers: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
+    """Build the adapter output for one turn from the final graph state."""
     messages = _extract_messages(result_state)
     response = _final_response(messages)
     # Aggregate usage/cost from this turn's messages only; the replayed final state
