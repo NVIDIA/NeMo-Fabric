@@ -241,6 +241,9 @@ def test_openclaw_rejects_invalid_port_range(settings: dict[str, object]):
             id="port-range-with-dashboard",
         ),
         pytest.param({"startup_timeout_seconds": 76}, id="startup-timeout-too-long"),
+        pytest.param({"agent_id": "my agent"}, id="agent-id-spaces"),
+        pytest.param({"agent_id": "a" * 65}, id="agent-id-too-long"),
+        pytest.param({"agent_id": "-agent"}, id="agent-id-prefix"),
     ],
 )
 def test_openclaw_plan_rejects_invalid_settings(
@@ -2542,3 +2545,94 @@ async def test_native_configuration_owns_prompt_once(
     finally:
         await runtime.stop()
     assert not (_dashboard_token(tmp_path).parent / "terminal.running").exists()
+
+
+@pytest.mark.parametrize(
+    "agent_id", ["my agent", "-agent", "_agent", "a" * 65, "é", " reviewer "]
+)
+async def test_openclaw_rejects_noncanonical_agent_ids(
+    mock_openclaw, tmp_path, agent_id
+):
+    config = _config(mock_openclaw)
+    config.harness.settings["agent_id"] = agent_id
+    runtime = adapter.OpenClawRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await _start(runtime, tmp_path, config)
+    assert caught.value.code == "openclaw_invalid_configuration"
+    assert caught.value.metadata == {"field": "harness.settings.agent_id"}
+    assert runtime._process is None
+
+
+@pytest.mark.skipif(os.name != "posix", reason="The native terminal requires POSIX")
+@pytest.mark.parametrize("mode", ["missing", "inactive", "wrong-agent"])
+async def test_shared_instruction_probe_fails_before_publishing_interfaces(
+    mock_openclaw, tmp_path, mode
+):
+    os.environ["FAKE_OPENCLAW_SHARED_CONFIG"] = mode
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    config = _config(mock_openclaw)
+    config.harness.settings["interfaces"] = {"terminal": {}}
+    runtime = adapter.OpenClawRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await _start(runtime, tmp_path, config)
+    assert caught.value.code == "openclaw_shared_configuration_unavailable"
+    assert runtime._process is None
+    assert not (_dashboard_token(tmp_path).parent / "gateway.json").exists()
+    assert not (_dashboard_token(tmp_path).parent / "terminal.running").exists()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("FABRIC_OPENCLAW_TEST_COMMAND"),
+    reason="Set FABRIC_OPENCLAW_TEST_COMMAND for actual plugin failure qualification",
+)
+@pytest.mark.parametrize(
+    "failure",
+    ["missing", "renamed", "conversation-denied", "prompt-denied", "wrong-agent"],
+)
+async def test_native_shared_hook_failures_reject_startup(
+    tmp_path, api_server, monkeypatch, failure
+):
+    plugin = tmp_path / "plugin"
+    shutil.copytree(Path(adapter.__file__).with_name("native_config"), plugin)
+    entrypoint = plugin / "index.mjs"
+    if failure == "missing":
+        entrypoint.write_text(
+            'throw new Error("plugin load failure for qualification");'
+        )
+    elif failure == "renamed":
+        entrypoint.write_text(
+            entrypoint.read_text().replace(
+                'api.on("before_prompt_build"', 'api.on("agent_end"'
+            )
+        )
+    original = adapter._openclaw_config
+
+    def generated_config(*args, **kwargs):
+        generated = original(*args, **kwargs)
+        generated["plugins"]["load"]["paths"] = [str(plugin)]
+        shared = generated["plugins"]["entries"]["fabric-shared-config"]
+        if failure == "conversation-denied":
+            shared["hooks"]["allowConversationAccess"] = False
+        elif failure == "prompt-denied":
+            shared["hooks"]["allowPromptInjection"] = False
+        elif failure == "wrong-agent":
+            shared["config"]["agentId"] = "other"
+        return generated
+
+    monkeypatch.setattr(adapter, "_openclaw_config", generated_config)
+    config = _config(Path(os.environ["FABRIC_OPENCLAW_TEST_COMMAND"]))
+    config.harness.settings["interfaces"] = {"terminal": {}}
+    config.models["default"].base_url = f"{api_server}/v1"
+    runtime = adapter.OpenClawRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await _start(runtime, tmp_path, config)
+    assert caught.value.code == "openclaw_shared_configuration_unavailable"
+    assert runtime._process is None
+    assert not (_dashboard_token(tmp_path).parent / "gateway.json").exists()
+    async with httpx.AsyncClient(trust_env=False) as client:
+        assert (await client.get(f"{api_server}/_requests")).json() == []
+
+
+@pytest.mark.parametrize("agent_id", ["Reviewer", "agent_1-A", "a" * 64])
+def test_openclaw_preserves_valid_agent_id_spelling(agent_id):
+    assert adapter._agent_id({"agent_id": agent_id}) == agent_id

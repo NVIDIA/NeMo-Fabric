@@ -18,7 +18,11 @@ You can use OpenClaw through the NVIDIA NeMo Fabric adapter in four ways:
 
 All four paths execute through one OpenClaw Gateway and its native agent runtime. NeMo Fabric translates `FabricConfig` into one private `openclaw.json`, with a fresh state directory, configured model/endpoint/credential references, generation parameters, workspace, tool policy, MCP servers, and skill paths.
 
-When a native interface is enabled, a small adapter-owned plugin applies replacement system instructions at OpenClaw's public `before_prompt_build` hook for the selected agent. SDK requests then omit their separate instruction injection, so all clients receive the configured prompt once. Pinned OpenClaw appends its native model-identity sentence after that prompt. Without native interfaces, existing SDK instruction handling is preserved. Omitted instructions preserve the native prompt; `append` remains unsupported.
+When a native interface is enabled, a small adapter-owned plugin adds the configured instruction through OpenClaw's public `before_prompt_build` hook for the selected agent. It preserves OpenClaw's native system prompt, including tool guidance. SDK requests then omit their separate instruction injection, so each client receives the Fabric instruction once. SDK-only and service configurations retain their existing system-message handling.
+
+The adapter's existing `replace` mode selects the Fabric-provided instruction; it does not replace OpenClaw's internal system prompt. Omitted instructions preserve native behavior; `append` remains unsupported.
+
+Before publishing native connection files, startup makes an authenticated, model-free check that the loaded plugin's registered hook supplies the instruction for the selected agent. Missing, blocked, or mismatched hooks fail startup with `openclaw_shared_configuration_unavailable`. This startup check is separate from normalized runtime health checks.
 
 The generated configuration is read-only. Native clients share the configured backend but keep separate conversations when they select different native sessions. Filesystem access and Gateway credentials are shared within the runtime; this is not a user-isolation boundary. Native session/model overrides are not qualified; shared defaults do not enforce immutable policy. Native reconfiguration controls do not provide a supported way to change the Fabric-owned configuration.
 
@@ -89,6 +93,8 @@ harness = HarnessConfig(
 The adapter supports OpenClaw's default `openclaw` execution runtime.
 
 ### Agent Configuration
+
+`harness.settings.agent_id` defaults to `default`. Use 1–64 ASCII letters, digits, underscores, or hyphens, starting with a letter or digit. IDs are case-insensitive; invalid IDs are rejected instead of relying on native character replacement or truncation.
 
 Set model provider, model, endpoint, generation parameters (`temperature`, `top_p`, and `max_tokens`), replacement system instructions, workspace, skills, and MCP servers through normalized `FabricConfig`. See [Shared Configuration](#shared-configuration) for how these settings reach all four client paths. Normalized MCP authentication is not supported.
 

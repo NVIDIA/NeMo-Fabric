@@ -310,14 +310,16 @@ async def test_native_and_sdk_share_gateway_configuration(
             assert len(payloads) == 25
             for payload in payloads:
                 assert payload["model"] == "fabric-echo"
-                assert [
+                system = "\n".join(
                     message["content"]
                     for message in payload["messages"]
                     if message["role"] == "system"
-                ] == [
-                    marker
-                    + "\n\nCurrent model identity: fabric-test/fabric-echo. If asked what model you are, answer with this value for the current run."
-                ]
+                )
+                assert system.count(marker) == 1
+                assert "## Tooling" in system
+                assert "## Tool Call Style" in system
+                assert "## Conversation Context" in system
+                assert "Current model identity: fabric-test/fabric-echo" in system
                 assert payload["temperature"] == 0.2
                 assert payload["top_p"] == 0.8
                 assert (
@@ -555,3 +557,54 @@ async def test_four_clients_can_invoke_concurrently(
                 if child is not None and child.isalive():
                     child.terminate(force=True)
                 await browser.close()
+
+
+async def test_native_selection_preserves_sdk_prompt_guidance(
+    tmp_path, api_server, native_config
+):
+    selection = native_config.harness.settings.pop("interfaces")
+    prompts = []
+    fabric = Fabric()
+    async with httpx.AsyncClient(trust_env=False, timeout=60) as client:
+        for interfaces in ({}, selection):
+            native_config.harness.settings["interfaces"] = interfaces
+            async with await fabric.start_runtime(
+                native_config, base_dir=tmp_path
+            ) as runtime:
+                if interfaces:
+                    directory = (
+                        tmp_path
+                        / "artifacts/.fabric/openclaw/runtimes"
+                        / runtime.runtime_id
+                        / "interfaces"
+                    )
+                    connection = json.loads((directory / "gateway.json").read_text())
+                    url = connection["http_url"] + "/fabric/shared-config/health"
+                    assert (await client.get(url)).status_code == 401
+                    token = (directory / connection["token_file"]).read_text().strip()
+                    response = await client.get(
+                        url, headers={"Authorization": f"Bearer {token}"}
+                    )
+                    assert response.status_code == 200
+                    assert response.json() == {"ready": True, "agent_id": "reviewer"}
+                    assert (
+                        native_config.instructions.system.content not in response.text
+                    )
+                result = await runtime.invoke(input="Check the configured instruction.")
+                assert result.status == "succeeded", result.to_mapping()
+                payloads = (await client.get(f"{api_server}/_requests")).json()
+                system = "\n".join(
+                    message["content"]
+                    for message in payloads[-1]["messages"]
+                    if message["role"] == "system"
+                )
+                prompts.append(system)
+    marker = native_config.instructions.system.content
+    for system in prompts:
+        assert system.count(marker) == 1
+        for section in ("## Tooling", "## Tool Call Style", "## Conversation Context"):
+            assert section in system
+        assert system.index("## Tooling") < system.index(marker)
+    (tmp_path / "sdk-prompt-compatibility.json").write_text(
+        json.dumps(prompts, indent=2)
+    )

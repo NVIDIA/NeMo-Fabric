@@ -196,13 +196,15 @@ def _dashboard_token_path(context: contract.RuntimeContext, base_dir: Path) -> P
 
 def _agent_id(settings: dict[str, Any]) -> str:
     value = settings.get("agent_id", "default")
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str) or not re.fullmatch(
+        r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}", value
+    ):
         raise lifecycle.LifecycleError(
             "openclaw_invalid_configuration",
-            "OpenClaw agent_id must be a non-empty string",
+            "OpenClaw agent_id must contain 1–64 ASCII letters, digits, underscores, or hyphens and start with a letter or digit",
             metadata={"field": "harness.settings.agent_id"},
         )
-    return value.strip()
+    return value
 
 
 def _channel_config(
@@ -1111,6 +1113,7 @@ class OpenClawRuntime:
                 "OpenClaw interfaces require a managed runtime",
                 metadata={"field": "harness.settings.interfaces"},
             )
+        _agent_id(settings)
         dashboard_port = _dashboard_port(settings)
         if native_interfaces.enabled(settings, "terminal") and os.name != "posix":
             raise lifecycle.LifecycleError(
@@ -1269,6 +1272,12 @@ class OpenClawRuntime:
             ]
             self._install_signal_handlers()
             await self._wait_started(port, token, startup_remaining())
+            if "fabric-shared-config" in generated.get("plugins", {}).get(
+                "entries", {}
+            ):
+                await self._verify_shared_configuration(
+                    port, token, _agent_id(settings), startup_remaining()
+                )
             if dashboard_port is not None:
                 token_path = _dashboard_token_path(context, base_dir)
                 local_interfaces.write_private_file(token_path, token)
@@ -1724,6 +1733,31 @@ class OpenClawRuntime:
             "openclaw_gateway_start_timeout",
             "OpenClaw Gateway did not finish startup before the startup timeout",
             retryable=True,
+        )
+
+    async def _verify_shared_configuration(
+        self, port: int, token: str, agent_id: str, timeout: float
+    ) -> None:
+        try:
+            async with asyncio.timeout(timeout):
+                async with httpx.AsyncClient(
+                    headers={"authorization": f"Bearer {token}"},
+                    timeout=min(timeout, 5.0),
+                    trust_env=False,
+                ) as client:
+                    response = await client.get(
+                        f"http://127.0.0.1:{port}/fabric/shared-config/health"
+                    )
+                    response.raise_for_status()
+                    status = response.json()
+                    if status == {"ready": True, "agent_id": agent_id.lower()}:
+                        return
+        except (httpx.HTTPError, ValueError, TimeoutError):
+            pass
+        raise lifecycle.LifecycleError(
+            "openclaw_shared_configuration_unavailable",
+            "OpenClaw shared instruction plugin or before_prompt_build hook is unavailable for the selected agent",
+            metadata={"field": "instructions.system", "agent_id": agent_id},
         )
 
     async def invoke(

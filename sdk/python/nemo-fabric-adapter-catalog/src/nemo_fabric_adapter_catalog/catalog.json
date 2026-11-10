@@ -2072,6 +2072,7 @@
               "default": "default",
               "description": "OpenClaw agent selected for SDK invocations and managed native clients.",
               "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$",
               "type": "string"
             },
             "channel_config": {
@@ -2221,7 +2222,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.7.0"
       },
-      "sha256": "e09e634bdd1f9ac1c32bb6aa35e7bf572de3c7ed8c5ac610b0528ef4d996ebb1",
+      "sha256": "dbfb74e0d2a2ba4db50bdc0d93140c0de3abc07d90f6551b9dd1f28458b9cc59",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {
