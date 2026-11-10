@@ -50,7 +50,7 @@ runtime assumptions but never installs harnesses or credentials at run time.
   `nemo-fabric[claude]`, `nemo-fabric[codex]`,
   or `nemo-fabric[deepagents]`.
 - Install Hermes Agent separately from the Fabric adapter. Follow the
-  [Hermes integration guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes.mdx)
+  [Hermes integration guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes/hermes.mdx)
   for the current compatible interpreter, source checkout, Relay dependencies,
   and adapter installation. The `nemo-fabric[hermes-agent]` extra does not
   install Hermes Agent.
@@ -172,6 +172,8 @@ environment, MCP, and telemetry variants. Reuse it rather than duplicating confi
 construction.
 
 ## Choose A Lifecycle
+
+For Hermes, embedded SDK execution is enabled and eager by default. Set `harness.settings.sdk.enabled=False` only for native-only runtimes with an enabled API, dashboard, or terminal interface; management through the SDK remains available, but invocation fails explicitly. Browser and terminal clients share one managed TUI backend. Native responses remain native even when Relay emits standard ATOF/ATIF; do not treat them as SDK `RunResult` objects. Follow the [Hermes invocation guides](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes/hermes.mdx) for interface-specific installation and attachment.
 
 For Deep Agents, mini-SWE-agent, and the LangGraph custom-agent example, pass the same UUID string through `RunRequest.relay_session_root` on each conversation turn to group Relay trajectories under one session. Core forwards the typed field as `AgentRunRequest.relay_session_root`; context keys do not control Relay propagation. An unusable UUID preserves per-request behavior. The remaining adapters do not consume this field.
 

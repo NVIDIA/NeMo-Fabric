@@ -27,25 +27,27 @@ NeMo Fabric gives applications, evaluation systems, and rollout platforms a cons
 
 NeMo Fabric includes adapters for the following harnesses and execution targets. Select a harness name for its adapter documentation:
 
-| Agent Harness | Tool Policy | MCP | Skills | Telemetry |
-| --- | :---: | :---: | :---: | :---: |
-| [Claude Code](adapters/python/claude/README.md) | ✅ | ✅ | ✅ | ✅ |
-| [Cline](adapters/typescript/cline/README.md) | ✅ | ✅ | ✅ | — |
-| [Codex](adapters/python/codex/README.md) | — | ✅ | ✅ | ✅ |
-| [Factory Droid](adapters/typescript/droid/README.md) | ✅ | ✅ | ✅ | — |
-| [Hermes Agent](adapters/python/hermes/README.md) | ✅ | ✅ | ✅ | ✅ |
-| [Kilo Code](adapters/typescript/kilo/README.md) | ✅ | ✅ | ✅ | — |
-| [AWS Kiro](adapters/typescript/kiro/README.md) | — | ✅ | — | — |
-| [AWS Strands](adapters/typescript/strands/README.md) | — | ✅ | — | — |
-| [LangChain Deep Agents](adapters/python/deepagents/README.md) | ✅ | ✅ | ✅ | ✅ |
-| [mini-SWE-agent](adapters/python/mini-swe-agent/README.md) | — | — | — | ✅ |
-| [NOOA](adapters/python/nooa/README.md) | — | ✅ | ✅ | ✅ |
-| [OpenClaw](adapters/python/openclaw/README.md) | ✅ | ✅ | ✅ | — |
-| [OpenHands](adapters/python/openhands/README.md) | ✅ | ✅ | ✅ | — |
-| [OpenCode](adapters/typescript/opencode/README.md) | — | ✅ | ✅ | — |
-| [Pi](adapters/typescript/pi/README.md) | ✅ | — | ✅ | ✅ |
-| [Qwen Code](adapters/typescript/qwen/README.md) | ✅ | ✅ | ✅ | — |
-| [Remote Agent](adapters/python/remote-agent/README.md) | — | — | — | ✅ |
+| Agent Harness | Tool Policy | MCP | Skills | Telemetry | Native Interfaces |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| [Claude Code](adapters/python/claude/README.md) | ✅ | ✅ | ✅ | ✅ | — |
+| [Cline](adapters/typescript/cline/README.md) | ✅ | ✅ | ✅ | — | — |
+| [Codex](adapters/python/codex/README.md) | — | ✅ | ✅ | ✅ | — |
+| [Factory Droid](adapters/typescript/droid/README.md) | ✅ | ✅ | ✅ | — | — |
+| [Hermes Agent](adapters/python/hermes/README.md) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Kilo Code](adapters/typescript/kilo/README.md) | ✅ | ✅ | ✅ | — | — |
+| [AWS Kiro](adapters/typescript/kiro/README.md) | — | ✅ | — | — | — |
+| [AWS Strands](adapters/typescript/strands/README.md) | — | ✅ | — | — | — |
+| [LangChain Deep Agents](adapters/python/deepagents/README.md) | ✅ | ✅ | ✅ | ✅ | — |
+| [mini-SWE-agent](adapters/python/mini-swe-agent/README.md) | — | — | — | ✅ | — |
+| [NOOA](adapters/python/nooa/README.md) | — | ✅ | ✅ | ✅ | — |
+| [OpenClaw](adapters/python/openclaw/README.md) | ✅ | ✅ | ✅ | — | ✅ |
+| [OpenHands](adapters/python/openhands/README.md) | ✅ | ✅ | ✅ | — | — |
+| [OpenCode](adapters/typescript/opencode/README.md) | — | ✅ | ✅ | — | — |
+| [Pi](adapters/typescript/pi/README.md) | ✅ | — | ✅ | ✅ | — |
+| [Qwen Code](adapters/typescript/qwen/README.md) | ✅ | ✅ | ✅ | — | — |
+| [Remote Agent](adapters/python/remote-agent/README.md) | — | — | — | ✅ | — |
+
+Native interfaces: harness-native API, dashboard, or TUI access enabled through Fabric.
 
 ✅ Supported · — Not supported. Support may come through normalized configuration, native harness behavior, or a specific target. Refer to each adapter guide or the [complete compatibility matrix](adapters/README.md#configuration-compatibility) for details and limitations.
 
@@ -53,7 +55,7 @@ NeMo Fabric includes adapters for the following harnesses and execution targets.
 
 NeMo Fabric brings supported agent harnesses into the frameworks teams use to benchmark and improve agents:
 
-- **Harbor ships FabricAgent upstream.** [Harbor 0.25.0](https://github.com/harbor-framework/harbor/releases/tag/v0.25.0) includes `FabricAgent`, bringing NeMo Fabric-backed harnesses directly into Harbor's benchmarking workflows. Its `fabric` extra requires NeMo Fabric 0.5.x; for NeMo Fabric 0.6, use the separate [Harbor bridge](docs/integrations/consumer/harbor.mdx) with Harbor 0.24.
+- **Harbor ships FabricAgent upstream.** [Harbor 0.25.0](https://github.com/harbor-framework/harbor/releases/tag/v0.25.0) includes `FabricAgent`, bringing NeMo Fabric-backed harnesses directly into Harbor's benchmarking workflows. Its `fabric` extra requires NeMo Fabric 0.5.x; for NeMo Fabric 0.6, use the separate [Harbor bridge](docs/integrations/consumer/harbor.mdx) with Harbor 0.24. The bridge preserves available guest evidence on execution failure with explicit coverage gaps.
 - **NeMo Gym supports NeMo Fabric-backed agents.** [NVIDIA NeMo Gym](https://github.com/NVIDIA-NeMo/gym) integrates NeMo Fabric for evaluation and training rollouts.
 
 The ecosystem also includes shipped workflows in [NVIDIA NeMo Helix](https://github.com/NVIDIA-NeMo/nemo-helix), an active integration with [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw/), and emerging rollout integrations such as [NVIDIA Polar](https://github.com/NVIDIA-NeMo/ProRL-Agent-Server). [Explore the NeMo Fabric ecosystem](docs/about-nemo-fabric/ecosystem.mdx).

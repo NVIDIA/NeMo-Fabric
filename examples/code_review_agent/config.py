@@ -99,7 +99,7 @@ def hermes_config() -> FabricConfig:
         adapter_id="nvidia.fabric.hermes",
         resolution="preinstalled",
         settings={
-            "max_tokens": 512,
+            "max_tokens": 2048,
             "reasoning_config": {"effort": "none"},
         },
     )
@@ -107,14 +107,16 @@ def hermes_config() -> FabricConfig:
     assert isinstance(model, ModelConfig)
     model.base_url = "https://integrate.api.nvidia.com/v1"
     config.instructions = InstructionsConfig(
-        system=InstructionConfig(content="You are a concise smoke test assistant.")
+        system=InstructionConfig(
+            content="Review the requested files for correctness risks. Read the files with file tools before reviewing. Do not modify files. Cite file and line references for findings; if none are found, say so and identify any test-coverage uncertainty."
+        )
     )
-    config.tools = ToolsConfig(enabled=[])
+    config.tools = ToolsConfig(enabled=["file"])
     config.runtime = RuntimeConfig(
         input_schema="chat",
         output_schema="message",
         artifacts="./artifacts/hermes",
-        max_turns=1,
+        max_turns=8,
     )
     config.environment = EnvironmentConfig(
         provider="local",

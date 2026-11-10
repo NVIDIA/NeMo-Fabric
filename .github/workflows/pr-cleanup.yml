@@ -1,0 +1,69 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: PR Cleanup
+
+on:
+  # Authenticated PR maintenance requires this trigger. Execute only the
+  # trusted default branch below; never check out or run code from the PR head.
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+  schedule:
+    - cron: '23 9 * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Post comments and close PRs (otherwise report only)'
+        type: boolean
+        default: false
+
+# Deny inherited token access; the cleanup job grants only its required scopes.
+permissions: {}
+
+concurrency:
+  group: pr-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Reconcile PR cleanup policy
+    if: >-
+      github.repository == 'NVIDIA/NeMo-Fabric' &&
+      (github.event_name != 'workflow_dispatch' ||
+       github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read  # Check out trusted default-branch code.
+      actions: read  # Restore observation history from this workflow's artifacts.
+      pull-requests: write  # Read PR activity, explain decisions, and close PRs.
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Test cleanup policy
+        run: python3 -m unittest discover -s tests/scripts -p test_pr_cleanup.py -v
+
+      - name: Reconcile pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          APPLY: ${{ (github.event_name == 'workflow_dispatch' && inputs.apply) || (github.event_name != 'workflow_dispatch' && vars.PR_CLEANUP_APPLY == 'true') }}
+        run: |
+          args=()
+          if [[ "$APPLY" == "true" ]]; then
+            args+=(--apply)
+          fi
+          python3 scripts/ci/pr_cleanup.py --repo "$GITHUB_REPOSITORY" "${args[@]}"
+
+      - name: Save push observation history
+        if: always() && hashFiles('.tmp/pr-cleanup/state.json') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-cleanup-state
+          path: .tmp/pr-cleanup/state.json
+          retention-days: 90
+          if-no-files-found: error

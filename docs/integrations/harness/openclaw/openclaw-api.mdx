@@ -1,0 +1,69 @@
+---
+title: "OpenClaw HTTP API"
+description: "Send native HTTP requests to the managed OpenClaw Gateway."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Start with the [OpenClaw overview](./openclaw.mdx) for installation and configuration ownership.
+
+## API Ownership
+
+The managed Gateway serves `/v1/chat/completions` by default for SDK invocation. Native HTTP clients can use the same endpoint; no separate API server or `interfaces.api` setting is needed.
+
+Enable either the dashboard or terminal interface so the adapter writes the Gateway address and access token to private connection files. For API-only use, configure the terminal interface:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.openclaw",
+    settings={"interfaces": {"terminal": {}}},
+)
+```
+
+Use this `harness` in your `FabricConfig` when starting the runtime. It starts the Gateway and publishes the connection files without requiring browser assets. The terminal client starts only when you run the generated launcher; HTTP clients can use the Gateway without launching it.
+
+When the Gateway is ready, the adapter writes its connection details to the private `interfaces/gateway.json` file:
+
+- `http_url`: the Gateway address for API requests.
+- `agent_id`: the agent name to use in the request's `model` value.
+- `token_file`: the name of the token file in the same directory.
+
+Read the token from that file and configure your HTTP client to send this header on every request:
+
+```http
+Authorization: Bearer <token>
+```
+
+## Requests and Conversations
+
+Send a `POST` request to `<http_url>/v1/chat/completions` with these fields:
+
+- `model`: `openclaw/` followed by the `agent_id` from `gateway.json`. This selects the OpenClaw agent that handles the request.
+- `messages`: the messages you want to send to the agent.
+- `user`: a conversation name chosen by your HTTP client.
+
+For example, when `agent_id` is `default`, the request body can be:
+
+```json
+{
+  "model": "openclaw/default",
+  "user": "api-review-1",
+  "messages": [
+    {"role": "user", "content": "Read notes.txt and summarize it."}
+  ]
+}
+```
+
+Reuse `api-review-1` for follow-up requests in that conversation. Choose a new `user` value to start a new conversation. Include `user` explicitly on each request so you control which conversation receives it.
+
+Each SDK runtime uses its runtime ID as the `user` value. Choose a different value for HTTP requests to keep those conversations separate from the SDK conversation. Reusing the SDK value can direct HTTP requests into its native session.
+
+The Gateway uses the model endpoint and credentials generated from `FabricConfig`. It also supplies the configured system instructions, workspace, tools, MCP servers, skills, and supported generation defaults. Your HTTP client does not need to copy the system instructions into each request.
+
+Responses come directly from OpenClaw in its native HTTP format. If you request streaming, the stream also uses OpenClaw's native format. These calls do not produce SDK `RunResult` objects or NeMo Relay streams.
+
+## Testing and Boundaries
+
+Follow the [HTTP manual test](../../../../examples/interfaces/openclaw/README.md#2-http-api). Direct requests do not increment SDK invocation accounting. There is no ATIF/ATOF export in this iteration. Fabric runtime shutdown revokes discovery and stops the owned Gateway; a client cannot retain the runtime merely by staying connected.

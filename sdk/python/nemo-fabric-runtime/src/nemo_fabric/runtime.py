@@ -974,22 +974,39 @@ def _run_request_payload(
     return payload
 
 
+def _retain_runtime_evidence(
+    error: FabricError, observations: Mapping[str, Any]
+) -> None:
+    """Keep obtained lifecycle facts beside any evidence already on the error."""
+    existing = error.details.get("runtime_evidence")
+    error.details["runtime_evidence"] = {
+        **(existing if isinstance(existing, dict) else {}),
+        **observations,
+    }
+
+
 async def _run_native_lifecycle(
     native: Any,
     plan: Mapping[str, Any],
     request: Mapping[str, Any],
 ) -> dict[str, Any]:
+    observations = {"request_id": request.get("request_id")}
+
     def run() -> dict[str, Any]:
         plan_json = json.dumps(dict(plan))
         try:
             runtime = json.loads(native.start_runtime(plan_json))
-        except FabricError:
+        except FabricError as error:
+            _retain_runtime_evidence(error, observations)
             raise
         except Exception as error:
-            raise _runtime_error(error, stage="start") from error
+            failure = _runtime_error(error, stage="start")
+            _retain_runtime_evidence(failure, observations)
+            raise failure from error
+        observations["runtime_id"] = runtime.get("runtime_id")
         runtime_json = json.dumps(runtime)
         result: dict[str, Any] | None = None
-        invoke_error: Exception | None = None
+        invoke_error: FabricError | None = None
         try:
             try:
                 result = json.loads(
@@ -1005,9 +1022,11 @@ async def _run_native_lifecycle(
                 raise invoke_error from error
             return result
         finally:
+            cleanup = "completed"
             try:
                 stop_events = json.loads(native.stop_runtime(plan_json, runtime_json))
             except Exception as error:
+                cleanup = "failed"
                 if invoke_error is None:
                     if result is None:
                         raise
@@ -1023,9 +1042,23 @@ async def _run_native_lifecycle(
                 stop_events = []
             if result is not None and isinstance(stop_events, list):
                 result.setdefault("events", []).extend(stop_events)
+            observations.update(
+                events=stop_events if isinstance(stop_events, list) else [],
+                cleanup=cleanup,
+            )
+            if result is not None:
+                observations["partial_result"] = result
+            if invoke_error is not None:
+                # Keep obtained identity and cleanup evidence beside the original
+                # exception. A protocol failure is not a normalized invocation.
+                _retain_runtime_evidence(invoke_error, observations)
 
     try:
         return await _call_blocking(run)
+    except asyncio.CancelledError as error:
+        # _call_blocking waits for native cleanup before propagating cancellation.
+        error._fabric_runtime_evidence = dict(observations)
+        raise
     except FabricError:
         raise
     except Exception as error:

@@ -17,6 +17,7 @@ import inspect
 import json
 import math
 import os
+import sys
 import uuid
 from collections.abc import Awaitable
 from collections.abc import Callable
@@ -49,6 +50,14 @@ HARNESS = "deepagents"
 OPENAI_COMPATIBLE_PROVIDERS = {"nvidia", "openai", "openai-compatible"}
 # MCP transports langchain-mcp-adapters accepts (after normalization).
 VALID_MCP_TRANSPORTS = {"stdio", "sse", "streamable_http", "websocket"}
+# Upper bound on listing one MCP server's tools at startup. Unreachable servers
+# usually fail fast; this bounds a server that accepts the connection but never
+# answers, so it is reported as unavailable instead of stalling startup.
+MCP_DISCOVERY_TIMEOUT_SECONDS = 60.0
+# How long a timed-out discovery may spend cleaning up its connection before
+# startup moves on. Transport cleanup (for example a streamable HTTP session
+# DELETE) can otherwise hold startup well past the discovery timeout.
+MCP_DISCOVERY_CANCEL_GRACE_SECONDS = 5.0
 # create_deep_agent arguments Fabric derives from normalized config; the
 # harness.settings.deepagents passthrough must not override them (doing so would
 # bypass the normalized model config, MCP tool resolution, workspace confinement,
@@ -340,11 +349,20 @@ def resolve_backend(
     return FilesystemBackend(root_dir=str(root), virtual_mode=True)
 
 
-async def resolve_tools(config: AgentConfig) -> list[Any] | None:
-    """Resolve Fabric MCP servers into Deep Agents tools."""
+async def resolve_tools(
+    config: AgentConfig,
+    unavailable_mcp_servers: list[dict[str, str]] | None = None,
+) -> list[Any] | None:
+    """Resolve Fabric MCP servers into Deep Agents tools.
 
-    tools = await _mcp_tools(config)
-    return tools or None
+    Servers skipped as unavailable are appended to ``unavailable_mcp_servers``
+    when a list is supplied.
+    """
+
+    resolution = await resolve_mcp_tools(config)
+    if unavailable_mcp_servers is not None:
+        unavailable_mcp_servers.extend(resolution.unavailable)
+    return resolution.tools or None
 
 
 def _blocked_tool_names(config: AgentConfig) -> set[str]:
@@ -410,26 +428,102 @@ def _mcp_tool_coroutine(
     return call_tool
 
 
-async def _mcp_tools(config: AgentConfig) -> list[Any]:
-    """Load MCP tools with recoverable input errors but fatal invalid responses."""
+class McpToolResolution(NamedTuple):
+    """MCP tools loaded at startup and the servers that could not be reached."""
+
+    tools: list[Any]
+    unavailable: list[dict[str, str]]
+
+
+def _error_type(error: BaseException) -> str:
+    """Name the underlying failure without its message, which may carry secrets."""
+    while isinstance(error, BaseExceptionGroup) and error.exceptions:
+        error = error.exceptions[0]
+    return type(error).__name__
+
+
+async def _load_server_tools(
+    client: Any, name: str
+) -> tuple[list[Any], dict[str, str] | None]:
+    """List one server's tools, reporting an unreachable server instead of raising."""
+    task = asyncio.ensure_future(client.get_tools(server_name=name))
+    try:
+        done, _ = await asyncio.wait({task}, timeout=MCP_DISCOVERY_TIMEOUT_SECONDS)
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
+    if not done:
+        # Give the connection a bounded chance to close, then move on. A task that
+        # is still cleaning up finishes in the background; its outcome is ignored.
+        task.cancel()
+        task.add_done_callback(_discard_task_outcome)
+        await asyncio.wait({task}, timeout=MCP_DISCOVERY_CANCEL_GRACE_SECONDS)
+        if not task.done():
+            print(
+                f"NeMo Fabric Deep Agents: MCP server {name!r} is still closing its "
+                "connection after the discovery timeout; continuing startup",
+                file=sys.stderr,
+            )
+        return [], {"reason": "timed_out", "error_type": "TimeoutError"}
+    if task.cancelled():
+        # Caller cancellation is re-raised above, so this cancellation came from
+        # inside the MCP client; treat the server as failed rather than abort start.
+        return [], {"reason": "failed", "error_type": "CancelledError"}
+    try:
+        tools = task.result()
+    except Exception as error:
+        return [], {"reason": "failed", "error_type": _error_type(error)}
+    return list(tools), None
+
+
+def _discard_task_outcome(task: asyncio.Task[Any]) -> None:
+    """Retrieve an abandoned task's outcome so asyncio does not log it."""
+    if not task.cancelled():
+        task.exception()
+
+
+async def resolve_mcp_tools(config: AgentConfig) -> McpToolResolution:
+    """Load tools from every reachable MCP server.
+
+    Invalid server configuration still fails startup. A server that cannot be
+    reached or does not list its tools in time is skipped and reported, so the
+    runtime starts with the tools of the remaining servers. Discovery runs again
+    on every runtime start; a skipped server is not remembered.
+    """
     servers = config.mcp.servers if config.mcp is not None else {}
     connections = {name: _mcp_connection(name, spec) for name, spec in servers.items()}
     if not connections:
-        return []
+        return McpToolResolution([], [])
     from langchain_mcp_adapters.client import MultiServerMCPClient
 
     client = MultiServerMCPClient(connections)
-    tools = list(await client.get_tools())
+    loaded = await asyncio.gather(
+        *(_load_server_tools(client, name) for name in connections)
+    )
+    tools: list[Any] = []
+    unavailable: list[dict[str, str]] = []
+    for (name, connection), (server_tools, failure) in zip(connections.items(), loaded):
+        if failure is None:
+            tools.extend(server_tools)
+            continue
+        report = {"name": name, "transport": connection["transport"], **failure}
+        unavailable.append(report)
+        print(
+            f"NeMo Fabric Deep Agents: skipped unavailable MCP server {name!r} "
+            f"({report['transport']}): {report['reason']} ({report['error_type']})",
+            file=sys.stderr,
+        )
     for tool in tools:
         # MCP isError results become ToolException, not graph-fatal failures.
         # Return them as tool feedback; never replay a call automatically.
         tool.coroutine = _mcp_tool_coroutine(tool.coroutine)
         tool.handle_tool_error = True
         tool.handle_validation_error = _mcp_validation_feedback
-    return tools
+    return McpToolResolution(tools, unavailable)
 
 
 def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
+    """Translate one Fabric MCP server into a langchain-mcp-adapters connection."""
     # A misconfigured server must fail loudly, not be silently dropped.
     transport = spec.transport.strip().lower().replace("-", "_")
     # AgentMcpServerConfig carries the command in ``url`` and stdio extensions.
@@ -452,6 +546,11 @@ def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
     if transport not in VALID_MCP_TRANSPORTS:
         raise AdapterConfigError(
             f"MCP server '{name}' has unsupported transport '{transport}'."
+        )
+    if transport == "websocket" and spec.custom_headers:
+        raise AdapterConfigError(
+            f"MCP server '{name}' does not support custom headers with the "
+            "websocket transport."
         )
     connection = {"transport": transport, "url": target}
     if headers := spec.custom_headers:
@@ -518,7 +617,9 @@ async def build_agent_kwargs(
     base_dir: str,
     model: Any,
     settings: dict[str, Any],
+    unavailable_mcp_servers: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
+    """Build the ``create_deep_agent`` arguments from the normalized config."""
     instruction = common_instructions.system_instruction(
         config,
         adapter="Deep Agents",
@@ -558,7 +659,7 @@ async def build_agent_kwargs(
                 )
     kwargs: dict[str, Any] = {
         "model": model,
-        "tools": await resolve_tools(config),
+        "tools": await resolve_tools(config, unavailable_mcp_servers),
         # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
         "system_prompt": instruction.content if instruction else None,
         "skills": resolve_skills(config),
@@ -683,6 +784,7 @@ class DeepAgentsRuntime:
     """One compiled Deep Agents graph and checkpointer owned by a Fabric runtime."""
 
     def __init__(self) -> None:
+        """Create an unstarted runtime with no graph or checkpointer."""
         self._started = False
         self._stopping = False
         self._active_invoke_task: asyncio.Task[Any] | None = None
@@ -694,6 +796,7 @@ class DeepAgentsRuntime:
         self._base_url: str | None = None
         self._thread_id: str | None = None
         self._completed_invocations = 0
+        self._mcp_unavailable: list[dict[str, str]] = []
         self._checkpointer: Any = None
         self._agent: Any = None
         self._observability: Observability | None = None
@@ -707,6 +810,7 @@ class DeepAgentsRuntime:
         self._telemetry_quarantine_cause: str | None = None
 
     async def start(self, payload: dict[str, Any]) -> None:
+        """Build the graph, open the checkpointer and load MCP tools."""
         if self._started:
             raise lifecycle.LifecycleError(
                 "deepagents_runtime_already_started",
@@ -751,13 +855,16 @@ class DeepAgentsRuntime:
                 relay_enabled,
             )
 
+            mcp_unavailable: list[dict[str, str]] = []
             agent_kwargs = await build_agent_kwargs(
                 agent_config,
                 runtime_context,
                 base_dir,
                 model,
                 settings,
+                mcp_unavailable,
             )
+            self._mcp_unavailable = mcp_unavailable
             self._checkpointer = await open_checkpointer(
                 checkpointer_path(runtime_context, base_dir, runtime_id)
             )
@@ -823,6 +930,7 @@ class DeepAgentsRuntime:
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
     ) -> AgentRunResult:
+        """Run one turn on the started graph and normalize its result."""
         start_payload = self._start_payload
         if not self._started or self._agent is None or start_payload is None:
             raise lifecycle.LifecycleError(
@@ -871,6 +979,7 @@ class DeepAgentsRuntime:
             telemetry_quarantine_cause=(
                 self._telemetry_quarantine_cause if inherited_quarantine else None
             ),
+            unavailable_mcp_servers=self._mcp_unavailable,
         )
         failed = bool(output.pop("failed", False))
         reported_error = output.pop("error", None)
@@ -1182,6 +1291,7 @@ class DeepAgentsRuntime:
         return observed("passed", None)
 
     async def stop(self) -> None:
+        """Release the graph and checkpointer; safe to call more than once."""
         self._stopping = True
         checkpointer = self._checkpointer
         self._start_payload = None
@@ -1190,6 +1300,7 @@ class DeepAgentsRuntime:
         self._base_url = None
         self._thread_id = None
         self._completed_invocations = 0
+        self._mcp_unavailable = []
         self._checkpointer = None
         self._agent = None
         self._observability = None
@@ -1411,7 +1522,9 @@ def normalize_output(
     relay_artifacts: list[dict[str, str]] | None,
     telemetry_error: str | None = None,
     telemetry_quarantine_cause: str | None = None,
+    unavailable_mcp_servers: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
+    """Build the adapter output for one turn from the final graph state."""
     messages = _extract_messages(result_state)
     response = _final_response(messages)
     # Aggregate usage/cost from this turn's messages only; the replayed final state
@@ -1449,6 +1562,11 @@ def normalize_output(
         output["telemetry"] = telemetry
     if relay_artifacts is not None:
         output["relay_artifacts"] = relay_artifacts
+    if unavailable_mcp_servers:
+        # Absent when every configured server loaded, so clean runs keep their shape.
+        output["mcp"] = {
+            "unavailable_servers": [dict(server) for server in unavailable_mcp_servers]
+        }
     return output
 
 

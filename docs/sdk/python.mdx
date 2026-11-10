@@ -750,7 +750,7 @@ plugin_config.relay = RelayConfig(
 plugin_config.enable_relay()
 ```
 
-NeMo Fabric preserves the `relay.plugins` section alongside any configured `relay.observability`, `relay.components`, and `relay.policy`. Relay owns manifest validation, loading, and activation. Use absolute manifest paths accessible inside the agent environment. Plugin activation depends on the selected adapter's Relay integration and the installed Relay version. For Hermes installation requirements, refer to [Use the Hermes Agent Adapter](../integrations/harness/hermes.mdx).
+NeMo Fabric preserves the `relay.plugins` section alongside any configured `relay.observability`, `relay.components`, and `relay.policy`. Relay owns manifest validation, loading, and activation. Use absolute manifest paths accessible inside the agent environment. Plugin activation depends on the selected adapter's Relay integration and the installed Relay version. For Hermes installation requirements, refer to [Use the Hermes Agent Adapter](../integrations/harness/hermes/hermes.mdx).
 
 ## API Inventory
 
@@ -1252,7 +1252,7 @@ Streaming has the following v0.1 constraints:
 Claude and Codex streaming use the NeMo Relay `nemo-relay` gateway CLI and
 require a release in the `>=0.9,<0.12` range. Their adapter `harness` and
 `full` extras install the supported CLI. Deep Agents uses its in-process NeMo
-Relay integration with Relay 0.11. Hermes Agent keeps Relay 0.10 with the pinned Hermes source in a separate Python 3.14 environment.
+Relay integration with Relay 0.11. Hermes Agent v0.22.7 uses Relay 0.11; v0.22.5 with Relay 0.10 remains supported. Hermes runs on Python 3.14, with `ADAPTER_PYTHON` selecting a separate environment when the application uses another interpreter.
 Remote Agent services own their Relay installation and publish to the same
 configured `nemo-fabric-stream` collector
 base URL. The local adapter does not install or start Relay for the service.
@@ -1453,7 +1453,7 @@ offending settings path.
 
 ## Errors
 
-All public SDK errors inherit from `FabricError`.
+All public SDK errors inherit from `FabricError`. One-shot lifecycle failures can retain obtained runtime and request identities, cleanup events, and already-selected software evidence in `error.details["runtime_evidence"]`. These observations do not establish a terminal invocation result; unknown usage remains unknown. The original exception and its cause remain authoritative.
 
 | Error | Meaning |
 | --- | --- |
