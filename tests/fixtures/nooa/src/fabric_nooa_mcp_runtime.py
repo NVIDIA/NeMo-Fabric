@@ -17,7 +17,8 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.nooa.adapter import NooaRuntime
 
 
-async def run(workspace: Path) -> dict[str, Any]:
+async def run(workspace: Path, *, with_unavailable: bool = False) -> dict[str, Any]:
+    """Start a NOOA runtime with fixture MCP servers, invoke it once, and stop it."""
     runtime_context = RuntimeContext.from_mapping(
         {
             "runtime_id": "runtime-subprocess",
@@ -32,17 +33,25 @@ async def run(workspace: Path) -> dict[str, Any]:
             "artifacts": {},
         }
     )
+    servers: dict[str, Any] = {
+        "calculator": {
+            "transport": "stdio",
+            "url": sys.executable,
+            "args": ["fixture-mcp-server"],
+        }
+    }
+    if with_unavailable:
+        servers["offline"] = {
+            "transport": "streamable-http",
+            "url": "http://unreachable.invalid/mcp?token=fixture-secret",
+        }
+        servers["missing"] = {
+            "transport": "stdio",
+            "url": str(workspace / "missing-mcp-server"),
+        }
     config = AgentConfig.from_mapping(
         {
-            "mcp": {
-                "servers": {
-                    "calculator": {
-                        "transport": "stdio",
-                        "url": sys.executable,
-                        "args": ["fixture-mcp-server"],
-                    }
-                }
-            },
+            "mcp": {"servers": servers},
             "workflow": {
                 "entrypoint": {
                     "kind": "interactive_agent_factory",
@@ -78,4 +87,13 @@ async def run(workspace: Path) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    print(json.dumps(asyncio.run(run(Path(sys.argv[1])))))
+    print(
+        json.dumps(
+            asyncio.run(
+                run(
+                    Path(sys.argv[1]),
+                    with_unavailable="--with-unavailable" in sys.argv[2:],
+                )
+            )
+        )
+    )

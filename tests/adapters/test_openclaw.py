@@ -2636,3 +2636,270 @@ async def test_native_shared_hook_failures_reject_startup(
 @pytest.mark.parametrize("agent_id", ["Reviewer", "agent_1-A", "a" * 64])
 def test_openclaw_preserves_valid_agent_id_spelling(agent_id):
     assert adapter._agent_id({"agent_id": agent_id}) == agent_id
+
+
+def _mcp_diagnostic(name: str, message: str) -> dict[str, object]:
+    return {
+        "id": f"mcp-server-diagnostic:{name}",
+        "severity": "warning",
+        "message": f'MCP server "{name}": {message}',
+        "servers": [name],
+    }
+
+
+def _mcp_status_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventories: list[object]
+) -> tuple[adapter.OpenClawRuntime, AsyncMock]:
+    """Return a started-looking runtime whose Gateway returns ``inventories`` in turn."""
+
+    context = _context(tmp_path, runtime_id="Runtime-1")
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = None
+    runtime._client = MagicMock()
+    runtime._config = _config(tmp_path / "openclaw")
+    runtime._context = context
+    runtime._port = 12345
+    runtime._process = mock_process
+    runtime._command = tmp_path / "openclaw"
+    runtime._command_env = {"OPENCLAW_GATEWAY_TOKEN": "secret-token"}
+    runtime._agent_id = "Reviewer"
+    runtime._mcp_transports = {"local": "stdio", "remote": "streamable-http"}
+    monkeypatch.setattr(
+        adapter,
+        "_invoke_gateway",
+        AsyncMock(return_value=("OpenClaw response", adapter.contract.AgentUsage())),
+    )
+    status = AsyncMock(side_effect=[json.dumps(value) for value in inventories])
+    monkeypatch.setattr(adapter, "_command_output", status)
+    return runtime, status
+
+
+def test_openclaw_unavailable_mcp_servers_use_native_diagnostics_without_messages():
+    """OpenClaw unavailable MCP servers use native diagnostics without messages."""
+    inventory = {
+        "groups": [],
+        "notices": [
+            _mcp_diagnostic(
+                "remote", "fetch failed | ECONNREFUSED https://user:pw@example.test"
+            ),
+            _mcp_diagnostic(
+                "local",
+                'MCP server "local" timed out: did not complete initialize within 30s',
+            ),
+            _mcp_diagnostic("plugin-owned", "fetch failed"),
+            {"id": "mcp-not-yet-connected", "servers": ["local"], "message": "x"},
+            {"id": "unsupported-tool-schema:local__x", "message": "x"},
+            "not a notice",
+        ],
+    }
+
+    unavailable = adapter._unavailable_mcp_servers(
+        inventory, {"local": "stdio", "remote": "streamable-http"}
+    )
+
+    assert unavailable == [
+        {"name": "remote", "transport": "streamable-http", "reason": "failed"},
+        {"name": "local", "transport": "stdio", "reason": "timed_out"},
+    ]
+    assert "ECONNREFUSED" not in json.dumps(unavailable)
+    assert adapter._unavailable_mcp_servers({"ok": False}, {"local": "stdio"}) == []
+    assert adapter._unavailable_mcp_servers(None, {"local": "stdio"}) == []
+
+
+async def test_openclaw_results_report_current_unavailable_mcp_servers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """OpenClaw results report current unavailable MCP servers."""
+    runtime, status = _mcp_status_runtime(
+        tmp_path,
+        monkeypatch,
+        [
+            {"notices": [_mcp_diagnostic("remote", "fetch failed")]},
+            {
+                "notices": [
+                    _mcp_diagnostic("remote", "fetch failed"),
+                    _mcp_diagnostic("local", "spawn ENOENT"),
+                ]
+            },
+            {"notices": []},
+        ],
+    )
+    context = runtime._context
+    assert context is not None
+
+    first = await runtime.invoke(AgentRunRequest(input="One."), context)
+    second = await runtime.invoke(AgentRunRequest(input="Two."), context)
+    recovered = await runtime.invoke(AgentRunRequest(input="Three."), context)
+
+    assert first.output == {
+        "response": "OpenClaw response",
+        "mcp": {
+            "unavailable_servers": [
+                {"name": "remote", "transport": "streamable-http", "reason": "failed"}
+            ]
+        },
+    }
+    assert second.output["mcp"] == {
+        "unavailable_servers": [
+            {"name": "local", "transport": "stdio", "reason": "failed"},
+            {"name": "remote", "transport": "streamable-http", "reason": "failed"},
+        ]
+    }
+    assert recovered.output == {"response": "OpenClaw response"}
+    warnings = capsys.readouterr().err.splitlines()
+    assert warnings == [
+        "NeMo Fabric OpenClaw: MCP server 'remote' (streamable-http) is unavailable: failed",
+        "NeMo Fabric OpenClaw: MCP server 'local' (stdio) is unavailable: failed",
+    ]
+    args = status.await_args_list[0].args
+    assert args[1:7] == (
+        "gateway",
+        "call",
+        "tools.effective",
+        "--json",
+        "--port",
+        "12345",
+    )
+    assert json.loads(args[8]) == {"sessionKey": "agent:reviewer:openai-user:runtime-1"}
+    assert "secret-token" not in json.dumps([str(arg) for arg in args])
+    assert status.await_args_list[0].kwargs["env"] == runtime._command_env
+
+
+async def test_openclaw_http_failures_report_unavailable_mcp_servers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """OpenClaw HTTP failures report unavailable MCP servers."""
+    runtime, _ = _mcp_status_runtime(
+        tmp_path,
+        monkeypatch,
+        [{"notices": [_mcp_diagnostic("local", "spawn ENOENT")]}],
+    )
+    request = adapter.httpx.Request(
+        "POST", "http://127.0.0.1:12345/v1/chat/completions"
+    )
+    monkeypatch.setattr(
+        adapter,
+        "_invoke_gateway",
+        AsyncMock(
+            side_effect=adapter.httpx.HTTPStatusError(
+                "bad", request=request, response=adapter.httpx.Response(502)
+            )
+        ),
+    )
+    assert runtime._context is not None
+
+    result = await runtime.invoke(AgentRunRequest(input="Hello."), runtime._context)
+
+    assert result.status == adapter.contract.AgentRunStatus.FAILED
+    assert result.output == {
+        "mcp": {
+            "unavailable_servers": [
+                {"name": "local", "transport": "stdio", "reason": "failed"}
+            ]
+        }
+    }
+
+
+async def test_openclaw_mcp_status_failure_keeps_the_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    """OpenClaw MCP status failure keeps the result."""
+    runtime, status = _mcp_status_runtime(tmp_path, monkeypatch, [])
+    status.side_effect = adapter.lifecycle.LifecycleError(
+        "openclaw_command_failed", "OpenClaw command failed"
+    )
+    assert runtime._context is not None
+
+    first = await runtime.invoke(AgentRunRequest(input="One."), runtime._context)
+    status.side_effect = None
+    status.return_value = "not json"
+    second = await runtime.invoke(AgentRunRequest(input="Two."), runtime._context)
+
+    assert first.output == second.output == {"response": "OpenClaw response"}
+    assert caplog.text.count("could not report MCP server availability") == 1
+
+
+async def test_openclaw_skips_mcp_status_without_configured_servers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """OpenClaw skips MCP status without configured servers."""
+    runtime, status = _mcp_status_runtime(tmp_path, monkeypatch, [])
+    runtime._mcp_transports = {}
+    assert runtime._context is not None
+
+    result = await runtime.invoke(AgentRunRequest(input="Hello."), runtime._context)
+
+    assert result.output == {"response": "OpenClaw response"}
+    status.assert_not_awaited()
+
+
+async def test_openclaw_mcp_status_cancellation_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """OpenClaw MCP status cancellation propagates."""
+    runtime, status = _mcp_status_runtime(tmp_path, monkeypatch, [])
+    started = asyncio.Event()
+
+    async def wait_forever(*_args, **_kwargs):
+        started.set()
+        await asyncio.Event().wait()
+
+    status.side_effect = wait_forever
+    assert runtime._context is not None
+    task = asyncio.create_task(
+        runtime.invoke(AgentRunRequest(input="Hello."), runtime._context)
+    )
+    await asyncio.wait_for(started.wait(), timeout=5)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process groups are POSIX-only")
+async def test_status_command_timeout_stops_children_holding_the_pipes(tmp_path):
+    """A stalled status command whose child keeps the pipes open stops promptly."""
+    child_pid_file = tmp_path / "child.pid"
+    script = tmp_path / "stall.py"
+    script.write_text(
+        "import pathlib, subprocess, sys, time\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"pathlib.Path({str(child_pid_file)!r}).write_text(str(child.pid))\n"
+        "time.sleep(60)\n"
+    )
+    command = tmp_path / "openclaw"
+    command.write_text(f"#!/bin/sh\nexec {sys.executable} {script}\n")
+    command.chmod(0o755)
+
+    started = time.monotonic()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        await adapter._command_output(
+            command,
+            "gateway",
+            "call",
+            env=dict(os.environ),
+            timeout=1,
+            process_group=True,
+        )
+
+    assert error.value.code == "openclaw_command_timeout"
+    assert time.monotonic() - started < 1 + adapter.COMMAND_REAP_SECONDS + 2
+    child_pid = int(child_pid_file.read_text())
+    stat = Path(f"/proc/{child_pid}/stat")
+    for _ in range(50):
+        try:
+            os.kill(child_pid, 0)
+            # On Linux the state follows the parenthesized command name; a
+            # zombie ("Z") has exited. Without /proc, os.kill is the check.
+            if stat.read_text().rsplit(")", 1)[1].split()[0] == "Z":
+                break
+        except ProcessLookupError:
+            break
+        except (FileNotFoundError, IndexError):
+            if sys.platform.startswith("linux"):
+                break  # the process exited while being checked
+        time.sleep(0.05)
+    else:
+        os.kill(child_pid, signal.SIGKILL)
+        pytest.fail("the status command's child kept running")

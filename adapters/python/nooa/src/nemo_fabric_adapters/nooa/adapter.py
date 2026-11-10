@@ -16,6 +16,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
+from typing import NamedTuple
 
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentRunError
@@ -24,6 +25,7 @@ from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import mcp_availability
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapters.nooa.interactive import InteractiveAgentBuildContext
 from nemo_fabric_adapters.nooa.interactive import InteractiveAgentTarget
@@ -37,6 +39,12 @@ HARNESS = "nooa"
 MODE = "interactive_agent"
 WORKFLOW_FACTORY_KIND = "interactive_agent_factory"
 _TERMINAL_REASONS = frozenset({"DONE", "NEED_INPUT", "GET_USER_INPUT"})
+# Upper bound on connecting to one MCP server and listing its tools at startup.
+# Unreachable servers usually fail fast; this bounds a server that accepts the
+# connection but never answers, so it is reported instead of stalling startup.
+MCP_CONNECT_TIMEOUT_SECONDS = 60.0
+# How long a timed-out connection may spend closing before startup moves on.
+MCP_CONNECT_CANCEL_GRACE_SECONDS = 5.0
 
 LOGGER = logging.getLogger(__name__)
 
@@ -201,15 +209,115 @@ def _validate_mcp_server(name: str, server: Any) -> str:
     return transport
 
 
-async def _register_mcp_servers(agent: Any, config: AgentConfig) -> None:
+class _McpServer(NamedTuple):
+    """One validated MCP server, ready for NOOA to connect."""
+
+    name: str
+    transport: str
+    target: str
+    args: list[str]
+    env: dict[str, str]
+    headers: dict[str, str]
+
+
+def _resolve_mcp_server(name: str, server: Any) -> _McpServer:
+    """Validate one Fabric MCP server for NOOA before any connection."""
+    transport = _validate_mcp_server(name, server)
+    target = _mcp_target(name, server.url)
+    headers: dict[str, str] = {}
+    if transport != "stdio":
+        try:
+            headers = common_utils.expand_http_headers(
+                name,
+                dict(server.custom_headers),
+            )
+        except (TypeError, ValueError) as error:
+            raise _config_error(
+                "nooa_invalid_mcp_server",
+                f"OO Agents MCP server {name!r} has invalid custom headers",
+                server=name,
+            ) from error
+    return _McpServer(
+        name=name,
+        transport=transport,
+        target=target,
+        args=list(server.args),
+        env=dict(server.env),
+        headers=headers,
+    )
+
+
+async def _connect_mcp_server(
+    manager: Any,
+    server: _McpServer,
+) -> tuple[Any, dict[str, str] | None]:
+    """Create one NOOA MCP tool, reporting an unreachable server instead of raising."""
+
+    async def create() -> Any:
+        """Ask NOOA to connect the server and list its tools."""
+        if server.transport == "stdio":
+            return await manager.create_stdio_server(
+                server.name,
+                command=server.target,
+                args=server.args,
+                env=server.env,
+            )
+        return await manager.create_url_server(
+            server.name,
+            server.target,
+            headers=server.headers,
+            transport=server.transport,
+        )
+
+    task, timed_out = await mcp_availability.wait_bounded(
+        create(),
+        timeout=MCP_CONNECT_TIMEOUT_SECONDS,
+        grace=MCP_CONNECT_CANCEL_GRACE_SECONDS,
+    )
+    if timed_out:
+        return None, mcp_availability.unavailable_server(
+            server.name,
+            server.transport,
+            mcp_availability.TIMED_OUT,
+            "TimeoutError",
+        )
+    if task.cancelled():
+        return None, mcp_availability.unavailable_server(
+            server.name, server.transport, mcp_availability.FAILED, "CancelledError"
+        )
+    try:
+        tool = task.result()
+    except Exception as error:
+        # NOOA wraps connection failures in a RuntimeError whose cause is the
+        # transport error; report that cause's type, never the message.
+        cause = error.__cause__ if isinstance(error.__cause__, Exception) else error
+        return None, mcp_availability.unavailable_server(
+            server.name,
+            server.transport,
+            mcp_availability.FAILED,
+            mcp_availability.exception_type(cause),
+        )
+    return tool, None
+
+
+async def _register_mcp_servers(
+    agent: Any, config: AgentConfig
+) -> list[dict[str, str]]:
+    """Register every reachable MCP server and return the unavailable ones.
+
+    Invalid server configuration still fails startup. A server that NOOA cannot
+    connect to, or that does not list its tools in time, is skipped and
+    reported, so the runtime starts with the remaining servers. Connection runs
+    again on every runtime start; a skipped server is not remembered.
+    """
+
     servers = config.mcp.servers if config.mcp is not None else {}
     if not servers:
-        return
+        return []
 
-    validated = {
-        name: (_validate_mcp_server(name, server), server)
-        for name, server in sorted(servers.items())
-    }
+    resolved = [
+        _resolve_mcp_server(name, server) for name, server in sorted(servers.items())
+    ]
     registry = _mcp_registry(agent)
     try:
         from nooa.mcp import MCPManager
@@ -219,53 +327,36 @@ async def _register_mcp_servers(agent: Any, config: AgentConfig) -> None:
             "OO Agents MCP support is not installed",
         ) from error
 
+    connected = await asyncio.gather(
+        *(_connect_mcp_server(MCPManager, server) for server in resolved)
+    )
     registered: list[str] = []
-    for name, (transport, server) in validated.items():
-        target = _mcp_target(name, server.url)
-        if transport == "stdio":
-            tool = await MCPManager.create_stdio_server(
-                name,
-                command=target,
-                args=list(server.args),
-                env=dict(server.env),
-            )
-        else:
-            try:
-                headers = common_utils.expand_http_headers(
-                    name,
-                    dict(server.custom_headers),
-                )
-            except (TypeError, ValueError) as error:
-                raise _config_error(
-                    "nooa_invalid_mcp_server",
-                    f"OO Agents MCP server {name!r} has invalid custom headers",
-                    server=name,
-                ) from error
-            tool = await MCPManager.create_url_server(
-                name,
-                target,
-                headers=headers,
-                transport=transport,
-            )
-
-        registry_name = f"mcp.{name}"
+    unavailable: list[dict[str, str]] = []
+    for server, (tool, failure) in zip(resolved, connected, strict=True):
+        if failure is not None:
+            unavailable.append(failure)
+            continue
+        registry_name = f"mcp.{server.name}"
         try:
             registry.register(registry_name, tool)
         except ValueError as error:
             raise _config_error(
                 "nooa_mcp_registration_failed",
-                f"OO Agents could not register MCP server {name!r}",
-                server=name,
+                f"OO Agents could not register MCP server {server.name!r}",
+                server=server.name,
             ) from error
         registered.append(registry_name)
+    mcp_availability.warn("OO Agents", unavailable)
 
-    try:
-        registry.activate(registered)
-    except ValueError as error:
-        raise _config_error(
-            "nooa_mcp_activation_failed",
-            "OO Agents could not activate the configured MCP servers",
-        ) from error
+    if registered:
+        try:
+            registry.activate(registered)
+        except ValueError as error:
+            raise _config_error(
+                "nooa_mcp_activation_failed",
+                "OO Agents could not activate the configured MCP servers",
+            ) from error
+    return unavailable
 
 
 def _build_context(
@@ -490,16 +581,30 @@ def _with_telemetry(
     return result
 
 
+def _with_mcp_report(
+    result: AgentRunResult,
+    unavailable: list[dict[str, str]],
+) -> AgentRunResult:
+    """Report the MCP servers this runtime could not use, when there are any."""
+
+    if mcp := mcp_availability.output_block(unavailable):
+        result.output = {**result.output, "mcp": mcp}
+    return result
+
+
 class NooaRuntime:
     """One registered OO Agents target owned by one Fabric runtime."""
 
     def __init__(self) -> None:
+        """Create an unstarted runtime with no NOOA target."""
         self._runtime_id: str | None = None
         self._target: InteractiveAgentTarget | None = None
         self._models: dict[str, Any] = {}
         self._telemetry: RelayTelemetry | None = None
+        self._mcp_unavailable: list[dict[str, str]] = []
 
     async def start(self, payload: dict[str, Any]) -> None:
+        """Build the NOOA target and register the reachable MCP servers."""
         if self._target is not None:
             raise lifecycle.LifecycleError(
                 "nooa_runtime_already_started",
@@ -511,6 +616,7 @@ class NooaRuntime:
         models: dict[str, Any] = {}
         target: InteractiveAgentTarget | None = None
         telemetry: RelayTelemetry | None = None
+        mcp_unavailable: list[dict[str, str]] = []
         try:
             models = await build_models(config)
             context = _build_context(payload, config, models)
@@ -521,7 +627,7 @@ class NooaRuntime:
             )
             target = _unwrap_target(await _await_if_needed(factory(context)))
             _validate_target(target)
-            await _register_mcp_servers(target.agent, config)
+            mcp_unavailable = await _register_mcp_servers(target.agent, config)
         except asyncio.CancelledError:
             await _close_resources(target, models)
             if telemetry is not None:
@@ -557,12 +663,14 @@ class NooaRuntime:
         self._target = target
         self._models = models
         self._telemetry = telemetry
+        self._mcp_unavailable = mcp_unavailable
 
     async def invoke(
         self,
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
     ) -> AgentRunResult:
+        """Run one NOOA turn and report MCP availability with its result."""
         if self._target is None or self._runtime_id is None:
             raise lifecycle.LifecycleError(
                 "nooa_runtime_not_started",
@@ -574,9 +682,12 @@ class NooaRuntime:
                 "OO Agents invocation does not match the active runtime",
             )
         if not isinstance(request.input, str):
-            return _failure_output(
-                "nooa_invalid_request",
-                "OO Agents InteractiveAgent input must be a string",
+            return _with_mcp_report(
+                _failure_output(
+                    "nooa_invalid_request",
+                    "OO Agents InteractiveAgent input must be a string",
+                ),
+                self._mcp_unavailable,
             )
 
         agent = self._target.agent
@@ -636,9 +747,13 @@ class NooaRuntime:
         else:
             assert isinstance(relay_invocation.result, AgentRunResult)
             result = relay_invocation.result
-        return _with_telemetry(result, relay_invocation.report)
+        return _with_mcp_report(
+            _with_telemetry(result, relay_invocation.report),
+            self._mcp_unavailable,
+        )
 
     async def stop(self) -> None:
+        """Close the NOOA target and forget this runtime's MCP report."""
         target = self._target
         models = self._models
         telemetry = self._telemetry
@@ -646,6 +761,7 @@ class NooaRuntime:
         self._target = None
         self._models = {}
         self._telemetry = None
+        self._mcp_unavailable = []
         if target is None and not models and telemetry is None:
             return
         telemetry_error: Exception | None = None
@@ -670,7 +786,6 @@ class NooaRuntime:
                 "nooa_runtime_stop_failed",
                 "OO Agents runtime failed to stop cleanly",
             ) from telemetry_error
-
 
 
 # Selected software reported by the shared lifecycle host; no dependency scan.

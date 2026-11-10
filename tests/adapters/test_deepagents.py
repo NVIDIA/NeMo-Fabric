@@ -2162,7 +2162,7 @@ async def test_unavailable_mcp_server_is_skipped_and_reported(
         "unavailable_servers": [
             {
                 "name": "jira",
-                "transport": "streamable_http",
+                "transport": "streamable-http",
                 "reason": "failed",
                 "error_type": "ConnectionError",
             },
@@ -2175,8 +2175,8 @@ async def test_unavailable_mcp_server_is_skipped_and_reported(
         ]
     }
     stderr = capsys.readouterr().err
-    assert "skipped unavailable MCP server 'jira'" in stderr
-    assert "skipped unavailable MCP server 'local'" in stderr
+    assert "MCP server 'jira' (streamable-http) is unavailable" in stderr
+    assert "MCP server 'local' (stdio) is unavailable" in stderr
     assert secret not in stderr
     assert secret not in json.dumps(output)
 
