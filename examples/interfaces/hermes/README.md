@@ -27,7 +27,7 @@ export ADAPTER_PYTHON="${ADAPTER_PYTHON:-$PWD/.venv-hermes/bin/python}"
 
 The export preserves a separately selected adapter interpreter; otherwise it uses `.venv-hermes`. The example scripts below run in `.venv-hermes`, which provides their NeMo Fabric SDK host.
 
-This prepares pinned Hermes v0.22.5, the NeMo Fabric adapter/SDK, and NeMo Relay 0.10 in `.venv-hermes`. The API dependency `aiohttp` and the Python web-serving dependencies needed by the TUI backend are included. Use `jq` for the JSON inspection commands below.
+This prepares pinned Hermes v0.22.7, the NeMo Fabric adapter/SDK, and NeMo Relay 0.11 in `.venv-hermes`. The API dependency `aiohttp` and the Python web-serving dependencies needed by the TUI backend are included. Use `jq` for the JSON inspection commands below.
 
 Set the model endpoint, served model name, and credential used by all three native tests:
 
