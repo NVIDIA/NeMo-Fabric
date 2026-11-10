@@ -918,6 +918,9 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
     tools_pkg = ModuleType("tools")
     tools_mcp = ModuleType("tools.mcp_tool")
     tools_mcp.discover_mcp_tools = lambda: discover_calls.append("discover") or []  # type: ignore[attr-defined]
+    tools_mcp.get_mcp_status = lambda configured: [  # type: ignore[attr-defined]
+        {"name": name, "status": "connected"} for name in configured
+    ]
 
     def shutdown_mcp_servers() -> None:
         shutdown_calls.append("shutdown")
@@ -1090,6 +1093,193 @@ async def test_runtime_reports_failed_oauth_mcp_authentication(monkeypatch):
     assert caught.value.metadata == {"servers": ["confluence"]}
     tools_mcp.refresh_agent_mcp_tools.assert_not_called()  # type: ignore[attr-defined]
     assert runtime._mcp_authentication_checked is False
+
+
+def _partial_mcp_config() -> AgentConfig:
+    return _agent_config(
+        {
+            "models": {"default": {"provider": "test", "model": "test-model"}},
+            "mcp": {
+                "servers": {
+                    "time": {"transport": "stdio", "url": "time-mcp"},
+                    "offline": {
+                        "transport": "streamable-http",
+                        "url": "http://127.0.0.1:9/mcp",
+                    },
+                    "missing": {"transport": "stdio", "url": "missing-mcp"},
+                    "pending": {"transport": "stdio", "url": "pending-mcp"},
+                }
+            },
+        }
+    )
+
+
+def _install_mcp_status(monkeypatch, *snapshots: list[dict[str, object]]) -> MagicMock:
+    """Serve Hermes's MCP status, one snapshot per read."""
+
+    get_mcp_status = MagicMock(side_effect=list(snapshots))
+    discovery = ModuleType("tools.mcp_tool_discovery")
+    discovery.get_mcp_status = get_mcp_status  # type: ignore[attr-defined]
+    discovery.discover_mcp_tools = MagicMock(return_value=[])  # type: ignore[attr-defined]
+    lifecycle = ModuleType("tools.mcp_tool_lifecycle")
+    lifecycle.shutdown_mcp_servers = MagicMock()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "tools", ModuleType("tools"))
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool_discovery", discovery)
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool_lifecycle", lifecycle)
+    return get_mcp_status
+
+
+async def test_runtime_reports_current_unavailable_mcp_servers_on_each_result(
+    monkeypatch, capsys
+):
+    mock_turn = MagicMock(
+        return_value=({"final_response": "done", "completed": True}, "")
+    )
+    monkeypatch.setattr(adapter, "_invoke_hermes_turn", mock_turn)
+    agent_config = _partial_mcp_config()
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._agent_config = agent_config
+    runtime._model_config = agent_config.models["default"]
+    runtime._runtime_id = "runtime-partial-mcp"
+    runtime._agent = MagicMock()
+    runtime._hermes_config = configuration.build_hermes_config(
+        agent_config, workspace="."
+    )
+    get_mcp_status = _install_mcp_status(
+        monkeypatch,
+        [
+            {"name": "time", "status": "connected"},
+            {"name": "offline", "status": "failed", "error": "secret-token"},
+            {"name": "missing", "status": "failed", "error": "missing executable"},
+            {"name": "pending", "status": "connecting"},
+        ],
+        [
+            {"name": "time", "status": "connected"},
+            {"name": "offline", "status": "connected"},
+            {"name": "missing", "status": "failed", "error": "missing executable"},
+            {"name": "pending", "status": "configured"},
+        ],
+        [
+            {"name": "time", "status": "connected"},
+            {"name": "offline", "status": "connected"},
+            {"name": "missing", "status": "lazy"},
+            {"name": "pending", "status": "connected"},
+        ],
+    )
+    request, context = _invocation(
+        {
+            "runtime_context": _runtime_context(
+                runtime_id="runtime-partial-mcp"
+            ).to_mapping(),
+            "request": {"input": "what time is it"},
+        }
+    )
+
+    first = await runtime.invoke(request, context)
+    first_warnings = capsys.readouterr().err
+    second = await runtime.invoke(request, context)
+    second_warnings = capsys.readouterr().err
+    third = await runtime.invoke(request, context)
+
+    assert first.status is AgentRunStatus.SUCCEEDED
+    assert first.output["mcp"] == {
+        "unavailable_servers": [
+            {"name": "missing", "transport": "stdio", "reason": "failed"},
+            {"name": "offline", "transport": "streamable-http", "reason": "failed"},
+        ]
+    }
+    # A server Hermes reconnected is no longer reported.
+    assert second.output["mcp"] == {
+        "unavailable_servers": [
+            {"name": "missing", "transport": "stdio", "reason": "failed"},
+        ]
+    }
+    assert "mcp" not in third.output
+    assert "secret-token" not in json.dumps(first.output)
+    assert first_warnings.count("is unavailable") == 2
+    assert "'offline' (streamable-http) is unavailable: failed" in first_warnings
+    assert second_warnings == ""
+    get_mcp_status.assert_called_with(runtime._hermes_config["mcp_servers"])
+
+
+async def test_runtime_starts_when_mcp_servers_are_unavailable(
+    monkeypatch, tmp_path: Path, capsys
+):
+    mock_ai_agent = MagicMock(spec=AIAgent)
+    mock_ai_agent_type = MagicMock(spec=AIAgent, return_value=mock_ai_agent)
+    monkeypatch.setattr(
+        mock_ai_agent_type.__init__.__func__,
+        "__signature__",
+        inspect.signature(AIAgent.__init__),
+        raising=False,
+    )
+    hermes_config = ModuleType("hermes_cli.config")
+    hermes_config.load_config = lambda: {}  # type: ignore[attr-defined]
+    hermes_plugins = ModuleType("hermes_cli.plugins")
+    hermes_plugins.discover_plugins = lambda force=False: None  # type: ignore[attr-defined]
+    hermes_state = ModuleType("hermes_state")
+    hermes_state.SessionDB = MagicMock(spec=SessionDB)  # type: ignore[attr-defined]
+    run_agent = ModuleType("run_agent")
+    run_agent.AIAgent = mock_ai_agent_type  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "hermes_cli", ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", hermes_config)
+    monkeypatch.setitem(sys.modules, "hermes_cli.plugins", hermes_plugins)
+    monkeypatch.setitem(sys.modules, "hermes_state", hermes_state)
+    monkeypatch.setitem(sys.modules, "run_agent", run_agent)
+    get_mcp_status = _install_mcp_status(
+        monkeypatch,
+        [
+            {"name": "time", "status": "connected"},
+            {"name": "offline", "status": "failed"},
+            {"name": "missing", "status": "failed"},
+            {"name": "pending", "status": "failed"},
+        ],
+    )
+    discovery = sys.modules["tools.mcp_tool_discovery"]
+    mcp_lifecycle = sys.modules["tools.mcp_tool_lifecycle"]
+    monkeypatch.setenv("TEST_API_KEY", "secret")
+    agent_config = _agent_config(
+        {
+            **_partial_mcp_config().to_mapping(),
+            "tools": {"enabled": ["mcp-time"]},
+            "models": {
+                "default": {
+                    "provider": "test",
+                    "model": "test-model",
+                    "api_key_env": "TEST_API_KEY",
+                }
+            },
+        }
+    )
+
+    runtime = adapter.HermesRuntime()
+    await runtime.start(
+        {
+            "base_dir": str(tmp_path),
+            "config": agent_config,
+            "runtime_context": _runtime_context(
+                runtime_id="runtime-partial-start",
+                workspace=str(tmp_path),
+                artifact_root=str(tmp_path / "artifacts"),
+            ).to_mapping(),
+        }
+    )
+    try:
+        assert runtime._started is True
+        discovery.discover_mcp_tools.assert_called_once_with()  # type: ignore[attr-defined]
+        get_mcp_status.assert_called_once()
+        warnings = capsys.readouterr().err
+        assert warnings.count("is unavailable") == 3
+        assert [entry["name"] for entry in runtime._mcp_unavailable] == [
+            "offline",
+            "missing",
+            "pending",
+        ]
+    finally:
+        await runtime.stop()
+    assert runtime._mcp_unavailable == []
+    mcp_lifecycle.shutdown_mcp_servers.assert_called_once_with()  # type: ignore[attr-defined]
 
 
 def test_build_hermes_config_disables_session_title_generation_only_for_relay():

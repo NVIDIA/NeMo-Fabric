@@ -38,6 +38,8 @@ Hermes reports its Python package version as `0.0.0`, so use its Git tag and com
 
 Use normalized `FabricConfig` fields for the model, instructions, tools, skills, MCP servers, workspace, turn limit, and telemetry. Use `harness.settings` for Hermes-specific options and native interface selection.
 
+The runtime starts even when some configured MCP servers are unavailable. Hermes Agent connects each server separately at startup and keeps the tools of the servers that connected. Each result from that runtime lists the servers Hermes Agent currently reports as failed under `output.mcp.unavailable_servers`, with the server `name`, `transport` and `reason` (`failed`). The adapter also writes a warning to standard error when a server first becomes unavailable. The list reflects Hermes Agent's state after each turn: a server that has since connected, or that is still connecting, is not listed, and each new runtime connects every server again. Hermes Agent records only an error message for a failed connection, and error messages are not reported because they can contain URLs, headers or other credentials, so entries have no `error_type` and timeouts are reported as `failed`. Invalid server configuration, such as an unsupported transport or authentication mode, still fails startup, and an OAuth server that cannot be authenticated still fails the invocation.
+
 The following example configures an embedded SDK agent with file tools:
 
 ```python
