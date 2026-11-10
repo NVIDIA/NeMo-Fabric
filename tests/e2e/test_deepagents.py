@@ -295,6 +295,7 @@ async def test_env_secrets_in_headers(api_server, tmp_path):
 async def test_unavailable_mcp_servers_do_not_block_startup(
     api_server, tmp_path, unused_tcp_port, relay, request
 ):
+    """Start with the reachable MCP server and report the unavailable ones."""
     pytest.importorskip("deepagents")
     if relay:
         request.getfixturevalue("nemo_relay")

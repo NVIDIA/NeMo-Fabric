@@ -2100,6 +2100,7 @@ def _install_mcp_client(monkeypatch, servers: dict[str, Any]) -> MagicMock:
     """
 
     async def get_tools(*, server_name: str) -> list[Any]:
+        """Return, raise, or block according to the server's configured behavior."""
         behavior = servers[server_name]
         if behavior == "hang":
             await asyncio.Event().wait()
@@ -2121,6 +2122,7 @@ def _install_mcp_client(monkeypatch, servers: dict[str, Any]) -> MagicMock:
 
 
 def _named_tool(name: str) -> MagicMock:
+    """Return a stand-in MCP tool with the given name."""
     tool = MagicMock()
     tool.name = name
     return tool
