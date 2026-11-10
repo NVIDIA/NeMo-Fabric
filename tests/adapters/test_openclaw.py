@@ -2676,6 +2676,7 @@ def _mcp_status_runtime(
 
 
 def test_openclaw_unavailable_mcp_servers_use_native_diagnostics_without_messages():
+    """OpenClaw unavailable MCP servers use native diagnostics without messages."""
     inventory = {
         "groups": [],
         "notices": [
@@ -2709,6 +2710,7 @@ def test_openclaw_unavailable_mcp_servers_use_native_diagnostics_without_message
 async def test_openclaw_results_report_current_unavailable_mcp_servers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ):
+    """OpenClaw results report current unavailable MCP servers."""
     runtime, status = _mcp_status_runtime(
         tmp_path,
         monkeypatch,
@@ -2767,6 +2769,7 @@ async def test_openclaw_results_report_current_unavailable_mcp_servers(
 async def test_openclaw_http_failures_report_unavailable_mcp_servers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    """OpenClaw HTTP failures report unavailable MCP servers."""
     runtime, _ = _mcp_status_runtime(
         tmp_path,
         monkeypatch,
@@ -2801,6 +2804,7 @@ async def test_openclaw_http_failures_report_unavailable_mcp_servers(
 async def test_openclaw_mcp_status_failure_keeps_the_result(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ):
+    """OpenClaw MCP status failure keeps the result."""
     runtime, status = _mcp_status_runtime(tmp_path, monkeypatch, [])
     status.side_effect = adapter.lifecycle.LifecycleError(
         "openclaw_command_failed", "OpenClaw command failed"
@@ -2819,6 +2823,7 @@ async def test_openclaw_mcp_status_failure_keeps_the_result(
 async def test_openclaw_skips_mcp_status_without_configured_servers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    """OpenClaw skips MCP status without configured servers."""
     runtime, status = _mcp_status_runtime(tmp_path, monkeypatch, [])
     runtime._mcp_transports = {}
     assert runtime._context is not None
@@ -2832,6 +2837,7 @@ async def test_openclaw_skips_mcp_status_without_configured_servers(
 async def test_openclaw_mcp_status_cancellation_propagates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    """OpenClaw MCP status cancellation propagates."""
     runtime, status = _mcp_status_runtime(tmp_path, monkeypatch, [])
     started = asyncio.Event()
 

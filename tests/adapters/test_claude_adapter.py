@@ -125,6 +125,7 @@ def install_fake_client(
     monkeypatch: pytest.MonkeyPatch,
     response_factory: Callable[[MagicMock], AsyncIterator[Message]],
 ) -> list[MagicMock]:
+    """Replace ClaudeSDKClient with mocks that stream the given responses."""
     clients: list[MagicMock] = []
     client_type = adapter.ClaudeSDKClient
 
@@ -556,6 +557,7 @@ def test_claude_maps_mcp_custom_headers(claude_payload, monkeypatch):
 async def test_claude_invoke_passes_remaining_budget_to_query(
     claude_payload, monkeypatch
 ):
+    """Claude Code invoke passes remaining budget to query."""
     runtime = adapter.ClaudeRuntime()
     runtime._agent_config = agent_config(claude_payload)
     runtime._fabric_runtime_id = claude_payload["runtime_context"]["runtime_id"]
@@ -1504,6 +1506,7 @@ def mcp_status(**statuses: str) -> dict[str, Any]:
 
 
 def test_unavailable_mcp_servers_maps_native_status(claude_payload):
+    """``unavailable_mcp_servers`` maps native status."""
     config = agent_config(claude_payload)
 
     unavailable = adapter.unavailable_mcp_servers(
@@ -1530,6 +1533,7 @@ def test_unavailable_mcp_servers_maps_native_status(claude_payload):
 def test_unavailable_mcp_servers_skips_usable_or_unsettled_servers(
     claude_payload, status
 ):
+    """``unavailable_mcp_servers`` skips usable or unsettled servers."""
     assert (
         adapter.unavailable_mcp_servers(
             agent_config(claude_payload), mcp_status(repo=status, docs=status)
@@ -1542,12 +1546,14 @@ def test_unavailable_mcp_servers_skips_usable_or_unsettled_servers(
     "response", [None, {}, {"mcpServers": None}, {"mcpServers": ["repo"]}]
 )
 def test_unavailable_mcp_servers_rejects_malformed_status(claude_payload, response):
+    """``unavailable_mcp_servers`` rejects malformed status."""
     assert (
         adapter.unavailable_mcp_servers(agent_config(claude_payload), response) is None
     )
 
 
 async def start_runtime(claude_payload: dict[str, Any]) -> adapter.ClaudeRuntime:
+    """Start a Claude Code runtime from a test payload."""
     start_payload = dict(claude_payload)
     start_payload.pop("request")
     runtime = adapter.ClaudeRuntime()
@@ -1558,6 +1564,7 @@ async def start_runtime(claude_payload: dict[str, Any]) -> adapter.ClaudeRuntime
 async def test_claude_runtime_reports_current_unavailable_mcp_servers(
     claude_payload, monkeypatch, capsys
 ):
+    """Claude Code runtime reports current unavailable MCP servers."""
     clients = install_fake_client(
         monkeypatch, lambda _client: (message async for message in _one_result())
     )
@@ -1598,12 +1605,14 @@ async def test_claude_runtime_reports_current_unavailable_mcp_servers(
 
 
 async def _one_result() -> AsyncIterator[Message]:
+    """Stream a single successful result message."""
     yield running_total_result(0.1)
 
 
 async def test_claude_runtime_does_not_cache_mcp_failures_across_runtimes(
     claude_payload, monkeypatch, capsys
 ):
+    """Claude Code runtime does not cache MCP failures across runtimes."""
     clients = install_fake_client(
         monkeypatch, lambda _client: (message async for message in _one_result())
     )
@@ -1625,6 +1634,7 @@ async def test_claude_runtime_does_not_cache_mcp_failures_across_runtimes(
 async def test_claude_runtime_omits_mcp_report_when_status_is_unobservable(
     claude_payload, monkeypatch
 ):
+    """Claude Code runtime omits MCP report when status is unobservable."""
     clients = install_fake_client(
         monkeypatch, lambda _client: (message async for message in _one_result())
     )
@@ -1665,6 +1675,7 @@ async def test_claude_runtime_caps_wait_for_unanswered_mcp_status(
 async def test_claude_runtime_skips_mcp_status_without_mcp_servers(
     claude_payload, monkeypatch
 ):
+    """Claude Code runtime skips MCP status without MCP servers."""
     claude_payload["config"].pop("mcp")
     clients = install_fake_client(
         monkeypatch, lambda _client: (message async for message in _one_result())
@@ -1682,6 +1693,7 @@ async def test_claude_runtime_skips_mcp_status_without_mcp_servers(
 async def test_claude_runtime_propagates_cancellation_during_mcp_status(
     claude_payload, monkeypatch
 ):
+    """Claude Code runtime propagates cancellation during MCP status."""
     clients = install_fake_client(
         monkeypatch, lambda _client: (message async for message in _one_result())
     )

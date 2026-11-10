@@ -759,6 +759,7 @@ async def invoke_runtime(payload, before_each):
 def test_codex_reports_unavailable_mcp_servers_on_every_result(
     codex_payload, mock_codex, capsys
 ):
+    """Codex reports unavailable MCP servers on every result."""
     configure_mcp(codex_payload, PARTIAL_MCP_SERVERS)
     notifications = mock_codex.global_notifications
 
@@ -807,6 +808,7 @@ def test_codex_reports_unavailable_mcp_servers_on_every_result(
 
 
 def test_codex_reports_current_mcp_server_state(codex_payload, mock_codex, capsys):
+    """Codex reports current MCP server state."""
     configure_mcp(codex_payload, PARTIAL_MCP_SERVERS)
     notifications = mock_codex.global_notifications
 
@@ -834,6 +836,7 @@ def test_codex_reports_current_mcp_server_state(codex_payload, mock_codex, capsy
 
 
 def test_codex_omits_mcp_report_when_every_server_starts(codex_payload, mock_codex):
+    """Codex omits MCP report when every server starts."""
     configure_mcp(codex_payload, PARTIAL_MCP_SERVERS)
 
     def ready():
@@ -847,6 +850,7 @@ def test_codex_omits_mcp_report_when_every_server_starts(codex_payload, mock_cod
 
 
 def test_codex_leaves_transport_failure_for_sdk_waiters(codex_payload, mock_codex):
+    """Codex leaves transport failure for SDK waiters."""
     configure_mcp(codex_payload, PARTIAL_MCP_SERVERS)
     closed = adapter.TransportClosedError("closed")
 
@@ -863,6 +867,7 @@ def test_codex_leaves_transport_failure_for_sdk_waiters(codex_payload, mock_code
 def test_codex_records_mcp_startup_seen_during_oauth_login(
     codex_payload, mock_codex, monkeypatch
 ):
+    """Codex records MCP startup seen during OAuth login."""
     configure_mcp(
         codex_payload,
         {

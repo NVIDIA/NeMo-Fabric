@@ -486,6 +486,7 @@ def test_interactive_runtime_registers_and_invokes_mcp_in_subprocess(
 def test_interactive_runtime_reports_unavailable_mcp_servers_in_subprocess(
     tmp_path: Path,
 ):
+    """Interactive runtime reports unavailable MCP servers in subprocess."""
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(ROOT / "tests" / "fixtures" / "nooa" / "src")
 
@@ -1219,6 +1220,7 @@ async def test_runtime_starts_and_reports_unavailable_mcp_servers(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
+    """Runtime starts and reports unavailable MCP servers."""
     agent = _answering_agent()
     install_target(MagicMock(return_value=agent))
     calculator_tool = MagicMock(name="calculator_tool")
@@ -1278,6 +1280,7 @@ async def test_runtime_starts_when_no_mcp_server_is_available(
     install_target,
     monkeypatch: pytest.MonkeyPatch,
 ):
+    """Runtime starts when no MCP server is available."""
     agent = _answering_agent()
     install_target(MagicMock(return_value=agent))
     _install_mcp_manager(
@@ -1321,6 +1324,7 @@ async def test_runtime_does_not_remember_unavailable_mcp_servers(
     install_target,
     monkeypatch: pytest.MonkeyPatch,
 ):
+    """Runtime does not remember unavailable MCP servers."""
     first_agent = _answering_agent()
     second_agent = _answering_agent()
     install_target(MagicMock(side_effect=[first_agent, second_agent]))
@@ -1355,6 +1359,7 @@ async def test_invalid_mcp_configuration_fails_before_connecting(
     install_target,
     monkeypatch: pytest.MonkeyPatch,
 ):
+    """Invalid MCP configuration fails before connecting."""
     agent, _channels, _handlers = _agent_double()
     install_target(MagicMock(return_value=agent))
     manager = _install_mcp_manager(
@@ -1388,6 +1393,7 @@ async def test_cancelled_mcp_connection_cancels_runtime_start(
     install_target,
     monkeypatch: pytest.MonkeyPatch,
 ):
+    """Cancelled MCP connection cancels runtime start."""
     agent, _channels, _handlers = _agent_double()
     install_target(MagicMock(return_value=agent))
     connecting = asyncio.Event()

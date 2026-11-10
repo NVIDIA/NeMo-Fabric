@@ -18,6 +18,7 @@ from nemo_fabric_adapters.nooa.adapter import NooaRuntime
 
 
 async def run(workspace: Path, *, with_unavailable: bool = False) -> dict[str, Any]:
+    """Start a NOOA runtime with fixture MCP servers, invoke it once, and stop it."""
     runtime_context = RuntimeContext.from_mapping(
         {
             "runtime_id": "runtime-subprocess",

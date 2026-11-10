@@ -24,6 +24,7 @@ class _MCPTool:
 
 
 def _connection_failure(server_name: str, cause: Exception) -> RuntimeError:
+    """Wrap a transport error the way NOOA reports a failed connection."""
     error = RuntimeError(f"Could not connect to MCP server {server_name!r}: {cause}")
     error.__cause__ = cause
     return error
@@ -39,6 +40,7 @@ class MCPManager:
         args: list[str] | None = None,
         env: dict[str, str] | None = None,
     ) -> _MCPTool:
+        """Return a fixture tool, or fail like NOOA when the command does not exist."""
         del args, env
         if not os.path.isfile(command):
             raise _connection_failure(
@@ -54,6 +56,7 @@ class MCPManager:
         headers: dict[str, str] | None = None,
         transport: str = "streamable-http",
     ) -> _MCPTool:
+        """Return a fixture tool, or refuse like NOOA for an unreachable host."""
         del headers, transport
         if (urlsplit(url).hostname or "").startswith("unreachable"):
             raise _connection_failure(

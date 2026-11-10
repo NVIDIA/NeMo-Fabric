@@ -891,6 +891,7 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
     monkeypatch,
     tmp_path: Path,
 ):
+    """Runtime start discovers MCP tools when configured."""
     mock_session_db = MagicMock(spec=SessionDB)
     mock_session_db_type = MagicMock(spec=SessionDB, return_value=mock_session_db)
     mock_ai_agent = MagicMock(spec=AIAgent)
@@ -1132,6 +1133,7 @@ def _install_mcp_status(monkeypatch, *snapshots: list[dict[str, object]]) -> Mag
 async def test_runtime_reports_current_unavailable_mcp_servers_on_each_result(
     monkeypatch, capsys
 ):
+    """Runtime reports current unavailable MCP servers on each result."""
     mock_turn = MagicMock(
         return_value=({"final_response": "done", "completed": True}, "")
     )
@@ -1240,6 +1242,7 @@ async def test_runtime_omits_mcp_report_when_hermes_status_fails(monkeypatch):
 async def test_runtime_starts_when_mcp_servers_are_unavailable(
     monkeypatch, tmp_path: Path, capsys
 ):
+    """Runtime starts when MCP servers are unavailable."""
     mock_ai_agent = MagicMock(spec=AIAgent)
     mock_ai_agent_type = MagicMock(spec=AIAgent, return_value=mock_ai_agent)
     monkeypatch.setattr(
