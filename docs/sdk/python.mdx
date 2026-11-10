@@ -1451,7 +1451,7 @@ offending settings path.
 
 ## Errors
 
-All public SDK errors inherit from `FabricError`.
+All public SDK errors inherit from `FabricError`. One-shot lifecycle failures can retain obtained runtime and request identities, cleanup events, and already-selected software evidence in `error.details["runtime_evidence"]`. These observations do not establish a terminal invocation result; unknown usage remains unknown. The original exception and its cause remain authoritative.
 
 | Error | Meaning |
 | --- | --- |
