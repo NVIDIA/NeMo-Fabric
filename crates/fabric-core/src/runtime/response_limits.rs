@@ -340,9 +340,8 @@ mod tests {
         let mut result = original.clone();
         enforce_local_artifacts(&mut result, ResponseLimits::default()).unwrap();
         assert_eq!(result, original);
-        // A non-directory parent is a real I/O error, not a missing optional file.
-        std::fs::write(root.join("file"), "data").unwrap();
-        result.artifacts.artifacts[0].path = root.join("file/child");
+        // NUL is invalid on every supported platform, unlike missing optional files.
+        result.artifacts.artifacts[0].path = root.join("invalid\0path");
         assert!(matches!(
             enforce_local_artifacts(&mut result, ResponseLimits::default()),
             Err(FabricError::Read { .. })
