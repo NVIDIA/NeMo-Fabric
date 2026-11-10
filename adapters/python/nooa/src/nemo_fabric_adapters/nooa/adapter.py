@@ -221,6 +221,7 @@ class _McpServer(NamedTuple):
 
 
 def _resolve_mcp_server(name: str, server: Any) -> _McpServer:
+    """Validate one Fabric MCP server for NOOA before any connection."""
     transport = _validate_mcp_server(name, server)
     target = _mcp_target(name, server.url)
     headers: dict[str, str] = {}
@@ -253,6 +254,7 @@ async def _connect_mcp_server(
     """Create one NOOA MCP tool, reporting an unreachable server instead of raising."""
 
     async def create() -> Any:
+        """Ask NOOA to connect the server and list its tools."""
         if server.transport == "stdio":
             return await manager.create_stdio_server(
                 server.name,
@@ -594,6 +596,7 @@ class NooaRuntime:
     """One registered OO Agents target owned by one Fabric runtime."""
 
     def __init__(self) -> None:
+        """Create an unstarted runtime with no NOOA target."""
         self._runtime_id: str | None = None
         self._target: InteractiveAgentTarget | None = None
         self._models: dict[str, Any] = {}
@@ -601,6 +604,7 @@ class NooaRuntime:
         self._mcp_unavailable: list[dict[str, str]] = []
 
     async def start(self, payload: dict[str, Any]) -> None:
+        """Build the NOOA target and register the reachable MCP servers."""
         if self._target is not None:
             raise lifecycle.LifecycleError(
                 "nooa_runtime_already_started",
@@ -666,6 +670,7 @@ class NooaRuntime:
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
     ) -> AgentRunResult:
+        """Run one NOOA turn and report MCP availability with its result."""
         if self._target is None or self._runtime_id is None:
             raise lifecycle.LifecycleError(
                 "nooa_runtime_not_started",
@@ -748,6 +753,7 @@ class NooaRuntime:
         )
 
     async def stop(self) -> None:
+        """Close the NOOA target and forget this runtime's MCP report."""
         target = self._target
         models = self._models
         telemetry = self._telemetry

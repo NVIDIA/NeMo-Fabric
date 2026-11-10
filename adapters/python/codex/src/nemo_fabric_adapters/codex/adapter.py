@@ -214,10 +214,12 @@ def request_prompt(request: AgentRunRequest) -> str:
 
 
 def _mcp_transport(transport: str) -> str:
+    """Return the adapter's normalized spelling of an MCP transport."""
     return transport.strip().lower().replace("_", "-")
 
 
 def _native_mcp_servers(config: AgentConfig) -> dict[str, dict[str, Any]]:
+    """Translate Fabric MCP servers into Codex ``mcp_servers`` configuration."""
     servers = config.mcp.servers if config.mcp else {}
     result: dict[str, dict[str, Any]] = {}
     for name, server in sorted(servers.items()):
@@ -413,6 +415,7 @@ class CodexMcpStartupStatuses:
         transports: dict[str, str],
         notifications: queue.Queue[Any],
     ) -> None:
+        """Track startup statuses for this thread's configured MCP servers."""
         self._thread_id = thread_id
         self._transports = transports
         self._notifications = notifications
@@ -434,6 +437,7 @@ class CodexMcpStartupStatuses:
     def _drain(self) -> None:
         # The SDK routes notifications that carry no turn to this queue and
         # nothing else consumes them between invocations.
+        """Record pending startup statuses without blocking."""
         while True:
             try:
                 item = self._notifications.get_nowait()
@@ -524,6 +528,7 @@ async def _login_mcp_server(
     timeout: float,
     observe: Callable[[Any], None] | None = None,
 ) -> None:
+    """Run Codex's OAuth login for one MCP server and wait for completion."""
     params: dict[str, Any] = {
         "name": name,
         "threadId": thread_id,
@@ -576,6 +581,7 @@ async def _authenticate_mcp_servers(
     invocation_deadline: float,
     observe: Callable[[Any], None] | None = None,
 ) -> None:
+    """Log in to every configured OAuth MCP server that needs it."""
     oauth_servers = _mcp_oauth_servers(config)
     if not oauth_servers:
         return
@@ -1446,6 +1452,7 @@ class CodexRuntime:
     """One Codex app-server client and thread owned by a Fabric runtime."""
 
     def __init__(self) -> None:
+        """Create an unstarted runtime with no Codex client or thread."""
         self._config: AgentConfig | None = None
         self._context: RuntimeContext | None = None
         self._base_dir: str | None = None
@@ -1464,6 +1471,7 @@ class CodexRuntime:
         self._health_lock = asyncio.Lock()
 
     async def start(self, payload: dict[str, Any]) -> None:
+        """Start the Codex app-server, open the thread and track MCP startup."""
         if self._client is not None:
             raise lifecycle.LifecycleError(
                 "codex_runtime_already_started",
@@ -1691,6 +1699,7 @@ class CodexRuntime:
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
     ) -> AgentRunResult:
+        """Run one Codex turn and normalize its result."""
         if (
             self._config is None
             or self._context is None
@@ -1793,6 +1802,7 @@ class CodexRuntime:
     ) -> AgentRunResult:
         # Report the current state on every result. Absent when every
         # configured server started, so clean runs keep their shape.
+        """Build the run result, adding the current MCP availability report."""
         if self._mcp_statuses is not None and (
             mcp := mcp_availability.output_block(self._mcp_statuses.unavailable())
         ):
@@ -1800,6 +1810,7 @@ class CodexRuntime:
         return _agent_run_result(output, cumulative_totals)
 
     async def stop(self) -> None:
+        """Stop the Codex client and release runtime state."""
         client = self._client
         self._client = None
         self._config = None

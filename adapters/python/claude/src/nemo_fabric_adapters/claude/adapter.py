@@ -1192,6 +1192,7 @@ class ClaudeRuntime:
     """One connected Claude SDK client owned by a Fabric runtime."""
 
     def __init__(self) -> None:
+        """Create an unstarted runtime with no Claude Code client."""
         self._agent_config: AgentConfig | None = None
         self._fabric_runtime_id: str | None = None
         self._claude_session_id: str | None = None
@@ -1306,6 +1307,7 @@ class ClaudeRuntime:
         self._health_task = task
 
         def completed(task: asyncio.Task) -> None:
+            """Forget the finished status request and retrieve its outcome."""
             if self._health_task is task:
                 self._health_task = None
             if not task.cancelled():
@@ -1351,6 +1353,7 @@ class ClaudeRuntime:
         return unavailable
 
     async def start(self, payload: dict[str, Any]) -> None:
+        """Start the Claude Code client for the configured agent."""
         if self._client is not None:
             raise lifecycle.LifecycleError(
                 "claude_runtime_already_started",
@@ -1420,6 +1423,7 @@ class ClaudeRuntime:
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
     ) -> AgentRunResult:
+        """Run one query and normalize its result, including MCP availability."""
         client = self._client
         agent_config = self._agent_config
         fabric_runtime_id = self._fabric_runtime_id

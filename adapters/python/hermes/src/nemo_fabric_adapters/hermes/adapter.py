@@ -53,6 +53,7 @@ class HermesRuntime:
     """SDK and native Hermes execution owned by one Fabric runtime."""
 
     def __init__(self) -> None:
+        """Create an unstarted runtime with no Hermes agent."""
         self._started = False
         self._sdk_enabled = True
         self._owns_mcp = False

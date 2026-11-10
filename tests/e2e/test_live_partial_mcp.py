@@ -62,16 +62,19 @@ TIME_PROMPT = (
 
 
 def _free_port() -> int:
+    """Return a local port with nothing listening on it."""
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
 
 
 def _model_host() -> str:
+    """Return the configured model endpoint's host name."""
     return urlparse(BASE_URL).hostname or ""
 
 
 def _loopback_or_https() -> bool:
+    """Return whether Relay accepts the configured model URL."""
     parsed = urlparse(BASE_URL)
     if parsed.scheme == "https":
         return True
@@ -82,6 +85,7 @@ def _loopback_or_https() -> bool:
 
 
 def _model(provider: str):
+    """Return the live model configuration for one provider spelling."""
     from nemo_fabric import ModelConfig
 
     return ModelConfig(
@@ -90,6 +94,7 @@ def _model(provider: str):
 
 
 def _deepagents():
+    """Return the Deep Agents config and its input schema."""
     from examples.code_review_agent import deepagents_config
 
     config = deepagents_config()
@@ -98,6 +103,7 @@ def _deepagents():
 
 
 def _nooa():
+    """Return the NOOA config and its input schema."""
     from examples.code_review_agent import nooa_config
 
     config = nooa_config()
@@ -107,6 +113,7 @@ def _nooa():
 
 
 def _codex():
+    """Return the Codex config and its input schema."""
     from examples.code_review_agent import codex_config
 
     config = codex_config()
@@ -116,6 +123,7 @@ def _codex():
 
 
 def _claude():
+    """Return the Claude Code config and its input schema."""
     from examples.code_review_agent import claude_config
     from nemo_fabric import ToolsConfig
 
@@ -131,6 +139,7 @@ def _claude():
 
 
 def _hermes():
+    """Return the Hermes config and its input schema."""
     pytest.importorskip("hermes_cli", reason="run under the Hermes environment")
     from examples.code_review_agent import hermes_config
     from nemo_fabric import ToolsConfig
@@ -142,6 +151,7 @@ def _hermes():
 
 
 def _openclaw():
+    """Return the OpenClaw config and its input schema."""
     command = os.environ.get("FABRIC_OPENCLAW_TEST_COMMAND")
     if not command:
         pytest.skip("set FABRIC_OPENCLAW_TEST_COMMAND to the openclaw executable")

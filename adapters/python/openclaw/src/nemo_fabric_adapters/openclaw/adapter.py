@@ -959,6 +959,7 @@ class OpenClawRuntime:
     """One OpenClaw Gateway lifecycle or runtime-scoped connection."""
 
     def __init__(self) -> None:
+        """Create an unstarted runtime with no OpenClaw Gateway."""
         self._client: httpx.AsyncClient | None = None
         self._config: contract.AgentConfig | None = None
         self._context: contract.RuntimeContext | None = None
@@ -1168,6 +1169,7 @@ class OpenClawRuntime:
         return observed("passed", None)
 
     async def start(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        """Write the OpenClaw configuration and start or attach to the Gateway."""
         config: contract.AgentConfig = payload["config"]
         context = contract.RuntimeContext.from_mapping(payload["runtime_context"])
         settings = config.harness.settings if config.harness else {}
@@ -1841,6 +1843,7 @@ class OpenClawRuntime:
         request: contract.AgentRunRequest,
         context: contract.RuntimeContext,
     ) -> contract.AgentRunResult:
+        """Run one Gateway turn and report MCP availability with its result."""
         gateway_url = self._gateway_url
         if gateway_url is None and self._port is not None:
             gateway_url = f"http://127.0.0.1:{self._port}"
@@ -1980,6 +1983,7 @@ class OpenClawRuntime:
         return {"mcp": block} if block else {}
 
     async def stop(self) -> None:
+        """Stop the owned Gateway and release runtime state."""
         cancellation: asyncio.CancelledError | None = None
         self._stopping = True
         if self._interface_directory is not None:
