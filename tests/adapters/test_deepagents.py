@@ -11,6 +11,7 @@ integration test in ``tests/e2e/test_deepagents.py``.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.machinery
 import json
 import os
@@ -2035,8 +2036,11 @@ async def test_mcp_servers_become_adapter_tools(
     tool_read.name = "read_file"
     tool_write = MagicMock()
     tool_write.name = "write_file"
+    server_tools = {"fs": [tool_read], "local": [tool_write]}
     mock_client = MagicMock()
-    mock_client.get_tools = AsyncMock(return_value=[tool_read, tool_write])
+    mock_client.get_tools = AsyncMock(
+        side_effect=lambda *, server_name: server_tools[server_name]
+    )
     mock_client_cls = MagicMock(return_value=mock_client)
 
     client_mod = types.ModuleType("langchain_mcp_adapters.client")
@@ -2085,6 +2089,309 @@ async def test_mcp_servers_become_adapter_tools(
     assert tool_names == ["read_file", "write_file"]
     assert tool_read.handle_tool_error is True
     assert callable(tool_write.handle_validation_error)
+    assert "mcp" not in output
+
+
+def _install_mcp_client(monkeypatch, servers: dict[str, Any]) -> MagicMock:
+    """Fake MultiServerMCPClient whose per-server discovery follows ``servers``.
+
+    Each value is a tool list to return, an exception to raise, or ``"hang"`` to
+    never answer.
+    """
+
+    async def get_tools(*, server_name: str) -> list[Any]:
+        """Return, raise, or block according to the server's configured behavior."""
+        behavior = servers[server_name]
+        if behavior == "hang":
+            await asyncio.Event().wait()
+        if isinstance(behavior, BaseException):
+            raise behavior
+        return list(behavior)
+
+    mock_client = MagicMock()
+    mock_client.get_tools = AsyncMock(side_effect=get_tools)
+    client_mod = types.ModuleType("langchain_mcp_adapters.client")
+    client_mod.MultiServerMCPClient = MagicMock(return_value=mock_client)
+    monkeypatch.setitem(
+        sys.modules,
+        "langchain_mcp_adapters",
+        types.ModuleType("langchain_mcp_adapters"),
+    )
+    monkeypatch.setitem(sys.modules, "langchain_mcp_adapters.client", client_mod)
+    return mock_client
+
+
+def _named_tool(name: str) -> MagicMock:
+    """Return a stand-in MCP tool with the given name."""
+    tool = MagicMock()
+    tool.name = name
+    return tool
+
+
+async def test_unavailable_mcp_server_is_skipped_and_reported(
+    tmp_path, make_payload, monkeypatch, fake_sdks, capsys
+):
+    """Start with the reachable servers; report the others without their error text."""
+    secret = "token-do-not-report"
+    _install_mcp_client(
+        monkeypatch,
+        {
+            "docs": [_named_tool("search_docs")],
+            "jira": ConnectionError(f"https://jira.example/mcp?key={secret} refused"),
+            "local": ExceptionGroup(
+                "unhandled errors in a TaskGroup",
+                [FileNotFoundError(f"missing-server --key {secret}")],
+            ),
+        },
+    )
+    payload = make_payload(tmp_path)
+    payload["config"]["mcp"] = {
+        "servers": {
+            "docs": {"transport": "sse", "url": "http://localhost:9/sse"},
+            "jira": {"transport": "streamable-http", "url": "http://localhost:9/mcp"},
+            "local": {"transport": "stdio", "url": "missing-server"},
+        }
+    }
+
+    output = await invoke_once(payload)
+
+    assert output["failed"] is False
+    tool_names = [tool.name for tool in fake_sdks["create_kwargs"]["tools"]]
+    assert tool_names == ["search_docs"]
+    assert output["mcp"] == {
+        "unavailable_servers": [
+            {
+                "name": "jira",
+                "transport": "streamable_http",
+                "reason": "failed",
+                "error_type": "ConnectionError",
+            },
+            {
+                "name": "local",
+                "transport": "stdio",
+                "reason": "failed",
+                "error_type": "FileNotFoundError",
+            },
+        ]
+    }
+    stderr = capsys.readouterr().err
+    assert "skipped unavailable MCP server 'jira'" in stderr
+    assert "skipped unavailable MCP server 'local'" in stderr
+    assert secret not in stderr
+    assert secret not in json.dumps(output)
+
+
+async def test_mcp_server_that_never_answers_is_reported_as_timed_out(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
+    """Bound discovery so a silent server cannot stall startup."""
+    monkeypatch.setattr(adapter, "MCP_DISCOVERY_TIMEOUT_SECONDS", 0.01)
+    _install_mcp_client(
+        monkeypatch, {"docs": [_named_tool("search_docs")], "slow": "hang"}
+    )
+    payload = make_payload(tmp_path)
+    payload["config"]["mcp"] = {
+        "servers": {
+            "docs": {"transport": "sse", "url": "http://localhost:9/sse"},
+            "slow": {"transport": "sse", "url": "http://localhost:9/slow"},
+        }
+    }
+
+    output = await invoke_once(payload)
+
+    assert output["failed"] is False
+    assert [tool.name for tool in fake_sdks["create_kwargs"]["tools"]] == [
+        "search_docs"
+    ]
+    assert output["mcp"]["unavailable_servers"] == [
+        {
+            "name": "slow",
+            "transport": "sse",
+            "reason": "timed_out",
+            "error_type": "TimeoutError",
+        }
+    ]
+
+
+async def test_timed_out_discovery_does_not_wait_for_slow_cleanup(
+    tmp_path, make_payload, monkeypatch, fake_sdks, capsys
+):
+    """A server that is slow to close after a timeout is skipped within the grace."""
+    monkeypatch.setattr(adapter, "MCP_DISCOVERY_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(adapter, "MCP_DISCOVERY_CANCEL_GRACE_SECONDS", 0.05)
+    cleanup_started = asyncio.Event()
+
+    async def hang_then_clean_up_slowly(*, server_name: str) -> list[Any]:
+        """Never answer, then take far longer than the grace to close."""
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cleanup_started.set()
+            await asyncio.sleep(30)
+            raise
+        return []
+
+    mock_client = _install_mcp_client(monkeypatch, {"slow": []})
+    mock_client.get_tools = AsyncMock(side_effect=hang_then_clean_up_slowly)
+    payload = make_payload(tmp_path)
+    payload["config"]["mcp"] = {
+        "servers": {"slow": {"transport": "sse", "url": "http://localhost:9/slow"}}
+    }
+
+    output = await asyncio.wait_for(invoke_once(payload), timeout=5)
+
+    assert cleanup_started.is_set()
+    assert "'slow' is still closing its connection" in capsys.readouterr().err
+    assert output["failed"] is False
+    assert output["mcp"]["unavailable_servers"] == [
+        {
+            "name": "slow",
+            "transport": "sse",
+            "reason": "timed_out",
+            "error_type": "TimeoutError",
+        }
+    ]
+
+
+async def test_websocket_custom_headers_fail_startup(tmp_path, make_payload):
+    """Unsupported websocket headers are a configuration error, not an outage."""
+    payload = make_payload(tmp_path)
+    payload["config"]["mcp"] = {
+        "servers": {
+            "ws": {
+                "transport": "websocket",
+                "url": "ws://localhost:9/mcp",
+                "custom_headers": {"Authorization": "Bearer token"},
+            }
+        }
+    }
+
+    with pytest.raises(adapter.AdapterConfigError, match="websocket transport"):
+        await adapter.resolve_tools(AgentConfig.from_mapping(payload["config"]))
+
+
+async def test_runtime_starts_when_no_mcp_server_is_available(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
+    """Every server down still starts the agent, with no MCP tools."""
+    _install_mcp_client(monkeypatch, {"jira": ConnectionError("refused")})
+    payload = make_payload(tmp_path)
+    payload["config"]["mcp"] = {
+        "servers": {"jira": {"transport": "sse", "url": "http://localhost:9/sse"}}
+    }
+
+    output = await invoke_once(payload)
+
+    assert output["failed"] is False
+    assert "tools" not in fake_sdks["create_kwargs"]
+    assert [server["name"] for server in output["mcp"]["unavailable_servers"]] == [
+        "jira"
+    ]
+
+
+async def test_next_runtime_retries_a_previously_unavailable_mcp_server(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
+    """Discovery is not cached across runtimes, so a recovered server is picked up."""
+    servers: dict[str, Any] = {"jira": ConnectionError("refused")}
+    mock_client = _install_mcp_client(monkeypatch, servers)
+    payload = make_payload(tmp_path)
+    payload["config"]["mcp"] = {
+        "servers": {"jira": {"transport": "sse", "url": "http://localhost:9/sse"}}
+    }
+
+    first = await invoke_once(payload)
+    servers["jira"] = [_named_tool("get_issue")]
+    second = await invoke_once(payload)
+
+    assert first["mcp"]["unavailable_servers"][0]["name"] == "jira"
+    assert "mcp" not in second
+    assert [tool.name for tool in fake_sdks["create_kwargs"]["tools"]] == ["get_issue"]
+    assert mock_client.get_tools.await_count == 2
+
+
+async def test_unavailable_mcp_servers_are_reported_on_every_turn(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
+    """The report belongs to the runtime, so later turns keep it."""
+    _install_mcp_client(monkeypatch, {"jira": ConnectionError("refused")})
+    payload = make_payload(tmp_path)
+    payload["config"]["mcp"] = {
+        "servers": {"jira": {"transport": "sse", "url": "http://localhost:9/sse"}}
+    }
+
+    first, second = await invoke_twice(payload)
+
+    assert first["mcp"] == second["mcp"]
+    assert second["mcp"]["unavailable_servers"][0]["name"] == "jira"
+
+
+async def test_mcp_client_internal_cancellation_marks_server_failed(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
+    """A discovery task cancelled inside the client is a failed server, not an abort."""
+
+    async def cancelled_inside_client(*, server_name: str) -> list[Any]:
+        """Cancel the discovery task from within, as a misbehaving client could."""
+        asyncio.current_task().cancel()
+        await asyncio.sleep(0)
+        return []
+
+    mock_client = _install_mcp_client(monkeypatch, {"flaky": []})
+    mock_client.get_tools = AsyncMock(side_effect=cancelled_inside_client)
+    payload = make_payload(tmp_path)
+    payload["config"]["mcp"] = {
+        "servers": {"flaky": {"transport": "sse", "url": "http://localhost:9/sse"}}
+    }
+
+    output = await invoke_once(payload)
+
+    assert output["failed"] is False
+    assert output["mcp"]["unavailable_servers"] == [
+        {
+            "name": "flaky",
+            "transport": "sse",
+            "reason": "failed",
+            "error_type": "CancelledError",
+        }
+    ]
+
+
+async def test_mcp_discovery_cancellation_is_not_reported_as_unavailable(
+    tmp_path, make_payload, monkeypatch
+):
+    """Cancelling startup must cancel discovery, not record a skipped server."""
+    started = asyncio.Event()
+    discovery_cancelled = asyncio.Event()
+
+    async def hang(*, server_name: str) -> list[Any]:
+        """Wait until startup is cancelled."""
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            discovery_cancelled.set()
+            raise
+        return []
+
+    mock_client = _install_mcp_client(monkeypatch, {"jira": []})
+    mock_client.get_tools = AsyncMock(side_effect=hang)
+    payload = make_payload(tmp_path)
+    payload["config"]["mcp"] = {
+        "servers": {"jira": {"transport": "sse", "url": "http://localhost:9/sse"}}
+    }
+    unavailable: list[dict[str, str]] = []
+    startup = asyncio.create_task(
+        adapter.resolve_tools(AgentConfig.from_mapping(payload["config"]), unavailable)
+    )
+    await started.wait()
+    startup.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await startup
+    await asyncio.sleep(0)
+    assert discovery_cancelled.is_set()
+    assert unavailable == []
 
 
 @pytest.mark.parametrize(
