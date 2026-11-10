@@ -25,7 +25,7 @@ For a separately prepared Hermes environment, set `ADAPTER_PYTHON` to its interp
 uv pip install --python "$ADAPTER_PYTHON" --editable "${HERMES_AGENT_CHECKOUT}[web]" "aiohttp==3.14.5"
 ```
 
-Keep this `ADAPTER_PYTHON` value when following the [frontend setup commands](../../../../examples/interfaces/README.md#build-the-tui-frontends) to build the terminal bundle. For terminal-only use, skip the browser build and `HERMES_WEB_DIST` setting. If the dashboard backend is already enabled, reuse it; terminal attachment does not require another backend installation.
+Keep this `ADAPTER_PYTHON` value when following the [frontend setup commands](../../../../examples/interfaces/hermes/README.md#build-the-tui-frontends) to build the terminal bundle. For terminal-only use, skip the browser build and `HERMES_WEB_DIST` setting. If the dashboard backend is already enabled, reuse it; terminal attachment does not require another backend installation.
 
 The helper uses `HERMES_TUI_DIR/dist/entry.js` when configured; otherwise it looks for `hermes_cli/tui_dist/entry.js` or the pinned checkout's `ui-tui/dist/entry.js`. `HERMES_NODE` can select an executable Node runtime; otherwise it uses Node from `PATH`. It does not build or install missing assets.
 
@@ -52,7 +52,7 @@ This credential is shared with the browser dashboard when both use the same TUI 
 
 ## Attach and Detach
 
-Run the helper from an interactive terminal with the Hermes interpreter. The [runnable example](../../../../examples/interfaces/README.md#4-terminal-tui) prints the exact attachment command using that runtime's descriptor. The helper executes the prebuilt renderer against the managed backend and never falls back to spawning an unmanaged backend.
+Run the helper from an interactive terminal with the Hermes interpreter. The [runnable example](../../../../examples/interfaces/hermes/README.md#4-terminal-tui) prints the exact attachment command using that runtime's descriptor. The helper executes the prebuilt renderer against the managed backend and never falls back to spawning an unmanaged backend.
 
 Terminal clients start independent native conversations by default. Detaching leaves the backend/runtime running; it is not an instruction to cancel a turn. The runtime owner stops its backend and removes attachment files. Same-conversation multi-client control and detach during active work require explicit qualification; use the runtime owner's stop action for final cleanup.
 
@@ -60,4 +60,4 @@ Terminal clients start independent native conversations by default. Detaching le
 
 Terminal output is native; it is not a normalized NeMo Fabric `RunResult`. With Relay enabled, managed agent turns finalize/flush native segments without deleting conversation history. Verify populated ATIF tool steps after each completed turn without detaching or stopping the runtime.
 
-Use the [TUI example](../../../../examples/interfaces/README.md#4-terminal-tui) for manual input, repeated turns, and artifact inspection. Read the [shared limitations](./hermes.mdx#limitations-and-planned-work), including approval policy, shared filesystem access, native activity visibility, and cleanup limits. The initial attachment helper supports local loopback clients; remote discovery and credential transport are outside this iteration.
+Use the [TUI example](../../../../examples/interfaces/hermes/README.md#4-terminal-tui) for manual input, repeated turns, and artifact inspection. Read the [shared limitations](./hermes.mdx#limitations-and-planned-work), including approval policy, shared filesystem access, native activity visibility, and cleanup limits. The initial attachment helper supports local loopback clients; remote discovery and credential transport are outside this iteration.

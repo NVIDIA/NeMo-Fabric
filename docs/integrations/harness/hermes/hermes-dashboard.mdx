@@ -23,7 +23,7 @@ For a separately prepared Hermes environment, set `ADAPTER_PYTHON` to its interp
 uv pip install --python "$ADAPTER_PYTHON" --editable "${HERMES_AGENT_CHECKOUT}[web]" "aiohttp==3.14.5"
 ```
 
-Keep this `ADAPTER_PYTHON` value when following the [frontend setup commands](../../../../examples/interfaces/README.md#build-the-tui-frontends) to build both frontends in that pinned checkout. Browser assets must be available at `hermes_cli/web_dist/index.html` or the directory selected by `HERMES_WEB_DIST`. Runtime startup uses these prebuilt assets; it does not install or build them.
+Keep this `ADAPTER_PYTHON` value when following the [frontend setup commands](../../../../examples/interfaces/hermes/README.md#build-the-tui-frontends) to build both frontends in that pinned checkout. Browser assets must be available at `hermes_cli/web_dist/index.html` or the directory selected by `HERMES_WEB_DIST`. Runtime startup uses these prebuilt assets; it does not install or build them.
 
 ## Configuration
 
@@ -52,4 +52,4 @@ The adapter pins browser chat to the managed runtime profile and its existing TU
 
 Browser turns use native conversations and responses. They do not become SDK invocations or normalized `RunResult` objects. Managed native agent turns finalize and flush Relay segments when execution returns, preserving native history.
 
-See the [TUI example](../../../../examples/interfaces/README.md#3-browser-dashboard) for browser input and artifact inspection. Refer to the [shared limitations](./hermes.mdx#limitations-and-planned-work) for approvals, health/activity, and lifecycle boundaries.
+See the [TUI example](../../../../examples/interfaces/hermes/README.md#3-browser-dashboard) for browser input and artifact inspection. Refer to the [shared limitations](./hermes.mdx#limitations-and-planned-work) for approvals, health/activity, and lifecycle boundaries.

@@ -50,7 +50,7 @@ The [OpenShell Code Review example](code_review_agent/README.md#run-hermes-in-op
 
 ## Native Interfaces
 
-[`interfaces`](interfaces/README.md) demonstrates native harness interfaces alongside a Fabric-managed runtime. Start with the Hermes API example: submit a file task through the native API, verify the generated file, and inspect Relay ATOF events and ATIF tool steps.
+The [native interface examples](interfaces/README.md) are organized by harness. Each harness README provides setup, runnable commands, and manual checks for its supported interfaces.
 
 ## LangGraph Custom Agent
 
@@ -103,4 +103,4 @@ Start with the shared setup and execution model in the
 
 ## Native Hermes Interfaces
 
-The [interfaces examples](interfaces/README.md) exercise the managed Hermes API and provide a manual terminal/browser TUI host. Terminal and browser clients share one runtime-owned TUI service; SDK execution can be disabled explicitly for native-only use.
+The [interfaces examples](interfaces/hermes/README.md) exercise the managed Hermes API and provide a manual terminal/browser TUI host. Terminal and browser clients share one runtime-owned TUI service; SDK execution can be disabled explicitly for native-only use.

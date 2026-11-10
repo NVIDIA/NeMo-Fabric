@@ -79,7 +79,7 @@ The invocation paths have different additional requirements:
 | Dashboard/browser TUI | Python web-serving dependencies, built browser and terminal assets, and a supported Node runtime; see [dashboard installation](../../../docs/integrations/harness/hermes/hermes-dashboard.mdx#installation). |
 | Terminal TUI | Python web-serving dependencies for the backend, plus a built terminal renderer and supported Node runtime for the client; terminal-only mode needs no browser assets. See [terminal installation](../../../docs/integrations/harness/hermes/hermes-tui.mdx#installation). |
 
-Native interfaces require a POSIX host. Runtime startup does not build or install frontends. The [manual TUI example](../../../examples/interfaces/README.md#4-terminal-tui) provides the setup commands and interaction flow.
+Native interfaces require a POSIX host. Runtime startup does not build or install frontends. The [manual TUI example](../../../examples/interfaces/hermes/README.md#4-terminal-tui) provides the setup commands and interaction flow.
 
 ## What It Maps
 
