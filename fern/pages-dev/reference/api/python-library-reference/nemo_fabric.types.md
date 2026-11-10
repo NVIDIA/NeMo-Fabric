@@ -1107,6 +1107,92 @@ Return a detached, JSON-compatible mapping for serialization.
 ---
 
 
+## <kbd>class</kbd> `RuntimeStatusReport`
+
+Recorded lifecycle state and a safe handle snapshot for discovery.
+
+This report reads existing ownership records without probing the harness. ``handle`` is null after stop. Otherwise the handle preserves runtime and environment identity but excludes environment variables, connection metadata, provider metadata, and unknown extensions. The snapshot is for inspection; use the original ``Runtime`` for invocation and cleanup.
+
+
+
+**Attributes:**
+
+ - <b>`runtime_id`</b>:  Selected runtime lifecycle identifier.
+ - <b>`agent_name`</b>:  Exact agent name that owns the runtime.
+ - <b>`status`</b>:  Recorded ``active``, ``stopped``, or ``failed`` SDK state.
+ - <b>`handle`</b>:  Sanitized ``RuntimeHandle``, or null after stop.
+ - <b>`server_state`</b>:  Recorded runtime-server state, or null for a direct local read.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `runtime_id` | `str` |
+| `agent_name` | `str` |
+| `status` | `Literal['active', 'stopped', 'failed']` |
+| `handle` | `RuntimeHandle \| None` |
+| `server_state` | `Literal['running', 'stopping', 'stopped', 'unknown'] \| None` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
 ## <kbd>class</kbd> `ServiceReference`
 
 Reference to an already-running caller-owned service.

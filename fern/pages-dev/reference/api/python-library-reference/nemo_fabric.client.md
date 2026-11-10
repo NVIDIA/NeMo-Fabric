@@ -377,6 +377,48 @@ Execute one complete start, invoke, and stop lifecycle.
 ---
 
 
+### <kbd>method</kbd> `runtime_status`
+
+```python
+async def runtime_status(
+    *,
+    runtime_id: str,
+    agent_name: str,
+    environment: EnvironmentHandle | None = None,
+) -> RuntimeStatusReport
+```
+
+Read recorded runtime state and rediscover a safe handle by identifier.
+
+Without an environment, read runtimes created by this ``Fabric`` instance and retain each ``Runtime`` until successful stop. Each client holds at most 128 runtime records, including pending starts. New starts evict the oldest stopped records first and fail with ``runtime_limit_reached`` if active, failed, and pending runtimes fill the limit. A stopped record has a null handle. A local environment also selects its exact identifier.
+
+An OpenShell environment routes ``fabric-agent-ctl status`` to the owning server, including from a later client process. The returned handle belongs to that server's local environment. Records do not survive server restart. This operation never starts, invokes, stops, or probes a runtime. Recorded ``active`` state does not establish current harness health; use ``check()`` for a fresh observation.
+
+
+
+**Args:**
+
+ - <b>`runtime_id`</b>:  Runtime identifier returned by start.
+ - <b>`agent_name`</b>:  Exact owning agent name.
+ - <b>`environment`</b>:  Optional local selector or verified OpenShell binding.
+
+
+
+**Returns:**
+ An immutable ``RuntimeStatusReport`` with a discovery-only handle. Handle environment variables and arbitrary provider metadata are omitted.
+
+
+
+**Raises:**
+
+ - <b>`FabricConfigError`</b>:  If the target or returned report is invalid.
+ - <b>`FabricStateError`</b>:  If the runtime or selected ownership is unavailable.
+ - <b>`FabricNativeUnavailableError`</b>:  If remote routing needs a missing extension.
+ - <b>`FabricRuntimeError`</b>:  If the status transport fails.
+
+---
+
+
 ### <kbd>method</kbd> `start_runtime`
 
 ```python
@@ -420,6 +462,7 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
 **Raises:**
 
  - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid, streaming is  requested without NeMo Relay enabled, ``launch_collector`` is  set without streaming, Pi is configured with an external  collector, or an external collector has no sink.
+ - <b>`FabricStateError`</b>:  If active, failed, and pending runtimes fill the  client's 128-record limit (``runtime_limit_reached``).
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
  - <b>`FabricRuntimeError`</b>:  If runtime startup fails.
 
@@ -463,6 +506,7 @@ Starting or stopping the runtime does not release ``environment``. Runtime and r
 **Raises:**
 
  - <b>`FabricConfigError`</b>:  If inputs are invalid or the handle does not match the plan.
+ - <b>`FabricStateError`</b>:  If active, failed, and pending runtimes fill the  client's 128-record limit (``runtime_limit_reached``).
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not installed.
  - <b>`FabricRuntimeError`</b>:  If runtime startup fails.
 
