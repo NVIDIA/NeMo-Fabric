@@ -43,6 +43,7 @@ export type AdapterConfigField =
   | "models.max_tokens"
   | "instructions.system"
   | "runtime.max_turns"
+  | "runtime.keep_state"
   | "tools.enabled"
   | "tools.definitions"
   | "tools.blocked"

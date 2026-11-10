@@ -42,6 +42,7 @@ from nemo_fabric_adapter_contract.models import AgentUsage
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import mcp_availability
 import nemo_fabric_adapters.common.utils as common_utils
 from pydantic import ValidationError
 
@@ -435,51 +436,41 @@ class McpToolResolution(NamedTuple):
     unavailable: list[dict[str, str]]
 
 
-def _error_type(error: BaseException) -> str:
-    """Name the underlying failure without its message, which may carry secrets."""
-    while isinstance(error, BaseExceptionGroup) and error.exceptions:
-        error = error.exceptions[0]
-    return type(error).__name__
-
-
 async def _load_server_tools(
-    client: Any, name: str
+    client: Any, name: str, transport: str
 ) -> tuple[list[Any], dict[str, str] | None]:
     """List one server's tools, reporting an unreachable server instead of raising."""
-    task = asyncio.ensure_future(client.get_tools(server_name=name))
-    try:
-        done, _ = await asyncio.wait({task}, timeout=MCP_DISCOVERY_TIMEOUT_SECONDS)
-    except asyncio.CancelledError:
-        task.cancel()
-        raise
-    if not done:
-        # Give the connection a bounded chance to close, then move on. A task that
-        # is still cleaning up finishes in the background; its outcome is ignored.
-        task.cancel()
-        task.add_done_callback(_discard_task_outcome)
-        await asyncio.wait({task}, timeout=MCP_DISCOVERY_CANCEL_GRACE_SECONDS)
+    task, timed_out = await mcp_availability.wait_bounded(
+        client.get_tools(server_name=name),
+        timeout=MCP_DISCOVERY_TIMEOUT_SECONDS,
+        grace=MCP_DISCOVERY_CANCEL_GRACE_SECONDS,
+    )
+    if timed_out:
         if not task.done():
             print(
                 f"NeMo Fabric Deep Agents: MCP server {name!r} is still closing its "
                 "connection after the discovery timeout; continuing startup",
                 file=sys.stderr,
             )
-        return [], {"reason": "timed_out", "error_type": "TimeoutError"}
+        return [], mcp_availability.unavailable_server(
+            name, transport, mcp_availability.TIMED_OUT, "TimeoutError"
+        )
     if task.cancelled():
-        # Caller cancellation is re-raised above, so this cancellation came from
-        # inside the MCP client; treat the server as failed rather than abort start.
-        return [], {"reason": "failed", "error_type": "CancelledError"}
+        # Caller cancellation is re-raised by wait_bounded, so this cancellation
+        # came from inside the MCP client; treat the server as failed.
+        return [], mcp_availability.unavailable_server(
+            name, transport, mcp_availability.FAILED, "CancelledError"
+        )
     try:
         tools = task.result()
     except Exception as error:
-        return [], {"reason": "failed", "error_type": _error_type(error)}
+        return [], mcp_availability.unavailable_server(
+            name,
+            transport,
+            mcp_availability.FAILED,
+            mcp_availability.exception_type(error),
+        )
     return list(tools), None
-
-
-def _discard_task_outcome(task: asyncio.Task[Any]) -> None:
-    """Retrieve an abandoned task's outcome so asyncio does not log it."""
-    if not task.cancelled():
-        task.exception()
 
 
 async def resolve_mcp_tools(config: AgentConfig) -> McpToolResolution:
@@ -498,21 +489,19 @@ async def resolve_mcp_tools(config: AgentConfig) -> McpToolResolution:
 
     client = MultiServerMCPClient(connections)
     loaded = await asyncio.gather(
-        *(_load_server_tools(client, name) for name in connections)
+        *(
+            _load_server_tools(client, name, connection["transport"])
+            for name, connection in connections.items()
+        )
     )
     tools: list[Any] = []
     unavailable: list[dict[str, str]] = []
-    for (name, connection), (server_tools, failure) in zip(connections.items(), loaded):
+    for server_tools, failure in loaded:
         if failure is None:
             tools.extend(server_tools)
-            continue
-        report = {"name": name, "transport": connection["transport"], **failure}
-        unavailable.append(report)
-        print(
-            f"NeMo Fabric Deep Agents: skipped unavailable MCP server {name!r} "
-            f"({report['transport']}): {report['reason']} ({report['error_type']})",
-            file=sys.stderr,
-        )
+        else:
+            unavailable.append(failure)
+    mcp_availability.warn("Deep Agents", unavailable)
     for tool in tools:
         # MCP isError results become ToolException, not graph-fatal failures.
         # Return them as tool feedback; never replay a call automatically.
@@ -1562,11 +1551,9 @@ def normalize_output(
         output["telemetry"] = telemetry
     if relay_artifacts is not None:
         output["relay_artifacts"] = relay_artifacts
-    if unavailable_mcp_servers:
-        # Absent when every configured server loaded, so clean runs keep their shape.
-        output["mcp"] = {
-            "unavailable_servers": [dict(server) for server in unavailable_mcp_servers]
-        }
+    # Absent when every configured server loaded, so clean runs keep their shape.
+    if mcp := mcp_availability.output_block(unavailable_mcp_servers or []):
+        output["mcp"] = mcp
     return output
 
 

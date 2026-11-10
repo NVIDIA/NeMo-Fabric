@@ -31,6 +31,7 @@ from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import mcp_availability
 from nemo_fabric_adapters.hermes import configuration
 from nemo_fabric_adapters.hermes import interfaces
 from nemo_fabric_adapters.hermes import telemetry
@@ -52,6 +53,7 @@ class HermesRuntime:
     """SDK and native Hermes execution owned by one Fabric runtime."""
 
     def __init__(self) -> None:
+        """Create an unstarted runtime with no Hermes agent."""
         self._started = False
         self._sdk_enabled = True
         self._owns_mcp = False
@@ -67,6 +69,7 @@ class HermesRuntime:
         self._hermes_config: dict[str, Any] = {}
         self._enabled_toolsets: list[str] | None = None
         self._mcp_authentication_checked = False
+        self._mcp_unavailable: list[dict[str, str]] = []
         self._conversation_history: list[dict[str, Any]] | None = None
         self._session_db: Any = None
         self._agent: Any = None
@@ -202,6 +205,7 @@ class HermesRuntime:
                             from tools.mcp_tool import discover_mcp_tools
 
                         await asyncio.to_thread(discover_mcp_tools)
+                        await self._refresh_unavailable_mcp_servers()
 
                     self._enabled_toolsets = configuration.resolve_hermes_toolsets(
                         agent_config, loaded_hermes_config
@@ -372,6 +376,7 @@ class HermesRuntime:
         messages = result.get("messages") or []
         if isinstance(messages, list):
             self._conversation_history = messages
+        unavailable_mcp_servers = await self._refresh_unavailable_mcp_servers()
         reported_error = result.get("error")
         failed = (
             bool(result.get("failed"))
@@ -415,6 +420,9 @@ class HermesRuntime:
             output["relay_artifacts"] = common_utils.collect_relay_artifacts(
                 self._relay_plugin_config
             )
+        # Absent when every configured server is usable, so clean runs keep their shape.
+        if mcp := mcp_availability.output_block(unavailable_mcp_servers):
+            output["mcp"] = mcp
         error = None
         if failed:
             if isinstance(reported_error, dict):
@@ -443,6 +451,56 @@ class HermesRuntime:
             output=output,
             error=error,
         )
+
+    async def _refresh_unavailable_mcp_servers(self) -> list[dict[str, str]]:
+        """Read Hermes's current status of the configured MCP servers.
+
+        Hermes keeps running when a server fails to connect, so this reports
+        its current state: a server that has since connected is no longer
+        reported. Hermes records why a connect failed
+        only as a message, which is never reported, so every failure is
+        ``failed``. Servers that are still connecting, or that Hermes has not
+        attempted yet, are not reported.
+        """
+
+        configured = self._hermes_config.get("mcp_servers") or {}
+        agent_config = self._agent_config
+        if not configured or agent_config is None or agent_config.mcp is None:
+            self._mcp_unavailable = []
+            return []
+
+        try:
+            try:
+                from tools.mcp_tool_discovery import get_mcp_status
+            except ModuleNotFoundError as error:
+                if error.name != "tools.mcp_tool_discovery":
+                    raise
+                from tools.mcp_tool import get_mcp_status
+
+            statuses = await asyncio.to_thread(get_mcp_status, configured)
+        except Exception:
+            # The report is diagnostic: omit it rather than fail start or a turn.
+            LOGGER.warning("Hermes MCP server status could not be observed")
+            self._mcp_unavailable = []
+            return []
+        servers = agent_config.mcp.servers
+        unavailable = [
+            mcp_availability.unavailable_server(
+                name,
+                servers[name].transport.strip().lower(),
+                mcp_availability.FAILED,
+            )
+            for status in statuses
+            if status.get("status") == "failed"
+            and (name := status.get("name")) in servers
+        ]
+        reported = {entry["name"] for entry in self._mcp_unavailable}
+        mcp_availability.warn(
+            "Hermes",
+            [entry for entry in unavailable if entry["name"] not in reported],
+        )
+        self._mcp_unavailable = unavailable
+        return unavailable
 
     async def _authenticate_mcp_servers(self) -> None:
         if self._mcp_authentication_checked:
@@ -725,6 +783,7 @@ class HermesRuntime:
         self._hermes_config = {}
         self._enabled_toolsets = None
         self._mcp_authentication_checked = False
+        self._mcp_unavailable = []
         self._conversation_history = None
         self._relay_plugin_config = None
         self._relay_plugin_config_path = None

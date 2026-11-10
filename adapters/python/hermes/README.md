@@ -99,6 +99,22 @@ The adapter receives a normalized payload from NeMo Fabric and materializes a na
 Tool selectors are Hermes toolset names because that is the native policy
 surface Hermes exposes.
 
+The runtime starts even when some configured MCP servers are unavailable.
+Hermes Agent connects each server separately at startup and keeps the tools
+of the servers that connected.
+Every result from the runtime reports the servers Hermes Agent currently lists
+as failed under `output.mcp.unavailable_servers` (`name`, `transport`, and a
+`reason` of `failed`), and the adapter writes a warning to standard error when a
+server first becomes unavailable. The report reflects Hermes Agent's state
+after each turn, so a server that Hermes Agent has since connected is no longer
+reported, and a server that is still connecting is not reported. The adapter
+does not cache failures: each new runtime connects every server again. Hermes
+Agent records only an error message for a failed connection, which is omitted
+because it can carry credentials, so the report has no `error_type` and does
+not distinguish timeouts.
+An OAuth server that cannot be authenticated still fails the invocation with
+`hermes_mcp_authentication_failed`.
+
 System instructions support `instructions.system.mode: replace`. Use `runtime.max_turns` to control the agent loop.
 
 The descriptor validates the following `harness.settings` fields:

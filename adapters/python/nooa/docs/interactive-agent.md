@@ -120,6 +120,19 @@ server. This add-or-remove pattern provides whole-server capability variation.
 The adapter does not declare normalized MCP authentication or per-method tool
 filters, so NeMo Fabric rejects those configurations during planning.
 
+The runtime starts even when some configured MCP servers are unavailable. NOOA
+connects to each server and lists its tools when the runtime starts; a server
+that cannot be reached, or that does not list its tools within 60 seconds, is
+skipped, and the agent starts with the remaining servers registered and
+activated. Each result from that runtime lists the skipped servers under
+`output.mcp.unavailable_servers`, with the server `name`, `transport`, `reason`
+(`failed` or `timed_out`) and `error_type`. The adapter also writes a warning to
+standard error. Error messages are not reported, because they can contain URLs,
+headers or other credentials. Connection runs again on every runtime start, so
+a new runtime picks up a server that has recovered; a running runtime does not
+retry a skipped server. Invalid server configuration, such as an unsupported
+transport, an empty target or invalid custom headers, still fails startup.
+
 The selected target must expose a NOOA-compatible skill registry through
 `agent.skills.register()` and `agent.skills.activate()`. `CodingAgent` and the
 registered ARC solver provide this surface. A custom `InteractiveAgent` can run

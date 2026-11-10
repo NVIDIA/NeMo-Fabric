@@ -122,6 +122,8 @@ that it contains `SKILL.md`, and registers it as a process-scoped Codex skill
 root. Codex uses its normal skill discovery behavior. Invalid skill directories
 and MCP transports fail before the SDK runtime starts.
 
+The runtime starts even when some configured MCP servers are unavailable. Codex starts each server itself and leaves out the tools of a server that fails, so the agent starts with the tools of the remaining servers. Each result from that runtime lists the servers whose latest Codex startup status is failed under `output.mcp.unavailable_servers`, with the server `name`, `transport`, and `reason` (`failed`, or `authentication_required` when Codex reports that stored OAuth credentials need reauthentication). The adapter also writes a warning to standard error. Error messages are not reported, because they can contain URLs, headers or other credentials. A server that is still starting is not reported, and a new runtime starts every server again.
+
 For `Fabric.start_runtime(...)`, the model provider, MCP configuration, and
 skill roots are fixed when the runtime starts and cannot vary between
 `Runtime.invoke(...)` calls. Start a new runtime to change them.

@@ -101,6 +101,17 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
 - `mcp` configures stdio, HTTP, streamable HTTP, or SSE servers. For stdio,
   set `url` to the executable and pass each command-line argument as a separate
   `args` element.
+- Claude Code starts even when some configured MCP servers cannot connect.
+  After each turn the adapter reads Claude Code's own MCP connection state
+  (`get_mcp_status()`) and reports the configured servers it could not use
+  under `output.mcp.unavailable_servers` (`name`, `transport`, and `reason` of
+  `failed` or `authentication_required` for a server that needs
+  authentication). The adapter writes a warning to standard error the first
+  time a server is unavailable in a runtime. Error messages are omitted because
+  they can carry credentials. Servers that are still connecting are not
+  reported. Each result reflects the current state, so a server that
+  reconnects within the runtime leaves the report, and a new runtime connects
+  every server again.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter
   stages these directories as a local Claude plugin for the runtime.
 

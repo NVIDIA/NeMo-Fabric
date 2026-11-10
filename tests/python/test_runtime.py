@@ -1584,10 +1584,15 @@ async def test_runtime_status_cancelled_invocation_releases_live_index(
     )
     assert report.status == "stopped"
     assert report.handle is None
+    assert runtime.runtime_id not in native_client._runtimes
     del task
     del runtime
-    await asyncio.sleep(0)
-    gc.collect()
+    # Executor threads can briefly retain completed work after waking the loop.
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 2
+    while reference() is not None and loop.time() < deadline:
+        gc.collect()
+        await asyncio.sleep(0.01)
     assert reference() is None
 
 

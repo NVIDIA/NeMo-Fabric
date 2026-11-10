@@ -15,7 +15,10 @@ lifecycle contract. Choose the integration that matches the agent interface:
 
 The shared `nvidia.fabric.nooa` adapter owns the common NOOA queue dispatcher.
 It also maps normalized skill paths and whole MCP servers into compatible
-registered targets.
+registered targets. An MCP server that cannot be reached at runtime start is
+skipped instead of failing startup and is reported under
+`output.mcp.unavailable_servers`; see
+[Configure MCP Servers](docs/interactive-agent.md#configure-mcp-servers).
 The dedicated `nvidia.fabric.nooa.bench-agent` adapter maps the benchmark-native
 `BenchAgent` task contract directly into a NeMo Fabric invocation. Its
 [observed token usage](docs/bench-agent.md#observed-token-usage) preserves the

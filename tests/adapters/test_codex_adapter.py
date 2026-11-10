@@ -5,6 +5,7 @@ import asyncio
 import gc
 import json
 import os
+import queue
 import subprocess
 import sys
 import time
@@ -334,6 +335,7 @@ def mock_codex_fixture(monkeypatch):
     mock_codex.mcp_login_error = None
     mock_codex.oauth_authorization_url = "https://auth.example.test/authorize"
     mock_codex.login_params = None
+    mock_codex.global_notifications = queue.Queue()
 
     async def protocol_request(method, params, *, response_model):
         if method == "skills/extraRoots/set":
@@ -381,6 +383,11 @@ def mock_codex_fixture(monkeypatch):
         mock_client._client = SimpleNamespace(
             request=mock_codex.skill_request,
             next_notification=mock_codex.next_notification,
+            _sync=SimpleNamespace(
+                _router=SimpleNamespace(
+                    _global_notifications=mock_codex.global_notifications
+                )
+            ),
         )
 
         async def close():
@@ -705,6 +712,214 @@ def test_codex_preserves_prefixed_environment_reference_as_static_header(
         "url": "https://mcp.example.test/mcp",
         "http_headers": {"Authorization": "Bearer ${MCP_TOKEN}"},
     }
+
+
+def mcp_startup_status(name, status, *, thread_id="thread-123", failure_reason=None):
+    """Return the notification Codex sends when an MCP server's startup changes."""
+
+    return SimpleNamespace(
+        method="mcpServer/startupStatus/updated",
+        payload=adapter.McpServerStatusUpdatedNotification(
+            name=name,
+            status=status,
+            threadId=thread_id,
+            failureReason=failure_reason,
+            # Codex error text can carry URLs or credentials; it is never reported.
+            error="token=secret" if status == "failed" else None,
+        ),
+    )
+
+
+PARTIAL_MCP_SERVERS = {
+    "time": {"transport": "stdio", "url": "mcp-server-time"},
+    "offline": {
+        "transport": "streamable_http",
+        "url": "http://127.0.0.1:9/mcp",
+    },
+    "missing": {"transport": "stdio", "url": "missing-mcp-server"},
+    "login": {"transport": "http", "url": "https://mcp.example.test/mcp"},
+}
+
+
+async def invoke_runtime(payload, before_each):
+    runtime = adapter.CodexRuntime()
+    await runtime.start(lifecycle_start_payload(payload))
+    outputs = []
+    try:
+        for publish in before_each:
+            publish()
+            outputs.append(
+                result_view(await runtime.invoke(*lifecycle_invocation(payload)))
+            )
+    finally:
+        await runtime.stop()
+    return outputs
+
+
+def test_codex_reports_unavailable_mcp_servers_on_every_result(
+    codex_payload, mock_codex, capsys
+):
+    """Codex reports unavailable MCP servers on every result."""
+    configure_mcp(codex_payload, PARTIAL_MCP_SERVERS)
+    notifications = mock_codex.global_notifications
+
+    def first():
+        for name in PARTIAL_MCP_SERVERS:
+            notifications.put(mcp_startup_status(name, "starting"))
+        notifications.put(mcp_startup_status("time", "ready"))
+        notifications.put(mcp_startup_status("offline", "failed"))
+        notifications.put(mcp_startup_status("missing", "failed"))
+        notifications.put(
+            mcp_startup_status(
+                "login", "failed", failure_reason="reauthenticationRequired"
+            )
+        )
+        # Other threads and servers Fabric did not configure are not reported.
+        notifications.put(mcp_startup_status("time", "failed", thread_id="other"))
+        notifications.put(mcp_startup_status("codex_apps", "failed"))
+        notifications.put(SimpleNamespace(method="warning", payload=None))
+
+    outputs = asyncio.run(invoke_runtime(codex_payload, [first, lambda: None]))
+
+    expected = {
+        "unavailable_servers": [
+            {
+                "name": "login",
+                "transport": "http",
+                "reason": "authentication_required",
+            },
+            {"name": "missing", "transport": "stdio", "reason": "failed"},
+            {"name": "offline", "transport": "streamable-http", "reason": "failed"},
+        ]
+    }
+    assert [output["completed"] for output in outputs] == [True, True]
+    assert [output["mcp"] for output in outputs] == [expected, expected]
+    assert "secret" not in json.dumps(outputs)
+    assert notifications.empty()
+    # Warn once per server, on the result where it was first seen unavailable.
+    warnings = capsys.readouterr().err.splitlines()
+    assert warnings == [
+        "NeMo Fabric Codex: MCP server 'login' (http) is unavailable: "
+        "authentication_required",
+        "NeMo Fabric Codex: MCP server 'missing' (stdio) is unavailable: failed",
+        "NeMo Fabric Codex: MCP server 'offline' (streamable-http) is unavailable: "
+        "failed",
+    ]
+
+
+def test_codex_reports_current_mcp_server_state(codex_payload, mock_codex, capsys):
+    """Codex reports current MCP server state."""
+    configure_mcp(codex_payload, PARTIAL_MCP_SERVERS)
+    notifications = mock_codex.global_notifications
+
+    outputs = asyncio.run(
+        invoke_runtime(
+            codex_payload,
+            [
+                # A server still starting is not reported as unavailable.
+                lambda: notifications.put(mcp_startup_status("time", "starting")),
+                lambda: notifications.put(mcp_startup_status("time", "failed")),
+                lambda: notifications.put(mcp_startup_status("time", "ready")),
+                lambda: notifications.put(mcp_startup_status("time", "failed")),
+            ],
+        )
+    )
+
+    unavailable = {"name": "time", "transport": "stdio", "reason": "failed"}
+    assert [output.get("mcp") for output in outputs] == [
+        None,
+        {"unavailable_servers": [unavailable]},
+        None,
+        {"unavailable_servers": [unavailable]},
+    ]
+    assert len(capsys.readouterr().err.splitlines()) == 2
+
+
+def test_codex_omits_mcp_report_when_every_server_starts(codex_payload, mock_codex):
+    """Codex omits MCP report when every server starts."""
+    configure_mcp(codex_payload, PARTIAL_MCP_SERVERS)
+
+    def ready():
+        for name in PARTIAL_MCP_SERVERS:
+            mock_codex.global_notifications.put(mcp_startup_status(name, "ready"))
+
+    [output] = asyncio.run(invoke_runtime(codex_payload, [ready]))
+
+    assert output["completed"] is True
+    assert "mcp" not in output
+
+
+def test_codex_leaves_transport_failure_for_sdk_waiters(codex_payload, mock_codex):
+    """Codex leaves transport failure for SDK waiters."""
+    configure_mcp(codex_payload, PARTIAL_MCP_SERVERS)
+    closed = adapter.TransportClosedError("closed")
+
+    def publish():
+        mock_codex.global_notifications.put(mcp_startup_status("missing", "failed"))
+        mock_codex.global_notifications.put(closed)
+
+    [output] = asyncio.run(invoke_runtime(codex_payload, [publish]))
+
+    assert output["mcp"]["unavailable_servers"][0]["name"] == "missing"
+    assert mock_codex.global_notifications.get_nowait() is closed
+
+
+def test_codex_records_mcp_startup_seen_during_oauth_login(
+    codex_payload, mock_codex, monkeypatch
+):
+    """Codex records MCP startup seen during OAuth login."""
+    configure_mcp(
+        codex_payload,
+        {
+            **PARTIAL_MCP_SERVERS,
+            "remote": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {"type": "oauth2"},
+            },
+        },
+    )
+    mock_codex.mcp_auth_statuses["remote"] = adapter.McpAuthStatus.not_logged_in
+    monkeypatch.setattr(
+        adapter, "_open_authorization_url", AsyncMock(return_value=True)
+    )
+    completion = mock_codex.next_notification.side_effect
+    pending = [mcp_startup_status("offline", "failed")]
+
+    async def next_notification():
+        return pending.pop() if pending else await completion()
+
+    mock_codex.next_notification.side_effect = next_notification
+
+    output = invoke_once(codex_payload)
+
+    assert output["completed"] is True
+    assert output["mcp"] == {
+        "unavailable_servers": [
+            {"name": "offline", "transport": "streamable-http", "reason": "failed"}
+        ]
+    }
+
+
+def test_codex_runs_without_mcp_report_when_sdk_hides_startup_status(
+    codex_payload, mock_codex, capsys
+):
+    """A missing SDK notification queue disables the report, not the runtime."""
+    configure_mcp(codex_payload, PARTIAL_MCP_SERVERS)
+    original = mock_codex.side_effect
+
+    def build_client(*, config):
+        client = original(config=config)
+        client._client._sync = None
+        return client
+
+    mock_codex.side_effect = build_client
+
+    [output] = asyncio.run(invoke_runtime(codex_payload, [lambda: None]))
+
+    assert output["completed"] is True
+    assert "mcp" not in output
+    assert "unavailable MCP servers are not reported" in capsys.readouterr().err
 
 
 def test_codex_rejects_mcp_oauth_client_secret(codex_payload):

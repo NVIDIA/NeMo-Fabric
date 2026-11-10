@@ -123,6 +123,9 @@ adapter boundary:
   the task environment.
 - Read identity, environment, artifacts, telemetry, and the invocation
   deadline (`deadline_millis`) from `RuntimeContext`, not from workflow settings.
+- If the adapter declares `runtime.keep_state`, keep all native state in
+  `RuntimeContext.state_dir` when it is present. Every runtime of the agent
+  receives the same folder.
 
 Reject unsupported values with stable, safe error codes. Do not log complete
 configs, environment values, headers, credentials, or arbitrary user input.
