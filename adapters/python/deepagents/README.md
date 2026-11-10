@@ -107,6 +107,15 @@ NeMo Fabric maps the following into the harness:
   `langchain-mcp-adapters`. A misconfigured server (non-mapping, empty target,
   unsupported transport) is a normalized configuration failure, not a silent drop.
   MCP-reported tool errors (`ToolException`) and argument validation failures return error tool messages to the model so it can correct a call. Local argument-validation feedback includes field paths and reasons, such as `command: Field required`, without dumping argument payloads. This does not automatically retry or replay commands; other exceptions still propagate.
+- An MCP server that cannot be reached, or that does not list its tools within
+  60 seconds, is skipped at startup; the runtime starts with the tools of the
+  remaining servers. Every result from that runtime reports the skipped servers
+  under `output.mcp.unavailable_servers` (`name`, `transport`, `reason` of
+  `failed` or `timed_out`, and `error_type`), and the adapter writes a warning to
+  standard error. Error messages are omitted because they can carry
+  credentials. Discovery runs again on each runtime start, so a recovered server
+  is picked up by the next runtime. The `mcp` key is absent when every server
+  loaded.
 - `tools.enabled` and `tools.blocked` are enforced by middleware across the full
   tool surface: Deep Agents built-ins (including `task`), MCP tools, and
   **delegated subagents** alike. Use Deep Agents-native tool names.

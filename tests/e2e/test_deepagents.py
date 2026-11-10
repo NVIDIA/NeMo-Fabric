@@ -291,6 +291,82 @@ async def test_env_secrets_in_headers(api_server, tmp_path):
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
+@pytest.mark.parametrize("relay", [False, True], ids=["native", "relay"])
+async def test_unavailable_mcp_servers_do_not_block_startup(
+    api_server, tmp_path, unused_tcp_port, relay, request
+):
+    pytest.importorskip("deepagents")
+    if relay:
+        request.getfixturevalue("nemo_relay")
+    from examples.code_review_agent import deepagents_config, with_relay
+    from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
+
+    os.environ["MY_KEY"] = "XYZ"
+    scenario_response = requests.post(
+        f"{api_server}/_scenario",
+        json={"tool_call": {"name": "get_authorization_header", "arguments": {}}},
+        timeout=5,
+    )
+    scenario_response.raise_for_status()
+
+    config = deepagents_config()
+    if relay:
+        config = with_relay(config)
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=tmp_path,
+        artifacts=tmp_path / "artifacts",
+    )
+    config.runtime = RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        artifacts=tmp_path / "artifacts",
+    )
+    config.add_mcp_server(
+        "headers",
+        transport="streamable-http",
+        url=f"{api_server}/mcp",
+        authentication=None,
+        custom_headers={"Authorization": "Bearer ${MY_KEY}"},
+    )
+    # Nothing listens on this port, so the connection is refused.
+    config.add_mcp_server(
+        "offline",
+        transport="streamable-http",
+        url=f"http://127.0.0.1:{unused_tcp_port}/mcp",
+    )
+    config.add_mcp_server(
+        "missing",
+        transport="stdio",
+        url="nemo-fabric-missing-mcp-server-command",
+    )
+
+    async with await Fabric().start_runtime(
+        config, base_dir=tmp_path, streaming=relay
+    ) as runtime:
+        first = await runtime.invoke(
+            input="Use the MCP tool to return its Authorization header."
+        )
+        second = await runtime.invoke(input="second")
+
+    results = (first.to_mapping(), second.to_mapping())
+    assert first["status"] == second["status"] == "succeeded", results
+    response = requests.get(f"{api_server}/_mcp_authorization_headers", timeout=5)
+    response.raise_for_status()
+    assert set(response.json()) == {"Bearer XYZ"}
+    for turn in (first, second):
+        unavailable = turn["output"]["mcp"]["unavailable_servers"]
+        assert {server["name"]: server["reason"] for server in unavailable} == {
+            "offline": "failed",
+            "missing": "failed",
+        }, turn.to_mapping()
+        assert "XYZ" not in json.dumps(unavailable)
+    if relay:
+        assert first.telemetry[0].provider == "relay", first.to_mapping()
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key")
 @pytest.mark.parametrize("enabled", [True, False])
 async def test_mcp_stdio_transport(api_server, tmp_path, enabled):
     pytest.importorskip("deepagents")
