@@ -12,6 +12,7 @@ import json
 import logging
 import math
 import os
+import queue
 import signal
 import subprocess
 import sys
@@ -21,6 +22,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from openai_codex import (
@@ -38,6 +40,8 @@ from openai_codex.generated.v2_all import (
     McpAuthStatus,
     McpServerOauthLoginCompletedNotification,
     McpServerOauthLoginResponse,
+    McpServerStartupState,
+    McpServerStatusUpdatedNotification,
     SkillsExtraRootsSetResponse,
     ThreadReadResponse,
 )
@@ -56,6 +60,7 @@ from nemo_fabric_adapter_contract.models import McpOAuth2Config
 from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
+from nemo_fabric_adapters.common import mcp_availability
 import nemo_fabric_adapters.common.relay_gateway as relay_gateway
 from nemo_fabric_adapters.common.relay_http import (
     RelayHttpModelError,
@@ -68,6 +73,7 @@ from nemo_fabric_adapters.common import lifecycle
 
 
 INTERRUPT_TIMEOUT_SECONDS = 5.0
+MCP_STARTUP_STATUS_METHOD = "mcpServer/startupStatus/updated"
 CLOCK_RESOLUTION_SECONDS = time.get_clock_info("monotonic").resolution
 SANDBOXES = {
     "read-only": Sandbox.read_only,
@@ -207,18 +213,21 @@ def request_prompt(request: AgentRunRequest) -> str:
     return value
 
 
+def _mcp_transport(transport: str) -> str:
+    return transport.strip().lower().replace("_", "-")
+
+
 def _native_mcp_servers(config: AgentConfig) -> dict[str, dict[str, Any]]:
     servers = config.mcp.servers if config.mcp else {}
     result: dict[str, dict[str, Any]] = {}
     for name, server in sorted(servers.items()):
-        transport = server.transport
         target = os.path.expandvars(server.url).strip()
         if not target:
             raise AdapterConfigError(
                 "codex_invalid_configuration",
                 f"MCP server {name} URL is required",
             )
-        normalized_transport = transport.strip().lower().replace("_", "-")
+        normalized_transport = _mcp_transport(server.transport)
         if normalized_transport == "stdio":
             result[name] = {
                 "command": target,
@@ -369,6 +378,98 @@ def _codex_protocol_client(codex: AsyncCodex) -> Any:
     return client
 
 
+def _codex_global_notifications(codex: AsyncCodex) -> queue.Queue[Any] | None:
+    """Return the SDK queue of app-server notifications not scoped to a turn.
+
+    Returns ``None`` when the SDK does not expose it; the runtime then runs
+    without reporting unavailable MCP servers instead of failing to start.
+    """
+
+    sync_client = getattr(getattr(codex, "_client", None), "_sync", None)
+    router = getattr(sync_client, "_router", None)
+    notifications = getattr(router, "_global_notifications", None)
+    if not isinstance(notifications, queue.Queue):
+        print(
+            "NeMo Fabric Codex: this Codex SDK does not expose MCP startup "
+            "status; unavailable MCP servers are not reported",
+            file=sys.stderr,
+        )
+        return None
+    return notifications
+
+
+class CodexMcpStartupStatuses:
+    """Track the startup status Codex reports for each configured MCP server.
+
+    Codex starts the configured servers itself when the thread starts and
+    leaves out the tools of servers that fail, so the runtime keeps running.
+    Each server's outcome arrives as an ``mcpServer/startupStatus/updated``
+    notification for the thread; this keeps the latest one per server.
+    """
+
+    def __init__(
+        self,
+        thread_id: str,
+        transports: dict[str, str],
+        notifications: queue.Queue[Any],
+    ) -> None:
+        self._thread_id = thread_id
+        self._transports = transports
+        self._notifications = notifications
+        self._latest: dict[str, McpServerStatusUpdatedNotification] = {}
+        self._reported: set[str] = set()
+
+    def observe(self, notification: Any) -> None:
+        """Record a notification when it is a startup status for this thread."""
+
+        payload = getattr(notification, "payload", None)
+        if (
+            getattr(notification, "method", None) == MCP_STARTUP_STATUS_METHOD
+            and isinstance(payload, McpServerStatusUpdatedNotification)
+            and payload.thread_id in {None, self._thread_id}
+            and payload.name in self._transports
+        ):
+            self._latest[payload.name] = payload
+
+    def _drain(self) -> None:
+        # The SDK routes notifications that carry no turn to this queue and
+        # nothing else consumes them between invocations.
+        while True:
+            try:
+                item = self._notifications.get_nowait()
+            except queue.Empty:
+                return
+            if isinstance(item, BaseException):
+                # Leave the transport failure for the next SDK waiter.
+                self._notifications.put(item)
+                return
+            self.observe(item)
+
+    def unavailable(self) -> list[dict[str, str]]:
+        """Return the configured servers whose latest startup attempt failed."""
+
+        self._drain()
+        entries = []
+        for name, status in sorted(self._latest.items()):
+            if status.status is not McpServerStartupState.failed:
+                continue
+            reason = (
+                mcp_availability.AUTHENTICATION_REQUIRED
+                if status.failure_reason is not None
+                else mcp_availability.FAILED
+            )
+            entries.append(
+                mcp_availability.unavailable_server(
+                    name, self._transports[name], reason
+                )
+            )
+        mcp_availability.warn(
+            "Codex", [entry for entry in entries if entry["name"] not in self._reported]
+        )
+        self._reported = {entry["name"] for entry in entries}
+        return entries
+
+
 async def _mcp_auth_statuses(
     client: Any, *, thread_id: str, timeout: float
 ) -> dict[str, McpAuthStatus]:
@@ -421,6 +522,7 @@ async def _login_mcp_server(
     scopes: list[str] | None,
     thread_id: str,
     timeout: float,
+    observe: Callable[[Any], None] | None = None,
 ) -> None:
     params: dict[str, Any] = {
         "name": name,
@@ -458,6 +560,8 @@ async def _login_mcp_server(
                         "codex_mcp_authentication_failed",
                         f"Codex MCP OAuth login failed for server {name!r}",
                     )
+                if observe is not None:
+                    observe(notification)
     except TimeoutError as error:
         raise AdapterConfigError(
             "codex_mcp_authentication_failed",
@@ -470,6 +574,7 @@ async def _authenticate_mcp_servers(
     thread: Any,
     config: AgentConfig,
     invocation_deadline: float,
+    observe: Callable[[Any], None] | None = None,
 ) -> None:
     oauth_servers = _mcp_oauth_servers(config)
     if not oauth_servers:
@@ -506,6 +611,7 @@ async def _authenticate_mcp_servers(
                     _remaining_timeout(invocation_deadline),
                     oauth.authorization_timeout_seconds,
                 ),
+                observe=observe,
             )
     except CodexAdapterError as error:
         # asyncio fires timers up to one clock tick early, so allow that tolerance.
@@ -855,7 +961,8 @@ def thread_config(
     mcp_servers = _native_mcp_servers(config)
     if mcp_servers:
         result["mcp_servers"] = mcp_servers
-    # Keep the pre-0.154 behavior of waiting for configured MCP servers.
+    # Keep the pre-0.154 behavior of waiting for configured MCP servers, so
+    # every startup outcome is known before a turn's result is reported.
     result["mcp_optional_startup_grace_ms"] = 0
     if callback_url := _mcp_oauth_callback_url(config):
         result["mcp_oauth_callback_url"] = callback_url
@@ -1349,6 +1456,7 @@ class CodexRuntime:
         self._gateway_process: subprocess.Popen[Any] | None = None
         self._api_key_home: tempfile.TemporaryDirectory | None = None
         self._mcp_authentication_checked = False
+        self._mcp_statuses: CodexMcpStartupStatuses | None = None
         self._unusable = False
         self._usage_totals: dict[str, int] = dict.fromkeys(USAGE_FIELDS, 0)
         self._active_invoke_task: asyncio.Task | None = None
@@ -1417,6 +1525,22 @@ class CodexRuntime:
                 base_dir,
                 relay=relay,
             )
+            mcp_servers = agent_config.mcp.servers if agent_config.mcp else {}
+            notifications = (
+                _codex_global_notifications(client) if mcp_servers else None
+            )
+            mcp_statuses = (
+                CodexMcpStartupStatuses(
+                    str(thread.id),
+                    {
+                        name: _mcp_transport(server.transport)
+                        for name, server in mcp_servers.items()
+                    },
+                    notifications,
+                )
+                if notifications is not None
+                else None
+            )
         except CodexAdapterError as error:
             await self._cleanup_failed_start()
             raise _as_lifecycle_error(error) from error
@@ -1438,6 +1562,7 @@ class CodexRuntime:
         self._base_dir = base_dir
         self._fabric_runtime_id = fabric_runtime_id
         self._thread = thread
+        self._mcp_statuses = mcp_statuses
         self._usage_totals = dict.fromkeys(USAGE_FIELDS, 0)
 
     async def check(self, level: str) -> dict[str, Any]:
@@ -1587,11 +1712,12 @@ class CodexRuntime:
                 "Codex invocation does not match the connected runtime",
             )
         if self._unusable:
-            return _agent_run_result(
+            return self._run_result(
                 _failure(
                     "codex_runtime_unavailable",
                     "Codex runtime cannot accept another invocation after a runtime failure",
-                )
+                ),
+                None,
             )
 
         invocation_deadline = lifecycle.invocation_deadline(runtime_context)
@@ -1605,6 +1731,9 @@ class CodexRuntime:
                     self._thread,
                     config,
                     invocation_deadline,
+                    self._mcp_statuses.observe
+                    if self._mcp_statuses is not None
+                    else None,
                 )
                 self._mcp_authentication_checked = True
             relay = self._relay
@@ -1644,7 +1773,7 @@ class CodexRuntime:
                         )
                     )
                     failure["usage"] = output.get("usage")
-                    return _agent_run_result(
+                    return self._run_result(
                         _relay_output(failure, relay, artifacts=[]), self._usage_totals
                     )
         except AdapterRelayError as error:
@@ -1657,7 +1786,18 @@ class CodexRuntime:
         self._unusable = not usable
         if self._relay is not None:
             output = _relay_output(output, self._relay)
-        return _agent_run_result(output, self._usage_totals)
+        return self._run_result(output, self._usage_totals)
+
+    def _run_result(
+        self, output: dict[str, Any], cumulative_totals: dict[str, int] | None
+    ) -> AgentRunResult:
+        # Report the current state on every result. Absent when every
+        # configured server started, so clean runs keep their shape.
+        if self._mcp_statuses is not None and (
+            mcp := mcp_availability.output_block(self._mcp_statuses.unavailable())
+        ):
+            output = {**output, "mcp": mcp}
+        return _agent_run_result(output, cumulative_totals)
 
     async def stop(self) -> None:
         client = self._client
@@ -1668,6 +1808,7 @@ class CodexRuntime:
         self._thread = None
         self._fabric_runtime_id = None
         self._mcp_authentication_checked = False
+        self._mcp_statuses = None
         self._unusable = True
         self._usage_totals.clear()
 
