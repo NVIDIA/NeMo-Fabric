@@ -1,0 +1,110 @@
+---
+title: "OpenClaw SDK"
+description: "Invoke and manage OpenClaw through the NeMo Fabric SDK."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Start with the [OpenClaw overview](./openclaw.mdx) for installation, shared configuration, and the four invocation paths.
+
+## SDK Execution
+
+Use the [Code Review Example](../../../../examples/code_review_agent/README.md) with `--variant openclaw`. The adapter sends requests to its managed Gateway's Chat Completions endpoint, preserving the runtime ID as the SDK conversation selector and returning a normalized `RunResult`.
+
+SDK-only configurations retain existing behavior. When native interfaces are enabled, the same Gateway adds the Fabric instruction through the shared plugin while retaining OpenClaw's native prompt and tool guidance. The SDK omits its separate instruction message in this mode to avoid duplication. Model, workspace, tools, MCP, and skills are generated once for that Gateway. SDK requests retain their configured generation parameters. Native turns do not create SDK invocation records.
+
+With browser or terminal access enabled, `Fabric.check()` reports activity as `unknown` because SDK invocation state does not cover work from native clients. A passing health check therefore does not establish that the Gateway is idle; callers that wait for `activity: idle` must handle this mode explicitly. SDK-only runtimes retain `idle`/`busy` reporting. See [health checks](../../../sdk/health-checks.mdx) for the shared contract.
+
+## Usage Accounting
+
+The adapter treats Gateway usage as observed evidence. Reported counts do not establish whether they cover aggregate usage or a last-call fallback, and zero counters do not prove that no usage occurred.
+
+NeMo Fabric leaves standard complete counters unknown and preserves reported counts in `usage.extensions["nvidia.fabric.openclaw.usage_evidence.v1"].observed`. The evidence includes `scope_unverified` in `gaps`, plus `missing_usage` or `zero_unverified` when applicable.
+
+These counts do not establish complete coverage of retries, compaction, child agents, or background work. For endpoint streaming-usage settings, see [Agent Configuration](./openclaw.mdx#agent-configuration).
+
+## Use a Shared Service
+
+Call `prepare_service()` to map the normalized `FabricConfig` to
+`openclaw.json` and start a NeMo Fabric-owned Gateway. Pass the returned service
+to `start_runtime()` to give each runtime an independent OpenClaw session:
+
+```python
+from nemo_fabric import Fabric
+
+
+async def invoke_with_prepared_service(config):
+    fabric = Fabric()
+    async with await fabric.prepare_service(config) as service:
+        async with await fabric.start_runtime(config, service=service) as runtime:
+            return await runtime.invoke(input="Review the workspace changes.")
+```
+
+Call `attach_service()` when another system owns the Gateway lifecycle. The
+reference contains the endpoint and the name of an environment variable that
+holds the Gateway token, never the token value:
+
+```python
+from nemo_fabric import Fabric
+from nemo_fabric import ServiceReference
+
+
+async def invoke_with_attached_service(config):
+    reference = ServiceReference.from_mapping(
+        {
+            "adapter_id": "nvidia.fabric.openclaw",
+            "service_type": "openclaw_gateway",
+            "connection": {
+                "gateway_url": "https://openclaw.example.com",
+                "gateway_token_env": "OPENCLAW_GATEWAY_TOKEN",
+                "agent_id": "default",
+            },
+        }
+    )
+
+    fabric = Fabric()
+    async with await fabric.attach_service(config, reference) as service:
+        async with await fabric.start_runtime(config, service=service) as runtime:
+            return await runtime.invoke(input="Review the workspace changes.")
+```
+
+The service handle contains sanitized identity and connection information and
+is valid only in the NeMo Fabric process that created it. Releasing a prepared
+service stops its Gateway. Releasing an attached service closes NeMo
+Fabric-owned clients and private connection material without stopping the
+caller-owned Gateway. Attached Gateways must use HTTPS unless the URL contains
+a literal loopback IP address. For an attached service, omit deployment-owned
+model endpoints, API-key references, tools, MCP servers, skills, channel
+configuration, and startup settings from `config` because NeMo Fabric cannot
+apply them to an existing Gateway.
+
+## Execution and Isolation
+
+Before starting a managed runtime or prepared service, the adapter writes a
+complete temporary `openclaw.json` and sets OpenClaw environment variables. It
+does not use the OpenClaw configuration RPC. The generated configuration:
+
+- binds the Gateway to loopback;
+- enables the OpenAI-compatible Chat Completions endpoint;
+- uses a cryptographically generated one-time Gateway token;
+- applies the normalized workspace, model, skills, and MCP servers;
+- disables OpenClaw anonymous telemetry; and
+- uses a unique temporary state directory.
+
+Each invocation sends a terminal request to `/v1/chat/completions` with the
+NeMo Fabric runtime ID as the stable OpenClaw session key. A managed runtime
+stops its Gateway during runtime shutdown. A prepared service keeps its Gateway
+running until the service is released, so multiple runtimes can connect to it.
+
+The adapter isolates the Gateway in its own process group, continuously checks
+its startup endpoint, and forwards `SIGINT` and `SIGTERM` on POSIX systems.
+On Linux, the adapter uses `setpriv --pdeathsig SIGTERM` when `setpriv` is
+available and can run, so that the kernel signals the Gateway after abrupt
+adapter termination. A sandbox that forbids applying capabilities, such as an
+OpenShell sandbox, makes `setpriv` fail; the adapter then starts the Gateway
+without it. Windows uses a kill-on-close Job Object for the Gateway process
+tree. Without `setpriv`, Linux has the same catchable-signal protection as
+macOS but cannot handle `SIGKILL`.
+
+Relay telemetry, native OpenTelemetry, adapter-native response streaming,
+cancellation, and live updates are not supported.

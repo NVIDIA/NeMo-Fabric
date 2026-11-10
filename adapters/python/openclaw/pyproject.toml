@@ -40,6 +40,9 @@ Documentation = "https://docs.nvidia.com/nemo/fabric"
 where = ["src"]
 include = ["nemo_fabric_adapters.openclaw*"]
 
+[tool.setuptools.package-data]
+"nemo_fabric_adapters.openclaw" = ["native_config/*.mjs", "native_config/*.json"]
+
 [tool.setuptools.data-files]
 "share/nemo-fabric/adapters/openclaw" = ["openclaw.fabric-adapter.json"]
 

@@ -36,6 +36,7 @@ def mock_api_server(port: int) -> Iterator[str]:
         app.state.requests = []
         app.state.status_code = 200
         app.state.delay_seconds = 0.0
+        app.state.response_text = None
         app.state.chat_authorization_headers = []
         app.state.tool_calls = []
         app.state.tool_call_index = 0
@@ -74,6 +75,7 @@ def mock_api_server(port: int) -> Iterator[str]:
         payload = await request.json()
         app.state.status_code = int(payload.get("status_code", 200))
         app.state.delay_seconds = float(payload.get("delay_seconds", 0.0))
+        app.state.response_text = payload.get("response_text")
         tool_call = payload.get("tool_call")
         app.state.tool_calls = payload.get("tool_calls") or (
             [tool_call] if tool_call is not None else []
@@ -193,7 +195,10 @@ def mock_api_server(port: int) -> Iterator[str]:
             if isinstance(message, dict) and message.get("role") == "user"
         ]
         latest = user_messages[-1].get("content", "") if user_messages else ""
-        content = f"echo user_count={len(user_messages)} latest={latest}"
+        content = (
+            app.state.response_text
+            or f"echo user_count={len(user_messages)} latest={latest}"
+        )
         if payload.get("stream") is True:
             return StreamingResponse(
                 _stream_chat_completion(payload, content),

@@ -61,7 +61,8 @@ surfaces touched by a change.
 - **Harbor integration changed**
   For deadline changes, test runtime-owned and adapter-normalized invocation deadlines, genuine outer expiration, and setup/transport failures with cleanup and verifier invocation counts. Verify Harbor phase ownership separately when its upstream fix is an external dependency; do not claim an unpatched Harbor summary preserves nested deadlines.
   Use `qualify-harbor` for real inference and container checks across the adapter catalog or a developer subset. Retain its complete catalog report; deterministic tests alone do not establish an all-harness integration pass.
-  Run `tests/integrations/test_harbor_runner.py` and
+  Run `tests/integrations/test_harbor_runner.py`,
+  `tests/integrations/test_harbor_model_config.py`, and
   `tests/python/test_adapter_capabilities.py`, then `just test-python`.
   For host admission changes, verify metadata inspection without harness SDKs
   or task discovery, selected telemetry claims, and task-side descriptor drift

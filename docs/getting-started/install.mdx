@@ -13,7 +13,7 @@ dependencies.
 
 ### Supported Python Versions
 
-NeMo Fabric supports Python 3.11 through 3.14. Some integrations and adapters have additional requirements. The supported Hermes Agent v0.22.5 release requires Python 3.14; OpenHands and the Harbor integration require Python 3.12 or later.
+NeMo Fabric supports Python 3.11 through 3.14. Some integrations and adapters have additional requirements. The supported Hermes Agent v0.22.7 release requires Python 3.14; OpenHands and the Harbor integration require Python 3.12 or later.
 
 ### Supported Platforms
 
@@ -147,7 +147,7 @@ that runs Hermes Agent:
 pip install "nemo-fabric[hermes-agent]"
 ```
 
-These packages do not install Hermes Agent. Use [Hermes Agent v0.22.5](https://github.com/NousResearch/hermes-agent/releases/tag/v0.22.5) with Python 3.14. This release includes dependency security fixes absent from v2026.9.24 and supports ordinary runs, Relay 0.10 telemetry, and streaming. For local development, create the isolated environment from the repository root:
+These packages do not install Hermes Agent. Use [Hermes Agent v0.22.7](https://github.com/NousResearch/hermes-agent/releases/tag/v0.22.7) with Python 3.14. This release includes dependency security fixes absent from v2026.9.24 and supports ordinary runs, Relay 0.11 telemetry, and streaming. For local development, create the isolated environment from the repository root:
 
 ```bash
 just install-hermes-agent
@@ -269,7 +269,7 @@ NeMo Fabric 0.6 uses these Relay versions:
 | --- | --- | --- |
 | Claude, Codex, Pi | `>=0.9,<0.12` | CLI and matching Pi extension where required |
 | Deep Agents, mini-SWE-agent, NOOA, NOOA Bench | `>=0.11,<0.12` | Python package |
-| Hermes Agent | `>=0.10,<0.11` | Python package in a separate Hermes environment |
+| Hermes Agent | `>=0.10,<0.12` | Python package in a separate Hermes environment |
 | Remote Agent | Service-owned | Match the remote service's supported Relay version |
 
 #### NeMo Relay Python Package
@@ -298,7 +298,7 @@ pip install "nemo-fabric-adapters-nooa[full]"
 
 Use `relay` when the environment already manages the harness. For Deep Agents, mini-SWE-agent, and NOOA, use `full` to install the harness and Relay package together. Hermes Agent's `relay` and `full` extras install Relay. Install Hermes Agent separately.
 
-Hermes v0.22.5 and the pinned upstream Hermes revision require `nemo-relay>=0.10,<0.11` on supported Python 3.14 platforms. The Hermes adapter extras keep that range. Use a separate Hermes environment when the NeMo Fabric application uses Relay 0.11 for other adapters.
+Hermes v0.22.7 requires `nemo-relay>=0.11,<0.12`; Hermes v0.22.5 requires `nemo-relay>=0.10,<0.11`. The Hermes adapter supports both ranges. Use Python 3.14 for Hermes. Applications on Python 3.13 or another supported version can select a separate Hermes interpreter through `ADAPTER_PYTHON`.
 
 Deep Agents, mini-SWE-agent, and NOOA require `nemo-relay>=0.11,<0.12`. Claude and Codex launch the external Relay CLI. Their `harness` and `full` extras install the CLI.
 
@@ -306,7 +306,7 @@ NeMo Fabric uses runtime-owned Relay configuration. Remove or relocate a user `p
 
 #### Upgrade to Relay 0.11
 
-The Relay Python package requires 0.11. Claude, Codex, and Pi support stable CLI releases from 0.9 through 0.11. The Pi extension must match the selected CLI release. The `insecure_http_model_hosts` setting requires CLI 0.11. Keep Hermes on Relay 0.10 in its separate environment. Restart existing runtimes after the upgrade so each gateway and extension uses the selected release.
+The `nemo-fabric[relay]` extra requires Relay 0.11. Claude, Codex, and Pi support stable CLI releases from 0.9 through 0.11. The Pi extension must match the selected CLI release. The `insecure_http_model_hosts` setting requires CLI 0.11. Hermes v0.22.7 uses Relay 0.11; v0.22.5 remains supported with Relay 0.10. Restart existing runtimes after the upgrade so each gateway and extension uses the selected release.
 
 Relay 0.11 gateways require HTTPS for remote model endpoints by default, including private network and Kubernetes Service addresses. Plain HTTP remains available for loopback endpoints. To trust a credential-free remote HTTP model endpoint, set `harness.settings.insecure_http_model_hosts` to its exact hostname or IP address. Prompts and responses travel unencrypted, and Relay strips credential headers before forwarding. Relay 0.11 also requires HTTPS for remote telemetry collectors by default. Relay supports explicit exceptions for trusted collectors through `insecure_http_hosts`, or `NEMO_RELAY_OTEL_INSECURE_HTTP_HOSTS` for automatic OTLP exporters. Relay releases before 0.10.2 can forward credentials to remote HTTP model endpoints. Use HTTPS when model requests or telemetry contain credentials or sensitive content.
 

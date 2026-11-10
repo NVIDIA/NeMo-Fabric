@@ -1,0 +1,10 @@
+{
+  "name": "nemo-fabric-openclaw-config",
+  "private": true,
+  "type": "module",
+  "openclaw": {
+    "extensions": [
+      "./index.mjs"
+    ]
+  }
+}

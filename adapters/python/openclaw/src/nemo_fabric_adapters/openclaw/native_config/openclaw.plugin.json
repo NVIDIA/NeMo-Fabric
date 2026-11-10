@@ -1,0 +1,24 @@
+{
+  "id": "fabric-shared-config",
+  "name": "NeMo Fabric shared configuration",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "agentId",
+      "systemInstruction"
+    ],
+    "properties": {
+      "agentId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "systemInstruction": {
+        "type": "string"
+      }
+    }
+  }
+}

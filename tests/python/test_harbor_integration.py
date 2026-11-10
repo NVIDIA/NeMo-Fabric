@@ -287,7 +287,7 @@ def test_harbor_discovers_task_local_pi_descriptor_with_uploaded_bundle(
     spec = agent._build_spec("fix it")
 
     assert spec.config.discovery is not None
-    assert spec.config.discovery.local_paths == ["adapters", descriptor]
+    assert spec.config.discovery.local_paths == [descriptor]
     assert spec.config_base_dir == PurePosixPath("/tmp/nemo-fabric-config")
 
 

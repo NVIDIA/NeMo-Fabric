@@ -11,6 +11,8 @@ no_uv := "false"
 ref_name := ""
 # Linux wheel artifacts target this minimum glibc version for compatibility.
 linux_glibc_version := "2.17"
+# Override only to validate another supported Hermes release, such as v0.22.5.
+hermes_commit := "b200f5bc60e31588ba2cb60e288029c4a54ba5fa"
 
 python_projects := ". sdk/python/nemo-fabric sdk/python/nemo-fabric-runtime sdk/python/nemo-fabric-collector sdk/python/nemo-fabric-adapter-catalog sdk/python/nemo-fabric-evidence adapter-contract/python adapters/python/common adapters/python/claude adapters/python/codex adapters/python/deepagents adapters/python/hermes adapters/python/mini-swe-agent adapters/python/nooa adapters/python/openclaw adapters/python/openhands adapters/python/remote-agent"
 
@@ -393,11 +395,11 @@ install-typescript-strands: install-typescript-contract
 # Install every maintained TypeScript package.
 install-typescript: install-typescript-contract install-typescript-adapters
 
-# Install Hermes Agent v0.22.5 with its Relay 0.10 integration.
+# Install Hermes Agent v0.22.7 with its Relay 0.11 integration.
 install-hermes-agent:
     #!/usr/bin/env bash
     set -euo pipefail
-    hermes_commit="bf0203a794a07aac3ff764972ab9087baa4e4f4e"
+    hermes_commit="{{ hermes_commit }}"
     hermes_checkout="${HERMES_AGENT_CHECKOUT:-$REPO_ROOT/external/hermes-agent}"
     hermes_diff_pathspec=()
 
@@ -457,7 +459,7 @@ install-hermes-agent:
         pytest pytest-asyncio pyyaml
 
 test-hermes: install-hermes-agent
-    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py tests/adapters/test_hermes_config_builder.py tests/adapters/test_hermes_native_config.py tests/adapters/test_hermes_interfaces.py tests/adapters/test_hermes_streaming.py tests/adapters/test_hermes_health.py tests/e2e/test_hermes_e2e.py tests/e2e/test_hermes_checks.py -q
+    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py tests/adapters/test_hermes_config_builder.py tests/adapters/test_hermes_native_config.py tests/adapters/test_hermes_interfaces.py tests/adapters/test_hermes_terminal.py tests/adapters/test_hermes_streaming.py tests/adapters/test_hermes_health.py tests/e2e/test_hermes_e2e.py tests/e2e/test_hermes_checks.py -q
 
 # Build the TypeScript contract and adapter packages using their locked dependencies.
 build-typescript: install-typescript
