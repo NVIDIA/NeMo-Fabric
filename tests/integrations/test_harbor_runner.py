@@ -1037,28 +1037,36 @@ async def test_registered_workflow_round_trip_and_target_drift(tmp_path, monkeyp
 
 
 @pytest.mark.parametrize(
-    "options",
+    ("options", "error_field"),
     [
-        {"fabric_adapter_id": "nvidia.fabric.nooa"},
-        {
-            "fabric_adapter_id": "nvidia.fabric.langchain.deepagents",
-            "fabric_harness_settings": {
-                "deepagents": {"backend": {"type": "local_shell"}}
+        ({"fabric_adapter_id": "nvidia.fabric.nooa"}, "workflow"),
+        (
+            {
+                "fabric_adapter_id": "nvidia.fabric.langchain.deepagents",
+                "fabric_harness_settings": {
+                    "deepagents": {"backend": {"type": "local_shell"}}
+                },
             },
-        },
-        {
-            "fabric_adapter_id": "nvidia.fabric.cline",
-            "model_name": "qualification-model",
-            "fabric_model_provider": "openai",
-            "fabric_model_api_key_env": "MODEL_API_KEY",
-        },
+            "tools",
+        ),
+        (
+            {
+                "fabric_adapter_id": "nvidia.fabric.cline",
+                "model_name": "qualification-model",
+                "fabric_model_provider": "openai",
+                "fabric_model_api_key_env": "MODEL_API_KEY",
+            },
+            r"models\.default\.provider",
+        ),
     ],
 )
-def test_declared_requirements_fail_during_host_agent_construction(tmp_path, options):
+def test_declared_requirements_fail_during_host_agent_construction(
+    tmp_path, options, error_field
+):
     from nemo_fabric import FabricConfigError
     from nemo_fabric.integrations.harbor import FabricAgent
 
-    with pytest.raises(FabricConfigError):
+    with pytest.raises(FabricConfigError, match=error_field):
         FabricAgent(logs_dir=tmp_path, **options)
 
 

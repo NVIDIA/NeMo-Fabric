@@ -2851,25 +2851,31 @@ pub(crate) fn adapter_config_compatibility_issues(
     let mut issues = Vec::new();
 
     if let Some(schema) = &descriptor.config_schema {
-        let validator = jsonschema::validator_for(&Value::Object(schema.clone()))
-            .expect("adapter config schema was validated during descriptor resolution");
-        let value =
-            serde_json::to_value(config).expect("typed configuration is always JSON serializable");
-        for error in validator.iter_errors(&value) {
-            let path = schema_error_path(&error, "config");
-            issues.push(incompatible(
-                path.strip_prefix("config.").unwrap_or(&path).to_string(),
-                // A cross-field error can contain the entire config instance.
-                // Report only its schema location, never configured values.
-                format!(
-                    "{} (schema path: {})",
-                    schema
-                        .get("description")
-                        .and_then(Value::as_str)
-                        .unwrap_or("does not satisfy the adapter config schema"),
-                    error.schema_path()
-                ),
-            ));
+        match jsonschema::validator_for(&Value::Object(schema.clone())) {
+            Ok(validator) => {
+                let value = serde_json::to_value(config)
+                    .expect("typed configuration is always JSON serializable");
+                for error in validator.iter_errors(&value) {
+                    let path = schema_error_path(&error, "config");
+                    issues.push(incompatible(
+                        path.strip_prefix("config.").unwrap_or(&path).to_string(),
+                        // A cross-field error can contain the entire config instance.
+                        // Report only its schema location, never configured values.
+                        format!(
+                            "{} (schema path: {})",
+                            schema
+                                .get("description")
+                                .and_then(Value::as_str)
+                                .unwrap_or("does not satisfy the adapter config schema"),
+                            error.schema_path()
+                        ),
+                    ));
+                }
+            }
+            Err(_) => issues.push(incompatible(
+                "config_schema".to_string(),
+                "the adapter config schema is invalid".to_string(),
+            )),
         }
     }
 
