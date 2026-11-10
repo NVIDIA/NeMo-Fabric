@@ -1,0 +1,76 @@
+---
+title: "Hermes API"
+description: "Run the managed native HTTP gateway with independent Hermes conversations."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Start with [hermes.mdx](./hermes.mdx) for shared setup and an overview of all four invocation paths.
+
+NVIDIA NeMo Fabric can host Hermes's native HTTP API as a managed `hermes gateway run` process. Requests execute through native agents, independently of the embedded SDK and TUI backend. The HTTP service uses `aiohttp`; it is separate from the FastAPI dashboard service.
+
+## Installation
+
+Complete the [shared installation](./hermes.mdx#install-the-adapter) first. The API path additionally requires `aiohttp` in the Hermes adapter environment. For Hermes v0.22.5, the pinned version is `3.14.5`.
+
+If you used `just install-hermes-agent`, this dependency is already installed. For a separately prepared Hermes environment, install it with `ADAPTER_PYTHON` set to that environment's interpreter:
+
+```bash
+uv pip install --python "$ADAPTER_PYTHON" "aiohttp==3.14.5"
+```
+
+Verify the dependency in the same environment:
+
+```bash
+"$ADAPTER_PYTHON" -c "import aiohttp; print(aiohttp.__version__)"
+```
+
+The API path requires a POSIX host. It needs no browser assets, terminal frontend, or Node runtime.
+
+## Configuration
+
+Combine the normalized model/workspace configuration from the [SDK guide](./hermes-sdk.mdx#configure-the-adapter) with these harness settings:
+
+```python
+settings = {
+    "sdk": {"enabled": False},
+    "interfaces": {"api": {"port": 8642}},
+}
+```
+
+This disables embedded SDK execution explicitly. Omit `sdk` to also start the embedded Hermes `AIAgent` alongside the native API process. The API is off unless selected; selecting it does not start a dashboard or terminal backend. Model, instructions, tools, and Relay remain in normalized configuration fields.
+
+## Authentication
+
+The API server binds to `127.0.0.1` at its configured port. After every enabled interface passes readiness, the adapter writes a per-start bearer token with mode `0600` to:
+
+```text
+<artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/api.token
+```
+
+Clients calling the native API must read the generated token file and include `Authorization: Bearer <token>` in each HTTP request. Only the API gateway child receives it in its environment. Processes running as the runtime's user, including agent tools, can read the token file.
+
+This token authenticates access to the API gateway. It is distinct from the model-provider API key and the TUI backend credential used by dashboard and terminal clients. API clients share the per-start token; it does not provide per-user isolation.
+
+## Requests, Clients, and Conversations
+
+The pinned native service includes OpenAI-compatible chat completions and responses, native run/session endpoints, and health diagnostics. The managed chat-completions path has end-to-end evidence; other native routes need separate qualification before relying on equivalent behavior.
+
+Multiple clients can connect. Use native session/conversation mechanisms for separate histories; clients share the runtime's workspace, tools, home, and per-start bearer credential. Concurrent workload qualification is separate from accepting multiple connections.
+
+Native requests do not pass through `Runtime.invoke()` and do not return NeMo Fabric `RunResult` objects. Shared configuration does not attach them to the embedded SDK conversation.
+
+## Relay Trajectories
+
+With Relay enabled, managed API turns finalize and flush a segment when native execution returns. ATIF is available per turn without deleting native history; subsequent turns can continue the conversation and produce new segments. Check actual ATOF events and ATIF tool steps, since export failures are logged and do not replace the response.
+
+## Health, Testing, and Limitations
+
+- **Native health endpoint:** `/health` belongs to Hermes's API server. Calling it directly checks that native service; it does not return a normalized NeMo Fabric health report or check the embedded SDK agent and TUI backend.
+- **Startup readiness:** The adapter polls the API server's `/health` endpoint and waits for HTTP 200 before declaring that interface ready. Startup fails if the process exits or readiness is not established within the startup budget.
+- **Normalized health with the SDK enabled:** `Fabric.check()` observes the embedded SDK agent and preserves its `idle`/`busy` activity. A failed API child does not fail that SDK health check. Probe the API `/health` endpoint or inspect its interface log separately to diagnose the API service.
+- **Normalized health with the SDK disabled:** `Fabric.check()` observes the enabled native backends. For the API backend, `live` checks the owned process; `active` and `ready` also probe `/health`. An enabled TUI backend is checked too. Activity is `unknown` because native turns are not fully aggregated.
+
+Neither the native endpoint nor the normalized checks execute a model/tool turn. Hermes also exposes authenticated `/health/detailed`, run status, and persisted sessions for native diagnostics; these do not provide a unified inventory of live agents in NeMo Fabric.
+
+See the [API example](../../../../examples/interfaces/hermes/README.md#2-http-api) for requests and trajectory inspection, and the [shared limitations](./hermes.mdx#limitations-and-planned-work) for lifecycle and artifact boundaries.

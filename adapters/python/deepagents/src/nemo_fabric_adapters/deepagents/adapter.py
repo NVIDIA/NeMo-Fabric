@@ -461,6 +461,12 @@ async def _load_server_tools(
         return [], mcp_availability.unavailable_server(
             name, transport, mcp_availability.TIMED_OUT, "TimeoutError"
         )
+    if task.cancelled():
+        # Caller cancellation is re-raised above, so this cancellation came from
+        # inside the MCP client; treat the server as failed rather than abort start.
+        return [], mcp_availability.unavailable_server(
+            name, transport, mcp_availability.FAILED, "CancelledError"
+        )
     try:
         tools = task.result()
     except Exception as error:

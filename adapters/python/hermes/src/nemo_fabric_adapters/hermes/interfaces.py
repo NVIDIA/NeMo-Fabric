@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Serve Hermes's API server and dashboard as children of a managed runtime."""
+"""Own Hermes API and shared browser/terminal TUI backend processes."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import os
 import secrets
 import signal
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +22,7 @@ from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import local_interfaces
 from nemo_fabric_adapters.common import utils as common_utils
 
-HEALTH_PATHS = {"api": "/health", "dashboard": "/api/status"}
+HEALTH_PATHS = {"api": "/health", "dashboard": "/api/status", "terminal": "/api/status"}
 LOGGER = logging.getLogger(__name__)
 # Children run in their own sessions and stop by process group.
 POSIX = os.name != "nt"
@@ -39,11 +39,23 @@ def interface_ports(settings: dict[str, Any]) -> dict[str, int]:
 
     The descriptor's schema has already checked the settings.
     """
-    return {
+    ports = {
         name: interface["port"]
         for name, interface in settings.get("interfaces", {}).items()
         if interface.get("enabled", True)
     }
+    if "dashboard" in ports and "terminal" in ports:
+        if ports["dashboard"] != ports["terminal"]:
+            raise lifecycle.LifecycleError(
+                "hermes_tui_port_conflict",
+                "Dashboard and terminal must use the same TUI backend port",
+            )
+        del ports["terminal"]
+    if len(set(ports.values())) != len(ports):
+        raise lifecycle.LifecycleError(
+            "hermes_interface_port_conflict", "API and TUI backends need distinct ports"
+        )
+    return ports
 
 
 def startup_timeout(settings: dict[str, Any]) -> float:
@@ -68,6 +80,7 @@ class _Child:
     name: str
     port: int
     process: asyncio.subprocess.Process
+    tui_token: str | None = field(default=None, repr=False)
 
 
 class InterfaceChildren:
@@ -77,6 +90,8 @@ class InterfaceChildren:
         self._children: list[_Child] = []
         self._token_path: Path | None = None
         self._agent_config_path: Path | None = None
+        self._tui_token_path: Path | None = None
+        self._tui_descriptor_path: Path | None = None
 
     async def start(
         self,
@@ -87,8 +102,10 @@ class InterfaceChildren:
         timeout: float,
         environment: dict[str, str],
         agent_config: AgentConfig,
+        terminal_enabled: bool = False,
+        workspace: str = ".",
     ) -> None:
-        """Start the enabled interfaces and write the API token once all pass health."""
+        """Start each backend once and publish credentials after all are ready."""
         require_supported_platform()
         for name, port in ports.items():
             if not local_interfaces.port_available(port):
@@ -102,6 +119,7 @@ class InterfaceChildren:
                 )
         web_dist = _web_dist() if "dashboard" in ports else None
         token = secrets.token_urlsafe(32)
+        tui_token = secrets.token_urlsafe(32)
         log_dir = hermes_home / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         deadline = asyncio.get_running_loop().time() + timeout
@@ -113,7 +131,11 @@ class InterfaceChildren:
             self._agent_config_path = config_path
             for name, port in ports.items():
                 arguments, child_environment = _child_command(
-                    name, port, token=token, web_dist=web_dist, environment=environment
+                    name,
+                    port,
+                    token=token if name == "api" else tui_token,
+                    web_dist=web_dist,
+                    environment=environment,
                 )
                 with open(log_dir / f"fabric-interface-{name}.log", "ab") as log:
                     process = await asyncio.create_subprocess_exec(
@@ -129,9 +151,30 @@ class InterfaceChildren:
                         stderr=asyncio.subprocess.STDOUT,
                         start_new_session=True,
                     )
-                self._children.append(_Child(name, port, process))
+                self._children.append(
+                    _Child(name, port, process, tui_token if name != "api" else None)
+                )
             for child in self._children:
                 await _wait_healthy(child, deadline)
+            if terminal_enabled:
+                tui_name = "dashboard" if "dashboard" in ports else "terminal"
+                self._tui_token_path = token_path.with_name("tui.token")
+                self._tui_descriptor_path = token_path.with_name("tui.json")
+                local_interfaces.write_private_file(self._tui_token_path, tui_token)
+                local_interfaces.write_private_file(
+                    self._tui_descriptor_path,
+                    json.dumps(
+                        {
+                            "version": 1,
+                            "mode": "dashboard"
+                            if tui_name == "dashboard"
+                            else "headless",
+                            "port": ports[tui_name],
+                            "token_file": "tui.token",
+                            "workspace": str(Path(workspace).resolve()),
+                        }
+                    ),
+                )
             if "api" in ports:
                 local_interfaces.write_private_file(token_path, token)
                 self._token_path = token_path
@@ -139,9 +182,34 @@ class InterfaceChildren:
             await self.stop()
             raise
 
+    async def check(self, level: str) -> str | None:
+        """Return a contract health reason for owned processes and endpoints."""
+        children = tuple(self._children)
+        if not children:
+            return "runtime_unavailable"
+        for child in children:
+            if child.process.returncode is not None:
+                return "agent_exited"
+            if (
+                level != "live"
+                and await _http_status(child.port, HEALTH_PATHS[child.name]) != 200
+            ):
+                return "endpoint_unavailable"
+            if (
+                level != "live"
+                and child.tui_token
+                and not await tui_ready(child.port, child.tui_token)
+            ):
+                return "endpoint_unavailable"
+        if children != tuple(self._children):
+            return "observation_changed"
+        return None
+
     async def stop(self) -> None:
-        """Remove the API token, then stop every interface process group."""
+        """Remove attachment credentials and stop every owned process group."""
         self._remove_private_file("_token_path")
+        self._remove_private_file("_tui_descriptor_path")
+        self._remove_private_file("_tui_token_path")
         running = [
             child for child in self._children if child.process.returncode is None
         ]
@@ -164,6 +232,7 @@ class InterfaceChildren:
             await asyncio.wait(pending)
 
     def _remove_private_file(self, attribute: str) -> None:
+        """Remove a private file, retaining its path for retry after a failure."""
         path = getattr(self, attribute)
         if path is not None:
             try:
@@ -176,6 +245,7 @@ class InterfaceChildren:
 
 
 def _web_dist() -> Path:
+    """Resolve built browser assets without installing or building a frontend."""
     configured = os.environ.get("HERMES_WEB_DIST")
     if configured:
         dist = Path(configured)
@@ -194,6 +264,7 @@ def _web_dist() -> Path:
 
 
 async def _wait_healthy(child: _Child, deadline: float) -> None:
+    """Wait for native health and TUI authentication within the shared budget."""
     loop = asyncio.get_running_loop()
     while loop.time() < deadline:
         if child.process.returncode is not None:
@@ -203,7 +274,8 @@ async def _wait_healthy(child: _Child, deadline: float) -> None:
                 metadata={"interface": child.name},
             )
         if await _http_status(child.port, HEALTH_PATHS[child.name]) == 200:
-            return
+            if not child.tui_token or await tui_ready(child.port, child.tui_token):
+                return
         await asyncio.sleep(0.1)
     raise lifecycle.LifecycleError(
         "hermes_interface_start_timeout",
@@ -226,6 +298,14 @@ def _child_command(
         key: value
         for key, value in environment.items()
         if not key.startswith("API_SERVER_")
+        and key
+        not in {
+            "HERMES_DASHBOARD_SESSION_TOKEN",
+            "HERMES_TUI_GATEWAY_URL",
+            "HERMES_TUI_SIDECAR_URL",
+            "HERMES_DESKTOP",
+            "HERMES_SERVE_HEADLESS",
+        }
     }
     if name == "api":
         child_environment.update(
@@ -234,6 +314,17 @@ def _child_command(
             API_SERVER_PORT=str(port),
         )
         return ["gateway", "run"], child_environment
+    child_environment["HERMES_DASHBOARD_SESSION_TOKEN"] = token
+    if name == "terminal":
+        child_environment.pop("HERMES_WEB_DIST", None)
+        return [
+            "serve",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--isolated",
+        ], child_environment
     child_environment["HERMES_WEB_DIST"] = str(web_dist)
     # --isolated keeps one dashboard per runtime instead of attaching to another
     # runtime's dashboard on this host.
@@ -267,3 +358,34 @@ async def _http_status(port: int, path: str) -> int | None:
             connection.close()
 
     return await asyncio.to_thread(get)
+
+
+async def tui_ready(port: int, token: str) -> bool:
+    """Check authenticated TUI RPC, without creating a conversation or model call."""
+    import aiohttp
+
+    try:
+        async with (
+            asyncio.timeout(2),
+            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2)) as client,
+        ):
+            async with client.ws_connect(
+                f"http://127.0.0.1:{port}/api/ws", params={"token": token}
+            ) as ws:
+                await ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": "fabric-health",
+                        "method": "session.list",
+                        "params": {},
+                    }
+                )
+                async for message in ws:
+                    if message.type != aiohttp.WSMsgType.TEXT:
+                        return False
+                    reply = json.loads(message.data)
+                    if reply.get("id") == "fabric-health":
+                        return "result" in reply
+    except (aiohttp.ClientError, TimeoutError, OSError, ValueError):
+        return False
+    return False

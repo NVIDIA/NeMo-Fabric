@@ -99,3 +99,8 @@ Start with the shared setup and execution model in the
 ## Software Evidence
 
 [Selected software evidence](provenance/README.md) reproduces six execution paths, separate venvs, disabled collection and stable version comparison with explicit coverage limits.
+
+
+## Native Hermes Interfaces
+
+The [interfaces examples](interfaces/hermes/README.md) exercise the managed Hermes API and provide a manual terminal/browser TUI host. Terminal and browser clients share one runtime-owned TUI service; SDK execution can be disabled explicitly for native-only use.

@@ -26,6 +26,10 @@ environment without calling an LLM. Its OpenClaw, Claude, Pi, and Codex runs exe
 exercises a real coding task and supports comparisons across configuration
 variations.
 
+## Complete Model Configuration
+
+The SDK bridge accepts `fabric_model_config` as a complete public `ModelConfig`, including sampling controls and descriptor-declared top-level extensions for custom models. See the [configuration example and conflict rules](../../sdk/python/nemo-fabric-runtime/src/nemo_fabric/integrations/harbor/README.md#complete-model-configuration).
+
 ## Execution Model
 
 ```mermaid

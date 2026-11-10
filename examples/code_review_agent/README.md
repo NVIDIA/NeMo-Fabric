@@ -93,8 +93,10 @@ combined.
 ### Enable Relay Telemetry and Streaming
 
 Install Relay as described in the
-[Relay installation guide](../../docs/getting-started/install.mdx#install-nemo-relay),
-and then enable Relay telemetry to collect Agent Trajectory Observability
+[Relay installation guide](../../docs/getting-started/install.mdx#install-nemo-relay).
+For `--stream`, also install `nemo-fabric[streaming]` in the SDK interpreter's environment, as described in the [runtime installation guide](../../docs/getting-started/install.mdx#install-the-nemo-fabric-runtime). When `ADAPTER_PYTHON` selects a separate environment, the SDK host still needs this streaming extra.
+
+Enable Relay telemetry to collect Agent Trajectory Observability
 Format (ATOF) stream records:
 
 ```bash

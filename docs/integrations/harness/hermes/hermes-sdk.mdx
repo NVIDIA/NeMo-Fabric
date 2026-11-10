@@ -1,0 +1,111 @@
+---
+title: "Hermes SDK"
+description: "Invoke the embedded Hermes agent with normalized configuration and results."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Start with [hermes.mdx](./hermes.mdx) for shared setup and an overview of all four invocation paths.
+
+NVIDIA NeMo Fabric's Hermes SDK path executes requests through an embedded Hermes `AIAgent` in the adapter host. It returns normalized results and reuses conversation history across ordered invocations.
+
+## Installation
+
+Complete the [shared installation](./hermes.mdx#install-the-adapter). The SDK path requires no interface-specific packages or frontend builds. Install any additional dependencies required by your selected tools and MCP servers in the Hermes adapter environment.
+
+## Configure the Adapter
+
+Use normalized `FabricConfig` fields for the model, instructions, tools, skills, MCP servers, workspace, turn limit, and telemetry. Use `harness.settings` for Hermes-specific options and native interface selection.
+
+The following example configures an embedded SDK agent with file tools:
+
+```python
+from nemo_fabric import FabricConfig
+
+config = FabricConfig.from_mapping(
+    {
+        "metadata": {"name": "hermes-agent"},
+        "harness": {
+            "adapter_id": "nvidia.fabric.hermes",
+        },
+        "models": {
+            "default": {
+                "provider": "openai",
+                "model": "your-model",
+                "base_url": "https://MODEL_HOST/v1",
+                "api_key_env": "MODEL_API_KEY",
+                "temperature": 0.0,
+                "top_p": 0.9,
+                "max_tokens": 1024,
+            }
+        },
+        "instructions": {
+            "system": {"mode": "replace", "content": "Help with files in the workspace."}
+        },
+        "tools": {"enabled": ["file"], "blocked": ["terminal"]},
+        "runtime": {"max_turns": 8},
+        "environment": {"provider": "local", "workspace": "."},
+    }
+)
+```
+
+Replace the endpoint and model, and provide `MODEL_API_KEY` in the adapter environment before starting. To add native API or browser access, follow the [Hermes invocation paths](./hermes.mdx).
+
+The following rules apply to the normalized configuration:
+
+- **System instructions:** Only `instructions.system.mode: replace` is supported.
+- **Tools:** Selectors are Hermes toolset names.
+- **Turn limit:** Use `runtime.max_turns` to control the agent loop.
+
+### Hermes Settings
+
+The descriptor uses closed schemas, so unknown settings are rejected.
+
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| `sdk.enabled` | `true` | Initialize the embedded SDK agent. Set to `false` for native-only execution; enable at least one native interface. SDK invocation then fails with `hermes_sdk_disabled`, while runtime management remains available. |
+| `reasoning_config` | `{"effort": "none"}` | Optional `enabled` boolean and `effort`: `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
+| `plugins_enabled` | `[]` | List of native Hermes plugin identifiers to enable. Configure NeMo Relay through NeMo Fabric telemetry settings. |
+| `save_trajectories` | `false` | Save native JSONL trajectories; separate from normalized telemetry. |
+| `max_tokens` | Hermes native default | Response-token limit used when the selected model has no explicit `max_tokens`. A model-level limit takes precedence; if both are omitted, Hermes uses its native default. |
+| `terminal_timeout` | `60` | Positive timeout in seconds for a Hermes terminal tool operation; this does not enable a TUI. |
+
+Use the [API](./hermes-api.mdx), [dashboard](./hermes-dashboard.mdx), or [terminal TUI](./hermes-tui.mdx) guide for native interface selection.
+
+## Invoke and Stream
+
+Start the runtime with the configured Hermes interpreter. With `config` from the preceding example, invoke it through the public SDK:
+
+```python
+from nemo_fabric import Fabric
+
+async with await Fabric().start_runtime(config) as runtime:
+    result = await runtime.invoke(input="List the files in the workspace.")
+    print(result.output)
+```
+
+`Runtime.invoke_stream()` uses Relay-backed event streaming; retrieve its normalized result with `stream.result()`. Refer to [streaming](../../../sdk/python.mdx#nemo-relay-streaming) for the SDK usage pattern.
+
+## Lifecycle and Conversations
+
+The embedded SDK agent is enabled by default and initializes during runtime startup, together with its parent session database and SDK-owned MCP connections. SDK initialization errors remain startup errors.
+
+The runtime starts even when some configured MCP servers are unavailable. Hermes Agent connects each server separately at startup and keeps the tools of the servers that connected. Each result from that runtime lists the servers Hermes Agent currently reports as failed under `output.mcp.unavailable_servers`, with the server `name`, `transport` and `reason` (`failed`). The adapter also writes a warning to standard error when a server first becomes unavailable. The list reflects Hermes Agent's state after each turn: a server that has since connected, or that is still connecting, is not listed, and each new runtime connects every server again. Hermes Agent records only an error message for a failed connection, and error messages are not reported because they can contain URLs, headers or other credentials, so entries have no `error_type` and timeouts are reported as `failed`. Invalid server configuration, such as an unsupported transport or authentication mode, still fails startup, and an OAuth server that cannot be authenticated still fails the invocation.
+
+Ordered SDK invocations reuse the same agent and conversation until stop closes them. API, browser, and terminal conversations do not execute through this agent or inherit its live history. Persisted files do not establish cross-runtime resume.
+
+Set `harness.settings.sdk.enabled` to `false` only when at least one native interface is enabled. Disabling the embedded Hermes agent does not affect runtime management: your application can still start, check, and stop the native interfaces through the NeMo Fabric SDK. SDK invocation returns a failed `RunResult` with the stable error code `hermes_sdk_disabled` and `retryable: false`. This is a configuration mismatch: enable the SDK agent before invoking through the SDK. The native interfaces and their health checks remain available.
+
+Evaluation consumers, including Harbor, must keep `sdk.enabled: true` (or omit `sdk`). A native-only configuration is for hosting interfaces; it cannot run SDK evaluation trials. Current adapter metadata and `RunPlan` do not expose this invocation restriction before startup, so metadata-based admission can accept a configuration whose trials will fail. Exposing this restriction before invocation is planned work.
+
+## Results and Relay
+
+SDK invocations return normalized NeMo Fabric `RunResult` objects. With Relay enabled, the adapter finalizes and flushes available ATOF/ATIF evidence before returning the result. Native interface responses remain native; see the [normalization comparison](./hermes.mdx#what-nemo-fabric-normalizes).
+
+## Health and Limitations
+
+Whenever the SDK agent is enabled, `check()` supports `live`, `active`, and `ready` using SDK session/database ownership, the invocation interface, and fresh `get_activity_summary()` diagnostics. This includes mixed runtimes: SDK activity remains `idle` or `busy`, and a separate API or TUI process failure does not fail SDK runtime health. SDK activity does not describe native conversations.
+
+With `sdk.enabled: false`, checks observe the enabled native processes and endpoints, with activity reported as `unknown`. Check native endpoints or interface logs separately to diagnose a native interface in a mixed runtime; a normalized interface health target is planned under [#566](https://github.com/NVIDIA/NeMo-Fabric/issues/566). Checks do not run an agent turn.
+
+Refer to [SDK health checks](../../../sdk/health-checks.mdx) and the [shared limitations](./hermes.mdx#limitations-and-planned-work).
