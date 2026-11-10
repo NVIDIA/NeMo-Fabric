@@ -7,20 +7,55 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Start with the [OpenClaw overview](./openclaw.mdx) for shared installation, configuration, and ownership.
 
-## Additional Setup
+## Enable Terminal Access
 
-Terminal attachment requires POSIX and the pinned OpenClaw executable with a supported Node runtime. The npm package provides the terminal renderer; no Fabric-specific frontend build is required. Browser assets are unnecessary when dashboard is disabled.
+Complete the [shared installation](./openclaw.mdx#install-openclaw-and-the-adapter) first. Terminal access requires a POSIX host, an interactive terminal, and the supported OpenClaw and Node versions. The OpenClaw package includes the terminal UI; no separate frontend build is needed.
 
-Enable `harness.settings.interfaces.terminal: {}`. There is no terminal port setting. The adapter starts one Gateway and publishes an owner-executable `interfaces/terminal` launcher after readiness. Run that launcher from a real terminal or use `openshell sandbox exec -n SANDBOX --tty -- <launcher path>` when the runtime is inside an OpenShell sandbox. Local terminal attachment is qualified separately from the OpenShell transport.
+Use this harness configuration when starting your managed runtime:
 
-## Attachment and Conversations
+```python
+from nemo_fabric import HarnessConfig
 
-The launcher reads owner-only discovery, marker, and credential files and checks the authenticated endpoint. It starts native `openclaw tui` using a private remote-client configuration and an environment SecretRef. No token is placed in command-line arguments, and ambient OpenClaw target settings are removed. Attachment does not start another Gateway, use native local embedded mode, or install dependencies.
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.openclaw",
+    settings={"interfaces": {"terminal": {}}},
+)
+```
 
-Each attachment selects the configured agent and creates a new session by default. Pass `--session NAME` to intentionally reuse a native session on that agent. This is a session name, not an agent override or a connection to a previous Fabric runtime. Browser and terminal can select the same conversation explicitly; they are not isolated users.
+The adapter starts the Gateway and, once it is ready, creates an executable launcher at `<artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/terminal`. The terminal connects to that Gateway, so there is no terminal port to configure. Browser assets are unnecessary when dashboard access is disabled.
 
-## Detach, Health, and Testing
+## Connect From a Terminal
 
-Use `/quit` to leave a completed conversation. The managed Gateway and other clients remain available. The pinned native TUI sometimes invokes its own shutdown fallback and exits with code 130; the adapter preserves that native exit status. Runtime stop removes `terminal.running` before the remaining connection files and stops the Gateway. Health checks use native endpoint evidence and report activity as unknown while interactive access is enabled.
+Run the generated `terminal` launcher from an interactive terminal. The [manual example](../../../../examples/interfaces/openclaw/README.md#4-terminal-tui) prints its full path as `terminal_launcher`.
 
-Follow the [terminal manual test](../../../../examples/interfaces/openclaw/README.md#4-terminal-tui). Active-turn detach, approval interaction, remote attachment, and native activity aggregation remain unqualified. NeMo Relay integration is deferred.
+The launcher checks that the runtime's private connection files are valid and that the Gateway accepts its credential. It then starts `openclaw tui` with the correct Gateway address and token. Authentication is automatic; you do not need to paste a token. The credential is supplied through the environment and a private client configuration, rather than command-line arguments. Existing OpenClaw connection settings in your shell are cleared for this client so it connects to the selected runtime.
+
+For a runtime inside an OpenShell sandbox, run the launcher through a TTY-enabled sandbox command:
+
+```bash
+openshell sandbox exec -n SANDBOX --tty -- /path/to/interfaces/terminal
+```
+
+Replace `SANDBOX` and the launcher path with your runtime's values. Local attachment has been tested; the OpenShell terminal transport remains unqualified in this prototype.
+
+## Choose a Conversation
+
+- Run the launcher without `--session` to start a new conversation on the configured agent.
+- Add `--session manual-review` to open or continue that named conversation. Reuse the name when reconnecting to the same runtime. Session names cannot contain spaces or colons.
+- Browser and terminal clients can join the same conversation when they explicitly select the same native session. Separate clients do not provide user isolation.
+
+Session names apply only to the configured agent and current runtime.
+
+## Disconnect and Check Runtime Health
+
+After a turn completes, enter `/quit` to close the terminal client. The Gateway keeps running, and SDK, HTTP, browser, and other terminal clients can continue using it. The pinned terminal client can return exit code 130 through its native shutdown fallback; that exit code alone does not mean the Gateway stopped.
+
+Stop the owning runtime to shut down the Gateway. The adapter removes `terminal.running` first, then the remaining connection files and credentials.
+
+`Fabric.check()` uses native Gateway endpoints to check health. With browser or terminal access enabled, activity is reported as `unknown` because the adapter cannot observe all interactive work. A passing health check does not establish that the runtime is idle.
+
+## Try It and Review Limitations
+
+Follow the [terminal manual test](../../../../examples/interfaces/openclaw/README.md#4-terminal-tui) to send input, continue a conversation, inspect output, and stop the runtime.
+
+Active-turn detach, interactive approvals, remote attachment, and complete native activity discovery still need qualification. NeMo Relay integration is deferred.
