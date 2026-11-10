@@ -27,6 +27,7 @@ from nemo_fabric import (
 from nemo_fabric.runtime_server.protocol import (
     OPERATIONS,
     ProtocolError,
+    response_transport_limit,
     envelope,
     validate_request,
 )
@@ -46,6 +47,7 @@ class OwnedRuntime:
     state: str = "running"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     generation: int = 0
+    response_limit_bytes: int = response_transport_limit()
 
 
 class RuntimeServer:
@@ -66,6 +68,15 @@ class RuntimeServer:
         # issue another start until the enclosing sandbox is replaced.
         self.start_uncertain = False
         self._start_lock = asyncio.Lock()
+
+    def response_limit_bytes(self, request: dict[str, Any]) -> int:
+        runtime_id = request.get("runtime_id")
+        owned = self.runtimes.get(runtime_id) if isinstance(runtime_id, str) else None
+        return (
+            owned.response_limit_bytes
+            if owned is not None
+            else response_transport_limit()
+        )
 
     def _owned(self, request: dict[str, Any]) -> OwnedRuntime:
         owned = self.runtimes.get(request["runtime_id"])
@@ -176,6 +187,10 @@ class RuntimeServer:
                         # uncertain and retain sandbox ownership.
                         raise ProtocolError("runtime_id_conflict", "start")
                     owned = OwnedRuntime(runtime, request["agent"], "unknown")
+                    if config.runtime.response_limits is not None:
+                        owned.response_limit_bytes = response_transport_limit(
+                            config.runtime.response_limits.max_response_bytes
+                        )
                     self.runtimes[runtime.runtime_id] = owned
                     # The runtime is addressable; stop can clean it up.
                     self.start_uncertain = False

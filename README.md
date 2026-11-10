@@ -23,6 +23,10 @@ NeMo Fabric gives applications, evaluation systems, and rollout platforms a cons
 - **Switch harnesses:** Reuse the consumer integration while adapters handle harness-specific behavior.
 - **Compare outcomes:** Collect normalized results, errors, artifacts, lifecycle events, and telemetry references.
 
+Invocation response and artifact budgets are configured under
+[`runtime.response_limits`](docs/sdk/python.mdx#response-and-artifact-limits),
+with the same policy for host and OpenShell execution.
+
 ## Supported Agent Harnesses
 
 NeMo Fabric includes adapters for the following harnesses and execution targets. Select a harness name for its adapter documentation:
@@ -88,7 +92,6 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 Planned areas of development include:
 
 - **Refine runtime resource measurements:** Improve CPU, memory, elapsed-time, and available GPU measurements through broader benchmark validation.
-- **Support artifact-heavy workloads:** Make response and artifact limits configurable, with clear limit errors and guidance for retrieving large screenshots.
 - **Expose task progress and recoverable results:** Provide task state, step progress, plans, pending requests, sandbox task listings, and paginated events, with final results retrievable after invocation ends or the caller disconnects.
 - **Standardize model usage accounting:** Report input, cached, output, and reasoning tokens consistently, distinguish complete, partial, and unknown usage, and attribute delegated work to the correct invocation.
 - **Capture execution provenance:** Record NeMo Fabric and adapter versions, requested models, sanitized MCP configuration, and execution environment, with explicit sources and unknowns.

@@ -1005,6 +1005,7 @@ async def _run_native_lifecycle(
                 raise invoke_error from error
             return result
         finally:
+            result_changed = False
             try:
                 stop_events = json.loads(native.stop_runtime(plan_json, runtime_json))
             except Exception as error:
@@ -1012,6 +1013,7 @@ async def _run_native_lifecycle(
                     if result is None:
                         raise
                     if result.get("status") == "succeeded":
+                        result_changed = True
                         result["status"] = "failed"
                         result["error"] = {
                             "stage": "stop",
@@ -1021,8 +1023,22 @@ async def _run_native_lifecycle(
                             "retryable": False,
                         }
                 stop_events = []
-            if result is not None and isinstance(stop_events, list):
+            if result is not None and isinstance(stop_events, list) and stop_events:
                 result.setdefault("events", []).extend(stop_events)
+                result_changed = True
+            if result is not None and result_changed:
+                limits = (
+                    plan.get("config", {}).get("runtime", {}).get("response_limits")
+                    or {}
+                )
+                finalized = json.loads(
+                    native.finalize_run_result(
+                        json.dumps(result),
+                        limits.get("max_response_bytes", 4 * 1024 * 1024),
+                    )
+                )
+                result.clear()
+                result.update(finalized)
 
     try:
         return await _call_blocking(run)

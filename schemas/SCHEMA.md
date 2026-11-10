@@ -197,3 +197,13 @@ unchanged.
 `sdk/run-result.execution` is optional. `sdk/agent.provenance` controls collection and carries explicit caller reports through existing dispatch. Optional evidence is decoded defensively; invalid reports become coverage gaps. The strict `AgentConfig`, `AgentRunRequest`, `AgentRunResult` and `RuntimeContext` shapes and adapter wire version are unchanged.
 
 Evidence receivers additionally enforce report byte/aggregate entry budgets, unique context keys and infrastructure references to existing contexts. These cross-field limits supplement the JSON Schema's closed shapes, non-blank identities, observation and coverage constraints.
+
+### Response budgets
+
+The SDK configuration and run-plan schemas include `RuntimeConfig.response_limits`
+and the `ResponseLimits` definition. The four positive integer fields are
+`max_response_bytes`, `max_artifact_bytes`, `max_artifact_files`, and
+`max_artifact_file_bytes`; omitted fields use their declared defaults. These are
+SDK-owned budgets, so they do not change `AgentRuntimeConfig` or the southbound
+adapter contract. See the [SDK guide](../docs/sdk/python.mdx#response-and-artifact-limits)
+for counting rules, defaults, and failure behavior.

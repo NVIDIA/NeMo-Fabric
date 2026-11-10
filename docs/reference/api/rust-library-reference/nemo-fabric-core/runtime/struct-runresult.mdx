@@ -87,6 +87,18 @@ NeMo Fabric lifecycle/progress events emitted during the run.
 
 Adapter-specific metadata.
 
+## Implementations
+
+### `impl RunResult`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"struct-runresult.mdx\">RunResult</a>"}} /></pre>
+
+#### `enforce_response_limit`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn enforce_response_limit(&amp;mut self, limits: <a href=\"../config/struct-responselimits.mdx\">ResponseLimits</a>) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.unit.html\">()</a>&gt;"}} /></pre>
+
+Enforce the response byte budget after the result has been finalized. A breach replaces returned payloads with a bounded limit diagnostic.
+
 ## Trait Implementations
 
 ### `impl Clone for RunResult`

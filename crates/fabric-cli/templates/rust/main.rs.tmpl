@@ -37,6 +37,7 @@ fn build_config() -> FabricConfig {
             output_schema: "message".to_string(),
             artifacts: None,
             timeout_seconds: {{TIMEOUT_SECONDS}},
+            response_limits: None,
             max_turns: {{MAX_TURNS}},
             extensions: BTreeMap::new(),
         },

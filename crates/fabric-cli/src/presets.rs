@@ -286,6 +286,7 @@ fn config(
             output_schema: "message".to_string(),
             artifacts: None,
             timeout_seconds: None,
+            response_limits: None,
             max_turns: None,
             extensions: BTreeMap::new(),
         },

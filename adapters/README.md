@@ -158,7 +158,7 @@ and additive extension maps because their support does not vary by adapter:
 | `models.<role>.max_tokens` | No | No | Yes | Yes | Yes: passed through LiteLLM | No | Yes | Yes | No | No | No | No | No | No | No | No | Yes: translated to the selected API protocol |
 | `instructions.system` | `replace`, `append` | `replace` with base instructions | `replace` | `replace` | `replace` | `replace` | `replace` | `replace`, `append` | `replace` with Cline override prompt | `replace`, `append` | `replace` with OpenCode base instructions | `replace` with Pi base instructions | `replace`, `append` | `replace` | No | `append` | `replace` |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
-| `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
+| `runtime.artifacts`, `.timeout_seconds`, `.response_limits` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
 | `runtime.max_turns` | Yes | No | Yes; maps to LangGraph supersteps | Yes; iteration limit | Yes | No | No | Yes; per invocation | No | No | No | No | No | Yes; maps to build-agent steps | No | No | No |
 | `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |
 | `environment.workspace`, `.artifacts`, `.env`, `.env_names` | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core | Core |

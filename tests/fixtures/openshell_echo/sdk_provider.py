@@ -126,6 +126,10 @@ async def main():
                             "effects": "none",
                         },
                     }
+            elif operation == "collect_artifacts" and os.environ.get(
+                "FABRIC_TEST_ARTIFACT_LIMIT"
+            ):
+                output = json.loads(os.environ["FABRIC_TEST_ARTIFACT_LIMIT"])
             elif operation == "collect_artifacts":
                 reader = os.environ["FABRIC_TEST_ARTIFACT_READER"]
                 result = subprocess.run(

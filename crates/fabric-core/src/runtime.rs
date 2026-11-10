@@ -38,6 +38,7 @@ use crate::system_stats::ResourceObservation;
 use crate::system_stats::{CgroupStats, InvocationSystemStats, StatsSession, SystemReader};
 
 mod openshell;
+mod response_limits;
 use openshell::OpenShellRuntimeAdapter;
 
 pub(crate) fn remote_check_agent(
@@ -218,6 +219,14 @@ pub struct RunResult {
     /// Adapter-specific metadata.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, Value>,
+}
+
+impl RunResult {
+    /// Enforce the response byte budget after the result has been finalized.
+    /// A breach replaces returned payloads with a bounded limit diagnostic.
+    pub fn enforce_response_limit(&mut self, limits: crate::config::ResponseLimits) -> Result<()> {
+        response_limits::enforce_response(self, limits)
+    }
 }
 
 /// Runtime completion status.
@@ -951,14 +960,22 @@ enum LocalServiceState {
 /// Invoke a NeMo Fabric run plan.
 pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
     let runtime = start_runtime(plan)?;
-    let mut result = match invoke_runtime(plan, &runtime, request) {
+    let result = match invoke_runtime(plan, &runtime, request) {
         Ok(result) => result,
         Err(error) => {
             let _ = stop_runtime(plan, &runtime);
             return Err(error);
         }
     };
-    match stop_runtime(plan, &runtime) {
+    finish_run_result(plan, result, stop_runtime(plan, &runtime))
+}
+
+fn finish_run_result(
+    plan: &RunPlan,
+    mut result: RunResult,
+    stopped: Result<Vec<FabricEvent>>,
+) -> Result<RunResult> {
+    match stopped {
         Ok(events) => result.events.extend(events),
         Err(error) if result.status == RunStatus::Succeeded => {
             result.status = RunStatus::Failed;
@@ -972,6 +989,7 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
         }
         Err(_) => {}
     }
+    result.enforce_response_limit(plan.config.runtime.response_limits.unwrap_or_default())?;
     Ok(result)
 }
 
@@ -1295,9 +1313,19 @@ pub fn invoke_runtime(
     validate_runtime_handle(plan, runtime)?;
     if uses_local_host(plan) {
         if runtime.environment.provider == "openshell" {
-            return OpenShellRuntimeAdapter.invoke(plan, runtime, request);
+            let mut result = OpenShellRuntimeAdapter.invoke(plan, runtime, request)?;
+            response_limits::enforce_response(
+                &mut result,
+                plan.config.runtime.response_limits.unwrap_or_default(),
+            )?;
+            return Ok(result);
         }
-        return LocalHostAdapter.invoke(plan, runtime, request);
+        let mut result = LocalHostAdapter.invoke(plan, runtime, request)?;
+        response_limits::enforce_response(
+            &mut result,
+            plan.config.runtime.response_limits.unwrap_or_default(),
+        )?;
+        return Ok(result);
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
         harness: harness(plan),
@@ -1370,7 +1398,13 @@ pub fn invoke_openai_stream(
         if runtime.environment.provider == "openshell" {
             return OpenShellRuntimeAdapter.invoke_openai_stream(plan, runtime, request, transport);
         }
-        return LocalHostAdapter.invoke_openai_stream(plan, runtime, request, transport);
+        let mut result =
+            LocalHostAdapter.invoke_openai_stream(plan, runtime, request, transport)?;
+        response_limits::enforce_response(
+            &mut result,
+            plan.config.runtime.response_limits.unwrap_or_default(),
+        )?;
+        return Ok(result);
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
         harness: harness(plan),
@@ -2470,7 +2504,7 @@ fn run_local_host_invocation_with_timeout(
             serde_json::to_value(&agent_result.extensions).map_err(FabricError::SerializeJson)?,
         );
     }
-    Ok(RunResult {
+    let mut result = RunResult {
         agent_name: plan.agent_name.clone(),
         harness: harness(plan),
         adapter_kind: adapter_kind(plan),
@@ -2491,7 +2525,12 @@ fn run_local_host_invocation_with_timeout(
             .collect(),
         events,
         metadata,
-    })
+    };
+    response_limits::enforce_local_artifacts(
+        &mut result,
+        plan.config.runtime.response_limits.unwrap_or_default(),
+    )?;
+    Ok(result)
 }
 
 fn invalidate_timed_out_local_host(
@@ -6227,6 +6266,33 @@ for line in sys.stdin:
     }
 
     #[test]
+    fn run_plan_checks_stop_events_and_stop_errors_in_final_budget() {
+        let (root, mut plan) = local_host_plan("success");
+        let original = run_plan(&plan, RunRequest::text("test")).unwrap();
+        let initial_bytes = serde_json::to_vec(&original).unwrap().len() as u32;
+        plan.config.runtime.response_limits = Some(crate::ResponseLimits {
+            max_response_bytes: initial_bytes,
+            ..Default::default()
+        });
+        let event = event_with_metadata("stop", "x".repeat(2048), BTreeMap::new());
+        let stop_error = lifecycle_error(
+            AdapterLifecycleOperation::Stop,
+            "test",
+            "stop_failed",
+            "x".repeat(2048),
+            "",
+        );
+        for stopped in [Ok(vec![event]), Err(stop_error)] {
+            let result = finish_run_result(&plan, original.clone(), stopped).unwrap();
+            assert_eq!(result.status, RunStatus::Failed);
+            let error = result.error.unwrap();
+            assert_eq!(error.code, "response_limit_exceeded");
+            assert!(error.metadata["observed"].as_u64().unwrap() > u64::from(initial_bytes));
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn run_plan_stops_local_host_after_invoke_failure() {
         let (root, mut plan) = local_host_plan("invoke_failure");
         let agent_name = new_id("local-host-invoke-error-agent");
@@ -6287,7 +6353,6 @@ for line in sys.stdin:
     #[test]
     fn local_host_enriches_typed_usage_artifacts_and_extensions() {
         let (root, plan) = local_host_plan("typed_result");
-
         let result = run_plan(&plan, RunRequest::text("enrich")).expect("normalized result");
 
         assert_eq!(result.status, RunStatus::Succeeded);
