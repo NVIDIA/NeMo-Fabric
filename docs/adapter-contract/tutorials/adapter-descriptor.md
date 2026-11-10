@@ -102,6 +102,15 @@ schema enum for the exact accepted values.
 Planning rejects configured normalized behavior outside the declared surface.
 NeMo Fabric does not silently remove unsupported fields.
 
+Accept `runtime.keep_state` only when the adapter keeps all of its native
+state in `RuntimeContext.state_dir` when that field is present. Every runtime
+of the agent then receives the same folder, so a later runtime finds the
+earlier runtime's sessions, memory, and other harness files. On Linux and
+macOS, the adapter host inherits the folder's lock. Don't leave detached
+children that keep inherited file descriptors open: such a child keeps the
+agent's state locked after the host exits, and later runtimes of the agent
+fail to start.
+
 When an adapter accepts `instructions.system`, declare the exact supported
 modes in `config.system_instruction_modes`. `replace` discards the harness
 default system instruction. `append` preserves the harness default and adds the
