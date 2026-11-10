@@ -11,7 +11,19 @@ Start with the [OpenClaw overview](./openclaw.mdx) for installation and configur
 
 The managed Gateway already serves `/v1/chat/completions` for SDK invocation. Native HTTP clients can call that same endpoint; there is no separate API server or `interfaces.api` setting.
 
-Enable a dashboard or terminal interface to publish native connection discovery and credentials. Terminal-only is the headless option and does not require browser assets. Read `http_url`, `agent_id`, and `token_file` from the private `interfaces/gateway.json`; read the referenced token file and send the token as `Authorization: Bearer <token>`. The HTTP client sends this header on each request.
+Enable either the dashboard or terminal interface so your HTTP client can find the Gateway address and access token. For API-only use, enable the terminal interface. This mode needs no browser assets, and you do not need to launch the terminal client.
+
+When the Gateway is ready, the adapter writes its connection details to the private `interfaces/gateway.json` file:
+
+- `http_url`: the Gateway address for API requests.
+- `agent_id`: the agent name to use in the request's `model` value.
+- `token_file`: the name of the token file in the same directory.
+
+Read the token from that file and configure your HTTP client to send this header on every request:
+
+```http
+Authorization: Bearer <token>
+```
 
 ## Requests and Conversations
 
