@@ -284,6 +284,35 @@ fn check_environment(
     to_json(&report)
 }
 
+/// Read recorded runtime status through an OpenShell environment.
+#[pyfunction]
+fn runtime_status_environment(
+    py: Python<'_>,
+    environment_json: String,
+    agent: String,
+    runtime_id: String,
+) -> PyResult<String> {
+    let environment = parse_environment_handle(environment_json)?;
+    let report = py
+        .detach(|| {
+            nemo_fabric_core::runtime::runtime_status_environment(&environment, &agent, &runtime_id)
+        })
+        .map_err(|error| {
+            let code = match &error {
+                FabricError::EnvironmentProviderOperation { code, .. }
+                    if matches!(code.as_str(), "wrong_agent" | "runtime_unavailable") =>
+                {
+                    code.as_str()
+                }
+                _ => "status_failed",
+            };
+            let exception = PyRuntimeError::new_err("The runtime status lookup failed.");
+            let _ = exception.value(py).setattr("code", code);
+            exception
+        })?;
+    to_json(&report)
+}
+
 /// Check health for a registered service.
 #[pyfunction]
 fn check_service(py: Python<'_>, service_json: String, request_json: String) -> PyResult<String> {
@@ -361,6 +390,7 @@ fn runtime_resource_snapshot(
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(check_environment, m)?)?;
+    m.add_function(wrap_pyfunction!(runtime_status_environment, m)?)?;
     m.add_function(wrap_pyfunction!(check_service, m)?)?;
     m.add("ServiceInUseError", m.py().get_type::<ServiceInUseError>())?;
     m.add(

@@ -190,3 +190,251 @@ async def test_sdk_server_check_reaches_the_real_command_bridge(
     assert [command["operation"] for command in commands] == ["check"]
     assert "agent" not in commands[0]
     assert "runtime_id" not in commands[0]
+
+
+async def test_runtime_status_remote_reaches_sdk_in_the_original_server(
+    blocking_adapter_config,
+    server_environment,
+    server_sdk_bridge,
+    tmp_path,
+    runtime_status_validator,
+):
+    host, log = server_sdk_bridge
+    config = blocking_adapter_config.model_copy(deep=True)
+    config.environment.workspace = str(tmp_path)
+    config.discovery.local_paths = [str(tmp_path / "blocking.fabric-adapter.json")]
+    started = await host.handle(
+        {
+            "interface_version": 2,
+            "operation": "start",
+            "agent": "blocking",
+            "config": config.to_mapping(),
+        }
+    )
+    assert started["status"] == "succeeded", started
+    runtime_id = started["result"]["runtime_id"]
+    try:
+        later_client = Fabric()
+        active = await later_client.runtime_status(
+            environment=server_environment, runtime_id=runtime_id, agent_name="blocking"
+        )
+        assert active.status == "active"
+        assert active.server_state == "running"
+        assert active.handle.runtime_id == runtime_id
+        assert active.handle.environment["provider"] == "local"
+        runtime_status_validator.validate(active.to_mapping())
+        stopped = await host.handle(
+            {
+                "interface_version": 2,
+                "operation": "stop",
+                "agent": "blocking",
+                "runtime_id": runtime_id,
+            }
+        )
+        assert stopped["status"] == "succeeded"
+        report = await later_client.runtime_status(
+            environment=server_environment, runtime_id=runtime_id, agent_name="blocking"
+        )
+        assert report.status == "stopped"
+        assert report.handle is None
+        runtime_status_validator.validate(report.to_mapping())
+        commands = [json.loads(line) for line in log.read_text().splitlines()]
+        assert commands == [
+            {"operation": "status", "agent": "blocking", "runtime_id": runtime_id},
+            {"operation": "status", "agent": "blocking", "runtime_id": runtime_id},
+        ]
+        assert not (tmp_path / "entered").exists()
+    finally:
+        await host.shutdown()
+
+
+async def test_server_runtime_limit_has_no_effects_and_start_recovers_after_stop(
+    blocking_adapter_config, server_sdk_bridge, tmp_path, monkeypatch
+):
+    monkeypatch.setattr("nemo_fabric.client._MAX_RUNTIME_RECORDS", 1)
+    host, _ = server_sdk_bridge
+    config = blocking_adapter_config.model_copy(deep=True)
+    config.environment.workspace = str(tmp_path)
+    config.discovery.local_paths = [str(tmp_path / "blocking.fabric-adapter.json")]
+    command = {
+        "interface_version": 2,
+        "operation": "start",
+        "agent": "blocking",
+        "config": config.to_mapping(),
+    }
+    try:
+        first = await host.handle(command)
+        assert first["status"] == "succeeded", first
+        rejected = await host.handle(command)
+        assert rejected["error"]["code"] == "runtime_limit_reached", rejected
+        assert rejected["error"]["effects"] == "none"
+        assert rejected["changed"] is False
+        assert not host.start_uncertain
+        stopped = await host.handle(
+            {
+                "interface_version": 2,
+                "operation": "stop",
+                "agent": "blocking",
+                "runtime_id": first["result"]["runtime_id"],
+            }
+        )
+        assert stopped["status"] == "succeeded", stopped
+        replacement = await host.handle(command)
+        assert replacement["status"] == "succeeded", replacement
+        assert replacement["result"]["runtime_id"] != first["result"]["runtime_id"]
+    finally:
+        await host.shutdown()
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"runtime_id": "other"},
+        {"agent_name": "other"},
+        {"status": "unrecognized"},
+        {"surprise": "TEST_ONLY_SECRET"},
+    ],
+)
+async def test_runtime_status_remote_rejects_invalid_or_mismatched_reports(
+    server_environment, monkeypatch, change
+):
+    from nemo_fabric import FabricConfigError
+
+    native = MagicMock()
+    native.runtime_status_environment.return_value = json.dumps(
+        {
+            "runtime_id": "runtime-1",
+            "agent_name": "demo",
+            "status": "stopped",
+            "handle": None,
+            "server_state": "stopped",
+            **change,
+        }
+    )
+    monkeypatch.setattr("nemo_fabric.client._native", native)
+    with pytest.raises(FabricConfigError):
+        await Fabric().runtime_status(
+            environment=server_environment, runtime_id="runtime-1", agent_name="demo"
+        )
+    native.start_runtime.assert_not_called()
+    native.check_environment.assert_not_called()
+
+
+async def test_runtime_status_remote_during_invocation_keeps_the_original_runtime(
+    blocking_adapter_config, server_environment, server_sdk_bridge, tmp_path
+):
+    host, log = server_sdk_bridge
+    config = blocking_adapter_config.model_copy(deep=True)
+    config.environment.workspace = str(tmp_path)
+    config.discovery.local_paths = [str(tmp_path / "blocking.fabric-adapter.json")]
+    started = await host.handle(
+        {
+            "interface_version": 2,
+            "operation": "start",
+            "agent": "blocking",
+            "config": config.to_mapping(),
+        }
+    )
+    assert started["status"] == "succeeded", started
+    runtime_id = started["result"]["runtime_id"]
+    invoking = asyncio.create_task(
+        host.handle(
+            {
+                "interface_version": 2,
+                "operation": "invoke",
+                "agent": "blocking",
+                "runtime_id": runtime_id,
+                "input": "work",
+            }
+        )
+    )
+    try:
+        async with asyncio.timeout(5):
+            while not (tmp_path / "entered").exists():
+                await asyncio.sleep(0.01)
+        report = await asyncio.wait_for(
+            Fabric().runtime_status(
+                environment=server_environment,
+                runtime_id=runtime_id,
+                agent_name="blocking",
+            ),
+            3,
+        )
+        assert report.status == "active"
+        assert report.handle.runtime_id == runtime_id
+        assert not invoking.done()
+        assert not (tmp_path / "stopped").exists()
+        for agent_name, selected_id, expected in (
+            ("other", runtime_id, "wrong_agent"),
+            ("blocking", "missing", "runtime_unavailable"),
+        ):
+            from nemo_fabric import FabricStateError
+
+            with pytest.raises(FabricStateError) as caught:
+                await Fabric().runtime_status(
+                    environment=server_environment,
+                    runtime_id=selected_id,
+                    agent_name=agent_name,
+                )
+            assert caught.value.code == expected
+    finally:
+        (tmp_path / "release").write_text("release")
+        assert (await asyncio.wait_for(invoking, 5))["status"] == "succeeded"
+        await host.shutdown()
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"runtime_id":"runtime-1","runtime_id":"other"}',
+        "null",
+        "[]",
+        "{",
+        "x" * (4 * 1024 * 1024 + 1),
+    ],
+    ids=["duplicate-fields", "null", "array", "malformed", "oversized"],
+)
+async def test_runtime_status_remote_rejects_malformed_or_oversized_json(
+    server_environment, monkeypatch, raw
+):
+    from nemo_fabric import FabricConfigError
+
+    native = MagicMock()
+    native.runtime_status_environment.return_value = raw
+    monkeypatch.setattr("nemo_fabric.client._native", native)
+    with pytest.raises(FabricConfigError, match="runtime status report is invalid"):
+        await Fabric().runtime_status(
+            environment=server_environment, runtime_id="runtime-1", agent_name="demo"
+        )
+    native.start_runtime.assert_not_called()
+    native.invoke_runtime.assert_not_called()
+    native.stop_runtime.assert_not_called()
+    native.check_environment.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "report_json",
+    [
+        '{"runtime_id":"wrong-target","runtime_id":"runtime-1","agent_name":"demo","status":"stopped","handle":null,"server_state":"stopped"}',
+        '{"runtime_id":"runtime-1","agent_name":"demo","status":"failed","status":"stopped","handle":null,"server_state":"stopped"}',
+    ],
+)
+async def test_runtime_status_native_transport_rejects_duplicate_fields(
+    server_environment, tmp_path, report_json
+):
+    from nemo_fabric import FabricRuntimeError
+
+    provider = tmp_path / "duplicate-provider"
+    provider.write_text(
+        f"#!{sys.executable}\n"
+        + "import json, sys\n"
+        + "frame = json.loads(sys.stdin.readline())\n"
+        + "prefix = json.dumps({'protocol_version': frame['protocol_version'], 'request_id': frame['request_id'], 'status': 'succeeded'})[:-1]\n"
+        + f'print(prefix + \', "output": {{"status": "returned", "value": \' + {report_json!r} + \'}}}}\', flush=True)\n'
+    )
+    provider.chmod(0o700)
+    os.environ["NEMO_FABRIC_OPEN_SHELL_PROVIDER"] = str(provider)
+    with pytest.raises(FabricRuntimeError, match="runtime status transport failed"):
+        await Fabric().runtime_status(
+            environment=server_environment, runtime_id="runtime-1", agent_name="demo"
+        )
