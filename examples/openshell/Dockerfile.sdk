@@ -29,11 +29,14 @@ COPY environment-providers/ environment-providers/
 COPY sdk/python/ sdk/python/
 COPY adapter-contract/python/ adapter-contract/python/
 COPY adapters/python/ adapters/python/
+# Cargo caches are shared across source checkouts; COPY preserves file mtimes.
+# Refresh crate roots so a newer cached build cannot hide changed source bytes.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/src/fabric/target \
-    uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels --config-setting build-args=--locked sdk/python/nemo-fabric-runtime \
+    touch crates/fabric-core/src/lib.rs crates/fabric-python/src/lib.rs \
+    && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels --config-setting build-args=--locked sdk/python/nemo-fabric-runtime \
     && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels sdk/python/nemo-fabric-evidence \
     && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapter-contract/python \
     && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapters/python/common \
