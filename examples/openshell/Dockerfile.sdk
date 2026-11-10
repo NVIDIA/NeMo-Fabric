@@ -31,6 +31,7 @@ COPY adapter-contract/python/ adapter-contract/python/
 COPY adapters/python/ adapters/python/
 # Cargo caches are shared across source checkouts; COPY preserves file mtimes.
 # Refresh crate roots so a newer cached build cannot hide changed source bytes.
+# Install local wheels without reusing unpacked wheels from another source revision.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
@@ -40,7 +41,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels sdk/python/nemo-fabric-evidence \
     && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapter-contract/python \
     && uv build --python /usr/local/bin/python3 --wheel --out-dir /wheels adapters/python/common \
-    && uv pip install --python /opt/fabric/bin/python --find-links /wheels /wheels/*.whl
+    && uv pip install --no-cache --python /opt/fabric/bin/python --find-links /wheels /wheels/*.whl
 FROM base
 COPY --from=wheels /opt/fabric /opt/fabric
 RUN ln -s /opt/fabric/bin/fabric-agent-ctl /usr/local/bin/fabric-agent-ctl \
