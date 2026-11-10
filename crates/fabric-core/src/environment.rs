@@ -1552,7 +1552,7 @@ for line in sys.stdin:
                     ProviderOperation::RuntimeCommand {
                         environment: &environment,
                         command: &task,
-                        timeout_seconds: 10,
+                        timeout_seconds: Some(10),
                     },
                 );
                 sender.send(result).unwrap();

@@ -69,7 +69,7 @@ pub fn runtime_status_environment(
         agent: agent.to_string(),
         runtime_id: runtime_id.to_string(),
     };
-    match crate::environment::command_runtime(environment, &command, 10)? {
+    match crate::environment::command_runtime(environment, &command, Some(10))? {
         crate::task_command::TaskCommandResponse::Returned { value } => Ok(value),
         crate::task_command::TaskCommandResponse::Rejected { error } => {
             Err(FabricError::EnvironmentProviderOperation {
