@@ -48,6 +48,7 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import health as health_transport
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import mcp_availability
 from nemo_fabric_adapters.common import relay_artifacts
 from nemo_fabric_adapters.common import relay_gateway
 from nemo_fabric_adapters.common.relay_http import (
@@ -332,6 +333,45 @@ def _mcp_servers(config: AgentConfig) -> dict[str, Any]:
                 f"MCP server {name!r} {auth.type!r} authentication is not supported by Claude",
             )
     return result
+
+
+# Claude Code connection states that leave a configured server unusable.
+# ``pending`` servers are still connecting and ``disabled`` servers were turned
+# off on purpose, so neither is reported.
+_UNAVAILABLE_MCP_STATUSES = {
+    "failed": mcp_availability.FAILED,
+    "needs-auth": mcp_availability.AUTHENTICATION_REQUIRED,
+}
+
+
+def unavailable_mcp_servers(
+    config: AgentConfig, response: Any
+) -> list[dict[str, str]] | None:
+    """Map a native ``get_mcp_status()`` response to the shared MCP report.
+
+    Only servers from the Fabric configuration are reported, with their
+    configured transport. Claude Code's error text is never copied, because it
+    can contain URLs or headers. A malformed response returns ``None``.
+    """
+
+    if not isinstance(response, dict) or not isinstance(
+        response.get("mcpServers"), list
+    ):
+        return None
+    configured = config.mcp.servers if config.mcp is not None else {}
+    unavailable = []
+    for server in response["mcpServers"]:
+        if not isinstance(server, dict):
+            return None
+        name = server.get("name")
+        reason = _UNAVAILABLE_MCP_STATUSES.get(server.get("status"))
+        if reason is not None and isinstance(name, str) and name in configured:
+            unavailable.append(
+                mcp_availability.unavailable_server(
+                    name, configured[name].transport, reason
+                )
+            )
+    return unavailable
 
 
 def _stage_mcp_config(
@@ -1157,6 +1197,8 @@ class ClaudeRuntime:
         self._relay: ClaudeRelaySettings | None = None
         self._gateway_process: subprocess.Popen[Any] | None = None
         self._mcp_config_path: Path | None = None
+        # Names of MCP servers already warned about as unavailable.
+        self._mcp_warned: set[str] = set()
         self._unusable = False
         self._health_lock = asyncio.Lock()
         self._health_task: asyncio.Task | None = None
@@ -1217,23 +1259,11 @@ class ClaudeRuntime:
 
         try:
             async with self._health_lock:
-                # SDK 0.2.166 does not remove cancelled control requests. Keep
-                # at most one native request until its own bounded wait ends.
-                if self._health_task is not None:
-                    await asyncio.wait({self._health_task})
+                await self._settle_mcp_status_request()
                 snapshot = observed("passed", None)
                 if snapshot["outcome"] != "passed":
                     return snapshot
-                task = asyncio.create_task(client.get_mcp_status())
-                self._health_task = task
-
-                def completed(task: asyncio.Task) -> None:
-                    if self._health_task is task:
-                        self._health_task = None
-                    if not task.cancelled():
-                        task.exception()
-
-                task.add_done_callback(completed)
+                task = self._start_mcp_status_request(client)
                 await asyncio.wait({task})
                 response = task.result()
         except Exception:
@@ -1257,6 +1287,65 @@ class ClaudeRuntime:
                 return observed("unknown", "probe_error")
             names.add(server["name"])
         return observed("passed", None)
+
+    async def _settle_mcp_status_request(self) -> None:
+        """Wait for the previous native status request; call under the lock."""
+
+        # SDK 0.2.166 does not remove cancelled control requests. Keep at most
+        # one native request until its own bounded wait ends.
+        if self._health_task is not None:
+            await asyncio.wait({self._health_task})
+
+    def _start_mcp_status_request(self, client: ClaudeSDKClient) -> asyncio.Task:
+        """Start one native status request; call under the lock after settling."""
+
+        task = asyncio.create_task(client.get_mcp_status())
+        self._health_task = task
+
+        def completed(task: asyncio.Task) -> None:
+            if self._health_task is task:
+                self._health_task = None
+            if not task.cancelled():
+                task.exception()
+
+        task.add_done_callback(completed)
+        return task
+
+    async def _unavailable_mcp_servers(
+        self,
+        client: ClaudeSDKClient,
+        config: AgentConfig,
+        timeout: float,
+    ) -> list[dict[str, str]] | None:
+        """Read the current unavailable MCP servers from Claude Code itself.
+
+        Claude Code keeps its own MCP connection state for the life of the CLI
+        process, so each result reports the state after its turn. ``None``
+        means the state could not be observed and the report is omitted.
+        """
+
+        if config.mcp is None or not config.mcp.servers:
+            return []
+        try:
+            async with asyncio.timeout(timeout):
+                async with self._health_lock:
+                    await self._settle_mcp_status_request()
+                    task = self._start_mcp_status_request(client)
+                    await asyncio.wait({task})
+            response = task.result()
+        except Exception:
+            LOGGER.warning("Claude MCP server status could not be observed")
+            return None
+        unavailable = unavailable_mcp_servers(config, response)
+        if unavailable is None:
+            LOGGER.warning("Claude returned a malformed MCP server status")
+            return None
+        mcp_availability.warn(
+            "Claude",
+            [entry for entry in unavailable if entry["name"] not in self._mcp_warned],
+        )
+        self._mcp_warned.update(entry["name"] for entry in unavailable)
+        return unavailable
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._client is not None:
@@ -1308,6 +1397,7 @@ class ClaudeRuntime:
         self._agent_config = agent_config
         self._fabric_runtime_id = fabric_runtime_id
         self._client = client
+        self._mcp_warned = set()
         # A new Claude Code process starts its running cost total at zero.
         self._cost_total = 0.0
 
@@ -1396,6 +1486,12 @@ class ClaudeRuntime:
                         )
                     )
 
+        if not self._unusable:
+            unavailable = await self._unavailable_mcp_servers(
+                client, agent_config, _remaining_timeout(invocation_deadline)
+            )
+            if mcp := mcp_availability.output_block(unavailable or []):
+                output["mcp"] = mcp
         if self._relay is not None:
             output = _relay_output(output, self._relay)
         return _agent_run_result(output)

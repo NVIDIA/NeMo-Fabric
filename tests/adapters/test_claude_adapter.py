@@ -137,6 +137,7 @@ def install_fake_client(
         client.receive_response.side_effect = lambda: response_factory(client)
         client.disconnect = AsyncMock()
         client.interrupt = AsyncMock()
+        client.get_mcp_status = AsyncMock(return_value={"mcpServers": []})
         clients.append(client)
         return client
 
@@ -559,6 +560,7 @@ async def test_claude_invoke_passes_remaining_budget_to_query(
     runtime._agent_config = agent_config(claude_payload)
     runtime._fabric_runtime_id = claude_payload["runtime_context"]["runtime_id"]
     runtime._client = MagicMock(spec=adapter.ClaudeSDKClient)
+    runtime._client.get_mcp_status.return_value = {"mcpServers": []}
     run_query = AsyncMock(return_value={"completed": False})
     monkeypatch.setattr(runtime, "_run_query", run_query)
     remaining_timeout = MagicMock(return_value=7.0)
@@ -578,7 +580,11 @@ async def test_claude_invoke_passes_remaining_budget_to_query(
         <= invocation_deadline
         <= after + expected_timeout + 0.1
     )
-    remaining_timeout.assert_called_once_with(invocation_deadline)
+    # The query and the MCP status read after it share the invocation deadline.
+    assert remaining_timeout.call_args_list == [
+        ((invocation_deadline,),),
+        ((invocation_deadline,),),
+    ]
     assert run_query.await_args.args[2] == 7.0
 
 
@@ -1482,6 +1488,197 @@ async def test_claude_runtime_cost_starts_from_zero_for_each_client(
 
     assert await invocation_costs(claude_payload, 1) == [0.10]
     assert await invocation_costs(claude_payload, 1) == [0.10]
+
+
+def mcp_status(**statuses: str) -> dict[str, Any]:
+    return {
+        "mcpServers": [
+            {
+                "name": name,
+                "status": status,
+                "error": "connect to https://user:secret@mcp.example.test failed",
+            }
+            for name, status in statuses.items()
+        ]
+    }
+
+
+def test_unavailable_mcp_servers_maps_native_status(claude_payload):
+    config = agent_config(claude_payload)
+
+    unavailable = adapter.unavailable_mcp_servers(
+        config,
+        mcp_status(
+            repo="failed",
+            docs="needs-auth",
+            unconfigured="failed",
+        ),
+    )
+
+    assert unavailable == [
+        {"name": "repo", "transport": "stdio", "reason": "failed"},
+        {
+            "name": "docs",
+            "transport": "streamable-http",
+            "reason": "authentication_required",
+        },
+    ]
+    assert "secret" not in json.dumps(unavailable)
+
+
+@pytest.mark.parametrize("status", ["connected", "pending", "disabled"])
+def test_unavailable_mcp_servers_skips_usable_or_unsettled_servers(
+    claude_payload, status
+):
+    assert (
+        adapter.unavailable_mcp_servers(
+            agent_config(claude_payload), mcp_status(repo=status, docs=status)
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    "response", [None, {}, {"mcpServers": None}, {"mcpServers": ["repo"]}]
+)
+def test_unavailable_mcp_servers_rejects_malformed_status(claude_payload, response):
+    assert (
+        adapter.unavailable_mcp_servers(agent_config(claude_payload), response) is None
+    )
+
+
+async def start_runtime(claude_payload: dict[str, Any]) -> adapter.ClaudeRuntime:
+    start_payload = dict(claude_payload)
+    start_payload.pop("request")
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(lifecycle_start(start_payload))
+    return runtime
+
+
+async def test_claude_runtime_reports_current_unavailable_mcp_servers(
+    claude_payload, monkeypatch, capsys
+):
+    clients = install_fake_client(
+        monkeypatch, lambda _client: (message async for message in _one_result())
+    )
+    runtime = await start_runtime(claude_payload)
+    clients[0].get_mcp_status.side_effect = [
+        mcp_status(repo="connected", docs="failed"),
+        mcp_status(repo="needs-auth", docs="failed"),
+        mcp_status(repo="connected", docs="connected"),
+    ]
+
+    results = [
+        await runtime.invoke(*lifecycle_invocation(claude_payload)) for _ in range(3)
+    ]
+    await runtime.stop()
+
+    assert [result.status for result in results] == [AgentRunStatus.SUCCEEDED] * 3
+    assert results[0].output["mcp"] == {
+        "unavailable_servers": [
+            {"name": "docs", "transport": "streamable-http", "reason": "failed"}
+        ]
+    }
+    assert results[1].output["mcp"] == {
+        "unavailable_servers": [
+            {"name": "docs", "transport": "streamable-http", "reason": "failed"},
+            {
+                "name": "repo",
+                "transport": "stdio",
+                "reason": "authentication_required",
+            },
+        ]
+    }
+    # A server that recovered inside the runtime leaves the report.
+    assert "mcp" not in results[2].output
+    stderr = capsys.readouterr().err
+    assert stderr.count("'docs' (streamable-http) is unavailable: failed") == 1
+    assert stderr.count("'repo' (stdio) is unavailable: authentication_required") == 1
+    assert "secret" not in stderr
+
+
+async def _one_result() -> AsyncIterator[Message]:
+    yield running_total_result(0.1)
+
+
+async def test_claude_runtime_does_not_cache_mcp_failures_across_runtimes(
+    claude_payload, monkeypatch, capsys
+):
+    clients = install_fake_client(
+        monkeypatch, lambda _client: (message async for message in _one_result())
+    )
+    first_runtime = await start_runtime(claude_payload)
+    clients[0].get_mcp_status.return_value = mcp_status(docs="failed")
+    first = await first_runtime.invoke(*lifecycle_invocation(claude_payload))
+    await first_runtime.stop()
+
+    second_runtime = await start_runtime(claude_payload)
+    clients[1].get_mcp_status.return_value = mcp_status(docs="connected")
+    second = await second_runtime.invoke(*lifecycle_invocation(claude_payload))
+    await second_runtime.stop()
+
+    assert first.output["mcp"]["unavailable_servers"][0]["name"] == "docs"
+    assert "mcp" not in second.output
+    assert capsys.readouterr().err.count("'docs'") == 1
+
+
+async def test_claude_runtime_omits_mcp_report_when_status_is_unobservable(
+    claude_payload, monkeypatch
+):
+    clients = install_fake_client(
+        monkeypatch, lambda _client: (message async for message in _one_result())
+    )
+    runtime = await start_runtime(claude_payload)
+    clients[0].get_mcp_status.side_effect = RuntimeError("secret status failure")
+
+    result = await runtime.invoke(*lifecycle_invocation(claude_payload))
+    await runtime.stop()
+
+    assert result.status is AgentRunStatus.SUCCEEDED
+    assert "mcp" not in result.output
+
+
+async def test_claude_runtime_skips_mcp_status_without_mcp_servers(
+    claude_payload, monkeypatch
+):
+    claude_payload["config"].pop("mcp")
+    clients = install_fake_client(
+        monkeypatch, lambda _client: (message async for message in _one_result())
+    )
+    runtime = await start_runtime(claude_payload)
+
+    result = await runtime.invoke(*lifecycle_invocation(claude_payload))
+    await runtime.stop()
+
+    assert result.status is AgentRunStatus.SUCCEEDED
+    assert "mcp" not in result.output
+    clients[0].get_mcp_status.assert_not_called()
+
+
+async def test_claude_runtime_propagates_cancellation_during_mcp_status(
+    claude_payload, monkeypatch
+):
+    clients = install_fake_client(
+        monkeypatch, lambda _client: (message async for message in _one_result())
+    )
+    runtime = await start_runtime(claude_payload)
+    requested = asyncio.Event()
+
+    async def blocked_status() -> dict[str, Any]:
+        requested.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    clients[0].get_mcp_status.side_effect = blocked_status
+    invocation = asyncio.create_task(
+        runtime.invoke(*lifecycle_invocation(claude_payload))
+    )
+    await requested.wait()
+    invocation.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await invocation
+    await runtime.stop()
 
 
 async def test_claude_runtime_removes_mcp_config_after_failed_sdk_connect(
