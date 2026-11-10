@@ -3,11 +3,9 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# NVIDIA NeMo Fabric Hermes Testing Examples
+# NVIDIA NeMo Fabric Hermes Interface Examples
 
-These examples are a work in progress. Their structure and user experience will be reworked as part of OpenClaw TUI support.
-
-Start with the [Hermes architecture guide](../../../docs/integrations/harness/hermes/hermes.mdx) for the invocation diagram, shared configuration, backend ownership, and result/artifact boundaries. Use this README to test each of the four client paths:
+Start with the [Hermes architecture guide](../../../docs/integrations/harness/hermes/hermes.mdx). These four paths use shared Fabric configuration translated into Hermes native configuration. SDK responses are normalized; other responses remain native. NeMo Relay provides ATOF events and ATIF trajectories. Use this README to test each path:
 
 | Test Path | Entry Point | Architecture and Setup |
 | --- | --- | --- |
