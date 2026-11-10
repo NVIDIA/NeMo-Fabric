@@ -936,8 +936,7 @@ struct LocalAdapterHost {
     relay_config: Option<RelayRuntimeConfig>,
     // Adapter startup values stay in memory, never in a serialized handle or plan.
     environment_env: BTreeMap<String, String>,
-    // Held while the host runs; dropping the host releases the agent's state folder.
-    // A service host holds it for the runtimes connected to the service.
+    // Each host holds a descriptor, including runtimes sharing a service's lock.
     _state_lock: Option<File>,
 }
 
@@ -1090,6 +1089,16 @@ pub fn start_runtime_with_service(
     let mut current_env = record.host.environment_env.clone();
     resolve_named_environment(plan, &mut current_env)?;
     validate_named_environment(plan, &record.host.environment_env, &current_env)?;
+    let state_lock = record
+        .host
+        ._state_lock
+        .as_ref()
+        .map(File::try_clone)
+        .transpose()
+        .map_err(|source| FabricError::Write {
+            path: record.host.runtime_dir.clone(),
+            source,
+        })?;
     let environment = prepare_environment(plan)?;
     let runtime = start_local_runtime(
         plan,
@@ -1102,6 +1111,7 @@ pub fn start_runtime_with_service(
             } else {
                 None
             },
+            state_lock,
         )),
     )?;
     if plan.config.provenance.enabled {
@@ -1202,7 +1212,14 @@ fn start_service(
     )?;
     let environment_env = start.runtime_context.environment.env.clone();
     let request = AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Start(Box::new(start)));
-    let mut host = spawn_local_host(plan, &runtime, artifacts, relay_config, environment_env)?;
+    let mut host = spawn_local_host(
+        plan,
+        &runtime,
+        artifacts,
+        relay_config,
+        environment_env,
+        None,
+    )?;
     let output = match exchange_lifecycle_message(
         &mut host,
         &service_id,
@@ -1734,6 +1751,8 @@ fn service_binding(
     info: &AdapterServiceInfo,
 ) -> Result<String> {
     let mut binding_plan = plan.clone();
+    // Bind relative plans to the directory used when the service was prepared.
+    binding_plan.base_dir = absolute_path(binding_plan.base_dir)?;
     binding_plan.config.provenance = Default::default();
     stable_hash(
         "fabric-service-binding",
@@ -1937,12 +1956,17 @@ impl RuntimeAdapter for LocalHostAdapter {
 fn start_local_runtime(
     plan: &RunPlan,
     environment: EnvironmentHandle,
-    service: Option<(String, PathBuf, Option<crate::ExecutionEvidence>)>,
+    service: Option<(
+        String,
+        PathBuf,
+        Option<crate::ExecutionEvidence>,
+        Option<File>,
+    )>,
 ) -> Result<RuntimeHandle> {
     validate_local_host(plan, &environment)?;
     let service_id = service
         .as_ref()
-        .map(|(service_id, _, _)| service_id.clone());
+        .map(|(service_id, _, _, _)| service_id.clone());
     let runtime_id = new_id("runtime");
     let runtime_binding = runtime_binding(&runtime_id, service_id.as_ref(), plan, &environment)?;
     let runtime = RuntimeHandle {
@@ -1963,15 +1987,20 @@ fn start_local_runtime(
     let mut artifacts = artifact_manifest(plan)?;
     let fabric_home = prepare_fabric_home(&artifacts, &runtime, &start_invocation)?;
     let relay_config = prepare_relay_runtime_config(plan, &runtime, &fabric_home, &mut artifacts)?;
-    let service_execution = service.as_ref().and_then(|(_, _, report)| report.clone());
-    let service_context =
-        service.map(
-            |(service_id, connection_path, execution)| AdapterServiceContext::Connect {
+    let service_execution = service
+        .as_ref()
+        .and_then(|(_, _, report, _)| report.clone());
+    let (service_context, state_lock) = match service {
+        Some((service_id, connection_path, execution, state_lock)) => (
+            Some(AdapterServiceContext::Connect {
                 execution,
                 service_id,
                 connection_path,
-            },
-        );
+            }),
+            state_lock,
+        ),
+        None => (None, None),
+    };
     let start = adapter_lifecycle_start(
         plan,
         &runtime,
@@ -1996,8 +2025,14 @@ fn start_local_runtime(
         })
         .unwrap_or_default();
     crate::check::register(&runtime, levels);
-    let mut host = match spawn_local_host(plan, &runtime, artifacts, relay_config, environment_env)
-    {
+    let mut host = match spawn_local_host(
+        plan,
+        &runtime,
+        artifacts,
+        relay_config,
+        environment_env,
+        state_lock,
+    ) {
         Ok(host) => host,
         Err(error) => {
             crate::check::invalidate_runtime(&runtime);
@@ -2711,12 +2746,14 @@ fn spawn_local_host(
     artifacts: ArtifactManifest,
     relay_config: Option<RelayRuntimeConfig>,
     environment_env: BTreeMap<String, String>,
+    service_state_lock: Option<File>,
 ) -> Result<LocalAdapterHost> {
-    // A runtime connected to a service uses the lock its service host holds.
-    let state_lock = if runtime.service_id.is_none() {
-        lock_agent_state(plan, &artifacts)?
-    } else {
-        None
+    // A connected host inherits a duplicate of its service's lock, so either
+    // host can finish cleanup without releasing the other host's protection.
+    let state_lock = match service_state_lock {
+        Some(lock) => Some(lock),
+        None if runtime.service_id.is_none() => lock_agent_state(plan, &artifacts)?,
+        None => None,
     };
     let runtime_dir = local_host_directory(&runtime.runtime_id);
     std::fs::create_dir_all(&runtime_dir).map_err(|source| FabricError::Write {
@@ -3610,9 +3647,8 @@ fn agent_state_dir(plan: &RunPlan, artifacts: &ArtifactManifest) -> Result<Optio
 }
 
 /// Takes the agent's state folder for one runtime. The lock lasts while the
-/// returned file is open here or, on Unix, in the adapter host that inherits
-/// it, and the operating system releases it when both have exited, so a
-/// crashed runtime leaves no stale lock behind.
+/// returned file is open here or, on Unix, in an adapter host that inherits
+/// it. The operating system releases the lock after all descriptors close.
 fn lock_agent_state(plan: &RunPlan, artifacts: &ArtifactManifest) -> Result<Option<File>> {
     let Some(state_dir) = agent_state_dir(plan, artifacts)? else {
         return Ok(None);
@@ -5329,6 +5365,68 @@ else:
         let _ = fs::remove_dir_all(root);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn keep_state_stays_locked_while_a_connected_host_outlives_its_service() {
+        const APP_PLAN: &str = "FABRIC_KEEP_STATE_SERVICE_TEST_PLAN";
+        if let Ok(path) = std::env::var(APP_PLAN) {
+            let plan: RunPlan =
+                serde_json::from_str(&fs::read_to_string(path).expect("read plan")).expect("plan");
+            let service = prepare_service(&plan).expect("prepare service in the app");
+            start_runtime_with_service(&plan, &service).expect("connect runtime in the app");
+            // The service can exit before a connected host finishes cleanup.
+            let record = local_services().get(&service.service_id).cloned().unwrap();
+            let mut record = record.lock().unwrap_or_else(|error| error.into_inner());
+            record.host.child.kill().expect("kill service host");
+            record.host.child.wait().expect("wait for service host");
+            std::process::exit(0);
+        }
+        let (root, plan) = local_host_plan_keeping_state_in("linger_after_exit");
+        let plan_path = root.join("plan.json");
+        fs::write(&plan_path, serde_json::to_string(&plan).expect("plan JSON"))
+            .expect("write plan");
+        let app = Command::new(std::env::current_exe().expect("test binary"))
+            .args([
+                "runtime::tests::keep_state_stays_locked_while_a_connected_host_outlives_its_service",
+                "--exact",
+                "--nocapture",
+            ])
+            .env(APP_PLAN, &plan_path)
+            .status()
+            .expect("run the app");
+        assert!(app.success(), "{app}");
+        let pid_path = root.join("host.pid");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !pid_path.exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        let host: libc::pid_t = fs::read_to_string(&pid_path)
+            .expect("the connected host outlives the app and service")
+            .trim()
+            .parse()
+            .expect("connected host pid");
+        let second = start_runtime(&plan);
+        if let Ok(runtime) = &second {
+            stop_runtime(&plan, runtime).expect("stop overlapping runtime");
+        }
+        // SAFETY: the test owns this host, which remains alive until signalled.
+        unsafe { libc::kill(host, libc::SIGKILL) };
+        let error = second.expect_err("the connected host still uses the state");
+        assert!(matches!(error, FabricError::StateInUse { .. }), "{error}");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let runtime = loop {
+            match start_runtime(&plan) {
+                Ok(runtime) => break runtime,
+                Err(FabricError::StateInUse { .. }) if Instant::now() < deadline => {
+                    thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => panic!("start after the connected host exited: {error}"),
+            }
+        };
+        stop_runtime(&plan, &runtime).expect("stop replacement runtime");
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn keep_state_lets_a_runtime_connect_after_another_failed_to_stop() {
         let (root, plan) = local_host_plan_keeping_state_in("stop_failure");
@@ -5346,6 +5444,56 @@ else:
         release_service(&plan, &service).expect("retry release service");
         assert!(!local_services().contains_key(&service.service_id));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn keep_state_rejects_service_connection_after_relative_base_changes() {
+        const APP_PLAN: &str = "FABRIC_KEEP_STATE_RELATIVE_PLAN";
+        if let Ok(path) = std::env::var(APP_PLAN) {
+            let mut plan: RunPlan =
+                serde_json::from_str(&fs::read_to_string(path).expect("read plan")).expect("plan");
+            plan.base_dir = PathBuf::from(".");
+            let original = std::env::current_dir().expect("original directory");
+            plan.config
+                .harness
+                .as_mut()
+                .expect("harness")
+                .settings
+                .insert("cwd".to_string(), serde_json::json!(original));
+            let service = prepare_service(&plan).expect("prepare service with relative base");
+            let runtime = start_runtime_with_service(&plan, &service)
+                .expect("connect from the original directory");
+            stop_runtime(&plan, &runtime).expect("stop connected runtime");
+            std::env::set_current_dir("other").expect("change directory in isolated app");
+            let second = start_runtime_with_service(&plan, &service);
+            if let Ok(runtime) = &second {
+                stop_runtime(&plan, runtime).expect("stop unexpected connected runtime");
+            }
+            std::env::set_current_dir(original).expect("restore app directory");
+            release_service(&plan, &service).expect("release service");
+            assert!(
+                matches!(second, Err(FabricError::ServiceHandleMismatch { .. })),
+                "a service connection must remain bound to its original directory: {second:?}"
+            );
+            std::process::exit(0);
+        }
+        let (root, plan) = local_host_plan_keeping_state();
+        fs::create_dir(root.join("other")).expect("create other directory");
+        let plan_path = root.join("plan.json");
+        fs::write(&plan_path, serde_json::to_string(&plan).expect("plan JSON"))
+            .expect("write plan");
+        let app = Command::new(std::env::current_exe().expect("test binary"))
+            .args([
+                "runtime::tests::keep_state_rejects_service_connection_after_relative_base_changes",
+                "--exact",
+                "--nocapture",
+            ])
+            .current_dir(&root)
+            .env(APP_PLAN, &plan_path)
+            .status()
+            .expect("run isolated app");
+        let _ = fs::remove_dir_all(root);
+        assert!(app.success(), "{app}");
     }
 
     fn local_host_plan_with_env_name(name: &str) -> (PathBuf, RunPlan) {
