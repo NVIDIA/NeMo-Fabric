@@ -42,9 +42,12 @@ def load_policy(path):
     for key in ("max_open_prs", "inactive_days"):
         if type(policy.get(key)) is not int or policy[key] < 1:
             raise CleanupError(f"Invalid {key}")
-    for key in ("exemption_org", "exemption_team"):
-        if not re.fullmatch(r"[A-Za-z0-9-]+", policy.get(key, "")):
-            raise CleanupError(f"Invalid {key}")
+    authors = policy.get("exempt_authors")
+    if not isinstance(authors, list) or any(
+        not isinstance(author, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,39}", author)
+        for author in authors
+    ):
+        raise CleanupError("Invalid exempt_authors")
     return policy
 
 
@@ -94,10 +97,6 @@ class GitHub:
 
     def pulls(self):
         return self.pages(f"repos/{self.repo}/pulls?state=open")
-
-    def maintainers(self, policy):
-        path = f"orgs/{policy['exemption_org']}/teams/{policy['exemption_team']}/members?role=maintainer"
-        return {member["login"].casefold() for member in self.pages(path)}
 
     def previous_state(self):
         """Accept artifacts only from this trusted workflow's completed runs."""
@@ -201,9 +200,8 @@ def last_activity(pr, record, comments, reviews, review_comments, timeline):
 
 
 class Cleanup:
-    def __init__(self, api, members_api, policy, state, now, apply=False):
+    def __init__(self, api, policy, state, now, apply=False):
         self.api = api
-        self.members_api = members_api
         self.policy = policy
         self.state = state
         self.now = now
@@ -290,20 +288,13 @@ class Cleanup:
             if self.apply
             else [pr for pr in pulls if pr["number"] not in simulated_closed]
         )
-        try:
-            maintainers = self.members_api.maintainers(self.policy)
-        except (CleanupError, KeyError, ValueError) as error:
-            self.errors.append(
-                f"Cap enforcement skipped: team maintainer lookup failed: {error}"
-            )
-            return
+        maintainers = {author.casefold() for author in self.policy["exempt_authors"]}
         limit = self.policy["max_open_prs"]
         for pr in excess_prs(remaining, maintainers, limit):
             number = pr["number"]
             try:
                 current = remaining
                 if self.apply:
-                    maintainers = self.members_api.maintainers(self.policy)
                     current = self.api.pulls()
                     if number not in {
                         item["number"]
@@ -312,7 +303,7 @@ class Cleanup:
                         self.log(
                             number,
                             "skipped",
-                            "Capacity, team role, or PR state changed",
+                            "Capacity or PR state changed",
                         )
                         continue
                 author = pr["user"]["login"].casefold()
@@ -354,9 +345,6 @@ def main(argv=None):
         parser.error("Invalid repository")
     policy = load_policy(args.policy)
     api = GitHub(args.repo, os.environ["GH_TOKEN"])
-    members_api = GitHub(
-        args.repo, os.environ.get("PR_CLEANUP_MEMBERS_TOKEN") or os.environ["GH_TOKEN"]
-    )
     now = datetime.now(timezone.utc)
     pulls = api.pulls()
     errors = []
@@ -372,7 +360,7 @@ def main(argv=None):
         event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
     state = observe_heads(pulls, previous, now, policy["inactive_days"], event)
     state["repository"] = args.repo
-    cleanup = Cleanup(api, members_api, policy, state, now, args.apply)
+    cleanup = Cleanup(api, policy, state, now, args.apply)
     cleanup.reconcile(pulls)
     # Persist even on partial failures: missing history never makes a PR look older.
     path = Path(args.state)

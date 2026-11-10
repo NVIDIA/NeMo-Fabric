@@ -1,6 +1,10 @@
 {
   "max_open_prs": 3,
   "inactive_days": 28,
-  "exemption_org": "NVIDIA",
-  "exemption_team": "nemo-fabric-developers"
+  "exempt_authors": [
+    "sara-tadayon-nv",
+    "AjayThorve",
+    "dagardner-nv",
+    "AnuradhaKaruppiah"
+  ]
 }

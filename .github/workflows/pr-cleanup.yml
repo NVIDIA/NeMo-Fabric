@@ -38,24 +38,12 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
 
-      - name: Create organization membership read token
-        if: vars.PR_CLEANUP_APP_ID != ''
-        id: members
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
-        with:
-          app-id: ${{ vars.PR_CLEANUP_APP_ID }}
-          private-key: ${{ secrets.PR_CLEANUP_APP_PRIVATE_KEY }}
-          owner: NVIDIA
-          repositories: NeMo-Fabric
-          permission-members: read
-
       - name: Test cleanup policy
         run: python3 -m unittest discover -s tests/scripts -p test_pr_cleanup.py -v
 
       - name: Reconcile pull requests
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_CLEANUP_MEMBERS_TOKEN: ${{ steps.members.outputs.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           APPLY: ${{ (github.event_name == 'workflow_dispatch' && inputs.apply) || (github.event_name != 'workflow_dispatch' && vars.PR_CLEANUP_APPLY == 'true') }}
         run: |

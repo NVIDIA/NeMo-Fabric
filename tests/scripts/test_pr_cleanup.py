@@ -25,8 +25,7 @@ NOW = datetime(2026, 11, 9, 12, tzinfo=timezone.utc)
 POLICY = {
     "max_open_prs": 3,
     "inactive_days": 28,
-    "exemption_org": "NVIDIA",
-    "exemption_team": "nemo-fabric-developers",
+    "exempt_authors": ["maintainer"],
 }
 
 
@@ -70,29 +69,18 @@ def state(pulls, days=40):
 class FakeGitHub:
     repo = "NVIDIA/NeMo-Fabric"
 
-    def __init__(self, pulls, maintainers=()):
+    def __init__(self, pulls):
         self.items = copy.deepcopy(pulls)
-        self.exempt = set(maintainers)
         self.comments = {}
         self.timeline = {}
         self.reviews = {}
         self.review_comments = {}
         self.writes = []
         self.fail = set()
-        self.promote = None
-        self.members_calls = 0
         self.fresh_hook = None
 
     def pulls(self):
         return copy.deepcopy([item for item in self.items if item["state"] == "open"])
-
-    def maintainers(self, policy):
-        self.members_calls += 1
-        if "members" in self.fail:
-            raise cleanup.CleanupError("membership read failed")
-        if self.promote and self.members_calls > 1:
-            self.exempt.add(self.promote)
-        return self.exempt
 
     def pages(self, path):
         if any(fragment in path for fragment in self.fail):
@@ -131,8 +119,10 @@ class FakeGitHub:
 
 
 class CleanupTests(unittest.TestCase):
-    def run_policy(self, api, *, apply=False, days=0):
-        worker = cleanup.Cleanup(api, api, POLICY, state(api.items, days), NOW, apply)
+    def run_policy(self, api, *, apply=False, days=0, policy=None):
+        worker = cleanup.Cleanup(
+            api, policy or POLICY, state(api.items, days), NOW, apply
+        )
         worker.reconcile(api.pulls())
         return worker
 
@@ -156,13 +146,13 @@ class CleanupTests(unittest.TestCase):
         )
         self.assertEqual(cleanup.excess_prs(items, {"developer"}, 3), [])
 
-    def test_cap_exemption_is_team_role_not_repository_role(self):
+    def test_cap_exemption_is_configured_not_repository_role(self):
         api = FakeGitHub([pr(i, author="repo-admin") for i in range(1, 5)])
         api.items[-1]["permissions"] = {"admin": True}
         worker = self.run_policy(api)
         self.assertEqual([row["number"] for row in worker.rows], [4])
-        api.exempt.add("repo-admin")
-        self.assertEqual(self.run_policy(api).rows, [])
+        policy = {**POLICY, "exempt_authors": ["REPO-ADMIN"]}
+        self.assertEqual(self.run_policy(api, policy=policy).rows, [])
 
     def test_dry_run_has_no_writes_and_apply_closes_newest(self):
         api = FakeGitHub([pr(i) for i in range(1, 6)])
@@ -174,24 +164,25 @@ class CleanupTests(unittest.TestCase):
         )
         self.assertEqual(len(api.pulls()), 3)
 
-    def test_missing_team_permission_blocks_only_cap(self):
+    def test_cap_uses_no_organization_api(self):
         api = FakeGitHub([pr(i) for i in range(1, 5)])
-        api.fail.add("members")
-        worker = self.run_policy(api, apply=True)
-        self.assertTrue(worker.errors)
-        self.assertEqual(api.writes, [])
-        worker = self.run_policy(api, apply=True, days=40)
-        self.assertEqual(len(api.pulls()), 0)  # inactivity is independent of exemptions
-        self.assertTrue(worker.errors)
+        with patch.object(api, "pages", wraps=api.pages) as pages:
+            self.run_policy(api, apply=True)
+        self.assertTrue(
+            all(call.args[0].startswith("repos/") for call in pages.call_args_list)
+        )
+        self.assertEqual(len(api.pulls()), 3)
 
-    def test_promotion_before_cap_closure(self):
+    def test_capacity_rechecked_before_cap_closure(self):
         api = FakeGitHub([pr(i) for i in range(1, 5)])
-        api.promote = "developer"
-        self.run_policy(api, apply=True)
+        initial = api.pulls()
+        with patch.object(api, "pulls", side_effect=[initial, initial, initial[:-1]]):
+            worker = self.run_policy(api, apply=True)
         self.assertEqual(api.writes, [])
+        self.assertEqual(worker.rows[0]["status"], "skipped")
 
-    def test_inactivity_boundary_and_team_maintainers(self):
-        api = FakeGitHub([pr(1, draft=True)], {"developer"})
+    def test_inactivity_boundary_and_exempt_maintainers(self):
+        api = FakeGitHub([pr(1, author="maintainer", draft=True)])
         self.assertEqual(self.run_policy(api, days=28).rows, [])
         self.assertEqual(self.run_policy(api, days=29).rows[0]["number"], 1)
 
@@ -252,7 +243,7 @@ class CleanupTests(unittest.TestCase):
 
     def test_partial_failure_retry_deduplicates_and_reopen_comments_again(self):
         api = FakeGitHub([pr(1)])
-        worker = cleanup.Cleanup(api, api, POLICY, state(api.items), NOW, True)
+        worker = cleanup.Cleanup(api, POLICY, state(api.items), NOW, True)
         api.fail.add("close")
         with self.assertRaises(cleanup.CleanupError):
             worker.close(api.items[0], "cap", "reason")
@@ -291,26 +282,43 @@ class CleanupTests(unittest.TestCase):
             for key, value in (
                 ("max_open_prs", 0),
                 ("inactive_days", True),
-                ("exemption_team", "../../other"),
+                ("exempt_authors", "maintainer"),
+                ("exempt_authors", [None]),
+                ("exempt_authors", ["bad/name"]),
+                ("exempt_authors", [""]),
+                ("exempt_authors", None),
             ):
                 path.write_text(json.dumps({**POLICY, key: value}))
                 with self.assertRaises(cleanup.CleanupError):
                     cleanup.load_policy(path)
 
-    def test_pagination_and_team_role_query(self):
+    def test_pagination_and_failed_pages(self):
         api = cleanup.GitHub("NVIDIA/NeMo-Fabric", "not-a-real-token")
         with patch.object(
-            api, "request", side_effect=[[{"login": "A"}] * 100, [{"login": "B"}]]
+            api, "request", side_effect=[[pr(1)] * 100, [pr(2)]]
         ) as request:
-            self.assertEqual(api.maintainers(POLICY), {"a", "b"})
-            self.assertIn(
-                "role=maintainer&per_page=100&page=2", request.call_args.args[0]
-            )
+            self.assertEqual(len(api.pulls()), 101)
+            self.assertIn("per_page=100&page=2", request.call_args.args[0])
         with patch.object(
             api, "request", side_effect=cleanup.CleanupError("page failed")
         ):
             with self.assertRaises(cleanup.CleanupError):
-                api.pages("repos/example/pulls")
+                api.pulls()
+
+    def test_each_configured_maintainer_bypasses_only_cap(self):
+        policy = cleanup.load_policy(
+            Path(__file__).resolve().parents[2] / ".github/pr-cleanup.json"
+        )
+        self.assertEqual(len(policy["exempt_authors"]), 4)
+        for author in policy["exempt_authors"]:
+            with self.subTest(author=author):
+                api = FakeGitHub(
+                    [pr(i, author=author.upper(), draft=True) for i in range(1, 5)]
+                )
+                self.assertEqual(self.run_policy(api, policy=policy).rows, [])
+                self.assertEqual(
+                    len(self.run_policy(api, policy=policy, days=40).rows), 4
+                )
 
     def test_state_artifacts_ignore_untrusted_run_events_and_expired_state(self):
         api = cleanup.GitHub("NVIDIA/NeMo-Fabric", "not-a-real-token")
@@ -360,7 +368,7 @@ class CleanupTests(unittest.TestCase):
     def test_spoofed_comment_does_not_suppress_closure_explanation(self):
         api = FakeGitHub([pr(1)])
         api.comments[1] = [comment(body="<!-- fabric-pr-cleanup:cap:0 -->")]
-        worker = cleanup.Cleanup(api, api, POLICY, state(api.items), NOW, True)
+        worker = cleanup.Cleanup(api, POLICY, state(api.items), NOW, True)
         worker.close(api.items[0], "cap", "real reason")
         self.assertEqual(sum(method == "POST" for method, _, _ in api.writes), 1)
 
