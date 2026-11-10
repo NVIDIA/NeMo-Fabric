@@ -204,7 +204,10 @@ def last_activity(pr, record, comments, reviews, review_comments, timeline):
     for event in timeline:
         if event.get("event") in {"reopened", "head_ref_force_pushed"}:
             dates.append(timestamp(event["created_at"]))
-    for item in [*comments, *reviews, *review_comments]:
+    # The reviews endpoint omits updated_at; reviewed timeline events expose
+    # edits to top-level reviews. Apply the same human-author filter to both.
+    review_events = [event for event in timeline if event.get("event") == "reviewed"]
+    for item in [*comments, *reviews, *review_comments, *review_events]:
         if human(item):
             value = (
                 item.get("updated_at")

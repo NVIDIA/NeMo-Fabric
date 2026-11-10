@@ -213,6 +213,58 @@ class CleanupTests(unittest.TestCase):
                 getattr(api, surface)[1] = [comment()]
                 self.assertEqual(self.run_policy(api, days=40).rows, [])
 
+    def test_edited_top_level_human_review_prevents_inactivity_closure(self):
+        """Use timeline review edits when the reviews endpoint has only submitted_at."""
+        api = FakeGitHub([pr(1)])
+        review = {
+            "id": 10,
+            "user": {"login": "reviewer", "type": "User"},
+            "state": "approved",
+            "submitted_at": cleanup.iso(NOW - timedelta(days=40)),
+        }
+        api.reviews[1] = [review]
+        api.timeline[1] = [
+            {**review, "event": "reviewed", "updated_at": cleanup.iso(NOW)}
+        ]
+        worker = self.run_policy(api, apply=True, days=40)
+        self.assertEqual(worker.errors, [])
+        self.assertEqual(worker.rows, [])
+        self.assertEqual(api.writes, [])
+        self.assertEqual(len(api.pulls()), 1)
+
+    def test_edited_top_level_bot_review_does_not_reset_inactivity(self):
+        """Continue to ignore recent bot-review edits exposed by the timeline."""
+        api = FakeGitHub([pr(1)])
+        review = {
+            "id": 10,
+            "user": {"login": "review-bot[bot]", "type": "Bot"},
+            "state": "commented",
+            "submitted_at": cleanup.iso(NOW - timedelta(days=40)),
+        }
+        api.reviews[1] = [review]
+        api.timeline[1] = [
+            {**review, "event": "reviewed", "updated_at": cleanup.iso(NOW)}
+        ]
+        worker = self.run_policy(api, apply=True, days=40)
+        self.assertEqual(worker.errors, [])
+        self.assertEqual([row["status"] for row in worker.rows], ["closed"])
+        self.assertEqual(len(api.pulls()), 0)
+
+    def test_review_timeline_without_updated_at_uses_submission_time(self):
+        """Do not invent recent activity when timeline review edit time is absent."""
+        api = FakeGitHub([pr(1)])
+        review = {
+            "id": 10,
+            "user": {"login": "reviewer", "type": "User"},
+            "state": "approved",
+            "submitted_at": cleanup.iso(NOW - timedelta(days=40)),
+        }
+        api.reviews[1] = [review]
+        api.timeline[1] = [{**review, "event": "reviewed"}]
+        worker = self.run_policy(api, apply=True, days=40)
+        self.assertEqual(worker.errors, [])
+        self.assertEqual([row["status"] for row in worker.rows], ["closed"])
+
     def test_bot_ci_label_and_draft_changes_do_not_reset(self):
         """Exclude automation and metadata-only changes from the inactivity clock."""
         api = FakeGitHub([pr(1, draft=True)])
@@ -251,13 +303,22 @@ class CleanupTests(unittest.TestCase):
 
     def test_last_minute_comment_merge_and_head_change(self):
         """Reject stale inactivity decisions after new feedback, merging, or pushes."""
-        for change in ("comment", "merge", "push"):
+        for change in ("comment", "review", "merge", "push"):
             api = FakeGitHub([pr(1)])
 
             def update(api, number):
                 """Inject concurrent human activity or a PR state change during preflight."""
                 if change == "comment":
                     api.comments[number] = [comment()]
+                elif change == "review":
+                    api.timeline[number] = [
+                        {
+                            "event": "reviewed",
+                            "user": {"login": "reviewer", "type": "User"},
+                            "submitted_at": cleanup.iso(NOW - timedelta(days=40)),
+                            "updated_at": cleanup.iso(NOW),
+                        }
+                    ]
                 elif change == "merge":
                     api.items[0]["state"] = "closed"
                 else:
