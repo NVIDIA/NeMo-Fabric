@@ -132,10 +132,17 @@ class HermesRuntime:
                 runtime_context, common_utils.base_dir(payload)
             )
             self._hermes_home.mkdir(parents=True, exist_ok=True)
-            # A runtime that ended without stop can leave its API token in a
-            # kept Hermes home, for a server that no longer runs.
+            # An abruptly ended runtime can leave credentials and attachment
+            # records in a kept Hermes home.
             token_path = self._hermes_home / "interfaces" / "api.token"
-            token_path.unlink(missing_ok=True)
+            try:
+                for name in ("tui.json", "tui.token", "api.token", "agent-config.json"):
+                    token_path.with_name(name).unlink(missing_ok=True)
+            except OSError as error:
+                raise lifecycle.LifecycleError(
+                    "hermes_interface_cleanup_failed",
+                    "Hermes interface files could not be removed",
+                ) from error
             if interface_ports:
                 # Refuse before Hermes's setup, whose MCP discovery can take
                 # minutes and outlast the caller's start deadline.
