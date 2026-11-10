@@ -81,7 +81,7 @@ Lifecycle failures before a normalized result is available produce a separate `r
 
 Only canonical `timeout` failures at stage `invoke` raise Harbor's `AgentTimeoutError` and remain eligible for verification. Startup and shutdown deadlines, ordinary runtime failures, and configuration errors raise `RuntimeError` and skip verification. Equivalent runtime and adapter invocation deadlines use the same policy. The verifier still owns the reward.
 
-Harbor versions with [phase timeout ownership](https://github.com/harbor-framework/harbor/pull/3376) preserve the inner exception and its actual deadline. Older Harbor versions catch all nested `TimeoutError` subclasses and can still overwrite the trial exception message with their outer budget, even when that budget did not expire. The downloaded Fabric evidence retains the original deadline and cause in either case; this Fabric change alone does not fix Harbor's phase ownership.
+Harbor versions with [phase timeout ownership](https://github.com/harbor-framework/harbor/pull/3376) preserve the inner exception and its actual deadline. Older Harbor versions catch all nested `TimeoutError` subclasses and can still overwrite the trial exception message with their outer budget, even when that budget did not expire. The downloaded NeMo Fabric evidence retains the original deadline and cause in either case; this NeMo Fabric change alone does not fix Harbor's phase ownership.
 
 Cancellation takes precedence. An invocation with status `cancelled` becomes a trial execution error and retains its normalized status; it does not interrupt the Harbor job. Actual orchestration cancellation still propagates as `asyncio.CancelledError`.
 
