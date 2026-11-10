@@ -66,7 +66,14 @@ export RUN_DIR="$PWD/outputs/interfaces/openclaw-browser-$(date +%Y%m%d-%H%M%S)"
 
 Open the printed `http_url` in a browser. Read the printed token-file path privately and enter its value in the native Control UI sign-in field, or use OpenClaw's native token-fragment sign-in flow. The token authenticates to this Gateway; it is not the model API key. Select agent `reviewer` and create a distinct chat.
 
-Send `Read notes.txt and write browser-result.md with a short checklist.` After completion, send `Read browser-result.md and add one verification step.` Inspect `$RUN_DIR/workspace/browser-result.md` in another terminal.
+Send `Read notes.txt and write browser-result.md with a short checklist.` After completion, send `Read browser-result.md and add one verification step.`
+
+In another terminal, set `RUN_DIR` to the same output directory used by the owner. Use the parent directory of the `workspace` path printed by the owner, replacing the placeholder below with that exact path:
+
+```bash
+export RUN_DIR="/absolute/path/to/openclaw-browser-YYYYMMDD-HHMMSS"
+cat "$RUN_DIR/workspace/browser-result.md"
+```
 
 Press Enter in the owner terminal to stop. Check `cleanup.json` and confirm the browser can no longer submit work. Browser tabs share a native session when they select the same chat; another tab does not guarantee isolation.
 
