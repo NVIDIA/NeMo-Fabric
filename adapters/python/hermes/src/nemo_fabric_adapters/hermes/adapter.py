@@ -125,10 +125,6 @@ class HermesRuntime:
                     "hermes_no_execution_path",
                     "Enable the Hermes SDK or at least one native interface",
                 )
-            if interface_ports:
-                # Refuse before Hermes's setup, whose MCP discovery can take
-                # minutes and outlast the caller's start deadline.
-                interfaces.require_supported_platform()
             model_config = configuration._selected_model(agent_config)
             self._model_config = model_config
             self._runtime_id = runtime_context.runtime_id
@@ -140,6 +136,10 @@ class HermesRuntime:
             # kept Hermes home, for a server that no longer runs.
             token_path = self._hermes_home / "interfaces" / "api.token"
             token_path.unlink(missing_ok=True)
+            if interface_ports:
+                # Refuse before Hermes's setup, whose MCP discovery can take
+                # minutes and outlast the caller's start deadline.
+                interfaces.require_supported_platform()
             os.environ["HOME"] = str(self._hermes_home)
             os.environ["HERMES_HOME"] = str(self._hermes_home)
             os.environ.setdefault("HERMES_YOLO_MODE", "1")

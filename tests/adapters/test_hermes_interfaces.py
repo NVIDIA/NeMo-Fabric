@@ -442,8 +442,9 @@ async def test_hermes_stop_cuts_off_an_in_flight_api_request(
     assert not _token_path(tmp_path).exists()
 
 
+@pytest.mark.parametrize("kept", [False, True])
 async def test_hermes_interfaces_fail_start_on_windows_before_any_child_starts(
-    tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch, kept: bool
 ):
     monkeypatch.setattr(interfaces, "POSIX", False)
     # start() stops whatever it started when it fails, so check the spawn
@@ -455,20 +456,26 @@ async def test_hermes_interfaces_fail_start_on_windows_before_any_child_starts(
     write_config = MagicMock(wraps=configuration.write_hermes_config)
     monkeypatch.setattr(configuration, "write_hermes_config", write_config)
     runtime = adapter.HermesRuntime()
+    payload = _payload(
+        tmp_path,
+        {"interfaces": {"api": {"port": _free_port()}}},
+        base_url=f"{api_server}/v1",
+    )
+    token_path = _token_path(tmp_path)
+    if kept:
+        state_dir = tmp_path / "artifacts/.fabric/state/nvidia.fabric.hermes/assistant"
+        payload["runtime_context"]["state_dir"] = str(state_dir)
+        token_path = state_dir / "interfaces/api.token"
+    token_path.parent.mkdir(parents=True)
+    token_path.write_text("token-from-a-crashed-runtime", encoding="utf-8")
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
-        await runtime.start(
-            _payload(
-                tmp_path,
-                {"interfaces": {"api": {"port": _free_port()}}},
-                base_url=f"{api_server}/v1",
-            )
-        )
+        await runtime.start(payload)
 
     assert caught.value.code == "hermes_interfaces_unsupported_platform"
     spawn.assert_not_called()
     write_config.assert_not_called()
-    assert not _token_path(tmp_path).exists()
+    assert not token_path.exists()
 
 
 async def test_hermes_interface_port_in_use_fails_start(

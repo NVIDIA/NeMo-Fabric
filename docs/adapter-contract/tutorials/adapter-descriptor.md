@@ -111,6 +111,8 @@ children that keep inherited file descriptors open: such a child keeps the
 agent's state locked after the host exits, and later runtimes of the agent
 fail to start.
 
+A detached child that does not hold the lock can outlive the adapter host and access the state folder after another runtime acquires the lock. Ensure that all children stop accessing retained state before the lock is released.
+
 When an adapter accepts `instructions.system`, declare the exact supported
 modes in `config.system_instruction_modes`. `replace` discards the harness
 default system instruction. `append` preserves the harness default and adds the
