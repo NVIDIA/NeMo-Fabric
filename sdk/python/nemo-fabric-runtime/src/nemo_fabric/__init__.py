@@ -83,6 +83,7 @@ from nemo_fabric.types import RunResult
 from nemo_fabric.types import RunUsage
 from nemo_fabric.types import RuntimeCapabilities
 from nemo_fabric.types import RuntimeHandle
+from nemo_fabric.types import RuntimeStatusReport
 from nemo_fabric.types import RuntimeResourceSnapshot
 from nemo_fabric.types import ServiceHandle
 from nemo_fabric.types import ServiceReference
@@ -156,6 +157,7 @@ __all__ = [
     "RunUsage",
     "RuntimeCapabilities",
     "RuntimeHandle",
+    "RuntimeStatusReport",
     "RuntimeResourceSnapshot",
     "SystemStatsConfig",
     "SystemStatsSamplingConfig",

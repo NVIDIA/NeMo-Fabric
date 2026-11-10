@@ -47,6 +47,45 @@ pub(crate) fn remote_check_agent(
     openshell::check_agent(environment, runtime_id)
 }
 
+// Internal transport entrypoint for the typed Python SDK status operation.
+#[doc(hidden)]
+pub fn runtime_status_environment(
+    environment: &EnvironmentHandle,
+    agent: &str,
+    runtime_id: &str,
+) -> Result<Value> {
+    if environment.provider != "openshell"
+        || environment.control_location != ControlLocation::InEnvControl
+        || [agent, runtime_id]
+            .iter()
+            .any(|value| value.trim().is_empty() || value.contains('\0'))
+    {
+        return Err(FabricError::InvalidConfig {
+            field: "runtime_status".to_string(),
+            reason: "a valid runtime target and OpenShell environment are required".to_string(),
+        });
+    }
+    let command = crate::task_command::TaskCommand::Status {
+        agent: agent.to_string(),
+        runtime_id: runtime_id.to_string(),
+    };
+    match crate::environment::command_runtime(environment, &command, 10)? {
+        crate::task_command::TaskCommandResponse::Returned { value } => Ok(value),
+        crate::task_command::TaskCommandResponse::Rejected { error } => {
+            Err(FabricError::EnvironmentProviderOperation {
+                provider: "openshell".to_string(),
+                operation: "status".to_string(),
+                code: if error.effects == "none" {
+                    error.code
+                } else {
+                    "invalid_response".to_string()
+                },
+                message: "The runtime status request was rejected.".to_string(),
+            })
+        }
+    }
+}
+
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
 const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";

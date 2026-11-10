@@ -333,6 +333,12 @@ async def test_start_runtime_creates_runtime_owned_collectors(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
+    mock_native.start_runtime.side_effect = [
+        json.dumps(_runtime()),
+        json.dumps(
+            {**_runtime(), "runtime_id": "runtime-2", "runtime_binding": "binding-2"}
+        ),
+    ]
     first = await native_client.start_runtime(_config(relay=True), streaming=True)
     second = await native_client.start_runtime(_config(relay=True), streaming=True)
     try:
@@ -342,6 +348,7 @@ async def test_start_runtime_creates_runtime_owned_collectors(
         first_sink = first_plan["relay"]["observability"]["atof"]["sinks"][-1]
         second_sink = second_plan["relay"]["observability"]["atof"]["sinks"][-1]
 
+        assert first.runtime_id != second.runtime_id
         assert first._collector is not second._collector
         assert first_sink["url"] != second_sink["url"]
     finally:
@@ -792,9 +799,7 @@ async def test_failed_stream_cleanup_compensates_before_next_invoke(
                     "message": "Pi stopped before starting an agent run",
                     "retryable": False,
                 },
-                "metadata": {
-                    "adapter": {"pi_turn_started": False, "pi_turn_count": 0}
-                },
+                "metadata": {"adapter": {"pi_turn_started": False, "pi_turn_count": 0}},
             }
         )
         return json.dumps(result)

@@ -6,7 +6,7 @@
 import asyncio
 
 import pytest
-from nemo_fabric import FabricConfigError, RunRequest, RuntimeStatus
+from nemo_fabric import FabricConfigError, FabricStateError, RunRequest, RuntimeStatus
 from nemo_fabric.errors import FabricRuntimeError
 from nemo_fabric.runtime_server.protocol import ProtocolError
 
@@ -31,6 +31,27 @@ async def test_start_delegates_to_existing_sdk(
     assert args[0].to_mapping()["metadata"]["name"] == config["metadata"]["name"]
     assert kwargs == {"base_dir": host.directory}
     mock_fabric.start_runtime.assert_awaited_once()
+
+
+@pytest.mark.parametrize("previously_used", [False, True])
+async def test_capacity_rejection_preserves_server_ownership_and_fixed_diagnostics(
+    host, host_request, mock_fabric, runtime_factory, previously_used
+):
+    if previously_used:
+        assert (await host.handle(host_request("start")))["status"] == "succeeded"
+    mock_fabric.start_runtime.side_effect = FabricStateError(
+        "TEST_ONLY_PRIVATE", stage="start", code="runtime_limit_reached"
+    )
+    response = await host.handle(host_request("start"))
+    assert response["error"]["code"] == "runtime_limit_reached"
+    assert response["error"]["effects"] == "none"
+    assert response["changed"] is False
+    assert not host.start_uncertain
+    assert host.has_used_runtime is previously_used
+    assert "TEST_ONLY_PRIVATE" not in str(response)
+    mock_fabric.start_runtime.side_effect = None
+    mock_fabric.start_runtime.return_value = runtime_factory("replacement")
+    assert (await host.handle(host_request("start")))["status"] == "succeeded"
 
 
 @pytest.mark.parametrize(

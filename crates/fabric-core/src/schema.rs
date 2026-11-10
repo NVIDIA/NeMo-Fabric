@@ -62,6 +62,8 @@ pub enum SchemaName {
     EnvironmentReference,
     /// Runtime handle schema.
     RuntimeHandle,
+    /// Recorded SDK runtime state and sanitized discovery handle.
+    RuntimeStatusReport,
     /// Caller-supplied reference to an already-running service.
     ServiceReference,
     /// Prepared or attached service handle schema.
@@ -84,7 +86,7 @@ pub enum SchemaName {
 
 impl SchemaName {
     /// All public schemas in stable output order.
-    pub const ALL: [Self; 28] = [
+    pub const ALL: [Self; 29] = [
         Self::ExecutionEvidence,
         Self::CheckRequest,
         Self::CheckReport,
@@ -104,6 +106,7 @@ impl SchemaName {
         Self::EnvironmentHandle,
         Self::EnvironmentReference,
         Self::RuntimeHandle,
+        Self::RuntimeStatusReport,
         Self::ServiceReference,
         Self::ServiceHandle,
         Self::InvocationHandle,
@@ -137,6 +140,7 @@ impl SchemaName {
             Self::EnvironmentHandle => "environment-handle",
             Self::EnvironmentReference => "environment-reference",
             Self::RuntimeHandle => "runtime-handle",
+            Self::RuntimeStatusReport => "runtime-status-report",
             Self::ServiceReference => "service-reference",
             Self::ServiceHandle => "service-handle",
             Self::InvocationHandle => "invocation-handle",
@@ -200,6 +204,7 @@ impl SchemaName {
             "environment-handle" | "environment_handle" => Ok(Self::EnvironmentHandle),
             "environment-reference" | "environment_reference" => Ok(Self::EnvironmentReference),
             "runtime-handle" | "runtime_handle" => Ok(Self::RuntimeHandle),
+            "runtime-status-report" | "runtime_status_report" => Ok(Self::RuntimeStatusReport),
             "service-reference" | "service_reference" => Ok(Self::ServiceReference),
             "service-handle" | "service_handle" => Ok(Self::ServiceHandle),
             "invocation-handle" | "invocation_handle" => Ok(Self::InvocationHandle),
@@ -246,6 +251,7 @@ pub fn generate_schema(schema: SchemaName) -> Result<Value> {
         SchemaName::EnvironmentHandle => to_value(schema_for!(EnvironmentHandle)),
         SchemaName::EnvironmentReference => to_value(schema_for!(EnvironmentReference)),
         SchemaName::RuntimeHandle => to_value(schema_for!(RuntimeHandle)),
+        SchemaName::RuntimeStatusReport => runtime_status_report_schema(),
         SchemaName::ServiceReference => to_value(schema_for!(ServiceReference)),
         SchemaName::ServiceHandle => to_value(schema_for!(ServiceHandle)),
         SchemaName::InvocationHandle => to_value(schema_for!(InvocationHandle)),
@@ -256,6 +262,45 @@ pub fn generate_schema(schema: SchemaName) -> Result<Value> {
         SchemaName::FabricEvent => to_value(schema_for!(FabricEvent)),
         SchemaName::RuntimeResourceSnapshot => to_value(schema_for!(RuntimeResourceSnapshot)),
     }
+}
+
+/// Generate the Python-owned status wire contract from the shared handle schema.
+/// Status lookup remains an SDK operation; Rust only transports its JSON result.
+fn runtime_status_report_schema() -> Result<Value> {
+    let mut handle = generate_schema(SchemaName::RuntimeHandle)?;
+    let mut definitions = handle.as_object_mut().unwrap().remove("$defs").unwrap();
+    handle.as_object_mut().unwrap().remove("$schema");
+    handle["additionalProperties"] = Value::Bool(false);
+    let environment = definitions["EnvironmentHandle"]["properties"]
+        .as_object_mut()
+        .unwrap();
+    for field in ["env", "connection", "metadata"] {
+        environment.remove(field);
+    }
+    definitions["RuntimeHandle"] = handle;
+    let identity = serde_json::json!({
+        "type": "string", "minLength": 1, "pattern": "\\S",
+        "not": {"pattern": "\\u0000"}
+    });
+    Ok(serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "RuntimeStatusReport",
+        "description": "Recorded lifecycle state and a sanitized discovery handle, not a health observation.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["runtime_id", "agent_name", "status", "handle", "server_state"],
+        "properties": {
+            "runtime_id": identity,
+            "agent_name": identity,
+            "status": {"enum": ["active", "stopped", "failed"]},
+            "handle": {"anyOf": [{"$ref": "#/$defs/RuntimeHandle"}, {"type": "null"}]},
+            "server_state": {"enum": ["running", "stopping", "stopped", "unknown", null]}
+        },
+        "if": {"properties": {"status": {"const": "stopped"}}},
+        "then": {"properties": {"handle": {"type": "null"}}},
+        "else": {"properties": {"handle": {"$ref": "#/$defs/RuntimeHandle"}}},
+        "$defs": definitions
+    }))
 }
 
 /// Generate all schemas keyed by stable schema name.
@@ -369,6 +414,7 @@ mod tests {
             SchemaName::EnvironmentHandle,
             SchemaName::EnvironmentReference,
             SchemaName::RuntimeHandle,
+            SchemaName::RuntimeStatusReport,
             SchemaName::InvocationHandle,
             SchemaName::RunRequest,
             SchemaName::RunResult,
