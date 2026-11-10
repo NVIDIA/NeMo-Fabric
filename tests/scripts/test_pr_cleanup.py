@@ -340,7 +340,7 @@ class CleanupTests(unittest.TestCase):
         policy = cleanup.load_policy(
             Path(__file__).resolve().parents[2] / ".github/pr-cleanup.json"
         )
-        self.assertEqual(len(policy["exempt_authors"]), 4)
+        self.assertEqual(len(policy["exempt_authors"]), 6)
         for author in policy["exempt_authors"]:
             with self.subTest(author=author):
                 api = FakeGitHub(
