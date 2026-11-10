@@ -13,6 +13,8 @@ Use the [Code Review Example](../../../../examples/code_review_agent/README.md) 
 
 SDK-only configurations retain existing behavior. When native interfaces are enabled, the same Gateway applies the configured system prompt through the shared plugin. Model, workspace, tools, MCP, and skills are generated once for that Gateway. SDK requests retain their configured generation parameters. Native turns do not create SDK invocation records.
 
+With browser or terminal access enabled, `Fabric.check()` reports activity as `unknown` because SDK invocation state does not cover work from native clients. A passing health check therefore does not establish that the Gateway is idle; callers that wait for `activity: idle` must handle this mode explicitly. SDK-only runtimes retain `idle`/`busy` reporting. See [health checks](../../../sdk/health-checks.mdx) for the shared contract.
+
 ## Usage Accounting
 
 The adapter treats Gateway usage as observed evidence. Reported counts do not establish whether they cover aggregate usage or a last-call fallback, and zero counters do not prove that no usage occurred.

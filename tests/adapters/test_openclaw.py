@@ -2500,8 +2500,9 @@ async def test_openclaw_gateway_stream_keeps_usage_observational():
         ({"terminal": {}}, True),
     ],
 )
+@pytest.mark.parametrize("agent_id", ["default", "Reviewer"])
 async def test_native_configuration_owns_prompt_once(
-    mock_openclaw, tmp_path, selection, shared
+    mock_openclaw, tmp_path, selection, shared, agent_id
 ):
     capture = tmp_path / "config.json"
     request_capture = tmp_path / "request.json"
@@ -2509,6 +2510,7 @@ async def test_native_configuration_owns_prompt_once(
     os.environ["FAKE_OPENCLAW_REQUEST"] = str(request_capture)
     config = _config(mock_openclaw)
     config.harness.settings["interfaces"] = selection
+    config.harness.settings["agent_id"] = agent_id
     runtime = adapter.OpenClawRuntime()
     await _start(runtime, tmp_path, config)
     try:
@@ -2524,7 +2526,7 @@ async def test_native_configuration_owns_prompt_once(
         if shared:
             entry = generated["plugins"]["entries"]["fabric-shared-config"]
             assert entry["config"] == {
-                "agentId": "default",
+                "agentId": agent_id,
                 "systemInstruction": "Be concise.",
             }
             directory = _dashboard_token(tmp_path).parent
@@ -2534,6 +2536,9 @@ async def test_native_configuration_owns_prompt_once(
         else:
             assert "plugins" not in generated
             assert not _dashboard_token(tmp_path).parent.exists()
+        for level in ("live", "active", "ready"):
+            report = await runtime.check(level)
+            assert report["outcome"] == "passed", report
     finally:
         await runtime.stop()
     assert not (_dashboard_token(tmp_path).parent / "terminal.running").exists()

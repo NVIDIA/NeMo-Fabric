@@ -19,8 +19,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(name="native_config")
-def native_config_fixture(tmp_path, api_server, unused_tcp_port):
+@pytest.fixture(name="native_config", params=["reviewer", "Reviewer"])
+def native_config_fixture(tmp_path, api_server, unused_tcp_port, request):
     os.environ["ADAPTER_PYTHON"] = sys.executable
     os.environ["FABRIC_TEST_MODEL_KEY"] = "native-parity-test-key"
     marker = "FABRIC_SHARED_PROMPT_72931"
@@ -36,7 +36,7 @@ def native_config_fixture(tmp_path, api_server, unused_tcp_port):
                 "adapter_id": "nvidia.fabric.openclaw",
                 "settings": {
                     "openclaw_command": os.environ["FABRIC_OPENCLAW_TEST_COMMAND"],
-                    "agent_id": "reviewer",
+                    "agent_id": request.param,
                     "interfaces": {
                         "dashboard": {"port": unused_tcp_port},
                         "terminal": {},

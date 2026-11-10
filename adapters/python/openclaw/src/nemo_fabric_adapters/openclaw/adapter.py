@@ -1081,7 +1081,8 @@ class OpenClawRuntime:
                     valid
                     and not service_host
                     and not any(
-                        model["id"] == f"openclaw/{agent_id}" for model in models
+                        model["id"] == f"openclaw/{agent_id.lower()}"
+                        for model in models
                     )
                 ):
                     return observed("failed", "endpoint_unavailable")
