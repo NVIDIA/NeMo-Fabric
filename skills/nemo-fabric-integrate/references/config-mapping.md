@@ -53,8 +53,6 @@ When present, `InstructionConfig.mode` defaults to `replace`; set it to
 `append` only when the selected adapter descriptor advertises that mode.
 Planning rejects unsupported modes before adapter startup.
 
-`RuntimeConfig.timeout_seconds` is a positive, finite invocation limit in seconds; omit it or set it to `None` to disable NeMo Fabric's total invocation deadline in local and OpenShell execution. Keep `max_turns` as the independent harness turn limit where supported. Harness-native limits still apply.
-
 ## Build And Shape
 
 Construct the nested config directly, then adjust capabilities with helper

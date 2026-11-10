@@ -35,7 +35,6 @@ This table lists the maintainer skills in this set and what each covers.
 | [`review-doc-style`](review-doc-style/SKILL.md) | Review documentation and public text for NVIDIA technical-writing style. |
 | [`validate-change`](validate-change/SKILL.md) | Choose and run the right validation matrix for a change. |
 | [`qualify-harbor`](qualify-harbor/SKILL.md) | Guide shared-BYOM or individual-provider setup, then run one shared Terminal-Bench task across the adapter catalog with isolated installs and retained evidence. |
-| [`qualify-runtime-deadlines`](qualify-runtime-deadlines/SKILL.md) | Prepare a saved inference plan and qualify exact-revision host/OpenShell invocation deadlines with an executable release gate. |
 | [`python-tests`](python-tests/SKILL.md) | Write Python tests for NeMo Fabric. |
 | [`maintain-ci`](maintain-ci/SKILL.md) | Maintain GitHub Actions workflows with pinned actions and local validation. |
 | [`maintain-packaging`](maintain-packaging/SKILL.md) | Maintain package metadata, native artifacts, lockfiles, and release surfaces. |

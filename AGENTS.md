@@ -42,9 +42,6 @@ Key conventions for the two tiers:
   validated and published independently; repository-internal adapter
   maintenance stays in `.agents/skills/`.
 
-For invocation-deadline E2E qualification and its release gate, use
-[`.agents/skills/qualify-runtime-deadlines/SKILL.md`](.agents/skills/qualify-runtime-deadlines/SKILL.md).
-
 ## Documentation And Contribution Workflow
 
 These workflow notes keep public documentation, examples, and PR preparation aligned

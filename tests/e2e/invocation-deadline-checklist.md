@@ -5,9 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Invocation Deadline Qualification
 
-Use the separate [runtime deadline qualification skill](../../.agents/skills/qualify-runtime-deadlines/SKILL.md) and its [runbook](../../.agents/skills/qualify-runtime-deadlines/references/runbook.md) to prepare a saved plan, execute the workloads and machine-verify the release gate. This checklist describes the coverage; it is not a substitute for a passing report.
-
-Use this checklist on the exact release candidate or PR commit. Record the full source commit SHA with the model ID, endpoint, harness versions, task image digest, commands, normalized results, elapsed times, and cleanup outcomes. For release qualification, the SHA must match `RELEASE_SHA`, and the host SDK, provider, and task image must be built from that commit. Keep run evidence in local output directories or external review artifacts; do not commit it. Keep credentials out of evidence. A skipped live test is incomplete qualification.
+Use this checklist on the exact release candidate or PR commit. Record the full source commit SHA with the model ID, endpoint, harness versions, task image digest, commands, normalized results, elapsed times, and cleanup outcomes. Build the host SDK, provider, and task image from that commit. Keep run evidence in local output directories or external review artifacts; do not commit it. Keep credentials out of evidence. A skipped live test is incomplete qualification.
 
 - [ ] Unit and regression suites: configuration validation, optional deadline propagation, finite enforcement, termination reasons, and unchanged lifecycle/health budgets.
 - [ ] Model-free OpenShell tests: finite and unlimited invocations exceed 320 seconds, short finite deadline retains `timeout` at `invoke`, and sandboxes are deleted.
@@ -45,4 +43,4 @@ Restrict the policy to the model endpoint and client Python binary. OpenShell na
 
 The full inference matrix covers smoke completion, a 900-second finite deadline, no total deadline, and a 15-second enforced deadline for each harness and location. Two sequential 165-second tool calls make each long invocation exceed 320 seconds while staying below independent native per-tool budgets. The model must read the example's actual `calculator.py` and return the tool's unique receipt and the value returned by `answer()`. Each case stops its runtime and releases any owned sandbox.
 
-`CODE_REVIEW_DEADLINE_CASES` and `CODE_REVIEW_DEADLINE_LOCATIONS` select developer subsets. A subset run does not satisfy the release gate; qualification requires all 16 cases with successful cleanup.
+`CODE_REVIEW_DEADLINE_CASES` and `CODE_REVIEW_DEADLINE_LOCATIONS` select developer subsets. Full qualification requires all 16 cases with successful cleanup.
