@@ -11,7 +11,18 @@ Start with the [OpenClaw overview](./openclaw.mdx) for installation and configur
 
 The managed Gateway serves `/v1/chat/completions` by default for SDK invocation. Native HTTP clients can use the same endpoint; no separate API server or `interfaces.api` setting is needed.
 
-Enable either the dashboard or terminal interface so your HTTP client can find the Gateway address and access token. For API-only use, enable the terminal interface. This mode needs no browser assets, and you do not need to launch the terminal client.
+Enable either the dashboard or terminal interface so the adapter writes the Gateway address and access token to private connection files. For API-only use, configure the terminal interface:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.openclaw",
+    settings={"interfaces": {"terminal": {}}},
+)
+```
+
+Use this `harness` in your `FabricConfig` when starting the runtime. It starts the Gateway and publishes the connection files without requiring browser assets. The terminal client starts only when you run the generated launcher; HTTP clients can use the Gateway without launching it.
 
 When the Gateway is ready, the adapter writes its connection details to the private `interfaces/gateway.json` file:
 
