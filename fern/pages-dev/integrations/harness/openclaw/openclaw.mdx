@@ -98,6 +98,8 @@ The adapter supports OpenClaw's default `openclaw` execution runtime.
 
 Set model provider, model, endpoint, generation parameters (`temperature`, `top_p`, and `max_tokens`), replacement system instructions, workspace, skills, and MCP servers through normalized `FabricConfig`. See [Shared Configuration](#shared-configuration) for how these settings reach all four client paths. Normalized MCP authentication is not supported.
 
+An MCP server that cannot be reached does not stop the runtime: OpenClaw skips it for the run and retries it on a later run. Each SDK result from a managed runtime lists the servers OpenClaw could not use under `output.mcp.unavailable_servers` (`name`, `transport`, and a `reason` of `failed` or `timed_out`), read from OpenClaw's `tools.effective` session inventory, and the adapter writes a standard-error warning the first time a server is reported unavailable. Error messages are omitted because they can carry credentials. Runtimes that connect to a prepared service do not report MCP availability.
+
 For a custom OpenAI-compatible endpoint, set the model's `base_url` and, when credentials are required, `api_key_env`.
 
 The optional `models.<role>.settings.supports_usage_in_streaming` setting controls OpenClaw's native `compat.supportsUsageInStreaming`:
