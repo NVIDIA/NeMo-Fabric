@@ -143,6 +143,6 @@ After readiness, the adapter publishes private connection material under `<artif
 
 ## Testing and Limitations
 
-Follow the [four-path OpenClaw examples](../../../../examples/interfaces/README-openclaw.md) for repeatable manual tests. The opt-in native qualification uses a recording model endpoint, a rendered browser, and a PTY to verify actual configuration and tool execution.
+Follow the [four-path OpenClaw examples](../../../../examples/interfaces/openclaw/README.md) for repeatable manual tests. The opt-in native qualification uses a recording model endpoint, a rendered browser, and a PTY to verify actual configuration and tool execution.
 
 Terminal attachment currently requires POSIX. On Windows, dashboard tokens inherit directory ACLs; mode bits do not enforce owner-only ACLs. Interactive approvals, detach during active work, remote terminal attachment, and full native activity/inventory are not qualified. The pinned TUI can use an exit-code-130 fallback during `/quit`; this does not stop the managed Gateway. NeMo Relay integration and trajectory export remain separate work.

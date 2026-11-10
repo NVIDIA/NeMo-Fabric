@@ -120,7 +120,7 @@ With native interfaces enabled, one Gateway owns all four client paths. A small 
 
 After readiness, private `interfaces/gateway.json` discovery references `dashboard.token` or `gateway.token`. Terminal selection adds an executable `interfaces/terminal` and `terminal.running` marker; the marker is removed first on stop. The launcher uses private client configuration and an environment SecretRef, not token arguments. Terminal attachment currently requires POSIX. Pinned TUI `/quit` can use a native exit-code-130 fallback while the Gateway stays usable.
 
-Refer to the [four-path architecture](../../../docs/integrations/harness/openclaw/openclaw.mdx) and [repeatable examples](../../../examples/interfaces/README-openclaw.md). Relay telemetry, ATIF/ATOF export, and native OpenTelemetry are not supported.
+Refer to the [four-path architecture](../../../docs/integrations/harness/openclaw/openclaw.mdx) and [repeatable examples](../../../examples/interfaces/openclaw/README.md). Relay telemetry, ATIF/ATOF export, and native OpenTelemetry are not supported.
 
 With native browser or terminal access enabled, runtime activity is `unknown`; healthy endpoints can still pass normalized checks. SDK invocation state alone cannot account for native work.
 

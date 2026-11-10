@@ -5,14 +5,14 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric OpenClaw Interface Examples
 
-Start with the [OpenClaw architecture guide](../../docs/integrations/harness/openclaw/openclaw.mdx). These four paths share one managed Gateway, its selected agent, and translated Fabric configuration. SDK responses are normalized; other responses remain native. NeMo Relay integration and trajectory export are deferred.
+Start with the [OpenClaw architecture guide](../../../docs/integrations/harness/openclaw/openclaw.mdx). These four paths share one managed Gateway, its selected agent, and translated Fabric configuration. SDK responses are normalized; other responses remain native. NeMo Relay integration and trajectory export are deferred.
 
 | Path | Example | Architecture |
 | --- | --- | --- |
-| SDK | [Code Review Example](../code_review_agent/README.md) with `--variant openclaw` | [SDK](../../docs/integrations/harness/openclaw/openclaw-sdk.mdx) |
-| HTTP | `openclaw.py --http-input ... --once` | [HTTP API](../../docs/integrations/harness/openclaw/openclaw-api.mdx) |
-| Browser | `openclaw.py --interface dashboard`, then native chat | [Dashboard](../../docs/integrations/harness/openclaw/openclaw-dashboard.mdx) |
-| Terminal | `openclaw.py --interface terminal`, then generated launcher | [Terminal TUI](../../docs/integrations/harness/openclaw/openclaw-tui.mdx) |
+| SDK | [Code Review Example](../../code_review_agent/README.md) with `--variant openclaw` | [SDK](../../../docs/integrations/harness/openclaw/openclaw-sdk.mdx) |
+| HTTP | `openclaw.py --http-input ... --once` | [HTTP API](../../../docs/integrations/harness/openclaw/openclaw-api.mdx) |
+| Browser | `openclaw.py --interface dashboard`, then native chat | [Dashboard](../../../docs/integrations/harness/openclaw/openclaw-dashboard.mdx) |
+| Terminal | `openclaw.py --interface terminal`, then generated launcher | [Terminal TUI](../../../docs/integrations/harness/openclaw/openclaw-tui.mdx) |
 
 ## Shared Setup
 
@@ -34,7 +34,7 @@ Use a new output directory for each run; the example refuses to overwrite one. `
 
 ## 1. SDK
 
-Follow the [Code Review Example](../code_review_agent/README.md) with `--variant openclaw`. To compare an SDK turn with the native clients in this example, add `--sdk-input 'Read notes.txt and write sdk-result.md with a short checklist.'` to an owner command below. The result is saved as `sdk-result.json`.
+Follow the [Code Review Example](../../code_review_agent/README.md) with `--variant openclaw`. To compare an SDK turn with the native clients in this example, add `--sdk-input 'Read notes.txt and write sdk-result.md with a short checklist.'` to an owner command below. The result is saved as `sdk-result.json`.
 
 ## 2. HTTP API
 
@@ -42,7 +42,7 @@ Run a real file task, then stop the owner automatically:
 
 ```bash
 export RUN_DIR="$PWD/outputs/interfaces/openclaw-http-$(date +%Y%m%d-%H%M%S)"
-.venv/bin/python examples/interfaces/openclaw.py \
+.venv/bin/python examples/interfaces/openclaw/openclaw.py \
   --base-url "$MODEL_BASE_URL" --model "$MODEL_NAME" \
   --interface terminal --output-dir "$RUN_DIR" \
   --http-input 'Read notes.txt and write api-result.md with a short checklist.' --once
@@ -59,7 +59,7 @@ In the owner terminal, choose an available Gateway base port and keep the owner 
 
 ```bash
 export RUN_DIR="$PWD/outputs/interfaces/openclaw-browser-$(date +%Y%m%d-%H%M%S)"
-.venv/bin/python examples/interfaces/openclaw.py \
+.venv/bin/python examples/interfaces/openclaw/openclaw.py \
   --base-url "$MODEL_BASE_URL" --model "$MODEL_NAME" \
   --interface dashboard --port 18789 --output-dir "$RUN_DIR"
 ```
@@ -76,7 +76,7 @@ In the owner terminal:
 
 ```bash
 export RUN_DIR="$PWD/outputs/interfaces/openclaw-terminal-$(date +%Y%m%d-%H%M%S)"
-.venv/bin/python examples/interfaces/openclaw.py \
+.venv/bin/python examples/interfaces/openclaw/openclaw.py \
   --base-url "$MODEL_BASE_URL" --model "$MODEL_NAME" \
   --interface terminal --output-dir "$RUN_DIR"
 ```
