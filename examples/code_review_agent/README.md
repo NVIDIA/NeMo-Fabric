@@ -152,7 +152,7 @@ harness supports.
 Codex and Claude omit the default code-review skill; add
 `--skill-path ./skills/code-review` to retain it. Relay configurations for
 Codex, Claude, and Pi require a NeMo Relay CLI in the `>=0.9,<0.12` range.
-Pi also requires its Relay Pi extension. Deep Agents requires the `nemo-relay>=0.11,<0.12` Python package. Hermes Agent keeps `nemo-relay>=0.10,<0.11` in its separate environment. Cline does not support Relay telemetry in this initial adapter.
+Pi also requires its Relay Pi extension. Deep Agents requires the `nemo-relay>=0.11,<0.12` Python package. Hermes Agent v0.22.7 uses `nemo-relay>=0.11,<0.12`; v0.22.5 with Relay 0.10 remains supported. Hermes requires Python 3.14; use `ADAPTER_PYTHON` when the application uses another interpreter. Cline does not support Relay telemetry in this initial adapter.
 Additional requirements appear in the corresponding subsections.
 
 For example, after installing Deep Agents, this command keeps the default skill
@@ -464,7 +464,7 @@ normalized reports under `.tmp/code-review-hermes/` and collects declared artifa
 into each result directory's `artifacts/` subdirectory. Set
 `OPENSHELL_CODE_REVIEW_RELAY=true` to include Hermes' NeMo Relay ATOF/ATIF
 artifacts. The image uses Python 3.14, a pinned Hermes source revision, and
-Relay 0.10; Relay is off by default.
+Relay 0.11; Relay is off by default.
 
 For a different OpenAI-compatible endpoint, set
 `OPENSHELL_CODE_REVIEW_BASE_URL` and `OPENSHELL_CODE_REVIEW_MODEL`. Set

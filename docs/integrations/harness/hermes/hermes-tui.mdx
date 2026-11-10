@@ -19,7 +19,7 @@ Complete the [shared installation](./hermes.mdx#install-the-adapter) first. Term
 - **Client assets:** The built terminal renderer and a supported Node runtime on the machine running the client. Terminal-only mode needs no browser assets.
 - **Host:** POSIX, for the managed backend and terminal attachment helper.
 
-For a separately prepared Hermes environment, set `ADAPTER_PYTHON` to its interpreter and `HERMES_AGENT_CHECKOUT` to your pinned v0.22.5 source checkout, then install the web extra and the pinned readiness dependency:
+For a separately prepared Hermes environment, set `ADAPTER_PYTHON` to its interpreter and `HERMES_AGENT_CHECKOUT` to your pinned v0.22.7 source checkout, then install the web extra and the pinned readiness dependency:
 
 ```bash
 uv pip install --python "$ADAPTER_PYTHON" --editable "${HERMES_AGENT_CHECKOUT}[web]" "aiohttp==3.14.5"
