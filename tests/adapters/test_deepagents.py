@@ -2326,18 +2326,72 @@ async def test_unavailable_mcp_servers_are_reported_on_every_turn(
     assert second["mcp"]["unavailable_servers"][0]["name"] == "jira"
 
 
+async def test_mcp_client_internal_cancellation_marks_server_failed(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
+    """A discovery task cancelled inside the client is a failed server, not an abort."""
+
+    async def cancelled_inside_client(*, server_name: str) -> list[Any]:
+        """Cancel the discovery task from within, as a misbehaving client could."""
+        asyncio.current_task().cancel()
+        await asyncio.sleep(0)
+        return []
+
+    mock_client = _install_mcp_client(monkeypatch, {"flaky": []})
+    mock_client.get_tools = AsyncMock(side_effect=cancelled_inside_client)
+    payload = make_payload(tmp_path)
+    payload["config"]["mcp"] = {
+        "servers": {"flaky": {"transport": "sse", "url": "http://localhost:9/sse"}}
+    }
+
+    output = await invoke_once(payload)
+
+    assert output["failed"] is False
+    assert output["mcp"]["unavailable_servers"] == [
+        {
+            "name": "flaky",
+            "transport": "sse",
+            "reason": "failed",
+            "error_type": "CancelledError",
+        }
+    ]
+
+
 async def test_mcp_discovery_cancellation_is_not_reported_as_unavailable(
     tmp_path, make_payload, monkeypatch
 ):
     """Cancelling startup must cancel discovery, not record a skipped server."""
-    _install_mcp_client(monkeypatch, {"jira": asyncio.CancelledError()})
+    started = asyncio.Event()
+    discovery_cancelled = asyncio.Event()
+
+    async def hang(*, server_name: str) -> list[Any]:
+        """Wait until startup is cancelled."""
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            discovery_cancelled.set()
+            raise
+        return []
+
+    mock_client = _install_mcp_client(monkeypatch, {"jira": []})
+    mock_client.get_tools = AsyncMock(side_effect=hang)
     payload = make_payload(tmp_path)
     payload["config"]["mcp"] = {
         "servers": {"jira": {"transport": "sse", "url": "http://localhost:9/sse"}}
     }
+    unavailable: list[dict[str, str]] = []
+    startup = asyncio.create_task(
+        adapter.resolve_tools(AgentConfig.from_mapping(payload["config"]), unavailable)
+    )
+    await started.wait()
+    startup.cancel()
 
     with pytest.raises(asyncio.CancelledError):
-        await adapter.resolve_tools(AgentConfig.from_mapping(payload["config"]))
+        await startup
+    await asyncio.sleep(0)
+    assert discovery_cancelled.is_set()
+    assert unavailable == []
 
 
 @pytest.mark.parametrize(
