@@ -17,6 +17,7 @@ from nemo_fabric import (
     FabricConfig,
     FabricConfigError,
     FabricStateError,
+    FabricRuntimeError,
     CheckRequest,
     EnvironmentHandle,
     RunRequest,
@@ -239,6 +240,12 @@ class RuntimeServer:
                         else "validation_failed"
                     )
                     error = ProtocolError(code, "validation")
+                elif (
+                    stage == "invoke"
+                    and isinstance(error, FabricRuntimeError)
+                    and error.code == "timeout"
+                ):
+                    error = ProtocolError("timeout", stage)
                 else:
                     error = ProtocolError(
                         f"{stage}_failed", stage, cause=getattr(error, "code", None)
