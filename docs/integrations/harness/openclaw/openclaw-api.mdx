@@ -9,7 +9,7 @@ Start with the [OpenClaw overview](./openclaw.mdx) for installation and configur
 
 ## API Ownership
 
-The managed Gateway already serves `/v1/chat/completions` for SDK invocation. Native HTTP clients can call that same endpoint; there is no separate API server or `interfaces.api` setting.
+The managed Gateway serves `/v1/chat/completions` by default for SDK invocation. Native HTTP clients can use the same endpoint; no separate API server or `interfaces.api` setting is needed.
 
 Enable either the dashboard or terminal interface so your HTTP client can find the Gateway address and access token. For API-only use, enable the terminal interface. This mode needs no browser assets, and you do not need to launch the terminal client.
 
