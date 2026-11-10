@@ -101,9 +101,9 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
         else:
             raise ProtocolError()
     required = set()
-    if operation in ("start", "invoke", "stop"):
+    if operation in ("start", "invoke", "stop", "status"):
         required.add("--agent")
-    if operation in ("invoke", "stop"):
+    if operation in ("invoke", "stop", "status"):
         required.add("--runtime-id")
     if operation in CONFIG_OPERATIONS:
         required.add("--config")

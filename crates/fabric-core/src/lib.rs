@@ -15,6 +15,7 @@ pub mod provenance;
 pub mod resource_snapshot;
 pub mod runtime;
 pub mod schema;
+mod strict_json;
 pub mod system_stats;
 mod task_command;
 mod time;

@@ -49,7 +49,9 @@ The report uses one of these outcomes:
 | `unknown`     | The check could not establish the result, for example because of a timeout, unavailable target, invalid native response, or ownership change. |
 | `unsupported` | The installed adapter or execution mode does not provide the requested check.                                                                 |
 
-Runtime `activity` is separate from health. A runtime can report `busy` and pass every supported level while an invocation waits for a model response. Activity describes NeMo Fabric invocations; activity does not establish that an agent will accept a second concurrent prompt.
+Runtime `activity` is separate from health. A runtime can report `busy` and pass every supported level while an invocation waits for a model response. It can also pass with `activity: unknown` when the adapter has positive native health evidence but cannot observe whether work is in progress. A passing runtime check reports `state: active`; activity may be `idle`, `busy`, or `unknown`. An unknown activity value alone does not establish health, and `stopping` or `stopped` activity cannot pass.
+
+This rule applies to every adapter. It does not change which native evidence each adapter must collect, or turn an `outcome: unknown` into a pass. Consumers waiting for an idle runtime must require `activity: idle`; a passing health result with unknown activity does not establish that an agent will accept another prompt.
 
 ## Native Evidence by Adapter
 
@@ -80,6 +82,12 @@ The table covers all runtime adapters and the OpenClaw Gateway service. Each row
 mini-SWE-agent, NOOA InteractiveAgent, NOOA BenchAgent, and Remote Agent advertise no runtime health levels. A health check for a running runtime using one of these adapters returns `unsupported/unsupported_adapter`. This outcome describes check support rather than an agent failure. Server checks remain available in OpenShell environments.
 
 Pi readiness checks configured model, tool, and MCP state. Those observations do not perform a model request or execute a tool. OpenClaw readiness follows the Gateway's channel policies and can use the Gateway's cached observations. The linked OpenClaw endpoint tests use controlled Gateway HTTP responses.
+
+On Linux and macOS, confirmed exit of an adapter host owned by NeMo Fabric returns `failed/agent_exited` at `live` for any adapter that advertises `live`. Checks evaluate `live` before higher levels, so a confirmed host exit fails a `ready` check even when the adapter does not support `ready`. The managed runtime can no longer serve requests, even if a separate native child process or attached service survives. This observation does not establish descendant cleanup. An unreadable process identity or a failed health connection alone remains `unknown`.
+
+Adapter checks also preserve confirmed native-process exit and closed-session evidence when a native health request fails. A changed runtime or NeMo Fabric session invalidates the observation and returns `unknown/observation_changed`.
+
+Kilo checks the NeMo Fabric session and runtime generation at every level. The `active` probe also returns `unknown/observation_changed` when the native session identifier differs from the selected session. Kilo's `ready` probe checks server health without comparing the native session identifier; a full `ready` check still runs `active` first.
 
 Passing a health check does not establish successful inference, valid model credentials, provider availability, or successful tool execution unless the particular probe verifies that property. For example, Claude's readiness response does not require connected MCP servers, and Qwen's command response does not test model access. The linked qualification tests hold a local model response to verify that health checks can complete during invocation; those tests provide separate invocation evidence rather than changing what the health result means.
 

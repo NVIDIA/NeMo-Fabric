@@ -255,7 +255,7 @@ class _Report(_StrictModel):
                 and (
                     self.runtime is None
                     or self.runtime.state != "active"
-                    or self.runtime.activity in ("stopped", "stopping", "unknown")
+                    or self.runtime.activity in ("stopped", "stopping")
                 )
             ):
                 raise ValueError("incomplete passing evidence")

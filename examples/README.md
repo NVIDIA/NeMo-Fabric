@@ -48,6 +48,10 @@ Pi's startup `model_redirect` marks are not included in `atof_records`.
 
 The [OpenShell Code Review example](code_review_agent/README.md#run-hermes-in-openshell) packages Hermes Agent inside the sandbox and uses the normal SDK/provider lifecycle from the host. It runs two review turns and can collect NeMo Relay evidence.
 
+## Native Interfaces
+
+[`interfaces`](interfaces/README.md) demonstrates native harness interfaces alongside a Fabric-managed runtime. Start with the Hermes API example: submit a file task through the native API, verify the generated file, and inspect Relay ATOF events and ATIF tool steps.
+
 ## LangGraph Custom Agent
 
 [`langgraph_custom_agent`](langgraph_custom_agent/README.md) demonstrates how

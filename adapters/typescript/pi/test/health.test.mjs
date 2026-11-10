@@ -297,3 +297,23 @@ test("native context liveness rejects disposed sessions while stored state remai
   assert.throws(() => context.isIdle());
   assert.throws(() => session.extensionRunner.createContext().isIdle());
 });
+
+test("runtime health preserves confirmed native exit evidence without invoking or stopping", async (t) => {
+  const evidence = {
+    outcome: "failed", reason_code: "agent_exited", activity: "stopped",
+    source: "fabric.adapter.liveness", observed_at: new Date().toISOString(),
+  };
+  let stops = 0;
+  const runtime = new PiAdapterRuntime({
+    create: async () => ({
+      id: "native-session",
+      check: async () => evidence,
+      prompt: async () => { throw new Error("health must not invoke"); },
+      stop: async () => { stops += 1; },
+    }),
+  });
+  await runtime.start(input);
+  t.after(() => runtime.stop());
+  assert.deepEqual(await runtime.check("live"), evidence);
+  assert.equal(stops, 0);
+});

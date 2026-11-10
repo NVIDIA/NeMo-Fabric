@@ -16,6 +16,7 @@ from datetime import timedelta
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
+from typing import Literal
 from typing import Self
 from typing import TypeVar
 
@@ -1843,6 +1844,93 @@ class RuntimeHandle(FabricMapping):
         else:
             data["service_id"] = None
         data["environment"] = _mapping(data.get("environment"), "environment")
+        return data
+
+
+class RuntimeStatusReport(FabricMapping):
+    """Recorded lifecycle state and a safe handle snapshot for discovery.
+
+    This report reads existing ownership records without probing the harness.
+    ``handle`` is null after stop. Otherwise the handle preserves runtime and
+    environment identity but excludes environment variables, connection metadata,
+    provider metadata, and unknown extensions. The snapshot is for inspection;
+    use the original ``Runtime`` for invocation and cleanup.
+
+    Attributes:
+        runtime_id: Selected runtime lifecycle identifier.
+        agent_name: Exact agent name that owns the runtime.
+        status: Recorded ``active``, ``stopped``, or ``failed`` SDK state.
+        handle: Sanitized ``RuntimeHandle``, or null after stop.
+        server_state: Recorded runtime-server state, or null for a direct local read.
+    """
+
+    runtime_id: str
+    agent_name: str
+    status: Literal["active", "stopped", "failed"]
+    handle: RuntimeHandle | None
+    server_state: Literal["running", "stopping", "stopped", "unknown"] | None
+    _fields = frozenset(
+        {"runtime_id", "agent_name", "status", "handle", "server_state"}
+    )
+
+    def __getitem__(self, key: str) -> Any:
+        value = super().__getitem__(key)
+        if key == "handle" and value is not None:
+            return RuntimeHandle.from_mapping(value.to_mapping())
+        return value
+
+    def __getattr__(self, name: str) -> Any:
+        if name == "handle":
+            return self[name]
+        return super().__getattr__(name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError("RuntimeStatusReport is immutable")
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if set(data) != cls._fields:
+            raise FabricConfigError("The runtime status report has invalid fields.")
+        for field in ("runtime_id", "agent_name"):
+            data[field] = _required_text(data.get(field), field)
+            if "\0" in data[field]:
+                raise FabricConfigError("The runtime status target is invalid.")
+        if data["status"] not in ("active", "stopped", "failed"):
+            raise FabricConfigError("The recorded runtime status is invalid.")
+        if data["server_state"] not in (
+            None,
+            "running",
+            "stopping",
+            "stopped",
+            "unknown",
+        ):
+            raise FabricConfigError("The recorded server state is invalid.")
+        if data["status"] == "stopped":
+            if data["handle"] is not None:
+                raise FabricConfigError(
+                    "A stopped runtime cannot report a current handle."
+                )
+        else:
+            handle = RuntimeHandle.from_mapping(data["handle"])
+            if (handle.runtime_id, handle.agent_name) != (
+                data["runtime_id"],
+                data["agent_name"],
+            ):
+                raise FabricConfigError(
+                    "The runtime status handle does not match its target."
+                )
+            environment = EnvironmentHandle.from_mapping(
+                handle.environment
+            ).to_mapping()
+            for field in ("env", "connection", "metadata"):
+                environment.pop(field, None)
+            values = {
+                field: value
+                for field, value in handle.to_mapping().items()
+                if field in RuntimeHandle._fields
+            }
+            values["environment"] = environment
+            data["handle"] = RuntimeHandle.from_mapping(values)
         return data
 
 

@@ -83,6 +83,12 @@ impl LocalHostProcess {
         self.identity.is_some() && platform::start_identity(self.pid) == self.identity
     }
 
+    /// Confirm that the recorded process exited, without locking its lifecycle host.
+    /// Unreadable process evidence must not be interpreted as an exit.
+    pub(crate) fn has_exited(&self) -> Option<bool> {
+        platform::has_exited(self.pid, self.identity?)
+    }
+
     /// Record the host `pid`, started by NeMo Fabric at `started_at`.
     pub(crate) fn new(pid: u32, started_at: SystemTime) -> Self {
         Self {
@@ -525,6 +531,14 @@ mod platform {
         stat(pid).ok().map(|stat| stat.start)
     }
 
+    pub(super) fn has_exited(pid: u32, identity: u64) -> Option<bool> {
+        match stat(pid) {
+            Ok(stat) => Some(stat.start != identity || stat.zombie),
+            Err(ReadError::Gone) => Some(true),
+            Err(ReadError::Unavailable(_)) => None,
+        }
+    }
+
     fn sysconf(name: libc::c_int) -> u64 {
         // SAFETY: sysconf has no memory-safety preconditions.
         u64::try_from(unsafe { libc::sysconf(name) }).unwrap_or(0)
@@ -707,6 +721,16 @@ mod platform {
         usage(pid).ok().map(|info| info.ri_proc_start_abstime)
     }
 
+    pub(super) fn has_exited(pid: u32, identity: u64) -> Option<bool> {
+        match usage(pid) {
+            Ok(info) => {
+                Some(info.ri_proc_start_abstime != identity || info.ri_proc_exit_abstime != 0)
+            }
+            Err(ReadError::Gone) => Some(true),
+            Err(ReadError::Unavailable(_)) => None,
+        }
+    }
+
     pub(super) fn read_tree(root: u32, identity: u64) -> Result<TreeRead, &'static str> {
         let timebase = timebase().ok_or(PROCESS_UNREADABLE)?;
         read_tree_with(&Live { timebase }, root, identity)
@@ -720,6 +744,10 @@ mod platform {
     pub(super) const SUPPORTED: bool = false;
 
     pub(super) fn start_identity(_pid: u32) -> Option<u64> {
+        None
+    }
+
+    pub(super) fn has_exited(_pid: u32, _identity: u64) -> Option<bool> {
         None
     }
 
@@ -784,6 +812,25 @@ mod tests {
             error,
             FabricError::ResourceObservationUnavailable { .. }
         ));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn local_host_exit_requires_positive_process_identity_evidence() {
+        let mut host = LocalHostProcess::new(std::process::id(), SystemTime::now());
+        assert_eq!(host.has_exited(), Some(false));
+        let identity = host.identity.take().unwrap();
+        assert_eq!(
+            host.has_exited(),
+            None,
+            "unreadable identity is not exit evidence"
+        );
+        host.identity = Some(identity.wrapping_add(1));
+        assert_eq!(
+            host.has_exited(),
+            Some(true),
+            "a reused PID belongs to another process"
+        );
     }
 
     /// A host that exited but is not yet reaped is not a live process.
