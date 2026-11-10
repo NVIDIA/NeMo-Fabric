@@ -5,7 +5,7 @@
 
 import asyncio
 import threading
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from nemo_fabric_adapter_contract.models import AdapterCheckResult, AgentConfig
@@ -71,6 +71,28 @@ async def test_hermes_health_uses_fresh_native_diagnostics(hermes_health, level)
     agent.get_activity_summary.assert_called_once_with()
     agent.run_conversation.assert_not_called()
     assert runtime._conversation_history is None
+
+
+@pytest.mark.parametrize("level", ["live", "active", "ready"])
+@pytest.mark.parametrize("busy", [False, True])
+async def test_mixed_runtime_health_uses_sdk_activity(hermes_health, level, busy):
+    runtime, agent = hermes_health
+    runtime._settings = {"interfaces": {"api": {"port": 18642}}}
+    runtime._interfaces.check = AsyncMock(return_value="agent_exited")
+    invocation = asyncio.create_task(asyncio.Event().wait()) if busy else None
+    runtime._active_invoke_task = invocation
+    try:
+        result = await runtime.check(level)
+        assert (result["outcome"], result["activity"]) == (
+            "passed",
+            "busy" if busy else "idle",
+        )
+        runtime._interfaces.check.assert_not_awaited()
+        agent.get_activity_summary.assert_called_once_with()
+    finally:
+        if invocation is not None:
+            invocation.cancel()
+            await asyncio.gather(invocation, return_exceptions=True)
 
 
 @pytest.mark.parametrize("level", ["live", "active", "ready"])
