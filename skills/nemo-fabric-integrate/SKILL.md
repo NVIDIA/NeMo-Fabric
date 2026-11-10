@@ -232,6 +232,8 @@ runtime before calling `release_environment(environment)` separately. Provider
 availability and reuse limits vary; task paths must remain strings for non-local
 environments. See the [environment lifecycle guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#explicit-environment-lifecycle).
 
+Use `await fabric.runtime_status(runtime_id=runtime_id, agent_name=name)` to read recorded state and a safe discovery handle for a runtime started by the same `Fabric` instance. The client retains live runtime objects until successful stop. Add `environment=environment` for an OpenShell lookup through `fabric-agent-ctl status`, including from a later client process while the original server remains alive. `RuntimeStatusReport` reports `active`, `stopped`, or `failed`; `server_state` is present for server reads and null for direct local reads. Each client holds at most 128 runtime records, including pending starts. New starts evict the oldest successfully stopped records first; when active, failed, and pending runtimes fill the limit, startup raises `FabricStateError` with `code="runtime_limit_reached"`. Retained stopped records have a null handle. Discovery handles omit environment variable values and arbitrary provider metadata; use the original `Runtime` for invocation and cleanup. Status reads perform no lifecycle operation or health probe. Use `Fabric.check()` when the consumer needs fresh health evidence.
+
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,
 or agent/database inside one local host for the full runtime. Local `process`

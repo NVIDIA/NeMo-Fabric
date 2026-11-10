@@ -308,6 +308,7 @@ class Runtime:
         finally:
             if not invocation_claimed:
                 self._current_task = None
+            self._client._record_stopped_runtime(self)
 
     def invoke_stream(
         self,
@@ -837,6 +838,7 @@ class Runtime:
             self._status = RuntimeStatus.STOPPED
         finally:
             self._closing = False
+            self._client._record_stopped_runtime(self)
             try:
                 await self._deregister_requests()
             except Exception as cleanup_error:

@@ -33,9 +33,11 @@ import httpx
 from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import local_interfaces
 from nemo_fabric_adapters.common import openai_chat
 from nemo_fabric_adapters.common import utils as common_utils
 from nemo_fabric_adapters.openclaw import _windows_job
+from nemo_fabric_adapters.openclaw import interfaces as native_interfaces
 
 
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 60.0
@@ -160,15 +162,49 @@ def _positive_setting(settings: dict[str, Any], name: str, default: float) -> fl
     return float(value)
 
 
+def _native_interfaces_enabled(settings: dict[str, Any]) -> bool:
+    """Return whether this runtime exposes a managed browser or terminal client."""
+    return any(
+        native_interfaces.enabled(settings, name) for name in ("dashboard", "terminal")
+    )
+
+
+def _dashboard_port(settings: dict[str, Any]) -> int | None:
+    """Return the Control UI's port when the settings enable it.
+
+    The descriptor's schema has already checked the settings.
+    """
+    dashboard = settings.get("interfaces", {}).get("dashboard")
+    if dashboard is None or not dashboard.get("enabled", True):
+        return None
+    return dashboard["port"]
+
+
+def _dashboard_token_path(context: contract.RuntimeContext, base_dir: Path) -> Path:
+    root = context.artifacts.root
+    artifact_root = (base_dir / str(root)).resolve() if root else base_dir / "artifacts"
+    return (
+        artifact_root
+        / ".fabric"
+        / "openclaw"
+        / "runtimes"
+        / context.runtime_id
+        / "interfaces"
+        / "dashboard.token"
+    )
+
+
 def _agent_id(settings: dict[str, Any]) -> str:
     value = settings.get("agent_id", "default")
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str) or not re.fullmatch(
+        r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}", value
+    ):
         raise lifecycle.LifecycleError(
             "openclaw_invalid_configuration",
-            "OpenClaw agent_id must be a non-empty string",
+            "OpenClaw agent_id must contain 1–64 ASCII letters, digits, underscores, or hyphens and start with a letter or digit",
             metadata={"field": "harness.settings.agent_id"},
         )
-    return value.strip()
+    return value
 
 
 def _channel_config(
@@ -461,6 +497,7 @@ def _openclaw_config(
     port: int,
     token_env: str,
     service_mode: bool = False,
+    dashboard: bool = False,
 ) -> dict[str, Any]:
     model = _selected_model(config)
     model_id = _model_id(model)
@@ -493,7 +530,18 @@ def _openclaw_config(
                 "mode": "token",
                 "token": {"source": "env", "provider": "default", "id": token_env},
             },
-            "controlUi": {"enabled": False},
+            "controlUi": {
+                "enabled": True,
+                "allowedOrigins": [
+                    f"http://127.0.0.1:{port}",
+                    f"http://localhost:{port}",
+                    *native_interfaces.public_origins(
+                        config.harness.settings if config.harness else {}
+                    ),
+                ],
+            }
+            if dashboard
+            else {"enabled": False},
             "http": {"endpoints": {"chatCompletions": {"enabled": True}}},
         },
         "agents": {
@@ -518,6 +566,27 @@ def _openclaw_config(
     result["agents"]["entries"] = {agent_id: {}}
     if config.instructions is not None and config.instructions.system is not None:
         result["agents"]["defaults"]["contextInjection"] = "never"
+        if _native_interfaces_enabled(
+            config.harness.settings if config.harness else {}
+        ):
+            result["plugins"] = {
+                "load": {
+                    "paths": [str(Path(__file__).with_name("native_config").resolve())]
+                },
+                "entries": {
+                    "fabric-shared-config": {
+                        "enabled": True,
+                        "hooks": {
+                            "allowConversationAccess": True,
+                            "allowPromptInjection": True,
+                        },
+                        "config": {
+                            "agentId": agent_id,
+                            "systemInstruction": config.instructions.system.content,
+                        },
+                    }
+                },
+            }
     skill_paths = _resolve_skill_paths(config, base_dir)
     if skill_paths:
         result["skills"] = {"load": {"extraDirs": skill_paths}}
@@ -782,8 +851,6 @@ def _write_service_connection(
     token: str,
     agent_id: str,
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(path.parent, 0o700)
     payload = (
         json.dumps(
             {
@@ -794,25 +861,7 @@ def _write_service_connection(
         )
         + "\n"
     )
-    descriptor, temporary_name = tempfile.mkstemp(
-        dir=path.parent,
-        prefix=f".{path.name}.",
-    )
-    try:
-        if hasattr(os, "fchmod"):
-            os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            descriptor = -1
-            stream.write(payload)
-        os.replace(temporary_name, path)
-    except BaseException:
-        if descriptor >= 0:
-            os.close(descriptor)
-        try:
-            os.unlink(temporary_name)
-        except FileNotFoundError:
-            pass
-        raise
+    local_interfaces.write_private_file(path, payload)
 
 
 def _read_service_connection(path: Path) -> tuple[str, str, str]:
@@ -857,6 +906,8 @@ class OpenClawRuntime:
         self._temp_dir: tempfile.TemporaryDirectory[str] | None = None
         self._port: int | None = None
         self._token: str | None = None
+        self._dashboard_token_path: Path | None = None
+        self._interface_directory: Path | None = None
         self._gateway_url: str | None = None
         self._agent_id = "default"
         self._shutdown_timeout = DEFAULT_SHUTDOWN_TIMEOUT_SECONDS
@@ -932,6 +983,11 @@ class OpenClawRuntime:
                 if service_host
                 else "stopped"
                 if reason == "agent_exited"
+                else "unknown"
+                if config is not None
+                and _native_interfaces_enabled(
+                    config.harness.settings if config.harness else {}
+                )
                 else (
                     "busy"
                     if self._active_invoke_task is not None
@@ -1027,7 +1083,8 @@ class OpenClawRuntime:
                     valid
                     and not service_host
                     and not any(
-                        model["id"] == f"openclaw/{agent_id}" for model in models
+                        model["id"] == f"openclaw/{agent_id.lower()}"
+                        for model in models
                     )
                 ):
                     return observed("failed", "endpoint_unavailable")
@@ -1050,6 +1107,20 @@ class OpenClawRuntime:
                 "openclaw_invalid_service_context",
                 "OpenClaw service context must be an object",
             )
+        if service is not None and "interfaces" in settings:
+            raise lifecycle.LifecycleError(
+                "openclaw_interfaces_require_managed_runtime",
+                "OpenClaw interfaces require a managed runtime",
+                metadata={"field": "harness.settings.interfaces"},
+            )
+        _agent_id(settings)
+        dashboard_port = _dashboard_port(settings)
+        if native_interfaces.enabled(settings, "terminal") and os.name != "posix":
+            raise lifecycle.LifecycleError(
+                "openclaw_terminal_platform_unsupported",
+                "Managed OpenClaw terminal requires POSIX",
+            )
+        native_interfaces.public_origins(settings)
         self._service_host = service is not None and service.get("operation") in {
             "prepare",
             "attach",
@@ -1106,7 +1177,20 @@ class OpenClawRuntime:
             kind="component",
         )
 
-        port = _select_port(settings)
+        if dashboard_port is None:
+            port = _select_port(settings)
+        else:
+            port = dashboard_port
+            for candidate in (port, port + 2):
+                if not _port_available(candidate):
+                    raise lifecycle.LifecycleError(
+                        "openclaw_interface_port_unavailable",
+                        f"OpenClaw dashboard port {candidate} is already in use",
+                        metadata={
+                            "field": "harness.settings.interfaces.dashboard.port",
+                            "port": candidate,
+                        },
+                    )
 
         # Generate a one-time use token for the OpenClaw gateway
         token = secrets.token_urlsafe(48)
@@ -1123,6 +1207,7 @@ class OpenClawRuntime:
             port=port,
             token_env=token_env,
             service_mode=service is not None and service.get("operation") == "prepare",
+            dashboard=dashboard_port is not None,
         )
         config_path.write_text(json.dumps(generated, indent=2) + "\n", encoding="utf-8")
         config_path.chmod(0o600)
@@ -1187,6 +1272,33 @@ class OpenClawRuntime:
             ]
             self._install_signal_handlers()
             await self._wait_started(port, token, startup_remaining())
+            if "fabric-shared-config" in generated.get("plugins", {}).get(
+                "entries", {}
+            ):
+                await self._verify_shared_configuration(
+                    port, token, _agent_id(settings), startup_remaining()
+                )
+            if dashboard_port is not None:
+                token_path = _dashboard_token_path(context, base_dir)
+                local_interfaces.write_private_file(token_path, token)
+                self._dashboard_token_path = token_path
+            if _native_interfaces_enabled(settings):
+                self._interface_directory = _dashboard_token_path(
+                    context, base_dir
+                ).parent
+                native_interfaces.publish(
+                    self._interface_directory,
+                    runtime_id=context.runtime_id,
+                    port=port,
+                    token=token,
+                    command=command,
+                    workspace=str(
+                        Path(context.environment.workspace or base_dir).resolve()
+                    ),
+                    agent_id=_agent_id(settings),
+                    dashboard=dashboard_port is not None,
+                    terminal=native_interfaces.enabled(settings, "terminal"),
+                )
             self._client = httpx.AsyncClient(
                 headers={"authorization": f"Bearer {token}"},
                 http2=True,
@@ -1623,6 +1735,31 @@ class OpenClawRuntime:
             retryable=True,
         )
 
+    async def _verify_shared_configuration(
+        self, port: int, token: str, agent_id: str, timeout: float
+    ) -> None:
+        try:
+            async with asyncio.timeout(timeout):
+                async with httpx.AsyncClient(
+                    headers={"authorization": f"Bearer {token}"},
+                    timeout=min(timeout, 5.0),
+                    trust_env=False,
+                ) as client:
+                    response = await client.get(
+                        f"http://127.0.0.1:{port}/fabric/shared-config/health"
+                    )
+                    response.raise_for_status()
+                    status = response.json()
+                    if status == {"ready": True, "agent_id": agent_id.lower()}:
+                        return
+        except (httpx.HTTPError, ValueError, TimeoutError):
+            pass
+        raise lifecycle.LifecycleError(
+            "openclaw_shared_configuration_unavailable",
+            "OpenClaw shared instruction plugin or before_prompt_build hook is unavailable for the selected agent",
+            metadata={"field": "instructions.system", "agent_id": agent_id},
+        )
+
     async def invoke(
         self,
         request: contract.AgentRunRequest,
@@ -1648,7 +1785,9 @@ class OpenClawRuntime:
         instruction = (
             self._config.instructions.system if self._config.instructions else None
         )
-        if instruction is not None:
+        if instruction is not None and not _native_interfaces_enabled(
+            self._config.harness.settings if self._config.harness else {}
+        ):
             messages.append({"role": "system", "content": instruction.content})
         messages.append(
             {
@@ -1712,6 +1851,22 @@ class OpenClawRuntime:
     async def stop(self) -> None:
         cancellation: asyncio.CancelledError | None = None
         self._stopping = True
+        if self._interface_directory is not None:
+            if native_interfaces.remove(self._interface_directory):
+                self._interface_directory = None
+        token_path = self._dashboard_token_path
+        if token_path is not None:
+            try:
+                token_path.unlink(missing_ok=True)
+            except OSError:
+                # Keep the path so a later stop can retry.
+                logger.error(
+                    "OpenClaw could not remove its dashboard token at %s",
+                    token_path,
+                    exc_info=True,
+                )
+            else:
+                self._dashboard_token_path = None
         try:
             self._restore_signal_handlers()
         except Exception:
