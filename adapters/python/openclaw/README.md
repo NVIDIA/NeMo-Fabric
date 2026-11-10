@@ -73,6 +73,21 @@ list maps to a wildcard `tools.deny` policy, and `tools.blocked` maps to
 isolated temporary OpenClaw state directory. The Gateway is stopped and its
 temporary configuration is removed when the NeMo Fabric runtime stops.
 
+OpenClaw connects MCP servers per session when a run starts. A server that
+cannot be reached is skipped and the run continues with the tools of the
+remaining servers; OpenClaw retries the server on a later run. After each
+invocation of a managed runtime, the adapter reads OpenClaw's `tools.effective`
+inventory for the session and reports the servers OpenClaw could not use under
+`output.mcp.unavailable_servers` (`name`, `transport`, and a `reason` of
+`failed` or `timed_out`). The adapter writes a warning to standard error the
+first time a server is reported unavailable in a runtime. Error messages are
+omitted because they can carry credentials, and OpenClaw does not expose an
+error type. The report reflects the latest attempt, so a recovered server
+disappears from later results, and the `mcp` key is absent when every server
+is usable. Reading the inventory runs one OpenClaw CLI command per invocation
+when MCP servers are configured. Runtimes that connect to a prepared service
+do not report MCP availability.
+
 For custom OpenAI-compatible providers, set `models.<role>.base_url`; the
 adapter generates an OpenClaw custom provider using the
 `openai-completions` API adapter. Set `api_key_env` when that provider requires
