@@ -63,6 +63,7 @@ surfaces touched by a change.
   Run `tests/integrations/test_harbor_runner.py`,
   `tests/integrations/test_harbor_model_config.py`, and
   `tests/python/test_adapter_capabilities.py`, then `just test-python`.
+  For runner failure changes, verify bounded optional evidence, malformed sibling isolation, original exception identity, cancellation cleanup, unknown accounting, and legacy error-only documents. Match host/task transport versions.
   For host admission changes, verify metadata inspection without harness SDKs
   or task discovery, selected telemetry claims, and task-side descriptor drift
   rejection before startup.
