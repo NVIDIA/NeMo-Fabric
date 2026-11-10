@@ -23,10 +23,13 @@ MARKER = "<!-- fabric-pr-cleanup:"
 
 
 class CleanupError(RuntimeError):
+    """Report incomplete API data or invalid policy without exposing credentials."""
+
     pass
 
 
 def timestamp(value):
+    """Parse a timezone-aware API timestamp; reject ambiguous local times."""
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         raise CleanupError("Activity timestamps must include a timezone")
@@ -34,10 +37,12 @@ def timestamp(value):
 
 
 def iso(value):
+    """Render an observation time as an explicit UTC ISO timestamp."""
     return value.astimezone(timezone.utc).isoformat()
 
 
 def load_policy(path):
+    """Validate limits and the maintainer allowlist before permitting PR mutations."""
     policy = json.loads(Path(path).read_text())
     for key in ("max_open_prs", "inactive_days"):
         if type(policy.get(key)) is not int or policy[key] < 1:
@@ -55,10 +60,16 @@ class GitHub:
     """Use the runner's gh CLI for authenticated API calls and artifact redirects."""
 
     def __init__(self, repo, token):
+        """Bind API requests to one repository and its authentication token."""
         self.repo = repo
         self.token = token
 
     def raw(self, path, method="GET", payload=None):
+        """Call gh with a fixed executable and argument list, never a shell.
+
+        Endpoints come from trusted code and API identifiers; PR text is sent as
+        JSON on stdin. Let gh handle authenticated artifact-download redirects.
+        """
         command = ["gh", "api", "--hostname", "github.com", "--method", method, path]
         if payload is not None:
             command += ["--input", "-"]
@@ -67,6 +78,7 @@ class GitHub:
                 command,
                 input=json.dumps(payload).encode() if payload is not None else None,
                 capture_output=True,
+                shell=False,
                 timeout=90,
                 env={**os.environ, "GH_TOKEN": self.token},
             )
@@ -80,9 +92,11 @@ class GitHub:
         return result.stdout
 
     def request(self, path, method="GET", payload=None):
+        """Decode one API response as JSON and propagate lookup failures."""
         return json.loads(self.raw(path, method, payload))
 
     def pages(self, path, key=None):
+        """Collect every API page or fail rather than return a partial PR list."""
         items = []
         separator = "&" if "?" in path else "?"
         for page in range(1, 1001):
@@ -96,6 +110,7 @@ class GitHub:
         raise CleanupError("Pagination limit reached; refusing incomplete data")
 
     def pulls(self):
+        """List all open PRs, including drafts and every target branch."""
         return self.pages(f"repos/{self.repo}/pulls?state=open")
 
     def previous_state(self):
@@ -135,6 +150,7 @@ class GitHub:
 
 
 def excess_prs(pulls, maintainers, limit):
+    """Select newest excess PRs per non-exempt author, retaining the oldest limit."""
     authors = defaultdict(list)
     for pr in pulls:
         if pr["user"]["login"].casefold() not in maintainers:
@@ -177,11 +193,13 @@ def observe_heads(pulls, previous, now, days, event=None):
 
 
 def human(item):
+    """Distinguish human comment authors from bot-generated activity."""
     user = item.get("user") or {}
     return user.get("type") == "User" and not user.get("login", "").endswith("[bot]")
 
 
 def last_activity(pr, record, comments, reviews, review_comments, timeline):
+    """Find the latest qualifying activity, ignoring bot comments and CI events."""
     dates = [timestamp(pr["created_at"]), timestamp(record["last_push_observed_at"])]
     for event in timeline:
         if event.get("event") in {"reopened", "head_ref_force_pushed"}:
@@ -200,7 +218,10 @@ def last_activity(pr, record, comments, reviews, review_comments, timeline):
 
 
 class Cleanup:
+    """Reconcile inactivity first, then per-author limits, with optional writes."""
+
     def __init__(self, api, policy, state, now, apply=False):
+        """Capture the validated policy, observation state, and explicit apply mode."""
         self.api = api
         self.policy = policy
         self.state = state
@@ -210,9 +231,11 @@ class Cleanup:
         self.errors = []
 
     def log(self, number, status, reason):
+        """Record a reportable decision without writing to GitHub."""
         self.rows.append({"number": number, "status": status, "reason": reason})
 
     def activity(self, pr):
+        """Fetch complete discussion history and reject a changed observed PR head."""
         number = pr["number"]
         base = f"repos/{self.api.repo}"
         comments = self.api.pages(f"{base}/issues/{number}/comments")
@@ -254,6 +277,13 @@ class Cleanup:
         self.log(number, "closed", explanation)
 
     def reconcile(self, pulls):
+        """Evaluate both rules and recheck candidates before apply-mode closures.
+
+        Dry-run simulates inactivity removals before calculating excess PRs.
+        Failed activity reads skip only affected inactivity decisions; failed
+        closures remain open and count toward the cap. GitHub offers no atomic
+        read-and-close operation, so a race with human activity remains.
+        """
         cutoff = self.now - timedelta(days=self.policy["inactive_days"])
         simulated_closed = set()
         for pr in pulls:
@@ -331,6 +361,7 @@ class Cleanup:
 
 
 def main(argv=None):
+    """Run cleanup in dry-run mode unless explicitly enabled, then save observations."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True)
     parser.add_argument("--policy", default=".github/pr-cleanup.json")
@@ -373,6 +404,7 @@ def main(argv=None):
     }
     rendered = json.dumps(report, indent=2)
     print(rendered)
+    # This path is supplied by the Actions runner, never by PR content.
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         # JSON is indented Markdown, so untrusted API text cannot inject headings/HTML.

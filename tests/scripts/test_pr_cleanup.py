@@ -30,6 +30,7 @@ POLICY = {
 
 
 def pr(number, author="developer", days=40, draft=False):
+    """Build an open PR fixture with a deterministic creation time and head."""
     return {
         "number": number,
         "user": {"login": author},
@@ -41,6 +42,7 @@ def pr(number, author="developer", days=40, draft=False):
 
 
 def comment(days=1, bot=False, body="review feedback"):
+    """Build human or bot activity with a server-provided update timestamp."""
     return {
         "user": {
             "login": "github-actions[bot]" if bot else "reviewer",
@@ -52,6 +54,7 @@ def comment(days=1, bot=False, body="review feedback"):
 
 
 def state(pulls, days=40):
+    """Build continuous push observations independently of commit author dates."""
     return {
         "version": 1,
         "repository": "NVIDIA/NeMo-Fabric",
@@ -67,9 +70,12 @@ def state(pulls, days=40):
 
 
 class FakeGitHub:
+    """Model PR state and partial API failures while recording all mutations."""
+
     repo = "NVIDIA/NeMo-Fabric"
 
     def __init__(self, pulls):
+        """Initialize isolated PRs, activity surfaces, and failure injection hooks."""
         self.items = copy.deepcopy(pulls)
         self.comments = {}
         self.timeline = {}
@@ -80,9 +86,11 @@ class FakeGitHub:
         self.fresh_hook = None
 
     def pulls(self):
+        """Return fresh copies of currently open PRs for preflight rechecks."""
         return copy.deepcopy([item for item in self.items if item["state"] == "open"])
 
     def pages(self, path):
+        """Serve discussion surfaces or inject an incomplete lookup failure."""
         if any(fragment in path for fragment in self.fail):
             raise cleanup.CleanupError("lookup failed")
         number = int(path.split("/")[-2])
@@ -95,6 +103,7 @@ class FakeGitHub:
         return copy.deepcopy(self.comments.get(number, []))
 
     def request(self, path, method="GET", payload=None):
+        """Apply simulated comments and closures, including a failed final PATCH."""
         number = int(
             path.split("/")[-2] if path.endswith("/comments") else path.split("/")[-1]
         )
@@ -119,7 +128,10 @@ class FakeGitHub:
 
 
 class CleanupTests(unittest.TestCase):
+    """Exercise cleanup policy, activity, retries, and API boundaries."""
+
     def run_policy(self, api, *, apply=False, days=0, policy=None):
+        """Run a reconciliation with controlled observations and optional enforcement."""
         worker = cleanup.Cleanup(
             api, policy or POLICY, state(api.items, days), NOW, apply
         )
@@ -127,6 +139,7 @@ class CleanupTests(unittest.TestCase):
         return worker
 
     def test_cap_drafts_all_branches_and_newest_first(self):
+        """Count drafts across branches and close the newest PRs above the cap."""
         items = [pr(i, days=50 - i, draft=i % 2 == 0) for i in range(1, 7)]
         items[3]["base"] = {"ref": "release/1"}
         self.assertEqual(
@@ -135,6 +148,7 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(cleanup.excess_prs(items[:3], set(), 3), [])
 
     def test_ties_reopening_and_case_insensitive_authors(self):
+        """Keep original creation order with deterministic ties and normalized logins."""
         items = [
             pr(i, author="Developer" if i % 2 else "developer") for i in range(1, 5)
         ]
@@ -147,6 +161,7 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(cleanup.excess_prs(items, {"developer"}, 3), [])
 
     def test_cap_exemption_is_configured_not_repository_role(self):
+        """Require an explicit maintainer exemption even for repository admins."""
         api = FakeGitHub([pr(i, author="repo-admin") for i in range(1, 5)])
         api.items[-1]["permissions"] = {"admin": True}
         worker = self.run_policy(api)
@@ -155,6 +170,7 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(self.run_policy(api, policy=policy).rows, [])
 
     def test_dry_run_has_no_writes_and_apply_closes_newest(self):
+        """Compare read-only decisions with apply-mode newest-first closures."""
         api = FakeGitHub([pr(i) for i in range(1, 6)])
         self.run_policy(api)
         self.assertEqual(api.writes, [])
@@ -165,6 +181,7 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(len(api.pulls()), 3)
 
     def test_cap_uses_no_organization_api(self):
+        """Enforce the cap using repository APIs without team-membership credentials."""
         api = FakeGitHub([pr(i) for i in range(1, 5)])
         with patch.object(api, "pages", wraps=api.pages) as pages:
             self.run_policy(api, apply=True)
@@ -174,6 +191,7 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(len(api.pulls()), 3)
 
     def test_capacity_rechecked_before_cap_closure(self):
+        """Skip a cap candidate when a concurrent closure has freed capacity."""
         api = FakeGitHub([pr(i) for i in range(1, 5)])
         initial = api.pulls()
         with patch.object(api, "pulls", side_effect=[initial, initial, initial[:-1]]):
@@ -182,11 +200,13 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(worker.rows[0]["status"], "skipped")
 
     def test_inactivity_boundary_and_exempt_maintainers(self):
+        """Apply the strict inactivity boundary to draft PRs from exempt maintainers."""
         api = FakeGitHub([pr(1, author="maintainer", draft=True)])
         self.assertEqual(self.run_policy(api, days=28).rows, [])
         self.assertEqual(self.run_policy(api, days=29).rows[0]["number"], 1)
 
     def test_human_comments_edits_reviews_and_review_comments_reset(self):
+        """Reset inactivity for qualifying human feedback on every discussion surface."""
         for surface in ("comments", "reviews", "review_comments"):
             with self.subTest(surface=surface):
                 api = FakeGitHub([pr(1)])
@@ -194,6 +214,7 @@ class CleanupTests(unittest.TestCase):
                 self.assertEqual(self.run_policy(api, days=40).rows, [])
 
     def test_bot_ci_label_and_draft_changes_do_not_reset(self):
+        """Exclude automation and metadata-only changes from the inactivity clock."""
         api = FakeGitHub([pr(1, draft=True)])
         api.items[0]["updated_at"] = cleanup.iso(NOW)
         api.comments[1] = [comment(bot=True)]
@@ -201,12 +222,14 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(self.run_policy(api, days=40).rows[0]["number"], 1)
 
     def test_reopening_and_force_push_reset(self):
+        """Treat reopening and force-push timeline events as fresh activity."""
         for kind in ("reopened", "head_ref_force_pushed"):
             api = FakeGitHub([pr(1)])
             api.timeline[1] = [{"event": kind, "created_at": cleanup.iso(NOW)}]
             self.assertEqual(self.run_policy(api, days=40).rows, [])
 
     def test_inactivity_before_cap_and_dry_run_parity(self):
+        """Free inactive capacity first and preserve dry-run/apply decision parity."""
         items = [pr(i, days=50 - i) for i in range(1, 5)]
         dry_api, real_api = FakeGitHub(items), FakeGitHub(items)
         for api in (dry_api, real_api):
@@ -219,6 +242,7 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(len(real_api.pulls()), 3)
 
     def test_activity_lookup_failure_skips_inactivity(self):
+        """Avoid inactivity closures when discussion history cannot be read completely."""
         api = FakeGitHub([pr(1)])
         api.fail.add("timeline")
         worker = self.run_policy(api, apply=True, days=40)
@@ -226,10 +250,12 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(api.writes, [])
 
     def test_last_minute_comment_merge_and_head_change(self):
+        """Reject stale inactivity decisions after new feedback, merging, or pushes."""
         for change in ("comment", "merge", "push"):
             api = FakeGitHub([pr(1)])
 
             def update(api, number):
+                """Inject concurrent human activity or a PR state change during preflight."""
                 if change == "comment":
                     api.comments[number] = [comment()]
                 elif change == "merge":
@@ -242,6 +268,7 @@ class CleanupTests(unittest.TestCase):
             self.assertEqual(api.writes, [])
 
     def test_partial_failure_retry_deduplicates_and_reopen_comments_again(self):
+        """Reuse an explanation after PATCH failure but explain a new reopen cycle."""
         api = FakeGitHub([pr(1)])
         worker = cleanup.Cleanup(api, POLICY, state(api.items), NOW, True)
         api.fail.add("close")
@@ -255,6 +282,7 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(sum(method == "POST" for method, _, _ in api.writes), 2)
 
     def test_bootstrap_changed_heads_gap_and_synchronize(self):
+        """Reset observed push timing conservatively on new heads or uncertain history."""
         pulls = [pr(1)]
         first = cleanup.observe_heads(pulls, None, NOW, 28)
         self.assertEqual(first["pulls"]["1"]["last_push_observed_at"], cleanup.iso(NOW))
@@ -277,6 +305,7 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(reset["pulls"]["1"]["last_push_observed_at"], cleanup.iso(NOW))
 
     def test_policy_validation(self):
+        """Reject invalid limits and malformed maintainer exemption configuration."""
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "policy.json"
             for key, value in (
@@ -293,6 +322,7 @@ class CleanupTests(unittest.TestCase):
                     cleanup.load_policy(path)
 
     def test_pagination_and_failed_pages(self):
+        """Read subsequent PR pages and fail on an incomplete listing."""
         api = cleanup.GitHub("NVIDIA/NeMo-Fabric", "not-a-real-token")
         with patch.object(
             api, "request", side_effect=[[pr(1)] * 100, [pr(2)]]
@@ -306,6 +336,7 @@ class CleanupTests(unittest.TestCase):
                 api.pulls()
 
     def test_each_configured_maintainer_bypasses_only_cap(self):
+        """Verify every configured maintainer bypasses the cap but remains subject to inactivity."""
         policy = cleanup.load_policy(
             Path(__file__).resolve().parents[2] / ".github/pr-cleanup.json"
         )
@@ -321,6 +352,7 @@ class CleanupTests(unittest.TestCase):
                 )
 
     def test_state_artifacts_ignore_untrusted_run_events_and_expired_state(self):
+        """Accept only usable observation artifacts from trusted workflow executions."""
         api = cleanup.GitHub("NVIDIA/NeMo-Fabric", "not-a-real-token")
         runs = [
             {"id": 1, "event": "pull_request", "head_branch": "main"},
@@ -350,6 +382,7 @@ class CleanupTests(unittest.TestCase):
             self.assertEqual(api.previous_state()["version"], 1)
 
     def test_missing_or_expired_history_starts_fresh(self):
+        """Give PRs a full observation period when reliable push history is unavailable."""
         pulls = [pr(1)]
         for previous in (
             None,
@@ -361,11 +394,13 @@ class CleanupTests(unittest.TestCase):
             )
 
     def test_spoofed_cleanup_marker_is_still_human_activity(self):
+        """Count a human comment even when its body imitates an automation marker."""
         api = FakeGitHub([pr(1)])
         api.comments[1] = [comment(body="<!-- fabric-pr-cleanup:fake -->")]
         self.assertEqual(self.run_policy(api, days=40).rows, [])
 
     def test_spoofed_comment_does_not_suppress_closure_explanation(self):
+        """Prevent a human-authored marker from suppressing the bot explanation."""
         api = FakeGitHub([pr(1)])
         api.comments[1] = [comment(body="<!-- fabric-pr-cleanup:cap:0 -->")]
         worker = cleanup.Cleanup(api, POLICY, state(api.items), NOW, True)
@@ -373,6 +408,7 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(sum(method == "POST" for method, _, _ in api.writes), 1)
 
     def test_main_defaults_to_no_mutations_and_saves_observations(self):
+        """Keep CLI defaults read-only while persisting state and a run summary."""
         api = FakeGitHub([pr(i) for i in range(1, 5)])
         api.previous_state = lambda: None
         with tempfile.TemporaryDirectory() as directory:
@@ -410,6 +446,7 @@ class CleanupTests(unittest.TestCase):
             self.assertTrue((root / "summary.md").exists())
 
     def test_api_timeout_is_a_reportable_lookup_failure(self):
+        """Convert API timeouts into safe, reportable lookup errors."""
         api = cleanup.GitHub("NVIDIA/NeMo-Fabric", "not-a-real-token")
         with patch.object(
             cleanup.subprocess,
@@ -420,6 +457,7 @@ class CleanupTests(unittest.TestCase):
                 api.pulls()
 
     def test_gh_errors_do_not_echo_token_or_response_body(self):
+        """Keep credentials and untrusted response bodies out of API error messages."""
         api = cleanup.GitHub("NVIDIA/NeMo-Fabric", "secret-token")
         response = type(
             "Result", (), {"returncode": 1, "stdout": b"", "stderr": b"secret-token"}

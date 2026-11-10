@@ -4,6 +4,8 @@
 name: PR Cleanup
 
 on:
+  # Authenticated PR maintenance requires this trigger. Execute only the
+  # trusted default branch below; never check out or run code from the PR head.
   pull_request_target:
     types: [opened, reopened, synchronize]
   schedule:
@@ -15,12 +17,16 @@ on:
         type: boolean
         default: false
 
+# Deny inherited token access; the cleanup job grants only its required scopes.
+permissions: {}
+
 concurrency:
   group: pr-cleanup
   cancel-in-progress: false
 
 jobs:
   cleanup:
+    name: Reconcile PR cleanup policy
     if: >-
       github.repository == 'NVIDIA/NeMo-Fabric' &&
       (github.event_name != 'workflow_dispatch' ||
@@ -28,9 +34,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
-      contents: read
-      actions: read
-      pull-requests: write
+      contents: read  # Check out trusted default-branch code.
+      actions: read  # Restore observation history from this workflow's artifacts.
+      pull-requests: write  # Read PR activity, explain decisions, and close PRs.
     steps:
       - name: Checkout trusted default branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
