@@ -5,9 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric Hermes Interface Examples
 
-This example is a work in progress. Its structure and user experience will be reworked as part of OpenClaw TUI support.
-
-Use native harness interfaces alongside a NeMo Fabric-managed runtime. Each harness example uses the public Python SDK for configuration and lifecycle, then sends input through the harness's native interface.
+Start with the [Hermes architecture guide](../../../docs/integrations/harness/hermes.mdx) for installation and SDK configuration, then see [native interfaces](../../../docs/integrations/harness/hermes-interfaces.mdx) for shared configuration and process ownership. This example tests the native HTTP API using a Fabric-managed runtime and translated Fabric configuration. SDK responses are normalized; API responses remain native. NeMo Relay provides ATOF events and ATIF trajectories.
 
 ## Hermes API and Relay
 
