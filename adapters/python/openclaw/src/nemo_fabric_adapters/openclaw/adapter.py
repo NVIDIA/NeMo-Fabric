@@ -1215,8 +1215,20 @@ class OpenClawRuntime:
             return await self._attach_service(config, context, settings, service)
         if context.state_dir:
             # A runtime that ended without stop can leave its dashboard token
-            # in the kept state, for a Gateway that no longer runs.
-            _dashboard_token_path(context, base_dir).unlink(missing_ok=True)
+            # and interface files in the kept state, for a Gateway that no
+            # longer runs.
+            interface_directory = _dashboard_token_path(context, base_dir).parent
+            try:
+                (interface_directory / "dashboard.token").unlink(missing_ok=True)
+            except OSError:
+                removed = False
+            else:
+                removed = native_interfaces.remove(interface_directory)
+            if not removed:
+                raise lifecycle.LifecycleError(
+                    "openclaw_interface_cleanup_failed",
+                    "OpenClaw interface files could not be removed",
+                )
         child_env = common_utils.virtualenv_subprocess_env()
         child_env.update(context.environment.env)
         if model.api_key_env is not None and not child_env.get(model.api_key_env):

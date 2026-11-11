@@ -2443,6 +2443,15 @@ async def test_openclaw_failed_start_keeps_the_agents_state(
     stale_token = state_dir / "interfaces" / "dashboard.token"
     stale_token.parent.mkdir()
     stale_token.write_text("stale", encoding="utf-8")
+    # A runtime that ended without stop can also leave the native interface
+    # files that point clients at its Gateway.
+    stale_interfaces = [stale_token] + [
+        stale_token.with_name(name) for name in adapter.native_interfaces.FILES
+    ]
+    for path in stale_interfaces[1:]:
+        path.write_text("stale", encoding="utf-8")
+    stale_client_state = stale_token.with_name("client-state")
+    stale_client_state.mkdir()
     before = skill.read_bytes()
     runtime = adapter.OpenClawRuntime()
     generated: list[Path] = []
@@ -2486,7 +2495,8 @@ async def test_openclaw_failed_start_keeps_the_agents_state(
     assert skill.read_bytes() == before
     assert len(generated) == 1 and not generated[0].exists()
     assert not generated[0].is_relative_to(state_dir)
-    assert not stale_token.exists()
+    assert [path for path in stale_interfaces if path.exists()] == []
+    assert not stale_client_state.exists()
     assert runtime._process is None and runtime._temp_dir is None
     if failure == "after_gateway_start":
         assert gateway_state.read_text(encoding="utf-8") == str(state_dir)
