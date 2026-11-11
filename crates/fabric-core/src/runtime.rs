@@ -1929,6 +1929,7 @@ impl RuntimeAdapter for LocalHostAdapter {
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
         let host = { local_hosts().get(&runtime.runtime_id).cloned() };
         let Some(host) = host else {
+            local_host_processes().remove(&runtime.runtime_id);
             return Ok(vec![local_host_stop_event(runtime, true, false)]);
         };
         let mut host = host.lock().unwrap_or_else(|error| error.into_inner());
@@ -3381,7 +3382,11 @@ fn terminate_local_host(host: &mut LocalAdapterHost) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         let deadline = Instant::now() + LOCAL_HOST_EXIT_GRACE;
-        while host.descendants.iter().any(|process| process.has_exited() != Some(true)) {
+        while host
+            .descendants
+            .iter()
+            .any(|process| process.has_exited() != Some(true))
+        {
             if Instant::now() >= deadline {
                 return Err(std::io::Error::other(
                     "owned native children have not exited",
@@ -3400,7 +3405,8 @@ fn remember_host_descendants(host: &mut LocalAdapterHost) {
     if !matches!(host.child.try_wait(), Ok(None)) {
         return;
     }
-    host.descendants.retain(|process| process.has_exited() != Some(true));
+    host.descendants
+        .retain(|process| process.has_exited() != Some(true));
     for pid in host_descendants(host.child.id()) {
         if !host
             .descendants
@@ -3848,6 +3854,18 @@ fn lock_agent_state(plan: &RunPlan, artifacts: &ArtifactManifest) -> Result<Opti
         &adapter_id(plan).unwrap_or_else(|| harness(plan)),
         &state_dir,
     )?;
+    // Kept state can hold conversations and credentials: only its owner may
+    // read it, including a folder that an earlier runtime created.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&state_dir, std::fs::Permissions::from_mode(0o700)).map_err(
+            |source| FabricError::Write {
+                path: state_dir.clone(),
+                source,
+            },
+        )?;
+    }
     // The lock sits beside the folder, which the adapter owns and may replace.
     let mut lock_name = std::ffi::OsString::from(".");
     lock_name.push(state_dir.file_name().unwrap_or_default());

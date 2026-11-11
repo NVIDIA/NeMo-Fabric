@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapters.hermes import interfaces
 
 pytestmark = pytest.mark.skipif(
@@ -40,6 +41,7 @@ async def test_interface_child_retains_state_lock_until_process_exit(
             hermes_home=tmp_path,
             token_path=tmp_path / "api.token",
             timeout=5,
+            agent_config=AgentConfig.from_mapping({}),
             environment={**os.environ, "FABRIC_STATE_LOCK_FD": str(guard.fileno())},
         )
         guard.close()

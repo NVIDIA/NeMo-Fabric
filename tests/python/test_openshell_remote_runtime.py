@@ -658,4 +658,3 @@ async def test_remote_session_identity_cannot_be_added_to_a_legacy_runtime(
                 await runtime.invoke(input="Check the bound session.")
         finally:
             await runtime.stop()
-
