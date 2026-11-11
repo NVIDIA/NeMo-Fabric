@@ -375,6 +375,8 @@ class HermesRuntime:
         await self._authenticate_mcp_servers()
 
         def run_hermes_turn() -> tuple[dict[str, Any], str]:
+            native_session = self._native_session
+            completed = False
             if self._relay_plugin_config is not None:
                 common_utils.reject_ambient_relay_plugin_config()
             try:
@@ -385,12 +387,14 @@ class HermesRuntime:
                     conversation_history=self._conversation_history,
                     task_id=runtime_context.request_id,
                 )
-                if self._native_session:
-                    self._native_session.finish_turn(
+                if native_session:
+                    completed = native_session.finish_turn(
                         str(self._agent.session_id), result[0]
                     )
                 return result
             finally:
+                if native_session:
+                    native_session.recovery_required = not completed
                 if self._relay_plugin_config is not None:
                     # Hermes writes TOML-configured ATIF at its session-finalization
                     # boundary for every supported Relay version. Fabric defines

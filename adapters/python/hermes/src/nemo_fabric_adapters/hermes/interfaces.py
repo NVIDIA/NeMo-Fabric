@@ -238,7 +238,11 @@ class InterfaceChildren:
         finally:
             # Runs even when stop is cancelled, so no child outlives the runtime.
             for child in running:
-                common_utils.signal_process_group(child.process.pid, signal.SIGKILL)
+                common_utils.signal_process_group(
+                    child.process.pid,
+                    signal.SIGKILL,
+                    fallback_to_pid=child.process.returncode is None,
+                )
             self._children = []
             self._remove_private_file("_agent_config_path")
         if pending:

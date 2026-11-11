@@ -938,6 +938,7 @@ struct RelayRuntimeConfig {
 
 struct LocalAdapterHost {
     cleanup_pending: bool,
+    cleanup_scope: LocalCleanupScope,
     #[cfg(unix)]
     descendants: Vec<LocalHostProcess>,
     session_ref: Option<SessionRef>,
@@ -962,9 +963,9 @@ struct LocalAdapterHost {
     _state_lock: Option<File>,
 }
 
-/// Identifies the startup scope whose failed native host still needs cleanup.
+/// Identifies the scope whose native host still needs confirmed cleanup.
 #[derive(Clone, PartialEq, Eq)]
-enum FailedStartScope {
+enum LocalCleanupScope {
     Service(String),
     Retained(PathBuf),
     Ephemeral {
@@ -974,7 +975,7 @@ enum FailedStartScope {
     },
 }
 
-static FAILED_LOCAL_STARTS: LazyLock<Mutex<BTreeMap<String, FailedStartScope>>> =
+static PENDING_LOCAL_CLEANUP: LazyLock<Mutex<BTreeMap<String, LocalCleanupScope>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 struct LocalServiceRecord {
@@ -1116,7 +1117,7 @@ pub fn start_runtime_with_service(
             service_id: service.service_id.clone(),
         });
     }
-    retry_failed_service_starts(&mut record, AdapterLifecycleOperation::Start)?;
+    retry_pending_service_cleanup(&mut record, AdapterLifecycleOperation::Start)?;
     // The service host holds the agent's state lock for its connected
     // runtimes, so only one of them may run at a time.
     if !record.active_runtime_ids.is_empty()
@@ -1191,7 +1192,7 @@ pub fn release_service(plan: &RunPlan, service: &ServiceHandle) -> Result<Vec<Fa
     if service_record.state == LocalServiceState::Released {
         return Ok(vec![service_release_event(service, true)]);
     }
-    retry_failed_service_starts(&mut service_record, AdapterLifecycleOperation::Stop)?;
+    retry_pending_service_cleanup(&mut service_record, AdapterLifecycleOperation::Stop)?;
     if !service_record.active_runtime_ids.is_empty() {
         return Err(FabricError::ServiceInUse {
             service_id: service.service_id.clone(),
@@ -1984,6 +1985,10 @@ impl RuntimeAdapter for LocalHostAdapter {
                 if code == "host_crashed"
         );
         termination.map_err(|source| {
+            PENDING_LOCAL_CLEANUP
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .insert(runtime.runtime_id.clone(), host.cleanup_scope.clone());
             lifecycle_error(
                 AdapterLifecycleOperation::Stop,
                 &runtime.runtime_id,
@@ -1996,7 +2001,7 @@ impl RuntimeAdapter for LocalHostAdapter {
         // has been confirmed. A failed adapter stop may still be safely killed.
         local_hosts().remove(&runtime.runtime_id);
         local_host_processes().remove(&runtime.runtime_id);
-        FAILED_LOCAL_STARTS
+        PENDING_LOCAL_CLEANUP
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .remove(&runtime.runtime_id);
@@ -2082,7 +2087,6 @@ fn start_local_runtime(
         service_context,
     )?;
     let environment_env = start.runtime_context.environment.env.clone();
-    let state_dir = start.runtime_context.state_dir.clone();
     let request = AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Start(Box::new(start)));
     let started_at = SystemTime::now();
     let levels = plan
@@ -2124,14 +2128,12 @@ fn start_local_runtime(
         crate::check::invalidate_runtime(&runtime);
         if terminate_local_host(&mut host).is_err() {
             host.cleanup_pending = true;
+            let scope = host.cleanup_scope.clone();
             local_hosts().insert(runtime.runtime_id.clone(), Arc::new(Mutex::new(host)));
-            FAILED_LOCAL_STARTS
+            PENDING_LOCAL_CLEANUP
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
-                .insert(
-                    runtime.runtime_id.clone(),
-                    failed_start_scope(plan, state_dir.as_deref(), runtime.service_id.as_deref()),
-                );
+                .insert(runtime.runtime_id.clone(), scope);
             return Err(lifecycle_error(
                 AdapterLifecycleOperation::Start,
                 &runtime.runtime_id,
@@ -2152,13 +2154,13 @@ fn start_local_runtime(
 }
 
 /// Group cleanup retries by service or physical retained home, preserving renamed sessions.
-fn failed_start_scope(
+fn cleanup_scope(
     plan: &RunPlan,
     state_dir: Option<&Path>,
     service_id: Option<&str>,
-) -> FailedStartScope {
+) -> LocalCleanupScope {
     if let Some(service_id) = service_id {
-        return FailedStartScope::Service(service_id.to_string());
+        return LocalCleanupScope::Service(service_id.to_string());
     }
     if let Some(path) = state_dir {
         let resolved = path
@@ -2166,21 +2168,21 @@ fn failed_start_scope(
             .ok()
             .or_else(|| Some(path.parent()?.canonicalize().ok()?.join(path.file_name()?)))
             .unwrap_or_else(|| path.to_path_buf());
-        return FailedStartScope::Retained(resolved);
+        return LocalCleanupScope::Retained(resolved);
     }
-    FailedStartScope::Ephemeral {
+    LocalCleanupScope::Ephemeral {
         base_dir: plan.base_dir.clone(),
         adapter_id: adapter_id(plan).unwrap_or_else(|| harness(plan)),
         agent_name: plan.agent_name.clone(),
     }
 }
 
-/// Retry only known failed starts in this scope, retaining their guards on any failure.
-fn retry_failed_local_starts(
-    scope: &FailedStartScope,
+/// Retry only recorded cleanup failures in this scope, retaining guards on any failure.
+fn retry_pending_local_cleanup(
+    scope: &LocalCleanupScope,
     operation: AdapterLifecycleOperation,
 ) -> Result<()> {
-    let pending: Vec<String> = FAILED_LOCAL_STARTS
+    let pending: Vec<String> = PENDING_LOCAL_CLEANUP
         .lock()
         .unwrap_or_else(|error| error.into_inner())
         .iter()
@@ -2196,7 +2198,7 @@ fn retry_failed_local_starts(
                     operation,
                     &runtime_id,
                     "cleanup_unconfirmed",
-                    "Failed runtime startup cleanup could not be confirmed",
+                    "Runtime cleanup could not be confirmed",
                     "",
                 )
             };
@@ -2206,7 +2208,7 @@ fn retry_failed_local_starts(
             local_hosts().remove(&runtime_id);
             local_host_processes().remove(&runtime_id);
         }
-        FAILED_LOCAL_STARTS
+        PENDING_LOCAL_CLEANUP
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .remove(&runtime_id);
@@ -2215,12 +2217,12 @@ fn retry_failed_local_starts(
 }
 
 /// Keep failed connections reserved until their native host cleanup succeeds.
-fn retry_failed_service_starts(
+fn retry_pending_service_cleanup(
     record: &mut LocalServiceRecord,
     operation: AdapterLifecycleOperation,
 ) -> Result<()> {
-    let cleanup = retry_failed_local_starts(
-        &FailedStartScope::Service(record.handle.service_id.clone()),
+    let cleanup = retry_pending_local_cleanup(
+        &LocalCleanupScope::Service(record.handle.service_id.clone()),
         operation,
     );
     let hosts = local_hosts();
@@ -3025,8 +3027,8 @@ fn spawn_local_host(
     service_state_lock: Option<File>,
 ) -> Result<LocalAdapterHost> {
     let state_dir = agent_state_dir(plan, &artifacts)?;
-    let scope = failed_start_scope(plan, state_dir.as_deref(), runtime.service_id.as_deref());
-    retry_failed_local_starts(&scope, AdapterLifecycleOperation::Start)?;
+    let scope = cleanup_scope(plan, state_dir.as_deref(), runtime.service_id.as_deref());
+    retry_pending_local_cleanup(&scope, AdapterLifecycleOperation::Start)?;
     // A connected host inherits a duplicate of its service's lock, so either
     // host can finish cleanup without releasing the other host's protection.
     let state_lock = match service_state_lock {
@@ -3034,6 +3036,8 @@ fn spawn_local_host(
         None if runtime.service_id.is_none() => lock_agent_state(plan, &artifacts)?,
         None => None,
     };
+    // Lock acquisition creates retained storage, allowing its physical path to resolve.
+    let scope = cleanup_scope(plan, state_dir.as_deref(), runtime.service_id.as_deref());
     let runtime_dir = local_host_directory(&runtime.runtime_id);
     std::fs::create_dir_all(&runtime_dir).map_err(|source| FabricError::Write {
         path: runtime_dir.clone(),
@@ -3171,6 +3175,7 @@ fn spawn_local_host(
     }
     Ok(LocalAdapterHost {
         cleanup_pending: false,
+        cleanup_scope: scope,
         #[cfg(unix)]
         descendants: Vec::new(),
         session_ref: None,
@@ -4487,17 +4492,17 @@ fn collect_workspace_artifacts(
     if status_text.trim().is_empty() {
         return Ok(());
     }
-    // Kept agent state can hold conversations and credentials; leave it out
-    // when the artifact directory sits inside the workspace.
-    let kept_state: Vec<PathBuf> = manifest
+    // NeMo Fabric-owned files include credentials and native session data.
+    // Exclude them when the artifact directory sits inside the workspace.
+    let fabric_owned: Vec<PathBuf> = manifest
         .root
         .iter()
-        .map(|root| root.join(".fabric").join("state"))
+        .map(|root| root.join(".fabric"))
         .collect();
-    let Some(mut patch) = tracked_workspace_patch(workspace, &kept_state) else {
+    let Some(mut patch) = tracked_workspace_patch(workspace, &fabric_owned) else {
         return Ok(());
     };
-    patch.push_str(&untracked_workspace_patch(workspace, &kept_state)?);
+    patch.push_str(&untracked_workspace_patch(workspace, &fabric_owned)?);
     if patch.trim().is_empty() {
         return Ok(());
     }
@@ -5549,6 +5554,81 @@ else:
             matches!(error, FabricError::Session { code, .. } if code == "session_resume_unsupported")
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn failed_one_shot_stop_cleanup_is_retried_before_replacement() {
+        for prepare_replacement in [false, true] {
+            let (root, plan) = local_host_plan_keeping_state();
+            FAIL_NEXT_HOST_TERMINATION.with(|fail| fail.set(true));
+            let result = run_plan(&plan, RunRequest::text("completed")).unwrap();
+            assert_eq!(result.status, RunStatus::Failed);
+            assert_eq!(result.error.as_ref().unwrap().stage, ErrorStage::Stop);
+            assert!(local_hosts().contains_key(&result.runtime_id));
+
+            FAIL_NEXT_HOST_TERMINATION.with(|fail| fail.set(true));
+            let blocked = if prepare_replacement {
+                prepare_service(&plan).map(|_| ())
+            } else {
+                start_runtime(&plan).map(|_| ())
+            };
+            assert!(
+                matches!(blocked, Err(FabricError::AdapterLifecycleOperation { code, .. }) if code == "cleanup_unconfirmed")
+            );
+            assert!(local_hosts().contains_key(&result.runtime_id));
+            if prepare_replacement {
+                let service = prepare_service(&plan).expect("retry unconfirmed one-shot cleanup");
+                release_service(&plan, &service).unwrap();
+            } else {
+                let runtime = start_runtime(&plan).expect("retry unconfirmed one-shot cleanup");
+                stop_runtime(&plan, &runtime).unwrap();
+            }
+            assert!(!local_hosts().contains_key(&result.runtime_id));
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn workspace_patch_excludes_native_interface_credentials() {
+        for tracked in [false, true] {
+            let (root, plan) = local_host_plan_keeping_state();
+            let runtime = start_runtime(&plan).unwrap();
+            let private = root.join("artifacts/.fabric/hermes/runtimes/example/interfaces");
+            fs::create_dir_all(&private).unwrap();
+            fs::write(private.join("api.token"), "private-interface-fixture").unwrap();
+            fs::write(root.join("notes.txt"), "public workspace note").unwrap();
+            let git = |args: &[&str]| {
+                assert!(
+                    Command::new("git")
+                        .arg("-C")
+                        .arg(&root)
+                        .args(args)
+                        .status()
+                        .unwrap()
+                        .success()
+                )
+            };
+            git(&["init", "-q"]);
+            if tracked {
+                git(&["add", "--intent-to-add", "--", "."]);
+            }
+            let destination = root.join("captured");
+            fs::create_dir(&destination).unwrap();
+            let mut manifest = ArtifactManifest {
+                root: Some(root.join("artifacts")),
+                artifacts: Vec::new(),
+            };
+            let mut observed = runtime.clone();
+            observed.environment.workspace = Some(root.clone());
+            collect_workspace_artifacts(&mut manifest, &destination, &observed, &mut Vec::new())
+                .unwrap();
+            let patch = fs::read_to_string(destination.join("workspace.patch")).unwrap();
+            stop_runtime(&plan, &runtime).unwrap();
+            let _ = fs::remove_dir_all(root);
+            assert!(patch.contains("public workspace note"));
+            assert!(!patch.contains("private-interface-fixture"));
+            assert!(!patch.contains("api.token"));
+        }
     }
 
     #[test]
