@@ -1177,7 +1177,7 @@ async def test_runtime_reports_current_unavailable_mcp_servers_on_each_result(
     runtime._runtime_id = "runtime-partial-mcp"
     runtime._agent = MagicMock()
     runtime._hermes_config = configuration.build_hermes_config(
-        agent_config, workspace="."
+        agent_config, workspace=".", base_dir="."
     )
     get_mcp_status = _install_mcp_status(
         monkeypatch,
@@ -1250,7 +1250,7 @@ async def test_runtime_omits_mcp_report_when_hermes_status_fails(monkeypatch):
     runtime._runtime_id = "runtime-partial-mcp"
     runtime._agent = MagicMock()
     runtime._hermes_config = configuration.build_hermes_config(
-        agent_config, workspace="."
+        agent_config, workspace=".", base_dir="."
     )
     get_mcp_status = _install_mcp_status(monkeypatch)
     get_mcp_status.side_effect = RuntimeError("status secret-token")
