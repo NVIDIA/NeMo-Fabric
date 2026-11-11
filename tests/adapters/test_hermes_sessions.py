@@ -5,6 +5,7 @@
 
 import hashlib
 import json
+import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -100,7 +101,12 @@ def test_invalid_recovery_record_is_a_structured_failure(session_store, value):
     assert "private" not in str(caught.value)
 
 
-def test_recovery_record_cannot_read_a_symlink(session_store, tmp_path):
+@pytest.mark.parametrize("nofollow_available", [True, False])
+def test_recovery_record_cannot_read_a_symlink(
+    session_store, tmp_path, monkeypatch, nofollow_available
+):
+    if not nofollow_available:
+        monkeypatch.delattr(os, "O_NOFOLLOW", raising=False)
     database, context, marker = session_store
     outside = tmp_path / "outside.json"
     outside.write_text('{"state":"complete"}')
@@ -108,6 +114,25 @@ def test_recovery_record_cannot_read_a_symlink(session_store, tmp_path):
     with pytest.raises(LifecycleError) as caught:
         open_session(database, context)
     assert caught.value.code == "session_incompatible"
+
+
+def test_recovery_record_replaced_during_open_is_rejected(session_store, monkeypatch):
+    database, context, marker = session_store
+    marker.write_text('{"state":"complete"}')
+    replacement = marker.with_suffix(".replacement")
+    replacement.write_text('{"state":"running"}')
+    original_open = os.open
+
+    def replace_before_open(path, flags, *args, **kwargs):
+        if path == marker:
+            os.replace(replacement, marker)
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", replace_before_open)
+    with pytest.raises(LifecycleError) as caught:
+        open_session(database, context)
+    assert caught.value.code == "session_incompatible"
+    database.reopen_session.assert_not_called()
 
 
 def test_turn_completion_ignores_and_preserves_an_unowned_stale_temporary(

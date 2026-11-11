@@ -60,7 +60,7 @@ def read_input(path: str) -> Any:
                     encoded.extend(chunk)
                 encoded = bytes(encoded)
         else:
-            descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+            descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
             with os.fdopen(descriptor, "rb") as stream:
                 if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
                     raise ValueError("expected regular input file")
