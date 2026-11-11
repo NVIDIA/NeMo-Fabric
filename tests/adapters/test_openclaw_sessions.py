@@ -6,6 +6,7 @@
 import hashlib
 import json
 import os
+import stat
 from unittest.mock import AsyncMock
 
 import pytest
@@ -434,3 +435,54 @@ async def test_native_session_selection_uses_canonical_agent_identity(
         call.args[1]["agentId"] == agent_id.lower()
         for call in session_call.call_args_list
     )
+
+
+@pytest.mark.parametrize("sync_fails", [False, True])
+async def test_completion_data_is_synced_before_publishing_the_marker(
+    session_context, session_call, monkeypatch, sync_fails
+):
+    native = await sessions.open_session(session_context, "default", session_call)
+    native.marker.parent.mkdir(exist_ok=True)
+    native.marker.write_text('{"state":"complete"}')
+    original = native.marker.read_bytes()
+    synced = []
+    replace = os.replace
+    fsync = os.fsync
+
+    def sync_before_publish(descriptor):
+        if stat.S_ISREG(os.fstat(descriptor).st_mode):
+            if sync_fails:
+                raise OSError("test sync failed")
+            temporary = list(native.marker.parent.glob(f".{native.marker.name}.*"))
+            assert len(temporary) == 1
+            assert json.loads(temporary[0].read_text())["state"] == "running"
+            synced.append(descriptor)
+        fsync(descriptor)
+
+    def publish(source, destination):
+        assert synced, "marker contents must reach storage before replacement"
+        assert native.marker.read_bytes() == original
+        return replace(source, destination)
+
+    monkeypatch.setattr(os, "fsync", sync_before_publish)
+    monkeypatch.setattr(os, "replace", publish)
+    if sync_fails:
+        with pytest.raises(OSError):
+            native._write({"state": "running"})
+        assert native.marker.read_bytes() == original
+        assert list(native.marker.parent.glob(f".{native.marker.name}.*")) == []
+    else:
+        native._write({"state": "running"})
+        assert json.loads(native.marker.read_text())["state"] == "running"
+
+
+@pytest.mark.parametrize("state", [[], {}])
+async def test_malformed_completion_state_has_a_structured_resume_error(
+    session_context, session_call, tmp_path, state
+):
+    directory = tmp_path / ".fabric-turns"
+    directory.mkdir()
+    (directory / f"{NATIVE_ID}.json").write_text(json.dumps({"state": state}))
+    with pytest.raises(LifecycleError) as caught:
+        await sessions.open_session(session_context, "default", session_call)
+    assert caught.value.code == "session_incompatible"

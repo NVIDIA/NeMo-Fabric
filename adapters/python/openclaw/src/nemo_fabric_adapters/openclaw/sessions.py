@@ -56,10 +56,11 @@ def _read_marker(path: Path) -> dict[str, Any]:
             ):
                 raise ValueError("invalid file")
             value = json.loads(source.read(1024 * 1024))
-        if not isinstance(value, dict) or value.get("state") not in {
-            "running",
-            "complete",
-        }:
+        if (
+            not isinstance(value, dict)
+            or not isinstance(value.get("state"), str)
+            or value.get("state") not in {"running", "complete"}
+        ):
             raise ValueError("invalid completion record")
         if (
             type(value.get("message_count", 0)) is not int
@@ -196,8 +197,6 @@ class NativeSession:
             )
         value = value | {"acknowledged_tool_calls": self.acknowledged_tool_calls}
         write_private_file(self.marker, json.dumps(value))
-        with self.marker.open("rb") as source:
-            os.fsync(source.fileno())
         if os.name == "posix":
             descriptor = os.open(
                 self.marker.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW

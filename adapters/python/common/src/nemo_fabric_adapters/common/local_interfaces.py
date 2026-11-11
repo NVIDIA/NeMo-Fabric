@@ -46,6 +46,8 @@ def write_private_file(path: Path, payload: str) -> None:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             descriptor = -1
             stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
         os.replace(temporary_name, path)
     except BaseException:
         if descriptor >= 0:
