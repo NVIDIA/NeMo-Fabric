@@ -15,7 +15,7 @@ SPDX-License-Identifier: Apache-2.0
 | `check [--timeout-seconds SECONDS]` | Check runtime server responsiveness |
 | `check --agent NAME --runtime-id ID [--live \| --active \| --ready]` | Check the selected runtime through `Fabric.check()` |
 | `start --agent NAME --config FILE [--session-ref FILE]` | `Fabric.start_runtime(config, base_dir=..., session_ref=...)` |
-| `start --agent NAME --request FILE` | Start from one object containing `config` and optional `session` |
+| `start --agent NAME --request FILE` | Start from one object containing `config` and optional `session_ref` |
 | `invoke --agent NAME --runtime-id ID --input FILE` | `Runtime.invoke(input=...)` |
 | `invoke --agent NAME --runtime-id ID --request FILE` | `Runtime.invoke(request=RunRequest(...))` |
 | `stop --agent NAME --runtime-id ID` | `Runtime.stop()` |

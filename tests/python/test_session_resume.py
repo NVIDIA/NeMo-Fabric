@@ -86,3 +86,18 @@ def test_runtime_start_rejects_mode_wrappers(value):
 
     with pytest.raises(FabricConfigError, match="SessionRef"):
         _with_session_ref(None, value)
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [(True, True), (False, False), ("false", False), (1, False), (None, False)],
+)
+def test_native_error_retryability_requires_a_boolean(value, expected):
+    from nemo_fabric.errors import _runtime_error
+
+    error = RuntimeError("Native operation failed")
+    error.code = "native_failure"
+    error.retryable = value
+    normalized = _runtime_error(error, stage="start")
+    assert normalized.code == "native_failure"
+    assert normalized.retryable is expected

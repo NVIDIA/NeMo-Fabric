@@ -5329,6 +5329,47 @@ else:
     }
 
     #[test]
+    fn workflow_session_selection_uses_the_resolved_adapter() {
+        let (root, plan) = durable_session_plan("success");
+        let path = root.join("adapters/local-host/local-host.fabric-adapter.json");
+        let mut descriptor: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        descriptor["target_types"] = serde_json::json!(["workflow"]);
+        fs::write(path, descriptor.to_string()).unwrap();
+        fs::write(
+            root.join("adapters/local-host/resume.fabric-target.json"),
+            serde_json::json!({
+                "contract_version": crate::ADAPTER_CONTRACT_VERSION,
+                "id": "test.fabric.resume-workflow",
+                "adapter_id": "acme.fabric.local-host",
+                "type": "workflow",
+                "spec": {"entrypoint": {"kind": "workflow_registry", "ref": "resume"}}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let mut config = plan.config;
+        config.harness = None;
+        config.workflow = Some(
+            serde_json::from_value(serde_json::json!({
+                "target_id": "test.fabric.resume-workflow"
+            }))
+            .unwrap(),
+        );
+        let mut plan = resolve_run_plan_from_config(config, ResolveContext::new(&root)).unwrap();
+        let reference = SessionRef {
+            schema_version: SESSION_REF_SCHEMA_VERSION.into(),
+            adapter_id: "acme.fabric.local-host".into(),
+            session_id: "native-session".into(),
+        };
+        plan.session_ref = Some(reference.clone());
+        assert_eq!(crate::session::selection(&plan).unwrap(), Some(reference));
+        plan.session_ref.as_mut().unwrap().adapter_id = "another.fabric.adapter".into();
+        assert!(matches!(crate::session::selection(&plan),
+            Err(FabricError::Session { code, .. }) if code == "session_adapter_mismatch"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn durable_session_start_requires_native_confirmation() {
         let (root, plan) = durable_session_plan("success");
         let error = start_runtime(&plan).expect_err("missing native identity");

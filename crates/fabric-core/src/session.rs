@@ -94,10 +94,9 @@ pub(crate) fn selection(plan: &RunPlan) -> Result<Option<SessionRef>> {
         session_ref.validate()?;
         if Some(session_ref.adapter_id.as_str())
             != plan
-                .config
-                .harness
+                .adapter_descriptor
                 .as_ref()
-                .map(|harness| harness.adapter_id.as_str())
+                .map(|adapter| adapter.descriptor.adapter_id.as_str())
         {
             return Err(session_error(
                 "session_adapter_mismatch",

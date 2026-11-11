@@ -62,12 +62,15 @@ def _runtime_error(error: Exception, *, stage: str) -> FabricRuntimeError:
     """Preserve native deadline identity and adapter codes without parsing text."""
     if isinstance(error, FabricRuntimeError):
         return error
-    code = "timeout" if isinstance(error, TimeoutError) else getattr(error, "code", None)
+    code = (
+        "timeout" if isinstance(error, TimeoutError) else getattr(error, "code", None)
+    )
+    retryable = getattr(error, "retryable", False)
     return FabricRuntimeError(
         str(error),
         stage=stage,
         code=code if isinstance(code, str) else None,
-        retryable=getattr(error, "retryable", False),
+        retryable=retryable if isinstance(retryable, bool) else False,
     )
 
 
