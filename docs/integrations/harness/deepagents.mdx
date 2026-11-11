@@ -101,6 +101,8 @@ a subagent with its own `model` override uses that model's defaults.
 
 MCP-reported tool errors (`ToolException`) and argument validation failures return error tool messages to the model rather than aborting the invocation. Local argument-validation feedback includes field paths and reasons, such as `command: Field required`, without dumping argument payloads. The model can then correct a call. The adapter does not automatically retry or replay commands, and other exceptions still propagate.
 
+The runtime starts even when some configured MCP servers are unavailable. A server that cannot be reached, or that does not list its tools within 60 seconds, is skipped, and the agent starts with the tools of the remaining servers. Each result from that runtime lists the skipped servers under `output.mcp.unavailable_servers`, with the server `name`, `transport`, `reason` (`failed` or `timed_out`) and `error_type`. The adapter also writes a warning to standard error. Error messages are not reported, because they can contain URLs, headers or other credentials. Discovery runs again on every runtime start, so a new runtime picks up a server that has recovered. Invalid server configuration, such as an unsupported transport or authentication mode, still fails startup.
+
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, replacement system instructions, blocked tools, and telemetry.
 The adapter rejects `append` system instructions. Use

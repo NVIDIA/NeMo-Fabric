@@ -228,12 +228,22 @@ jobs:
           just --set no_uv true test-python
 
   hermes:
-    name: Hermes adapter (v0.22.5, Relay 0.10, Python 3.14)
+    name: Hermes adapter (${{ matrix.hermes.version }}, Relay ${{ matrix.hermes.relay }}, Python 3.14)
     if: ${{ (inputs.ref_type || github.ref_type) != 'tag' && !inputs.skip_tests }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        hermes:
+          - version: v0.22.5
+            commit: bf0203a794a07aac3ff764972ab9087baa4e4f4e
+            relay: "0.10"
+          - version: v0.22.7
+            commit: b200f5bc60e31588ba2cb60e288029c4a54ba5fa
+            relay: "0.11"
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -241,11 +251,11 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.ref || github.sha }}
 
-      - name: Checkout Hermes Agent v0.22.5
+      - name: Checkout Hermes Agent ${{ matrix.hermes.version }}
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: NousResearch/hermes-agent
-          ref: bf0203a794a07aac3ff764972ab9087baa4e4f4e # v0.22.5
+          ref: ${{ matrix.hermes.commit }}
           path: external/hermes-agent
           persist-credentials: false
 
@@ -264,7 +274,7 @@ jobs:
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
 
       - name: Test ordinary Hermes adapter behavior
-        run: just test-hermes
+        run: just --set hermes_commit '${{ matrix.hermes.commit }}' test-hermes
 
   opencode-e2e:
     name: OpenCode E2E

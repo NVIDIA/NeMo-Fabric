@@ -103,6 +103,31 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Allow", "POST")
             self.end_headers()
             return
+        if self.path == "/fabric/shared-config/health":
+            if self.headers.get("Authorization") != f"Bearer {token}":
+                self.send_response(401)
+                self.end_headers()
+                return
+            mode = os.environ.get("FAKE_OPENCLAW_SHARED_CONFIG", "ready")
+            if mode == "missing":
+                self.send_response(404)
+                self.end_headers()
+                return
+            with open(os.environ["OPENCLAW_CONFIG_PATH"], encoding="utf-8") as stream:
+                generated = json.load(stream)
+            agent_id = next(iter(generated["agents"]["entries"]))
+            body = json.dumps(
+                {
+                    "ready": mode != "inactive",
+                    "agent_id": agent_id.lower() if mode != "wrong-agent" else "other",
+                }
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == "/healthz":
             body = json.dumps({"ok": True, "status": "live"}).encode()
             self.send_response(200)

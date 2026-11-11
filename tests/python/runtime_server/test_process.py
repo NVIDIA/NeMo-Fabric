@@ -10,6 +10,7 @@ import shutil
 import sys
 import tempfile
 from contextlib import suppress
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -97,7 +98,9 @@ async def test_server_check_command_process_is_independent_of_agents(
                 assert response["result"]["server"] == {"state": "responding"}
                 assert response["result"]["runtime"] is None
                 assert "PRIVATE" not in json.dumps(response)
-            assert second["result"]["completed_at"] > first["result"]["completed_at"]
+            assert datetime.fromisoformat(
+                second["result"]["completed_at"]
+            ) > datetime.fromisoformat(first["result"]["completed_at"])
             assert retained.read_text() == "KEEP"
             if busy:
                 assert invocation.returncode is None

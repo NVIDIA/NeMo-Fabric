@@ -100,6 +100,38 @@ def test_report_fields_cannot_be_reassigned_or_deleted(check_report):
         del report.outcome
 
 
+@pytest.mark.parametrize("activity", ["idle", "busy", "unknown"])
+def test_passing_health_does_not_require_known_activity(check_report, activity):
+    check_report["runtime"]["activity"] = activity
+    report = CheckReport.from_mapping(check_report)
+    assert report.outcome == "passed"
+    assert report.runtime["activity"] == activity
+
+
+@pytest.mark.parametrize(
+    "outcome, reason", [("unknown", "probe_error"), ("failed", "agent_exited")]
+)
+def test_unknown_activity_preserves_nonpassing_health(check_report, outcome, reason):
+    check_report["outcome"] = outcome
+    check_report["reason_code"] = reason
+    check_report["runtime"] = {
+        "state": "failed" if outcome == "failed" else "unknown",
+        "activity": "unknown",
+    }
+    check_report["checks"][0].update(outcome=outcome, reason_code=reason)
+    report = CheckReport.from_mapping(check_report)
+    assert report.outcome == outcome
+    assert report.reason_code == reason
+    assert report.runtime["activity"] == "unknown"
+
+
+@pytest.mark.parametrize("activity", ["stopping", "stopped"])
+def test_passing_health_rejects_shutdown_activity(check_report, activity):
+    check_report["runtime"]["activity"] = activity
+    with pytest.raises(FabricConfigError, match="The check report is invalid"):
+        CheckReport.from_mapping(check_report)
+
+
 async def test_sdk_checks_use_one_client_timer(
     check_environment, check_report, monkeypatch
 ):

@@ -1,0 +1,63 @@
+---
+title: "Hermes Terminal TUI"
+description: "Attach the native terminal renderer to a managed headless or dashboard TUI service."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Start with [hermes.mdx](./hermes.mdx) for shared setup and an overview of all four invocation paths.
+
+NVIDIA NeMo Fabric's terminal path attaches a prebuilt Hermes terminal renderer to a runtime-owned TUI service. This fourth client path shares the dashboard's execution backend; it does not create a fourth backend or invoke the embedded SDK agent.
+
+**Experimental terminal interface:** The `interfaces.terminal` configuration, including `terminal.port`, the `tui.json` and `tui.token` attachment files, and the `nemo_fabric_adapters.hermes.terminal` helper may change as NeMo Fabric adopts the [launcher contract in #579](https://github.com/NVIDIA/NeMo-Fabric/issues/579). Compatibility across releases is not guaranteed for these surfaces.
+
+## Installation
+
+Complete the [shared installation](./hermes.mdx#install-the-adapter) first. Terminal attachment additionally requires:
+
+- **Backend dependencies:** FastAPI, Uvicorn, and the other dependencies in pinned Hermes's `web` extra, plus `aiohttp` for authenticated readiness checks. The repository's Python 3.14 `just install-hermes-agent` recipe already provides them.
+- **Client assets:** The built terminal renderer and a supported Node runtime on the machine running the client. Terminal-only mode needs no browser assets.
+- **Host:** POSIX, for the managed backend and terminal attachment helper.
+
+For a separately prepared Hermes environment, set `ADAPTER_PYTHON` to its interpreter and `HERMES_AGENT_CHECKOUT` to your pinned v0.22.7 source checkout, then install the web extra and the pinned readiness dependency:
+
+```bash
+uv pip install --python "$ADAPTER_PYTHON" --editable "${HERMES_AGENT_CHECKOUT}[web]" "aiohttp==3.14.5"
+```
+
+Keep this `ADAPTER_PYTHON` value when following the [frontend setup commands](../../../../examples/interfaces/hermes/README.md#build-the-tui-frontends) to build the terminal bundle. For terminal-only use, skip the browser build and `HERMES_WEB_DIST` setting. If the dashboard backend is already enabled, reuse it; terminal attachment does not require another backend installation.
+
+The helper uses `HERMES_TUI_DIR/dist/entry.js` when configured; otherwise it looks for `hermes_cli/tui_dist/entry.js` or the pinned checkout's `ui-tui/dist/entry.js`. `HERMES_NODE` can select an executable Node runtime; otherwise it uses Node from `PATH`. It does not build or install missing assets.
+
+## Configuration
+
+Combine normalized model/workspace/Relay configuration with these harness settings:
+
+```python
+settings = {
+    "sdk": {"enabled": False},
+    "interfaces": {"terminal": {"port": 9119}},
+}
+```
+
+Terminal-only mode starts `hermes serve --isolated`, which runs the backend without serving the browser dashboard. If dashboard is also enabled, give it the same port: the terminal attaches to that existing service instead. API, if enabled, needs a distinct port. SDK remains enabled by default unless explicitly disabled.
+
+## Authentication
+
+After readiness, the adapter publishes owner-only attachment files under `<artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/`: `tui.json` describes the port/mode/workspace, and `tui.token` contains the TUI backend credential.
+
+The attachment helper reads these files, verifies backend authentication, and passes an authenticated WebSocket URL through the environment. The native terminal renderer presents the credential when connecting. The token is not placed in command arguments or entered manually.
+
+This credential is shared with the browser dashboard when both use the same TUI backend. It is distinct from the API gateway's `api.token` and the model-provider API key. Terminal clients share the credential; separate conversations do not provide per-user isolation.
+
+## Attach and Detach
+
+Run the helper from an interactive terminal with the Hermes interpreter. The [runnable example](../../../../examples/interfaces/hermes/README.md#4-terminal-tui) prints the exact attachment command using that runtime's descriptor. The helper executes the prebuilt renderer against the managed backend and never falls back to spawning an unmanaged backend.
+
+Terminal clients start independent native conversations by default. Detaching leaves the backend/runtime running; it is not an instruction to cancel a turn. The runtime owner stops its backend and removes attachment files. Same-conversation multi-client control and detach during active work require explicit qualification; use the runtime owner's stop action for final cleanup.
+
+## Results, Relay, and Testing
+
+Terminal output is native; it is not a normalized NeMo Fabric `RunResult`. With Relay enabled, managed agent turns finalize/flush native segments without deleting conversation history. Verify populated ATIF tool steps after each completed turn without detaching or stopping the runtime.
+
+Use the [TUI example](../../../../examples/interfaces/hermes/README.md#4-terminal-tui) for manual input, repeated turns, and artifact inspection. Read the [shared limitations](./hermes.mdx#limitations-and-planned-work), including approval policy, shared filesystem access, native activity visibility, and cleanup limits. The initial attachment helper supports local loopback clients; remote discovery and credential transport are outside this iteration.

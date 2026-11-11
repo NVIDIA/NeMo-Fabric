@@ -81,6 +81,20 @@ describes. Start fails with `openclaw_skill_not_found` for a missing entry and
 `openclaw_skill_invalid` for the other failures. The adapter passes each skill
 folder to OpenClaw's `skills.load.extraDirs`.
 
+OpenClaw connects MCP servers per session when a run starts. A server that
+cannot be reached is skipped and the run continues with the tools of the
+remaining servers; OpenClaw retries the server on a later run. After each
+invocation of a managed runtime, the adapter reads OpenClaw's `tools.effective`
+inventory for the session and reports the servers OpenClaw could not use under
+`output.mcp.unavailable_servers` (`name`, `transport`, and a `reason` of
+`failed` or `timed_out`). The adapter writes a warning to standard error the
+first time a server is reported unavailable in a runtime. Error messages are
+omitted because they can carry credentials, and OpenClaw does not expose an
+error type. The report reflects the latest attempt, so a recovered server
+disappears from later results. Reading the inventory runs one OpenClaw CLI command per invocation
+when MCP servers are configured. Runtimes that connect to a prepared service
+do not report MCP availability.
+
 For custom OpenAI-compatible providers, set `models.<role>.base_url`; the
 adapter generates an OpenClaw custom provider using the
 `openai-completions` API adapter. Set `api_key_env` when that provider requires
@@ -112,10 +126,11 @@ The following settings are specific to the OpenClaw adapter:
 | Setting | Default | Description |
 | --- | --- | --- |
 | `openclaw_command` | `openclaw` | Executable name or path. |
-| `agent_id` | `default` | OpenClaw agent for NeMo Fabric-originated invocations. |
+| `agent_id` | `default` | Selected agent for SDK and managed native clients. |
 | `channel_config` | None | OpenClaw-native `channels` and `bindings` for a prepared service. Every binding must target `agent_id`. Managed runtimes reject this setting. |
 | `port_range` | Random available range | Inclusive consumer-allocated range with `start` and `end` fields; it must span at least 111 ports. |
-| `interfaces.dashboard` | None | Serve the Control UI on a managed runtime, with an exact `port` and optional `enabled`; see [Serve the Control UI](../../../docs/integrations/harness/openclaw.mdx#serve-the-control-ui). |
+| `interfaces.dashboard` | None | Serve the Control UI on a managed runtime, with an exact `port`, optional `enabled`, and `public_origins`; refer to the [dashboard guide](../../../docs/integrations/harness/openclaw/openclaw-dashboard.mdx). |
+| `interfaces.terminal` | None | Attach the native terminal to the existing Gateway, without a separate port. Refer to the [terminal guide](../../../docs/integrations/harness/openclaw/openclaw-tui.mdx). |
 | `startup_timeout_seconds` | `60` | One deadline for all of start, from checking the `openclaw` command to the Gateway becoming ready; at most 75 seconds. |
 | `shutdown_timeout_seconds` | `5` | Graceful shutdown timeout. |
 | `connect_timeout_seconds` | `10` | Local HTTP connection timeout. |
@@ -123,7 +138,15 @@ The following settings are specific to the OpenClaw adapter:
 
 OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses `base_port + 2` for browser control and allocates browser CDP ports from `base_port + 11` through `base_port + 110`. Set `port_range` when the consumer reserves a port range before configuring NeMo Fabric; the adapter selects a base whose complete derived footprint fits inside that range. The adapter verifies only that `base_port` and `base_port + 2` are available before startup. OpenClaw allocates the CDP ports on demand instead of reserving the complete range, so the adapter cannot guarantee that those ports will still be available when OpenClaw needs them. Keep the configured range reserved for the lifetime of the runtime when using OpenClaw browser features.
 
-Relay telemetry and native OpenTelemetry are not supported.
+With native interfaces enabled, one Gateway owns all four client paths. A small adapter-owned plugin adds the configured instruction for the selected agent through the public `before_prompt_build` hook while preserving OpenClaw's native prompt and tool guidance. SDK requests omit duplicate instruction injection in that mode; SDK-only and service behavior are preserved. The existing `replace` mode selects the Fabric instruction without replacing OpenClaw's internal prompt. Model, workspace, tools, MCP, and skill configuration are shared; native responses remain native.
+
+Startup verifies the loaded hook through an authenticated, model-free probe before publishing connection files. Missing, blocked, or mismatched hooks fail with `openclaw_shared_configuration_unavailable`. The plugin requires both `allowConversationAccess` and `allowPromptInjection`: pinned OpenClaw gates `before_prompt_build` behind both permissions for external plugins.
+
+After readiness, private `interfaces/gateway.json` discovery references `dashboard.token` or `gateway.token`. Terminal selection adds an executable `interfaces/terminal` and `terminal.running` marker; the marker is removed first on stop. The launcher uses private client configuration and an environment SecretRef, not token arguments. Terminal attachment currently requires POSIX. Pinned TUI `/quit` can use a native exit-code-130 fallback while the Gateway stays usable.
+
+Refer to the [four-path architecture](../../../docs/integrations/harness/openclaw/openclaw.mdx) and [repeatable examples](../../../examples/interfaces/openclaw/README.md). Relay telemetry, ATIF/ATOF export, and native OpenTelemetry are not supported.
+
+With native browser or terminal access enabled, runtime activity is `unknown`; healthy endpoints can still pass normalized checks. SDK invocation state alone cannot account for native work.
 
 ## Gateway Health
 

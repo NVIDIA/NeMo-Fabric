@@ -233,7 +233,37 @@ root is separate. OpenShell invocation is buffered; streaming and shared-service
 hosting remain local SDK capabilities. Commands with uncertain outcomes are
 never replayed; an uncertain start blocks further starts in that sandbox.
 
-### Runtime Health
+### Recorded Runtime Status
+
+Use `Fabric.runtime_status()` to read the recorded lifecycle state and rediscover a runtime handle without starting, invoking, stopping, or probing the harness:
+
+```python
+report = await fabric.runtime_status(
+    runtime_id=runtime.runtime_id,
+    agent_name=config.metadata.name,
+)
+print(report.status)  # "active", "stopped", or "failed"
+```
+
+A direct local lookup selects a runtime started by the same `Fabric` instance. Each client holds at most 128 records across active, failed, stopped, and pending runtimes. New starts evict the oldest successfully stopped records first. When active, failed, and pending runtimes fill the limit, startup raises `FabricStateError` with `code="runtime_limit_reached"` before creating runtime resources. The client retains active and failed runtime objects until successful stop, even when the caller drops the original Python reference. Callers remain responsible for stopping runtimes. An optional local `EnvironmentHandle` restricts the lookup to that environment. Retained stopped records have `handle=None`; evicted records are unavailable.
+
+For OpenShell, pass a verified environment handle and the runtime identifier returned by start. The SDK sends `fabric-agent-ctl status` to the original owning server, so a later client process can perform the same read:
+
+```python
+report = await Fabric().runtime_status(
+    environment=environment,
+    runtime_id=runtime_id,
+    agent_name="researcher",
+)
+```
+
+`RuntimeStatusReport` contains `runtime_id`, `agent_name`, `status`, `handle`, and `server_state`. The [runtime status schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/sdk/runtime-status-report.schema.json) defines the JSON shape for SDK and command consumers. The server state is `running`, `stopping`, `stopped`, or `unknown`; direct local reads use `None`. Missing runtimes, wrong agents, and mismatched local environment identifiers raise `FabricStateError`. The SDK validates remote report identity and uses fixed diagnostics for transport failures.
+
+The returned handle is a discovery snapshot. The snapshot retains runtime identity, the opaque binding, adapter and service identifiers, and environment identity and paths. The snapshot excludes environment variable values, provider connection metadata, provider metadata, and unknown handle extensions. Use the original `Runtime` for invocation and cleanup. OpenShell reports the handle owned inside the sandbox, rather than a new host-side runtime binding. Stopped runtimes have no current handle. Records are held by the owning process and do not survive server restart.
+
+Recorded `active` state does not prove the harness is currently healthy. Use `Fabric.check()` for a fresh health observation. This status operation adds no native-interface endpoints or credential locations.
+
+## Runtime Health
 
 Use `Fabric.check(environment=..., request=...)` to check runtime health. Refer to the [health-check overview](health-checks.mdx) for scopes, outcomes, and deadlines, and the [adapter support table](health-checks.mdx#native-evidence-by-adapter) for supported levels and native evidence.
 
@@ -336,7 +366,7 @@ Service checks evaluate earlier levels in order under the same three-second defa
 `Fabric.check()` and `fabric-agent-ctl check`. The executable ships with
 `nemo-fabric-runtime` and follows the SDK package release.
 
-`fabric-agent-ctl serve` starts one runtime server per sandbox. The `start`, `invoke`, and `stop` commands call the existing `Fabric.start_runtime()`, `Runtime.invoke()`, and `Runtime.stop()` methods. Start accepts `FabricConfig` and returns the SDK `RuntimeHandle` mapping. Invoke accepts a full `RunRequest` through `--request` or any JSON SDK input through `--input`, and returns the SDK `RunResult` mapping. Stop returns JSON null. These payloads occupy the response envelope's `result` field; command diagnostics remain separate. Targeted commands require the returned runtime ID and exact agent name. The caller waits for the private socket before start. Caller-side preflight uses `Fabric.plan()` and `Fabric.doctor()`; startup validates configuration against installed descriptors.
+`fabric-agent-ctl serve` starts one runtime server per sandbox. The `start`, `invoke`, `stop`, and `status` commands call `Fabric.start_runtime()`, `Runtime.invoke()`, `Runtime.stop()`, and `Fabric.runtime_status()`. Start accepts `FabricConfig` and returns the SDK `RuntimeHandle` mapping. Invoke accepts a full `RunRequest` through `--request` or any JSON SDK input through `--input`, and returns the SDK `RunResult` mapping. Stop returns JSON null. These payloads occupy the response envelope's `result` field; command diagnostics remain separate. Targeted commands require the returned runtime ID and exact agent name. The caller waits for the private socket before start. Caller-side preflight uses `Fabric.plan()` and `Fabric.doctor()`; startup validates configuration against installed descriptors.
 
 One sandbox can own multiple runtimes, each addressed by its returned runtime ID. Invoke and stop operations are independent across IDs; stopping one runtime leaves the others usable, and another runtime can be started after a stop. An uncertain start blocks further starts because the server cannot safely determine whether an unaddressable runtime exists. Ordinary SDK stop does not confirm descendant cleanup, so the runtime server retains `fabric.unclean` after runtime use and reports `cleanup_unconfirmed` if previous sandbox process cleanup cannot be confirmed. Refer to the [runtime server command guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md).
 
@@ -718,7 +748,7 @@ plugin_config.relay = RelayConfig(
 plugin_config.enable_relay()
 ```
 
-NeMo Fabric preserves the `relay.plugins` section alongside any configured `relay.observability`, `relay.components`, and `relay.policy`. Relay owns manifest validation, loading, and activation. Use absolute manifest paths accessible inside the agent environment. Plugin activation depends on the selected adapter's Relay integration and the installed Relay version. For Hermes installation requirements, refer to [Use the Hermes Agent Adapter](../integrations/harness/hermes.mdx).
+NeMo Fabric preserves the `relay.plugins` section alongside any configured `relay.observability`, `relay.components`, and `relay.policy`. Relay owns manifest validation, loading, and activation. Use absolute manifest paths accessible inside the agent environment. Plugin activation depends on the selected adapter's Relay integration and the installed Relay version. For Hermes installation requirements, refer to [Use the Hermes Agent Adapter](../integrations/harness/hermes/hermes.mdx).
 
 ## API Inventory
 
@@ -868,16 +898,15 @@ artifact directory, and `metadata.name` and the adapter ID must each be usable
 as one folder name on Linux, macOS, and Windows: no `/`, `\`, `<>:"|?*`, or
 control characters, no trailing space or `.`, and not a Windows device name such
 as `CON` or `NUL`. On Linux and macOS, only the folder's owner can read it.
-Only one runtime can use the folder at a time: `Fabric.start_runtime(...)` fails
-while another runtime of the agent runs. A service and one runtime connected to
-it share the folder; the service holds it until `Service.release()`, even with
-no runtime connected. On Linux and macOS, the adapter host also holds the
-folder, so it stays locked until both the process that started the runtime and
-the host have exited. If the host itself is killed while a native process it
-started in its own session keeps running, the folder is unlocked while that
-process runs. Planning fails without an artifact directory, or for an
-adapter that doesn't declare `runtime.keep_state`; the Hermes Agent and
-OpenClaw adapters declare it.
+Only one runtime can use the folder at a time: `Fabric.start_runtime(...)` fails while another runtime of the agent runs. A service and one connected runtime share the folder. The service holds the lock until `Service.release()`, even with no runtime connected.
+
+The operating system releases the lock after all copies of the lock have closed:
+
+- **Linux and macOS:** Each adapter host inherits a lock descriptor, including a runtime connected to a service. Stopping a standalone runtime normally releases the lock while the application continues running. Killing only the adapter host leaves the application's lock descriptor open.
+- **Windows:** Adapter hosts do not inherit the lock. Only the NeMo Fabric process holds the lock, so the folder becomes available if that process exits while an adapter host is still running.
+- **Detached processes:** A native process can continue accessing the state folder after all lock descriptors close. A replacement runtime can then acquire the lock while the detached process still writes to the folder.
+
+Planning fails without an artifact directory or for an adapter that doesn't declare `runtime.keep_state`. The Hermes Agent and OpenClaw adapters declare `runtime.keep_state`.
 
 ## Runtime Resource Snapshots
 
@@ -1241,7 +1270,7 @@ Streaming has the following v0.1 constraints:
 Claude and Codex streaming use the NeMo Relay `nemo-relay` gateway CLI and
 require a release in the `>=0.9,<0.12` range. Their adapter `harness` and
 `full` extras install the supported CLI. Deep Agents uses its in-process NeMo
-Relay integration with Relay 0.11. Hermes Agent keeps Relay 0.10 with the pinned Hermes source in a separate Python 3.14 environment.
+Relay integration with Relay 0.11. Hermes Agent v0.22.7 uses Relay 0.11; v0.22.5 with Relay 0.10 remains supported. Hermes runs on Python 3.14, with `ADAPTER_PYTHON` selecting a separate environment when the application uses another interpreter.
 Remote Agent services own their Relay installation and publish to the same
 configured `nemo-fabric-stream` collector
 base URL. The local adapter does not install or start Relay for the service.
@@ -1442,7 +1471,7 @@ offending settings path.
 
 ## Errors
 
-All public SDK errors inherit from `FabricError`.
+All public SDK errors inherit from `FabricError`. One-shot lifecycle failures can retain obtained runtime and request identities, cleanup events, and already-selected software evidence in `error.details["runtime_evidence"]`. These observations do not establish a terminal invocation result; unknown usage remains unknown. The original exception and its cause remain authoritative.
 
 | Error | Meaning |
 | --- | --- |

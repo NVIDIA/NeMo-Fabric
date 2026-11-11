@@ -497,7 +497,7 @@ where
     }
 }
 
-// A dedicated provider process handles each health check and exits after the response.
+// A dedicated provider process handles each read-only command and exits after the response.
 fn request_check_provider_process<T>(
     command: OsString,
     operation: ProviderOperation<'_>,
@@ -506,6 +506,13 @@ fn request_check_provider_process<T>(
 where
     T: for<'de> Deserialize<'de>,
 {
+    let is_check = matches!(
+        &operation,
+        ProviderOperation::RuntimeCommand {
+            command: TaskCommand::Check { .. },
+            ..
+        }
+    );
     let started = Instant::now();
     let budget = Duration::try_from_secs_f64(timeout_seconds).unwrap_or(Duration::MAX);
     let remaining = || {
@@ -531,7 +538,9 @@ where
         })
         .map_err(FabricError::SerializeJson)?;
         let seconds = remaining()?.as_secs_f64();
-        request["command"]["timeout_seconds"] = Value::from(seconds);
+        if is_check {
+            request["command"]["timeout_seconds"] = Value::from(seconds);
+        }
         request["timeout_seconds"] = Value::from(seconds.ceil().clamp(1.0, 320.0) as u64);
         let mut encoded = serde_json::to_vec(&request).map_err(FabricError::SerializeJson)?;
         if encoded.len() > MAX_PROVIDER_REQUEST_BYTES {
@@ -567,12 +576,29 @@ where
             }
         };
         remaining()?;
-        if output.is_empty() || output.len() > 16 * 1024 || output.last() != Some(&b'\n') {
+        if output.is_empty()
+            || output.len()
+                > if is_check {
+                    16 * 1024
+                } else {
+                    MAX_PROVIDER_RESPONSE_BYTES
+                }
+            || output.last() != Some(&b'\n')
+        {
             return provider_error(
                 "runtime_command",
                 "provider_protocol_error",
                 "invalid health response framing".into(),
             );
+        }
+        if !is_check {
+            crate::strict_json::validate(&output).map_err(|_| {
+                provider_failure(
+                    "runtime_command",
+                    "provider_protocol_error",
+                    "invalid status response".into(),
+                )
+            })?;
         }
         let response: ProviderResponse = serde_json::from_slice(&output).map_err(|_| {
             provider_failure(
@@ -635,11 +661,16 @@ where
         let budget = *timeout_seconds;
         return request_check_provider_process(command, operation, budget);
     }
+    if matches!(task_command, TaskCommand::Status { .. }) {
+        return request_check_provider_process(command, operation, 10.0);
+    }
     let operation_name = operation.name();
     let request_id = new_id("environment-provider-request");
     let environment_key = environment_resource_key(environment)?;
     let (identity, is_start, is_stop) = match task_command {
-        TaskCommand::Check { .. } => unreachable!("health uses a separate provider process"),
+        TaskCommand::Check { .. } | TaskCommand::Status { .. } => {
+            unreachable!("reads use a separate provider process")
+        }
         TaskCommand::Start { .. } => (request_id.clone(), true, false),
         TaskCommand::Invoke { runtime_id, .. } => (runtime_id.clone(), false, false),
         TaskCommand::Stop { runtime_id, .. } => (runtime_id.clone(), false, true),
@@ -1446,6 +1477,60 @@ mod tests {
 
         retire_runtime_provider_process(&first_key, &first);
         retire_runtime_provider_process(&second_key, &second);
+        fs::remove_dir_all(directory).expect("remove fixture");
+    }
+
+    #[test]
+    fn status_provider_does_not_wait_for_an_invocation_worker() {
+        let (directory, command) = provider_script(
+            r#"
+import json, sys
+for line in sys.stdin:
+    request = json.loads(line)
+    assert request['command']['operation'] == 'status'
+    assert set(request['command']) == {'operation', 'agent', 'runtime_id'}
+    print(json.dumps({'protocol_version': request['protocol_version'],
+        'request_id': request['request_id'], 'status': 'succeeded',
+        'output': {'seen': 'status'}}), flush=True)
+"#,
+        );
+        let environment: EnvironmentHandle = serde_json::from_value(serde_json::json!({
+            "environment_id": "status-worker", "provider": "openshell",
+            "control_location": "in_env_control", "ownership": "caller_owned",
+            "connection": {"gateway": "https://status.invalid", "sandbox_id": new_id("sandbox")}
+        }))
+        .expect("environment fixture");
+        let key = serde_json::json!([environment_resource_key(&environment).unwrap(), "runtime-1"])
+            .to_string();
+        let process = runtime_provider_process(&key, &command, "runtime_command").expect("worker");
+        let guard = process.lock().unwrap();
+        let (sender, receiver) = mpsc::channel();
+        thread::scope(|scope| {
+            scope.spawn(|| {
+                let task = TaskCommand::Status {
+                    agent: "demo".to_string(),
+                    runtime_id: "runtime-1".to_string(),
+                };
+                let result = request_runtime_provider_process::<Value>(
+                    command,
+                    ProviderOperation::RuntimeCommand {
+                        environment: &environment,
+                        command: &task,
+                        timeout_seconds: 10,
+                    },
+                );
+                sender.send(result).unwrap();
+            });
+            let result = receiver.recv_timeout(Duration::from_secs(2));
+            drop(guard);
+            assert_eq!(
+                result
+                    .expect("status must bypass the invocation mutex")
+                    .expect("status output")["seen"],
+                "status"
+            );
+        });
+        retire_runtime_provider_process(&key, &process);
         fs::remove_dir_all(directory).expect("remove fixture");
     }
 

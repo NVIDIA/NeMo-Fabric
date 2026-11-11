@@ -577,7 +577,7 @@ class ClineSdkSessionHandle implements ClineSessionHandle {
     }
     const unchanged = () => !this.stopped && residentSessions(this.core) === this.sessions &&
       this.sessions?.get(sessionId) === resident && resident.agent === this.agent &&
-      resident.agent.getAgentId() === this.agentId && !resident.agent.shutdownCalled;
+      resident.agent.getAgentId() === this.agentId;
     try {
       const sessions = residentSessions(this.core);
       const current = sessions?.get(sessionId);
@@ -608,14 +608,17 @@ class ClineSdkSessionHandle implements ClineSessionHandle {
           this.probing = false;
         }
         if (!unchanged()) return unobservedHealth("observation_changed");
+        if (resident.agent.shutdownCalled) return observation("failed", "session_closed");
         if (snapshot?.sessionId !== sessionId || !["idle", "running", "pending"].includes(snapshot.status)) {
           return observation("failed", "health_failed");
         }
       }
-      return unchanged() ? observation("passed", null) : unobservedHealth("observation_changed");
+      if (!unchanged()) return unobservedHealth("observation_changed");
+      return resident.agent.shutdownCalled ? observation("failed", "session_closed") : observation("passed", null);
     } catch {
       try {
         if (!unchanged()) return unobservedHealth("observation_changed");
+        if (resident.agent.shutdownCalled) return observation("failed", "session_closed");
       } catch { return unobservedHealth("observation_changed"); }
       return unobservedHealth("probe_error");
     }

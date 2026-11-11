@@ -4,7 +4,10 @@
 """Native Hermes health checks during a blocked local model request."""
 
 import asyncio
+from functools import partial
 import os
+from pathlib import Path
+import signal
 import sys
 import threading
 
@@ -187,7 +190,11 @@ async def test_hermes_sdk_health_during_invocation(health_model, tmp_path):
         await fabric.release_environment(environment)
 
 
-async def test_hermes_native_session_health_and_closure(health_model, tmp_path):
+async def test_hermes_native_session_health_and_closure(
+    health_model, tmp_path, monkeypatch
+):
+    from agent import session_activity
+
     endpoint, _, _, requests = health_model
     os.environ["FABRIC_NATIVE_HEALTH_TEST_KEY"] = "local-test-only"
     os.environ["HOME"] = str(tmp_path)
@@ -220,12 +227,26 @@ async def test_hermes_native_session_health_and_closure(health_model, tmp_path):
         startup_requests = list(requests)
         assert ("POST", "/v1/chat/completions") not in startup_requests
         before = native._agent.get_activity_summary()
+
+        # Advance only the snapshot clock, leaving stored activity untouched.
+        monkeypatch.setattr(
+            session_activity,
+            "build_activity_snapshot",
+            partial(
+                session_activity.build_activity_snapshot,
+                now=before["last_activity_at"] + before["seconds_since_activity"] + 1.0,
+            ),
+        )
         for level in ("live", "active", "ready"):
             async with asyncio.timeout(3):
                 result = await native.check(level)
             AdapterCheckResult.from_mapping(result)
             assert (result["outcome"], result["activity"]) == ("passed", "idle")
-        assert before == native._agent.get_activity_summary()
+        after = native._agent.get_activity_summary()
+        assert after.pop("seconds_since_activity") > before.pop(
+            "seconds_since_activity"
+        )
+        assert before == after
         assert native._conversation_history is None
         assert requests == startup_requests
         await asyncio.to_thread(native._agent.close)
@@ -239,3 +260,68 @@ async def test_hermes_native_session_health_and_closure(health_model, tmp_path):
         assert requests == startup_requests
     finally:
         await native.stop()
+
+
+@pytest.mark.skipif(
+    sys.platform not in {"linux", "darwin"},
+    reason="requires native process identity reads",
+)
+async def test_hermes_host_exit_does_not_hide_behind_a_responsive_runtime_server(
+    health_model, tmp_path, server_sdk_bridge
+):
+    from nemo_fabric.runtime_server import transport
+
+    endpoint, _, release, _ = health_model
+    release.set()
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    host, _ = server_sdk_bridge
+    config = _config(endpoint, tmp_path)
+    started = await host.handle(
+        {
+            "interface_version": 2,
+            "operation": "start",
+            "agent": config.metadata.name,
+            "config": config.model_dump(mode="json"),
+        }
+    )
+    assert started["status"] == "succeeded", started
+    runtime_id = started["result"]["runtime_id"]
+    runtime = host.runtimes[runtime_id].runtime
+    target = {"agent": config.metadata.name, "runtime_id": runtime_id}
+    socket_path = Path(os.environ["FABRIC_HOST_SOCKET"])
+    try:
+        # An explicit local invocation supplies the exact owned host PID.
+        result = await runtime.invoke(input="Return finished.")
+        assert result.status == "succeeded", result.to_mapping()
+        os.kill(result.metadata["host_pid"], signal.SIGKILL)
+        async with asyncio.timeout(3):
+            while True:
+                checked = await transport.client(
+                    {
+                        "interface_version": 2,
+                        "operation": "check",
+                        "level": "ready",
+                        **target,
+                    },
+                    socket_path=socket_path,
+                )
+                if checked["result"]["outcome"] == "failed":
+                    break
+                await asyncio.sleep(0.01)
+        report = checked["result"]
+        assert checked["status"] == "failed"
+        assert report["reason_code"] == "agent_exited"
+        assert report["runtime"] == {"state": "failed", "activity": "stopped"}
+        assert [check["name"] for check in report["checks"]] == ["live"]
+        assert report["checks"][0]["source"] == "fabric.adapter.liveness"
+        assert report["checks"][0]["observed_at"] is not None
+        server = await transport.client(
+            {"interface_version": 2, "operation": "check"}, socket_path=socket_path
+        )
+        assert server["result"]["outcome"] == "passed"
+        assert host.runtimes[runtime_id].runtime is runtime
+    finally:
+        stopped = await host.handle(
+            {"interface_version": 2, "operation": "stop", **target}
+        )
+        assert stopped["status"] == "succeeded", stopped

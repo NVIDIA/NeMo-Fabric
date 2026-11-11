@@ -31,6 +31,7 @@ from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import mcp_availability
 from nemo_fabric_adapters.hermes import configuration
 from nemo_fabric_adapters.hermes import interfaces
 from nemo_fabric_adapters.hermes import telemetry
@@ -49,10 +50,13 @@ def main() -> None:
 
 
 class HermesRuntime:
-    """One Hermes agent and session database owned by a Fabric runtime."""
+    """SDK and native Hermes execution owned by one Fabric runtime."""
 
     def __init__(self) -> None:
+        """Create an unstarted runtime with no Hermes agent."""
         self._started = False
+        self._sdk_enabled = True
+        self._owns_mcp = False
         self._stopping = False
         self._health_lock = asyncio.Lock()
         self._health_task: asyncio.Task[Any] | None = None
@@ -65,6 +69,7 @@ class HermesRuntime:
         self._hermes_config: dict[str, Any] = {}
         self._enabled_toolsets: list[str] | None = None
         self._mcp_authentication_checked = False
+        self._mcp_unavailable: list[dict[str, str]] = []
         self._conversation_history: list[dict[str, Any]] | None = None
         self._session_db: Any = None
         self._agent: Any = None
@@ -74,6 +79,12 @@ class HermesRuntime:
         self._interfaces = interfaces.InterfaceChildren()
 
     async def start(self, payload: dict[str, Any]) -> None:
+        """Apply shared configuration and start the selected SDK/native backends.
+
+        SDK execution remains enabled by default. A native-only runtime skips
+        SDK agent, database, and MCP initialization; failed startup cleans up
+        any resources already created.
+        """
         if self._started:
             raise lifecycle.LifecycleError(
                 "hermes_runtime_already_started",
@@ -108,10 +119,12 @@ class HermesRuntime:
             self._agent_config = agent_config
             self._settings = configuration._settings(agent_config)
             interface_ports = interfaces.interface_ports(self._settings)
-            if interface_ports:
-                # Refuse before Hermes's setup, whose MCP discovery can take
-                # minutes and outlast the caller's start deadline.
-                interfaces.require_supported_platform()
+            self._sdk_enabled = self._settings.get("sdk", {}).get("enabled", True)
+            if not self._sdk_enabled and not interface_ports:
+                raise lifecycle.LifecycleError(
+                    "hermes_no_execution_path",
+                    "Enable the Hermes SDK or at least one native interface",
+                )
             model_config = configuration._selected_model(agent_config)
             self._model_config = model_config
             self._runtime_id = runtime_context.runtime_id
@@ -119,10 +132,21 @@ class HermesRuntime:
                 runtime_context, common_utils.base_dir(payload)
             )
             self._hermes_home.mkdir(parents=True, exist_ok=True)
-            # A runtime that ended without stop can leave its API token in a
-            # kept Hermes home, for a server that no longer runs.
+            # An abruptly ended runtime can leave credentials and attachment
+            # records in a kept Hermes home.
             token_path = self._hermes_home / "interfaces" / "api.token"
-            token_path.unlink(missing_ok=True)
+            try:
+                for name in ("tui.json", "tui.token", "api.token", "agent-config.json"):
+                    token_path.with_name(name).unlink(missing_ok=True)
+            except OSError as error:
+                raise lifecycle.LifecycleError(
+                    "hermes_interface_cleanup_failed",
+                    "Hermes interface files could not be removed",
+                ) from error
+            if interface_ports:
+                # Refuse before Hermes's setup, whose MCP discovery can take
+                # minutes and outlast the caller's start deadline.
+                interfaces.require_supported_platform()
             os.environ["HOME"] = str(self._hermes_home)
             os.environ["HERMES_HOME"] = str(self._hermes_home)
             os.environ.setdefault("HERMES_YOLO_MODE", "1")
@@ -163,54 +187,57 @@ class HermesRuntime:
             if not api_key:
                 raise RuntimeError(f"{api_key_env} is required for Hermes mode")
 
-            from hermes_cli.config import load_config
-            from hermes_cli.plugins import discover_plugins
-            from hermes_state import SessionDB
-            from run_agent import AIAgent
+            if self._sdk_enabled:
+                from hermes_cli.config import load_config
+                from hermes_cli.plugins import discover_plugins
+                from hermes_state import SessionDB
+                from run_agent import AIAgent
 
-            with redirect_stdout(StringIO()):
-                if relay_enabled:
-                    common_utils.reject_ambient_relay_plugin_config()
-                discover_plugins(force=True)
-                loaded_hermes_config = load_config()
-                # Hermes 0.12+ no longer discovers MCP tools as an import side effect
-                # (#16856). Fabric is a Hermes host: discover after config.yaml exists
-                # and before AIAgent resolves mcp-* toolsets.
-                # discover_mcp_tools uses a blocking 120s wait, wrapping it in
-                # asyncio.to_thread to avoid blocking the loop.
-                if self._hermes_config.get("mcp_servers"):
-                    try:
-                        from tools.mcp_tool_discovery import discover_mcp_tools
-                    except ModuleNotFoundError as error:
-                        if error.name != "tools.mcp_tool_discovery":
-                            raise
-                        from tools.mcp_tool import discover_mcp_tools
+                with redirect_stdout(StringIO()):
+                    if relay_enabled:
+                        common_utils.reject_ambient_relay_plugin_config()
+                    discover_plugins(force=True)
+                    loaded_hermes_config = load_config()
+                    # Hermes 0.12+ no longer discovers MCP tools as an import side effect
+                    # (#16856). Fabric is a Hermes host: discover after config.yaml exists
+                    # and before AIAgent resolves mcp-* toolsets.
+                    # discover_mcp_tools uses a blocking 120s wait, wrapping it in
+                    # asyncio.to_thread to avoid blocking the loop.
+                    if self._hermes_config.get("mcp_servers"):
+                        self._owns_mcp = True
+                        try:
+                            from tools.mcp_tool_discovery import discover_mcp_tools
+                        except ModuleNotFoundError as error:
+                            if error.name != "tools.mcp_tool_discovery":
+                                raise
+                            from tools.mcp_tool import discover_mcp_tools
 
-                    await asyncio.to_thread(discover_mcp_tools)
+                        await asyncio.to_thread(discover_mcp_tools)
+                        await self._refresh_unavailable_mcp_servers()
 
-                self._enabled_toolsets = configuration.resolve_hermes_toolsets(
-                    agent_config, loaded_hermes_config
-                )
-                self._session_db = SessionDB()
-                self._conversation_history = None
-                self._agent = AIAgent(
-                    **filter_supported_kwargs(
-                        AIAgent,
-                        base_url=model_config.base_url,
-                        api_key=api_key,
-                        provider=model_config.provider,
-                        model=model_config.model,
-                        **configuration.agent_behavior_kwargs(
-                            agent_config, self._enabled_toolsets
-                        ),
-                        quiet_mode=True,
-                        skip_context_files=True,
-                        skip_memory=True,
-                        platform="fabric",
-                        session_id=self._runtime_id,
-                        session_db=self._session_db,
+                    self._enabled_toolsets = configuration.resolve_hermes_toolsets(
+                        agent_config, loaded_hermes_config
                     )
-                )
+                    self._session_db = SessionDB()
+                    self._conversation_history = None
+                    self._agent = AIAgent(
+                        **filter_supported_kwargs(
+                            AIAgent,
+                            base_url=model_config.base_url,
+                            api_key=api_key,
+                            provider=model_config.provider,
+                            model=model_config.model,
+                            **configuration.agent_behavior_kwargs(
+                                agent_config, self._enabled_toolsets
+                            ),
+                            quiet_mode=True,
+                            skip_context_files=True,
+                            skip_memory=True,
+                            platform="fabric",
+                            session_id=self._runtime_id,
+                            session_db=self._session_db,
+                        )
+                    )
             if interface_ports:
                 if "api" in interface_ports:
                     from hermes_cli.profile_channels import platform_ids
@@ -251,6 +278,12 @@ class HermesRuntime:
                     ),
                     environment=environment,
                     agent_config=agent_config,
+                    workspace=str(runtime_context.environment.workspace or "."),
+                    terminal_enabled=self._settings.get("interfaces", {})
+                    .get("terminal", {})
+                    .get("enabled", True)
+                    if "terminal" in self._settings.get("interfaces", {})
+                    else False,
                 )
             self._agent_config = agent_config
             self._started = True
@@ -263,6 +296,20 @@ class HermesRuntime:
         request: AgentRunRequest,
         runtime_context: RuntimeContext,
     ) -> AgentRunResult:
+        """Invoke the embedded agent and return its normalized result.
+
+        Native-only runtimes reject SDK invocation without constructing an
+        agent. Enabled SDK runtimes retain their conversation between calls.
+        """
+        if self._started and not self._sdk_enabled:
+            return AgentRunResult(
+                status=AgentRunStatus.FAILED,
+                output={},
+                error=AgentRunError(
+                    code="hermes_sdk_disabled",
+                    message="Embedded Hermes SDK execution is disabled; use an enabled native interface",
+                ),
+            )
         agent_config = self._agent_config
         model_config = self._model_config
         if (
@@ -337,6 +384,7 @@ class HermesRuntime:
         messages = result.get("messages") or []
         if isinstance(messages, list):
             self._conversation_history = messages
+        unavailable_mcp_servers = await self._refresh_unavailable_mcp_servers()
         reported_error = result.get("error")
         failed = (
             bool(result.get("failed"))
@@ -380,6 +428,9 @@ class HermesRuntime:
             output["relay_artifacts"] = common_utils.collect_relay_artifacts(
                 self._relay_plugin_config
             )
+        # Absent when every configured server is usable, so clean runs keep their shape.
+        if mcp := mcp_availability.output_block(unavailable_mcp_servers):
+            output["mcp"] = mcp
         error = None
         if failed:
             if isinstance(reported_error, dict):
@@ -408,6 +459,56 @@ class HermesRuntime:
             output=output,
             error=error,
         )
+
+    async def _refresh_unavailable_mcp_servers(self) -> list[dict[str, str]]:
+        """Read Hermes's current status of the configured MCP servers.
+
+        Hermes keeps running when a server fails to connect, so this reports
+        its current state: a server that has since connected is no longer
+        reported. Hermes records why a connect failed
+        only as a message, which is never reported, so every failure is
+        ``failed``. Servers that are still connecting, or that Hermes has not
+        attempted yet, are not reported.
+        """
+
+        configured = self._hermes_config.get("mcp_servers") or {}
+        agent_config = self._agent_config
+        if not configured or agent_config is None or agent_config.mcp is None:
+            self._mcp_unavailable = []
+            return []
+
+        try:
+            try:
+                from tools.mcp_tool_discovery import get_mcp_status
+            except ModuleNotFoundError as error:
+                if error.name != "tools.mcp_tool_discovery":
+                    raise
+                from tools.mcp_tool import get_mcp_status
+
+            statuses = await asyncio.to_thread(get_mcp_status, configured)
+        except Exception:
+            # The report is diagnostic: omit it rather than fail start or a turn.
+            LOGGER.warning("Hermes MCP server status could not be observed")
+            self._mcp_unavailable = []
+            return []
+        servers = agent_config.mcp.servers
+        unavailable = [
+            mcp_availability.unavailable_server(
+                name,
+                servers[name].transport.strip().lower(),
+                mcp_availability.FAILED,
+            )
+            for status in statuses
+            if status.get("status") == "failed"
+            and (name := status.get("name")) in servers
+        ]
+        reported = {entry["name"] for entry in self._mcp_unavailable}
+        mcp_availability.warn(
+            "Hermes",
+            [entry for entry in unavailable if entry["name"] not in reported],
+        )
+        self._mcp_unavailable = unavailable
+        return unavailable
 
     async def _authenticate_mcp_servers(self) -> None:
         if self._mcp_authentication_checked:
@@ -511,6 +612,35 @@ class HermesRuntime:
         self._relay_finalize_hook_invoked = False
 
     async def check(self, level: str) -> dict[str, Any]:
+        """Observe SDK health when enabled, otherwise the native backends."""
+        if (
+            self._sdk_enabled
+            or not self._started
+            or self._stopping
+            or level not in {"live", "active", "ready"}
+        ):
+            return await self._check_sdk(level)
+        ports = interfaces.interface_ports(self._settings)
+        if not ports:
+            return await self._check_sdk(level)
+        reason = await self._interfaces.check(level)
+        if self._stopping or not self._started:
+            reason = "observation_changed"
+        return {
+            "outcome": "passed" if reason is None else "failed",
+            "reason_code": reason,
+            "activity": "unknown",
+            "source": {
+                "live": "fabric.adapter.liveness",
+                "active": "fabric.adapter.interface",
+                "ready": "fabric.adapter.readiness",
+            }[level],
+            "observed_at": datetime.now(timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+        }
+
+    async def _check_sdk(self, level: str) -> dict[str, Any]:
         """Observe the owned Hermes session through its native diagnostic interface."""
         result: dict[str, Any] = {
             "outcome": "unknown",
@@ -623,6 +753,12 @@ class HermesRuntime:
         return observed("passed", None)
 
     async def stop(self) -> None:
+        """Stop owned native processes and close resources created by the SDK.
+
+        Cleanup attempts every resource even after a failure, then reports
+        errors without closing parent MCP resources that this runtime never
+        initialized.
+        """
         self._stopping = True
         active_invoke_task = self._active_invoke_task
         errors: list[BaseException] = []
@@ -641,7 +777,8 @@ class HermesRuntime:
 
         agent = self._agent
         session_db = self._session_db
-        had_mcp_servers = bool(self._hermes_config.get("mcp_servers"))
+        had_mcp_servers = self._owns_mcp
+        self._owns_mcp = False
         had_relay_plugin = self._relay_plugin_config_path is not None
         self._agent = None
         self._session_db = None
@@ -654,6 +791,7 @@ class HermesRuntime:
         self._hermes_config = {}
         self._enabled_toolsets = None
         self._mcp_authentication_checked = False
+        self._mcp_unavailable = []
         self._conversation_history = None
         self._relay_plugin_config = None
         self._relay_plugin_config_path = None

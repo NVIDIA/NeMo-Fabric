@@ -47,6 +47,45 @@ pub(crate) fn remote_check_agent(
     openshell::check_agent(environment, runtime_id)
 }
 
+// Internal transport entrypoint for the typed Python SDK status operation.
+#[doc(hidden)]
+pub fn runtime_status_environment(
+    environment: &EnvironmentHandle,
+    agent: &str,
+    runtime_id: &str,
+) -> Result<Value> {
+    if environment.provider != "openshell"
+        || environment.control_location != ControlLocation::InEnvControl
+        || [agent, runtime_id]
+            .iter()
+            .any(|value| value.trim().is_empty() || value.contains('\0'))
+    {
+        return Err(FabricError::InvalidConfig {
+            field: "runtime_status".to_string(),
+            reason: "a valid runtime target and OpenShell environment are required".to_string(),
+        });
+    }
+    let command = crate::task_command::TaskCommand::Status {
+        agent: agent.to_string(),
+        runtime_id: runtime_id.to_string(),
+    };
+    match crate::environment::command_runtime(environment, &command, 10)? {
+        crate::task_command::TaskCommandResponse::Returned { value } => Ok(value),
+        crate::task_command::TaskCommandResponse::Rejected { error } => {
+            Err(FabricError::EnvironmentProviderOperation {
+                provider: "openshell".to_string(),
+                operation: "status".to_string(),
+                code: if error.effects == "none" {
+                    error.code
+                } else {
+                    "invalid_response".to_string()
+                },
+                message: "The runtime status request was rejected.".to_string(),
+            })
+        }
+    }
+}
+
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
 const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";
@@ -897,8 +936,7 @@ struct LocalAdapterHost {
     relay_config: Option<RelayRuntimeConfig>,
     // Adapter startup values stay in memory, never in a serialized handle or plan.
     environment_env: BTreeMap<String, String>,
-    // Held while the host runs; dropping the host releases the agent's state folder.
-    // A service host holds it for the runtimes connected to the service.
+    // Each host holds a descriptor, including runtimes sharing a service's lock.
     _state_lock: Option<File>,
 }
 
@@ -1051,6 +1089,16 @@ pub fn start_runtime_with_service(
     let mut current_env = record.host.environment_env.clone();
     resolve_named_environment(plan, &mut current_env)?;
     validate_named_environment(plan, &record.host.environment_env, &current_env)?;
+    let state_lock = record
+        .host
+        ._state_lock
+        .as_ref()
+        .map(File::try_clone)
+        .transpose()
+        .map_err(|source| FabricError::Write {
+            path: record.host.runtime_dir.clone(),
+            source,
+        })?;
     let environment = prepare_environment(plan)?;
     let runtime = start_local_runtime(
         plan,
@@ -1063,6 +1111,7 @@ pub fn start_runtime_with_service(
             } else {
                 None
             },
+            state_lock,
         )),
     )?;
     if plan.config.provenance.enabled {
@@ -1163,7 +1212,14 @@ fn start_service(
     )?;
     let environment_env = start.runtime_context.environment.env.clone();
     let request = AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Start(Box::new(start)));
-    let mut host = spawn_local_host(plan, &runtime, artifacts, relay_config, environment_env)?;
+    let mut host = spawn_local_host(
+        plan,
+        &runtime,
+        artifacts,
+        relay_config,
+        environment_env,
+        None,
+    )?;
     let output = match exchange_lifecycle_message(
         &mut host,
         &service_id,
@@ -1695,6 +1751,8 @@ fn service_binding(
     info: &AdapterServiceInfo,
 ) -> Result<String> {
     let mut binding_plan = plan.clone();
+    // Bind relative plans to the directory used when the service was prepared.
+    binding_plan.base_dir = absolute_path(binding_plan.base_dir)?;
     binding_plan.config.provenance = Default::default();
     stable_hash(
         "fabric-service-binding",
@@ -1898,12 +1956,17 @@ impl RuntimeAdapter for LocalHostAdapter {
 fn start_local_runtime(
     plan: &RunPlan,
     environment: EnvironmentHandle,
-    service: Option<(String, PathBuf, Option<crate::ExecutionEvidence>)>,
+    service: Option<(
+        String,
+        PathBuf,
+        Option<crate::ExecutionEvidence>,
+        Option<File>,
+    )>,
 ) -> Result<RuntimeHandle> {
     validate_local_host(plan, &environment)?;
     let service_id = service
         .as_ref()
-        .map(|(service_id, _, _)| service_id.clone());
+        .map(|(service_id, _, _, _)| service_id.clone());
     let runtime_id = new_id("runtime");
     let runtime_binding = runtime_binding(&runtime_id, service_id.as_ref(), plan, &environment)?;
     let runtime = RuntimeHandle {
@@ -1924,15 +1987,20 @@ fn start_local_runtime(
     let mut artifacts = artifact_manifest(plan)?;
     let fabric_home = prepare_fabric_home(&artifacts, &runtime, &start_invocation)?;
     let relay_config = prepare_relay_runtime_config(plan, &runtime, &fabric_home, &mut artifacts)?;
-    let service_execution = service.as_ref().and_then(|(_, _, report)| report.clone());
-    let service_context =
-        service.map(
-            |(service_id, connection_path, execution)| AdapterServiceContext::Connect {
+    let service_execution = service
+        .as_ref()
+        .and_then(|(_, _, report, _)| report.clone());
+    let (service_context, state_lock) = match service {
+        Some((service_id, connection_path, execution, state_lock)) => (
+            Some(AdapterServiceContext::Connect {
                 execution,
                 service_id,
                 connection_path,
-            },
-        );
+            }),
+            state_lock,
+        ),
+        None => (None, None),
+    };
     let start = adapter_lifecycle_start(
         plan,
         &runtime,
@@ -1957,8 +2025,14 @@ fn start_local_runtime(
         })
         .unwrap_or_default();
     crate::check::register(&runtime, levels);
-    let mut host = match spawn_local_host(plan, &runtime, artifacts, relay_config, environment_env)
-    {
+    let mut host = match spawn_local_host(
+        plan,
+        &runtime,
+        artifacts,
+        relay_config,
+        environment_env,
+        state_lock,
+    ) {
         Ok(host) => host,
         Err(error) => {
             crate::check::invalidate_runtime(&runtime);
@@ -2484,7 +2558,6 @@ fn invalidate_timed_out_local_host(
             .is_some_and(|host| Arc::ptr_eq(host, expected_host))
         {
             hosts.remove(runtime_id);
-            local_host_processes().remove(runtime_id);
         }
     }
 
@@ -2646,6 +2719,13 @@ fn local_host_processes() -> std::sync::MutexGuard<'static, BTreeMap<String, Loc
         .unwrap_or_else(|error| error.into_inner())
 }
 
+/// Read retained host exit evidence without taking the invocation lock.
+/// Release the process registry before inspecting the process.
+pub(crate) fn local_host_has_exited(runtime_id: &str) -> Option<bool> {
+    let process = local_host_processes().get(runtime_id).cloned()?;
+    process.has_exited()
+}
+
 fn local_services()
 -> std::sync::MutexGuard<'static, BTreeMap<String, Arc<Mutex<LocalServiceRecord>>>> {
     LOCAL_SERVICES
@@ -2666,12 +2746,14 @@ fn spawn_local_host(
     artifacts: ArtifactManifest,
     relay_config: Option<RelayRuntimeConfig>,
     environment_env: BTreeMap<String, String>,
+    service_state_lock: Option<File>,
 ) -> Result<LocalAdapterHost> {
-    // A runtime connected to a service uses the lock its service host holds.
-    let state_lock = if runtime.service_id.is_none() {
-        lock_agent_state(plan, &artifacts)?
-    } else {
-        None
+    // A connected host inherits a duplicate of its service's lock, so either
+    // host can finish cleanup without releasing the other host's protection.
+    let state_lock = match service_state_lock {
+        Some(lock) => Some(lock),
+        None if runtime.service_id.is_none() => lock_agent_state(plan, &artifacts)?,
+        None => None,
     };
     let runtime_dir = local_host_directory(&runtime.runtime_id);
     std::fs::create_dir_all(&runtime_dir).map_err(|source| FabricError::Write {
@@ -3565,9 +3647,8 @@ fn agent_state_dir(plan: &RunPlan, artifacts: &ArtifactManifest) -> Result<Optio
 }
 
 /// Takes the agent's state folder for one runtime. The lock lasts while the
-/// returned file is open here or, on Unix, in the adapter host that inherits
-/// it, and the operating system releases it when both have exited, so a
-/// crashed runtime leaves no stale lock behind.
+/// returned file is open here or, on Unix, in an adapter host that inherits
+/// it. The operating system releases the lock after all descriptors close.
 fn lock_agent_state(plan: &RunPlan, artifacts: &ArtifactManifest) -> Result<Option<File>> {
     let Some(state_dir) = agent_state_dir(plan, artifacts)? else {
         return Ok(None);
@@ -5284,6 +5365,68 @@ else:
         let _ = fs::remove_dir_all(root);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn keep_state_stays_locked_while_a_connected_host_outlives_its_service() {
+        const APP_PLAN: &str = "FABRIC_KEEP_STATE_SERVICE_TEST_PLAN";
+        if let Ok(path) = std::env::var(APP_PLAN) {
+            let plan: RunPlan =
+                serde_json::from_str(&fs::read_to_string(path).expect("read plan")).expect("plan");
+            let service = prepare_service(&plan).expect("prepare service in the app");
+            start_runtime_with_service(&plan, &service).expect("connect runtime in the app");
+            // The service can exit before a connected host finishes cleanup.
+            let record = local_services().get(&service.service_id).cloned().unwrap();
+            let mut record = record.lock().unwrap_or_else(|error| error.into_inner());
+            record.host.child.kill().expect("kill service host");
+            record.host.child.wait().expect("wait for service host");
+            std::process::exit(0);
+        }
+        let (root, plan) = local_host_plan_keeping_state_in("linger_after_exit");
+        let plan_path = root.join("plan.json");
+        fs::write(&plan_path, serde_json::to_string(&plan).expect("plan JSON"))
+            .expect("write plan");
+        let app = Command::new(std::env::current_exe().expect("test binary"))
+            .args([
+                "runtime::tests::keep_state_stays_locked_while_a_connected_host_outlives_its_service",
+                "--exact",
+                "--nocapture",
+            ])
+            .env(APP_PLAN, &plan_path)
+            .status()
+            .expect("run the app");
+        assert!(app.success(), "{app}");
+        let pid_path = root.join("host.pid");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !pid_path.exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        let host: libc::pid_t = fs::read_to_string(&pid_path)
+            .expect("the connected host outlives the app and service")
+            .trim()
+            .parse()
+            .expect("connected host pid");
+        let second = start_runtime(&plan);
+        if let Ok(runtime) = &second {
+            stop_runtime(&plan, runtime).expect("stop overlapping runtime");
+        }
+        // SAFETY: the test owns this host, which remains alive until signalled.
+        unsafe { libc::kill(host, libc::SIGKILL) };
+        let error = second.expect_err("the connected host still uses the state");
+        assert!(matches!(error, FabricError::StateInUse { .. }), "{error}");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let runtime = loop {
+            match start_runtime(&plan) {
+                Ok(runtime) => break runtime,
+                Err(FabricError::StateInUse { .. }) if Instant::now() < deadline => {
+                    thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => panic!("start after the connected host exited: {error}"),
+            }
+        };
+        stop_runtime(&plan, &runtime).expect("stop replacement runtime");
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn keep_state_lets_a_runtime_connect_after_another_failed_to_stop() {
         let (root, plan) = local_host_plan_keeping_state_in("stop_failure");
@@ -5301,6 +5444,56 @@ else:
         release_service(&plan, &service).expect("retry release service");
         assert!(!local_services().contains_key(&service.service_id));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn keep_state_rejects_service_connection_after_relative_base_changes() {
+        const APP_PLAN: &str = "FABRIC_KEEP_STATE_RELATIVE_PLAN";
+        if let Ok(path) = std::env::var(APP_PLAN) {
+            let mut plan: RunPlan =
+                serde_json::from_str(&fs::read_to_string(path).expect("read plan")).expect("plan");
+            plan.base_dir = PathBuf::from(".");
+            let original = std::env::current_dir().expect("original directory");
+            plan.config
+                .harness
+                .as_mut()
+                .expect("harness")
+                .settings
+                .insert("cwd".to_string(), serde_json::json!(original));
+            let service = prepare_service(&plan).expect("prepare service with relative base");
+            let runtime = start_runtime_with_service(&plan, &service)
+                .expect("connect from the original directory");
+            stop_runtime(&plan, &runtime).expect("stop connected runtime");
+            std::env::set_current_dir("other").expect("change directory in isolated app");
+            let second = start_runtime_with_service(&plan, &service);
+            if let Ok(runtime) = &second {
+                stop_runtime(&plan, runtime).expect("stop unexpected connected runtime");
+            }
+            std::env::set_current_dir(original).expect("restore app directory");
+            release_service(&plan, &service).expect("release service");
+            assert!(
+                matches!(second, Err(FabricError::ServiceHandleMismatch { .. })),
+                "a service connection must remain bound to its original directory: {second:?}"
+            );
+            std::process::exit(0);
+        }
+        let (root, plan) = local_host_plan_keeping_state();
+        fs::create_dir(root.join("other")).expect("create other directory");
+        let plan_path = root.join("plan.json");
+        fs::write(&plan_path, serde_json::to_string(&plan).expect("plan JSON"))
+            .expect("write plan");
+        let app = Command::new(std::env::current_exe().expect("test binary"))
+            .args([
+                "runtime::tests::keep_state_rejects_service_connection_after_relative_base_changes",
+                "--exact",
+                "--nocapture",
+            ])
+            .current_dir(&root)
+            .env(APP_PLAN, &plan_path)
+            .status()
+            .expect("run isolated app");
+        let _ = fs::remove_dir_all(root);
+        assert!(app.success(), "{app}");
     }
 
     fn local_host_plan_with_env_name(name: &str) -> (PathBuf, RunPlan) {
@@ -6254,6 +6447,7 @@ else:
     fn local_host_invoke_timeout_evicts_and_terminates_host() {
         let (root, plan) = local_host_plan("invoke_timeout");
         let runtime = start_runtime(&plan).expect("start local host");
+        crate::check::register(&runtime, vec![crate::check::CheckLevel::Live]);
         let host = local_hosts()
             .get(&runtime.runtime_id)
             .cloned()
@@ -6288,6 +6482,25 @@ else:
         );
         assert!(!runtime_dir.exists());
 
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        for level in ["live", "active", "ready"] {
+            let request = serde_json::from_value(serde_json::json!({
+                "scope": "runtime", "runtime_id": runtime.runtime_id,
+                "level": level, "timeout_seconds": 0.5,
+            }))
+            .unwrap();
+            let report = crate::check::check_environment(&runtime.environment, &request).unwrap();
+            assert_eq!(report.outcome, crate::check::CheckOutcome::Failed);
+            assert_eq!(
+                report.reason_code,
+                Some(crate::check::CheckReason::AgentExited)
+            );
+            assert_eq!(
+                report.runtime.unwrap().state,
+                crate::check::CheckRuntimeState::Failed
+            );
+        }
+
         let retry = invoke_runtime(&plan, &runtime, RunRequest::text("retry"))
             .expect_err("timed-out runtime must remain unavailable");
         assert!(matches!(
@@ -6296,6 +6509,7 @@ else:
         ));
         let stopped = stop_runtime(&plan, &runtime).expect("stop after timeout is idempotent");
         assert_eq!(stopped[0].metadata["already_stopped"], true);
+        assert!(local_host_has_exited(&runtime.runtime_id).is_none());
 
         let _ = fs::remove_dir_all(root);
     }
@@ -6921,6 +7135,267 @@ else:
         let error = project_agent_run_request(&request).expect_err("invalid overrides");
 
         assert!(error.to_string().contains("request.overrides"), "{error}");
+    }
+
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn health_reports_exited_hosts_for_all_health_adapters_without_the_invocation_lock() {
+        use crate::check::{
+            CheckLevel, CheckOutcome, CheckReason, CheckRequest, CheckRuntimeState,
+        };
+
+        let (root, plan) = local_host_plan("success");
+        let mut runtime = start_runtime(&plan).expect("start local host");
+        let original_adapter_id = runtime.adapter_id.clone();
+        let mut adapters = Vec::new();
+        let adapter_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../adapters");
+        for language in ["python", "typescript"] {
+            for entry in fs::read_dir(adapter_root.join(language)).unwrap() {
+                let directory = entry.unwrap().path();
+                if !directory.is_dir() || directory.file_name().unwrap() == "node_modules" {
+                    continue;
+                }
+                for file in fs::read_dir(directory).unwrap() {
+                    let file = file.unwrap().path();
+                    if !file.to_string_lossy().ends_with(".fabric-adapter.json") {
+                        continue;
+                    }
+                    let descriptor: Value =
+                        serde_json::from_slice(&fs::read(file).unwrap()).unwrap();
+                    if let Some(levels) = descriptor["capabilities"]["metadata"]["health_checks"]
+                        .as_array()
+                        .filter(|levels| !levels.is_empty())
+                    {
+                        adapters.push((
+                            descriptor["adapter_id"].as_str().unwrap().to_owned(),
+                            serde_json::from_value::<Vec<CheckLevel>>(Value::Array(levels.clone()))
+                                .unwrap(),
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(
+            !adapters.is_empty(),
+            "health-capable adapter descriptors exist"
+        );
+        // Third-party adapters must receive the same evidence without an ID allowlist.
+        adapters.push(("acme.fabric.health-test".into(), vec![CheckLevel::Live]));
+        let request = serde_json::from_value::<CheckRequest>(serde_json::json!({
+            "scope": "runtime", "runtime_id": runtime.runtime_id,
+            "level": "ready", "timeout_seconds": 0.5,
+        }))
+        .unwrap();
+        let host = local_hosts().get(&runtime.runtime_id).unwrap().clone();
+        // An invocation owns this lock. Health must not acquire the lock.
+        let mut host = host.lock().unwrap();
+        for (adapter_id, levels) in &adapters {
+            runtime.adapter_id = Some(adapter_id.clone());
+            crate::check::register(&runtime, levels.clone());
+            let before = crate::check::check_environment(&runtime.environment, &request).unwrap();
+            assert_eq!(before.outcome, CheckOutcome::Unknown, "{adapter_id}");
+            assert_eq!(
+                before.reason_code,
+                Some(CheckReason::ProbeError),
+                "{adapter_id}"
+            );
+        }
+
+        let process = local_host_processes()
+            .get(&runtime.runtime_id)
+            .unwrap()
+            .clone();
+        host.child.kill().expect("kill the owned adapter host");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while snapshot_local_host(&runtime.runtime_id, Some(&process)).is_ok() {
+            assert!(Instant::now() < deadline, "killed host did not exit");
+            thread::sleep(Duration::from_millis(5));
+        }
+        // Cover both an unreaped exited process and one whose PID is gone.
+        for reaped in [false, true] {
+            if reaped {
+                host.child.wait().expect("reap exited host");
+            }
+            for (adapter_id, levels) in &adapters {
+                runtime.adapter_id = Some(adapter_id.clone());
+                crate::check::register(&runtime, levels.clone());
+                let report =
+                    crate::check::check_environment(&runtime.environment, &request).unwrap();
+                assert_eq!(
+                    report.outcome,
+                    CheckOutcome::Failed,
+                    "{adapter_id}: {report:?}"
+                );
+                assert_eq!(
+                    report.reason_code,
+                    Some(CheckReason::AgentExited),
+                    "{adapter_id}"
+                );
+                assert_eq!(
+                    report.runtime.unwrap().state,
+                    CheckRuntimeState::Failed,
+                    "{adapter_id}"
+                );
+                assert_eq!(
+                    report.checks.len(),
+                    1,
+                    "later levels must not run: {adapter_id}"
+                );
+                assert_eq!(report.checks[0].name, crate::check::CheckStage::Live);
+                assert_eq!(
+                    report.checks[0].source,
+                    crate::check::CheckSource::AdapterLiveness
+                );
+                assert!(report.checks[0].observed_at.is_some());
+                assert!(report.elapsed_ms < 500.0);
+            }
+        }
+        // Without retained process identity, a failed connection remains inconclusive.
+        local_host_processes().remove(&runtime.runtime_id);
+        crate::check::register(&runtime, vec![CheckLevel::Live]);
+        let missing = crate::check::check_environment(&runtime.environment, &request).unwrap();
+        assert_eq!(missing.outcome, CheckOutcome::Unknown);
+        assert_eq!(missing.reason_code, Some(CheckReason::ProbeError));
+        local_host_processes().insert(runtime.runtime_id.clone(), process);
+        crate::check::register(&runtime, vec![]);
+        let unsupported = crate::check::check_environment(&runtime.environment, &request).unwrap();
+        assert_eq!(unsupported.outcome, CheckOutcome::Unsupported);
+        assert_eq!(
+            unsupported.reason_code,
+            Some(CheckReason::UnsupportedAdapter)
+        );
+        assert!(unsupported.checks.is_empty());
+        crate::check::invalidate_runtime(&runtime);
+        runtime.adapter_id = original_adapter_id;
+        drop(host);
+        stop_runtime(&plan, &runtime).expect("clean up exited host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn local_host_exit_evidence_survives_registry_contention_and_poisoning() {
+        use std::sync::mpsc;
+
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let host = local_hosts().get(&runtime.runtime_id).unwrap().clone();
+        {
+            let mut host = host.lock().unwrap();
+            host.child.kill().unwrap();
+            host.child.wait().unwrap();
+        }
+
+        let runtime_id = runtime.runtime_id.clone();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (observed_tx, observed_rx) = mpsc::channel();
+        let processes = local_host_processes();
+        let observer = thread::spawn(move || {
+            entered_tx.send(()).unwrap();
+            observed_tx
+                .send(local_host_has_exited(&runtime_id))
+                .unwrap();
+        });
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let early = observed_rx.recv_timeout(Duration::from_millis(50));
+        drop(processes);
+        let contended = match early {
+            Ok(observation) => observation,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                observed_rx.recv_timeout(Duration::from_secs(2)).unwrap()
+            }
+            Err(error) => panic!("receive exit observation: {error}"),
+        };
+        observer.join().unwrap();
+
+        let poisoning = std::panic::catch_unwind(|| {
+            let _processes = local_host_processes();
+            panic!("poison the process registry for this test");
+        });
+        let poisoned = local_host_has_exited(&runtime.runtime_id);
+        LOCAL_HOST_PROCESSES.clear_poison();
+
+        stop_runtime(&plan, &runtime).unwrap();
+        fs::remove_dir_all(root).unwrap();
+        assert!(poisoning.is_err());
+        assert_eq!((contended, poisoned), (Some(true), Some(true)));
+    }
+
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn health_preserves_a_host_exit_during_a_failed_probe() {
+        use crate::check::{CheckOutcome, CheckReason, CheckRequest};
+        use std::os::unix::fs::PermissionsExt;
+
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        crate::check::register(&runtime, vec![crate::check::CheckLevel::Live]);
+        let host = local_hosts().get(&runtime.runtime_id).unwrap().clone();
+        let host = host.lock().unwrap();
+        let pid = host.child.id();
+        let process = local_host_processes()
+            .get(&runtime.runtime_id)
+            .unwrap()
+            .clone();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = local_host_directory(&runtime.runtime_id).join("health.endpoint.json");
+        fs::write(
+            &endpoint,
+            serde_json::to_vec(&serde_json::json!({
+                "protocol_version": "fabric.check/v1alpha1",
+                "runtime_id": runtime.runtime_id,
+                "port": listener.local_addr().unwrap().port(),
+                "token": "0123456789abcdef".repeat(4),
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::set_permissions(&endpoint, fs::Permissions::from_mode(0o600)).unwrap();
+        let exited = thread::spawn(move || {
+            listener.set_nonblocking(true).unwrap();
+            let accept_deadline = Instant::now() + Duration::from_secs(5);
+            let (mut stream, _) = loop {
+                match listener.accept() {
+                    Ok(connection) => break connection,
+                    Err(error)
+                        if error.kind() == ErrorKind::WouldBlock
+                            && Instant::now() < accept_deadline =>
+                    {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                        panic!("timed out waiting for health connection")
+                    }
+                    Err(error) => panic!("accept health connection: {error}"),
+                }
+            };
+            stream.set_nonblocking(false).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = [0; 1024];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            // SAFETY: pid belongs to the still-owned host whose invocation lock is held.
+            assert_eq!(unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) }, 0);
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while process.has_exited() != Some(true) {
+                assert!(Instant::now() < deadline, "owned host did not exit");
+                thread::sleep(Duration::from_millis(1));
+            }
+            // Dropping the connection simulates a health channel lost with its host.
+        });
+        let request = serde_json::from_value::<CheckRequest>(serde_json::json!({
+            "scope": "runtime", "runtime_id": runtime.runtime_id, "timeout_seconds": 3.0,
+        }))
+        .unwrap();
+        let report = crate::check::check_environment(&runtime.environment, &request).unwrap();
+        exited.join().unwrap();
+        drop(host);
+        stop_runtime(&plan, &runtime).unwrap();
+        fs::remove_dir_all(root).unwrap();
+        assert_eq!(report.outcome, CheckOutcome::Failed, "{report:?}");
+        assert_eq!(report.reason_code, Some(CheckReason::AgentExited));
+        assert!(report.checks[0].observed_at.is_some());
     }
 
     #[test]

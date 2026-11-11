@@ -5,7 +5,7 @@
 
 import asyncio
 import threading
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from nemo_fabric_adapter_contract.models import AdapterCheckResult, AgentConfig
@@ -71,6 +71,28 @@ async def test_hermes_health_uses_fresh_native_diagnostics(hermes_health, level)
     agent.get_activity_summary.assert_called_once_with()
     agent.run_conversation.assert_not_called()
     assert runtime._conversation_history is None
+
+
+@pytest.mark.parametrize("level", ["live", "active", "ready"])
+@pytest.mark.parametrize("busy", [False, True])
+async def test_mixed_runtime_health_uses_sdk_activity(hermes_health, level, busy):
+    runtime, agent = hermes_health
+    runtime._settings = {"interfaces": {"api": {"port": 18642}}}
+    runtime._interfaces.check = AsyncMock(return_value="agent_exited")
+    invocation = asyncio.create_task(asyncio.Event().wait()) if busy else None
+    runtime._active_invoke_task = invocation
+    try:
+        result = await runtime.check(level)
+        assert (result["outcome"], result["activity"]) == (
+            "passed",
+            "busy" if busy else "idle",
+        )
+        runtime._interfaces.check.assert_not_awaited()
+        agent.get_activity_summary.assert_called_once_with()
+    finally:
+        if invocation is not None:
+            invocation.cancel()
+            await asyncio.gather(invocation, return_exceptions=True)
 
 
 @pytest.mark.parametrize("level", ["live", "active", "ready"])
@@ -234,7 +256,10 @@ async def test_hermes_unsupported_level_has_no_probe(hermes_health):
 
 
 @pytest.mark.parametrize("change", ["close", "stop"])
-async def test_hermes_health_detects_closure_during_diagnostic(hermes_health, change):
+@pytest.mark.parametrize("raises", [False, True])
+async def test_hermes_health_detects_closure_during_diagnostic(
+    hermes_health, change, raises
+):
     runtime, agent = hermes_health
 
     def changed():
@@ -242,6 +267,8 @@ async def test_hermes_health_detects_closure_during_diagnostic(hermes_health, ch
             agent._memory_provider_shutdown = True
         else:
             runtime._stopping = True
+        if raises:
+            raise RuntimeError("private-native-probe-detail")
         return agent.get_activity_summary.return_value
 
     agent.get_activity_summary.side_effect = changed
@@ -252,6 +279,7 @@ async def test_hermes_health_detects_closure_during_diagnostic(hermes_health, ch
         else ("unknown", "observation_changed")
     )
     assert (result["outcome"], result["reason_code"]) == expected
+    assert "private-native-probe-detail" not in str(result)
 
 
 async def test_health_timeout_consumes_late_native_errors_without_logging(

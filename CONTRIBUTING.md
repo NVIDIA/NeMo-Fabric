@@ -231,6 +231,68 @@ maintenance updates.
 
 This section describes how to prepare and submit changes for review.
 
+### PR Cleanup Policy
+
+The PR Cleanup workflow enforces the following rules when automatic enforcement
+is enabled. Manual runs default to **dry-run mode**, reporting proposed closures
+without posting comments or closing PRs.
+
+- Each author may have up to **3 open PRs, including drafts**, across all target
+  branches. Cleanup keeps the three oldest by original creation time and closes
+  newer excess PRs. Maintainers are exempt from this cap.
+- PRs with **more than 28 days without activity**, including drafts, are closed
+  regardless of author, including maintainers. Human comments and edits,
+  reviews and review comments, reopening, and pushes count as activity. Bot
+  comments, CI results,
+  labels, and draft/ready transitions alone do not count.
+
+Each closure explains its reason. To resume an inactive PR, reopen it when ready
+and tag maintainers for review. To reopen a PR closed for exceeding the cap,
+first merge or close another PR. Reopening preserves original creation order
+and triggers policy evaluation again. Branches and discussions are preserved.
+
+Cleanup runs when PRs open, reopen, or receive commits, and daily. It acts after
+PR creation, so an excess PR may briefly appear and trigger CI.
+
+#### Maintainer Setup and Rollout
+
+The configuration is in `.github/pr-cleanup.json`; the implementation and tests
+are in `scripts/ci/pr_cleanup.py` and `tests/scripts/test_pr_cleanup.py`.
+
+The workflow uses the built-in repository `GITHUB_TOKEN`; no additional App or
+credentials are required. The maintainer exemption list is maintained in the
+policy configuration and should be updated when maintainers change.
+
+1. Confirm the organization/repository Actions event policy permits
+   `pull_request_target`. The workflow executes only trusted default-branch
+   code, never PR-head code. Allow the pinned actions in the organization's
+   action policy. Manual dispatch is restricted to the default branch.
+2. Set repository variable `PR_CLEANUP_APPLY` to `true` to enable automatic
+   comments and closures after merge. Leave it unset for automatic dry-run
+   reports. Manual dispatch defaults to reporting only; selecting its `apply`
+   input explicitly requests enforcement for that run, regardless of the
+   automatic setting. Existing excess PRs are included in enforcement.
+3. To pause closures, unset `PR_CLEANUP_APPLY` and avoid manual apply runs, or
+   disable the workflow. Previously closed PRs are not automatically reopened.
+
+Push timing is observed and saved in the workflow's `pr-cleanup-state` artifact;
+commit author dates are not used as push timestamps. New PRs, missing/expired
+state, or an observation gap of at least 28 days start a fresh 28-day observation
+period. Consequently, the first deployment does not immediately close old PRs
+for inactivity. Dry-run observation history carries forward into enforcement.
+Keep artifact retention at least 28 days and do not delete the latest history
+unless you intend to restart observation. Comment and review history is read
+with pagination before an inactivity decision. Failed lookups skip affected
+closures and appear in the workflow summary. Rechecks reduce races with human
+activity, but GitHub does not offer atomic read-and-close operations.
+
+Local read-only inspection with an authenticated `gh` CLI:
+
+```bash
+GH_TOKEN="$(gh auth token)" python3 scripts/ci/pr_cleanup.py --repo NVIDIA/NeMo-Fabric
+python3 -m unittest discover -s tests/scripts -p test_pr_cleanup.py -v
+```
+
 ### Before Submitting
 
 Complete these checks before opening or updating a pull request:

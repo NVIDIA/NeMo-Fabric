@@ -226,7 +226,9 @@ def test_openclaw_rejects_invalid_port_range(settings: dict[str, object]):
 @pytest.mark.parametrize(
     "settings",
     [
-        pytest.param({"interfaces": {"terminal": {}}}, id="unsupported-interface"),
+        pytest.param(
+            {"interfaces": {"terminal": {"port": 20_000}}}, id="terminal-has-no-port"
+        ),
         pytest.param(
             {"interfaces": {"dashboard": {"port": 20_000, "token": "x"}}},
             id="unknown-field",
@@ -243,6 +245,9 @@ def test_openclaw_rejects_invalid_port_range(settings: dict[str, object]):
             id="port-range-with-dashboard",
         ),
         pytest.param({"startup_timeout_seconds": 76}, id="startup-timeout-too-long"),
+        pytest.param({"agent_id": "my agent"}, id="agent-id-spaces"),
+        pytest.param({"agent_id": "a" * 65}, id="agent-id-too-long"),
+        pytest.param({"agent_id": "-agent"}, id="agent-id-prefix"),
     ],
 )
 def test_openclaw_plan_rejects_invalid_settings(
@@ -2719,3 +2724,414 @@ async def test_openclaw_gateway_stream_keeps_usage_observational():
         "observed": {"input_tokens": 42, "output_tokens": 8, "total_tokens": 50},
         "gaps": ["scope_unverified"],
     }
+
+
+@pytest.mark.skipif(os.name != "posix", reason="The native terminal requires POSIX")
+@pytest.mark.parametrize(
+    "selection, shared",
+    [
+        ({}, False),
+        ({"terminal": {"enabled": False}}, False),
+        ({"terminal": {}}, True),
+    ],
+)
+@pytest.mark.parametrize("agent_id", ["default", "Reviewer"])
+async def test_native_configuration_owns_prompt_once(
+    mock_openclaw, tmp_path, selection, shared, agent_id
+):
+    capture = tmp_path / "config.json"
+    request_capture = tmp_path / "request.json"
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(capture)
+    os.environ["FAKE_OPENCLAW_REQUEST"] = str(request_capture)
+    config = _config(mock_openclaw)
+    config.harness.settings["interfaces"] = selection
+    config.harness.settings["agent_id"] = agent_id
+    runtime = adapter.OpenClawRuntime()
+    await _start(runtime, tmp_path, config)
+    try:
+        result = await runtime.invoke(
+            AgentRunRequest(input="Check shared configuration."), _context(tmp_path)
+        )
+        assert result.status == "succeeded"
+        request = json.loads(request_capture.read_text())
+        assert [message["role"] for message in request["messages"]] == (
+            ["user"] if shared else ["system", "user"]
+        )
+        generated = json.loads(capture.read_text())
+        if shared:
+            entry = generated["plugins"]["entries"]["fabric-shared-config"]
+            assert entry["config"] == {
+                "agentId": agent_id,
+                "systemInstruction": "Be concise.",
+            }
+            directory = _dashboard_token(tmp_path).parent
+            assert (directory / "terminal.running").exists()
+            assert (directory / "gateway.json").exists()
+            assert (await runtime.check("ready"))["activity"] == "unknown"
+        else:
+            assert "plugins" not in generated
+            assert not _dashboard_token(tmp_path).parent.exists()
+        for level in ("live", "active", "ready"):
+            report = await runtime.check(level)
+            assert report["outcome"] == "passed", report
+    finally:
+        await runtime.stop()
+    assert not (_dashboard_token(tmp_path).parent / "terminal.running").exists()
+
+
+@pytest.mark.parametrize(
+    "agent_id", ["my agent", "-agent", "_agent", "a" * 65, "é", " reviewer "]
+)
+async def test_openclaw_rejects_noncanonical_agent_ids(
+    mock_openclaw, tmp_path, agent_id
+):
+    config = _config(mock_openclaw)
+    config.harness.settings["agent_id"] = agent_id
+    runtime = adapter.OpenClawRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await _start(runtime, tmp_path, config)
+    assert caught.value.code == "openclaw_invalid_configuration"
+    assert caught.value.metadata == {"field": "harness.settings.agent_id"}
+    assert runtime._process is None
+
+
+@pytest.mark.skipif(os.name != "posix", reason="The native terminal requires POSIX")
+@pytest.mark.parametrize("mode", ["missing", "inactive", "wrong-agent"])
+async def test_shared_instruction_probe_fails_before_publishing_interfaces(
+    mock_openclaw, tmp_path, mode
+):
+    os.environ["FAKE_OPENCLAW_SHARED_CONFIG"] = mode
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    config = _config(mock_openclaw)
+    config.harness.settings["interfaces"] = {"terminal": {}}
+    runtime = adapter.OpenClawRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await _start(runtime, tmp_path, config)
+    assert caught.value.code == "openclaw_shared_configuration_unavailable"
+    assert runtime._process is None
+    assert not (_dashboard_token(tmp_path).parent / "gateway.json").exists()
+    assert not (_dashboard_token(tmp_path).parent / "terminal.running").exists()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("FABRIC_OPENCLAW_TEST_COMMAND"),
+    reason="Set FABRIC_OPENCLAW_TEST_COMMAND for actual plugin failure qualification",
+)
+@pytest.mark.parametrize(
+    "failure",
+    ["missing", "renamed", "conversation-denied", "prompt-denied", "wrong-agent"],
+)
+async def test_native_shared_hook_failures_reject_startup(
+    tmp_path, api_server, monkeypatch, failure
+):
+    plugin = tmp_path / "plugin"
+    shutil.copytree(Path(adapter.__file__).with_name("native_config"), plugin)
+    entrypoint = plugin / "index.mjs"
+    if failure == "missing":
+        entrypoint.write_text(
+            'throw new Error("plugin load failure for qualification");'
+        )
+    elif failure == "renamed":
+        entrypoint.write_text(
+            entrypoint.read_text().replace(
+                'api.on("before_prompt_build"', 'api.on("agent_end"'
+            )
+        )
+    original = adapter._openclaw_config
+
+    def generated_config(*args, **kwargs):
+        generated = original(*args, **kwargs)
+        generated["plugins"]["load"]["paths"] = [str(plugin)]
+        shared = generated["plugins"]["entries"]["fabric-shared-config"]
+        if failure == "conversation-denied":
+            shared["hooks"]["allowConversationAccess"] = False
+        elif failure == "prompt-denied":
+            shared["hooks"]["allowPromptInjection"] = False
+        elif failure == "wrong-agent":
+            shared["config"]["agentId"] = "other"
+        return generated
+
+    monkeypatch.setattr(adapter, "_openclaw_config", generated_config)
+    config = _config(Path(os.environ["FABRIC_OPENCLAW_TEST_COMMAND"]))
+    config.harness.settings["interfaces"] = {"terminal": {}}
+    config.models["default"].base_url = f"{api_server}/v1"
+    runtime = adapter.OpenClawRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await _start(runtime, tmp_path, config)
+    assert caught.value.code == "openclaw_shared_configuration_unavailable"
+    assert runtime._process is None
+    assert not (_dashboard_token(tmp_path).parent / "gateway.json").exists()
+    async with httpx.AsyncClient(trust_env=False) as client:
+        assert (await client.get(f"{api_server}/_requests")).json() == []
+
+
+@pytest.mark.parametrize("agent_id", ["Reviewer", "agent_1-A", "a" * 64])
+def test_openclaw_preserves_valid_agent_id_spelling(agent_id):
+    assert adapter._agent_id({"agent_id": agent_id}) == agent_id
+
+
+def _mcp_diagnostic(name: str, message: str) -> dict[str, object]:
+    return {
+        "id": f"mcp-server-diagnostic:{name}",
+        "severity": "warning",
+        "message": f'MCP server "{name}": {message}',
+        "servers": [name],
+    }
+
+
+def _mcp_status_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventories: list[object]
+) -> tuple[adapter.OpenClawRuntime, AsyncMock]:
+    """Return a started-looking runtime whose Gateway returns ``inventories`` in turn."""
+
+    context = _context(tmp_path, runtime_id="Runtime-1")
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.returncode = None
+    runtime._client = MagicMock()
+    runtime._config = _config(tmp_path / "openclaw")
+    runtime._context = context
+    runtime._port = 12345
+    runtime._process = mock_process
+    runtime._command = tmp_path / "openclaw"
+    runtime._command_env = {"OPENCLAW_GATEWAY_TOKEN": "secret-token"}
+    runtime._agent_id = "Reviewer"
+    runtime._mcp_transports = {"local": "stdio", "remote": "streamable-http"}
+    monkeypatch.setattr(
+        adapter,
+        "_invoke_gateway",
+        AsyncMock(return_value=("OpenClaw response", adapter.contract.AgentUsage())),
+    )
+    status = AsyncMock(side_effect=[json.dumps(value) for value in inventories])
+    monkeypatch.setattr(adapter, "_command_output", status)
+    return runtime, status
+
+
+def test_openclaw_unavailable_mcp_servers_use_native_diagnostics_without_messages():
+    """OpenClaw unavailable MCP servers use native diagnostics without messages."""
+    inventory = {
+        "groups": [],
+        "notices": [
+            _mcp_diagnostic(
+                "remote", "fetch failed | ECONNREFUSED https://user:pw@example.test"
+            ),
+            _mcp_diagnostic(
+                "local",
+                'MCP server "local" timed out: did not complete initialize within 30s',
+            ),
+            _mcp_diagnostic("plugin-owned", "fetch failed"),
+            {"id": "mcp-not-yet-connected", "servers": ["local"], "message": "x"},
+            {"id": "unsupported-tool-schema:local__x", "message": "x"},
+            "not a notice",
+        ],
+    }
+
+    unavailable = adapter._unavailable_mcp_servers(
+        inventory, {"local": "stdio", "remote": "streamable-http"}
+    )
+
+    assert unavailable == [
+        {"name": "remote", "transport": "streamable-http", "reason": "failed"},
+        {"name": "local", "transport": "stdio", "reason": "timed_out"},
+    ]
+    assert "ECONNREFUSED" not in json.dumps(unavailable)
+    assert adapter._unavailable_mcp_servers({"ok": False}, {"local": "stdio"}) == []
+    assert adapter._unavailable_mcp_servers(None, {"local": "stdio"}) == []
+
+
+async def test_openclaw_results_report_current_unavailable_mcp_servers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """OpenClaw results report current unavailable MCP servers."""
+    runtime, status = _mcp_status_runtime(
+        tmp_path,
+        monkeypatch,
+        [
+            {"notices": [_mcp_diagnostic("remote", "fetch failed")]},
+            {
+                "notices": [
+                    _mcp_diagnostic("remote", "fetch failed"),
+                    _mcp_diagnostic("local", "spawn ENOENT"),
+                ]
+            },
+            {"notices": []},
+        ],
+    )
+    context = runtime._context
+    assert context is not None
+
+    first = await runtime.invoke(AgentRunRequest(input="One."), context)
+    second = await runtime.invoke(AgentRunRequest(input="Two."), context)
+    recovered = await runtime.invoke(AgentRunRequest(input="Three."), context)
+
+    assert first.output == {
+        "response": "OpenClaw response",
+        "mcp": {
+            "unavailable_servers": [
+                {"name": "remote", "transport": "streamable-http", "reason": "failed"}
+            ]
+        },
+    }
+    assert second.output["mcp"] == {
+        "unavailable_servers": [
+            {"name": "local", "transport": "stdio", "reason": "failed"},
+            {"name": "remote", "transport": "streamable-http", "reason": "failed"},
+        ]
+    }
+    assert recovered.output == {"response": "OpenClaw response"}
+    warnings = capsys.readouterr().err.splitlines()
+    assert warnings == [
+        "NeMo Fabric OpenClaw: MCP server 'remote' (streamable-http) is unavailable: failed",
+        "NeMo Fabric OpenClaw: MCP server 'local' (stdio) is unavailable: failed",
+    ]
+    args = status.await_args_list[0].args
+    assert args[1:7] == (
+        "gateway",
+        "call",
+        "tools.effective",
+        "--json",
+        "--port",
+        "12345",
+    )
+    assert json.loads(args[8]) == {"sessionKey": "agent:reviewer:openai-user:runtime-1"}
+    assert "secret-token" not in json.dumps([str(arg) for arg in args])
+    assert status.await_args_list[0].kwargs["env"] == runtime._command_env
+
+
+async def test_openclaw_http_failures_report_unavailable_mcp_servers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """OpenClaw HTTP failures report unavailable MCP servers."""
+    runtime, _ = _mcp_status_runtime(
+        tmp_path,
+        monkeypatch,
+        [{"notices": [_mcp_diagnostic("local", "spawn ENOENT")]}],
+    )
+    request = adapter.httpx.Request(
+        "POST", "http://127.0.0.1:12345/v1/chat/completions"
+    )
+    monkeypatch.setattr(
+        adapter,
+        "_invoke_gateway",
+        AsyncMock(
+            side_effect=adapter.httpx.HTTPStatusError(
+                "bad", request=request, response=adapter.httpx.Response(502)
+            )
+        ),
+    )
+    assert runtime._context is not None
+
+    result = await runtime.invoke(AgentRunRequest(input="Hello."), runtime._context)
+
+    assert result.status == adapter.contract.AgentRunStatus.FAILED
+    assert result.output == {
+        "mcp": {
+            "unavailable_servers": [
+                {"name": "local", "transport": "stdio", "reason": "failed"}
+            ]
+        }
+    }
+
+
+async def test_openclaw_mcp_status_failure_keeps_the_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    """OpenClaw MCP status failure keeps the result."""
+    runtime, status = _mcp_status_runtime(tmp_path, monkeypatch, [])
+    status.side_effect = adapter.lifecycle.LifecycleError(
+        "openclaw_command_failed", "OpenClaw command failed"
+    )
+    assert runtime._context is not None
+
+    first = await runtime.invoke(AgentRunRequest(input="One."), runtime._context)
+    status.side_effect = None
+    status.return_value = "not json"
+    second = await runtime.invoke(AgentRunRequest(input="Two."), runtime._context)
+
+    assert first.output == second.output == {"response": "OpenClaw response"}
+    assert caplog.text.count("could not report MCP server availability") == 1
+
+
+async def test_openclaw_skips_mcp_status_without_configured_servers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """OpenClaw skips MCP status without configured servers."""
+    runtime, status = _mcp_status_runtime(tmp_path, monkeypatch, [])
+    runtime._mcp_transports = {}
+    assert runtime._context is not None
+
+    result = await runtime.invoke(AgentRunRequest(input="Hello."), runtime._context)
+
+    assert result.output == {"response": "OpenClaw response"}
+    status.assert_not_awaited()
+
+
+async def test_openclaw_mcp_status_cancellation_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """OpenClaw MCP status cancellation propagates."""
+    runtime, status = _mcp_status_runtime(tmp_path, monkeypatch, [])
+    started = asyncio.Event()
+
+    async def wait_forever(*_args, **_kwargs):
+        started.set()
+        await asyncio.Event().wait()
+
+    status.side_effect = wait_forever
+    assert runtime._context is not None
+    task = asyncio.create_task(
+        runtime.invoke(AgentRunRequest(input="Hello."), runtime._context)
+    )
+    await asyncio.wait_for(started.wait(), timeout=5)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process groups are POSIX-only")
+async def test_status_command_timeout_stops_children_holding_the_pipes(tmp_path):
+    """A stalled status command whose child keeps the pipes open stops promptly."""
+    child_pid_file = tmp_path / "child.pid"
+    script = tmp_path / "stall.py"
+    script.write_text(
+        "import pathlib, subprocess, sys, time\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"pathlib.Path({str(child_pid_file)!r}).write_text(str(child.pid))\n"
+        "time.sleep(60)\n"
+    )
+    command = tmp_path / "openclaw"
+    command.write_text(f"#!/bin/sh\nexec {sys.executable} {script}\n")
+    command.chmod(0o755)
+
+    started = time.monotonic()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        await adapter._command_output(
+            command,
+            "gateway",
+            "call",
+            env=dict(os.environ),
+            timeout=1,
+            process_group=True,
+        )
+
+    assert error.value.code == "openclaw_command_timeout"
+    assert time.monotonic() - started < 1 + adapter.COMMAND_REAP_SECONDS + 2
+    child_pid = int(child_pid_file.read_text())
+    stat = Path(f"/proc/{child_pid}/stat")
+    for _ in range(50):
+        try:
+            os.kill(child_pid, 0)
+            # On Linux the state follows the parenthesized command name; a
+            # zombie ("Z") has exited. Without /proc, os.kill is the check.
+            if stat.read_text().rsplit(")", 1)[1].split()[0] == "Z":
+                break
+        except ProcessLookupError:
+            break
+        except (FileNotFoundError, IndexError):
+            if sys.platform.startswith("linux"):
+                break  # the process exited while being checked
+        time.sleep(0.05)
+    else:
+        os.kill(child_pid, signal.SIGKILL)
+        pytest.fail("the status command's child kept running")

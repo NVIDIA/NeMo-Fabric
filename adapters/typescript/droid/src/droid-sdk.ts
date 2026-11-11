@@ -133,6 +133,7 @@ interface DroidSdkSession {
 
 interface DroidSdkModule {
   createSession(options: Record<string, unknown>): Promise<DroidSdkSession>;
+  ProcessExitError?: typeof import("@factory/droid-sdk/node").ProcessExitError;
 }
 
 interface EnvironmentLease {
@@ -688,8 +689,13 @@ class DroidSdkSessionHandle implements DroidSessionHandle {
   private readonly runtimeRoot?: string;
   private stopped = false;
   private healthPending = false;
+  private processExit?: AdapterCheckResult;
 
-  constructor(session: DroidSdkSession, runtimeRoot?: string) {
+  constructor(
+    session: DroidSdkSession,
+    runtimeRoot?: string,
+    private readonly processExitError?: DroidSdkModule["ProcessExitError"],
+  ) {
     this.session = session;
     this.runtimeRoot = runtimeRoot;
   }
@@ -706,6 +712,7 @@ class DroidSdkSessionHandle implements DroidSessionHandle {
         ...unobservedHealth("unsupported_level"),
         outcome: "unsupported",
       };
+    if (this.processExit !== undefined) return { ...this.processExit };
     // The SDK has no cancellation option for listTools. Retain at most one pending request across caller timeouts.
     if (this.healthPending) return unobservedHealth("probe_timeout");
     this.healthPending = true;
@@ -720,10 +727,19 @@ class DroidSdkSessionHandle implements DroidSessionHandle {
         source: "fabric.adapter.liveness",
         observed_at: new Date().toISOString(),
       };
-    } catch {
-      return unobservedHealth(
-        this.stopped ? "observation_changed" : "probe_error",
-      );
+    } catch (error) {
+      if (this.stopped) return unobservedHealth("observation_changed");
+      if (this.processExitError !== undefined && error instanceof this.processExitError) {
+        this.processExit = {
+          outcome: "failed",
+          reason_code: "agent_exited",
+          activity: "stopped",
+          source: "fabric.adapter.liveness",
+          observed_at: new Date().toISOString(),
+        };
+        return { ...this.processExit };
+      }
+      return unobservedHealth("probe_error");
     } finally {
       this.healthPending = false;
     }
@@ -820,10 +836,12 @@ export class DroidSdkSessionFactory implements DroidSessionFactory {
           };
 
     let session: DroidSdkSession | undefined;
+    let processExitError: DroidSdkModule["ProcessExitError"];
     try {
       const environment = leaseEnvironment(sessionEnvironment, apiKeyEnv, apiKey, this.parentEnvironment);
       try {
         const sdk = await this.loader();
+        processExitError = sdk.ProcessExitError;
         session = await sdk.createSession({
           cwd: workspace,
           modelId: selected.model,
@@ -846,7 +864,7 @@ export class DroidSdkSessionFactory implements DroidSessionFactory {
       await applyToolPolicy(session, input.config, mcpServers);
       await validateMcpTools(session, mcpServers, this.mcpStartupTimeoutMs);
       await validateSkills(session, runtimeProfile.entrypoints);
-      return new DroidSdkSessionHandle(session, runtimeProfile.root);
+      return new DroidSdkSessionHandle(session, runtimeProfile.root, processExitError);
     } catch (error) {
       await session?.close().catch(() => undefined);
       if (runtimeProfile.root !== undefined) {

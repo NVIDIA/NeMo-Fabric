@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -480,6 +481,54 @@ def test_interactive_runtime_registers_and_invokes_mcp_in_subprocess(
     assert result["output"]["response"] == (
         f"calculator via {sys.executable}: hello MCP"
     )
+
+
+def test_interactive_runtime_reports_unavailable_mcp_servers_in_subprocess(
+    tmp_path: Path,
+):
+    """Interactive runtime reports unavailable MCP servers in subprocess."""
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(ROOT / "tests" / "fixtures" / "nooa" / "src")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "fabric_nooa_mcp_runtime",
+            str(tmp_path),
+            "--with-unavailable",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=10,
+        cwd=ROOT,
+        env=environment,
+    )
+    result = json.loads(completed.stdout)
+    assert result["status"] == "succeeded"
+    assert result["output"]["response"] == (
+        f"calculator via {sys.executable}: hello MCP"
+    )
+    assert result["output"]["mcp"] == {
+        "unavailable_servers": [
+            {
+                "name": "missing",
+                "transport": "stdio",
+                "reason": "failed",
+                "error_type": "FileNotFoundError",
+            },
+            {
+                "name": "offline",
+                "transport": "streamable-http",
+                "reason": "failed",
+                "error_type": "ConnectionRefusedError",
+            },
+        ]
+    }
+    assert "MCP server 'missing' (stdio) is unavailable" in completed.stderr
+    assert "MCP server 'offline' (streamable-http) is unavailable" in completed.stderr
+    assert "fixture-secret" not in completed.stdout + completed.stderr
 
 
 def test_main_opts_into_typed_agent_config(monkeypatch: pytest.MonkeyPatch):
@@ -1104,6 +1153,270 @@ async def test_runtime_registers_and_activates_whole_mcp_servers(
         call("mcp.repository", http_tool),
     ]
     agent.skills.activate.assert_called_once_with(["mcp.calculator", "mcp.repository"])
+    agent.close.assert_awaited_once_with()
+
+
+def _install_mcp_manager(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    stdio: AsyncMock | None = None,
+    url: AsyncMock | None = None,
+) -> MagicMock:
+    manager = MagicMock(name="MCPManager")
+    manager.create_stdio_server = stdio or AsyncMock()
+    manager.create_url_server = url or AsyncMock()
+    nooa_module = types.ModuleType("nooa")
+    nooa_module.__path__ = []  # type: ignore[attr-defined]
+    mcp_module = types.ModuleType("nooa.mcp")
+    mcp_module.MCPManager = manager
+    monkeypatch.setitem(sys.modules, "nooa", nooa_module)
+    monkeypatch.setitem(sys.modules, "nooa.mcp", mcp_module)
+    return manager
+
+
+def _mcp_payload(tmp_path: Path, servers: dict[str, Any], **kwargs: Any) -> dict:
+    payload = _start_payload(tmp_path, **kwargs)
+    payload["config"] = AgentConfig.from_mapping(
+        {"mcp": {"servers": servers}, "workflow": _workflow()}
+    )
+    return payload
+
+
+def _connection_failure(cause: Exception) -> RuntimeError:
+    # NOOA wraps the transport error, and its message can echo the target.
+    error = RuntimeError("Could not connect to MCP server: token=super-secret")
+    error.__cause__ = cause
+    return error
+
+
+async def _hang(*_args: Any, **_kwargs: Any) -> Any:
+    await asyncio.Event().wait()
+
+
+def _answering_agent():
+    agent, _channels, handlers = _agent_double()
+
+    async def handle(_notification: dict[str, list[Any]]):
+        handlers[-1](SimpleNamespace(content="done"))
+        return SimpleNamespace(kind="DONE", explanation="complete")
+
+    agent.handle.side_effect = handle
+    return agent
+
+
+_PARTIAL_MCP_SERVERS = {
+    "calculator": {"transport": "stdio", "url": sys.executable},
+    "offline": {
+        "transport": "streamable-http",
+        "url": "https://offline.example.test/mcp",
+    },
+    "slow": {"transport": "sse", "url": "https://slow.example.test/sse"},
+}
+
+
+async def test_runtime_starts_and_reports_unavailable_mcp_servers(
+    tmp_path: Path,
+    install_target,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    """Runtime starts and reports unavailable MCP servers."""
+    agent = _answering_agent()
+    install_target(MagicMock(return_value=agent))
+    calculator_tool = MagicMock(name="calculator_tool")
+
+    async def create_url_server(name: str, *_args: Any, **_kwargs: Any) -> Any:
+        if name == "slow":
+            await _hang()
+        raise _connection_failure(ConnectionRefusedError())
+
+    manager = _install_mcp_manager(
+        monkeypatch,
+        stdio=AsyncMock(return_value=calculator_tool),
+        url=AsyncMock(side_effect=create_url_server),
+    )
+    monkeypatch.setattr(adapter, "MCP_CONNECT_TIMEOUT_SECONDS", 0.05)
+    runtime = adapter.NooaRuntime()
+
+    await runtime.start(_mcp_payload(tmp_path, _PARTIAL_MCP_SERVERS))
+    try:
+        first = await runtime.invoke(*_invocation(request_id="first"))
+        second = await runtime.invoke(*_invocation(request_id="second"))
+    finally:
+        await runtime.stop()
+
+    expected = {
+        "unavailable_servers": [
+            {
+                "name": "offline",
+                "transport": "streamable-http",
+                "reason": "failed",
+                "error_type": "ConnectionRefusedError",
+            },
+            {
+                "name": "slow",
+                "transport": "sse",
+                "reason": "timed_out",
+                "error_type": "TimeoutError",
+            },
+        ]
+    }
+    assert first.status == AgentRunStatus.SUCCEEDED
+    assert first.output["mcp"] == expected
+    assert second.output["mcp"] == expected
+    assert manager.create_url_server.await_count == 2
+    agent.skills.register.assert_called_once_with("mcp.calculator", calculator_tool)
+    agent.skills.activate.assert_called_once_with(["mcp.calculator"])
+    stderr = capsys.readouterr().err
+    assert stderr.count("is unavailable") == 2
+    assert "MCP server 'offline' (streamable-http) is unavailable: failed" in stderr
+    assert "MCP server 'slow' (sse) is unavailable: timed_out" in stderr
+    assert "super-secret" not in stderr
+    assert "super-secret" not in json.dumps(first.output)
+
+
+async def test_runtime_starts_when_no_mcp_server_is_available(
+    tmp_path: Path,
+    install_target,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Runtime starts when no MCP server is available."""
+    agent = _answering_agent()
+    install_target(MagicMock(return_value=agent))
+    _install_mcp_manager(
+        monkeypatch,
+        stdio=AsyncMock(side_effect=_connection_failure(FileNotFoundError())),
+    )
+    runtime = adapter.NooaRuntime()
+
+    await runtime.start(
+        _mcp_payload(
+            tmp_path,
+            {"missing": {"transport": "stdio", "url": "/missing/mcp-server"}},
+        )
+    )
+    try:
+        invalid = await runtime.invoke(*_invocation(value={"not": "text"}))
+        result = await runtime.invoke(*_invocation())
+    finally:
+        await runtime.stop()
+
+    expected = {
+        "unavailable_servers": [
+            {
+                "name": "missing",
+                "transport": "stdio",
+                "reason": "failed",
+                "error_type": "FileNotFoundError",
+            }
+        ]
+    }
+    assert result.status == AgentRunStatus.SUCCEEDED
+    assert result.output["mcp"] == expected
+    assert invalid.status == AgentRunStatus.FAILED
+    assert invalid.output["mcp"] == expected
+    agent.skills.register.assert_not_called()
+    agent.skills.activate.assert_not_called()
+
+
+async def test_runtime_does_not_remember_unavailable_mcp_servers(
+    tmp_path: Path,
+    install_target,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Runtime does not remember unavailable MCP servers."""
+    first_agent = _answering_agent()
+    second_agent = _answering_agent()
+    install_target(MagicMock(side_effect=[first_agent, second_agent]))
+    tool = MagicMock(name="calculator_tool")
+    manager = _install_mcp_manager(
+        monkeypatch,
+        stdio=AsyncMock(side_effect=[_connection_failure(OSError()), tool]),
+    )
+    servers = {"calculator": {"transport": "stdio", "url": sys.executable}}
+
+    first_runtime = adapter.NooaRuntime()
+    await first_runtime.start(_mcp_payload(tmp_path, servers))
+    try:
+        first = await first_runtime.invoke(*_invocation())
+    finally:
+        await first_runtime.stop()
+    second_runtime = adapter.NooaRuntime()
+    await second_runtime.start(_mcp_payload(tmp_path, servers, runtime_id="runtime-2"))
+    try:
+        second = await second_runtime.invoke(*_invocation(runtime_id="runtime-2"))
+    finally:
+        await second_runtime.stop()
+
+    assert first.output["mcp"]["unavailable_servers"][0]["name"] == "calculator"
+    assert "mcp" not in second.output
+    assert manager.create_stdio_server.await_count == 2
+    second_agent.skills.activate.assert_called_once_with(["mcp.calculator"])
+
+
+async def test_invalid_mcp_configuration_fails_before_connecting(
+    tmp_path: Path,
+    install_target,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Invalid MCP configuration fails before connecting."""
+    agent, _channels, _handlers = _agent_double()
+    install_target(MagicMock(return_value=agent))
+    manager = _install_mcp_manager(
+        monkeypatch,
+        stdio=AsyncMock(side_effect=_connection_failure(FileNotFoundError())),
+    )
+    runtime = adapter.NooaRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        await runtime.start(
+            _mcp_payload(
+                tmp_path,
+                {
+                    "missing": {"transport": "stdio", "url": "/missing/mcp-server"},
+                    "repository": {
+                        "transport": "streamable-http",
+                        "url": "https://mcp.example.test/api",
+                        "custom_headers": {"Invalid Header": "value"},
+                    },
+                },
+            )
+        )
+
+    assert error.value.code == "nooa_invalid_mcp_server"
+    manager.create_stdio_server.assert_not_awaited()
+    agent.close.assert_awaited_once_with()
+
+
+async def test_cancelled_mcp_connection_cancels_runtime_start(
+    tmp_path: Path,
+    install_target,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Cancelled MCP connection cancels runtime start."""
+    agent, _channels, _handlers = _agent_double()
+    install_target(MagicMock(return_value=agent))
+    connecting = asyncio.Event()
+
+    async def create_stdio_server(*_args: Any, **_kwargs: Any) -> Any:
+        connecting.set()
+        await _hang()
+
+    _install_mcp_manager(monkeypatch, stdio=AsyncMock(side_effect=create_stdio_server))
+    runtime = adapter.NooaRuntime()
+    start = asyncio.create_task(
+        runtime.start(
+            _mcp_payload(
+                tmp_path,
+                {"calculator": {"transport": "stdio", "url": sys.executable}},
+            )
+        )
+    )
+    await connecting.wait()
+    start.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await start
     agent.close.assert_awaited_once_with()
 
 
@@ -1971,3 +2284,45 @@ async def test_incompatible_relay_fails_before_target_execution(
     assert result.called is False
     assert result.report.error == "Relay setup failed (RuntimeError)"
     call.assert_not_awaited()
+
+
+async def test_mcp_connection_timeout_does_not_wait_for_slow_cleanup(monkeypatch):
+    """A stalled server that is slow to close is skipped within the grace period."""
+    from nemo_fabric_adapters.nooa import adapter as nooa_adapter
+
+    monkeypatch.setattr(nooa_adapter, "MCP_CONNECT_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(nooa_adapter, "MCP_CONNECT_CANCEL_GRACE_SECONDS", 0.05)
+    cleanup_started = asyncio.Event()
+
+    class StallingManager:
+        """Accept the connection, never list tools, then close slowly."""
+
+        async def create_url_server(self, *args, **kwargs):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cleanup_started.set()
+                await asyncio.sleep(30)
+                raise
+
+    server = nooa_adapter._McpServer(
+        name="slow",
+        transport="streamable-http",
+        target="http://127.0.0.1:9/mcp",
+        args=[],
+        env={},
+        headers={},
+    )
+
+    tool, failure = await asyncio.wait_for(
+        nooa_adapter._connect_mcp_server(StallingManager(), server), timeout=5
+    )
+
+    assert tool is None
+    assert cleanup_started.is_set()
+    assert failure == {
+        "name": "slow",
+        "transport": "streamable-http",
+        "reason": "timed_out",
+        "error_type": "TimeoutError",
+    }
