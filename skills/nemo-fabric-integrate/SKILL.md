@@ -191,6 +191,8 @@ external state. Do not replay an interrupted request automatically. Keep
 ownership and retry cleanup when stop is unconfirmed. Native Hermes API and
 dashboard behavior remains owned by Hermes.
 
+Hermes `SessionRef` resume requires the SDK backend to be enabled. Native-only Hermes runtimes can retain state and report `RunPlan.capabilities.session_resume: false`. Explicit SDK session selection then fails with `session_resume_unsupported` before native startup.
+
 Pick the smallest lifecycle the consumer needs:
 
 - **Single invocation** — one input, no retained state after the call.

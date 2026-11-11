@@ -422,3 +422,34 @@ async def test_sdk_lifecycle_methods_resume_a_direct_reference(
     assert result.session_ref == reference
     captured = requests.get(api_server + "/_requests", timeout=5).json()
     assert nonce in json.dumps(captured[-1]["messages"])
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Hermes interfaces require a POSIX host")
+async def test_native_only_retention_preserves_startup_without_sdk_session_selection(
+    resume_config, tmp_path, api_server, unused_tcp_port
+):
+    mapping = resume_config.to_mapping()
+    mapping["harness"]["settings"] = {
+        "sdk": {"enabled": False},
+        "interfaces": {"api": {"port": unused_tcp_port}},
+    }
+    config = FabricConfig.from_mapping(mapping)
+    fabric = Fabric()
+    assert fabric.plan(config, base_dir=tmp_path).capabilities.session_resume is False
+    runtime_ids = []
+    for _ in range(2):
+        async with await fabric.start_runtime(config, base_dir=tmp_path) as runtime:
+            assert runtime.session_ref is None
+            runtime_ids.append(runtime.runtime_id)
+    assert runtime_ids[0] != runtime_ids[1]
+    reference = SessionRef.from_mapping(
+        {
+            "schema_version": "fabric.session_ref/v1alpha1",
+            "adapter_id": "nvidia.fabric.hermes",
+            "session_id": "native-session",
+        }
+    )
+    with pytest.raises(FabricRuntimeError) as caught:
+        await fabric.start_runtime(config, base_dir=tmp_path, session_ref=reference)
+    assert caught.value.code == "session_resume_unsupported"
+    assert requests.get(api_server + "/_requests", timeout=5).json() == []

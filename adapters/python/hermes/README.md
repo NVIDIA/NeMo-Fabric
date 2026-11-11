@@ -157,6 +157,8 @@ The adapter leaves the installed Hermes source unchanged. Independently started 
 
 ## Cold Resume
 
+`SessionRef` resume requires `sdk.enabled: true`, which is the default. Native-only runtimes can retain their Hermes home with `runtime.keep_state`. They expose `session_resume: false` in the run plan and reject explicit SDK session selection with `session_resume_unsupported`.
+
 With `runtime.keep_state`, save `Runtime.session_ref.to_mapping()` in caller-owned
 storage. Pass `session_ref=SessionRef.from_mapping(saved_reference)`
 to `Fabric.start_runtime()` to reopen the exact native conversation. The caller

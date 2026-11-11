@@ -3749,7 +3749,7 @@ fn validate_control_location(
 }
 
 fn resolve_runtime_capabilities(
-    _config: &FabricConfig,
+    config: &FabricConfig,
     descriptor: Option<&AdapterDescriptor>,
 ) -> RuntimeCapabilities {
     let implemented_runtime = descriptor.is_some_and(|descriptor| {
@@ -3761,8 +3761,19 @@ fn resolve_runtime_capabilities(
     let descriptor_capabilities = descriptor
         .map(|descriptor| descriptor.capabilities.clone())
         .unwrap_or_default();
+    // Native-only Hermes retains state without issuing an SDK session identity.
+    let hermes_sdk_disabled = descriptor
+        .is_some_and(|descriptor| descriptor.adapter_id == "nvidia.fabric.hermes")
+        && config
+            .harness
+            .as_ref()
+            .and_then(|harness| harness.settings.get("sdk"))
+            .and_then(|sdk| sdk.get("enabled"))
+            == Some(&Value::Bool(false));
     RuntimeCapabilities {
-        session_resume: implemented_runtime && descriptor_capabilities.session_resume,
+        session_resume: implemented_runtime
+            && descriptor_capabilities.session_resume
+            && !hermes_sdk_disabled,
         service: implemented_runtime && descriptor_capabilities.service,
         streaming: implemented_runtime && descriptor_capabilities.streaming,
         updates: implemented_runtime && descriptor_capabilities.updates,
@@ -4410,6 +4421,29 @@ pub struct TelemetryPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hermes_session_resume_depends_on_the_selected_sdk_backend() {
+        let descriptor = load_adapter_descriptor(
+            repository_adapter_dir().join("python/hermes/hermes.fabric-adapter.json"),
+        )
+        .expect("Hermes descriptor");
+        for (enabled, expected) in [(None, true), (Some(true), true), (Some(false), false)] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            let settings = &mut config.harness.as_mut().unwrap().settings;
+            settings.insert(
+                "interfaces".into(),
+                serde_json::json!({"api": {"port": 8642}}),
+            );
+            if let Some(enabled) = enabled {
+                settings.insert("sdk".into(), serde_json::json!({"enabled": enabled}));
+            }
+            assert_eq!(
+                resolve_runtime_capabilities(&config, Some(&descriptor)).session_resume,
+                expected
+            );
+        }
+    }
 
     #[test]
     fn agent_config_round_trips_explicit_extensions() {

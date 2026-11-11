@@ -122,6 +122,11 @@ class HermesRuntime:
             self._settings = configuration._settings(agent_config)
             interface_ports = interfaces.interface_ports(self._settings)
             self._sdk_enabled = self._settings.get("sdk", {}).get("enabled", True)
+            if runtime_context.session_ref is not None and not self._sdk_enabled:
+                raise lifecycle.LifecycleError(
+                    "session_resume_unsupported",
+                    "SessionRef resume requires the Hermes SDK backend",
+                )
             if not self._sdk_enabled and not interface_ports:
                 raise lifecycle.LifecycleError(
                     "hermes_no_execution_path",

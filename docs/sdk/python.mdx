@@ -910,9 +910,11 @@ The operating system releases the lock after all copies of the lock have closed:
 
 Planning fails without an artifact directory or for an adapter that doesn't declare `runtime.keep_state`. The Hermes Agent adapter declares `runtime.keep_state`.
 
-Enabling `runtime.keep_state` preserves earlier Hermes sessions in the database. Each new Hermes SDK runtime starts a fresh conversation.
+Enabling `runtime.keep_state` preserves earlier Hermes sessions in the database. Omitting `session_ref` starts a fresh Hermes SDK conversation.
 
 ### Resume a Hermes Conversation
+
+Hermes `SessionRef` resume requires `harness.settings.sdk.enabled` to be `true`, which is the default. Native-only runtimes can retain state with `runtime.keep_state`. Their `RunPlan.capabilities.session_resume` is `false`, and explicit SDK session selection returns `session_resume_unsupported` before native startup.
 
 Retention preserves state. Omitting `session_ref` starts a fresh conversation.
 Resume requires the exact `SessionRef` and access to the original retained

@@ -459,7 +459,7 @@ install-hermes-agent:
         pytest pytest-asyncio pyyaml
 
 test-hermes: install-hermes-agent
-    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py tests/adapters/test_hermes_config_builder.py tests/adapters/test_hermes_native_config.py tests/adapters/test_hermes_interfaces.py tests/adapters/test_hermes_terminal.py tests/adapters/test_hermes_streaming.py tests/adapters/test_hermes_health.py tests/e2e/test_hermes_e2e.py tests/e2e/test_hermes_checks.py -q
+    .venv-hermes/bin/python -m pytest tests/adapters/test_hermes_adapter.py tests/adapters/test_hermes_config_builder.py tests/adapters/test_hermes_native_config.py tests/adapters/test_hermes_interfaces.py tests/adapters/test_hermes_terminal.py tests/adapters/test_hermes_streaming.py tests/adapters/test_hermes_health.py tests/e2e/test_hermes_e2e.py tests/e2e/test_hermes_checks.py tests/adapters/test_hermes_sessions.py tests/adapters/test_hermes_session_lock.py tests/e2e/test_hermes_resume.py -q
 
 # Build the TypeScript contract and adapter packages using their locked dependencies.
 build-typescript: install-typescript

@@ -395,6 +395,9 @@ async def test_hermes_serves_api_and_dashboard_with_the_configured_model(
     assert not token_path.exists()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Hermes interfaces require a POSIX host"
+)
 async def test_hermes_stop_cuts_off_an_in_flight_api_request(
     tmp_path: Path, api_server: str
 ):
@@ -479,6 +482,9 @@ async def test_hermes_interfaces_fail_start_on_windows_before_any_child_starts(
     assert not token_path.exists()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Hermes interfaces require a POSIX host"
+)
 async def test_hermes_interface_port_in_use_fails_start(
     tmp_path: Path, api_server: str
 ):
@@ -502,6 +508,9 @@ async def test_hermes_interface_port_in_use_fails_start(
     assert not _token_path(tmp_path).exists()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Hermes interfaces require a POSIX host"
+)
 async def test_hermes_failed_interface_start_removes_a_token_left_in_kept_state(
     tmp_path: Path, api_server: str
 ):
@@ -713,6 +722,9 @@ async def test_private_file_removal_failure_still_stops_children_and_retries(
     assert children._agent_config_path is None
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Hermes interfaces require a POSIX host"
+)
 async def test_hermes_interface_start_timeout_stops_the_started_child(
     tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch
 ):
@@ -776,6 +788,9 @@ async def test_hermes_cancelled_interface_stop_still_kills_a_child_that_ignores_
             await process.wait()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Hermes interfaces require a POSIX host"
+)
 async def test_hermes_dashboard_without_a_built_frontend_fails_start(
     tmp_path: Path, api_server: str
 ):
@@ -1326,3 +1341,25 @@ async def test_four_paths_keep_conversations_separate_and_restart_cleanly(
         assert (await runtime.check("ready"))["outcome"] == "passed"
     finally:
         await runtime.stop()
+
+
+async def test_native_only_resume_is_rejected_before_starting_interfaces(
+    tmp_path, monkeypatch
+):
+    start = AsyncMock()
+    monkeypatch.setattr(interfaces.InterfaceChildren, "start", start)
+    payload = _payload(
+        tmp_path, {"sdk": {"enabled": False}, "interfaces": {"api": {"port": 18642}}}
+    )
+    payload["runtime_context"]["state_dir"] = str(tmp_path / "kept")
+    payload["runtime_context"]["session_ref"] = {
+        "schema_version": "fabric.session_ref/v1alpha1",
+        "adapter_id": "nvidia.fabric.hermes",
+        "session_id": "native-session",
+    }
+    runtime = adapter.HermesRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(payload)
+    assert caught.value.code == "session_resume_unsupported"
+    start.assert_not_awaited()
+    assert not (tmp_path / "kept").exists()
