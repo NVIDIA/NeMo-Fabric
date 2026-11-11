@@ -971,7 +971,10 @@ timed out stop does not establish that replacement is safe. Keep the runtime
 handle and retry cleanup. After a local startup fails without returning a
 handle, the next start for the same agent storage retries cleanup before
 starting a replacement. Connected starts and service release also retry known
-failed connection cleanup. Ownership remains held when that cleanup fails.
+failed connection cleanup. A local one-shot run whose shutdown could not be
+confirmed also retains cleanup ownership. The next start for the same storage
+retries that cleanup before starting a replacement. Ownership remains held when
+cleanup fails.
 Hermes native interface children retain the state
 lock when their adapter host exits, so a surviving writer prevents replacement.
 These controls do not change how the native Hermes API or dashboard chooses

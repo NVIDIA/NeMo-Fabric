@@ -15,6 +15,7 @@ import sqlite3
 import sys
 import time
 from pathlib import Path
+from unittest.mock import call
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
@@ -1363,3 +1364,21 @@ async def test_native_only_resume_is_rejected_before_starting_interfaces(
     assert caught.value.code == "session_resume_unsupported"
     start.assert_not_awaited()
     assert not (tmp_path / "kept").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Uses POSIX process signaling")
+async def test_interface_cleanup_never_signals_a_reaped_leader_pid(monkeypatch):
+    children = interfaces.InterfaceChildren()
+    process = MagicMock(pid=1234, returncode=None)
+
+    async def finish():
+        process.returncode = 0
+        return 0
+
+    process.wait = AsyncMock(side_effect=finish)
+    children._children.append(interfaces._Child("api", 0, process))
+    monkeypatch.setattr(interfaces.os, "killpg", MagicMock(side_effect=PermissionError))
+    signal_pid = MagicMock()
+    monkeypatch.setattr(interfaces.os, "kill", signal_pid)
+    await children.stop()
+    assert signal_pid.call_args_list == [call(1234, signal.SIGTERM)]

@@ -44,13 +44,15 @@ class NativeSession:
             }
         )
 
-    def finish_turn(self, native_id: str, result: dict[str, Any]) -> None:
+    def finish_turn(self, native_id: str, result: dict[str, Any]) -> bool:
         # Hermes may rotate a compression segment while preserving the logical session.
         self.native_id = native_id
         if not result.get("partial") and not _unfinished(
             self.database.get_messages(native_id)
         ):
             self._write_marker({"state": "complete"})
+            return True
+        return False
 
     def _write_marker(self, value: dict[str, Any]) -> None:
         self.marker.parent.mkdir(parents=True, exist_ok=True)
@@ -112,6 +114,7 @@ def _read_marker(path: Path) -> dict[str, Any]:
             marker = json.loads(source.read(1024 * 1024))
         if (
             not isinstance(marker, dict)
+            or not isinstance(marker.get("state"), str)
             or marker.get("state") not in {"running", "complete"}
             or type(marker.get("last_message_id", 0)) is not int
             or marker.get("last_message_id", 0) < 0

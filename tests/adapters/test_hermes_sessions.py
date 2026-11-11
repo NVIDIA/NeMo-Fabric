@@ -84,6 +84,8 @@ def test_recorded_tool_failure_followed_by_final_response_is_complete(session_st
 @pytest.mark.parametrize(
     "value",
     [
+        {"state": []},
+        {"state": {}},
         {"state": "running", "last_message_id": "invalid"},
         {"state": "running", "request_id": {"secret": "private"}},
         ["invalid"],
