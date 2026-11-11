@@ -217,6 +217,7 @@ def test_descriptor_uses_the_typed_agent_config_contract():
         "models.max_tokens",
         "instructions.system",
         "runtime.max_turns",
+        "runtime.keep_state",
         "tools.enabled",
         "tools.blocked",
         "mcp",
@@ -1483,6 +1484,96 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
 
     with pytest.raises(RuntimeError, match="stop after environment setup"):
         await adapter.HermesRuntime().start(payload)
+
+
+@pytest.mark.parametrize("kept", [False, True])
+def test_hermes_home_is_the_agents_state_folder_when_fabric_keeps_state(
+    tmp_path: Path, kept: bool
+):
+    """Select the shared state folder or the current runtime's home."""
+    state_dir = tmp_path / "artifacts/.fabric/state/nvidia.fabric.hermes/assistant"
+    context = _runtime_context(artifact_root="artifacts").to_mapping()
+    if kept:
+        context["state_dir"] = str(state_dir)
+
+    home = adapter._hermes_home(RuntimeContext.from_mapping(context), str(tmp_path))
+
+    assert home == (
+        state_dir if kept else tmp_path / "artifacts/.fabric/hermes/runtimes/runtime-1"
+    )
+
+
+@pytest.mark.parametrize("kept", [False, True])
+async def test_hermes_sessions_survive_runtime_replacement_only_with_kept_state(
+    tmp_path: Path, api_server: str, kept: bool
+):
+    """Preserve native session records when runtimes share a state folder."""
+    os.environ["TEST_API_KEY"] = "fabric-test-model-key"
+    config = _agent_config(
+        {
+            "models": {
+                "default": {
+                    "provider": "openai",
+                    "model": "fabric-echo",
+                    "base_url": f"{api_server}/v1",
+                    "api_key_env": "TEST_API_KEY",
+                }
+            },
+            "tools": {"enabled": []},
+        }
+    )
+    contexts = []
+    for runtime_id in ("runtime-first", "runtime-second"):
+        context = _runtime_context(
+            runtime_id=runtime_id,
+            workspace=str(tmp_path),
+            artifact_root=str(tmp_path / "artifacts"),
+        ).to_mapping()
+        if kept:
+            context["state_dir"] = str(tmp_path / "kept-state")
+        contexts.append(RuntimeContext.from_mapping(context))
+    first = adapter.HermesRuntime()
+    try:
+        await first.start(
+            {
+                "config": config,
+                "runtime_context": contexts[0].to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+        result = await first.invoke(
+            AgentRunRequest.from_mapping({"input": "retained session marker"}),
+            contexts[0],
+        )
+        assert result.status is AgentRunStatus.SUCCEEDED
+        session_id = first._agent.session_id
+        assert first._session_db.get_session(session_id) is not None
+        saved_messages = first._session_db.get_messages(session_id)
+        assert any(
+            message["content"] == "retained session marker"
+            for message in saved_messages
+        )
+    finally:
+        await first.stop()
+
+    second = adapter.HermesRuntime()
+    try:
+        await second.start(
+            {
+                "config": config,
+                "runtime_context": contexts[1].to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+        if kept:
+            assert second._session_db.get_session(session_id) is not None
+            assert second._session_db.get_messages(session_id) == saved_messages
+        else:
+            assert second._session_db.get_session(session_id) is None
+        assert second._agent.session_id == "runtime-second"
+        assert second._conversation_history is None
+    finally:
+        await second.stop()
 
 
 def test_artifact_root_resolves_relative_to_base_dir(tmp_path: Path):

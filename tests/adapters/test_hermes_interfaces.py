@@ -442,9 +442,11 @@ async def test_hermes_stop_cuts_off_an_in_flight_api_request(
     assert not _token_path(tmp_path).exists()
 
 
+@pytest.mark.parametrize("kept", [False, True])
 async def test_hermes_interfaces_fail_start_on_windows_before_any_child_starts(
-    tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch, kept: bool
 ):
+    """Clear stale credentials and reject native interfaces before setup."""
     monkeypatch.setattr(interfaces, "POSIX", False)
     # start() stops whatever it started when it fails, so check the spawn
     # itself rather than the children left afterwards.
@@ -455,20 +457,26 @@ async def test_hermes_interfaces_fail_start_on_windows_before_any_child_starts(
     write_config = MagicMock(wraps=configuration.write_hermes_config)
     monkeypatch.setattr(configuration, "write_hermes_config", write_config)
     runtime = adapter.HermesRuntime()
+    payload = _payload(
+        tmp_path,
+        {"interfaces": {"api": {"port": _free_port()}}},
+        base_url=f"{api_server}/v1",
+    )
+    token_path = _token_path(tmp_path)
+    if kept:
+        state_dir = tmp_path / "artifacts/.fabric/state/nvidia.fabric.hermes/assistant"
+        payload["runtime_context"]["state_dir"] = str(state_dir)
+        token_path = state_dir / "interfaces/api.token"
+    token_path.parent.mkdir(parents=True)
+    token_path.write_text("token-from-a-crashed-runtime", encoding="utf-8")
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
-        await runtime.start(
-            _payload(
-                tmp_path,
-                {"interfaces": {"api": {"port": _free_port()}}},
-                base_url=f"{api_server}/v1",
-            )
-        )
+        await runtime.start(payload)
 
     assert caught.value.code == "hermes_interfaces_unsupported_platform"
     spawn.assert_not_called()
     write_config.assert_not_called()
-    assert not _token_path(tmp_path).exists()
+    assert not token_path.exists()
 
 
 async def test_hermes_interface_port_in_use_fails_start(
@@ -492,6 +500,107 @@ async def test_hermes_interface_port_in_use_fails_start(
         "port": port,
     }
     assert not _token_path(tmp_path).exists()
+
+
+async def test_hermes_failed_interface_start_removes_a_token_left_in_kept_state(
+    tmp_path: Path, api_server: str
+):
+    """Remove a retained API token even when an occupied port blocks startup."""
+    state_dir = tmp_path / "artifacts/.fabric/state/nvidia.fabric.hermes/assistant"
+    stale_token = state_dir / "interfaces" / "api.token"
+    stale_token.parent.mkdir(parents=True)
+    stale_token.write_text("token-from-a-crashed-runtime", encoding="utf-8")
+    runtime = adapter.HermesRuntime()
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        payload = _payload(
+            tmp_path,
+            {"interfaces": {"api": {"port": server.getsockname()[1]}}},
+            base_url=f"{api_server}/v1",
+        )
+        payload["runtime_context"]["state_dir"] = str(state_dir)
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.start(payload)
+
+    assert caught.value.code == "hermes_interface_port_unavailable"
+    assert not stale_token.exists()
+
+
+@pytest.mark.parametrize("kept", [False, True])
+async def test_sdk_only_start_removes_stale_interface_files(
+    tmp_path, api_server, monkeypatch, kept
+):
+    """Remove stale native attachment files while preserving unrelated data."""
+    payload = _payload(tmp_path, {}, base_url=f"{api_server}/v1")
+    home = _token_path(tmp_path).parent.parent
+    if kept:
+        home = tmp_path / "kept-state"
+        payload["runtime_context"]["state_dir"] = str(home)
+    interface_dir = home / "interfaces"
+    interface_dir.mkdir(parents=True)
+    stale_files = [
+        interface_dir / name
+        for name in ("api.token", "tui.json", "tui.token", "agent-config.json")
+    ]
+    for path in stale_files:
+        path.write_text("stale interface data", encoding="utf-8")
+    unrelated = interface_dir / "keep.txt"
+    unrelated.write_text("retained data", encoding="utf-8")
+    spawn = AsyncMock()
+    monkeypatch.setattr(interfaces.asyncio, "create_subprocess_exec", spawn)
+
+    runtime = adapter.HermesRuntime()
+    try:
+        await runtime.start(payload)
+        assert all(not path.exists() for path in stale_files)
+        assert unrelated.read_text(encoding="utf-8") == "retained data"
+        spawn.assert_not_called()
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.parametrize(
+    "name", ["api.token", "tui.json", "tui.token", "agent-config.json"]
+)
+@pytest.mark.parametrize("failure", ["directory", "permission"])
+async def test_start_reports_interface_cleanup_failures_before_hermes_setup(
+    tmp_path, api_server, monkeypatch, name, failure
+):
+    """Return a stable error before setup when attachment cleanup fails."""
+    payload = _payload(tmp_path, {}, base_url=f"{api_server}/v1")
+    home = tmp_path / "kept-state"
+    payload["runtime_context"]["state_dir"] = str(home)
+    path = home / "interfaces" / name
+    path.parent.mkdir(parents=True)
+    if failure == "directory":
+        path.mkdir()
+    else:
+        path.write_text("stale interface data", encoding="utf-8")
+        unlink = Path.unlink
+
+        def deny_unlink(candidate, *args, **kwargs):
+            """Simulate a permission failure for the selected attachment."""
+            if candidate == path:
+                raise PermissionError("PRIVATE_UNLINK_DETAIL")
+            return unlink(candidate, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", deny_unlink)
+    write_config = MagicMock(wraps=configuration.write_hermes_config)
+    monkeypatch.setattr(configuration, "write_hermes_config", write_config)
+    spawn = AsyncMock()
+    monkeypatch.setattr(interfaces.asyncio, "create_subprocess_exec", spawn)
+
+    runtime = adapter.HermesRuntime()
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.start(payload)
+    finally:
+        await runtime.stop()
+
+    assert caught.value.code == "hermes_interface_cleanup_failed"
+    assert isinstance(caught.value.__cause__, OSError)
+    assert "PRIVATE_UNLINK_DETAIL" not in str(caught.value)
+    write_config.assert_not_called()
+    spawn.assert_not_called()
 
 
 def test_hermes_disabled_interface_is_not_started():

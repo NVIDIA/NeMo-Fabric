@@ -108,7 +108,7 @@ Use a single `FabricConfig` to define supported settings for all four Hermes pat
 
 NeMo Fabric resolves `FabricConfig` into `AgentConfig`. The adapter translates it into Hermes's native configuration and agent settings, applying the same explicit instructions and behavioral settings to agents in managed native processes.
 
-The adapter writes native `config.yaml` and optional NeMo Relay plugin configuration under the runtime's Hermes home. When native interfaces are enabled, it also writes an owner-only `interfaces/agent-config.json` snapshot for the managed processes.
+The adapter writes native `config.yaml` under the Hermes home. When NeMo Relay is enabled, the adapter creates a `relay-config` directory beside the file specified by `FABRIC_RELAY_CONFIG_PATH` and writes `plugins.toml` there. This location follows `FABRIC_RELAY_CONFIG_PATH` even with `runtime.keep_state` enabled. When native interfaces are enabled, it also writes an owner-only `interfaces/agent-config.json` snapshot for the managed processes.
 
 Model credentials are supplied through child process environments, not public attachment metadata. For OpenAI without an explicit base URL, the adapter removes inherited `OPENAI_BASE_URL` from managed children so it cannot redirect the configured credential.
 
@@ -120,7 +120,9 @@ Model credentials are supplied through child process environments, not public at
 
 ### Shared Runtime Home
 
-The runtime home is `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. Agents share persisted resources in this directory while retaining separate live conversations. Keeping these files does not establish cross-runtime resume.
+The default Hermes home is `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. With `runtime.keep_state`, the Hermes home is `<artifact root>/.fabric/state/nvidia.fabric.hermes/<agent name>`, so runtimes of the agent share the session database, memory, skills, and logs. The SDK starts a new conversation for each runtime, and earlier sessions remain in the database. The adapter rewrites `config.yaml` at each start.
+
+Startup removes stale `interfaces/api.token`, `interfaces/tui.json`, `interfaces/tui.token`, and `interfaces/agent-config.json` files from the Hermes home. A removal failure stops startup with `hermes_interface_cleanup_failed` before Hermes setup.
 
 ### Process Ownership
 
