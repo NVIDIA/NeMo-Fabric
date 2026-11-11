@@ -208,9 +208,7 @@ with (
 
 Nested scopes do not repeat the keys because the Relay scope hierarchy already
 links them to the root scope. The LangChain Deep Agents, mini-SWE-agent, and
-NOOA adapters attach all three keys. NOOA calls only
-`relay_correlation_metadata()`, so its request ID does not become the
-propagated Relay root.
+NOOA adapters attach all three keys and use `relay_request_context()` to preserve the caller's session root or a usable request root.
 
 Claude, Codex, and Pi send telemetry through an external Relay gateway and do
 not yet carry per-invocation NeMo Fabric IDs into Relay. Hermes Agent emits

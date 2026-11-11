@@ -828,10 +828,16 @@ async def test_relay_report_is_attached_without_replaying_target(
 
     await runtime.start(_start_payload(tmp_path))
     try:
-        result = await runtime.invoke(*_invocation())
+        request, context = _invocation()
+        request.relay_session_root = "11111111-1111-4111-8111-111111111111"
+        result = await runtime.invoke(request, context)
     finally:
         await runtime.stop()
 
+    assert (
+        mock_telemetry.invoke.await_args.kwargs["relay_session_root"]
+        == request.relay_session_root
+    )
     assert agent.handle.await_count == 1
     assert result.output["response"] == "telemetry reply"
     assert result.output["telemetry"] == {
@@ -1880,7 +1886,8 @@ def _install_relay_doubles(
             current[0] = root_handle
 
     @asynccontextmanager
-    async def activate(_config: dict[str, Any]):
+    async def activate(_config: dict[str, Any], *, additional_plugins_toml: Path):
+        assert additional_plugins_toml.read_text(encoding="utf-8") == ""
         yield SimpleNamespace(report={"config": {"diagnostics": []}})
 
     install = MagicMock(name="install_nemo_relay")
@@ -1890,6 +1897,7 @@ def _install_relay_doubles(
     relay_module.__path__ = []  # type: ignore[attr-defined]
     relay_module.ScopeType = SimpleNamespace(Agent="agent")
     relay_module.plugin = SimpleNamespace(activate=activate)
+    relay_module.event_metadata = MagicMock(name="event_metadata")
     relay_module.scope = MagicMock(name="scope")
     relay_module.scope.get_handle.side_effect = lambda: current[0]
     relay_module.scope.scope.side_effect = enter_scope

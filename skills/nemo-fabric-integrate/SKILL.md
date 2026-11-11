@@ -175,7 +175,7 @@ construction.
 
 For Hermes, embedded SDK execution is enabled and eager by default. Set `harness.settings.sdk.enabled=False` only for native-only runtimes with an enabled API, dashboard, or terminal interface; management through the SDK remains available, but invocation fails explicitly. Browser and terminal clients share one managed TUI backend. Native responses remain native even when Relay emits standard ATOF/ATIF; do not treat them as SDK `RunResult` objects. Follow the [Hermes invocation guides](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes/hermes.mdx) for interface-specific installation and attachment.
 
-For Deep Agents, mini-SWE-agent, and the LangGraph custom-agent example, pass the same UUID string through `RunRequest.relay_session_root` on each conversation turn to group Relay trajectories under one session. Core forwards the typed field as `AgentRunRequest.relay_session_root`; context keys do not control Relay propagation. An unusable UUID preserves per-request behavior. The remaining adapters do not consume this field.
+For Deep Agents, mini-SWE-agent, both NOOA adapters, and the LangGraph custom-agent example, pass the same UUID string through `RunRequest.relay_session_root` on each conversation turn to group Relay trajectories under one session. Core forwards the typed field as `AgentRunRequest.relay_session_root`; context keys do not control Relay propagation. An unusable UUID preserves per-request behavior. The remaining adapters do not consume this field.
 
 Pick the smallest lifecycle the consumer needs:
 

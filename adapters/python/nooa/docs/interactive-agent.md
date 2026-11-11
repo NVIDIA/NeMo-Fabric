@@ -140,8 +140,9 @@ without a skill registry when its configuration does not include MCP servers.
 
 ## Relay Telemetry
 
-Each Relay-enabled invocation installs NOOA's public `install_nemo_relay()`
-middleware and opens one `nooa-interactive-agent-request` scope. The middleware
+Pass the same UUID in `RunRequest.relay_session_root` on each conversation turn to group its traces under one native Relay session. Missing or unusable values preserve per-request roots. The adapter exports that native root as `session_id` on every span and preserves distinct invocation correlation IDs. It activates Fabric's generated exporter configuration explicitly, ignoring ambient user/project files while retaining system policy.
+
+Each Relay-enabled invocation installs the adapter's NOOA compatibility middleware and opens one `nooa-interactive-agent-request` scope. The middleware
 records nested agent-method, LLM, and `execute_python` scopes before the adapter
 finalizes the current invocation's artifacts.
 

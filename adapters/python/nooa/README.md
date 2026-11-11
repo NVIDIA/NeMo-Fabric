@@ -58,8 +58,9 @@ the NOOA harness packages.
 
 Both adapters declare Relay outputs for Agent Trajectory Interchange Format
 (ATIF), OpenTelemetry, and OpenInference. NeMo Fabric supplies the generated
-`FABRIC_RELAY_CONFIG_PATH`; the adapters reject ambient user or project plugin
-configuration and activate only the generated document.
+`FABRIC_RELAY_CONFIG_PATH`; the adapters activate only the generated document and system policy. Ambient user or project plugin configuration is ignored and left unchanged.
+
+Both adapters accept `RunRequest.relay_session_root` to group turns under one native Relay session. Without a usable session UUID, they preserve per-request roots. Every span from the adapter's generated trace exporters includes the native root as `session_id`, including model, tool, and function spans. Existing producer metadata takes precedence over injected additions.
 
 A Relay setup failure prevents agent execution and returns a failed result. If
 artifact finalization fails after the agent completes, the adapter preserves

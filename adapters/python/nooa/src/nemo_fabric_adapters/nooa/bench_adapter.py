@@ -359,6 +359,7 @@ class BenchRuntime:
                 agent=agent,
                 runtime_context=runtime_context,
                 call=invoke_agent,
+                relay_session_root=request.relay_session_root,
             )
         except BaseException:
             try:

@@ -738,6 +738,7 @@ class NooaRuntime:
             agent=agent,
             runtime_context=runtime_context,
             call=invoke_target,
+            relay_session_root=request.relay_session_root,
         )
         if not relay_invocation.called:
             result = _failure_output(
