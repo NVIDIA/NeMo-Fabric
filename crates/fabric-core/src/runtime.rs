@@ -962,6 +962,21 @@ struct LocalAdapterHost {
     _state_lock: Option<File>,
 }
 
+/// Identifies the startup scope whose failed native host still needs cleanup.
+#[derive(Clone, PartialEq, Eq)]
+enum FailedStartScope {
+    Service(String),
+    Retained(PathBuf),
+    Ephemeral {
+        base_dir: PathBuf,
+        adapter_id: String,
+        agent_name: String,
+    },
+}
+
+static FAILED_LOCAL_STARTS: LazyLock<Mutex<BTreeMap<String, FailedStartScope>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
+
 struct LocalServiceRecord {
     software_report: Option<crate::ExecutionEvidence>,
     host: LocalAdapterHost,
@@ -1101,6 +1116,7 @@ pub fn start_runtime_with_service(
             service_id: service.service_id.clone(),
         });
     }
+    retry_failed_service_starts(&mut record, AdapterLifecycleOperation::Start)?;
     // The service host holds the agent's state lock for its connected
     // runtimes, so only one of them may run at a time.
     if !record.active_runtime_ids.is_empty()
@@ -1122,7 +1138,7 @@ pub fn start_runtime_with_service(
             source,
         })?;
     let environment = prepare_environment(plan)?;
-    let runtime = start_local_runtime(
+    let started = start_local_runtime(
         plan,
         environment,
         Some((
@@ -1135,7 +1151,20 @@ pub fn start_runtime_with_service(
             },
             state_lock,
         )),
-    )?;
+    );
+    let runtime = match started {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            if let FabricError::AdapterLifecycleOperation {
+                code, runtime_id, ..
+            } = &error
+                && code == "cleanup_unconfirmed"
+            {
+                record.active_runtime_ids.insert(runtime_id.clone());
+            }
+            return Err(error);
+        }
+    };
     if plan.config.provenance.enabled {
         let host = { local_hosts().get(&runtime.runtime_id).cloned() };
         if let Some(host) = host {
@@ -1162,6 +1191,7 @@ pub fn release_service(plan: &RunPlan, service: &ServiceHandle) -> Result<Vec<Fa
     if service_record.state == LocalServiceState::Released {
         return Ok(vec![service_release_event(service, true)]);
     }
+    retry_failed_service_starts(&mut service_record, AdapterLifecycleOperation::Stop)?;
     if !service_record.active_runtime_ids.is_empty() {
         return Err(FabricError::ServiceInUse {
             service_id: service.service_id.clone(),
@@ -1966,6 +1996,10 @@ impl RuntimeAdapter for LocalHostAdapter {
         // has been confirmed. A failed adapter stop may still be safely killed.
         local_hosts().remove(&runtime.runtime_id);
         local_host_processes().remove(&runtime.runtime_id);
+        FAILED_LOCAL_STARTS
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&runtime.runtime_id);
         let removal = remove_local_host_files(&host);
         if !host_crashed {
             result?;
@@ -2048,6 +2082,7 @@ fn start_local_runtime(
         service_context,
     )?;
     let environment_env = start.runtime_context.environment.env.clone();
+    let state_dir = start.runtime_context.state_dir.clone();
     let request = AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Start(Box::new(start)));
     let started_at = SystemTime::now();
     let levels = plan
@@ -2090,6 +2125,13 @@ fn start_local_runtime(
         if terminate_local_host(&mut host).is_err() {
             host.cleanup_pending = true;
             local_hosts().insert(runtime.runtime_id.clone(), Arc::new(Mutex::new(host)));
+            FAILED_LOCAL_STARTS
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .insert(
+                    runtime.runtime_id.clone(),
+                    failed_start_scope(plan, state_dir.as_deref(), runtime.service_id.as_deref()),
+                );
             return Err(lifecycle_error(
                 AdapterLifecycleOperation::Start,
                 &runtime.runtime_id,
@@ -2107,6 +2149,85 @@ fn start_local_runtime(
     );
     local_hosts().insert(runtime.runtime_id.clone(), Arc::new(Mutex::new(host)));
     Ok(runtime)
+}
+
+/// Group cleanup retries by service or physical retained home, preserving renamed sessions.
+fn failed_start_scope(
+    plan: &RunPlan,
+    state_dir: Option<&Path>,
+    service_id: Option<&str>,
+) -> FailedStartScope {
+    if let Some(service_id) = service_id {
+        return FailedStartScope::Service(service_id.to_string());
+    }
+    if let Some(path) = state_dir {
+        let resolved = path
+            .canonicalize()
+            .ok()
+            .or_else(|| Some(path.parent()?.canonicalize().ok()?.join(path.file_name()?)))
+            .unwrap_or_else(|| path.to_path_buf());
+        return FailedStartScope::Retained(resolved);
+    }
+    FailedStartScope::Ephemeral {
+        base_dir: plan.base_dir.clone(),
+        adapter_id: adapter_id(plan).unwrap_or_else(|| harness(plan)),
+        agent_name: plan.agent_name.clone(),
+    }
+}
+
+/// Retry only known failed starts in this scope, retaining their guards on any failure.
+fn retry_failed_local_starts(
+    scope: &FailedStartScope,
+    operation: AdapterLifecycleOperation,
+) -> Result<()> {
+    let pending: Vec<String> = FAILED_LOCAL_STARTS
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .iter()
+        .filter(|(_, owned)| *owned == scope)
+        .map(|(id, _)| id.clone())
+        .collect();
+    for runtime_id in pending {
+        let host = { local_hosts().get(&runtime_id).cloned() };
+        if let Some(host) = host {
+            let mut host = host.lock().unwrap_or_else(|error| error.into_inner());
+            let unconfirmed = |_: std::io::Error| {
+                lifecycle_error(
+                    operation,
+                    &runtime_id,
+                    "cleanup_unconfirmed",
+                    "Failed runtime startup cleanup could not be confirmed",
+                    "",
+                )
+            };
+            terminate_local_host(&mut host).map_err(unconfirmed)?;
+            remove_local_host_files(&host).map_err(unconfirmed)?;
+            host._state_lock.take();
+            local_hosts().remove(&runtime_id);
+            local_host_processes().remove(&runtime_id);
+        }
+        FAILED_LOCAL_STARTS
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&runtime_id);
+    }
+    Ok(())
+}
+
+/// Keep failed connections reserved until their native host cleanup succeeds.
+fn retry_failed_service_starts(
+    record: &mut LocalServiceRecord,
+    operation: AdapterLifecycleOperation,
+) -> Result<()> {
+    let cleanup = retry_failed_local_starts(
+        &FailedStartScope::Service(record.handle.service_id.clone()),
+        operation,
+    );
+    let hosts = local_hosts();
+    record
+        .active_runtime_ids
+        .retain(|runtime_id| hosts.contains_key(runtime_id));
+    cleanup
 }
 
 fn confirm_native_session(
@@ -2903,6 +3024,9 @@ fn spawn_local_host(
     environment_env: BTreeMap<String, String>,
     service_state_lock: Option<File>,
 ) -> Result<LocalAdapterHost> {
+    let state_dir = agent_state_dir(plan, &artifacts)?;
+    let scope = failed_start_scope(plan, state_dir.as_deref(), runtime.service_id.as_deref());
+    retry_failed_local_starts(&scope, AdapterLifecycleOperation::Start)?;
     // A connected host inherits a duplicate of its service's lock, so either
     // host can finish cleanup without releasing the other host's protection.
     let state_lock = match service_state_lock {
@@ -3332,6 +3456,10 @@ fn take_local_host_stderr(host: &mut LocalAdapterHost) -> String {
 }
 
 fn terminate_local_host(host: &mut LocalAdapterHost) -> std::io::Result<()> {
+    #[cfg(test)]
+    if tests::FAIL_NEXT_HOST_TERMINATION.with(|fail| fail.replace(false)) {
+        return Err(std::io::Error::other("simulated host termination failure"));
+    }
     #[cfg(unix)]
     remember_host_descendants(host);
     let deadline = Instant::now() + LOCAL_HOST_EXIT_GRACE;
@@ -3346,6 +3474,10 @@ fn terminate_local_host(host: &mut LocalAdapterHost) -> std::io::Result<()> {
                 continue;
             }
             if !process.is_current() {
+                // A child can exit between the exit check and identity check.
+                if process.has_exited() == Some(true) {
+                    continue;
+                }
                 return Err(std::io::Error::other(
                     "owned child identity could not be confirmed",
                 ));
@@ -4650,6 +4782,10 @@ mod tests {
     use super::*;
     use crate::config::{ResolveContext, TelemetryProvider, resolve_run_plan_from_config};
 
+    thread_local! {
+        pub(super) static FAIL_NEXT_HOST_TERMINATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
     fn local_host_plan(mode: &str) -> (PathBuf, RunPlan) {
         local_host_plan_with_relay(mode, false)
     }
@@ -4835,6 +4971,13 @@ for line in sys.stdin:
             with open(os.path.join(root, "child.pid"), "w", encoding="utf-8") as stream:
                 stream.write(str(child.pid))
         service = message["payload"].get("service")
+        if MODE == "connect_failure_once" and service and service["operation"] == "connect":
+            failure_marker = os.environ["FABRIC_FAKE_HOST_STOP_MARKER"] + ".connect-failed"
+            if not os.path.exists(failure_marker):
+                with open(failure_marker, "w") as stream:
+                    stream.write("failed")
+                response("start", error=failure("start", "fake_start", "start rejected"))
+                sys.exit(16)
         if service and service["operation"] in {"prepare", "attach"}:
             with open(service["connection_path"], "w", encoding="utf-8") as stream:
                 json.dump({"fake": "connection"}, stream)
@@ -5406,6 +5549,90 @@ else:
             matches!(error, FabricError::Session { code, .. } if code == "session_resume_unsupported")
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn failed_standalone_start_cleanup_is_retried_before_replacement() {
+        for (retained, replace_with_service) in [(false, false), (true, false), (true, true)] {
+            let (root, plan) = if retained {
+                local_host_plan_keeping_state_in("start_failure")
+            } else {
+                local_host_plan("start_failure")
+            };
+            FAIL_NEXT_HOST_TERMINATION.with(|fail| fail.set(true));
+            let error = start_runtime(&plan).unwrap_err();
+            let failed_id = match error {
+                FabricError::AdapterLifecycleOperation {
+                    code, runtime_id, ..
+                } if code == "cleanup_unconfirmed" => runtime_id,
+                other => panic!("unexpected startup failure: {other}"),
+            };
+            assert!(local_hosts().contains_key(&failed_id));
+            let mut config = plan.config;
+            config.harness.as_mut().unwrap().settings["env"]["FABRIC_FAKE_HOST_MODE"] =
+                serde_json::json!("success");
+            let corrected =
+                resolve_run_plan_from_config(config, ResolveContext::new(&root)).unwrap();
+            if replace_with_service {
+                let service = prepare_service(&corrected)
+                    .expect("service preparation retries failed standalone cleanup");
+                release_service(&corrected, &service).unwrap();
+            } else {
+                let runtime = start_runtime(&corrected)
+                    .expect("replacement retries failed standalone cleanup");
+                stop_runtime(&corrected, &runtime).unwrap();
+            }
+            assert!(!local_hosts().contains_key(&failed_id));
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn failed_service_connection_cleanup_is_retried_before_connect_or_release() {
+        for reconnect in [false, true] {
+            let (root, plan) = local_host_plan_keeping_state_in("connect_failure_once");
+            let service = prepare_service(&plan).unwrap();
+            FAIL_NEXT_HOST_TERMINATION.with(|fail| fail.set(true));
+            let error = start_runtime_with_service(&plan, &service).unwrap_err();
+            let failed_id = match error {
+                FabricError::AdapterLifecycleOperation {
+                    code, runtime_id, ..
+                } if code == "cleanup_unconfirmed" => runtime_id,
+                other => panic!("unexpected startup failure: {other}"),
+            };
+            let record = local_services().get(&service.service_id).cloned().unwrap();
+            assert!(
+                record
+                    .lock()
+                    .unwrap()
+                    .active_runtime_ids
+                    .contains(&failed_id)
+            );
+            FAIL_NEXT_HOST_TERMINATION.with(|fail| fail.set(true));
+            let blocked = if reconnect {
+                start_runtime_with_service(&plan, &service).map(|_| ())
+            } else {
+                release_service(&plan, &service).map(|_| ())
+            };
+            assert!(
+                matches!(blocked, Err(FabricError::AdapterLifecycleOperation {code, ..}) if code == "cleanup_unconfirmed")
+            );
+            assert!(local_hosts().contains_key(&failed_id));
+            if reconnect {
+                let runtime = start_runtime_with_service(&plan, &service).unwrap();
+                assert!(
+                    !record
+                        .lock()
+                        .unwrap()
+                        .active_runtime_ids
+                        .contains(&failed_id)
+                );
+                stop_runtime(&plan, &runtime).unwrap();
+            }
+            release_service(&plan, &service).unwrap();
+            assert!(!local_hosts().contains_key(&failed_id));
+            let _ = fs::remove_dir_all(root);
+        }
     }
 
     #[test]

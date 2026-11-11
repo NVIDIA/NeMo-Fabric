@@ -638,7 +638,13 @@ async def _handle_start(
         if state.health is not None:
             await state.health.close()
         state.clear()
-        await _stop_after_eof(candidate)
+        try:
+            await _adapter_call("stop", candidate.stop)
+        except LifecycleError as cleanup_error:
+            raise LifecycleError(
+                "cleanup_unconfirmed",
+                "Adapter startup cleanup could not be confirmed",
+            ) from cleanup_error
         raise
     return _response("start", output=output)
 

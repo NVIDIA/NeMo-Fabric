@@ -968,7 +968,11 @@ failure followed by a completed response also does not require recovery.
 Writer ownership remains held while cleanup is unconfirmed. A busy managed
 stop returns `runtime_busy`. Retry stop after the invocation ends. A failed or
 timed out stop does not establish that replacement is safe. Keep the runtime
-handle and retry cleanup. Hermes native interface children retain the state
+handle and retry cleanup. After a local startup fails without returning a
+handle, the next start for the same agent storage retries cleanup before
+starting a replacement. Connected starts and service release also retry known
+failed connection cleanup. Ownership remains held when that cleanup fails.
+Hermes native interface children retain the state
 lock when their adapter host exits, so a surviving writer prevents replacement.
 These controls do not change how the native Hermes API or dashboard chooses
 conversations or accepts work.

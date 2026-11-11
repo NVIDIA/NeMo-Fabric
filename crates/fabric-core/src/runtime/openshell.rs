@@ -17,7 +17,7 @@ use crate::task_command::{TaskCommand, TaskCommandResponse};
 
 pub(super) struct OpenShellRuntimeAdapter;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum State {
     Starting,
     Active,
@@ -230,6 +230,7 @@ fn task_config(plan: &RunPlan, environment: &EnvironmentHandle) -> Result<crate:
     }
     Ok(config)
 }
+#[cfg(test)]
 fn set_state(key: &str, runtime_id: &str, state: State) {
     let mut bindings = BINDINGS.lock().unwrap_or_else(|error| error.into_inner());
     let binding = bindings
@@ -281,7 +282,7 @@ fn command_value(
         )),
     }
 }
-fn claim(runtime: &RuntimeHandle, stopping: bool) -> Result<Option<String>> {
+fn claim(runtime: &RuntimeHandle, stopping: bool) -> Result<Option<(String, State)>> {
     let key = resource_key(&runtime.environment)?;
     let mut bindings = BINDINGS.lock().unwrap_or_else(|error| error.into_inner());
     let environment_bindings = bindings.get_mut(&key).ok_or_else(|| {
@@ -331,9 +332,16 @@ fn claim(runtime: &RuntimeHandle, stopping: bool) -> Result<Option<String>> {
     if stopping && binding.state == State::Stopped {
         return Ok(None);
     }
-    if binding.state != State::Active
-        && !(stopping && matches!(binding.state, State::Unknown | State::Invoking))
-    {
+    if stopping && binding.state == State::Invoking {
+        return Err(lifecycle_error(
+            AdapterLifecycleOperation::Stop,
+            &runtime.runtime_id,
+            "runtime_busy",
+            "Runtime has an invocation in flight",
+            "",
+        ));
+    }
+    if binding.state != State::Active && !(stopping && binding.state == State::Unknown) {
         return Err(lifecycle_error(
             AdapterLifecycleOperation::Invoke,
             &runtime.runtime_id,
@@ -342,12 +350,13 @@ fn claim(runtime: &RuntimeHandle, stopping: bool) -> Result<Option<String>> {
             "",
         ));
     }
+    let previous = binding.state;
     binding.state = if stopping {
         State::Stopping
     } else {
         State::Invoking
     };
-    Ok(Some(key))
+    Ok(Some((key, previous)))
 }
 
 impl RuntimeAdapter for OpenShellRuntimeAdapter {
@@ -525,7 +534,7 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
             runtime_id: runtime.runtime_id.clone(),
             request: serde_json::to_value(&request).map_err(FabricError::SerializeJson)?,
         };
-        let key = claim(runtime, false)?.expect("active invocation binding");
+        let (key, _) = claim(runtime, false)?.expect("active invocation binding");
         let mut confirmed = false;
         let result = (|| {
             let response = command_runtime(&runtime.environment, &command, timeout + 15)?;
@@ -618,48 +627,67 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
         })
     }
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
-        if let Some(key) = claim(runtime, true)? {
-            let command = TaskCommand::Stop {
-                agent: runtime.agent_name.clone(),
-                runtime_id: runtime.runtime_id.clone(),
-            };
-            let result = (|| {
-                let value = command_value(
-                    command_runtime(&runtime.environment, &command, 30)?,
+        stop_with_command(runtime, |command| {
+            command_runtime(&runtime.environment, command, 30)
+        })
+    }
+}
+
+/// Stop through the selected transport while preserving confirmed runtime state.
+fn stop_with_command(
+    runtime: &RuntimeHandle,
+    send: impl FnOnce(&TaskCommand) -> Result<TaskCommandResponse>,
+) -> Result<Vec<FabricEvent>> {
+    if let Some((key, previous)) = claim(runtime, true)? {
+        let command = TaskCommand::Stop {
+            agent: runtime.agent_name.clone(),
+            runtime_id: runtime.runtime_id.clone(),
+        };
+        let mut no_effect_busy = false;
+        let result = (|| {
+            let response = send(&command)?;
+            no_effect_busy = matches!(&response, TaskCommandResponse::Rejected {error} if error.code == "runtime_busy" && error.effects == "none");
+            let value = command_value(
+                response,
+                AdapterLifecycleOperation::Stop,
+                &runtime.runtime_id,
+            )?;
+            if !value.is_null() {
+                return Err(lifecycle_error(
                     AdapterLifecycleOperation::Stop,
                     &runtime.runtime_id,
-                )?;
-                if !value.is_null() {
-                    return Err(lifecycle_error(
-                        AdapterLifecycleOperation::Stop,
-                        &runtime.runtime_id,
-                        "invalid_response",
-                        "SDK stop must return null",
-                        "",
-                    ));
-                }
-                Ok(())
-            })();
-            set_state(
-                &key,
-                &runtime.runtime_id,
-                if result.is_ok() {
-                    State::Stopped
-                } else {
-                    State::Unknown
-                },
-            );
-            result?;
+                    "invalid_response",
+                    "SDK stop must return null",
+                    "",
+                ));
+            }
+            Ok(())
+        })();
+        if let Some(binding) = BINDINGS
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get_mut(&key)
+            .and_then(|bindings| bindings.get_mut(&runtime.runtime_id))
+            && binding.state == State::Stopping
+        {
+            binding.state = if no_effect_busy {
+                previous
+            } else if result.is_ok() {
+                State::Stopped
+            } else {
+                State::Unknown
+            };
         }
-        Ok(vec![event_with_metadata(
-            "runtime.stopped",
-            "task SDK runtime stopped",
-            BTreeMap::from([(
-                "runtime_id".to_string(),
-                Value::String(runtime.runtime_id.clone()),
-            )]),
-        )])
+        result?;
     }
+    Ok(vec![event_with_metadata(
+        "runtime.stopped",
+        "task SDK runtime stopped",
+        BTreeMap::from([(
+            "runtime_id".to_string(),
+            Value::String(runtime.runtime_id.clone()),
+        )]),
+    )])
 }
 
 pub(super) fn release(environment: &EnvironmentHandle) -> Result<()> {
@@ -1122,7 +1150,9 @@ mod tests {
         };
         assert!(claim(&runtime, false).is_err());
         assert_eq!(
-            claim(&runtime, true).expect("explicit stop of unknown runtime"),
+            claim(&runtime, true)
+                .expect("explicit stop of unknown runtime")
+                .map(|(key, _)| key),
             Some(key.clone())
         );
         assert!(claim(&runtime, false).is_err());
@@ -1150,16 +1180,69 @@ mod tests {
         };
 
         assert_eq!(
-            claim(&runtime("runtime-one"), false).expect("first runtime claim"),
+            claim(&runtime("runtime-one"), false)
+                .expect("first runtime claim")
+                .map(|(key, _)| key),
             Some(key.clone())
         );
         assert_eq!(
-            claim(&runtime("runtime-two"), false).expect("second runtime claim"),
+            claim(&runtime("runtime-two"), false)
+                .expect("second runtime claim")
+                .map(|(key, _)| key),
             Some(key.clone())
         );
         set_state(&key, "runtime-one", State::Active);
         set_state(&key, "runtime-two", State::Active);
         BINDINGS.lock().expect("bindings").remove(&key);
+    }
+
+    #[test]
+    fn busy_stop_preserves_an_in_flight_invocation() {
+        let environment = environment();
+        let key = resource_key(&environment).unwrap();
+        let runtime: RuntimeHandle = serde_json::from_value(serde_json::json!({
+            "runtime_id": "busy-runtime", "runtime_binding": "unused",
+            "agent_name": "echo", "harness": "echo", "adapter_kind": "python",
+            "environment": environment
+        }))
+        .unwrap();
+        set_state(&key, &runtime.runtime_id, State::Invoking);
+        let error = claim(&runtime, true).expect_err("an in-flight invocation cannot be stopped");
+        assert!(
+            matches!(error, FabricError::AdapterLifecycleOperation {code, ..} if code == "runtime_busy")
+        );
+        assert!(BINDINGS.lock().unwrap()[&key][&runtime.runtime_id].state == State::Invoking);
+        set_state(&key, &runtime.runtime_id, State::Active);
+        assert!(claim(&runtime, false).is_ok());
+        BINDINGS.lock().unwrap().remove(&key);
+    }
+
+    #[test]
+    fn guest_busy_stop_preserves_only_confirmed_no_effect_state() {
+        for effects in ["none", "unknown"] {
+            for previous in [State::Active, State::Unknown] {
+                let environment = environment();
+                let key = resource_key(&environment).unwrap();
+                let runtime: RuntimeHandle = serde_json::from_value(serde_json::json!({
+                    "runtime_id": "busy-runtime", "runtime_binding": "unused",
+                    "agent_name": "echo", "harness": "echo", "adapter_kind": "python",
+                    "environment": environment
+                }))
+                .unwrap();
+                set_state(&key, &runtime.runtime_id, previous);
+                let response: TaskCommandResponse = serde_json::from_value(serde_json::json!({
+                    "status": "rejected", "error": {"code": "runtime_busy", "stage": "stop", "effects": effects}
+                })).unwrap();
+                assert!(stop_with_command(&runtime, |_| Ok(response)).is_err());
+                let expected = if effects == "none" {
+                    previous
+                } else {
+                    State::Unknown
+                };
+                assert!(BINDINGS.lock().unwrap()[&key][&runtime.runtime_id].state == expected);
+                BINDINGS.lock().unwrap().remove(&key);
+            }
+        }
     }
 
     #[test]

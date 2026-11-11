@@ -5,6 +5,7 @@
 
 import json
 import asyncio
+import os
 
 import pytest
 
@@ -37,6 +38,16 @@ def test_start_command_reads_an_explicit_session_selector(tmp_path, config):
     )
 
     assert request["session_ref"] == selector
+
+
+def test_start_command_reads_files_without_nonblock_flag(tmp_path, config, monkeypatch):
+    monkeypatch.delattr(os, "O_NONBLOCK", raising=False)
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(config))
+    request = cli.parse_command(
+        ["start", "--agent", "researcher", "--config", str(path)]
+    )
+    assert request["config"] == config
 
 
 def test_start_command_accepts_one_bundled_config_and_session(tmp_path, config):
@@ -148,3 +159,20 @@ async def test_runtime_server_rejects_mode_wrapper_before_start(
     )
     assert response["status"] == "failed"
     mock_fabric.start_runtime.assert_not_awaited()
+
+
+async def test_unconfirmed_start_cleanup_retains_sandbox_ownership(
+    host, host_request, mock_fabric
+):
+    """A cleanup failure keeps subsequent starts blocked and preserves ownership."""
+    mock_fabric.start_runtime.side_effect = FabricRuntimeError(
+        "PRIVATE cleanup detail", code="cleanup_unconfirmed"
+    )
+    failed = await host.handle(host_request("start"))
+    assert failed["error"]["effects"] == "unknown"
+    assert "PRIVATE" not in str(failed)
+    assert host.start_uncertain
+    assert host.has_used_runtime
+    retry = await host.handle(host_request("start"))
+    assert retry["error"]["code"] == "start_uncertain"
+    assert mock_fabric.start_runtime.await_count == 1

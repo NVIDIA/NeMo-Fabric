@@ -97,11 +97,17 @@ def _read_marker(path: Path) -> dict[str, Any]:
             os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
         )
         try:
-            descriptor = os.open(path, flags)
+            expected = path.lstat()
         except FileNotFoundError:
             return {}
+        if not stat.S_ISREG(expected.st_mode):
+            raise ValueError("invalid file")
+        descriptor = os.open(path, flags)
         with os.fdopen(descriptor, "r") as source:
-            if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+            actual = os.fstat(source.fileno())
+            if not stat.S_ISREG(actual.st_mode) or not os.path.samestat(
+                expected, actual
+            ):
                 raise ValueError("invalid file")
             marker = json.loads(source.read(1024 * 1024))
         if (
