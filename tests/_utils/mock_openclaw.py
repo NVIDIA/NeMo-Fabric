@@ -58,7 +58,7 @@ def save_sessions():
 
 def session_rpc(method, params):
     if method == "sessions.create":
-        key = params["key"]
+        key = params["key"].lower()
         if key in native_sessions:
             raise ValueError("session already exists")
         entry = {
