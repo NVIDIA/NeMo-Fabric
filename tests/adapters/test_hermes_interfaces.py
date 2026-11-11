@@ -446,6 +446,7 @@ async def test_hermes_stop_cuts_off_an_in_flight_api_request(
 async def test_hermes_interfaces_fail_start_on_windows_before_any_child_starts(
     tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch, kept: bool
 ):
+    """Clear stale credentials and reject native interfaces before setup."""
     monkeypatch.setattr(interfaces, "POSIX", False)
     # start() stops whatever it started when it fails, so check the spawn
     # itself rather than the children left afterwards.
@@ -504,6 +505,7 @@ async def test_hermes_interface_port_in_use_fails_start(
 async def test_hermes_failed_interface_start_removes_a_token_left_in_kept_state(
     tmp_path: Path, api_server: str
 ):
+    """Remove a retained API token even when an occupied port blocks startup."""
     state_dir = tmp_path / "artifacts/.fabric/state/nvidia.fabric.hermes/assistant"
     stale_token = state_dir / "interfaces" / "api.token"
     stale_token.parent.mkdir(parents=True)
@@ -527,6 +529,7 @@ async def test_hermes_failed_interface_start_removes_a_token_left_in_kept_state(
 async def test_sdk_only_start_removes_stale_interface_files(
     tmp_path, api_server, monkeypatch, kept
 ):
+    """Remove stale native attachment files while preserving unrelated data."""
     payload = _payload(tmp_path, {}, base_url=f"{api_server}/v1")
     home = _token_path(tmp_path).parent.parent
     if kept:
@@ -562,6 +565,7 @@ async def test_sdk_only_start_removes_stale_interface_files(
 async def test_start_reports_interface_cleanup_failures_before_hermes_setup(
     tmp_path, api_server, monkeypatch, name, failure
 ):
+    """Return a stable error before setup when attachment cleanup fails."""
     payload = _payload(tmp_path, {}, base_url=f"{api_server}/v1")
     home = tmp_path / "kept-state"
     payload["runtime_context"]["state_dir"] = str(home)
@@ -574,6 +578,7 @@ async def test_start_reports_interface_cleanup_failures_before_hermes_setup(
         unlink = Path.unlink
 
         def deny_unlink(candidate, *args, **kwargs):
+            """Simulate a permission failure for the selected attachment."""
             if candidate == path:
                 raise PermissionError("PRIVATE_UNLINK_DETAIL")
             return unlink(candidate, *args, **kwargs)

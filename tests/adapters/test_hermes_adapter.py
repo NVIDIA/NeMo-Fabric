@@ -1490,6 +1490,7 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
 def test_hermes_home_is_the_agents_state_folder_when_fabric_keeps_state(
     tmp_path: Path, kept: bool
 ):
+    """Select the shared state folder or the current runtime's home."""
     state_dir = tmp_path / "artifacts/.fabric/state/nvidia.fabric.hermes/assistant"
     context = _runtime_context(artifact_root="artifacts").to_mapping()
     if kept:
@@ -1506,6 +1507,7 @@ def test_hermes_home_is_the_agents_state_folder_when_fabric_keeps_state(
 async def test_hermes_sessions_survive_runtime_replacement_only_with_kept_state(
     tmp_path: Path, api_server: str, kept: bool
 ):
+    """Preserve native session records when runtimes share a state folder."""
     os.environ["TEST_API_KEY"] = "fabric-test-model-key"
     config = _agent_config(
         {

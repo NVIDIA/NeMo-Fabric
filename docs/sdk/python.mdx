@@ -908,6 +908,8 @@ The operating system releases the lock after all copies of the lock have closed:
 
 Planning fails without an artifact directory or for an adapter that doesn't declare `runtime.keep_state`. The Hermes Agent adapter declares `runtime.keep_state`.
 
+Enabling `runtime.keep_state` preserves earlier Hermes sessions in the database. Each new Hermes SDK runtime starts a fresh conversation.
+
 ## Runtime Resource Snapshots
 
 `Runtime.resource_snapshot()` returns a timestamped `RuntimeResourceSnapshot`
