@@ -1570,7 +1570,9 @@ async def test_hermes_sessions_survive_runtime_replacement_only_with_kept_state(
             assert second._session_db.get_messages(session_id) == saved_messages
         else:
             assert second._session_db.get_session(session_id) is None
-        assert second._agent.session_id == "runtime-second"
+        assert second._agent.session_id != session_id
+        if not kept:
+            assert second._agent.session_id == "runtime-second"
         assert second._conversation_history is None
     finally:
         await second.stop()

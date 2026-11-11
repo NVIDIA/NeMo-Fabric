@@ -134,7 +134,6 @@ class HermesRuntime:
                 runtime_context, common_utils.base_dir(payload)
             )
             self._hermes_home.mkdir(parents=True, exist_ok=True)
-            interfaces.require_released_home(self._hermes_home)
             # An abruptly ended runtime can leave credentials and attachment
             # records in a kept Hermes home.
             token_path = self._hermes_home / "interfaces" / "api.token"
