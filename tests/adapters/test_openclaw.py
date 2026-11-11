@@ -3229,8 +3229,11 @@ async def test_openclaw_attach_rejects_native_controls(tmp_path: Path, section: 
     assert not (tmp_path / "service-connection.json").exists()
 
 
+
+
+@pytest.mark.parametrize("agent_id", ["default", "Reviewer", "agent_1-A"])
 async def test_openclaw_retains_native_state_and_explicitly_resumes_the_selected_session(
-    tmp_path: Path, mock_openclaw: Path
+    tmp_path: Path, mock_openclaw: Path, agent_id
 ):
     from nemo_fabric_adapter_contract.models import SessionRef
 
@@ -3240,6 +3243,7 @@ async def test_openclaw_retains_native_state_and_explicitly_resumes_the_selected
     os.environ["FAKE_OPENCLAW_REQUEST"] = str(tmp_path / "request.json")
     os.environ["FAKE_OPENCLAW_MEMORY_REPLY"] = "1"
     config = _config(mock_openclaw)
+    config.harness.settings["agent_id"] = agent_id
 
     async def start(runtime_id, reference=None):
         context = _context(tmp_path, runtime_id)
@@ -3754,3 +3758,15 @@ async def test_retained_invocation_failure_preserves_identity_and_recovery_gate(
         assert continued.session_id == started["session_id"]
     finally:
         await runtime.stop()
+
+
+async def test_retained_mcp_status_targets_the_selected_conversation(
+    tmp_path, monkeypatch
+):
+    runtime, status = _mcp_status_runtime(tmp_path, monkeypatch, [{"groups": []}])
+    runtime._native_session = MagicMock(spec=adapter.sessions.NativeSession)
+    runtime._native_session.key = "agent:reviewer:openai-user:retained-conversation"
+    await runtime._mcp_output("Runtime-1", asyncio.get_running_loop().time() + 10)
+    arguments = status.await_args.args
+    params = json.loads(arguments[arguments.index("--params") + 1])
+    assert params["sessionKey"] == runtime._native_session.key

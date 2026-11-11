@@ -362,3 +362,75 @@ async def test_reused_tool_call_identifier_requires_a_new_recovery_acknowledgeme
     reopened = await sessions.open_session(session_context, "default", session_call)
     assert reopened.recovery_required
     assert reopened.warnings[0]["metadata"]["pending_tool_call_ids"] == ["reused-call"]
+
+
+@pytest.mark.parametrize("nofollow_available", [True, False])
+async def test_completion_record_rejects_a_symbolic_link_without_platform_flags(
+    session_context, session_call, tmp_path, monkeypatch, nofollow_available
+):
+    if not nofollow_available:
+        monkeypatch.delattr(os, "O_NOFOLLOW", raising=False)
+    directory = tmp_path / ".fabric-turns"
+    directory.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text('{"state":"complete"}')
+    (directory / f"{NATIVE_ID}.json").symlink_to(outside)
+    with pytest.raises(LifecycleError) as caught:
+        await sessions.open_session(session_context, "default", session_call)
+    assert caught.value.code == "session_incompatible"
+
+
+async def test_completion_record_replaced_during_open_is_rejected(
+    session_context, session_call, tmp_path, monkeypatch
+):
+    directory = tmp_path / ".fabric-turns"
+    directory.mkdir()
+    marker = directory / f"{NATIVE_ID}.json"
+    marker.write_text('{"state":"complete"}')
+    replacement = marker.with_suffix(".replacement")
+    replacement.write_text('{"state":"running"}')
+    original_open = os.open
+
+    def replace_before_open(path, flags, *args, **kwargs):
+        if path == marker:
+            os.replace(replacement, marker)
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", replace_before_open)
+    with pytest.raises(LifecycleError) as caught:
+        await sessions.open_session(session_context, "default", session_call)
+    assert caught.value.code == "session_incompatible"
+
+
+@pytest.mark.parametrize("agent_id", ["Reviewer", "agent_1-A"])
+@pytest.mark.parametrize("resume", [False, True])
+async def test_native_session_selection_uses_canonical_agent_identity(
+    session_context, session_call, native_session, agent_id, resume
+):
+    native_session["key"] = (
+        f"agent:{agent_id.lower()}:openai-user:retained-conversation"
+    )
+    original_respond = session_call.side_effect
+
+    def respond(method, params):
+        if method == "sessions.create":
+            native_session["key"] = params["key"].lower()
+            return {
+                "ok": True,
+                "key": native_session["key"],
+                "sessionId": NATIVE_ID,
+                "runStarted": False,
+            }
+        return original_respond(method, params)
+
+    session_call.side_effect = respond
+    if not resume:
+        session_context.session_ref = None
+    selected = await sessions.open_session(session_context, agent_id, session_call)
+    assert selected.session_id == NATIVE_ID
+    assert selected.key == native_session["key"]
+    assert selected.agent_id == agent_id.lower()
+    assert all(
+        call.args[1]["agentId"] == agent_id.lower()
+        for call in session_call.call_args_list
+    )

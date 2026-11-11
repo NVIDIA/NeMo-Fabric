@@ -2201,7 +2201,13 @@ class OpenClawRuntime:
                     "--port",
                     str(port),
                     "--params",
-                    json.dumps({"sessionKey": _session_key(self._agent_id, user)}),
+                    json.dumps(
+                        {
+                            "sessionKey": self._native_session.key
+                            if self._native_session
+                            else _session_key(self._agent_id, user)
+                        }
+                    ),
                     env=env,
                     timeout=timeout,
                     process_group=True,

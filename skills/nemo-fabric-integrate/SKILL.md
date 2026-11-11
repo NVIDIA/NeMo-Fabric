@@ -193,7 +193,7 @@ dashboard behavior remains owned by Hermes. OpenClaw supports retained managed
 runtimes and NeMo Fabric-owned services. A retained service keeps the Gateway
 and storage lock across connected-runtime stops. Caller-owned OpenClaw services
 reject retained sessions because their references cannot verify a native storage
-boundary. See the [OpenClaw guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/openclaw.mdx).
+boundary. See the [OpenClaw guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/openclaw/openclaw.mdx).
 
 Hermes `SessionRef` resume requires the SDK backend to be enabled. Native-only Hermes runtimes can retain state and report `RunPlan.capabilities.session_resume: false`. Explicit SDK session selection then fails with `session_resume_unsupported` before native startup.
 
