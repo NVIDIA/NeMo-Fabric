@@ -876,8 +876,8 @@ folder, so it stays locked until both the process that started the runtime and
 the host have exited. If the host itself is killed while a native process it
 started in its own session keeps running, the folder is unlocked while that
 process runs. Planning fails without an artifact directory, or for an
-adapter that doesn't declare `runtime.keep_state`; Hermes Agent's adapter
-declares it.
+adapter that doesn't declare `runtime.keep_state`; the Hermes Agent and
+OpenClaw adapters declare it.
 
 ## Runtime Resource Snapshots
 

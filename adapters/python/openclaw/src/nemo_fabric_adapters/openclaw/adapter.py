@@ -174,6 +174,10 @@ def _dashboard_port(settings: dict[str, Any]) -> int | None:
 
 
 def _dashboard_token_path(context: contract.RuntimeContext, base_dir: Path) -> Path:
+    # With runtime.keep_state, interfaces live in the agent's state folder,
+    # where every runtime of the agent finds them, as Hermes's do.
+    if context.state_dir:
+        return Path(context.state_dir) / "interfaces" / "dashboard.token"
     root = context.artifacts.root
     artifact_root = (base_dir / str(root)).resolve() if root else base_dir / "artifacts"
     return (
@@ -1079,7 +1083,19 @@ class OpenClawRuntime:
             await self._connect_service_runtime(config, context, settings, service)
             return None
         if service is not None and service.get("operation") == "attach":
+            if context.state_dir:
+                raise lifecycle.LifecycleError(
+                    "openclaw_keep_state_requires_managed_gateway",
+                    "OpenClaw keeps state only for a Gateway that NeMo Fabric "
+                    "starts; an attached Gateway keeps its state where its "
+                    "deployment puts it",
+                    metadata={"field": "runtime.keep_state"},
+                )
             return await self._attach_service(config, context, settings, service)
+        if context.state_dir:
+            # A runtime that ended without stop can leave its dashboard token
+            # in the kept state, for a Gateway that no longer runs.
+            _dashboard_token_path(context, base_dir).unlink(missing_ok=True)
         child_env = common_utils.virtualenv_subprocess_env()
         child_env.update(context.environment.env)
         if model.api_key_env is not None and not child_env.get(model.api_key_env):
@@ -1142,9 +1158,19 @@ class OpenClawRuntime:
         token = secrets.token_urlsafe(48)
         token_env = "OPENCLAW_GATEWAY_TOKEN"
 
+        # The generated configuration is this runtime's alone, so it stays in a
+        # temporary folder that stop removes, with or without kept state.
         temp_dir = tempfile.TemporaryDirectory(prefix="nemo-fabric-openclaw-")
-        state_dir = Path(temp_dir.name) / "state"
-        state_dir.mkdir(mode=0o700)
+        if context.state_dir:
+            # With runtime.keep_state, OpenClaw's native state, such as its
+            # sessions and the skills the agent writes, is the agent's state
+            # folder. Fabric locks that folder for one runtime at a time and
+            # never removes it; neither does the adapter.
+            state_dir = Path(context.state_dir)
+            state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        else:
+            state_dir = Path(temp_dir.name) / "state"
+            state_dir.mkdir(mode=0o700)
         config_path = Path(temp_dir.name) / "openclaw.json"
         generated = _openclaw_config(
             config,
