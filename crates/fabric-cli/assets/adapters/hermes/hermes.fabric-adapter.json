@@ -149,6 +149,65 @@
         },
         "additionalProperties": false,
         "description": "Embedded SDK execution, enabled by default. Runtime management remains available when disabled."
+      },
+      "auxiliary": {
+        "type": "object",
+        "properties": {
+          "title_generation": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "description": "Whether Hermes generates session titles automatically. When omitted, Relay-enabled runtimes disable it and other runtimes keep Hermes's default."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Hermes's native auxiliary.title_generation section."
+          },
+          "background_review": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "description": "Whether Hermes starts automatic background memory and skill reviews after turns. Explicit native /refine remains available. When omitted, Hermes's default applies."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Hermes's native auxiliary.background_review section."
+          }
+        },
+        "additionalProperties": false,
+        "description": "Native Hermes auxiliary-task controls written to config.yaml for every execution path. Only authored fields are written."
+      },
+      "tools": {
+        "type": "object",
+        "properties": {
+          "tool_search": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "on",
+                      "off"
+                    ]
+                  }
+                ],
+                "description": "Hermes tool search: auto, on, or off; true and false are native aliases for on and off. off presents the selected tool schemas directly. When omitted, Hermes's default applies."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Hermes's native tools.tool_search section."
+          }
+        },
+        "additionalProperties": false,
+        "description": "Native Hermes tools section written to config.yaml. Distinct from NeMo Fabric's normalized top-level tools.enabled and tools.blocked. Only authored fields are written."
       }
     },
     "required": [],

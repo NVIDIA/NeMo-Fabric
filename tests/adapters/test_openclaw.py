@@ -2903,3 +2903,324 @@ async def test_status_command_timeout_stops_children_holding_the_pipes(tmp_path)
     else:
         os.kill(child_pid, signal.SIGKILL)
         pytest.fail("the status command's child kept running")
+
+
+def _native_controls() -> dict[str, object]:
+    return {
+        "agents": {
+            "defaults": {
+                "heartbeat": {"every": "0m"},
+                "compaction": {"memoryFlush": {"enabled": False}},
+            }
+        },
+        "tools": {
+            "exec": {"notifyOnExit": False},
+            "toolSearch": False,
+            "codeMode": False,
+        },
+        "plugins": {
+            "entries": {"memory-core": {"config": {"dreaming": {"enabled": False}}}}
+        },
+    }
+
+
+GENERATED_AGENT_DEFAULTS = {
+    "workspace",
+    "skipBootstrap",
+    "model",
+    "models",
+    "contextInjection",
+}
+
+
+def _generated(config: AgentConfig, tmp_path: Path, **options: object):
+    return adapter._openclaw_config(
+        config,
+        _context(tmp_path),
+        base_dir=tmp_path,
+        port=20_000,
+        token_env="OPENCLAW_GATEWAY_TOKEN",
+        **options,
+    )
+
+
+def _assert_native_controls_merged(generated: dict[str, object]):
+    defaults = generated["agents"]["defaults"]
+    assert set(defaults) == GENERATED_AGENT_DEFAULTS | {"heartbeat", "compaction"}
+    assert defaults["heartbeat"] == {"every": "0m"}
+    assert defaults["compaction"] == {"memoryFlush": {"enabled": False}}
+    assert defaults["model"] == {"primary": "test/fabric-echo"}
+    assert defaults["contextInjection"] == "never"
+    assert generated["tools"] == {
+        "allow": ["browser", "web_search"],
+        "deny": ["exec"],
+        "exec": {"notifyOnExit": False},
+        "toolSearch": False,
+        "codeMode": False,
+    }
+    assert generated["plugins"]["entries"]["memory-core"] == {
+        "config": {"dreaming": {"enabled": False}}
+    }
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        pytest.param({}, id="absent"),
+        pytest.param({"agents": {}, "tools": {}, "plugins": {}}, id="empty-sections"),
+        pytest.param(
+            {
+                "agents": {"defaults": {"heartbeat": {}, "compaction": {}}},
+                "tools": {"exec": {}},
+                "plugins": {"entries": {"memory-core": {"config": {}}}},
+            },
+            id="empty-leaves",
+        ),
+    ],
+)
+def test_openclaw_omitted_native_controls_keep_generated_config(
+    mock_openclaw: Path, tmp_path: Path, settings: dict[str, object]
+):
+    baseline = _generated(_config(mock_openclaw), tmp_path)
+    config = _config(mock_openclaw)
+    config.harness.settings.update(settings)
+
+    generated = _generated(config, tmp_path)
+
+    assert generated == baseline
+    assert set(generated["agents"]["defaults"]) == GENERATED_AGENT_DEFAULTS
+    assert generated["tools"] == {"allow": ["browser", "web_search"], "deny": ["exec"]}
+    assert "plugins" not in generated
+
+
+@pytest.mark.parametrize(
+    ("settings", "path", "value"),
+    [
+        pytest.param(
+            {"agents": {"defaults": {"heartbeat": {"every": "1h30m"}}}},
+            ("agents", "defaults", "heartbeat", "every"),
+            "1h30m",
+            id="heartbeat",
+        ),
+        pytest.param(
+            {
+                "agents": {
+                    "defaults": {"compaction": {"memoryFlush": {"enabled": True}}}
+                }
+            },
+            ("agents", "defaults", "compaction", "memoryFlush", "enabled"),
+            True,
+            id="memory-flush",
+        ),
+        pytest.param(
+            {"tools": {"exec": {"notifyOnExit": True}}},
+            ("tools", "exec", "notifyOnExit"),
+            True,
+            id="notify-on-exit",
+        ),
+        pytest.param(
+            {"tools": {"toolSearch": True}},
+            ("tools", "toolSearch"),
+            True,
+            id="tool-search",
+        ),
+        pytest.param(
+            {"tools": {"codeMode": True}},
+            ("tools", "codeMode"),
+            True,
+            id="code-mode",
+        ),
+        pytest.param(
+            {
+                "plugins": {
+                    "entries": {
+                        "memory-core": {"config": {"dreaming": {"enabled": True}}}
+                    }
+                }
+            },
+            ("plugins", "entries", "memory-core", "config", "dreaming", "enabled"),
+            True,
+            id="dreaming",
+        ),
+    ],
+)
+def test_openclaw_writes_only_authored_native_controls(
+    mock_openclaw: Path,
+    tmp_path: Path,
+    settings: dict[str, object],
+    path: tuple[str, ...],
+    value: object,
+):
+    # The generated configuration plus exactly the authored leaf.
+    expected = _generated(_config(mock_openclaw), tmp_path)
+    parent = expected
+    for key in path[:-1]:
+        parent = parent.setdefault(key, {})
+    parent[path[-1]] = value
+    config = _config(mock_openclaw)
+    config.harness.settings.update(settings)
+
+    assert _generated(config, tmp_path) == expected
+
+
+@pytest.mark.parametrize("service_mode", [False, True])
+@pytest.mark.parametrize("shared_plugin", [False, True])
+def test_openclaw_native_controls_merge_with_generated_config(
+    mock_openclaw: Path, tmp_path: Path, service_mode: bool, shared_plugin: bool
+):
+    config = _config(mock_openclaw)
+    config.harness.settings.update(_native_controls())
+    if shared_plugin:
+        config.harness.settings["interfaces"] = {"terminal": {}}
+
+    generated = _generated(config, tmp_path, service_mode=service_mode)
+
+    _assert_native_controls_merged(generated)
+    if shared_plugin:
+        assert set(generated["plugins"]["entries"]) == {
+            "fabric-shared-config",
+            "memory-core",
+        }
+        assert generated["plugins"]["load"]["paths"]
+    else:
+        assert generated["plugins"] == {
+            "entries": {"memory-core": {"config": {"dreaming": {"enabled": False}}}}
+        }
+
+
+@pytest.mark.parametrize(
+    ("settings", "field"),
+    [
+        pytest.param(
+            {"tools": {"allow": ["exec"]}}, "harness.settings.tools.allow", id="tools"
+        ),
+        pytest.param(
+            {"agents": {"defaults": {"workspace": "/tmp"}}},
+            "harness.settings.agents.defaults.workspace",
+            id="agent-defaults",
+        ),
+    ],
+)
+def test_openclaw_native_controls_never_replace_generated_keys(
+    mock_openclaw: Path, tmp_path: Path, settings: dict[str, object], field: str
+):
+    # The descriptor rejects these keys; the writer also refuses to overwrite.
+    config = _config(mock_openclaw)
+    config.harness.settings.update(settings)
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        _generated(config, tmp_path)
+
+    assert caught.value.code == "openclaw_invalid_configuration"
+    assert caught.value.metadata == {"field": field}
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Runs the mock openclaw script directly"
+)
+@pytest.mark.parametrize(
+    "gateway",
+    [
+        "managed",
+        pytest.param(
+            "interfaces",
+            marks=pytest.mark.skipif(
+                os.name != "posix", reason="The native terminal requires POSIX"
+            ),
+        ),
+        "prepared",
+    ],
+)
+async def test_owned_gateways_receive_native_controls_before_startup(
+    mock_openclaw: Path, tmp_path: Path, dashboard_port: int, gateway: str
+):
+    capture = tmp_path / "config.json"
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(capture)
+    os.environ["FAKE_OPENCLAW_REQUEST"] = str(tmp_path / "request.json")
+    config = _config(mock_openclaw)
+    config.harness.settings.update(_native_controls())
+    payload: dict[str, object] = {}
+    if gateway == "interfaces":
+        config.harness.settings["interfaces"] = {
+            "dashboard": {"port": dashboard_port},
+            "terminal": {},
+        }
+    connection_path = tmp_path / "private" / "service-connection.json"
+    if gateway == "prepared":
+        payload["service"] = {
+            "operation": "prepare",
+            "connection_path": str(connection_path),
+        }
+    runtime = adapter.OpenClawRuntime()
+    await _start(runtime, tmp_path, config, **payload)
+    try:
+        # OpenClaw validates the generated file before the Gateway starts.
+        generated = json.loads(capture.read_text(encoding="utf-8"))
+        _assert_native_controls_merged(generated)
+        if gateway == "interfaces":
+            directory = _dashboard_token(tmp_path).parent
+            assert (directory / "terminal.running").exists()
+            assert json.loads((directory / "gateway.json").read_text())["http_url"] == (
+                f"http://127.0.0.1:{dashboard_port}"
+            )
+            assert generated["gateway"]["controlUi"]["enabled"] is True
+            assert "fabric-shared-config" in generated["plugins"]["entries"]
+        if gateway == "prepared":
+            session = adapter.OpenClawRuntime()
+            context = _context(tmp_path, "runtime-a")
+            await session.start(
+                {
+                    "config": config,
+                    "runtime_context": context.to_mapping(),
+                    "base_dir": str(tmp_path),
+                    "service": {
+                        "operation": "connect",
+                        "service_id": "service-1",
+                        "connection_path": str(connection_path),
+                    },
+                }
+            )
+            try:
+                result = await session.invoke(
+                    AgentRunRequest(input="Use the prepared Gateway."), context
+                )
+            finally:
+                await session.stop()
+            assert result.status == "succeeded"
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.parametrize("section", ["agents", "tools", "plugins"])
+async def test_openclaw_attach_rejects_native_controls(tmp_path: Path, section: str):
+    os.environ["OPENCLAW_GATEWAY_TOKEN"] = "caller-owned-token"
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {"settings": {section: _native_controls()[section]}},
+            "models": {"default": {"provider": "test", "model": "fabric-echo"}},
+        }
+    )
+    runtime = adapter.OpenClawRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await _start(
+            runtime,
+            tmp_path,
+            config,
+            service={
+                "operation": "attach",
+                "connection_path": str(tmp_path / "service-connection.json"),
+                "reference": {
+                    "adapter_id": "nvidia.fabric.openclaw",
+                    "service_type": "openclaw_gateway",
+                    "connection": {
+                        "gateway_url": "http://127.0.0.1:9",
+                        "gateway_token_env": "OPENCLAW_GATEWAY_TOKEN",
+                    },
+                },
+            },
+        )
+
+    assert caught.value.code == "openclaw_attach_configuration_unverifiable"
+    assert caught.value.metadata == {"fields": [f"harness.settings.{section}"]}
+    assert not (tmp_path / "service-connection.json").exists()

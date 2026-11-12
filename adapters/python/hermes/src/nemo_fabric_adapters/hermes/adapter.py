@@ -878,7 +878,6 @@ def _invoke_hermes_turn(
             conversation_history=conversation_history,
             task_id=task_id,
             sync_honcho=False,
-            dont_review=True,
         )
         result = agent.run_conversation(
             user_message,
