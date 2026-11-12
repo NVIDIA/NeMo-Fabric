@@ -55,7 +55,7 @@ Before migration, copy every legacy session directory while the Gateway is stopp
 
 Run `openclaw doctor --fix` with the 2026.9.34 executable and the same path settings. The command imports legacy `sessions.json` files and JSONL session data into each agent's SQLite database. Restart the Gateway after the command succeeds. Keep the verified backup for rollback.
 
-Managed runtimes and NeMo Fabric-owned services use temporary state directories by default, so each new Gateway starts with fresh state. With `runtime.keep_state`, the Gateway's `OPENCLAW_STATE_DIR` is the agent's state folder, `<artifact root>/.fabric/state/nvidia.fabric.openclaw/<agent name>`, for every runtime of the agent; see [Keep OpenClaw State Across Runtimes](../../../docs/integrations/harness/openclaw.mdx#keep-openclaw-state-across-runtimes).
+Managed runtimes and NeMo Fabric-owned services use temporary state directories, so each new Gateway starts with fresh state.
 
 ## Configuration
 
@@ -70,10 +70,8 @@ The adapter maps these fields into a generated `openclaw.json` before starting
 the Gateway. A non-empty `tools.enabled` list maps to `tools.allow`, an empty
 list maps to a wildcard `tools.deny` policy, and `tools.blocked` maps to
 `tools.deny`. It uses a generated one-time token, loopback binding, and an
-isolated temporary OpenClaw state directory, or the agent's state folder with
-`runtime.keep_state`. The Gateway is stopped and its temporary configuration is
-removed when the NeMo Fabric runtime stops; a kept state folder is never
-removed.
+isolated temporary OpenClaw state directory. The Gateway is stopped and its
+temporary configuration is removed when the NeMo Fabric runtime stops.
 
 Each `skills.paths` entry is a skill or a folder of skills, as
 [Load Skills from Folders](../../../docs/integrations/harness/skills.mdx)

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import ctypes
-import hashlib
 import json
 import os
 import shutil
@@ -38,7 +37,6 @@ def _context(
     workspace: Path,
     runtime_id: str = "openclaw-runtime",
     deadline_millis: int | None = None,
-    state_dir: Path | None = None,
 ) -> RuntimeContext:
     payload = {
         "runtime_id": runtime_id,
@@ -56,8 +54,6 @@ def _context(
     }
     if deadline_millis is not None:
         payload["deadline_millis"] = deadline_millis
-    if state_dir is not None:
-        payload["state_dir"] = str(state_dir)
     return RuntimeContext.from_mapping(payload)
 
 
@@ -2318,230 +2314,6 @@ async def test_openclaw_fabric_service_supports_multiple_runtimes(
     assert (tmp_path / "stopped.txt").read_text(encoding="utf-8") == "stopped"
 
 
-_MOCK_GATEWAY = pytest.mark.skipif(
-    sys.platform in {"darwin", "win32"},
-    reason="Starts the mock Gateway, which CI runs only on Linux",
-)
-_RUNS_MOCK_SCRIPT = pytest.mark.skipif(
-    sys.platform == "win32", reason="Runs the mock openclaw script directly"
-)
-_AUTHORED_SKILL = Path("agents/default/agent/workshop-skills/fabric-kept/SKILL.md")
-
-
-def _agent_config(command: Path, *, keep_state: bool) -> FabricConfig:
-    return FabricConfig.from_mapping(
-        {
-            "metadata": {"name": "openclaw-skills"},
-            "harness": {
-                "adapter_id": "nvidia.fabric.openclaw",
-                "resolution": "preinstalled",
-                "settings": {"openclaw_command": str(command)},
-            },
-            "models": {
-                "default": {
-                    "provider": "test",
-                    "model": "fabric-echo",
-                    "base_url": "https://models.example.test/v1",
-                }
-            },
-            "runtime": {"artifacts": "artifacts", "keep_state": keep_state},
-            "environment": {"provider": "local", "workspace": "."},
-        }
-    )
-
-
-async def _ask(runtime, prompt: str) -> str:
-    result = await runtime.invoke(input=prompt)
-    assert result.status == "succeeded", result
-    return result.output["response"]
-
-
-def _agent_state(tmp_path: Path) -> Path:
-    return tmp_path / "artifacts/.fabric/state/nvidia.fabric.openclaw/openclaw-skills"
-
-
-@_MOCK_GATEWAY
-async def test_openclaw_keep_state_keeps_an_authored_skill_for_the_next_runtime(
-    mock_openclaw: Path, tmp_path: Path
-):
-    """A skill the agent wrote stays where it saved it and works after a restart."""
-    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
-    os.environ["FAKE_OPENCLAW_REQUEST"] = str(tmp_path / "request.json")
-    config = _agent_config(mock_openclaw, keep_state=True)
-    fabric = Fabric()
-
-    first = await fabric.start_runtime(config, base_dir=tmp_path)
-    try:
-        authored = json.loads(await _ask(first, "author-skill fabric-kept"))
-        # Fabric lets one runtime at a time use the agent's state.
-        with pytest.raises(FabricRuntimeError, match="in use by another runtime"):
-            await fabric.start_runtime(config, base_dir=tmp_path)
-    finally:
-        await first.stop()
-
-    skill = Path(authored["path"])
-    assert skill.resolve() == (_agent_state(tmp_path) / _AUTHORED_SKILL).resolve()
-    assert hashlib.sha256(skill.read_bytes()).hexdigest() == authored["sha256"]
-
-    second = await fabric.start_runtime(config, base_dir=tmp_path)
-    try:
-        used = json.loads(await _ask(second, "use-skill fabric-kept second-run"))
-    finally:
-        await second.stop()
-
-    assert used == {
-        "path": authored["path"],
-        "sha256": authored["sha256"],
-        "output": "fabric-kept:second-run",
-    }
-    assert [path.resolve() for path in tmp_path.rglob("SKILL.md")] == [skill.resolve()]
-
-
-@_MOCK_GATEWAY
-async def test_openclaw_without_keep_state_removes_an_authored_skill_at_stop(
-    mock_openclaw: Path, tmp_path: Path
-):
-    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
-    os.environ["FAKE_OPENCLAW_REQUEST"] = str(tmp_path / "request.json")
-    config = _agent_config(mock_openclaw, keep_state=False)
-    fabric = Fabric()
-
-    first = await fabric.start_runtime(config, base_dir=tmp_path)
-    try:
-        authored = json.loads(await _ask(first, "author-skill fabric-kept"))
-    finally:
-        await first.stop()
-    second = await fabric.start_runtime(config, base_dir=tmp_path)
-    try:
-        reply = await _ask(second, "use-skill fabric-kept second-run")
-    finally:
-        await second.stop()
-
-    assert not Path(authored["path"]).is_relative_to(tmp_path)
-    assert not Path(authored["path"]).exists()
-    assert reply == "SKILL_MISSING"
-    assert not (tmp_path / "artifacts/.fabric/state").exists()
-
-
-@pytest.mark.parametrize(
-    "failure",
-    [
-        pytest.param("config_validate", marks=_RUNS_MOCK_SCRIPT),
-        pytest.param("after_gateway_start", marks=_MOCK_GATEWAY),
-    ],
-)
-async def test_openclaw_failed_start_keeps_the_agents_state(
-    mock_openclaw: Path,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    failure: str,
-):
-    state_dir = _agent_state(tmp_path)
-    skill = state_dir / _AUTHORED_SKILL
-    skill.parent.mkdir(parents=True)
-    skill.write_text("---\nname: fabric-kept\n---\n", encoding="utf-8")
-    stale_token = state_dir / "interfaces" / "dashboard.token"
-    stale_token.parent.mkdir()
-    stale_token.write_text("stale", encoding="utf-8")
-    # A runtime that ended without stop can also leave the native interface
-    # files that point clients at its Gateway.
-    stale_interfaces = [stale_token] + [
-        stale_token.with_name(name) for name in adapter.native_interfaces.FILES
-    ]
-    for path in stale_interfaces[1:]:
-        path.write_text("stale", encoding="utf-8")
-    stale_client_state = stale_token.with_name("client-state")
-    stale_client_state.mkdir()
-    before = skill.read_bytes()
-    runtime = adapter.OpenClawRuntime()
-    generated: list[Path] = []
-    gateway_state = tmp_path / "gateway-state.txt"
-    monkeypatch.setenv("FAKE_OPENCLAW_STATE_CAPTURE", str(gateway_state))
-    if failure == "config_validate":
-        # The mock fails validation when it can't record the configuration.
-        monkeypatch.setenv(
-            "FAKE_OPENCLAW_CAPTURE", str(tmp_path / "missing" / "c.json")
-        )
-        real_command_output = adapter._command_output
-
-        async def record_generated(command, *args, **kwargs):
-            if args[:1] == ("config",) and runtime._temp_dir is not None:
-                generated.append(Path(runtime._temp_dir.name))
-            return await real_command_output(command, *args, **kwargs)
-
-        monkeypatch.setattr(adapter, "_command_output", record_generated)
-        expected = adapter.lifecycle.LifecycleError
-    else:
-        monkeypatch.setenv("FAKE_OPENCLAW_CAPTURE", str(tmp_path / "config.json"))
-
-        # Start reads the HTTP read timeout only after the Gateway is ready.
-        def fail_after_gateway_start(_settings):
-            assert runtime._temp_dir is not None
-            generated.append(Path(runtime._temp_dir.name))
-            raise RuntimeError("start failed after the Gateway started")
-
-        monkeypatch.setattr(adapter, "_read_timeout", fail_after_gateway_start)
-        expected = RuntimeError
-
-    with pytest.raises(expected):
-        await runtime.start(
-            {
-                "config": _config(mock_openclaw),
-                "runtime_context": _context(tmp_path, state_dir=state_dir).to_mapping(),
-                "base_dir": str(tmp_path),
-            }
-        )
-
-    assert skill.read_bytes() == before
-    assert len(generated) == 1 and not generated[0].exists()
-    assert not generated[0].is_relative_to(state_dir)
-    assert [path for path in stale_interfaces if path.exists()] == []
-    assert not stale_client_state.exists()
-    assert runtime._process is None and runtime._temp_dir is None
-    if failure == "after_gateway_start":
-        assert gateway_state.read_text(encoding="utf-8") == str(state_dir)
-
-
-async def test_openclaw_attach_refuses_kept_state(tmp_path: Path):
-    """A caller-owned Gateway keeps its state where its deployment puts it."""
-    runtime = adapter.OpenClawRuntime()
-    config = AgentConfig.from_mapping(
-        {"models": {"default": {"provider": "test", "model": "fabric-echo"}}}
-    )
-
-    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
-        await runtime.start(
-            {
-                "config": config,
-                "runtime_context": _context(
-                    tmp_path, state_dir=_agent_state(tmp_path)
-                ).to_mapping(),
-                "base_dir": str(tmp_path),
-                "service": {
-                    "operation": "attach",
-                    "connection_path": str(tmp_path / "connection.json"),
-                },
-            }
-        )
-
-    assert caught.value.code == "openclaw_keep_state_requires_managed_gateway"
-    assert caught.value.metadata == {"field": "runtime.keep_state"}
-    assert not (tmp_path / "connection.json").exists()
-
-
-def test_openclaw_dashboard_token_is_in_kept_state(tmp_path: Path):
-    """Consumers find a kept agent's interfaces in its state folder."""
-    state_dir = _agent_state(tmp_path)
-
-    kept = adapter._dashboard_token_path(
-        _context(tmp_path, state_dir=state_dir), tmp_path
-    )
-    ephemeral = adapter._dashboard_token_path(_context(tmp_path), tmp_path)
-
-    assert kept == state_dir / "interfaces" / "dashboard.token"
-    assert ephemeral == _dashboard_token(tmp_path)
-
-
 @pytest.mark.parametrize(
     ("authentication", "capability"),
     [
@@ -2616,7 +2388,6 @@ def test_openclaw_descriptor_and_module_entrypoint(repo_root: Path):
     assert "channel_config" in descriptor["settings_schema"]["properties"]
     assert "tools.enabled" in descriptor["config"]["accepts"]
     assert "tools.blocked" in descriptor["config"]["accepts"]
-    assert "runtime.keep_state" in descriptor["config"]["accepts"]
     assert "mcp.auth.oauth2" not in descriptor["config"]["accepts"]
     assert "mcp.auth.service_account" not in descriptor["config"]["accepts"]
     assert descriptor["capabilities"]["streaming"] is False

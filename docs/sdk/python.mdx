@@ -906,7 +906,7 @@ The operating system releases the lock after all copies of the lock have closed:
 - **Windows:** Adapter hosts do not inherit the lock. Only the NeMo Fabric process holds the lock, so the folder becomes available if that process exits while an adapter host is still running.
 - **Detached processes:** A native process can continue accessing the state folder after all lock descriptors close. A replacement runtime can then acquire the lock while the detached process still writes to the folder.
 
-Planning fails without an artifact directory or for an adapter that doesn't declare `runtime.keep_state`. The Hermes Agent and OpenClaw adapters declare `runtime.keep_state`.
+Planning fails without an artifact directory or for an adapter that doesn't declare `runtime.keep_state`. The Hermes Agent adapter declares `runtime.keep_state`.
 
 ## Runtime Resource Snapshots
 

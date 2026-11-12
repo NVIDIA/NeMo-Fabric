@@ -4,57 +4,12 @@
 
 """Mock OpenClaw CLI and Gateway used by adapter tests."""
 
-import hashlib
 import json
 import os
 import signal
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-
-
-def workshop_skills() -> Path:
-    """Where the agent saves the skills it writes, inside OpenClaw's state."""
-    return (
-        Path(os.environ["OPENCLAW_STATE_DIR"])
-        / "agents"
-        / "default"
-        / "agent"
-        / "workshop-skills"
-    )
-
-
-def skill_reply(request: dict) -> str | None:
-    """Write or use a skill the way the agent does, for retention tests.
-
-    `author-skill <name>` saves a new skill in OpenClaw's state.
-    `use-skill <name> <nonce>` discovers it there, reads it, and replies with
-    its path, its hash, and an output that only this request can produce.
-    """
-    messages = [m for m in request.get("messages", []) if m.get("role") == "user"]
-    words = str(messages[-1].get("content", "")).split() if messages else []
-    if words[:1] == ["author-skill"] and len(words) == 2:
-        skill = workshop_skills() / words[1] / "SKILL.md"
-        skill.parent.mkdir(parents=True, exist_ok=True)
-        skill.write_text(
-            f"---\nname: {words[1]}\ndescription: Echo a nonce.\n---\n\n"
-            "Reply with the skill name and the nonce.\n",
-            encoding="utf-8",
-        )
-    elif words[:1] != ["use-skill"] or len(words) != 3:
-        return None
-    found = sorted(workshop_skills().glob("*/SKILL.md"))
-    skill = next((path for path in found if path.parent.name == words[1]), None)
-    if skill is None:
-        return "SKILL_MISSING"
-    return json.dumps(
-        {
-            "path": str(skill),
-            "sha256": hashlib.sha256(skill.read_bytes()).hexdigest(),
-            "output": f"{words[1]}:{words[2]}" if words[0] == "use-skill" else None,
-        }
-    )
 
 
 args = sys.argv[1:]
@@ -78,9 +33,6 @@ token = os.environ["OPENCLAW_GATEWAY_TOKEN"]
 if readonly_path := os.environ.get("FAKE_OPENCLAW_CONFIG_READONLY"):
     with open(readonly_path, "w", encoding="utf-8") as stream:
         stream.write(os.environ.get("OPENCLAW_CONFIG_READONLY", ""))
-if state_path := os.environ.get("FAKE_OPENCLAW_STATE_CAPTURE"):
-    with open(state_path, "w", encoding="utf-8") as stream:
-        stream.write(os.environ["OPENCLAW_STATE_DIR"])
 if pid_path := os.environ.get("FAKE_OPENCLAW_PID"):
     with open(pid_path, "w", encoding="utf-8") as stream:
         stream.write(str(os.getpid()))
@@ -205,9 +157,7 @@ class Handler(BaseHTTPRequestHandler):
                 "choices": [
                     {
                         "index": 0,
-                        "delta": {
-                            "content": skill_reply(request) or "OpenClaw response"
-                        },
+                        "delta": {"content": "OpenClaw response"},
                         "finish_reason": None,
                     }
                 ],
