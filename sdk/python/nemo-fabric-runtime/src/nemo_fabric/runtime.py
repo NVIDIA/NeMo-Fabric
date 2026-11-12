@@ -1070,6 +1070,19 @@ async def _run_native_lifecycle(
             )
             if result is not None:
                 observations["partial_result"] = result
+                if runtime.get("environment", {}).get("provider") == "local":
+                    try:
+                        native._save_run_result(
+                            plan_json, runtime_json, json.dumps(result)
+                        )
+                    except Exception as error:
+                        failure = FabricRuntimeError(
+                            "The final invocation result could not be saved.",
+                            stage="result",
+                            code="result_storage_failed",
+                        )
+                        _retain_runtime_evidence(failure, observations)
+                        raise failure from error
             if invoke_error is not None:
                 # Keep obtained identity and cleanup evidence beside the original
                 # exception. A protocol failure is not a normalized invocation.

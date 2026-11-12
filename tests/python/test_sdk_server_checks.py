@@ -530,3 +530,29 @@ async def test_remote_result_errors_do_not_expose_provider_details(
     assert "TEST_ONLY_PRIVATE" not in str(caught.value)
     native.invoke_runtime.assert_not_called()
     native.stop_runtime.assert_not_called()
+
+
+@pytest.mark.parametrize("request_id", [" ", "\t\n", "request\0id"])
+def test_recovery_request_ids_are_validated_before_invocation(request_id):
+    from nemo_fabric import RunRequest
+
+    with pytest.raises(ValueError):
+        RunRequest(input="hello", request_id=request_id)
+
+
+async def test_result_lookup_rejects_untyped_environment_before_native_dispatch(
+    monkeypatch,
+):
+    from nemo_fabric import FabricConfigError
+
+    native = MagicMock()
+    monkeypatch.setattr("nemo_fabric.client._native", native)
+    with pytest.raises(FabricConfigError):
+        await Fabric().invocation_result(
+            agent_name="researcher",
+            runtime_id="runtime-1",
+            request_id="request-1",
+            environment={"provider": "openshell"},
+        )
+    native.invocation_result.assert_not_called()
+    native.invocation_result_environment.assert_not_called()

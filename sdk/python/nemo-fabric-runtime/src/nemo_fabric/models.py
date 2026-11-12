@@ -1361,7 +1361,10 @@ class FabricConfig(FabricBaseModel):
 
 
 class RunRequest(FabricBaseModel):
-    """One validated NeMo Fabric invocation request."""
+    """One validated NeMo Fabric invocation request.
+
+    Request identifiers must not be blank or contain NUL.
+    """
 
     acknowledge_recovery: bool = Field(
         default=False,
@@ -1379,6 +1382,13 @@ class RunRequest(FabricBaseModel):
     )
     context: dict[str, Any] = Field(default_factory=dict)
     overrides: dict[str, Any] | None = None
+
+    @field_validator("request_id")
+    @classmethod
+    def _validate_request_id(cls, value: str) -> str:
+        if not value.strip() or "\0" in value:
+            raise ValueError("request_id must not be blank or contain NUL")
+        return value
 
     @field_validator("input", mode="before")
     @classmethod

@@ -308,6 +308,22 @@ fn invocation_result(
     to_json(&result)
 }
 
+/// Persist a result after the Python one-shot lifecycle finishes cleanup.
+#[pyfunction]
+fn _save_run_result(
+    py: Python<'_>,
+    plan_json: String,
+    runtime_json: String,
+    result_json: String,
+) -> PyResult<()> {
+    let plan = parse_run_plan(plan_json)?;
+    let runtime = parse_runtime_handle(runtime_json)?;
+    let result: nemo_fabric_core::RunResult = serde_json::from_str(&result_json)
+        .map_err(|_| pyo3::exceptions::PyValueError::new_err("The completed result is invalid."))?;
+    py.detach(|| nemo_fabric_core::runtime::save_run_result(&plan, &runtime, &result))
+        .map_err(|_| PyRuntimeError::new_err("The final invocation result could not be saved."))
+}
+
 /// Read a saved result through an OpenShell environment.
 #[pyfunction]
 fn invocation_result_environment(
@@ -443,6 +459,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(check_environment, m)?)?;
     m.add_function(wrap_pyfunction!(runtime_status_environment, m)?)?;
     m.add_function(wrap_pyfunction!(invocation_result, m)?)?;
+    m.add_function(wrap_pyfunction!(_save_run_result, m)?)?;
     m.add_function(wrap_pyfunction!(invocation_result_environment, m)?)?;
     m.add_function(wrap_pyfunction!(check_service, m)?)?;
     m.add("ServiceInUseError", m.py().get_type::<ServiceInUseError>())?;

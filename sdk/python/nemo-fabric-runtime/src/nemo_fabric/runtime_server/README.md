@@ -112,7 +112,9 @@ The task configuration carries the default-on `provenance` collector control and
 
 ### Recover a buffered invocation result
 
-Fabric saves each completed `RunResult` as `<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-result.json` before returning the result. On Unix, result and request-record files are readable only by their owner. The artifact root comes from `runtime.artifacts` or the environment; without either setting, Fabric uses its temporary artifact directory. Files remain until their storage is removed; no automatic retention or eviction is added.
+NeMo Fabric saves each completed `RunResult` as `<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-result.json` before returning the result. On Unix, result and request-record files are readable only by their owner. The artifact root comes from `runtime.artifacts` or the environment; without either setting, NeMo Fabric uses its temporary artifact directory. Files remain until their storage is removed; no automatic retention or eviction is added.
+
+Use a trusted artifact directory. On Unix, result storage rejects unsafe directory ownership, writable ancestry, and record-file permissions. Serialized results must fit within 4 MiB. Request identifiers must not be blank or contain NUL. Buffered retries can return the saved result; a request ID cannot switch between buffered and streaming invocations. A completed streaming request returns `stream_replay_unsupported` on replay; retrieve its terminal result with `invocation_result()` instead.
 
 Choose a stable `RunRequest.request_id` before submitting work. After a command timeout, `invocation_timeout` reports unknown effects and returns the runtime and request identifiers. The invocation can continue. Retrieve the completed result with:
 

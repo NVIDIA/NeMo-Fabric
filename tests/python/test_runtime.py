@@ -159,6 +159,31 @@ def _runtime_wrapper(
     )
 
 
+async def test_remote_one_shot_does_not_write_to_local_result_storage(mock_native):
+    runtime = _runtime()
+    runtime["environment"]["provider"] = "openshell"
+    mock_native.start_runtime.return_value = json.dumps(runtime)
+    result = await runtime_mod._run_native_lifecycle(
+        mock_native, _plan(), {"request_id": "remote-request", "input": "remote work"}
+    )
+    assert result["status"] == "succeeded"
+    mock_native._save_run_result.assert_not_called()
+
+
+async def test_final_save_failure_retains_one_shot_recovery_evidence(mock_native):
+    mock_native._save_run_result.side_effect = RuntimeError("storage unavailable")
+    with pytest.raises(FabricRuntimeError) as caught:
+        await runtime_mod._run_native_lifecycle(
+            mock_native, _plan(), {"request_id": "saved-request", "input": "hello"}
+        )
+    assert caught.value.stage == "result"
+    evidence = caught.value.details["runtime_evidence"]
+    assert evidence["runtime_id"] == "runtime-1"
+    assert evidence["request_id"] == "saved-request"
+    assert evidence["cleanup"] == "completed"
+    assert evidence["partial_result"]["status"] == "succeeded"
+
+
 @pytest.mark.parametrize("stage", ["start", "invoke", "stop"])
 @pytest.mark.parametrize(
     ("error_type", "expected_code"),

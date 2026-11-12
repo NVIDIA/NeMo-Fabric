@@ -104,11 +104,14 @@ async def client(
         if operation == "invoke":
             from nemo_fabric.models import RunRequest
 
-            payload = (
-                RunRequest.model_validate(request["request"])
-                if "request" in request
-                else RunRequest(input=request["input"])
-            )
+            try:
+                payload = (
+                    RunRequest.model_validate(request["request"])
+                    if "request" in request
+                    else RunRequest(input=request["input"])
+                )
+            except (TypeError, ValueError):
+                raise ProtocolError("invalid_request") from None
             request = {
                 key: value
                 for key, value in request.items()
