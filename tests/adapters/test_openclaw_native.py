@@ -669,7 +669,14 @@ async def test_native_controls_apply_to_pinned_gateway(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(process.communicate(), 60)
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), 60)
+        except BaseException:
+            # Stop a hung CLI and reap it so its pipes close before the error propagates.
+            if process.returncode is None:
+                process.kill()
+                await process.communicate()
+            raise
         assert process.returncode == 0, stderr.decode()
         memory_core = next(
             plugin

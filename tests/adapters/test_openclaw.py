@@ -3115,6 +3115,9 @@ def test_openclaw_native_controls_never_replace_generated_keys(
     assert caught.value.metadata == {"field": field}
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Runs the mock openclaw script directly"
+)
 @pytest.mark.parametrize(
     "gateway",
     [
