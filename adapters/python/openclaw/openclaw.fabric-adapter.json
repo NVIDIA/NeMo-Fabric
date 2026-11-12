@@ -137,6 +137,106 @@
         "type": "number",
         "exclusiveMinimum": 0,
         "description": "Timeout between response bytes from the local OpenClaw Gateway. When unset, the invocation timeout bounds the response."
+      },
+      "agents": {
+        "type": "object",
+        "properties": {
+          "defaults": {
+            "type": "object",
+            "properties": {
+              "heartbeat": {
+                "type": "object",
+                "properties": {
+                  "every": {
+                    "type": "string",
+                    "pattern": "^(?:[0-9]+(?:\\.[0-9]+)?(?:ms|s|m|h|d))+$",
+                    "description": "Native recurring heartbeat interval, such as 30m or 1h30m. Units are required; 0m disables the recurring cadence but not event-driven turns."
+                  }
+                },
+                "additionalProperties": false
+              },
+              "compaction": {
+                "type": "object",
+                "properties": {
+                  "memoryFlush": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean",
+                        "description": "Whether OpenClaw runs its pre-compaction memory flush turn. This does not stop compaction itself."
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "Native OpenClaw agents.defaults controls for NeMo Fabric-owned Gateways. Only authored fields are written; attached Gateways reject them."
+      },
+      "tools": {
+        "type": "object",
+        "properties": {
+          "exec": {
+            "type": "object",
+            "properties": {
+              "notifyOnExit": {
+                "type": "boolean",
+                "description": "Whether OpenClaw emits a system event and heartbeat when a backgrounded exec process exits."
+              }
+            },
+            "additionalProperties": false
+          },
+          "toolSearch": {
+            "type": "boolean",
+            "description": "Whether OpenClaw compacts large tool catalogs behind search tools."
+          },
+          "codeMode": {
+            "type": "boolean",
+            "description": "Whether OpenClaw Code Mode is enabled. Code Mode can take precedence over tool search."
+          }
+        },
+        "additionalProperties": false,
+        "description": "Native OpenClaw tools controls for NeMo Fabric-owned Gateways, merged with the allow and deny lists generated from NeMo Fabric's normalized top-level tools. Only authored fields are written; attached Gateways reject them."
+      },
+      "plugins": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "object",
+            "properties": {
+              "memory-core": {
+                "type": "object",
+                "properties": {
+                  "config": {
+                    "type": "object",
+                    "properties": {
+                      "dreaming": {
+                        "type": "object",
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean",
+                            "description": "Whether the memory-core plugin runs scheduled dreaming."
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "Native OpenClaw plugin controls for NeMo Fabric-owned Gateways. Only authored fields are written; attached Gateways reject them."
       }
     },
     "dependentSchemas": {

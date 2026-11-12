@@ -75,8 +75,9 @@ Fabric-owned clients and private connection material without stopping the
 caller-owned Gateway. Attached Gateways must use HTTPS unless the URL contains
 a literal loopback IP address. For an attached service, omit deployment-owned
 model endpoints, API-key references, tools, MCP servers, skills, channel
-configuration, and startup settings from `config` because NeMo Fabric cannot
-apply them to an existing Gateway.
+configuration, [native Gateway controls](./openclaw.mdx#native-gateway-controls),
+and startup settings from `config` because NeMo Fabric cannot apply them to an
+existing Gateway.
 
 ## Execution and Isolation
 
@@ -87,7 +88,8 @@ does not use the OpenClaw configuration RPC. The generated configuration:
 - binds the Gateway to loopback;
 - enables the OpenAI-compatible Chat Completions endpoint;
 - uses a cryptographically generated one-time Gateway token;
-- applies the normalized workspace, model, skills, and MCP servers;
+- applies the normalized workspace, model, skills, and MCP servers, and any
+  authored native Gateway controls;
 - disables OpenClaw anonymous telemetry; and
 - uses a unique temporary state directory.
 

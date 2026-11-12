@@ -1326,3 +1326,133 @@ async def test_four_paths_keep_conversations_separate_and_restart_cleanly(
         assert (await runtime.check("ready"))["outcome"] == "passed"
     finally:
         await runtime.stop()
+
+
+def _native_controls(tool_search: object = "off") -> dict[str, object]:
+    return {
+        "auxiliary": {
+            "title_generation": {"enabled": False},
+            "background_review": {"enabled": False},
+        },
+        "tools": {"tool_search": {"enabled": tool_search}},
+    }
+
+
+def _hermes_native_controls() -> dict[str, object]:
+    """Read the controls through Hermes's own loaders for the current home."""
+    from hermes_cli.config import load_config
+    from tools.tool_search import load_config as load_tool_search_config
+
+    auxiliary = load_config()["auxiliary"]
+    return {
+        "title_generation": auxiliary["title_generation"]["enabled"],
+        "background_review": auxiliary["background_review"]["enabled"],
+        "tool_search": load_tool_search_config().enabled,
+    }
+
+
+@pytest.mark.parametrize(
+    ("settings", "expected"),
+    [
+        pytest.param(
+            {},
+            {
+                "title_generation": True,
+                "background_review": True,
+                "tool_search": "auto",
+            },
+            id="omitted-keeps-hermes-defaults",
+        ),
+        *[
+            pytest.param(
+                _native_controls(tool_search),
+                {
+                    "title_generation": False,
+                    "background_review": False,
+                    "tool_search": expected,
+                },
+                id=f"tool-search-{tool_search}",
+            )
+            for tool_search, expected in (
+                (True, "on"),
+                (False, "off"),
+                ("on", "on"),
+                ("off", "off"),
+                ("auto", "auto"),
+            )
+        ],
+    ],
+)
+async def test_sdk_agent_reads_native_controls_at_initialization(
+    tmp_path, monkeypatch, settings, expected
+):
+    import hermes_state
+    import run_agent
+
+    observed: dict[str, object] = {}
+
+    def construct(*_args: object, **_kwargs: object) -> MagicMock:
+        observed.update(_hermes_native_controls())
+        return MagicMock()
+
+    monkeypatch.setattr(run_agent, "AIAgent", MagicMock(side_effect=construct))
+    monkeypatch.setattr(hermes_state, "SessionDB", MagicMock())
+    runtime = adapter.HermesRuntime()
+    try:
+        await runtime.start(_payload(tmp_path, settings))
+        assert os.environ["HERMES_HOME"] == str(runtime._hermes_home)
+    finally:
+        await runtime.stop()
+
+    assert observed == expected
+
+
+@pytest.mark.parametrize(
+    ("interface", "command"),
+    [("api", "gateway"), ("dashboard", "dashboard"), ("terminal", "serve")],
+)
+@pytest.mark.usefixtures("web_dist")
+async def test_native_interfaces_read_native_controls_before_startup(
+    tmp_path, monkeypatch, interface, command
+):
+    from nemo_fabric_adapters.hermes import terminal
+
+    spawned: list[tuple[tuple[str, ...], str, dict[str, object]]] = []
+
+    async def spawn(*arguments: str, env: dict[str, str], **_options: object):
+        # A child process reads config.yaml from its HERMES_HOME at startup.
+        os.environ["HERMES_HOME"] = env["HERMES_HOME"]
+        spawned.append((arguments, env["HERMES_HOME"], _hermes_native_controls()))
+        return MagicMock(returncode=0)
+
+    monkeypatch.setattr(interfaces.asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(interfaces, "_wait_healthy", AsyncMock())
+    monkeypatch.setattr(terminal, "tui_ready", AsyncMock(return_value=True))
+    settings = {
+        **_native_controls(False),
+        "sdk": {"enabled": False},
+        **_interface(interface, port=_free_port()),
+    }
+    runtime = adapter.HermesRuntime()
+    try:
+        await runtime.start(_payload(tmp_path, settings))
+        home = str(runtime._hermes_home)
+        if interface == "terminal":
+            # The terminal renderer attaches to the backend that owns this home.
+            connection = runtime._hermes_home / "interfaces" / "tui.json"
+            attachment = await asyncio.to_thread(
+                terminal.attachment_environment, connection
+            )
+            assert attachment["HERMES_HOME"] == home
+    finally:
+        await runtime.stop()
+
+    [(arguments, child_home, observed)] = spawned
+    assert arguments[1:3] == ("-m", "nemo_fabric_adapters.hermes.native")
+    assert arguments[5] == command
+    assert child_home == home
+    assert observed == {
+        "title_generation": False,
+        "background_review": False,
+        "tool_search": "off",
+    }
