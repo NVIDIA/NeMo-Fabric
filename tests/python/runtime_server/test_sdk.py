@@ -278,3 +278,152 @@ async def test_health_workers_recover_while_provider_descendants_hold_pipes(
         with suppress(Exception):
             await asyncio.wait_for(invoked, 5)
         await owned.stop()
+
+
+async def test_result_is_saved_and_retrievable_after_caller_timeout(
+    blocking_adapter_config, tmp_path, socket_path
+):
+    from nemo_fabric import RunRequest
+    from nemo_fabric.runtime_server import transport
+
+    host = RuntimeServer(directory=tmp_path)
+    command = {"interface_version": 2, "agent": "blocking"}
+    started = await host.handle(
+        {
+            **command,
+            "operation": "start",
+            "config": blocking_adapter_config.to_mapping(),
+        }
+    )
+    assert started["status"] == "succeeded", started
+    command["runtime_id"] = started["result"]["runtime_id"]
+    stop, ready = asyncio.Event(), asyncio.Event()
+    server = asyncio.create_task(
+        transport.serve(
+            host, socket_path=socket_path, stop_event=stop, ready_event=ready
+        )
+    )
+    try:
+        await asyncio.wait_for(ready.wait(), 3)
+        request = RunRequest(input="slow", request_id="recover-this-request")
+        timeout = await transport.client(
+            {**command, "operation": "invoke", "request": request.to_mapping()},
+            socket_path=socket_path,
+            timeout=0.1,
+        )
+        assert timeout["error"]["code"] == "invocation_timeout"
+        assert timeout["error"]["effects"] == "unknown"
+        assert timeout["result"] == {
+            "runtime_id": command["runtime_id"],
+            "request_id": request.request_id,
+        }
+        (tmp_path / "release").touch()
+        async with asyncio.timeout(5):
+            while True:
+                response = await transport.client(
+                    {
+                        **command,
+                        "operation": "result",
+                        "request_id": request.request_id,
+                    },
+                    socket_path=socket_path,
+                )
+                assert response["status"] == "succeeded", response
+                if response["result"] is not None:
+                    break
+                await asyncio.sleep(0.01)
+        result = response["result"]
+        assert result["request_id"] == request.request_id
+        assert result["output"] == {"response": "released"}
+        saved = (
+            tmp_path
+            / "artifacts"
+            / ".fabric"
+            / result["runtime_id"]
+            / result["invocation_id"]
+            / "run-result.json"
+        )
+        from nemo_fabric import RunResult
+
+        assert (
+            RunResult.from_mapping(json.loads(saved.read_text())).to_mapping() == result
+        )
+        assert saved.stat().st_mode & 0o077 == 0
+        sdk_result = await host.fabric.invocation_result(
+            agent_name="blocking",
+            runtime_id=command["runtime_id"],
+            request_id=request.request_id,
+            artifacts=tmp_path / "artifacts",
+        )
+        assert sdk_result.to_mapping() == result
+        assert (await host.handle({**command, "operation": "stop"}))[
+            "status"
+        ] == "succeeded"
+        assert (
+            await host.handle(
+                {**command, "operation": "result", "request_id": request.request_id}
+            )
+        )["result"] == result
+    finally:
+        (tmp_path / "release").touch()
+        stop.set()
+        await asyncio.wait_for(server, 5)
+
+
+async def test_cached_retry_preserves_later_sdk_history(
+    blocking_adapter_config, tmp_path
+):
+    from nemo_fabric import RunRequest
+
+    (tmp_path / "release").touch()
+    script = tmp_path / "adapter.py"
+    text = script.read_text().replace("harness=None", "history=[]\nharness=None")
+    text = text.replace(
+        "output={'status':'succeeded','output':{'response':'released'}}",
+        "history.append({'role':'assistant','content':str(len(history)+1)})\n            output={'status':'succeeded','output':{'messages':history}}",
+    )
+    script.write_text(text)
+    runtime = await Fabric().start_runtime(blocking_adapter_config, base_dir=tmp_path)
+    try:
+        request = RunRequest(input="A", request_id="request-a")
+        first = await runtime.invoke(request=request)
+        await runtime.invoke(request=RunRequest(input="B", request_id="request-b"))
+        history = runtime.messages
+        invocations = runtime.invocations
+        cached = await runtime.invoke(request=request)
+        assert cached.invocation_id == first.invocation_id
+        assert len(history) == 2
+        assert runtime.messages == history
+        assert runtime.invocations == invocations
+    finally:
+        await runtime.stop()
+
+
+async def test_lookup_before_first_invocation_returns_no_completed_result(
+    blocking_adapter_config, tmp_path
+):
+    host = RuntimeServer(directory=tmp_path)
+    command = {"interface_version": 2, "agent": "blocking"}
+    started = await host.handle(
+        {
+            **command,
+            "operation": "start",
+            "config": blocking_adapter_config.to_mapping(),
+        }
+    )
+    assert started["status"] == "succeeded", started
+    try:
+        response = await host.handle(
+            {
+                **command,
+                "operation": "result",
+                "runtime_id": started["result"]["runtime_id"],
+                "request_id": "not-submitted",
+            }
+        )
+        assert response["status"] == "succeeded", response
+        assert response["result"] is None
+        assert response["changed"] is False
+        assert not (tmp_path / "entered").exists()
+    finally:
+        await host.shutdown()

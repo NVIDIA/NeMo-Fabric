@@ -284,6 +284,57 @@ fn check_environment(
     to_json(&report)
 }
 
+/// Read a saved result from the configured artifact root.
+#[pyfunction]
+fn invocation_result(
+    py: Python<'_>,
+    artifacts: Option<String>,
+    agent: String,
+    runtime_id: String,
+    request_id: String,
+) -> PyResult<String> {
+    let root = artifacts
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("nemo-fabric"));
+    let result = py
+        .detach(|| {
+            nemo_fabric_core::runtime::invocation_result(&root, &agent, &runtime_id, &request_id)
+        })
+        .map_err(|_| {
+            PyRuntimeError::new_err(
+                "The invocation result is unavailable; do not replay uncertain work.",
+            )
+        })?;
+    to_json(&result)
+}
+
+/// Read a saved result through an OpenShell environment.
+#[pyfunction]
+fn invocation_result_environment(
+    py: Python<'_>,
+    environment_json: String,
+    agent: String,
+    runtime_id: String,
+    request_id: String,
+) -> PyResult<String> {
+    let environment = parse_environment_handle(environment_json)?;
+    let result = py
+        .detach(|| {
+            nemo_fabric_core::runtime::invocation_result_environment(
+                &environment,
+                &agent,
+                &runtime_id,
+                &request_id,
+            )
+        })
+        .map_err(|_| {
+            PyRuntimeError::new_err(
+                "The invocation result is unavailable; do not replay uncertain work.",
+            )
+        })?;
+    to_json(&result)
+}
+
 /// Read recorded runtime status through an OpenShell environment.
 #[pyfunction]
 fn runtime_status_environment(
@@ -391,6 +442,8 @@ fn runtime_resource_snapshot(
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(check_environment, m)?)?;
     m.add_function(wrap_pyfunction!(runtime_status_environment, m)?)?;
+    m.add_function(wrap_pyfunction!(invocation_result, m)?)?;
+    m.add_function(wrap_pyfunction!(invocation_result_environment, m)?)?;
     m.add_function(wrap_pyfunction!(check_service, m)?)?;
     m.add("ServiceInUseError", m.py().get_type::<ServiceInUseError>())?;
     m.add(

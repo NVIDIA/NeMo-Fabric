@@ -89,28 +89,33 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
         if flag in (
             "--agent",
             "--runtime-id",
+            "--request-id",
             "--config",
             "--session-ref",
             "--input",
             "--request",
             "--timeout-seconds",
         ):
-            if index + 1 == len(arguments) or arguments[index + 1].startswith("--"):
+            if index + 1 == len(arguments) or (
+                flag != "--request-id" and arguments[index + 1].startswith("--")
+            ):
                 raise ProtocolError()
             flags[flag] = arguments[index + 1]
             index += 2
         else:
             raise ProtocolError()
     required = set()
-    if operation in ("start", "invoke", "stop", "status"):
+    if operation in ("start", "invoke", "stop", "status", "result"):
         required.add("--agent")
-    if operation in ("invoke", "stop", "status"):
+    if operation in ("invoke", "stop", "status", "result"):
         required.add("--runtime-id")
     if operation in CONFIG_OPERATIONS:
         config_flags = flags.keys() & {"--config", "--request"}
         if len(config_flags) != 1:
             raise ProtocolError()
         required.update(config_flags)
+    if operation == "result":
+        required.add("--request-id")
     allowed = required.copy()
     if operation == "start" and "--config" in flags:
         allowed.add("--session-ref")
@@ -144,6 +149,7 @@ def parse_command(arguments: list[str]) -> dict[str, Any]:
     for flag in (
         "--agent",
         "--runtime-id",
+        "--request-id",
     ):
         if flag in flags:
             request[flag[2:].replace("-", "_")] = flags[flag]

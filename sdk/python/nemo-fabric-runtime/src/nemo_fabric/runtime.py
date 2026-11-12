@@ -893,6 +893,12 @@ class Runtime:
                 await self._collector.aclose()
 
     def _absorb(self, result: RunResult) -> None:
+        identity = (result.runtime_id, result.invocation_id, result.request_id)
+        if any(
+            (item["runtime_id"], item["invocation_id"], item["request_id"]) == identity
+            for item in self._invocations
+        ):
+            return
         self._invocations.append(
             {
                 "request_id": result.request_id,

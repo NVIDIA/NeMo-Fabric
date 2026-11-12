@@ -296,3 +296,25 @@ def test_unusable_input_preserves_existing_bridge_error_code(
     assert response["error"]["code"] == "invalid_input"
     assert response["error"]["effects"] == "none"
     assert response["changed"] is False
+
+
+def test_result_command_targets_one_request():
+    from nemo_fabric.runtime_server.cli import parse_command
+
+    assert parse_command(
+        [
+            "result",
+            "--agent",
+            "researcher",
+            "--runtime-id",
+            "runtime-1",
+            "--request-id",
+            "request-1",
+        ]
+    ) == {
+        "interface_version": 2,
+        "operation": "result",
+        "agent": "researcher",
+        "runtime_id": "runtime-1",
+        "request_id": "request-1",
+    }

@@ -661,14 +661,17 @@ where
         let budget = *timeout_seconds;
         return request_check_provider_process(command, operation, budget);
     }
-    if matches!(task_command, TaskCommand::Status { .. }) {
+    if matches!(
+        task_command,
+        TaskCommand::Status { .. } | TaskCommand::Result { .. }
+    ) {
         return request_check_provider_process(command, operation, 10.0);
     }
     let operation_name = operation.name();
     let request_id = new_id("environment-provider-request");
     let environment_key = environment_resource_key(environment)?;
     let (identity, is_start, is_stop) = match task_command {
-        TaskCommand::Check { .. } | TaskCommand::Status { .. } => {
+        TaskCommand::Check { .. } | TaskCommand::Status { .. } | TaskCommand::Result { .. } => {
             unreachable!("reads use a separate provider process")
         }
         TaskCommand::Start { .. } => (request_id.clone(), true, false),

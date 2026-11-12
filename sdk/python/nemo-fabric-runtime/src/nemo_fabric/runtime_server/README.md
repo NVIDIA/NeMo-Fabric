@@ -108,3 +108,25 @@ Follow the [OpenShell Code Review instructions](../../../../../../examples/code_
 The example starts the server, waits for its socket, starts a runtime, invokes twice, and stops through separate exec calls. The older NemoClaw client using `validate/prepare/configure` requires migration. Version 1 requests fail explicitly. Direct SDK lifecycle and streaming APIs retain their existing behavior.
 
 The task configuration carries the default-on `provenance` collector control and typed caller reports through the existing start request. `enabled=false` skips guest SDK and adapter collection. The guest records its own installation as `guest_sdk`; it never inspects caller packages. Returned RunResults preserve the caller reports and guest-owned snapshots. The host keeps its own snapshot independently so missing evidence from older intermediaries is explicit.
+
+
+### Recover a buffered invocation result
+
+Fabric saves each completed `RunResult` as `<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-result.json` before returning the result. On Unix, result and request-record files are readable only by their owner. The artifact root comes from `runtime.artifacts` or the environment; without either setting, Fabric uses its temporary artifact directory. Files remain until their storage is removed; no automatic retention or eviction is added.
+
+Choose a stable `RunRequest.request_id` before submitting work. After a command timeout, `invocation_timeout` reports unknown effects and returns the runtime and request identifiers. The invocation can continue. Retrieve the completed result with:
+
+```python
+result = await fabric.invocation_result(
+    agent_name="researcher", runtime_id=runtime_id,
+    request_id=request_id, artifacts="/path/to/artifacts",
+)
+```
+
+```sh
+fabric-agent-ctl result --agent researcher --runtime-id RUNTIME_ID --request-id REQUEST_ID
+```
+
+A null result means no completed result is available; it does not prove the request is still running or safe to repeat. A retry of the same request identifier and input returns the saved result, or reports that the original invocation is pending. Reusing that identifier with different input is rejected. Failed or interrupted reservations are not automatically replayed.
+
+For OpenShell, pass `environment=environment` instead of `artifacts` to query the original server through the provider. The CLI requires a retained ownership record on that server. A later local SDK client can read retained files using the explicit artifact root even after runtime stop. Neither path reconstructs a missing result. Remote results retain task-side artifact paths.

@@ -77,6 +77,8 @@ while not (root / "release").exists() and time.monotonic() - started < 8:
             arguments.extend(["--agent", command["agent"]])
             if "runtime_id" in command:
                 arguments.extend(["--runtime-id", command["runtime_id"]])
+            if name == "result":
+                arguments.extend(["--request-id", command["request_id"]])
             field = (
                 "config" if name == "start" else "request" if name == "invoke" else None
             )
@@ -88,7 +90,14 @@ while not (root / "release").exists() and time.monotonic() - started < 8:
                 key: value
                 for key, value in command.items()
                 if key
-                in {"operation", "agent", "runtime_id", "level", "timeout_seconds"}
+                in {
+                    "operation",
+                    "agent",
+                    "runtime_id",
+                    "request_id",
+                    "level",
+                    "timeout_seconds",
+                }
             }
             with Path(path).open("a") as stream:
                 stream.write(json.dumps(routing) + "\n")

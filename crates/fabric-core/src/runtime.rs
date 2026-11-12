@@ -39,7 +39,10 @@ use crate::system_stats::ResourceObservation;
 use crate::system_stats::{CgroupStats, InvocationSystemStats, StatsSession, SystemReader};
 
 mod openshell;
+mod results;
 use openshell::OpenShellRuntimeAdapter;
+#[doc(hidden)]
+pub use results::invocation_result;
 
 pub(crate) fn remote_check_agent(
     environment: &EnvironmentHandle,
@@ -82,6 +85,43 @@ pub fn runtime_status_environment(
                     "invalid_response".to_string()
                 },
                 message: "The runtime status request was rejected.".to_string(),
+            })
+        }
+    }
+}
+
+/// Read a saved task-side invocation result through its verified OpenShell environment.
+#[doc(hidden)]
+pub fn invocation_result_environment(
+    environment: &EnvironmentHandle,
+    agent: &str,
+    runtime_id: &str,
+    request_id: &str,
+) -> Result<Value> {
+    if environment.provider != "openshell"
+        || environment.control_location != ControlLocation::InEnvControl
+        || [agent, runtime_id, request_id]
+            .iter()
+            .any(|value| value.trim().is_empty() || value.contains('\0'))
+    {
+        return Err(FabricError::InvalidConfig {
+            field: "invocation_result".into(),
+            reason: "a valid invocation target and verified OpenShell environment are required"
+                .into(),
+        });
+    }
+    let command = crate::task_command::TaskCommand::Result {
+        agent: agent.into(),
+        runtime_id: runtime_id.into(),
+        request_id: request_id.into(),
+    };
+    match crate::environment::command_runtime(environment, &command, 10)? {
+        crate::task_command::TaskCommandResponse::Returned { value } => Ok(value),
+        crate::task_command::TaskCommandResponse::Rejected { .. } => {
+            Err(FabricError::InvalidConfig {
+                field: "invocation_result".into(),
+                reason: "the result lookup could not be completed; do not replay uncertain work"
+                    .into(),
             })
         }
     }
@@ -2424,6 +2464,12 @@ fn run_local_host_invocation_with_timeout(
         request_id: request.request_id.clone(),
         runtime_id: runtime.runtime_id.clone(),
     };
+    let root = artifact_manifest(plan)?
+        .root
+        .unwrap_or_else(|| std::env::temp_dir().join("nemo-fabric"));
+    if let Some(result) = results::reserve(&root, runtime, &request, &invocation)? {
+        return Ok(result);
+    }
     let host = local_hosts()
         .get(&runtime.runtime_id)
         .cloned()
@@ -2814,7 +2860,7 @@ fn run_local_host_invocation_with_timeout(
             serde_json::to_value(&agent_result.extensions).map_err(FabricError::SerializeJson)?,
         );
     }
-    Ok(RunResult {
+    let result = RunResult {
         session_ref: runtime.session_ref.clone(),
         agent_name: plan.agent_name.clone(),
         harness: harness(plan),
@@ -2836,7 +2882,9 @@ fn run_local_host_invocation_with_timeout(
             .collect(),
         events,
         metadata,
-    })
+    };
+    results::save(&root, &result)?;
+    Ok(result)
 }
 
 fn invalidate_timed_out_local_host(
@@ -5408,6 +5456,150 @@ else:
 
     fn stopped_agents() -> Vec<String> {
         TEST_STOPPED_AGENTS.lock().expect("stop tracker").clone()
+    }
+
+    #[test]
+    fn completed_invocation_persists_the_full_result() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start");
+        let result = invoke_runtime(&plan, &runtime, RunRequest::text("hello")).expect("invoke");
+        let path =
+            PathBuf::from(result.metadata["fabric_home"].as_str().unwrap()).join("run-result.json");
+        let saved: RunResult =
+            serde_json::from_slice(&fs::read(path).expect("saved result")).expect("valid result");
+        assert_eq!(saved, result);
+        stop_runtime(&plan, &runtime).expect("stop");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn result_lookup_and_duplicate_request_preserve_one_invocation() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start");
+        let mut request = RunRequest::text("hello");
+        request.request_id = "same-request".into();
+        let first = invoke_runtime(&plan, &runtime, request.clone()).expect("invoke");
+        let second = invoke_runtime(&plan, &runtime, request.clone()).expect("retry");
+        assert_eq!(first, second);
+        let artifacts = root.join("artifacts");
+        assert_eq!(
+            invocation_result(
+                &artifacts,
+                &plan.agent_name,
+                &runtime.runtime_id,
+                "same-request"
+            )
+            .unwrap(),
+            Some(first.clone())
+        );
+        request.input = serde_json::json!("different input");
+        assert!(invoke_runtime(&plan, &runtime, request).is_err());
+        stop_runtime(&plan, &runtime).expect("stop");
+        assert_eq!(
+            invocation_result(
+                &artifacts,
+                &plan.agent_name,
+                &runtime.runtime_id,
+                "same-request"
+            )
+            .unwrap(),
+            Some(first)
+        );
+        assert!(
+            invocation_result(
+                &artifacts,
+                "wrong-agent",
+                &runtime.runtime_id,
+                "same-request"
+            )
+            .is_err()
+        );
+        assert!(
+            invocation_result(&artifacts, &plan.agent_name, "../../escape", "same-request")
+                .is_err()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn result_lookup_rejects_symlinked_result_files() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start");
+        let mut request = RunRequest::text("hello");
+        request.request_id = "private-request".into();
+        let result = invoke_runtime(&plan, &runtime, request).expect("invoke");
+        let path =
+            PathBuf::from(result.metadata["fabric_home"].as_str().unwrap()).join("run-result.json");
+        let outside = root.join("outside-result.json");
+        fs::rename(&path, &outside).unwrap();
+        std::os::unix::fs::symlink(&outside, &path).unwrap();
+        assert!(
+            invocation_result(
+                &root.join("artifacts"),
+                &plan.agent_name,
+                &runtime.runtime_id,
+                "private-request"
+            )
+            .is_err()
+        );
+        stop_runtime(&plan, &runtime).expect("stop");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn duplicate_pending_request_is_not_submitted_again() {
+        let (root, plan) = local_host_plan("invoke_timeout");
+        let runtime = start_runtime(&plan).unwrap();
+        let stderr = local_hosts()
+            .get(&runtime.runtime_id)
+            .unwrap()
+            .lock()
+            .unwrap()
+            .stderr_path
+            .clone();
+        let mut request = RunRequest::text("slow");
+        request.request_id = "pending-request".into();
+        let worker_plan = plan.clone();
+        let worker_runtime = runtime.clone();
+        let worker_request = request.clone();
+        let worker = thread::spawn(move || {
+            run_local_host_adapter_with_timeout(
+                &worker_plan,
+                &worker_runtime,
+                worker_request,
+                Duration::from_millis(500),
+            )
+        });
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !fs::read_to_string(&stderr)
+            .unwrap()
+            .contains("invoke accepted without response")
+        {
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(10));
+        }
+        let error =
+            invoke_runtime(&plan, &runtime, request).expect_err("pending request must not replay");
+        assert!(
+            matches!(error, FabricError::AdapterLifecycleOperation { code, .. } if code == "invocation_pending")
+        );
+        worker
+            .join()
+            .unwrap()
+            .expect_err("original invocation times out");
+        assert!(
+            invocation_result(
+                &root.join("artifacts"),
+                &plan.agent_name,
+                &runtime.runtime_id,
+                "pending-request"
+            )
+            .unwrap()
+            .is_none()
+        );
+        stop_runtime(&plan, &runtime).unwrap();
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
