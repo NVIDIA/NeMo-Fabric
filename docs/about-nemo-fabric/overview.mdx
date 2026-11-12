@@ -1,61 +1,59 @@
 ---
 title: "NVIDIA NeMo Fabric Overview"
-description: "Understand NeMo Fabric capabilities, use cases, and the execution model."
+description: "Find out where NeMo Fabric fits your team's goals, then choose a starting point."
 slug: "/about-nemo-fabric/overview"
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-NVIDIA NeMo Fabric lets your application run supported agent harnesses and custom agents through one configuration and execution API. It validates your configuration, starts the selected runtime, sends requests, and returns consistent results, errors, artifacts, and telemetry references.
-
-Use NeMo Fabric when your application needs to support several harnesses, compare agent configurations, or connect an existing agent to a common execution boundary.
+NVIDIA NeMo Fabric helps teams run and compare supported agent harnesses without building a separate application integration for each one. Use it to bring agents into your product, evaluate harnesses on the same tasks, or make a custom agent available to other teams.
 
 <CardGroup cols={2}>
+  <Card title="Who Should Use NeMo Fabric" icon="fa-solid fa-users" href="#what-you-can-do">
+    Find out how NeMo Fabric can help your team build applications, compare harnesses, and share agents.
+  </Card>
   <Card title="Run Your First Agent" icon="fa-solid fa-rocket" href="../getting-started/quickstart.mdx">
     Install one harness and run a useful task through the Python SDK.
   </Card>
-  <Card title="Choose an Integration" icon="fa-solid fa-plug" href="../integrations/overview.mdx">
-    Find a harness or connect an evaluation framework to NeMo Fabric.
+  <Card title="Bring Your Own Custom Agent or Harness" icon="fa-solid fa-puzzle-piece" href="../adapter-contract/README.md">
+    Build an adapter so applications and evaluation tools can run your agent.
   </Card>
-  <Card title="Build an Application" icon="fa-brands fa-python" href="../sdk/python.mdx">
-    Configure agents, manage turns, and handle results through the SDK.
-  </Card>
-  <Card title="Bring Your Own Agent" icon="fa-solid fa-puzzle-piece" href="../adapter-contract/custom-agents.md">
-    Expose a custom agent through an adapter or registered framework target.
+  <Card title="Use Ready-Made Integrations" icon="fa-solid fa-plug" href="../integrations/consumer/overview.mdx">
+    Find evaluation and platform workflows that already use NeMo Fabric.
   </Card>
 </CardGroup>
 
 ## What You Can Do
 
-### Build an Application That Can Change Harnesses
+### Support Several Harnesses in Your Product
 
-Construct a complete typed `FabricConfig`, validate it, then call the Python SDK. Your result-handling code uses `RunResult` even when the selected adapter changes. Models, instructions, tools, skills, MCP, and telemetry remain subject to adapter support; tool names and model protocols are not universally portable.
+If your application team is building a code-review service or another agent-powered product, NeMo Fabric lets you connect supported harnesses through one application interface. Adapters handle each harness's initialization and execution, while your product reuses its request and result handling. Choose the capabilities supported by each harness rather than writing a separate execution integration for every one.
 
-Follow [Switch Harnesses and Compare Results](../getting-started/switch-harnesses.mdx) to make the variation explicit.
+Start with [Switch Harnesses](../getting-started/switch-harnesses.mdx), then explore the [Python SDK](../sdk/python.mdx).
 
-### Keep State Across Related Turns
+### Choose a Harness Through Evaluation
 
-Start one runtime and reuse it for ordered requests. The adapter retains its harness-native conversation state. Use independent runtimes for parallel tasks; the application chooses concurrency limits and recovery policy. Runtime IDs are correlation identities, not portable cold-resume tokens.
+If your evaluation team needs to choose a harness or compare agent configurations, use NeMo Fabric to change the execution target while keeping your benchmark tasks and scoring fixed. Harbor supplies the tasks and verification; NeMo Fabric runs the selected harness and returns results and available execution evidence for comparison.
+
+Start with the [Harbor integration](../integrations/consumer/harbor.mdx).
+
+### Build Interactive Agent Experiences
+
+If your product team wants users to ask follow-up questions or refine a code review, NeMo Fabric can keep a harness runtime open across related requests. The harness retains its conversation state between turns. For independent tasks, your application can start separate runtimes and choose how many run in parallel.
 
 Refer to [Multi-Turn Runtimes and Parallel Work](../sdk/runtimes.mdx).
 
-### Evaluate Agents Against the Same Task
+### Investigate Failures and Differences Between Runs
 
-Harbor owns task materialization, environments, verification, rewards, and retries. NeMo Fabric configures and invokes the selected agent. Hold the task and verifier fixed, vary the harness or configuration, and inspect both task outcomes and execution evidence. NeMo Fabric itself does not grade agent quality.
+If your platform or evaluation team needs to understand why a task failed or two runs behaved differently, NeMo Fabric gives you consistent result and error fields, correlation IDs, and artifact references. Supported integrations add execution telemetry, local resource measurements, and software-version observations so your team can investigate the run with evidence.
 
-Start with the [Harbor integration](../integrations/consumer/harbor.mdx). The [ecosystem](ecosystem.mdx) distinguishes available integrations from active and emerging work.
+Start with [Results, Errors, and Run Artifacts](../sdk/results.mdx), then explore [Streaming](../sdk/streaming.mdx), [Resource Usage and Stats](../sdk/system-stats.mdx), and [Software Execution Evidence](../sdk/evidence.mdx).
 
-### Observe What Happened
+### Make Your Agent Available to Other Teams
 
-Inspect normalized results, errors, artifact references, and optional usage. Enable supported Relay instrumentation for execution records and telemetry exports. Native output streaming and Relay execution-record streaming are separate APIs. Resource measurements describe their declared local scope, not remote model compute; software evidence records selected observations rather than guaranteeing reproducibility.
+If your agent team has built a custom agent or harness, a NeMo Fabric adapter lets other applications and evaluation systems run it through the same interface they use for supported harnesses. Implement the adapter contract once so each consuming team can reuse the integration. A shared framework adapter can also expose multiple registered agents when its loading contract fits.
 
-Refer to [Streaming](../sdk/streaming.mdx), [Resource Usage and Stats](../sdk/system-stats.mdx), and [Software Execution Evidence](../sdk/evidence.mdx).
-
-### Bring an Existing Agent
-
-Use a registered target behind a shared framework adapter when its loading contract fits. Otherwise, implement a dedicated adapter beside the custom agent. A Remote Agent adapter can call an independently deployed API, but cannot configure its internal tools, skills, or sandbox.
-
-Use the [custom-agent decision guide](../adapter-contract/custom-agents.md) or the [Remote Agent guide](../integrations/harness/remote-agent.mdx).
+Start with the [Adapter Contract](../adapter-contract/README.md) and the [custom-agent decision guide](../adapter-contract/custom-agents.md).
 
 ## How NeMo Fabric Works
 
