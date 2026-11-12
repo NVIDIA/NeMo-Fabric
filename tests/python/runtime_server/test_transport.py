@@ -23,6 +23,32 @@ from nemo_fabric.errors import FabricRuntimeError
 from nemo_fabric.runtime_server import protocol, transport
 
 
+@pytest.mark.parametrize(
+    "payload", [{"context": []}, {"overrides": []}, {"request_id": " "}]
+)
+async def test_invalid_invocation_payload_is_rejected_before_connection(
+    monkeypatch, socket_path, payload
+):
+    from unittest.mock import AsyncMock
+
+    connect = AsyncMock()
+    monkeypatch.setattr(asyncio, "open_unix_connection", connect)
+    response = await transport.client(
+        {
+            "interface_version": 2,
+            "operation": "invoke",
+            "agent": "researcher",
+            "runtime_id": "runtime-1",
+            "request": {"input": "hello", **payload},
+        },
+        socket_path=socket_path,
+    )
+    assert response["error"]["code"] == "invalid_request"
+    assert response["error"]["effects"] == "none"
+    assert response["changed"] is False
+    connect.assert_not_awaited()
+
+
 @pytest.fixture(name="lifecycle_files")
 def lifecycle_files_fixture(monkeypatch):
     files = {

@@ -129,6 +129,9 @@ class Fabric:
             for value in (agent_name, runtime_id, request_id)
         ):
             raise FabricConfigError("The invocation result target is invalid.")
+        environment_json = (
+            _environment_json(environment) if environment is not None else None
+        )
         native = self._require_native_module("invocation_result")
         if environment is not None and environment.provider == "openshell":
             if artifacts is not None:
@@ -136,7 +139,7 @@ class Fabric:
                     "Remote lookup uses the runtime's artifact storage."
                 )
             operation = lambda: native.invocation_result_environment(
-                _environment_json(environment), agent_name, runtime_id, request_id
+                environment_json, agent_name, runtime_id, request_id
             )
         else:
             if environment is not None and environment.provider != "local":

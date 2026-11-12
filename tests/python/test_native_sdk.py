@@ -26,6 +26,72 @@ from nemo_fabric import RunRequest
 from nemo_fabric import RuntimeStatus
 
 
+@pytest.mark.parametrize("stop_fails", [False, True])
+async def test_one_shot_lookup_matches_cleanup_result(
+    hermes_shim_agent_dir, monkeypatch, stop_fails
+):
+    monkeypatch.setenv("ADAPTER_PYTHON", sys.executable)
+    original_stop = native.stop_runtime
+
+    def stop(*args):
+        events = original_stop(*args)
+        if stop_fails:
+            raise RuntimeError("test-only stop failure after confirmed cleanup")
+        return events
+
+    monkeypatch.setattr(native, "stop_runtime", stop)
+    client = Fabric()
+    result = await client.run(
+        hermes_shim_config(), base_dir=hermes_shim_agent_dir, input="final result"
+    )
+    saved = await client.invocation_result(
+        artifacts=hermes_shim_agent_dir / "artifacts",
+        agent_name=result.agent_name,
+        runtime_id=result.runtime_id,
+        request_id=result.request_id,
+    )
+    assert result.status == ("failed" if stop_fails else "succeeded")
+    assert saved == result
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix umask permissions")
+@pytest.mark.parametrize("existing_root", [False, True])
+def test_result_storage_supports_group_writable_umask(
+    hermes_shim_agent_dir, monkeypatch, existing_root
+):
+    monkeypatch.setenv("ADAPTER_PYTHON", sys.executable)
+    artifacts = hermes_shim_agent_dir / "artifacts"
+    if existing_root:
+        artifacts.mkdir(mode=0o700)
+    script = """
+import asyncio, json, os, sys
+from nemo_fabric import Fabric, FabricConfig
+os.umask(0o002)
+async def main():
+    config = FabricConfig.from_mapping(json.loads(sys.argv[1]))
+    runtime = await Fabric().start_runtime(config, base_dir=sys.argv[2])
+    try:
+        result = await runtime.invoke(input="private result storage")
+        assert result.status == "succeeded"
+    finally:
+        await runtime.stop()
+asyncio.run(main())
+"""
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+            hermes_shim_config().model_dump_json(exclude_none=True),
+            str(hermes_shim_agent_dir),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
 async def test_native_sdk(hermes_shim_agent_dir: Path):
     assert native.version()
 

@@ -1116,6 +1116,19 @@ async def _run_native_lifecycle(
             )
             if result is not None:
                 observations["partial_result"] = result
+                if runtime.get("environment", {}).get("provider") == "local":
+                    try:
+                        native._save_run_result(
+                            plan_json, runtime_json, json.dumps(result)
+                        )
+                    except Exception as error:
+                        failure = FabricRuntimeError(
+                            "The final invocation result could not be saved.",
+                            stage="result",
+                            code="result_storage_failed",
+                        )
+                        _retain_runtime_evidence(failure, observations)
+                        raise failure from error
             if (
                 stop_error is not None
                 and _runtime_error(stop_error, stage="stop").code
