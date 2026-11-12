@@ -46,12 +46,14 @@ fn leaf(value: &str) -> bool {
 fn directory(parent: &Path, name: &str, create: bool, runtime_id: &str) -> Result<PathBuf> {
     let path = parent.join(name);
     if create {
-        let mut builder = fs::DirBuilder::new();
+        let builder = fs::DirBuilder::new();
         #[cfg(unix)]
-        {
+        let builder = {
             use std::os::unix::fs::DirBuilderExt;
+            let mut builder = builder;
             builder.mode(0o700);
-        }
+            builder
+        };
         if let Err(error) = builder.create(&path)
             && error.kind() != std::io::ErrorKind::AlreadyExists
         {
@@ -79,14 +81,16 @@ fn runtime_directory(root: &Path, runtime_id: &str, create: bool) -> Result<Path
 }
 
 fn options() -> OpenOptions {
-    let mut options = OpenOptions::new();
+    let options = OpenOptions::new();
     #[cfg(unix)]
-    {
+    let options = {
         use std::os::unix::fs::OpenOptionsExt;
+        let mut options = options;
         options
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    }
+        options
+    };
     options
 }
 
