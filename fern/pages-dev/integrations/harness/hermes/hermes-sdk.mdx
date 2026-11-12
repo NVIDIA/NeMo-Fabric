@@ -69,6 +69,11 @@ The descriptor uses closed schemas, so unknown settings are rejected.
 | `save_trajectories` | `false` | Save native JSONL trajectories; separate from normalized telemetry. |
 | `max_tokens` | Hermes native default | Response-token limit used when the selected model has no explicit `max_tokens`. A model-level limit takes precedence; if both are omitted, Hermes uses its native default. |
 | `terminal_timeout` | `60` | Positive timeout in seconds for a Hermes terminal tool operation; this does not enable a TUI. |
+| `auxiliary.title_generation.enabled` | Hermes native default; `false` with Relay | Automatic session-title generation. An explicit value wins over the Relay default. |
+| `auxiliary.background_review.enabled` | Hermes native default | Automatic background memory and skill review after turns. |
+| `tools.tool_search.enabled` | Hermes native default | Native tool search: `auto`, `on`, `off`, `true`, or `false`. Separate from the normalized top-level `tools` selectors. |
+
+The `auxiliary` and `tools` settings apply to all four paths; refer to [Native Harness Controls](./hermes.mdx#native-harness-controls).
 
 Use the [API](./hermes-api.mdx), [dashboard](./hermes-dashboard.mdx), or [terminal TUI](./hermes-tui.mdx) guide for native interface selection.
 
