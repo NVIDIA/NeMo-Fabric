@@ -6,9 +6,9 @@ description: Run agent harnesses selected by NVIDIA NeMo Fabric in Harbor evalua
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-Use `nemo_fabric.integrations.harbor:FabricAgent` when Harbor should own task
-materialization, environments, verification, rewards, and retries while NeMo Fabric
-selects and runs the agent harness.
+Use Harbor to evaluate agent harnesses on tasks with explicit verifiers and compare their outcomes. Harbor provisions the task environment and computes rewards; NVIDIA NeMo Fabric selects and runs the harness. Inspect the verifier's result and the trial artifacts to understand whether the agent completed the task.
+
+The `nemo_fabric.integrations.harbor:FabricAgent` bridge connects these workflows while Harbor owns task materialization, environments, verification, rewards, and retries.
 
 One Harbor trial consumes one complete NeMo Fabric config. Compare harnesses or
 capability variants by holding the Harbor task and verifier fixed and starting
@@ -16,10 +16,16 @@ a separate run with a different config or explicit Harbor skill/MCP input.
 The checked-in Harbor workflows qualify Hermes Agent, Claude, and the
 NVIDIA-labs Object Oriented Agents (NOOA) `BenchAgent` end to end.
 
-Refer to the repository examples for installation and runnable Harbor
-workflows:
+<CardGroup cols={2}>
+  <Card title="Run a Calculator Evaluation" icon="fa-solid fa-calculator" href="https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/harbor/calculator">
+    Follow the credential-free integration smoke test, then try a model-backed calculator task and inspect its verification result.
+  </Card>
+  <Card title="Evaluate Coding Tasks" icon="fa-solid fa-code" href="https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/harbor/swebench">
+    Run a SWE-bench workflow, compare harness configurations, and inspect task outcomes and execution evidence.
+  </Card>
+</CardGroup>
 
-[Run NeMo Fabric agents with Harbor](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/harbor)
+The [Harbor integration overview](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/harbor) explains installation and the supported host and task package combinations. The upstream built-in `FabricAgent` has separate version requirements, described in the [ecosystem version guide](../../about-nemo-fabric/ecosystem.mdx#choose-the-harbor-integration-for-your-versions).
 
 ## Model Provider
 

@@ -1,0 +1,17 @@
+---
+title: "Benchmark and Train with NeMo Gym"
+description: "Use Fabric-backed harnesses in Gym evaluation and reinforcement-learning workflows."
+slug: "/integrations/consumer-integrations/gym"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use NVIDIA NeMo Gym when your team needs scored agent tasks for benchmarking, repeated evaluations, or reinforcement-learning rollouts. Gym owns environments, task verification, concurrency, and training integration. Its NeMo Fabric agent runs the selected harness through the shared execution interface.
+
+## Choose a Fabric-Backed Task
+
+1. Follow [Gym setup](https://docs.nvidia.com/nemo/gym/main/get-started) and the upstream [NeMo Fabric agent guide](https://github.com/NVIDIA-NeMo/Gym/blob/main/responses_api_agents/nemo_fabric_agent/README.md). Use Gym's supported runtime and adapter dependencies.
+2. Choose the maintained [SWE-bench configuration](https://github.com/NVIDIA-NeMo/Gym/blob/main/responses_api_agents/anyswe_agent/configs/anyswe_nemo_fabric.yaml) for software-engineering tasks or the [Terminal-Bench configuration](https://github.com/NVIDIA-NeMo/Gym/blob/main/responses_api_agents/anyterminal_agent/configs/anyterminal_nemo_fabric.yaml) for terminal tasks.
+3. Run the task through Gym's documented benchmark workflow and inspect its verifier results. For harness comparisons, keep the task, scoring, and environment fixed while changing the supported agent configuration.
+
+For training, use Gym's [environment and rollout workflows](https://github.com/NVIDIA-NeMo/Gym) with your training stack. NeMo Fabric provides harness execution; Gym and the training system own rewards and model updates. The upstream Fabric agent guide also describes limitations of optional Relay trajectory capture.

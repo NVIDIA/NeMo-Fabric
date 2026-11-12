@@ -10,49 +10,47 @@ NVIDIA NeMo Fabric helps teams run and compare supported agent harnesses without
 
 {/* Card href values use relative published routes; Fern does not resolve source filenames in these props as it does in Markdown links. */}
 <CardGroup cols={2}>
-  <Card title="Who Should Use NeMo Fabric" icon="fa-solid fa-users" href="#what-you-can-do">
+  <Card title="Who Should Use NeMo Fabric" icon="fa-solid fa-users" href="#what-you-can-do-with-fabric">
     Find out how NeMo Fabric can help your team build applications, compare harnesses, and share agents.
   </Card>
-  <Card title="Run Your First Agent" icon="fa-solid fa-rocket" href="../getting-started/quickstart">
-    Install one harness and run a useful task through the Python SDK.
+  <Card title="Start Here: Run Your First Agent" icon="fa-solid fa-rocket" href="../getting-started/quickstart/overview">
+    Review a small Python function in the starter notebook or follow the Python Quickstart.
   </Card>
   <Card title="Bring Your Own Custom Agent or Harness" icon="fa-solid fa-puzzle-piece" href="../adapter-contract/overview">
-    Build an adapter so applications and evaluation tools can run your agent.
+    Make your agent work with NeMo Fabric: implement an adapter that applications and evaluation tools can reuse.
   </Card>
   <Card title="Use Ready-Made Integrations" icon="fa-solid fa-plug" href="../integrations/consumer-integrations/overview">
-    Find evaluation and platform workflows that already use NeMo Fabric.
+    Explore agent optimization, evaluation, training, and sandbox workflows through Helix, Harbor, Gym, and NemoClaw.
   </Card>
 </CardGroup>
 
-## What You Can Do
+## What You Can Do with Fabric
 
 ### Support Several Harnesses in Your Product
 
 If your application team is building a code-review service or another agent-powered product, NeMo Fabric lets you connect supported harnesses through one application interface. Adapters handle each harness's initialization and execution, while your product reuses its request and result handling. Choose the capabilities supported by each harness rather than writing a separate execution integration for every one.
 
-Start with [Switch Harnesses](../getting-started/switch-harnesses.mdx), then explore the [Python SDK](../sdk/python.mdx).
-
 ### Choose a Harness Through Evaluation
 
 If your evaluation team needs to choose a harness or compare agent configurations, use NeMo Fabric to change the execution target while keeping your benchmark tasks and scoring fixed. Harbor supplies the tasks and verification; NeMo Fabric runs the selected harness and returns results and available execution evidence for comparison.
-
-Start with the [Harbor integration](../integrations/consumer/harbor.mdx).
 
 ### Investigate Failures and Differences Between Runs
 
 If your platform or evaluation team needs to understand why a task failed or two runs behaved differently, NeMo Fabric gives you consistent result and error fields, correlation IDs, and artifact references. Supported integrations add execution telemetry, local resource measurements, and software-version observations so your team can investigate the run with evidence.
 
-Start with [Results, Errors, and Run Artifacts](../sdk/results.mdx), then explore [Streaming](../sdk/streaming.mdx), [Resource Usage and Stats](../sdk/system-stats.mdx), and [Software Execution Evidence](../sdk/evidence.mdx).
-
 ### Make Your Agent Available to Other Teams
 
 If your agent team has built a custom agent or harness, a NeMo Fabric adapter lets other applications and evaluation systems run it through the same interface they use for supported harnesses. Implement the adapter contract once so each consuming team can reuse the integration. A shared framework adapter can also expose multiple registered agents when its loading contract fits.
 
-Start with the [Adapter Contract](../adapter-contract/README.md) and the [custom-agent decision guide](../adapter-contract/custom-agents.md).
-
 ## How NeMo Fabric Works
 
-Your application submits a task and selects a harness. NeMo Fabric validates the configuration, connects to the harness through an adapter, and returns a consistent result. Each component has a distinct responsibility in that run:
+For example, an application asks an agent to review a code change:
+
+1. **Submit the task.** Your application sends the review request with its selected harness, model, and workspace settings.
+2. **Run the agent.** NeMo Fabric validates the settings and starts the harness through its adapter. The harness performs the review using its own agent logic and tools.
+3. **Return the outcome.** The adapter maps the outcome into a common result. NeMo Fabric returns the review output or failure details, plus available artifact and telemetry references. For a single-request run, it also attempts runtime cleanup before returning.
+
+The components divide responsibility as follows:
 
 | Component | Role in a Run |
 | --- | --- |

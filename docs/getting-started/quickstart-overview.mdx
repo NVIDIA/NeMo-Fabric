@@ -1,14 +1,61 @@
 ---
-title: "Quickstart"
-description: "Run an agent, switch harnesses, and extend its capabilities in three connected guides."
+title: "Start Here: Run Your First Agent"
+description: "Review a small Python function in the starter notebook or the three-part Python Quickstart."
 slug: "/getting-started/quickstart/overview"
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-Learn NVIDIA NeMo Fabric by running a small agent task, changing the harness that executes it, and adding skills and tools. Follow these three connected quickstarts in order: each builds on the application and configuration created in the first guide.
+Run your first code review with NVIDIA NeMo Fabric. Give an agent a small Python function, inspect the bug it finds, and read the result returned through NeMo Fabric. Choose the starter notebook for an interactive walkthrough or the Python Quickstart for a script you can extend.
 
-1. [Install One Harness](quickstart.mdx). Install NeMo Fabric with LangChain Deep Agents, provide model access, and run a workspace task. Keep the resulting `first_agent.py` for the next two guides.
+{/* Card href values use published routes or external notebook URLs. */}
+<CardGroup cols={2}>
+  <Card title="Open the Starter Notebook" icon="fa-solid fa-book-open" href="https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/01_quickstart.ipynb">
+    Follow the existing code-review example in Jupyter, with configuration, execution, and results explained cell by cell.
+  </Card>
+  <Card title="Follow the Python Quickstart" icon="fa-brands fa-python" href="../quickstart">
+    Install one harness and run the same review task from a Python script. Then switch harnesses and add capabilities.
+  </Card>
+</CardGroup>
+
+## Use the Starter Notebook
+
+<Steps>
+<Step title="Prepare Your Checkout">
+
+The starter notebook uses Hermes Agent from a NeMo Fabric source checkout. Complete [Development Setup](../contributing/setup.mdx) and the supported [Hermes Agent installation](install-hermes.mdx), then provide an [NVIDIA API key](https://build.nvidia.com/). The [notebook setup guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/README.md#prerequisites) explains the notebook's environment and credential prompts.
+
+</Step>
+<Step title="Open the Notebook in Jupyter">
+
+From the prepared repository root, run:
+
+```bash
+just notebooks
+```
+
+Open `01_quickstart.ipynb` and run its cells in order. The notebook constructs the reviewer and supplies this function directly in the request; it does not need to read project files:
+
+```python
+def average(values):
+    return sum(values) / len(values)
+```
+
+</Step>
+<Step title="Recognize a Successful Review">
+
+With the notebook's prerequisites available, the run should return status `succeeded`. The review should identify that an empty input list causes division by zero. Wording and suggested fixes can vary; check both the status and the finding. A skipped live cell means a prerequisite is missing, not that a review completed.
+
+The remaining cells demonstrate runtime reuse and optional diagnostics. Notebook [02_variations.ipynb](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/02_variations.ipynb) explores harness and configuration changes after the first run.
+
+</Step>
+</Steps>
+
+## Follow the Python Quickstart
+
+These three connected guides use the same code-review task. Follow them in order; the later guides reuse the configuration from the first:
+
+1. [Install One Harness](quickstart.mdx). Install NeMo Fabric with LangChain Deep Agents, provide model access, and review the function. Keep the resulting `first_agent.py` for the next two guides.
 2. [Switch Harnesses](switch-harnesses.mdx). Reuse that configuration to run Deep Agents and Hermes Agent variants, then compare results through the same application interface.
 3. [Add Skills and MCP](skills-and-mcp.mdx). Return to the original Deep Agents configuration and add a local skill and an MCP server connection.
 

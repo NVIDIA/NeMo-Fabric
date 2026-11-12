@@ -64,9 +64,18 @@ navigation:
     path: ./integrations/consumer/overview.mdx
     collapsed: open-by-default
     contents:
+    - page: NeMo Helix
+      path: ./integrations/consumer/helix.mdx
+      icon: fa-solid fa-sliders
     - page: Harbor
       path: ./integrations/consumer/harbor.mdx
       icon: fa-solid fa-ship
+    - page: NeMo Gym
+      path: ./integrations/consumer/gym.mdx
+      icon: fa-solid fa-dumbbell
+    - page: NemoClaw
+      path: ./integrations/consumer/nemoclaw.mdx
+      icon: fa-solid fa-shield-halved
   - section: Harness Integrations
     path: ./integrations/harness/overview.mdx
     collapsed: open-by-default

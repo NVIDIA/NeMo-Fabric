@@ -25,7 +25,7 @@ import asyncio
 import os
 import sys
 
-from first_agent import config
+from first_agent import REVIEW_INPUT, config
 from nemo_fabric import Fabric, HarnessConfig
 
 async def main():
@@ -39,7 +39,7 @@ async def main():
         os.environ["ADAPTER_PYTHON"] = interpreter
         try:
             result = await Fabric().run(
-                variant, input="Explain how you would review a small Python project. Do not use tools."
+                variant, input=REVIEW_INPUT
             )
             print(name, result.status, result.output, result.error)
         finally:

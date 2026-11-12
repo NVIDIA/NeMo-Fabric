@@ -8,9 +8,16 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 */}
 
-The adapter contract defines the metadata, configuration, lifecycle operations, and result formats that connect a harness or custom agent to NVIDIA NeMo Fabric. Use it when building a new integration so existing NeMo Fabric applications can discover and run your agent through the shared execution interface.
+**Make your agent work with NVIDIA NeMo Fabric.** An adapter connects your custom agent or harness to applications and evaluation systems that already use NeMo Fabric. Your agent keeps its own execution logic; the adapter translates NeMo Fabric requests into calls your agent understands and translates its outcomes back into a shared result format.
 
-Start by choosing an integration shape below, then follow the six numbered tutorials in order to describe, implement, register, and verify your adapter. If your harness already has a supported adapter, use its [harness integration guide](../integrations/harness/overview.mdx). If you are building an application that calls agents, start with the [Python SDK](../sdk/python.mdx).
+You provide a descriptor that identifies the integration and declares its supported settings, plus `start`, `invoke`, and `stop` operations that manage execution and return normalized outcomes. The contract supplies the metadata and data types shared with the consumer.
+
+{/* Card href values use relative published routes. */}
+<Card title="Build Your First Adapter" icon="fa-solid fa-puzzle-piece" href="tutorials/describe-adapter">
+  Follow six numbered tutorials to describe your target, map configuration, implement execution, normalize results, package the adapter, and verify its behavior.
+</Card>
+
+Choose an integration shape below before implementing the lifecycle. If your harness already has a supported adapter, its [harness integration guide](../integrations/harness/overview.mdx) explains how to use it. Applications that call existing agents use the [Python SDK](../sdk/python.mdx).
 
 ## How Adapters Fit
 
@@ -133,3 +140,9 @@ The current contract version is `fabric.adapter/v1alpha2`. The same
 `contract_version` covers Adapter Descriptors, Adapter Target Descriptors,
 `AgentConfig`, `RuntimeContext`, and the negotiated lifecycle binding. Adapter
 package versions are independent implementation-release versions.
+
+## Maintain Your Adapter
+
+Record the NeMo Fabric, contract, harness, and adapter versions that you test together. When upgrading the harness, update configuration translation and declared capabilities to match what the adapter actually implements. Rerun the [conformance checks](tutorials/conformance.md), including failure handling and cleanup, before publishing the new adapter version.
+
+Keep the descriptor and [package discovery records](tutorials/registration-and-discovery.md) with the adapter package so consuming applications can find the version they installed. The public [adapter-authoring skill](https://github.com/NVIDIA/NeMo-Fabric/blob/main/skills/nemo-fabric-build-adapter/SKILL.md) also covers migration and review against the published contract.

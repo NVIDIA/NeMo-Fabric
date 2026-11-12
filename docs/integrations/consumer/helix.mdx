@@ -1,0 +1,29 @@
+---
+title: "Optimize Agents with NeMo Helix"
+description: "Use Helix to evaluate and optimize agents backed by NeMo Fabric harnesses."
+slug: "/integrations/consumer-integrations/helix"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use NVIDIA NeMo Helix when your team wants to improve an agent's quality, cost, or latency through managed evaluation and optimization workflows. Helix connects agent definitions, model infrastructure, evaluation data, and experiments; NeMo Fabric supplies supported agent-harness execution.
+
+## Run an Optimization Workflow
+
+<Steps>
+<Step title="Connect Your Agent to Helix">
+
+Follow [Helix setup](https://docs.nvidia.com/nemo-helix/documentation/get-started/setup), then [register an agent](https://docs.nvidia.com/nemo-helix/documentation/agents/register-agents). Use the platform's documented Fabric support and package versions; the [Fabric upgrade guide](https://docs.nvidia.com/nemo-helix/documentation/agents/fabric-upgrade) explains its adapter requirements.
+
+</Step>
+<Step title="Evaluate a Baseline">
+
+Choose evaluation data and metrics that represent your team's task. The [Fabric harness evaluation guide](https://docs.nvidia.com/nemo-helix/documentation/evaluate-models/agent-eval/fabric-runner/) shows the supported runner workflow.
+
+</Step>
+<Step title="Optimize and Compare Candidates">
+
+Follow [Optimize Agents](https://docs.nvidia.com/nemo-helix/documentation/agents/optimize-agents) to use Helix's optimization workflows and compare candidates against the baseline. The useful outcome is a measured candidate comparison on your evaluation criteria, not simply a successful harness invocation.
+
+</Step>
+</Steps>

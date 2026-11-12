@@ -1,12 +1,12 @@
 ---
 title: "1. Install One Harness"
-description: "Install a supported harness, run your first agent, and inspect its result."
+description: "Install a supported harness, run a code review, and check the expected finding."
 slug: "/getting-started/quickstart"
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-Run a small workspace inspection task through NVIDIA NeMo Fabric. This package-based path uses LangChain Deep Agents and an NVIDIA-hosted model. It requires Python 3.11 or later and an NVIDIA API key; the [Installation Overview](install.mdx#requirements-and-supported-platforms) describes supported platforms.
+Ask an agent to review a small Python function through NVIDIA NeMo Fabric. This package-based path uses LangChain Deep Agents and an NVIDIA-hosted model. It requires Python 3.11 or later and an NVIDIA API key; the [Installation Overview](install.mdx#requirements-and-supported-platforms) describes supported platforms.
 
 This is the first of [three connected quickstarts](quickstart-overview.mdx). Keep `first_agent.py` and its configuration for the next two guides.
 
@@ -46,9 +46,9 @@ In PowerShell, use `$env:NVIDIA_API_KEY = '<your-key>'`. Keep the key out of the
 
 </Step>
 
-<Step title="Run a Workspace Task" id="run-a-workspace-task">
+<Step title="Run a Code Review" id="run-a-code-review">
 
-Save this complete example as `first_agent.py` in a workspace you want to inspect. The agent uses the selected harness's tools and permissions; use a directory appropriate for the task.
+Save this complete example as `first_agent.py` in your application directory. The request supplies the function inline and asks for a review without tool use or file changes.
 
 ```python
 import asyncio
@@ -59,7 +59,7 @@ from nemo_fabric import (
 )
 
 config = FabricConfig(
-    metadata=MetadataConfig(name="workspace-review"),
+    metadata=MetadataConfig(name="code-review"),
     harness=HarnessConfig(adapter_id="nvidia.fabric.langchain.deepagents"),
     models={
         "default": ModelConfig(
@@ -72,13 +72,20 @@ config = FabricConfig(
     environment=EnvironmentConfig(provider="local", workspace="."),
 )
 
+REVIEW_INPUT = (
+    "Review this Python function for correctness issues. Explain any bug you find. "
+    "Do not use tools or change files.\n\n"
+    "def average(values):\n"
+    "    return sum(values) / len(values)\n"
+)
+
 async def main():
     fabric = Fabric()
     result = await fabric.run(
         config,
         request=RunRequest(
-            input="List the top-level workspace files and explain what this project appears to contain. Do not modify files.",
-            request_id="first-workspace-review",
+            input=REVIEW_INPUT,
+            request_id="first-code-review",
         ),
     )
     print("Adapter:", result.adapter_id)
@@ -94,7 +101,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Run it from the workspace:
+Run it from the application directory:
 
 ```bash
 python first_agent.py
@@ -104,7 +111,7 @@ python first_agent.py
 
 <Step title="Check the Outcome" id="check-the-outcome">
 
-The returned adapter ID should be `nvidia.fabric.langchain.deepagents`. A successful request has status `succeeded`, request ID `first-workspace-review`, and a response describing the workspace. The prose varies between runs; the status and correlation fields show whether the task completed. With `environment.workspace` set, Deep Agents uses a filesystem backend rooted in that directory; its tool paths use a virtual root. A request to avoid edits is an instruction, not a security boundary.
+The returned adapter ID should be `nvidia.fabric.langchain.deepagents`. A successful request has status `succeeded` and request ID `first-code-review`. The review should identify that `average([])` causes division by zero. The prose and suggested fix can vary; check the status and the finding separately. The request to avoid tools and file changes is an instruction to the agent, not a security boundary.
 
 `Fabric.run()` starts the runtime, invokes it once, and attempts shutdown. It can return a failed normalized result; configuration and lifecycle failures can instead raise SDK exceptions. Follow [Troubleshooting](../troubleshooting.mdx) if the run does not succeed.
 
@@ -114,6 +121,6 @@ The returned adapter ID should be `nvidia.fabric.langchain.deepagents`. A succes
 
 ## Next Steps
 
-Change only the input to ask for a concise onboarding summary. The same configuration and result-handling code still apply. Then continue to [2. Switch Harnesses](switch-harnesses.mdx) to change the execution target while retaining your application interface.
+Change only the input to ask for a test that covers the empty-list case. The same configuration and result-handling code still apply. Then continue to [2. Switch Harnesses](switch-harnesses.mdx) to run the review through another harness while retaining your application interface.
 
 For further exploration, see [Multi-Turn Runtimes](../sdk/runtimes.mdx) to preserve state between related turns, or the maintained [onboarding notebooks](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/notebooks) for an interactive tour.

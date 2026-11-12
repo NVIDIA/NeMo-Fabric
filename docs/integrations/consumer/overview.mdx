@@ -1,26 +1,32 @@
 ---
 slug: "/integrations/consumer-integrations/overview"
 title: "Consumer Integrations"
-description: "Connect applications, evaluation systems, and platforms to NVIDIA NeMo Fabric."
+description: "Choose an existing workflow for agent optimization, evaluation, training, or sandboxed execution."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-NVIDIA NeMo Fabric consumer integrations are northbound: they connect
-applications, services, evaluation systems, and platforms to NeMo Fabric
-through its public interfaces.
+Use an existing platform or evaluation framework to put NVIDIA NeMo Fabric to work. Choose the outcome your team needs, then follow the product-specific guide. The platform owns its workflow; NeMo Fabric provides supported harness execution where that integration is available.
 
-## NVIDIA Ecosystem
+{/* Card href values use relative published routes. */}
+<CardGroup cols={2}>
+  <Card title="NeMo Helix: Optimize Agents" icon="fa-solid fa-sliders" href="helix">
+    Register an agent, evaluate candidates, and use platform-managed optimization to improve quality, cost, or latency.
+  </Card>
+  <Card title="Harbor: Evaluate Harnesses" icon="fa-solid fa-ship" href="harbor">
+    Run agent harnesses against benchmark tasks and inspect verifier scores and execution artifacts.
+  </Card>
+  <Card title="NeMo Gym: Benchmark and Train" icon="fa-solid fa-dumbbell" href="gym">
+    Run Fabric-backed coding benchmarks and connect agent rollouts to evaluation and reinforcement-learning workflows.
+  </Card>
+  <Card title="NemoClaw: Run Agents in OpenShell" icon="fa-solid fa-shield-halved" href="nemoclaw">
+    Follow supported-agent onboarding for sandboxed execution, inference setup, and network policy.
+  </Card>
+</CardGroup>
 
-NVIDIA products use the same consumer boundary to build, deploy, evaluate, and
-improve agents. Refer to the [NVIDIA NeMo Fabric ecosystem](../../about-nemo-fabric/ecosystem.mdx) for current and emerging integrations.
+Helix, Harbor, and Gym provide documented Fabric workflows. NemoClaw provides supported-agent sandbox workflows; Fabric-specific release compatibility is a separate consideration described in its guide. Each product owns its setup and supported package versions.
 
-## Harbor
-
-Harbor is a consumer integration because it uses NeMo Fabric to select and run
-an agent harness while Harbor owns task materialization, environments,
-verification, rewards, and retries. Refer to the
-[Harbor integration guide](./harbor.mdx) for the supported workflow.
+The [ecosystem overview](../../about-nemo-fabric/ecosystem.mdx) explains how these products divide responsibilities and distinguishes available workflows from emerging integrations.
 
 ## Build a Consumer Integration
 

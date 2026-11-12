@@ -68,7 +68,7 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 
 ## Documentation
 
-- [Quickstart](docs/getting-started/quickstart.mdx): Run a first agent through the Python SDK.
+- [Run your first agent](docs/getting-started/quickstart-overview.mdx): Review code with the starter notebook or the Python Quickstart.
 - [Invocation system stats](docs/sdk/system-stats.mdx#configure-and-run): Select per-invocation metric groups, sampled peaks, and cgroup conditions; disable collection independently of sampling.
 - [Selected software evidence](docs/sdk/evidence.mdx#selected-software-evidence): Inspect versions in optional `RunResult.execution` and control collection before initialization.
 - [Conversation telemetry](docs/sdk/configure.mdx#custom-fields-and-adapter-settings): Use `RunRequest.relay_session_root` to group Deep Agents and mini-SWE-agent turns under one NeMo Relay session.

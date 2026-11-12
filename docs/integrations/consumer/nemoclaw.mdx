@@ -1,0 +1,29 @@
+---
+title: "Run Agents in OpenShell with NemoClaw"
+description: "Find supported NemoClaw sandbox workflows and understand the separate Fabric integration boundary."
+slug: "/integrations/consumer-integrations/nemoclaw"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use NVIDIA NemoClaw when your team wants guided onboarding and lifecycle management for supported agents inside OpenShell sandboxes. NemoClaw provides agent setup, managed inference, and policy configuration; OpenShell supplies the sandbox isolation and enforcement.
+
+## Run a Supported Agent
+
+Follow the upstream quickstart for your selected agent:
+
+- [OpenClaw quickstart](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/get-started/quickstart)
+- [Hermes Agent quickstart](https://docs.nvidia.com/nemoclaw/latest/user-guide/hermes/get-started/quickstart)
+- [Deep Agents Code quickstart](https://docs.nvidia.com/nemoclaw/latest/user-guide/deepagents/get-started/quickstart)
+
+Choose an inference provider, configure the sandbox's network policy, and run the agent using that guide. Check the resulting sandbox and inference status through NemoClaw's documented commands.
+
+## Where NeMo Fabric Fits
+
+NeMo Fabric applications can run agents in OpenShell through the [environment-provider workflow](../../sdk/environments.mdx). That API path and NemoClaw's managed-agent workflows have separate setup and release requirements.
+
+<Note>
+The Fabric-specific NemoClaw integration is still undergoing release-compatibility validation. The linked NemoClaw quickstarts document its supported agent workflows; a shared harness or sandbox does not establish compatibility with every NeMo Fabric version.
+</Note>
+
+The [NemoClaw architecture guide](https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/about/how-it-works) explains the CLI, agent integration, sandbox lifecycle, and protection layers.
