@@ -141,8 +141,8 @@ from nemo_fabric import ToolsConfig
 def with_tool_policy(base):
     tool_config = base.model_copy(deep=True)
     tool_config.tools = ToolsConfig(
-        enabled=["Read", "Edit", "Bash"],
-        blocked=["WebFetch"],
+        enabled=["file", "terminal"],
+        blocked=["web"],
     )
     return tool_config
 ```

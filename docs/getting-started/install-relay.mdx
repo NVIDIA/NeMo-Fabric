@@ -6,7 +6,7 @@ description: "Install the Relay integration and collector required by the chosen
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-Install [NVIDIA NeMo Relay](https://docs.nvidia.com/nemo/relay), which instruments agent execution and routes telemetry to configured destinations, for a Relay-enabled NeMo Fabric harness. This guide helps you choose the Relay Python package or CLI and compatible version for your adapter. For live streaming, also install the [NeMo Fabric streaming collector](install-fabric-runtime.mdx) when your application uses the embedded collector.
+Install [NVIDIA NeMo Relay](https://docs.nvidia.com/nemo/relay), which instruments agent execution and routes telemetry to configured destinations, for a Relay-enabled NVIDIA NeMo Fabric harness. This guide helps you choose the Relay Python package or CLI and compatible version for your adapter. For live streaming, also install the [NeMo Fabric streaming collector](install-fabric-runtime.mdx) when your application uses the embedded collector.
 
 ### Install NeMo Relay
 
@@ -20,7 +20,7 @@ The required integration depends on the agent harness. Relay-enabled runs with
 the Claude, Codex, and Pi adapters require the
 [`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli).
 
-NeMo Fabric 0.6 uses these Relay versions:
+This development guide describes the Relay dependency ranges declared by the adapters in the NeMo Fabric 0.7.0 source. Unversioned installation commands select published packages, which can be an earlier release; use that release's documentation for its supported Relay versions.
 
 | Integration | Relay version | Installation |
 | --- | --- | --- |

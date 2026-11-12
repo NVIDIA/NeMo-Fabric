@@ -38,7 +38,7 @@ Relay subfields:
 | `models.<role>.api_key_env` | Yes | Yes | Yes | Yes | Yes |
 | `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes |
 | `models.<role>.temperature` | No | No | Yes | Yes | Yes |
-| `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | No keys declared |
+| `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared | `cost_tracking` |
 | `models.<role>.top_p`, `.max_tokens` | No | No | Yes | Yes | Yes; passed through LiteLLM |
 | `instructions.system` | `replace`, `append` | `replace`; maps to Codex base instructions | `replace` | `replace` | `replace` |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core |
@@ -59,6 +59,8 @@ Relay subfields:
 | `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes | Yes |
 | `relay.components`, `.policy` | Yes | Yes | Yes | Yes | Yes |
 | Other additive `extensions` on typed config objects | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor | Rejected unless declared by the descriptor |
+
+For an unpriced model with mini-SWE-agent, set `models.<role>.settings.cost_tracking` to `disabled` and set a positive `runtime.max_turns`. Refer to the [mini-SWE-agent guide](../integrations/harness/mini-swe-agent.mdx) for a complete configuration.
 
 Model selection is deterministic: the `default` role wins; otherwise a single
 named role is selected. More than one role without `default` fails planning.

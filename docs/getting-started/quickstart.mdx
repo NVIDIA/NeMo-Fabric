@@ -14,7 +14,7 @@ This is the first of [three connected quickstarts](quickstart-overview.mdx). Kee
 
 <Step title="Install One Harness" id="install-one-harness">
 
-Create an isolated application environment, then install NeMo Fabric and its supported Deep Agents adapter and dependencies:
+Create an isolated application environment, then install NeMo Fabric and its supported Deep Agents adapter and dependencies. On Linux or macOS, run:
 
 ```bash
 python3 -m venv .venv
@@ -22,7 +22,15 @@ source .venv/bin/activate
 python -m pip install 'nemo-fabric[deepagents]'
 ```
 
-On Windows, activate with `.venv\Scripts\Activate.ps1` in PowerShell. This example does not require the separate CLI or NeMo Relay.
+On Windows, run the complete sequence in PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install 'nemo-fabric[deepagents]'
+```
+
+This example does not require the separate CLI or NeMo Relay.
 
 </Step>
 

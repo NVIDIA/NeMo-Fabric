@@ -61,7 +61,7 @@ an attachment only removes NeMo Fabric-owned clients and temporary state.
 ```python
 import asyncio
 
-from nemo_fabric import Fabric, ServiceReference
+from nemo_fabric import Fabric, FabricConfig, HarnessConfig, MetadataConfig, ServiceReference
 
 async def main():
     attached_config = FabricConfig(

@@ -20,6 +20,7 @@ cd NeMo-Fabric
 **Prerequisites:**
 - Rust and Cargo
 - Python 3.11 through 3.14
+- Node.js 20.18.3 or later with npm
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - `just` 1.50.0+
 
@@ -31,7 +32,7 @@ source .venv/bin/activate
 just install-hermes-agent
 ```
 
-2. Build the Rust core and Python libraries.
+2. Build the Rust core, Python libraries, and TypeScript packages.
 
 ```bash
 just build-all

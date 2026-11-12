@@ -10,7 +10,8 @@ Validate the behavior changed in your NVIDIA NeMo Fabric contribution. The [repo
 
 | Change | Validation |
 | --- | --- |
-| Rust core, CLI, or shared execution behavior | `just test-rust`; also Python checks when the behavior crosses that binding |
+| Rust core, public adapter-contract schemas, or shared execution behavior | `just test-rust`, `just test-python`, and `just test-typescript` because both language bindings depend on the shared contracts |
+| CLI-only behavior | `just test-rust` and focused CLI checks |
 | Python SDK or adapter | `just test-python` and focused tests for the affected component |
 | TypeScript contract or adapter | `just test-typescript` and relevant adapter checks |
 | Documentation site | `just docs` for reference generation, Fern validation, and strict broken-link checks |

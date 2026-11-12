@@ -66,7 +66,7 @@ Use the [custom-agent decision guide](../adapter-contract/custom-agents.md) or t
 3. NeMo Fabric starts a runtime through the selected adapter and environment.
 4. The adapter invokes the harness or custom agent and retains native state for later ordered turns.
 5. NeMo Fabric returns a normalized `RunResult` with output, failure details, correlation IDs, and available evidence.
-6. The application stops the runtime and releases any separately prepared environment or shared service.
+6. For `Fabric.run()`, NeMo Fabric attempts to stop the runtime before returning. For a retained `Fabric.start_runtime()` runtime, the application stops it explicitly or uses its async context manager. The application also releases any separately prepared environment or shared service.
 
 ### Know Who Owns Each Responsibility
 

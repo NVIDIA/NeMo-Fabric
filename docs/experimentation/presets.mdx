@@ -20,7 +20,7 @@ experiments:
 | `deepagents` | LangChain Deep Agents | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` | NVIDIA API Catalog |
 
 The `scripted` preset does not call a model. It returns a deterministic response
-through the same NeMo Fabric runtime and adapter contract, which makes it useful for
+through the same NVIDIA NeMo Fabric runtime and adapter contract, which makes it useful for
 checking CLI installation, request flow, and result formatting without network
 access or credentials.
 
@@ -84,7 +84,7 @@ Override the preset's default model and temperature for a quick experiment:
 
 ```bash
 nemo-fabric run --preset hermes \
-  --model nvidia/meta/llama-3.3-70b-instruct \
+  --model meta/llama-3.3-70b-instruct \
   --temperature 0.2 \
   --input "Say hello"
 ```
