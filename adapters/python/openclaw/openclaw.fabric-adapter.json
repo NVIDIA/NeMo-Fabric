@@ -97,7 +97,7 @@
               "port"
             ],
             "additionalProperties": false,
-            "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to interfaces/dashboard.token in <artifact root>/.fabric/openclaw/runtimes/<runtime-id>, or in the agent's state folder with runtime.keep_state."
+            "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token."
           },
           "terminal": {
             "type": "object",
@@ -208,7 +208,6 @@
       "models.top_p",
       "models.max_tokens",
       "instructions.system",
-      "runtime.keep_state",
       "tools.enabled",
       "tools.blocked",
       "mcp",
