@@ -280,6 +280,7 @@ async def test_health_workers_recover_while_provider_descendants_hold_pipes(
         await owned.stop()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix socket transport")
 async def test_result_is_saved_and_retrievable_after_caller_timeout(
     blocking_adapter_config, tmp_path, socket_path
 ):
