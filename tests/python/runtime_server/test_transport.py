@@ -691,3 +691,35 @@ async def test_default_client_accepts_envelope_over_raw_response_budget(
             5,
         )
     assert received == response
+
+
+async def test_uncertain_response_preserves_generated_request_identity(
+    host_request, monkeypatch
+):
+    from unittest.mock import AsyncMock
+
+    reader = MagicMock(spec=asyncio.StreamReader)
+    reader.readline = AsyncMock(
+        return_value=protocol.encode_response(
+            protocol.envelope(
+                "invoke",
+                error=protocol.ProtocolError("response_too_large", "transport"),
+                changed=None,
+                effects="unknown",
+            )
+        )
+    )
+    writer = MagicMock(spec=asyncio.StreamWriter)
+    writer.drain = AsyncMock()
+    writer.wait_closed = AsyncMock()
+    monkeypatch.setattr(
+        asyncio, "open_unix_connection", AsyncMock(return_value=(reader, writer))
+    )
+    response = await transport.client(host_request("invoke", input={"prompt": "hello"}))
+    sent = json.loads(writer.write.call_args.args[0])
+    assert response["error"]["code"] == "response_too_large"
+    assert response["error"]["effects"] == "unknown"
+    assert response["result"] == {
+        "runtime_id": sent["runtime_id"],
+        "request_id": sent["request"]["request_id"],
+    }

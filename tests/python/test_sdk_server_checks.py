@@ -438,3 +438,95 @@ async def test_runtime_status_native_transport_rejects_duplicate_fields(
         await Fabric().runtime_status(
             environment=server_environment, runtime_id="runtime-1", agent_name="demo"
         )
+
+
+async def test_remote_result_lookup_during_and_after_invocation(
+    blocking_adapter_config, server_environment, server_sdk_bridge, tmp_path
+):
+    from nemo_fabric import RunRequest
+
+    host, log = server_sdk_bridge
+    config = blocking_adapter_config.model_copy(deep=True)
+    config.environment.workspace = str(tmp_path)
+    config.runtime.artifacts = str(tmp_path / "artifacts")
+    config.discovery.local_paths = [str(tmp_path / "blocking.fabric-adapter.json")]
+    command = {"interface_version": 2, "agent": "blocking"}
+    started = await host.handle(
+        {**command, "operation": "start", "config": config.to_mapping()}
+    )
+    assert started["status"] == "succeeded", started
+    runtime_id = started["result"]["runtime_id"]
+    request = RunRequest(input="slow", request_id="recover-remote")
+    turn = asyncio.create_task(
+        host.handle(
+            {
+                **command,
+                "operation": "invoke",
+                "runtime_id": runtime_id,
+                "request": request.to_mapping(),
+            }
+        )
+    )
+    try:
+        async with asyncio.timeout(5):
+            while not (tmp_path / "entered").exists():
+                await asyncio.sleep(0.01)
+        client = Fabric()
+        assert (
+            await client.invocation_result(
+                environment=server_environment,
+                agent_name="blocking",
+                runtime_id=runtime_id,
+                request_id=request.request_id,
+            )
+            is None
+        )
+        (tmp_path / "release").touch()
+        completed = await asyncio.wait_for(turn, 5)
+        result = await client.invocation_result(
+            environment=server_environment,
+            agent_name="blocking",
+            runtime_id=runtime_id,
+            request_id=request.request_id,
+        )
+        assert result.to_mapping() == completed["result"]
+        commands = [json.loads(line) for line in log.read_text().splitlines()]
+        assert (
+            commands
+            == [
+                {
+                    "operation": "result",
+                    "agent": "blocking",
+                    "runtime_id": runtime_id,
+                    "request_id": request.request_id,
+                }
+            ]
+            * 2
+        )
+    finally:
+        (tmp_path / "release").touch()
+        await turn
+        await host.shutdown()
+
+
+async def test_remote_result_errors_do_not_expose_provider_details(
+    server_environment, monkeypatch
+):
+    from nemo_fabric import FabricRuntimeError
+
+    native = MagicMock()
+    native.invocation_result_environment.side_effect = RuntimeError(
+        "TEST_ONLY_PRIVATE provider token"
+    )
+    monkeypatch.setattr("nemo_fabric.client._native", native)
+    with pytest.raises(FabricRuntimeError) as caught:
+        await Fabric().invocation_result(
+            environment=server_environment,
+            agent_name="researcher",
+            runtime_id="runtime-1",
+            request_id="request-1",
+        )
+    assert caught.value.code == "result_unavailable"
+    assert "TEST_ONLY_PRIVATE" not in str(caught.value)
+    native.invoke_runtime.assert_not_called()
+    native.stop_runtime.assert_not_called()
