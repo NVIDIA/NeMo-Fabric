@@ -8,17 +8,18 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 NVIDIA NeMo Fabric helps teams run and compare supported agent harnesses without building a separate application integration for each one. Use it to bring agents into your product, evaluate harnesses on the same tasks, or make a custom agent available to other teams.
 
+{/* Card href values use relative published routes; Fern does not resolve source filenames in these props as it does in Markdown links. */}
 <CardGroup cols={2}>
   <Card title="Who Should Use NeMo Fabric" icon="fa-solid fa-users" href="#what-you-can-do">
     Find out how NeMo Fabric can help your team build applications, compare harnesses, and share agents.
   </Card>
-  <Card title="Run Your First Agent" icon="fa-solid fa-rocket" href="../getting-started/quickstart.mdx">
+  <Card title="Run Your First Agent" icon="fa-solid fa-rocket" href="../getting-started/quickstart">
     Install one harness and run a useful task through the Python SDK.
   </Card>
-  <Card title="Bring Your Own Custom Agent or Harness" icon="fa-solid fa-puzzle-piece" href="../adapter-contract/README.md">
+  <Card title="Bring Your Own Custom Agent or Harness" icon="fa-solid fa-puzzle-piece" href="../adapter-contract/overview">
     Build an adapter so applications and evaluation tools can run your agent.
   </Card>
-  <Card title="Use Ready-Made Integrations" icon="fa-solid fa-plug" href="../integrations/consumer/overview.mdx">
+  <Card title="Use Ready-Made Integrations" icon="fa-solid fa-plug" href="../integrations/consumer-integrations/overview">
     Find evaluation and platform workflows that already use NeMo Fabric.
   </Card>
 </CardGroup>
@@ -37,12 +38,6 @@ If your evaluation team needs to choose a harness or compare agent configuration
 
 Start with the [Harbor integration](../integrations/consumer/harbor.mdx).
 
-### Build Interactive Agent Experiences
-
-If your product team wants users to ask follow-up questions or refine a code review, NeMo Fabric can keep a harness runtime open across related requests. The harness retains its conversation state between turns. For independent tasks, your application can start separate runtimes and choose how many run in parallel.
-
-Refer to [Multi-Turn Runtimes and Parallel Work](../sdk/runtimes.mdx).
-
 ### Investigate Failures and Differences Between Runs
 
 If your platform or evaluation team needs to understand why a task failed or two runs behaved differently, NeMo Fabric gives you consistent result and error fields, correlation IDs, and artifact references. Supported integrations add execution telemetry, local resource measurements, and software-version observations so your team can investigate the run with evidence.
@@ -57,32 +52,28 @@ Start with the [Adapter Contract](../adapter-contract/README.md) and the [custom
 
 ## How NeMo Fabric Works
 
-### Follow One Request
+Your application submits a task and selects a harness. NeMo Fabric validates the configuration, connects to the harness through an adapter, and returns a consistent result. Each component has a distinct responsibility in that run:
 
-1. The application constructs a typed `FabricConfig` with the selected target and supported settings.
-2. NeMo Fabric resolves descriptors and validates configuration. Optional `plan()` and `doctor()` calls expose this information before execution.
-3. NeMo Fabric starts a runtime through the selected adapter and environment.
-4. The adapter invokes the harness or custom agent and retains native state for later ordered turns.
-5. NeMo Fabric returns a normalized `RunResult` with output, failure details, correlation IDs, and available evidence.
-6. For `Fabric.run()`, NeMo Fabric attempts to stop the runtime before returning. For a retained `Fabric.start_runtime()` runtime, the application stops it explicitly or uses its async context manager. The application also releases any separately prepared environment or shared service.
-
-### Know Who Owns Each Responsibility
-
-| Component | Responsibility |
+| Component | Role in a Run |
 | --- | --- |
-| Application or evaluator | Task definition, scheduling, concurrency limits, retries, verification, and recovery |
-| NeMo Fabric | Configuration validation, adapter selection, lifecycle, correlation, and normalized outcomes |
-| Harness adapter | Translation into native models, tools, session state, invocation, and cleanup |
-| Harness or custom agent | Agent behavior and native execution semantics |
-| Environment provider | Environment-specific prepare, attach, and release operations; OpenShell supplies its sandbox isolation and policy |
-| NeMo Relay, when enabled | Instrumentation and supported execution telemetry |
-
-### Choose a Lifecycle
-
-Use `Fabric.run()` for one independent request. Use `Fabric.start_runtime()` for related turns on one live runtime. Shared services and explicitly prepared environments have separate ownership and release steps; neither creates a portable session-resume layer.
-
-The [Python SDK](../sdk/python.mdx) provides task-oriented guides. The [Adapter Contract](../adapter-contract/README.md) explains the boundary implemented by adapter authors.
+| Application or evaluator | Defines the task, chooses the harness, submits requests, and uses the results. Owns scheduling, concurrency limits, retries, evaluation, and recovery. |
+| NeMo Fabric | Validates configuration, selects the adapter, and coordinates runtime startup, invocation, and cleanup. Returns normalized results, errors, correlation IDs, and available artifact and telemetry references. |
+| Environment provider | Prepares or attaches the execution environment and handles its release according to ownership. A provider such as OpenShell supplies sandbox isolation and policy. |
+| Harness adapter | Translates supported configuration and lifecycle operations into the harness's native interfaces, then maps its output into the NeMo Fabric result format. |
+| Harness or custom agent | Performs the task using its own agent logic, tools, and execution behavior. |
+| NeMo Relay, when enabled | Instruments supported harness execution and routes telemetry to configured destinations. |
 
 ## Next Steps
 
-Start with the [Quickstart](../getting-started/quickstart.mdx), choose a [harness integration](../integrations/harness/overview.mdx), or explore the [ecosystem](ecosystem.mdx).
+Choose a guided first run or explore the SDK in a notebook:
+
+<CardGroup cols={2}>
+  <Card title="Follow the Quickstart" icon="fa-solid fa-rocket" href="../getting-started/quickstart/overview">
+    Install one supported harness and run your first agent task with the Python SDK.
+  </Card>
+  <Card title="Open the SDK Starter Notebook" icon="fa-solid fa-book-open" href="https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/01_quickstart.ipynb">
+    Work through configuration, execution, and results step by step in the source-checkout notebook.
+  </Card>
+</CardGroup>
+
+The [notebook guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/README.md) covers setup and a second notebook for comparing harnesses and varying agent capabilities.
