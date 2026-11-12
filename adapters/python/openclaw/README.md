@@ -124,7 +124,7 @@ The following settings are specific to the OpenClaw adapter:
 | `interfaces.dashboard` | None | Serve the Control UI on a managed runtime, with an exact `port`, optional `enabled`, and `public_origins`; refer to the [dashboard guide](../../../docs/integrations/harness/openclaw/openclaw-dashboard.mdx). |
 | `interfaces.terminal` | None | Attach the native terminal to the existing Gateway, without a separate port. Refer to the [terminal guide](../../../docs/integrations/harness/openclaw/openclaw-tui.mdx). |
 | `startup_timeout_seconds` | `60` | One deadline for all of start, from checking the `openclaw` command to the Gateway becoming ready; at most 75 seconds. |
-| `shutdown_timeout_seconds` | `5` | Graceful shutdown timeout. |
+| `shutdown_timeout_seconds` | `15` | Graceful Gateway shutdown timeout. Fabric allows 30 seconds for the complete adapter stop; an override must leave time for cleanup within that limit. |
 | `connect_timeout_seconds` | `10` | Local HTTP connection timeout. |
 | `read_timeout_seconds` | None | Local HTTP response timeout. When unset, the invocation timeout bounds the response. |
 

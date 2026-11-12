@@ -1622,6 +1622,48 @@ async def test_openclaw_stop_ends_the_gateway_where_group_signals_are_denied(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+async def test_openclaw_stop_allows_gateway_to_release_ownership(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.pid = 1234
+    mock_process.returncode = None
+    ownership_released = False
+    wait_for = asyncio.wait_for
+
+    # Compress the observed seven-second native cleanup and the production
+    # grace period equally; this regression must not take seconds to run.
+    async def scaled_wait_for(awaitable, timeout):
+        return await wait_for(awaitable, timeout=timeout / 100)
+
+    async def finish_shutdown():
+        nonlocal ownership_released
+        if mock_process.returncode is not None:
+            return mock_process.returncode
+        await asyncio.sleep(0.07)
+        ownership_released = True
+        mock_process.returncode = 0
+        return 0
+
+    mock_process.wait = AsyncMock(side_effect=finish_shutdown)
+    runtime._process = mock_process
+    signals = []
+
+    def signal_group(pid, signum, *, fallback_to_pid=True):
+        signals.append((pid, signum, fallback_to_pid))
+
+    monkeypatch.setattr(adapter.asyncio, "wait_for", scaled_wait_for)
+    monkeypatch.setattr(adapter.common_utils, "signal_process_group", signal_group)
+
+    await runtime.stop()
+
+    assert ownership_released, "Gateway must release ownership before escalation"
+    assert mock_process.returncode == 0
+    assert (1234, signal.SIGKILL, True) not in signals
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
 async def test_openclaw_stop_kills_a_gateway_that_ignores_sigterm_where_group_signals_are_denied(
     monkeypatch: pytest.MonkeyPatch,
 ):
