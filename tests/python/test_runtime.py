@@ -161,28 +161,43 @@ def _runtime_wrapper(
 
 @pytest.mark.parametrize("stage", ["start", "invoke", "stop"])
 @pytest.mark.parametrize(
-    ("error_type", "expected_code"),
-    [(TimeoutError, "timeout"), (RuntimeError, None)],
+    ("error_type", "native_code", "expected_code"),
+    [
+        (TimeoutError, "native_timeout", "timeout"),
+        (RuntimeError, None, None),
+        (RuntimeError, "adapter_failed", "adapter_failed"),
+    ],
 )
 async def test_deadline_identity_survives_stateful_sdk_boundaries(
-    native_client, mock_native, stage, error_type, expected_code
+    native_client, mock_native, stage, error_type, native_code, expected_code
 ):
+    error = error_type("deadline-looking text")
+    if native_code is not None:
+        error.code = native_code
+    details = {
+        "owner": "fabric_runtime",
+        "timeout_seconds": 300,
+        "cause_code": "host_timeout",
+    }
+    if expected_code == "timeout":
+        error.details = details
     if stage == "start":
-        mock_native.start_runtime.side_effect = error_type("deadline-looking text")
+        mock_native.start_runtime.side_effect = error
         operation = native_client.start_runtime(_config())
     else:
         runtime = await native_client.start_runtime(_config())
         if stage == "invoke":
-            mock_native.invoke_runtime.side_effect = error_type("deadline-looking text")
+            mock_native.invoke_runtime.side_effect = error
             operation = runtime.invoke(input="test")
         else:
-            mock_native.stop_runtime.side_effect = error_type("deadline-looking text")
+            mock_native.stop_runtime.side_effect = error
             operation = runtime.stop()
     with pytest.raises(FabricRuntimeError) as caught:
         await operation
     assert caught.value.stage == stage
     assert caught.value.code == expected_code
-    assert isinstance(caught.value.__cause__, error_type)
+    assert caught.value.__cause__ is error
+    assert caught.value.details == (details if expected_code == "timeout" else {})
     if stage == "invoke":
         await runtime.stop()
 
@@ -206,15 +221,24 @@ async def test_one_shot_deadline_preserves_stage_and_cleanup(
 async def test_one_shot_stop_deadline_has_canonical_result_error(
     native_client, mock_native, structured
 ):
-    mock_native.stop_runtime.side_effect = (
-        FabricRuntimeError("deadline", stage="stop", code="timeout")
+    details = {
+        "owner": "fabric_runtime",
+        "timeout_seconds": 300,
+        "cause_code": "host_timeout",
+    }
+    error = (
+        FabricRuntimeError("deadline", stage="stop", code="timeout", details=details)
         if structured
         else TimeoutError("deadline")
     )
+    error.details = details
+    mock_native.stop_runtime.side_effect = error
     result = await native_client.run(_config(), input="test")
     assert result.status == "failed"
     assert result.error.stage == "stop"
     assert result.error.code == "timeout"
+
+    assert result.error.metadata == details
 
 
 @pytest.mark.parametrize("stage", ["start", "invoke"])
@@ -1159,6 +1183,26 @@ async def test_native_unavailable_uses_typed_error(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(FabricNativeUnavailableError, match="native extension"):
         Fabric().plan(_config())
+
+
+async def test_native_deadline_details_survive_sdk_and_cleanup(
+    native_client, mock_native
+):
+    native_error = TimeoutError("host invocation exceeded 300 seconds")
+    native_error.details = {
+        "owner": "fabric_runtime",
+        "timeout_seconds": 300,
+        "cause_code": "host_timeout",
+    }
+    mock_native.invoke_runtime.side_effect = native_error
+    with pytest.raises(FabricRuntimeError) as caught:
+        await native_client.run(_config(), input="test")
+    for name, value in native_error.details.items():
+        assert caught.value.details[name] == value
+    assert caught.value.details["runtime_evidence"]["runtime_id"] == "runtime-1"
+    assert caught.value.details["runtime_evidence"]["cleanup"] == "completed"
+    assert caught.value.__cause__ is native_error
+    mock_native.stop_runtime.assert_called_once()
 
 
 @pytest.mark.parametrize("state", [RuntimeStatus.ACTIVE, RuntimeStatus.FAILED])

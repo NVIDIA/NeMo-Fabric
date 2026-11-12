@@ -77,17 +77,13 @@ Deploy matching bridge and runner versions: a runner predating name-only transpo
 
 The task runner writes normalized evidence before exiting nonzero for failed or cancelled runs. The bridge downloads that evidence before reporting a Harbor execution failure or cancellation, including when the runner exits nonzero. A completed answer can still receive verifier reward zero; verifier scoring is not an execution failure. A missing or malformed result does not hide an available process failure.
 
-Lifecycle failures before a normalized result is available produce a separate
-`runner_error` record. Core host-operation deadlines (`host_timeout`) use code
-`timeout`. The bridge classifies only this canonical code as a deadline, whether
-it appears in a runner error or normalized result, and raises `TimeoutError`,
-which Harbor translates into `AgentTimeoutError`. Cancellation takes precedence.
-An invocation with status `cancelled` becomes a trial execution error and retains
-its normalized status; it does not interrupt the Harbor job. Actual orchestration
-cancellation still propagates as `asyncio.CancelledError`.
-The bridge does not
-inspect harness IDs, native error-code lists, or diagnostic text. Other
-adapter-specific timeout codes are not automatically reclassified.
+Lifecycle failures before a normalized result is available produce a separate `runner_error` record. Core host-operation deadlines (`host_timeout`) and adapter lifecycle deadlines reported with canonical code `timeout` retain the lifecycle stage and structured `details`. Runtime deadlines include `owner: "fabric_runtime"`, `timeout_seconds`, and `cause_code: "host_timeout"`. Adapters normalize native execution deadlines at their boundary, with their own owner, limit, and native cause; the bridge does not inspect harness IDs, native error-code lists, or diagnostic text.
+
+Only canonical `timeout` failures at stage `invoke` raise Harbor's `AgentTimeoutError` and remain eligible for verification. Startup and shutdown deadlines, ordinary runtime failures, and configuration errors raise `RuntimeError` and skip verification. Equivalent runtime and adapter invocation deadlines use the same policy. The verifier still owns the reward.
+
+Harbor versions with [phase timeout ownership](https://github.com/harbor-framework/harbor/pull/3376) preserve the inner exception and its actual deadline. Older Harbor versions catch all nested `TimeoutError` subclasses and can still overwrite the trial exception message with their outer budget, even when that budget did not expire. The downloaded NeMo Fabric evidence retains the original deadline and cause in either case; this NeMo Fabric change alone does not fix Harbor's phase ownership.
+
+Cancellation takes precedence. An invocation with status `cancelled` becomes a trial execution error and retains its normalized status; it does not interrupt the Harbor job. Actual orchestration cancellation still propagates as `asyncio.CancelledError`.
 
 Raised lifecycle failures retain an optional versioned `evidence` object beside `runner_error`. It records only obtained identities, cleanup events, selected software evidence, validated persisted stats and artifact references. Each dimension has explicit coverage; missing usage and cost remain unknown, and absent samples are not reconstructed. A result obtained before a later publication failure is retained as `partial_result`, without changing the failure into a successful run. Partial usage remains evidence and does not populate Harbor's final accounting totals.
 

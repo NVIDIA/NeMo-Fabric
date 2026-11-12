@@ -1031,13 +1031,14 @@ async def _run_native_lifecycle(
                     if result is None:
                         raise
                     if result.get("status") == "succeeded":
+                        stop_error = _runtime_error(error, stage="stop")
                         result["status"] = "failed"
                         result["error"] = {
                             "stage": "stop",
-                            "code": _runtime_error(error, stage="stop").code
-                            or "runtime_stop_failed",
+                            "code": stop_error.code or "runtime_stop_failed",
                             "message": str(error) or "runtime shutdown failed",
                             "retryable": False,
+                            "metadata": stop_error.details,
                         }
                 stop_events = []
             if result is not None and isinstance(stop_events, list):
@@ -1086,9 +1087,20 @@ def _resource_snapshot_error(native: Any, error: Exception) -> FabricRuntimeErro
 
 
 async def _call_blocking(func: Any) -> Any:
-    worker = asyncio.create_task(asyncio.to_thread(func))
+    def call() -> tuple[Any, TimeoutError | None]:
+        try:
+            return func(), None
+        except TimeoutError as error:
+            # Python 3.11/3.12's executor bridge recreates TimeoutError, losing
+            # its details. Carry the original as a result across that boundary.
+            return None, error
+
+    worker = asyncio.create_task(asyncio.to_thread(call))
     try:
-        return await asyncio.shield(worker)
+        result, timeout_error = await asyncio.shield(worker)
+        if timeout_error is not None:
+            raise timeout_error
+        return result
     except asyncio.CancelledError as cancelled:
         # Re-awaiting shield in a cancelled task can prevent the worker result
         # from becoming observable, so let the event loop finish it first.

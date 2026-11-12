@@ -137,6 +137,11 @@ async def test_native_deadline_keeps_type_and_evicts_runtime(
     assert caught.value.code == "timeout"
     assert caught.value.stage == "invoke"
     assert isinstance(caught.value.__cause__, TimeoutError)
+    assert caught.value.details == {
+        "owner": "fabric_runtime",
+        "timeout_seconds": 5.0,
+        "cause_code": "host_timeout",
+    }
     assert runtime.status == RuntimeStatus.FAILED
     with pytest.raises(FabricStateError):
         await runtime.invoke(input="retry")
@@ -192,6 +197,9 @@ def test_runner_real_inner_deadline_preserves_failure_evidence(
     failure = FabricRunnerFailure.model_validate_json(result.read_text())
     assert failure.runner_error.code == "timeout"
     assert failure.runner_error.stage == "invoke"
+    assert failure.runner_error.details["owner"] == "fabric_runtime"
+    assert failure.runner_error.details["timeout_seconds"] == 1.0
+    assert failure.runner_error.details["cause_code"] == "host_timeout"
     assert not failure.runner_error.retryable
 
     assert failure.evidence.runtime_id.startswith("runtime-")
@@ -461,3 +469,105 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert empty_chunks == []
     assert empty_result.status == "succeeded"
     assert empty_result.output["openai_stream_invocation_count"] == 2
+
+
+async def test_adapter_deadline_keeps_normalized_code_and_native_cause(
+    hermes_shim_agent_dir,
+):
+    with pytest.raises(FabricRuntimeError) as caught:
+        await Fabric().run(
+            hermes_shim_config(),
+            base_dir=hermes_shim_agent_dir,
+            request=RunRequest(input="test", context={"normalized_deadline": True}),
+        )
+    assert caught.value.code == "timeout"
+    assert caught.value.stage == "invoke"
+    assert caught.value.details["owner"] == "adapter"
+    assert caught.value.details["timeout_seconds"] == 300
+    assert caught.value.details["cause_code"] == "strands_prompt_timeout"
+    assert caught.value.details["runtime_evidence"]["cleanup"] == "completed"
+    assert isinstance(caught.value.__cause__, TimeoutError)
+
+
+@pytest.mark.parametrize(
+    "attachment_error_type", [RecursionError, ValueError, KeyboardInterrupt, SystemExit]
+)
+def test_native_deadline_attachment_failure_preserves_exception_kind(
+    hermes_shim_agent_dir, monkeypatch, attachment_error_type
+):
+    plan = native.plan_config(
+        json.dumps(hermes_shim_config().to_mapping()), str(hermes_shim_agent_dir)
+    )
+    runtime = native.start_runtime(plan)
+    request = json.dumps(
+        RunRequest(input="test", context={"normalized_deadline": True}).to_mapping()
+    )
+    attachment_error = attachment_error_type("metadata attachment failed")
+    ordinary_error = isinstance(attachment_error, Exception)
+    expected = TimeoutError if ordinary_error else attachment_error_type
+    calls = []
+
+    def fail_attachment(*args, **kwargs):
+        calls.append(args)
+        raise attachment_error
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(json, "loads", fail_attachment)
+            with pytest.raises(expected) as caught:
+                native.invoke_runtime(plan, runtime, request)
+        assert len(calls) == 1
+        if ordinary_error:
+            assert "300 seconds" in str(caught.value)
+        else:
+            assert caught.value is attachment_error
+    finally:
+        native.stop_runtime(plan, runtime)
+
+
+@pytest.mark.parametrize("adapter", ["strands", "kiro", "kilo"])
+@pytest.mark.parametrize("invalid_metadata", [False, True])
+async def test_committed_deadline_schema_survives_core_result_validation(
+    hermes_shim_agent_dir, repo_root, adapter, invalid_metadata
+):
+    source = json.loads(
+        (
+            repo_root / f"adapters/typescript/{adapter}/{adapter}.fabric-adapter.json"
+        ).read_text()
+    )
+    descriptor_path = (
+        hermes_shim_agent_dir / "adapters/hermes-shim/hermes-shim.fabric-adapter.json"
+    )
+    descriptor = json.loads(descriptor_path.read_text())
+    descriptor["extension_schemas"].update(source["extension_schemas"])
+    descriptor_path.write_text(json.dumps(descriptor))
+    metadata = (
+        {
+            "owner": "adapter",
+            "timeout_seconds": 300,
+            "cause_code": "kilo_prompt_timeout",
+        }
+        if adapter == "kilo"
+        else {
+            "owner": "adapter",
+            "deadline_millis": 300_000,
+            "cause_code": f"{adapter}_deadline_exceeded",
+        }
+    )
+    if invalid_metadata:
+        metadata["undeclared"] = "must not cross the runtime boundary"
+    operation = Fabric().run(
+        hermes_shim_config(),
+        base_dir=hermes_shim_agent_dir,
+        request=RunRequest(
+            input="deadline", context={"normalized_deadline_result": metadata}
+        ),
+    )
+    if invalid_metadata:
+        with pytest.raises(FabricRuntimeError, match="extensions"):
+            await operation
+    else:
+        result = await operation
+        assert result.status == "failed"
+        assert result.error.code == "timeout"
+        assert result.error.metadata == metadata
