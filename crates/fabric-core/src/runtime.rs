@@ -2128,6 +2128,24 @@ fn start_local_runtime(
         crate::check::invalidate_runtime(&runtime);
         if terminate_local_host(&mut host).is_err() {
             host.cleanup_pending = true;
+            // Startup errors can contain credentials. Keep details private and
+            // return only the path while cleanup ownership remains retained.
+            let diagnostic_path = host.runtime_dir.join("startup-error.log");
+            let mut options = File::options();
+            options.create_new(true).write(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let diagnostics = options
+                .open(&diagnostic_path)
+                .and_then(|mut file| {
+                    file.write_all(error.to_string().as_bytes())?;
+                    file.sync_all()
+                })
+                .map(|()| diagnostic_path.display().to_string())
+                .unwrap_or_else(|_| "Startup diagnostics could not be saved".to_string());
             let scope = host.cleanup_scope.clone();
             local_hosts().insert(runtime.runtime_id.clone(), Arc::new(Mutex::new(host)));
             PENDING_LOCAL_CLEANUP
@@ -2139,7 +2157,7 @@ fn start_local_runtime(
                 &runtime.runtime_id,
                 "cleanup_unconfirmed",
                 "failed start left native cleanup unconfirmed",
-                "",
+                diagnostics,
             ));
         }
         let _ = remove_local_host_files(&host);
@@ -5641,12 +5659,31 @@ else:
             };
             FAIL_NEXT_HOST_TERMINATION.with(|fail| fail.set(true));
             let error = start_runtime(&plan).unwrap_err();
-            let failed_id = match error {
+            let message = error.to_string();
+            let (failed_id, diagnostics) = match error {
                 FabricError::AdapterLifecycleOperation {
-                    code, runtime_id, ..
-                } if code == "cleanup_unconfirmed" => runtime_id,
+                    code,
+                    runtime_id,
+                    diagnostics,
+                    ..
+                } if code == "cleanup_unconfirmed" => (runtime_id, diagnostics),
                 other => panic!("unexpected startup failure: {other}"),
             };
+            let diagnostic_path = PathBuf::from(diagnostics);
+            let details = fs::read_to_string(&diagnostic_path).unwrap();
+            assert!(details.contains("fake_start"));
+            assert!(details.contains("start rejected"));
+            assert!(details.contains("start diagnostic"));
+            assert!(!message.contains("start rejected"));
+            assert!(!message.contains("start diagnostic"));
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                assert_eq!(
+                    fs::metadata(&diagnostic_path).unwrap().permissions().mode() & 0o777,
+                    0o600
+                );
+            }
             assert!(local_hosts().contains_key(&failed_id));
             let mut config = plan.config;
             config.harness.as_mut().unwrap().settings["env"]["FABRIC_FAKE_HOST_MODE"] =
@@ -5663,6 +5700,7 @@ else:
                 stop_runtime(&corrected, &runtime).unwrap();
             }
             assert!(!local_hosts().contains_key(&failed_id));
+            assert!(!diagnostic_path.exists());
             let _ = fs::remove_dir_all(root);
         }
     }

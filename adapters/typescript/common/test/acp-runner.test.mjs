@@ -178,6 +178,7 @@ for (const scenario of ["parent exits", "forced shutdown", "partial startup"]) {
       shutdownTimeoutMs: 100,
     };
     let session;
+    let cleanupError;
     try {
       if (scenario === "partial startup") {
         await assert.rejects(startAcpSession(options), (error) => error.code === "acp_protocol_unsupported");
@@ -190,14 +191,19 @@ for (const scenario of ["parent exits", "forced shutdown", "partial startup"]) {
       await waitForProcessToStop(pids.parent);
       await waitForProcessToStop(pids.child);
     } finally {
-      await session?.stop();
+      try {
+        await session?.stop();
+      } catch (error) {
+        cleanupError ??= error;
+      }
       const pids = JSON.parse(await readFile(marker, "utf8"));
       for (const pid of [pids.parent, pids.child]) {
         try { process.kill(pid, "SIGKILL"); } catch (error) {
-          if (error.code !== "ESRCH") throw error;
+          if (error.code !== "ESRCH") cleanupError ??= error;
         }
       }
     }
+    if (cleanupError !== undefined) throw cleanupError;
   });
 }
 
@@ -274,6 +280,7 @@ for (const ignoresSigterm of [false, true]) {
       if (pid === pids.parent && signal !== 0) agentSignals.push(signal);
       return originalKill(pid, signal);
     });
+    let cleanupError;
     try {
       await session.stop();
       await waitForProcessToStop(pids.parent);
@@ -283,9 +290,10 @@ for (const ignoresSigterm of [false, true]) {
       kill.mock.restore();
       for (const pid of [pids.parent, pids.child]) {
         try { originalKill(pid, "SIGKILL"); } catch (error) {
-          if (error.code !== "ESRCH") throw error;
+          if (error.code !== "ESRCH") cleanupError ??= error;
         }
       }
     }
+    if (cleanupError !== undefined) throw cleanupError;
   });
 }
