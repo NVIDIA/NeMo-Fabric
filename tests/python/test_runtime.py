@@ -906,7 +906,7 @@ async def test_stop_closes_runtime_owned_collector(mock_native: MagicMock):
     mock_collector.aclose.assert_awaited_once()
 
 
-async def test_stop_rejects_in_flight_turn(
+async def test_stop_interrupts_in_flight_turn(
     mock_native: MagicMock,
 ):
     started = threading.Event()
@@ -923,11 +923,16 @@ async def test_stop_rejects_in_flight_turn(
     turn = asyncio.create_task(runtime.invoke(input="hello"))
     assert await _wait_for(started)
 
-    with pytest.raises(FabricStateError, match="in flight"):
-        await runtime.stop()
+    stop_result = mock_native.stop_runtime.return_value
 
-    release.set()
+    def interrupt(*args):
+        release.set()
+        return stop_result
+
+    mock_native.stop_runtime.side_effect = interrupt
+    await asyncio.wait_for(runtime.stop(), 2)
     await turn
+    assert runtime.status is RuntimeStatus.STOPPED
 
 
 async def test_concurrent_invokes_are_rejected(
@@ -1702,3 +1707,43 @@ async def test_runtime_status_handle_mutation_cannot_change_shared_report(
     assert report.handle.environment == original["handle"]["environment"]
     assert report.to_mapping() == original
     await runtime.stop()
+
+
+async def test_stop_waits_for_invocation_not_the_callers_remaining_work(mock_native):
+    entered, release = threading.Event(), threading.Event()
+    later_work = asyncio.Event()
+    completed = asyncio.Event()
+    invoke = mock_native.invoke_runtime.side_effect
+    stop_result = mock_native.stop_runtime.return_value
+
+    def blocking(*args):
+        entered.set()
+        assert release.wait(5)
+        return invoke(*args)
+
+    def interrupt(*args):
+        release.set()
+        return stop_result
+
+    mock_native.invoke_runtime.side_effect = blocking
+    mock_native.stop_runtime.side_effect = interrupt
+    runtime = _runtime_wrapper(mock_native)
+
+    async def caller():
+        await runtime.invoke(input="hello")
+        completed.set()
+        await later_work.wait()
+
+    task = asyncio.create_task(caller())
+    assert await _wait_for(entered)
+    stopping = asyncio.create_task(runtime.stop())
+    try:
+        await asyncio.wait_for(completed.wait(), 2)
+        await asyncio.wait_for(asyncio.shield(stopping), 0.5)
+        assert not task.done()
+        assert runtime.status is RuntimeStatus.STOPPED
+    finally:
+        release.set()
+        later_work.set()
+        await task
+        await stopping

@@ -947,6 +947,7 @@ struct LocalAdapterHost {
     execution: Option<crate::ExecutionEvidence>,
     adapter_execution: Option<crate::ExecutionEvidence>,
     child: Child,
+    pending_stop: Vec<LocalHostProcess>,
     #[cfg(windows)]
     job: Option<std::os::windows::io::OwnedHandle>,
     stdin: ChildStdin,
@@ -1958,73 +1959,210 @@ impl RuntimeAdapter for LocalHostAdapter {
     }
 
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
-        let host = { local_hosts().get(&runtime.runtime_id).cloned() };
-        let Some(host) = host else {
+        let Some(host) = local_hosts().get(&runtime.runtime_id).cloned() else {
+            let process = local_host_processes().get(&runtime.runtime_id).cloned();
+            if process
+                .as_ref()
+                .is_some_and(|process| !owned_process_has_exited(process))
+            {
+                return Err(cleanup_unconfirmed(runtime));
+            }
+            let pending = STOPPING_PROCESSES
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .get(&runtime.runtime_id)
+                .cloned()
+                .unwrap_or_default();
+            confirm_stopped_descendants(runtime, &pending)?;
             local_host_processes().remove(&runtime.runtime_id);
+            STOPPING_PROCESSES
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .remove(&runtime.runtime_id);
             return Ok(vec![local_host_stop_event(runtime, true, false)]);
         };
-        let mut host = host.lock().unwrap_or_else(|error| error.into_inner());
-        host.cleanup_pending = true;
+        let deadline = Instant::now() + LOCAL_HOST_STOP_TIMEOUT;
+        let mut interrupted = None;
+        let mut guard = loop {
+            match host.try_lock() {
+                Ok(guard) => break guard,
+                Err(std::sync::TryLockError::Poisoned(error)) => break error.into_inner(),
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    if interrupted.is_none() {
+                        interrupted = Some(interrupt_local_host(runtime)?);
+                    }
+                    if Instant::now() >= deadline {
+                        return Err(cleanup_unconfirmed(runtime));
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+            }
+        };
+        guard.cleanup_pending = true;
+        PENDING_LOCAL_CLEANUP.lock().unwrap_or_else(|error| error.into_inner())
+            .insert(runtime.runtime_id.clone(), guard.cleanup_scope.clone());
+        if let Some(processes) = interrupted {
+            guard.pending_stop.extend(processes);
+        }
+        if let Some(processes) = STOPPING_PROCESSES
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(&runtime.runtime_id)
+        {
+            guard.pending_stop.extend(processes.clone());
+        }
         #[cfg(unix)]
-        remember_host_descendants(&mut host);
+        if guard
+            .child
+            .try_wait()
+            .map_err(|_| cleanup_unconfirmed(runtime))?
+            .is_none()
+        {
+            let pid = guard.child.id();
+            guard.pending_stop.extend(
+                host_descendants(pid)
+                    .into_iter()
+                    .map(|pid| LocalHostProcess::new(pid as u32, SystemTime::now())),
+            );
+        }
         let request =
             AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Stop(AdapterLifecycleStop {
                 runtime_id: runtime.runtime_id.clone(),
             }));
         let result = exchange_lifecycle_message(
-            &mut host,
+            &mut guard,
             &runtime.runtime_id,
             &request,
             LOCAL_HOST_STOP_TIMEOUT,
         );
-        let termination = terminate_local_host(&mut host);
-        let diagnostics = local_host_diagnostics(&host);
-        let host_crashed = matches!(
-            &result,
-            Err(FabricError::AdapterLifecycleOperation { code, .. })
-                if code == "host_crashed"
-        );
-        termination.map_err(|source| {
-            PENDING_LOCAL_CLEANUP
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .insert(runtime.runtime_id.clone(), host.cleanup_scope.clone());
-            lifecycle_error(
-                AdapterLifecycleOperation::Stop,
-                &runtime.runtime_id,
-                "cleanup_unconfirmed",
-                format!("persistent local adapter host could not be terminated: {source}"),
-                diagnostics,
-            )
-        })?;
-        // Keep the host and its lock available for a retry until termination
-        // has been confirmed. A failed adapter stop may still be safely killed.
+        terminate_local_host(&mut guard).map_err(|_| cleanup_unconfirmed(runtime))?;
+        confirm_stopped_descendants(runtime, &guard.pending_stop)?;
+        remove_local_host_files(&guard).map_err(|_| cleanup_unconfirmed(runtime))?;
         local_hosts().remove(&runtime.runtime_id);
         local_host_processes().remove(&runtime.runtime_id);
-        PENDING_LOCAL_CLEANUP
+        STOPPING_PROCESSES
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .remove(&runtime.runtime_id);
-        let removal = remove_local_host_files(&host);
+        PENDING_LOCAL_CLEANUP.lock().unwrap_or_else(|error| error.into_inner())
+            .remove(&runtime.runtime_id);
+        let host_crashed = matches!(
+            &result,
+            Err(FabricError::AdapterLifecycleOperation { code, .. }) if code == "host_crashed"
+        );
         if !host_crashed {
             result?;
         }
-        removal.map_err(|source| {
-            lifecycle_error(
-                AdapterLifecycleOperation::Stop,
-                &runtime.runtime_id,
-                "host_cleanup_failed",
-                format!("persistent local adapter host files could not be removed: {source}"),
-                "",
-            )
-        })?;
-
         #[cfg(test)]
         TEST_STOPPED_AGENTS
             .lock()
             .expect("stop tracker")
             .push(runtime.agent_name.clone());
         Ok(vec![local_host_stop_event(runtime, false, host_crashed)])
+    }
+}
+
+fn cleanup_unconfirmed(runtime: &RuntimeHandle) -> FabricError {
+    lifecycle_error(
+        AdapterLifecycleOperation::Stop,
+        &runtime.runtime_id,
+        "cleanup_unconfirmed",
+        "Owned process cleanup is unconfirmed; retry stop before replacement.",
+        "",
+    )
+}
+
+fn owned_process_has_exited(process: &LocalHostProcess) -> bool {
+    if process.has_exited() == Some(true) {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        let Ok(pid) = libc::pid_t::try_from(process.pid()) else {
+            return false;
+        };
+        if pid <= 0 {
+            return false;
+        }
+        // SAFETY: signal zero only probes existence. An unidentified process is
+        // never signalled; ESRCH can still prove that its PID is now absent.
+        (unsafe { libc::kill(pid, 0) } != 0)
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+    }
+    #[cfg(not(unix))]
+    false
+}
+
+#[cfg(unix)]
+fn signal_owned_process(process: &LocalHostProcess) -> std::io::Result<()> {
+    if owned_process_has_exited(process) {
+        return Ok(());
+    }
+    if !process.is_current() {
+        return Err(std::io::Error::other("process ownership is unconfirmed"));
+    }
+    // SAFETY: the process identity was checked immediately before signalling.
+    if unsafe { libc::kill(process.pid() as libc::pid_t, libc::SIGKILL) } != 0 {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::ESRCH) {
+            return Err(error);
+        }
+    }
+    Ok(())
+}
+
+fn interrupt_local_host(runtime: &RuntimeHandle) -> Result<Vec<LocalHostProcess>> {
+    #[cfg(unix)]
+    {
+        let process = local_host_processes()
+            .get(&runtime.runtime_id)
+            .cloned()
+            .ok_or_else(|| cleanup_unconfirmed(runtime))?;
+        if process.has_exited() == Some(true) {
+            return Ok(Vec::new());
+        }
+        if !process.is_current() {
+            return Err(cleanup_unconfirmed(runtime));
+        }
+        let descendants: Vec<_> = host_descendants(process.pid())
+            .into_iter()
+            .map(|pid| LocalHostProcess::new(pid as u32, SystemTime::now()))
+            .collect();
+        let descendants = {
+            let mut retained = STOPPING_PROCESSES
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let previous = retained.entry(runtime.runtime_id.clone()).or_default();
+            previous.extend(descendants);
+            previous.clone()
+        };
+        for child in descendants.iter().rev() {
+            signal_owned_process(child).map_err(|_| cleanup_unconfirmed(runtime))?;
+        }
+        signal_owned_process(&process).map_err(|_| cleanup_unconfirmed(runtime))?;
+        Ok(descendants)
+    }
+    #[cfg(not(unix))]
+    Err(cleanup_unconfirmed(runtime))
+}
+
+fn confirm_stopped_descendants(
+    runtime: &RuntimeHandle,
+    processes: &[LocalHostProcess],
+) -> Result<()> {
+    let deadline = Instant::now() + LOCAL_HOST_EXIT_GRACE;
+    loop {
+        if processes.iter().all(owned_process_has_exited) {
+            return Ok(());
+        }
+        #[cfg(unix)]
+        for process in processes {
+            signal_owned_process(process).map_err(|_| cleanup_unconfirmed(runtime))?;
+        }
+        if Instant::now() >= deadline {
+            return Err(cleanup_unconfirmed(runtime));
+        }
+        thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -3007,6 +3145,10 @@ fn service_release_event(service: &ServiceHandle, already_released: bool) -> Fab
     )
 }
 
+// Keep identity-checked snapshots even if interruption fails before the host lock is released.
+static STOPPING_PROCESSES: LazyLock<Mutex<BTreeMap<String, Vec<LocalHostProcess>>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
+
 fn local_hosts() -> std::sync::MutexGuard<'static, BTreeMap<String, Arc<Mutex<LocalAdapterHost>>>> {
     LOCAL_HOSTS
         .lock()
@@ -3206,6 +3348,7 @@ fn spawn_local_host(
         execution: crate::provenance::core_snapshot(&plan.config.provenance),
         adapter_execution: None,
         child,
+        pending_stop: Vec::new(),
         #[cfg(windows)]
         job,
         stdin,
@@ -5408,6 +5551,30 @@ else:
 
     fn stopped_agents() -> Vec<String> {
         TEST_STOPPED_AGENTS.lock().expect("stop tracker").clone()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stop_retries_can_confirm_a_child_that_exited_before_identity_capture() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let mut child = Command::new("sh").args(["-c", "exit 0"]).spawn().unwrap();
+        let pid = child.id();
+        child.wait().unwrap();
+        let gone = LocalHostProcess::new(pid, SystemTime::now());
+        assert!(!gone.is_current());
+        local_hosts()
+            .get(&runtime.runtime_id)
+            .unwrap()
+            .lock()
+            .unwrap()
+            .pending_stop
+            .push(gone);
+        stop_runtime(&plan, &runtime)
+            .expect("a confirmed-gone child cannot permanently block cleanup");
+        assert!(!local_hosts().contains_key(&runtime.runtime_id));
+        assert!(local_host_has_exited(&runtime.runtime_id).is_none());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

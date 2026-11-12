@@ -294,9 +294,15 @@ async def test_failed_stop_keeps_ownership_and_allows_distinct_runtime(
     assert "PRIVATE" not in str(response)
     assert host.runtimes["runtime-1"].runtime is mock_runtime
     assert host.runtimes["runtime-1"].state == "unknown"
-    replacement = runtime_factory("runtime-2")
+    replacement = runtime_factory("runtime-2", agent="independent")
     mock_fabric.start_runtime.return_value = replacement
-    assert (await host.handle(host_request("start")))["status"] == "succeeded"
+    config = {
+        "metadata": {"name": "independent"},
+        "harness": {"adapter_id": "test.host"},
+    }
+    assert (
+        await host.handle(host_request("start", agent="independent", config=config))
+    )["status"] == "succeeded"
     assert mock_fabric.start_runtime.await_count == 2
 
 
@@ -389,7 +395,7 @@ async def test_non_active_returned_runtime_is_owned_for_stop(
     assert next_response["result"]["runtime_id"] == "runtime-2"
 
 
-async def test_stop_can_be_retried_after_a_busy_invocation(
+async def test_stop_does_not_wait_for_the_invocation_lock(
     host, host_request, mock_runtime
 ):
     await host.handle(host_request("start"))
@@ -406,11 +412,10 @@ async def test_stop_can_be_retried_after_a_busy_invocation(
     await entered.wait()
     second = asyncio.create_task(host.handle(host_request("stop")))
     await asyncio.sleep(0)
-    mock_runtime.stop.assert_not_awaited()
-    assert (await second)["error"]["code"] == "runtime_busy"
+    mock_runtime.stop.assert_awaited_once()
     release.set()
     assert (await first)["status"] == "succeeded"
-    assert (await host.handle(host_request("stop")))["status"] == "succeeded"
+    assert (await second)["status"] == "succeeded"
     mock_runtime.stop.assert_awaited_once_with()
 
 
@@ -492,3 +497,52 @@ async def test_stopped_runtime_records_are_bounded(
     assert (await host.handle(host_request("stop", runtime_id="runtime-129")))[
         "status"
     ] == "succeeded"
+
+
+async def test_busy_stop_reaches_sdk_before_invocation_finishes(
+    host, host_request, mock_runtime
+):
+    await host.handle(host_request("start"))
+    entered, release = asyncio.Event(), asyncio.Event()
+    native = mock_runtime.invoke.return_value
+
+    async def invoke(**kwargs):
+        entered.set()
+        await release.wait()
+        return native
+
+    async def stop():
+        release.set()
+
+    mock_runtime.invoke.side_effect = invoke
+    mock_runtime.stop.side_effect = stop
+    task = asyncio.create_task(host.handle(host_request("invoke", input={})))
+    await entered.wait()
+    try:
+        response = await asyncio.wait_for(host.handle(host_request("stop")), 0.5)
+        assert response["status"] == "succeeded"
+        mock_runtime.stop.assert_awaited_once()
+    finally:
+        release.set()
+        await task
+
+
+async def test_unconfirmed_stop_blocks_replacement_but_not_other_agents(
+    host, host_request, mock_runtime, mock_fabric, runtime_factory, config
+):
+    await host.handle(host_request("start"))
+    mock_runtime.stop.side_effect = RuntimeError("PRIVATE shutdown detail")
+    assert (await host.handle(host_request("stop")))["error"]["code"] == "stop_failed"
+    rejected = await host.handle(host_request("start"))
+    assert rejected["error"]["code"] == "cleanup_unconfirmed"
+    assert "PRIVATE" not in str(rejected)
+    mock_fabric.start_runtime.assert_awaited_once()
+    mock_fabric.start_runtime.return_value = runtime_factory(
+        "independent", agent="other"
+    )
+    other_config = {**config, "metadata": {"name": "other"}}
+    assert (
+        await host.handle(host_request("start", agent="other", config=other_config))
+    )["status"] == "succeeded"
+    mock_runtime.stop.side_effect = None
+    assert (await host.handle(host_request("stop")))["status"] == "succeeded"

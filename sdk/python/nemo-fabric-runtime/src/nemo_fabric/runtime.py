@@ -309,10 +309,12 @@ class Runtime:
                     self._status = RuntimeStatus.STOPPED
                 raise
             except FabricError:
-                self._status = RuntimeStatus.FAILED
+                if self._status is not RuntimeStatus.STOPPED:
+                    self._status = RuntimeStatus.FAILED
                 raise
             except Exception as error:
-                self._status = RuntimeStatus.FAILED
+                if self._status is not RuntimeStatus.STOPPED:
+                    self._status = RuntimeStatus.FAILED
                 raise _runtime_error(error, stage="invoke") from error
             if absorb_result:
                 self._absorb(typed_result)
@@ -794,14 +796,14 @@ class Runtime:
             raise _resource_snapshot_error(native, error) from error
 
     async def stop(self) -> None:
-        """Destroy an idle runtime exactly once.
+        """Stop the runtime, interrupting an active buffered invocation if needed.
 
         Repeated calls after a successful stop are no-ops. A failed runtime may
         still be stopped so its resources are released.
 
         Raises:
             FabricStateError: If the runtime is already stopping or has an
-                invocation in flight.
+                streaming invocation in flight.
             FabricNativeUnavailableError: If the native extension is missing.
             FabricRuntimeError: If native runtime shutdown fails.
         """
@@ -816,8 +818,7 @@ class Runtime:
             )
         if self._current_stream is not None and not self._current_stream._finalized:
             await self._current_stream.aclose()
-        if self._current_task is not None:
-            raise FabricStateError("cannot stop while a turn is in flight")
+        active_task = self._current_task
         if self._closing:
             raise FabricStateError("runtime shutdown is already in progress")
         self._closing = True
@@ -838,6 +839,11 @@ class Runtime:
                 return result
 
             await _call_blocking(stop)
+            if active_task is not None and active_task is not asyncio.current_task():
+                # Observe the interrupted invocation before publishing STOPPED;
+                # its error path must not overwrite the final lifecycle state.
+                while self._current_task is active_task:
+                    await asyncio.sleep(0.01)
         except asyncio.CancelledError as error:
             self._status = RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
             stop_error = error
