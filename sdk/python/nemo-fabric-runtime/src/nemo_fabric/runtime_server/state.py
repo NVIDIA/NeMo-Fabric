@@ -355,7 +355,7 @@ class RuntimeServer:
         cleanup_failures: list[Exception] = []
         async with self._start_lock:
             for owned in tuple(self.runtimes.values()):
-                async with owned.lock:
+                async with owned.stop_lock, owned.lock:
                     if owned.state != "stopped":
                         try:
                             await self._stop(owned)

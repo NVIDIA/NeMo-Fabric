@@ -235,6 +235,9 @@ pub enum FabricError {
         /// Bounded adapter-host diagnostics.
         diagnostics: String,
     },
+    /// A one-shot run could not confirm cleanup; the original runtime remains owned.
+    #[error("{0}")]
+    RuntimeCleanupPending(Box<RuntimeCleanupPending>),
     /// A runtime handle was used with a different run plan than the one that created it.
     #[error(
         "runtime handle does not match run plan for `{field}`: expected `{expected}` but found `{actual}` (runtime `{runtime_id}`)"
@@ -435,4 +438,59 @@ pub enum FabricError {
         /// Underlying JSON error.
         source: serde_json::Error,
     },
+}
+
+/// Cleanup context retained when [`crate::run_plan`] cannot finish stopping a runtime.
+///
+/// Retry [`crate::stop_runtime`] with the original plan and [`Self::runtime`].
+/// The handle and completed output are deliberately excluded from diagnostic formatting.
+pub struct RuntimeCleanupPending {
+    runtime: crate::RuntimeHandle,
+    result: Option<crate::RunResult>,
+    cause: FabricError,
+}
+
+impl RuntimeCleanupPending {
+    pub(crate) fn new(
+        runtime: crate::RuntimeHandle,
+        result: Option<crate::RunResult>,
+        cause: FabricError,
+    ) -> Self {
+        Self {
+            runtime,
+            result,
+            cause,
+        }
+    }
+
+    /// The original handle required for a cleanup retry in this process.
+    pub fn runtime(&self) -> &crate::RuntimeHandle {
+        &self.runtime
+    }
+
+    /// The completed invocation result, if invocation succeeded before cleanup failed.
+    pub fn result(&self) -> Option<&crate::RunResult> {
+        self.result.as_ref()
+    }
+
+    /// The invocation or stop error that preceded the retained cleanup context.
+    pub fn cause(&self) -> &FabricError {
+        &self.cause
+    }
+}
+
+impl std::fmt::Debug for RuntimeCleanupPending {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RuntimeCleanupPending")
+            .field("result_available", &self.result.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Display for RuntimeCleanupPending {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "runtime cleanup is unconfirmed; retry stop with RuntimeCleanupPending::runtime()",
+        )
+    }
 }

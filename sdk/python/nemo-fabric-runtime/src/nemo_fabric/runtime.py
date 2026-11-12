@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import json
 import logging
 from collections.abc import Mapping, Sequence
@@ -838,7 +839,10 @@ class Runtime:
                 stopped = True
                 return result
 
-            await _call_blocking(stop)
+            with ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="fabric-stop"
+            ) as executor:
+                await _call_blocking(stop, executor=executor)
             if active_task is not None and active_task is not asyncio.current_task():
                 # Observe the interrupted invocation before publishing STOPPED;
                 # its error path must not overwrite the final lifecycle state.
@@ -1107,8 +1111,15 @@ def _resource_snapshot_error(native: Any, error: Exception) -> FabricRuntimeErro
     return _runtime_error(error, stage="resource_snapshot")
 
 
-async def _call_blocking(func: Any) -> Any:
-    worker = asyncio.create_task(asyncio.to_thread(func))
+async def _call_blocking(
+    func: Any, *, executor: ThreadPoolExecutor | None = None
+) -> Any:
+    if executor is None:
+        worker = asyncio.create_task(asyncio.to_thread(func))
+    else:
+        worker = asyncio.ensure_future(
+            asyncio.get_running_loop().run_in_executor(executor, func)
+        )
     try:
         return await asyncio.shield(worker)
     except asyncio.CancelledError as cancelled:

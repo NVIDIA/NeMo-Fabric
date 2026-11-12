@@ -10,6 +10,7 @@ import json
 import logging
 import threading
 from contextlib import AsyncExitStack
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -157,6 +158,38 @@ def _runtime_wrapper(
         runtime=_runtime(runtime_id),
         overrides=overrides,
     )
+
+
+async def test_stop_does_not_wait_for_a_saturated_default_executor(mock_native):
+    runtime = _runtime_wrapper(mock_native)
+    loop = asyncio.get_running_loop()
+    await asyncio.to_thread(lambda: None)
+    previous_executor = loop._default_executor
+    entered, release = threading.Event(), threading.Event()
+
+    def occupy_worker():
+        entered.set()
+        release.wait(5)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        loop.set_default_executor(executor)
+        occupied = asyncio.create_task(asyncio.to_thread(occupy_worker))
+        try:
+            async with asyncio.timeout(3):
+                while not entered.is_set():
+                    await asyncio.sleep(0.01)
+            stopping = asyncio.create_task(runtime.stop())
+            try:
+                completed, _ = await asyncio.wait({stopping}, timeout=0.5)
+            finally:
+                release.set()
+                await stopping
+        finally:
+            release.set()
+            await occupied
+            loop.set_default_executor(previous_executor)
+    assert stopping in completed
+    mock_native.stop_runtime.assert_called_once()
 
 
 @pytest.mark.parametrize("stage", ["start", "invoke", "stop"])

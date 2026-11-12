@@ -12,3 +12,5 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn run_plan(plan: &amp;<a href=\"../config/struct-runplan.mdx\">RunPlan</a>, request: <a href=\"struct-runrequest.mdx\">RunRequest</a>) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"struct-runresult.mdx\">RunResult</a>&gt;"}} /></pre>
 
 Invoke a NeMo Fabric run plan.
+
+If stopping leaves owned cleanup pending, returns [`FabricError::RuntimeCleanupPending`](../error/enum-fabricerror.mdx#variant.RuntimeCleanupPending) with the original runtime handle and any completed result. Retry [`stop_runtime`](fn-stop-runtime.mdx) with that handle and this plan.

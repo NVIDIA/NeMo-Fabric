@@ -527,6 +527,31 @@ async def test_busy_stop_reaches_sdk_before_invocation_finishes(
         await task
 
 
+async def test_shutdown_waits_for_a_pending_stop(host, host_request, mock_runtime):
+    await host.handle(host_request("start"))
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def stop():
+        if entered.is_set():
+            raise FabricStateError("shutdown is already in progress")
+        entered.set()
+        await release.wait()
+
+    mock_runtime.stop.side_effect = stop
+    stopping = asyncio.create_task(host.handle(host_request("stop")))
+    await entered.wait()
+    shutdown = asyncio.create_task(host.shutdown())
+    try:
+        await asyncio.sleep(0.05)
+        release.set()
+        assert (await stopping)["status"] == "succeeded"
+        await shutdown
+        mock_runtime.stop.assert_awaited_once()
+    finally:
+        release.set()
+        await asyncio.gather(stopping, shutdown, return_exceptions=True)
+
+
 async def test_unconfirmed_stop_blocks_replacement_but_not_other_agents(
     host, host_request, mock_runtime, mock_fabric, runtime_factory, config
 ):

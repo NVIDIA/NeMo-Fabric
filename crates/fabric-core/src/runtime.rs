@@ -952,7 +952,7 @@ struct LocalAdapterHost {
     child: Child,
     pending_stop: Vec<LocalHostProcess>,
     #[cfg(windows)]
-    job: Option<std::os::windows::io::OwnedHandle>,
+    control: Arc<WindowsHostControl>,
     stdin: ChildStdin,
     responses: Receiver<std::result::Result<String, String>>,
     command: String,
@@ -1001,16 +1001,30 @@ enum LocalServiceState {
 }
 
 /// Invoke a NeMo Fabric run plan.
+///
+/// If stopping leaves owned cleanup pending, returns
+/// [`FabricError::RuntimeCleanupPending`] with the original runtime handle and
+/// any completed result. Retry [`stop_runtime`] with that handle and this plan.
 pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
     let runtime = start_runtime(plan)?;
     let mut result = match invoke_runtime(plan, &runtime, request) {
         Ok(result) => result,
         Err(error) => {
             let _ = stop_runtime(plan, &runtime);
+            if local_runtime_is_retained(&runtime.runtime_id) {
+                return Err(FabricError::RuntimeCleanupPending(Box::new(
+                    crate::RuntimeCleanupPending::new(runtime, None, error),
+                )));
+            }
             return Err(error);
         }
     };
     match stop_runtime(plan, &runtime) {
+        Err(error) if local_runtime_is_retained(&runtime.runtime_id) => {
+            return Err(FabricError::RuntimeCleanupPending(Box::new(
+                crate::RuntimeCleanupPending::new(runtime, Some(result), error),
+            )));
+        }
         Ok(events) => result.events.extend(events),
         Err(error) if result.status == RunStatus::Succeeded => {
             result.status = RunStatus::Failed;
@@ -1527,7 +1541,7 @@ pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<Fabri
         // An error alone does not prove that native writers have stopped.
         let cleaned = stopped.is_ok()
             || (runtime.environment.provider == "local"
-                && !local_hosts().contains_key(&runtime.runtime_id));
+                && !local_runtime_is_retained(&runtime.runtime_id));
         if cleaned
             && let Some(service_id) = runtime.service_id.as_ref()
             && let Some(record) = local_services().get(service_id).cloned()
@@ -2071,6 +2085,14 @@ impl RuntimeAdapter for LocalHostAdapter {
     }
 }
 
+fn local_runtime_is_retained(runtime_id: &str) -> bool {
+    let retained =
+        local_hosts().contains_key(runtime_id) || local_host_processes().contains_key(runtime_id);
+    #[cfg(windows)]
+    let retained = retained || windows_host_controls().contains_key(runtime_id);
+    retained
+}
+
 fn cleanup_unconfirmed(runtime: &RuntimeHandle) -> FabricError {
     lifecycle_error(
         AdapterLifecycleOperation::Stop,
@@ -2120,6 +2142,29 @@ fn signal_owned_process(process: &LocalHostProcess) -> std::io::Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+fn freeze_owned_process(process: &LocalHostProcess, deadline: Instant) -> std::io::Result<()> {
+    if owned_process_has_exited(process) {
+        return Ok(());
+    }
+    if !process.is_current() {
+        return Err(std::io::Error::other("process ownership is unconfirmed"));
+    }
+    // SAFETY: the process identity was checked immediately before signalling.
+    if unsafe { libc::kill(process.pid() as libc::pid_t, libc::SIGSTOP) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    loop {
+        if process.is_stopped() == Some(true) || owned_process_has_exited(process) {
+            return Ok(());
+        }
+        if !process.is_current() || Instant::now() >= deadline {
+            return Err(std::io::Error::other("process suspension is unconfirmed"));
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
 fn interrupt_local_host(runtime: &RuntimeHandle) -> Result<Vec<LocalHostProcess>> {
     #[cfg(unix)]
     {
@@ -2133,16 +2178,33 @@ fn interrupt_local_host(runtime: &RuntimeHandle) -> Result<Vec<LocalHostProcess>
         if !process.is_current() {
             return Err(cleanup_unconfirmed(runtime));
         }
-        let descendants: Vec<_> = host_descendants(process.pid())
-            .into_iter()
-            .map(|pid| LocalHostProcess::new(pid as u32, SystemTime::now()))
-            .collect();
+        let deadline = Instant::now() + LOCAL_HOST_STOP_TIMEOUT;
+        // Freeze each parent before listing its children. A frozen parent cannot
+        // create another child after that list was read. Retain every discovered
+        // identity before suspension so a partial failure remains retryable.
+        let mut parents = vec![process.clone()];
+        while let Some(parent) = parents.pop() {
+            freeze_owned_process(&parent, deadline).map_err(|_| cleanup_unconfirmed(runtime))?;
+            if owned_process_has_exited(&parent) {
+                continue;
+            }
+            let children: Vec<_> = child_pids(parent.pid() as libc::pid_t)
+                .into_iter()
+                .map(|pid| LocalHostProcess::new(pid as u32, SystemTime::now()))
+                .collect();
+            STOPPING_PROCESSES
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .entry(runtime.runtime_id.clone())
+                .or_default()
+                .extend(children.clone());
+            parents.extend(children);
+        }
         let descendants = {
             let mut retained = STOPPING_PROCESSES
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
             let previous = retained.entry(runtime.runtime_id.clone()).or_default();
-            previous.extend(descendants);
             previous.clone()
         };
         for child in descendants.iter().rev() {
@@ -2338,20 +2400,7 @@ fn start_local_runtime(
         return Err(error);
     }
     #[cfg(windows)]
-    match WindowsHostControl::capture(&host) {
-        Ok(control) => {
-            windows_host_controls().insert(runtime.runtime_id.clone(), Arc::new(control));
-        }
-        Err(source) => {
-            crate::check::invalidate_runtime(&runtime);
-            let _ = terminate_local_host(&mut host);
-            let _ = remove_local_host_files(&host);
-            return Err(FabricError::ProcessRunner {
-                command: host.command.clone(),
-                source,
-            });
-        }
-    }
+    windows_host_controls().insert(runtime.runtime_id.clone(), host.control.clone());
     local_host_processes().insert(
         runtime.runtime_id.clone(),
         LocalHostProcess::new(host.child.id(), started_at),
@@ -3237,11 +3286,16 @@ struct WindowsHostControl {
 
 #[cfg(windows)]
 impl WindowsHostControl {
-    fn capture(host: &LocalAdapterHost) -> std::io::Result<Self> {
+    fn capture(
+        child: &Child,
+        job: Option<std::os::windows::io::OwnedHandle>,
+    ) -> std::io::Result<Self> {
         use std::os::windows::io::AsHandle;
+        let job =
+            job.ok_or_else(|| std::io::Error::other("owned Windows process job is unavailable"))?;
         Ok(Self {
-            process: host.child.as_handle().try_clone_to_owned()?,
-            job: host.job.as_ref().map(|job| job.try_clone()).transpose()?,
+            process: child.as_handle().try_clone_to_owned()?,
+            job: Some(job),
         })
     }
 
@@ -3415,7 +3469,18 @@ fn spawn_local_host(
         }
     };
     #[cfg(windows)]
-    let job = host_job(&child);
+    let control = match WindowsHostControl::capture(&child, host_job(&child)) {
+        Ok(control) => Arc::new(control),
+        Err(source) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = std::fs::remove_dir_all(&runtime_dir);
+            return Err(FabricError::ProcessRunner {
+                command: command_display,
+                source,
+            });
+        }
+    };
     #[cfg(windows)]
     if let Err(source) = resume_host(child.id()) {
         let _ = child.kill();
@@ -3496,7 +3561,7 @@ fn spawn_local_host(
         child,
         pending_stop: Vec::new(),
         #[cfg(windows)]
-        job,
+        control,
         stdin,
         responses,
         command: command_display,
@@ -3807,7 +3872,7 @@ fn terminate_local_host(host: &mut LocalAdapterHost) -> std::io::Result<()> {
         }
     }
     #[cfg(windows)]
-    if let Some(job) = &host.job {
+    if let Some(job) = &host.control.job {
         // SAFETY: the host owns this job handle until it is dropped.
         if unsafe {
             windows_sys::Win32::System::JobObjects::TerminateJobObject(
@@ -3938,12 +4003,15 @@ fn child_pids(_parent: libc::pid_t) -> Vec<libc::pid_t> {
 
 /// Puts the suspended host in a job object so a forced kill reaches every
 /// process it starts, even through launchers or other intermediates that
-/// already exited. Like Cargo, fall back to killing only the host if the job
-/// is unavailable.
+/// already exited. Closing the last job handle also terminates its processes.
 #[cfg(windows)]
 fn host_job(child: &Child) -> Option<std::os::windows::io::OwnedHandle> {
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
-    use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectW};
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+        SetInformationJobObject,
+    };
 
     // SAFETY: null security attributes and name are allowed; null means failure.
     let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
@@ -3952,6 +4020,21 @@ fn host_job(child: &Child) -> Option<std::os::windows::io::OwnedHandle> {
     }
     // SAFETY: CreateJobObjectW returned a new handle that nothing else owns.
     let job = unsafe { OwnedHandle::from_raw_handle(job) };
+    // SAFETY: this job information structure accepts an all-zero initialization.
+    let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    // SAFETY: the owned job and readable buffer match the information class and size.
+    if unsafe {
+        SetInformationJobObject(
+            job.as_raw_handle(),
+            JobObjectExtendedLimitInformation,
+            (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+            std::mem::size_of_val(&limits) as u32,
+        )
+    } == 0
+    {
+        return None;
+    }
     // SAFETY: both handles stay valid for the duration of the call.
     let assigned = unsafe { AssignProcessToJobObject(job.as_raw_handle(), child.as_raw_handle()) };
     (assigned != 0).then_some(job)
@@ -5329,7 +5412,7 @@ for line in sys.stdin:
             # Exit during Fabric's grace wait and leave the child running.
             time.sleep(1)
             os._exit(0)
-        if MODE == "invoke_failure":
+        if MODE in {"invoke_failure", "invoke_failure_cleanup_failure"}:
             response("invoke", error=failure("invoke", "fake_invoke", "invoke rejected"))
             continue
         invocation = message["payload"]
@@ -5459,6 +5542,12 @@ for line in sys.stdin:
             child.stdin.write(json.dumps({"operation": "stop", "outcome": {"status": "succeeded", "output": None}}) + "\n")
             child.stdin.flush()
             os._exit(0)
+        if MODE in {"cleanup_failure", "invoke_failure_cleanup_failure"}:
+            import shutil
+            directory = os.environ["FABRIC_HOME"]
+            shutil.rmtree(directory)
+            with open(directory, "w", encoding="utf-8") as stream:
+                stream.write("cleanup requires a retry")
         if MODE == "stop_delay":
             with open(os.environ["FABRIC_FAKE_HOST_STOP_MARKER"], "w", encoding="utf-8") as stream:
                 stream.write("started")
@@ -5702,6 +5791,141 @@ else:
 
     fn stopped_agents() -> Vec<String> {
         TEST_STOPPED_AGENTS.lock().expect("stop tracker").clone()
+    }
+
+    #[test]
+    fn unconfirmed_timeout_cleanup_retains_service_membership() {
+        let (root, plan) = local_host_plan("success");
+        let service = prepare_service(&plan).unwrap();
+        let runtime = start_runtime_with_service(&plan, &service).unwrap();
+        let host = local_hosts().remove(&runtime.runtime_id).unwrap();
+        let stopped = stop_runtime(&plan, &runtime);
+        let retained = local_services()
+            .get(&service.service_id)
+            .unwrap()
+            .lock()
+            .unwrap()
+            .active_runtime_ids
+            .contains(&runtime.runtime_id);
+        local_hosts().insert(runtime.runtime_id.clone(), host);
+        stop_runtime(&plan, &runtime).unwrap();
+        release_service(&plan, &service).unwrap();
+        assert!(
+            matches!(stopped, Err(FabricError::AdapterLifecycleOperation { code, .. })
+            if code == "cleanup_unconfirmed")
+        );
+        assert!(retained);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn one_shot_cleanup_failures_keep_a_safe_retry_handle() {
+        for mode in ["cleanup_failure", "invoke_failure_cleanup_failure"] {
+            let (root, plan) = local_host_plan(mode);
+            let error = run_plan(&plan, RunRequest::text("TEST_ONLY_PRIVATE_RESULT"))
+                .expect_err("unconfirmed cleanup must retain a retry handle");
+            let debug = format!("{error:?}");
+            let FabricError::RuntimeCleanupPending(pending) = error else {
+                panic!("expected retained one-shot cleanup context");
+            };
+            assert_eq!(pending.result().is_some(), mode == "cleanup_failure");
+            let runtime = pending.runtime();
+            let directory = local_host_directory(&runtime.runtime_id);
+            fs::remove_file(&directory).unwrap();
+            fs::create_dir_all(&directory).unwrap();
+            stop_runtime(&plan, runtime).expect("retry cleanup with the original handle");
+            assert!(!local_hosts().contains_key(&runtime.runtime_id));
+            assert!(!debug.contains("TEST_ONLY_PRIVATE_RESULT"));
+            assert!(!debug.contains(&runtime.runtime_binding));
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn freezing_an_owned_process_prevents_new_child_creation() {
+        let (root, _) = local_host_plan("success");
+        let ready = root.join("ready-to-fork");
+        let release = root.join("release-fork");
+        let marker = root.join("forked");
+        let script = format!(
+            "import pathlib, subprocess, sys, time\n\
+             ready=pathlib.Path({})\n\
+             release=pathlib.Path({})\n\
+             marker=pathlib.Path({})\n\
+             ready.touch()\n\
+             while not release.exists(): time.sleep(0.01)\n\
+             subprocess.Popen([sys.executable,'-c','import time; time.sleep(1)'])\n\
+             marker.touch()\n\
+             time.sleep(1)\n",
+            serde_json::to_string(&ready).unwrap(),
+            serde_json::to_string(&release).unwrap(),
+            serde_json::to_string(&marker).unwrap(),
+        );
+        let mut child = Command::new(DEFAULT_PYTHON)
+            .args(["-c", &script])
+            .spawn()
+            .unwrap();
+        // Match a started adapter: wait until the interpreter has finished
+        // launching before exercising suspension of active application work.
+        let deadline = Instant::now() + LOCAL_HOST_STOP_TIMEOUT;
+        while !ready.exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        let started = ready.exists();
+        let process = LocalHostProcess::new(child.id(), SystemTime::now());
+        let frozen = freeze_owned_process(&process, Instant::now() + Duration::from_secs(3));
+        let stopped = process.is_stopped();
+        fs::write(&release, "").unwrap();
+        thread::sleep(Duration::from_millis(50));
+        let forked = marker.exists();
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(started, "child must initialize before freezing");
+        frozen.unwrap();
+        assert_eq!(stopped, Some(true));
+        assert!(!forked);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_capture_rejects_a_missing_job() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let host = local_hosts().get(&runtime.runtime_id).unwrap().clone();
+        let capture = WindowsHostControl::capture(&host.lock().unwrap().child, None);
+        stop_runtime(&plan, &runtime).unwrap();
+        assert!(capture.is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_job_closure_terminates_its_processes() {
+        use std::os::windows::process::CommandExt;
+        let mut child = Command::new(DEFAULT_PYTHON)
+            .args(["-c", "import time; time.sleep(30)"])
+            .creation_flags(windows_sys::Win32::System::Threading::CREATE_SUSPENDED)
+            .spawn()
+            .unwrap();
+        let job = host_job(&child).unwrap();
+        resume_host(child.id()).unwrap();
+        drop(job);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while child.try_wait().unwrap().is_none() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        let terminated = child.try_wait().unwrap().is_some();
+        if !terminated {
+            child.kill().unwrap();
+            child.wait().unwrap();
+        }
+        assert!(
+            terminated,
+            "closing the last job owner must terminate the owned tree"
+        );
     }
 
     #[cfg(windows)]
