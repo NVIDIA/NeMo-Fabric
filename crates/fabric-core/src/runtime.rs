@@ -131,6 +131,9 @@ static LOCAL_HOSTS: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<LocalAdapterHost>>
 // whole invocation, so a resource snapshot reads the PID from here instead.
 static LOCAL_HOST_PROCESSES: LazyLock<Mutex<BTreeMap<String, LocalHostProcess>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
+#[cfg(windows)]
+static WINDOWS_HOST_CONTROLS: LazyLock<Mutex<BTreeMap<String, Arc<WindowsHostControl>>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 static LOCAL_SERVICES: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<LocalServiceRecord>>>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
@@ -1960,7 +1963,9 @@ impl RuntimeAdapter for LocalHostAdapter {
 
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
         let Some(host) = local_hosts().get(&runtime.runtime_id).cloned() else {
+            #[cfg(not(windows))]
             let process = local_host_processes().get(&runtime.runtime_id).cloned();
+            #[cfg(not(windows))]
             if process
                 .as_ref()
                 .is_some_and(|process| !owned_process_has_exited(process))
@@ -1975,6 +1980,8 @@ impl RuntimeAdapter for LocalHostAdapter {
                 .unwrap_or_default();
             confirm_stopped_descendants(runtime, &pending)?;
             local_host_processes().remove(&runtime.runtime_id);
+            #[cfg(windows)]
+            windows_host_controls().remove(&runtime.runtime_id);
             STOPPING_PROCESSES
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
@@ -2040,6 +2047,8 @@ impl RuntimeAdapter for LocalHostAdapter {
         remove_local_host_files(&guard).map_err(|_| cleanup_unconfirmed(runtime))?;
         local_hosts().remove(&runtime.runtime_id);
         local_host_processes().remove(&runtime.runtime_id);
+        #[cfg(windows)]
+        windows_host_controls().remove(&runtime.runtime_id);
         STOPPING_PROCESSES
             .lock()
             .unwrap_or_else(|error| error.into_inner())
@@ -2142,7 +2151,18 @@ fn interrupt_local_host(runtime: &RuntimeHandle) -> Result<Vec<LocalHostProcess>
         signal_owned_process(&process).map_err(|_| cleanup_unconfirmed(runtime))?;
         Ok(descendants)
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        let control = windows_host_controls()
+            .get(&runtime.runtime_id)
+            .cloned()
+            .ok_or_else(|| cleanup_unconfirmed(runtime))?;
+        control
+            .interrupt()
+            .map_err(|_| cleanup_unconfirmed(runtime))?;
+        Ok(Vec::new())
+    }
+    #[cfg(not(any(unix, windows)))]
     Err(cleanup_unconfirmed(runtime))
 }
 
@@ -2150,14 +2170,30 @@ fn confirm_stopped_descendants(
     runtime: &RuntimeHandle,
     processes: &[LocalHostProcess],
 ) -> Result<()> {
+    #[cfg(windows)]
+    let control = windows_host_controls().get(&runtime.runtime_id).cloned();
     let deadline = Instant::now() + LOCAL_HOST_EXIT_GRACE;
     loop {
-        if processes.iter().all(owned_process_has_exited) {
+        let exited = processes.iter().all(owned_process_has_exited);
+        #[cfg(windows)]
+        let exited = exited
+            && control
+                .as_ref()
+                .is_none_or(|control| control.cleanup_confirmed() == Some(true));
+        if exited {
             return Ok(());
         }
         #[cfg(unix)]
         for process in processes {
             signal_owned_process(process).map_err(|_| cleanup_unconfirmed(runtime))?;
+        }
+        #[cfg(windows)]
+        if let Some(control) = &control
+            && control.job.is_some()
+        {
+            control
+                .interrupt()
+                .map_err(|_| cleanup_unconfirmed(runtime))?;
         }
         if Instant::now() >= deadline {
             return Err(cleanup_unconfirmed(runtime));
@@ -2300,6 +2336,21 @@ fn start_local_runtime(
         }
         let _ = remove_local_host_files(&host);
         return Err(error);
+    }
+    #[cfg(windows)]
+    match WindowsHostControl::capture(&host) {
+        Ok(control) => {
+            windows_host_controls().insert(runtime.runtime_id.clone(), Arc::new(control));
+        }
+        Err(source) => {
+            crate::check::invalidate_runtime(&runtime);
+            let _ = terminate_local_host(&mut host);
+            let _ = remove_local_host_files(&host);
+            return Err(FabricError::ProcessRunner {
+                command: host.command.clone(),
+                source,
+            });
+        }
     }
     local_host_processes().insert(
         runtime.runtime_id.clone(),
@@ -3164,8 +3215,103 @@ fn local_host_processes() -> std::sync::MutexGuard<'static, BTreeMap<String, Loc
 /// Read retained host exit evidence without taking the invocation lock.
 /// Release the process registry before inspecting the process.
 pub(crate) fn local_host_has_exited(runtime_id: &str) -> Option<bool> {
-    let process = local_host_processes().get(runtime_id).cloned()?;
-    process.has_exited()
+    #[cfg(windows)]
+    {
+        let control = windows_host_controls().get(runtime_id).cloned()?;
+        control.has_exited()
+    }
+    #[cfg(not(windows))]
+    {
+        let process = local_host_processes().get(runtime_id).cloned()?;
+        process.has_exited()
+    }
+}
+
+// Keep owned handles outside the invocation lock and after timeout eviction.
+// Handles continue to identify the same kernel objects even if PIDs are reused.
+#[cfg(windows)]
+struct WindowsHostControl {
+    process: std::os::windows::io::OwnedHandle,
+    job: Option<std::os::windows::io::OwnedHandle>,
+}
+
+#[cfg(windows)]
+impl WindowsHostControl {
+    fn capture(host: &LocalAdapterHost) -> std::io::Result<Self> {
+        use std::os::windows::io::AsHandle;
+        Ok(Self {
+            process: host.child.as_handle().try_clone_to_owned()?,
+            job: host.job.as_ref().map(|job| job.try_clone()).transpose()?,
+        })
+    }
+
+    fn has_exited(&self) -> Option<bool> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Foundation::{WAIT_OBJECT_0, WAIT_TIMEOUT};
+        // SAFETY: this owned process handle stays valid throughout the probe.
+        match unsafe {
+            windows_sys::Win32::System::Threading::WaitForSingleObject(
+                self.process.as_raw_handle(),
+                0,
+            )
+        } {
+            WAIT_OBJECT_0 => Some(true),
+            WAIT_TIMEOUT => Some(false),
+            _ => None,
+        }
+    }
+
+    fn cleanup_confirmed(&self) -> Option<bool> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::JobObjects::{
+            JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JobObjectBasicAccountingInformation,
+            QueryInformationJobObject,
+        };
+        match self.has_exited() {
+            Some(true) => {}
+            other => return other,
+        }
+        let Some(job) = &self.job else {
+            return None;
+        };
+        // SAFETY: this is a plain output structure with no invalid bit patterns.
+        let mut accounting: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = unsafe { std::mem::zeroed() };
+        // SAFETY: the job handle is owned; the writable buffer matches the class and size.
+        let queried = unsafe {
+            QueryInformationJobObject(
+                job.as_raw_handle(),
+                JobObjectBasicAccountingInformation,
+                (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
+                std::mem::size_of_val(&accounting) as u32,
+                std::ptr::null_mut(),
+            )
+        };
+        (queried != 0).then_some(accounting.ActiveProcesses == 0)
+    }
+
+    fn interrupt(&self) -> std::io::Result<()> {
+        use std::os::windows::io::AsRawHandle;
+        let job = self
+            .job
+            .as_ref()
+            .ok_or_else(|| std::io::Error::other("owned Windows process tree is unavailable"))?;
+        // SAFETY: this job handle belongs to the runtime, including its descendants.
+        if unsafe {
+            windows_sys::Win32::System::JobObjects::TerminateJobObject(job.as_raw_handle(), 1)
+        } == 0
+        {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+fn windows_host_controls()
+-> std::sync::MutexGuard<'static, BTreeMap<String, Arc<WindowsHostControl>>> {
+    WINDOWS_HOST_CONTROLS
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
 }
 
 fn local_services()
@@ -5140,6 +5286,11 @@ for line in sys.stdin:
             root = os.path.dirname(os.environ["FABRIC_FAKE_HOST_STOP_MARKER"])
             with open(os.path.join(root, "child.pid"), "w", encoding="utf-8") as stream:
                 stream.write(str(child.pid))
+        if MODE == "child_after_start":
+            subprocess.Popen(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
         service = message["payload"].get("service")
         if MODE == "connect_failure_once" and service and service["operation"] == "connect":
             failure_marker = os.environ["FABRIC_FAKE_HOST_STOP_MARKER"] + ".connect-failed"
@@ -5551,6 +5702,78 @@ else:
 
     fn stopped_agents() -> Vec<String> {
         TEST_STOPPED_AGENTS.lock().expect("stop tracker").clone()
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_busy_stop_retains_ownership_without_a_job() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let control = windows_host_controls()
+            .get(&runtime.runtime_id)
+            .unwrap()
+            .clone();
+        let process_only = Arc::new(WindowsHostControl {
+            process: control.process.try_clone().unwrap(),
+            job: None,
+        });
+        windows_host_controls().insert(runtime.runtime_id.clone(), process_only.clone());
+        let host = local_hosts().get(&runtime.runtime_id).unwrap().clone();
+        let guard = host.lock().unwrap();
+        let stopped = stop_runtime(&plan, &runtime);
+        drop(guard);
+        let retained = windows_host_controls().contains_key(&runtime.runtime_id);
+        let still_running = process_only.has_exited();
+        windows_host_controls().insert(runtime.runtime_id.clone(), control);
+        stop_runtime(&plan, &runtime).unwrap();
+        assert!(
+            matches!(stopped, Err(FabricError::AdapterLifecycleOperation { code, .. })
+            if code == "cleanup_unconfirmed")
+        );
+        assert!(retained);
+        assert_eq!(still_running, Some(false));
+        assert_eq!(process_only.cleanup_confirmed(), None);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_stop_confirms_the_job_after_the_host_exits() {
+        let (root, plan) = local_host_plan("child_after_start");
+        let runtime = start_runtime(&plan).unwrap();
+        let control = windows_host_controls()
+            .get(&runtime.runtime_id)
+            .unwrap()
+            .clone();
+        assert_eq!(control.has_exited(), Some(false));
+        {
+            let host = local_hosts().get(&runtime.runtime_id).unwrap().clone();
+            let mut host = host.lock().unwrap();
+            host.child.kill().unwrap();
+            host.child.wait().unwrap();
+        }
+        assert_eq!(control.has_exited(), Some(true));
+        assert_eq!(control.cleanup_confirmed(), Some(false));
+        stop_runtime(&plan, &runtime).expect("stop children after the host already exited");
+        assert_eq!(control.cleanup_confirmed(), Some(true));
+        assert!(!windows_host_controls().contains_key(&runtime.runtime_id));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn busy_stop_interrupts_the_owned_host_without_the_invocation_lock() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let host = local_hosts().get(&runtime.runtime_id).unwrap().clone();
+        let guard = host.lock().unwrap();
+        let interrupted = interrupt_local_host(&runtime);
+        drop(guard);
+        let stopped = stop_runtime(&plan, &runtime);
+        interrupted.expect("interrupt without taking the busy host lock");
+        stopped.expect("confirm cleanup after interruption");
+        assert!(!local_hosts().contains_key(&runtime.runtime_id));
+        assert!(local_host_has_exited(&runtime.runtime_id).is_none());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(unix)]
@@ -7348,6 +7571,9 @@ else:
             "timed-out host process must be terminated"
         );
         assert!(!runtime_dir.exists());
+
+        #[cfg(any(target_os = "linux", target_os = "macos", windows))]
+        assert_eq!(local_host_has_exited(&runtime.runtime_id), Some(true));
 
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         for level in ["live", "active", "ready"] {
