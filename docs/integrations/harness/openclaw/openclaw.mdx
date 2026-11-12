@@ -185,8 +185,7 @@ for every runtime of the agent and for a NeMo Fabric-owned service:
   start and removes it at stop. The native interface files, including the
   dashboard token, are written to `interfaces/` in the state folder, removed
   by `stop`, and removed at the next start if an earlier runtime ended without
-  `stop`. A removal failure stops startup with
-  `openclaw_interface_cleanup_failed` before the Gateway starts.
+  `stop`.
 - `stop` and a failed start never remove the state folder or its contents.
 - NeMo Fabric lets one runtime at a time use the folder, as
   [Keep Agent State Across Runtimes](../../../sdk/python.mdx#keep-agent-state-across-runtimes)
