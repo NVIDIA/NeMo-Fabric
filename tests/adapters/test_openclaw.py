@@ -3231,6 +3231,9 @@ async def test_openclaw_attach_rejects_native_controls(tmp_path: Path, section: 
 
 
 
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
 @pytest.mark.parametrize("agent_id", ["default", "Reviewer", "agent_1-A"])
 async def test_openclaw_retains_native_state_and_explicitly_resumes_the_selected_session(
     tmp_path: Path, mock_openclaw: Path, agent_id
@@ -3306,6 +3309,7 @@ async def test_openclaw_retains_native_state_and_explicitly_resumes_the_selected
         await resumed.stop()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
 async def test_openclaw_explicit_resume_rejects_a_missing_native_session(
     tmp_path: Path, mock_openclaw: Path
 ):
@@ -3336,6 +3340,7 @@ async def test_openclaw_explicit_resume_rejects_a_missing_native_session(
         await runtime.stop()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
 async def test_openclaw_retained_service_resumes_after_connected_runtime_stops(
     tmp_path: Path, mock_openclaw: Path
 ):
@@ -3430,12 +3435,19 @@ async def test_openclaw_retained_attach_fails_before_accessing_caller_owned_serv
     assert not (tmp_path / "caller.json").exists()
 
 
-async def test_openclaw_failed_gateway_cleanup_retains_process_for_retry():
+@pytest.mark.parametrize("platform", ["posix", "nt"])
+async def test_openclaw_failed_gateway_cleanup_retains_process_for_retry(
+    monkeypatch, platform
+):
+    mock_os = MagicMock(spec=os, wraps=os)
+    mock_os.name = platform
+    monkeypatch.setattr(adapter, "os", mock_os)
     runtime = adapter.OpenClawRuntime()
     process = MagicMock(spec=asyncio.subprocess.Process)
     process.pid = 12345
     process.returncode = None
     process.wait = AsyncMock(return_value=0)
+    process.terminate.side_effect = PermissionError("denied")
     runtime._process = process
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(
@@ -3447,6 +3459,10 @@ async def test_openclaw_failed_gateway_cleanup_retains_process_for_retry():
             await runtime.stop()
     assert caught.value.code == "cleanup_unconfirmed"
     assert runtime._process is process
+    if platform == "nt":
+        process.terminate.assert_called_once_with()
+    else:
+        process.terminate.assert_not_called()
     process.returncode = 0
     await runtime.stop()
     assert runtime._process is None
@@ -3486,6 +3502,7 @@ async def test_openclaw_gateway_holds_the_state_lock_after_controller_releases_i
         await runtime.stop()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
 async def test_openclaw_uncertain_turn_warns_and_waits_for_explicit_acknowledgement(
     tmp_path: Path, mock_openclaw: Path
 ):
@@ -3564,6 +3581,7 @@ async def test_openclaw_uncertain_turn_warns_and_waits_for_explicit_acknowledgem
         await resumed.stop()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
 async def test_openclaw_retained_start_removes_stale_dashboard_token_when_disabled(
     tmp_path: Path, mock_openclaw: Path
 ):
@@ -3589,6 +3607,7 @@ async def test_openclaw_retained_start_removes_stale_dashboard_token_when_disabl
         await runtime.stop()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
 async def test_openclaw_does_not_claim_the_old_identity_after_a_native_session_reset(
     tmp_path: Path, mock_openclaw: Path
 ):
@@ -3654,6 +3673,7 @@ async def test_openclaw_rejects_an_invalid_inherited_state_lock(
         await runtime.stop()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
 async def test_openclaw_retained_dashboard_token_rotates_and_remains_private(
     tmp_path: Path, mock_openclaw: Path, dashboard_port: int
 ):
@@ -3690,6 +3710,7 @@ async def test_openclaw_retained_dashboard_token_rotates_and_remains_private(
     assert tokens[0] != tokens[1]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
 @pytest.mark.parametrize("failure", ["timeout", "http429", "http500", "unconfirmed"])
 async def test_retained_invocation_failure_preserves_identity_and_recovery_gate(
     tmp_path: Path, mock_openclaw: Path, failure: str
