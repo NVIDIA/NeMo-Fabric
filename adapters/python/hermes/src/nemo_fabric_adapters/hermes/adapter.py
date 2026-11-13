@@ -30,6 +30,7 @@ from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
+from nemo_fabric_adapters.hermes import sessions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import mcp_availability
 from nemo_fabric_adapters.hermes import configuration
@@ -71,6 +72,7 @@ class HermesRuntime:
         self._mcp_authentication_checked = False
         self._mcp_unavailable: list[dict[str, str]] = []
         self._conversation_history: list[dict[str, Any]] | None = None
+        self._native_session: sessions.NativeSession | None = None
         self._session_db: Any = None
         self._agent: Any = None
         self._relay_plugin_config: dict[str, Any] | None = None
@@ -78,7 +80,7 @@ class HermesRuntime:
         self._active_invoke_task: asyncio.Task[tuple[dict[str, Any], str]] | None = None
         self._interfaces = interfaces.InterfaceChildren()
 
-    async def start(self, payload: dict[str, Any]) -> None:
+    async def start(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         """Apply shared configuration and start the selected SDK/native backends.
 
         SDK execution remains enabled by default. A native-only runtime skips
@@ -120,6 +122,11 @@ class HermesRuntime:
             self._settings = configuration._settings(agent_config)
             interface_ports = interfaces.interface_ports(self._settings)
             self._sdk_enabled = self._settings.get("sdk", {}).get("enabled", True)
+            if runtime_context.session_ref is not None and not self._sdk_enabled:
+                raise lifecycle.LifecycleError(
+                    "session_resume_unsupported",
+                    "SessionRef resume requires the Hermes SDK backend",
+                )
             if not self._sdk_enabled and not interface_ports:
                 raise lifecycle.LifecycleError(
                     "hermes_no_execution_path",
@@ -217,8 +224,21 @@ class HermesRuntime:
                     self._enabled_toolsets = configuration.resolve_hermes_toolsets(
                         agent_config, loaded_hermes_config
                     )
+                    if (
+                        runtime_context.session_ref is not None
+                        and not (self._hermes_home / "state.db").is_file()
+                    ):
+                        raise lifecycle.LifecycleError(
+                            "session_not_found",
+                            "Native session database was not found in retained storage",
+                        )
                     self._session_db = SessionDB()
-                    self._conversation_history = None
+                    self._native_session = sessions.open_session(
+                        self._session_db, runtime_context
+                    )
+                    self._conversation_history = (
+                        self._native_session.history if self._native_session else None
+                    )
                     self._agent = AIAgent(
                         **filter_supported_kwargs(
                             AIAgent,
@@ -233,7 +253,9 @@ class HermesRuntime:
                             skip_context_files=True,
                             skip_memory=True,
                             platform="fabric",
-                            session_id=self._runtime_id,
+                            session_id=self._native_session.native_id
+                            if self._native_session
+                            else self._runtime_id,
                             session_db=self._session_db,
                         )
                     )
@@ -286,6 +308,7 @@ class HermesRuntime:
                 )
             self._agent_config = agent_config
             self._started = True
+            return self._native_session.start_output() if self._native_session else None
         except BaseException:
             await self.stop()
             raise
@@ -327,6 +350,20 @@ class HermesRuntime:
                 "Hermes invocation does not match the active runtime",
             )
 
+        if self._native_session and self._native_session.recovery_required:
+            if not request.acknowledge_recovery:
+                return AgentRunResult(
+                    status=AgentRunStatus.FAILED,
+                    session_id=self._native_session.session_id,
+                    output=None,
+                    error=AgentRunError(
+                        code="session_recovery_required",
+                        message="Inspect the restored state and explicitly acknowledge recovery before a new invocation.",
+                        retryable=False,
+                    ),
+                )
+            self._native_session.recovery_required = False
+
         user_message = common_utils.normalize_user_input(request.input)
         instructions = agent_config.instructions
         system_prompt = (
@@ -338,17 +375,26 @@ class HermesRuntime:
         await self._authenticate_mcp_servers()
 
         def run_hermes_turn() -> tuple[dict[str, Any], str]:
+            native_session = self._native_session
+            completed = False
             if self._relay_plugin_config is not None:
                 common_utils.reject_ambient_relay_plugin_config()
             try:
-                return _invoke_hermes_turn(
+                result = _invoke_hermes_turn(
                     agent=self._agent,
                     system_prompt=system_prompt,
                     user_message=user_message,
                     conversation_history=self._conversation_history,
                     task_id=runtime_context.request_id,
                 )
+                if native_session:
+                    completed = native_session.finish_turn(
+                        str(self._agent.session_id), result[0]
+                    )
+                return result
             finally:
+                if native_session:
+                    native_session.recovery_required = not completed
                 if self._relay_plugin_config is not None:
                     # Hermes writes TOML-configured ATIF at its session-finalization
                     # boundary for every supported Relay version. Fabric defines
@@ -365,6 +411,8 @@ class HermesRuntime:
                 "hermes_invocation_in_progress",
                 "Hermes runtime already has an active invocation",
             )
+        if self._native_session:
+            self._native_session.begin_turn(runtime_context)
         invoke_task = asyncio.create_task(asyncio.to_thread(run_hermes_turn))
         self._active_invoke_task = invoke_task
 
@@ -454,6 +502,9 @@ class HermesRuntime:
                     message="Hermes did not complete the invocation",
                 )
         return AgentRunResult(
+            session_id=self._native_session.session_id
+            if self._native_session
+            else None,
             status=AgentRunStatus.FAILED if failed else AgentRunStatus.SUCCEEDED,
             output=output,
             error=error,
@@ -792,6 +843,7 @@ class HermesRuntime:
         self._mcp_authentication_checked = False
         self._mcp_unavailable = []
         self._conversation_history = None
+        self._native_session = None
         self._relay_plugin_config = None
         self._relay_plugin_config_path = None
         self._started = False

@@ -1258,7 +1258,12 @@ async def test_runtime_status_after_stop_has_no_live_handle_and_survives_drop(
     reference = weakref.ref(runtime)
     await runtime.stop()
     del runtime
-    gc.collect()
+    # The executor can publish a result before releasing its finished work item.
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 5
+    while reference() is not None and loop.time() < deadline:
+        await asyncio.sleep(0.01)
+        gc.collect()
     assert reference() is None
     report = await native_client.runtime_status(
         runtime_id=runtime_id, agent_name="demo"

@@ -337,6 +337,7 @@
         "active",
         "ready"
       ]
-    }
+    },
+    "session_resume": true
   }
 }

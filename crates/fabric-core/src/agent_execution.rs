@@ -15,6 +15,9 @@ use thiserror::Error;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AgentRunRequest {
+    /// Acknowledge uncertain earlier completion before starting this new request.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub acknowledge_recovery: bool,
     /// Request payload for the adapter target.
     pub input: Value,
     /// UUID propagation root shared across conversation turns.
@@ -119,6 +122,9 @@ pub struct AgentUsage {
 #[serde(deny_unknown_fields)]
 #[schemars(transform = agent_run_result_schema)]
 pub struct AgentRunResult {
+    /// Confirmed adapter-issued identity of the durable native session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     /// Adapter-target completion status.
     pub status: AgentRunStatus,
     /// Primary adapter-target output.
@@ -281,6 +287,7 @@ mod tests {
     #[test]
     fn validates_terminal_status_and_error() {
         let failed_without_error = AgentRunResult {
+            session_id: None,
             status: AgentRunStatus::Failed,
             output: Value::Null,
             error: None,
@@ -300,6 +307,7 @@ mod tests {
             extensions: BTreeMap::new(),
         };
         let succeeded_with_error = AgentRunResult {
+            session_id: None,
             status: AgentRunStatus::Succeeded,
             output: Value::Null,
             error: Some(error.clone()),
@@ -319,6 +327,7 @@ mod tests {
             (AgentRunStatus::Cancelled, Some(error)),
         ] {
             let result = AgentRunResult {
+                session_id: None,
                 status,
                 output: Value::Null,
                 error,
@@ -357,6 +366,7 @@ mod tests {
     #[test]
     fn validates_programmatically_constructed_artifact_paths() {
         let result = AgentRunResult {
+            session_id: None,
             status: AgentRunStatus::Succeeded,
             output: Value::Null,
             error: None,
