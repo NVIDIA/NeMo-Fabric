@@ -85,6 +85,38 @@ def remote_config_fixture(tmp_path, monkeypatch):
     )
 
 
+async def test_remote_retained_runtime_can_start_without_a_native_session(
+    remote_config, tmp_path
+):
+    descriptor_path = tmp_path / "task/echo.fabric-adapter.json"
+    descriptor = json.loads(descriptor_path.read_text())
+    descriptor["config"]["accepts"] = ["runtime.keep_state"]
+    descriptor["capabilities"]["session_resume"] = True
+    descriptor_path.write_text(json.dumps(descriptor))
+    remote_config.runtime.keep_state = True
+    fabric = Fabric()
+    environment = await fabric.attach_environment(
+        remote_config,
+        EnvironmentReference.from_mapping(
+            {
+                "provider": "openshell",
+                "resource": {
+                    "sandbox_name": "echo",
+                    "sandbox_id": remote_config.environment.connection["sandbox_id"],
+                },
+            }
+        ),
+    )
+    try:
+        async with await fabric.start_runtime_in(remote_config, environment) as runtime:
+            assert runtime.session_ref is None
+            result = await runtime.invoke(input="A fresh native-only runtime.")
+            assert result.status == "succeeded"
+            assert result.session_ref is None
+    finally:
+        await fabric.release_environment(environment)
+
+
 async def test_real_task_sdk_retains_state_and_collects_declared_artifacts(
     remote_config, tmp_path
 ):
@@ -632,3 +664,29 @@ async def test_disabled_provenance_crosses_the_real_guest_sdk_dispatch(
         capture_result("disabled-sandbox", result)
     finally:
         await fabric.release_environment(environment)
+
+
+@pytest.mark.parametrize(
+    "fault", ["unexpected_session_start", "unexpected_session_result"]
+)
+async def test_remote_session_identity_cannot_be_added_to_a_legacy_runtime(
+    remote_config, monkeypatch, fault
+):
+    monkeypatch.setenv("FABRIC_TEST_PROVIDER_FAULT", fault)
+    fabric = Fabric()
+    environment = await fabric.attach_environment(
+        remote_config,
+        EnvironmentReference.from_mapping(
+            {"provider": "openshell", "resource": {"sandbox_name": "echo"}}
+        ),
+    )
+    if fault == "unexpected_session_start":
+        with pytest.raises(FabricRuntimeError):
+            await fabric.start_runtime_in(remote_config, environment)
+    else:
+        runtime = await fabric.start_runtime_in(remote_config, environment)
+        try:
+            with pytest.raises(FabricRuntimeError):
+                await runtime.invoke(input="Check the bound session.")
+        finally:
+            await runtime.stop()

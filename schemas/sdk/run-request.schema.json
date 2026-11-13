@@ -2,6 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "A request passed to a NeMo Fabric-managed harness runtime.",
   "properties": {
+    "acknowledge_recovery": {
+      "description": "Explicitly accept recovery uncertainty before submitting this new turn.",
+      "type": "boolean"
+    },
     "context": {
       "additionalProperties": true,
       "description": "Runtime context such as task, rollout, workflow, or caller metadata.",

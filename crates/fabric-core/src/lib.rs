@@ -15,6 +15,7 @@ pub mod provenance;
 pub mod resource_snapshot;
 pub mod runtime;
 pub mod schema;
+pub mod session;
 mod strict_json;
 pub mod system_stats;
 mod task_command;
@@ -73,6 +74,7 @@ pub use runtime::{
 pub use schema::{
     SchemaName, generate_all_schemas, generate_schema, generate_schema_json, write_schema_snapshots,
 };
+pub use session::{SESSION_REF_SCHEMA_VERSION, SessionRef};
 pub use system_stats::{
     CgroupObservation, CgroupSnapshot, CgroupStats, GaugeSummary, InvocationSystemStats,
     Measurement, ResourceObservation, SampleSummary, SystemStatsConfig, SystemStatsMetricGroup,

@@ -212,20 +212,24 @@ async def test_report_finalization_cannot_pass_after_the_deadline(
     native.check_environment.return_value = json.dumps(check_report)
     monkeypatch.setattr("nemo_fabric.client._native", native)
     normalize = CheckReport._normalize
+    elapsed = [0.0]
+    clock = SimpleNamespace(monotonic=lambda: elapsed[0])
+    monkeypatch.setattr("nemo_fabric.client.time", clock)
+    monkeypatch.setattr("nemo_fabric.check.time", clock)
 
     def delayed(cls, data):
-        time.sleep(0.04)
+        elapsed[0] = 1.0
         return normalize(data)
 
     monkeypatch.setattr(CheckReport, "_normalize", classmethod(delayed))
-    started = time.monotonic()
     report = await Fabric().check(
         environment=check_environment,
         request=CheckRequest(
             scope="runtime", runtime_id="runtime-1", timeout_seconds=0.06
         ),
     )
-    assert report.outcome != "passed" or time.monotonic() - started < 0.06
+    assert report.outcome == "unknown"
+    assert report.reason_code == "probe_timeout"
 
 
 async def test_sdk_timeout_does_not_use_invocation_teardown(

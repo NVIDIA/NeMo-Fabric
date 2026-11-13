@@ -59,6 +59,7 @@ from nemo_fabric.service import Service
 from nemo_fabric.service import ServiceStatus
 from nemo_fabric.streaming import InvokeStream
 from nemo_fabric.types import AdapterInfo
+from nemo_fabric.types import SessionRef
 from nemo_fabric.types import ArtifactManifest
 from nemo_fabric.types import ArtifactRef
 from nemo_fabric.types import DoctorCheck
@@ -92,6 +93,7 @@ from nemo_fabric.types import ServiceReference
 from nemo_fabric.types import TelemetryRef
 
 __all__ = [
+    "SessionRef",
     "CheckReport",
     "CheckRequest",
     "AdapterCapabilityProfile",

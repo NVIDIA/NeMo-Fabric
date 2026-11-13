@@ -1570,7 +1570,9 @@ async def test_hermes_sessions_survive_runtime_replacement_only_with_kept_state(
             assert second._session_db.get_messages(session_id) == saved_messages
         else:
             assert second._session_db.get_session(session_id) is None
-        assert second._agent.session_id == "runtime-second"
+        assert second._agent.session_id != session_id
+        if not kept:
+            assert second._agent.session_id == "runtime-second"
         assert second._conversation_history is None
     finally:
         await second.stop()
@@ -2585,3 +2587,82 @@ async def test_sdk_disabled_result_reports_skills():
     assert first.error is not None
     assert first.error.code == "hermes_sdk_disabled"
     assert second.output == {"skills": {"loaded": [{"name": "review"}]}}
+
+
+@pytest.fixture(name="retained_hermes_runtime")
+def retained_hermes_runtime_fixture(started_hermes_runtime, tmp_path):
+    from nemo_fabric_adapters.hermes.sessions import NativeSession
+
+    runtime, turn = started_hermes_runtime
+    database = MagicMock()
+    database.get_messages.return_value = [{"id": 1, "role": "assistant"}]
+    native = NativeSession("original", "original", database, tmp_path / "turn.json")
+    runtime._native_session = native
+    runtime._agent.session_id = "original"
+    return runtime, turn, native
+
+
+@pytest.mark.parametrize("failure", ["partial", "unfinished", "exception"])
+async def test_retained_runtime_requires_recovery_after_an_uncertain_turn(
+    retained_hermes_runtime, failure
+):
+    runtime, turn, native = retained_hermes_runtime
+    context = _runtime_context(runtime_id=runtime._runtime_id)
+    turn.return_value = (
+        {"final_response": "unfinished", "partial": failure == "partial"},
+        "",
+    )
+    if failure == "unfinished":
+        native.database.get_messages.return_value = [{"id": 1, "role": "user"}]
+    if failure == "exception":
+        turn.side_effect = RuntimeError("native turn failed")
+        with pytest.raises(RuntimeError):
+            await runtime.invoke(AgentRunRequest(input="Create a ticket."), context)
+    else:
+        await runtime.invoke(AgentRunRequest(input="Create a ticket."), context)
+    assert native.recovery_required
+    marker = native.marker.read_bytes()
+    turn.reset_mock()
+    blocked = await runtime.invoke(AgentRunRequest(input="Do more work."), context)
+    assert blocked.error.code == "session_recovery_required"
+    turn.assert_not_called()
+    assert native.marker.read_bytes() == marker
+
+    turn.side_effect = None
+    turn.return_value = ({"final_response": "completed"}, "")
+    native.database.get_messages.return_value = [{"id": 2, "role": "assistant"}]
+    result = await runtime.invoke(
+        AgentRunRequest(input="I inspected the state.", acknowledge_recovery=True),
+        context,
+    )
+    assert result.status == AgentRunStatus.SUCCEEDED
+    assert not native.recovery_required
+
+
+async def test_cancelled_turn_requires_recovery_only_after_worker_finishes(
+    retained_hermes_runtime,
+):
+    runtime, turn, native = retained_hermes_runtime
+    entered, release = threading.Event(), threading.Event()
+
+    def partial_turn(**kwargs):
+        entered.set()
+        assert release.wait(5)
+        return {"final_response": "unfinished", "partial": True}, ""
+
+    turn.side_effect = partial_turn
+    context = _runtime_context(runtime_id=runtime._runtime_id)
+    invocation = asyncio.create_task(
+        runtime.invoke(AgentRunRequest(input="Create a ticket."), context)
+    )
+    try:
+        assert await asyncio.to_thread(entered.wait, 2)
+        worker = runtime._active_invoke_task
+        invocation.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await invocation
+        assert not native.recovery_required
+    finally:
+        release.set()
+    await asyncio.wait_for(asyncio.shield(worker), 2)
+    assert native.recovery_required

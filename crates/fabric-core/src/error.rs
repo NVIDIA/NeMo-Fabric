@@ -13,6 +13,14 @@ pub type Result<T> = std::result::Result<T, FabricError>;
 /// Errors raised by NeMo Fabric config loading and validation.
 #[derive(Debug, thiserror::Error)]
 pub enum FabricError {
+    /// A normalized durable session operation could not be completed.
+    #[error("{code}: {message}")]
+    Session {
+        /// Stable machine-readable failure code.
+        code: String,
+        /// Safe diagnostic without the native session identifier.
+        message: String,
+    },
     /// The base directory could not be resolved to an absolute path.
     #[error("failed to resolve base directory {path}: {source}")]
     ResolveBaseDirectory {

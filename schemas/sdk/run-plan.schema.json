@@ -3197,6 +3197,10 @@
           "description": "Whether the selected runtime supports service lifecycle operations.",
           "type": "boolean"
         },
+        "session_resume": {
+          "description": "Whether the adapter implements durable native session creation and resume.",
+          "type": "boolean"
+        },
         "streaming": {
           "default": false,
           "description": "Whether invocations can emit progressive output.",
@@ -3284,6 +3288,35 @@
         "context_refs",
         "provider",
         "service_version"
+      ],
+      "type": "object"
+    },
+    "SessionRef": {
+      "additionalProperties": false,
+      "description": "Adapter-issued native identity, resolved only within caller-supplied storage.",
+      "properties": {
+        "adapter_id": {
+          "description": "Adapter responsible for interpreting the opaque identifier.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "fabric.session_ref/v1alpha1",
+          "description": "Supported envelope version.",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Opaque adapter-issued identifier interpreted by the adapter.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "adapter_id",
+        "session_id"
       ],
       "type": "object"
     },
@@ -4305,6 +4338,17 @@
         }
       ],
       "description": "Selected install or availability strategy."
+    },
+    "session_ref": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SessionRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Native session to resume. Omission starts a fresh conversation."
     },
     "telemetry_plan": {
       "anyOf": [

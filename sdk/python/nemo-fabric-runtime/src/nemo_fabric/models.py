@@ -1481,6 +1481,11 @@ class FabricConfig(FabricBaseModel):
 class RunRequest(FabricBaseModel):
     """One validated NeMo Fabric invocation request."""
 
+    acknowledge_recovery: bool = Field(
+        default=False,
+        strict=True,
+        description="Explicit acknowledgment before a new invocation on a restored session with uncertain earlier work.",
+    )
     input: Any = ""
     relay_session_root: str | None = Field(
         default=None,
@@ -1528,4 +1533,6 @@ class RunRequest(FabricBaseModel):
             "request",
         )
         assert isinstance(data, dict)
+        if not self.acknowledge_recovery:
+            data.pop("acknowledge_recovery", None)
         return data

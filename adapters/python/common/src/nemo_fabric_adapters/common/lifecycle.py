@@ -634,11 +634,22 @@ async def _handle_start(
                     "lifecycle_health_unavailable",
                     "Adapter health channel could not start",
                 ) from None
-    except BaseException:
+    except BaseException as start_error:
         if state.health is not None:
             await state.health.close()
         state.clear()
-        await _stop_after_eof(candidate)
+        try:
+            await _adapter_call("stop", candidate.stop)
+        except LifecycleError as cleanup_error:
+            raise LifecycleError(
+                "cleanup_unconfirmed",
+                "Adapter startup cleanup could not be confirmed",
+                metadata=(
+                    {"start_error_code": start_error.code}
+                    if isinstance(start_error, LifecycleError)
+                    else {}
+                ),
+            ) from cleanup_error
         raise
     return _response("start", output=output)
 
