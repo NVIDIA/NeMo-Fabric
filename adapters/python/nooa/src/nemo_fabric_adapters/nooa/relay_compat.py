@@ -1,60 +1,19 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Relay 0.11 compatibility for NOOA 0.0.10 middleware."""
+"""Relay 0.11 tool-result compatibility for NOOA middleware."""
 
 from __future__ import annotations
 
-import asyncio
-from contextlib import nullcontext
-from contextvars import ContextVar
 from typing import Any
 
 import nemo_relay
 from nooa.events import _NO_RETURN
+from nooa.nemo_relay_middleware import nemo_relay_agent_call_middleware
 from nooa.nemo_relay_middleware import nemo_relay_llm_middleware
 from nooa.runtime.middleware import MIDDLEWARE_AGENT_CALL
 from nooa.runtime.middleware import MIDDLEWARE_EXECUTE_PYTHON
 from nooa.runtime.middleware import MIDDLEWARE_LLM_CALL
-
-
-_agent_scope: ContextVar[tuple[Any, Any, asyncio.Task[Any] | None] | None] = ContextVar(
-    "_nooa_agent_scope", default=None
-)
-
-
-async def _agent_call_middleware(ctx: Any, nxt: Any) -> Any:
-    """Isolate concurrent method stacks while preserving native session propagation."""
-    current = _agent_scope.get()
-    if current is None:
-        parent = nemo_relay.scope.get_handle()
-        propagation = nemo_relay.capture_propagation_context()
-        owner = None
-    else:
-        parent, propagation, owner = current
-    task = asyncio.current_task()
-    stack = (
-        nullcontext()
-        if owner is task
-        else nemo_relay.use_scope_stack(
-            nemo_relay.create_scope_stack_from_propagation(propagation)
-        )
-    )
-    with (
-        stack,
-        nemo_relay.scope.scope(
-            f"{type(ctx.agent).__name__}.{ctx.method_name}",
-            nemo_relay.ScopeType.Function,
-            handle=parent,
-        ) as handle,
-    ):
-        token = _agent_scope.set(
-            (handle, nemo_relay.capture_propagation_context(), task)
-        )
-        try:
-            return await nxt(ctx)
-        finally:
-            _agent_scope.reset(token)
 
 
 async def _tool_middleware(ctx: Any, nxt: Any) -> Any:
@@ -114,8 +73,10 @@ async def _tool_middleware(ctx: Any, nxt: Any) -> Any:
 
 
 def install_nemo_relay_compat(event_manager: Any) -> Any:
-    """Install NOOA middleware with Relay 0.11 tool results and native session roots."""
-    unsub_agent = event_manager.intercept(MIDDLEWARE_AGENT_CALL, _agent_call_middleware)
+    """Install NOOA middleware with Relay 0.11 tool-result compatibility."""
+    unsub_agent = event_manager.intercept(
+        MIDDLEWARE_AGENT_CALL, nemo_relay_agent_call_middleware
+    )
     unsub_llm = event_manager.intercept(MIDDLEWARE_LLM_CALL, nemo_relay_llm_middleware)
     unsub_exec = event_manager.intercept(MIDDLEWARE_EXECUTE_PYTHON, _tool_middleware)
 

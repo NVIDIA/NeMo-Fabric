@@ -21,7 +21,8 @@ adapter performs the following operations:
 1. Calls the factory during `start` and retains the returned agent.
 2. Submits each invocation string to `user_messages`.
 3. Runs the standard NOOA `race` / drain / `handle` dispatcher loop.
-4. Converts `AgentMessage` events into the normalized response and message list.
+4. Collects `AgentMessage` events and public turn-result messages into the
+   normalized response and message list.
 5. Calls target-owned cleanup, `agent.close()`, or the queue manager's fallback
    shutdown during `stop`.
 
@@ -39,9 +40,13 @@ NeMo Fabric invocation. `DONE`, `NEED_INPUT`, and the legacy `GET_USER_INPUT`
 end the invocation. The latter two return a successful adapter call with
 `completed=false` and preserve the native terminal reason.
 
-The normalized `messages` field contains ordered `{"content": "..."}` records.
-The `response` field contains the final message or, when the agent emits no
-`AgentMessage`, the terminal `RespondResult.explanation`.
+NOOA's public `Done`, `NeedInput`, and `Waiting` results map to `DONE`,
+`NEED_INPUT`, and `WAIT`; legacy `RespondResult` values remain supported.
+The normalized `messages` field contains ordered `{"content": "..."}` records
+from `AgentMessage` events, `Done.message`, `NeedInput.question`, and
+`Waiting.message`. The `response` field contains the final message or the
+terminal explanation when no message is present. A `NeedInput` uses its first
+nonblank explanation, reason, or question as the normalized explanation.
 
 ## Register a Target
 
@@ -140,9 +145,13 @@ without a skill registry when its configuration does not include MCP servers.
 
 ## Relay Telemetry
 
-Pass the same UUID in `RunRequest.relay_session_root` on each conversation turn to group its traces under one native Relay session. Missing or unusable values preserve per-request roots. The adapter exports that native root as `session_id` on every span and preserves distinct invocation correlation IDs. It activates Fabric's generated exporter configuration explicitly, ignoring ambient user/project files while retaining system policy.
+Follow the [shared Relay setup](../README.md#configure-relay) for session
+identity, UUID fallback, configuration policy, and compatible versions.
+[Strict trace capture](../README.md#strict-trace-capture) also requires the
+GenAI endpoint mapping.
 
-Each Relay-enabled invocation installs the adapter's NOOA compatibility middleware and opens one `nooa-interactive-agent-request` scope. The middleware
+Each Relay-enabled invocation installs NOOA's agent-call and LLM middleware,
+the adapter's Relay 0.11 tool-result shim, and opens one `nooa-interactive-agent-request` scope. The middleware
 records nested agent-method, LLM, and `execute_python` scopes before the adapter
 finalizes the current invocation's artifacts.
 

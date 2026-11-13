@@ -1448,11 +1448,16 @@ contains adapter-specific result details.
 
 To group several invocations into one NeMo Relay session, set
 `RunRequest.relay_session_root` to the same UUID string on each
-invocation. Deep Agents, mini-SWE-agent, and both NOOA adapters, which own an in-process Relay Agent scope, use it as the propagated Relay root. A UUID `request_id` stays the
-parent; otherwise the session root is also the parent. ATIF exports one
-trajectory per invocation under one `session_id`. An unusable value falls back
-to the per-request root without an error, and the invocation still succeeds. A
-context key named `session_id` does not group traces.
+invocation. Deep Agents, mini-SWE-agent, and both NOOA adapters, which own an
+in-process Relay Agent scope, use it as the propagated Relay root. A UUID
+`request_id` stays the parent; otherwise the session root is also the parent.
+ATIF exports one distinct `trajectory_id` and artifact per invocation under one
+`session_id`. Per-span OpenTelemetry attributes depend on the Relay exporter;
+the adapters do not guarantee a session attribute on every span. An unusable
+value falls back to a usable UUID `request_id` without an error. If neither ID
+is usable, the existing Relay context is preserved; Relay creates a native root
+when no context exists. `runtime_id` does not become an automatic conversation
+root. A context key named `session_id` does not group traces.
 
 For example, invoke each turn with `RunRequest(input=message, relay_session_root=conversation_uuid)`. Core forwards the typed field as `AgentRunRequest.relay_session_root`. Context keys do not control Relay grouping. Omitting the field preserves per-request behavior. Use matching runtime and adapter-contract versions when sending this field.
 

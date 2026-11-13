@@ -56,11 +56,26 @@ pip install "nemo-fabric-adapters-nooa[full]"
 Use `nemo-fabric-adapters-nooa[relay]` when the environment already manages
 the NOOA harness packages.
 
+Session grouping requires the upstream propagation fix in
+[NOOA PR #589](https://github.com/NVIDIA-NeMo/labs-OO-Agents/pull/589). The
+current `harness` and `full` extras pin NOOA 0.0.10, which does not include that
+fix. Fabric uses NOOA's agent-call middleware and retains only the tool-result
+compatibility shim for Relay 0.11. Before merging or releasing this integration,
+select compatible published NOOA and Relay versions, update their constraints
+and the lockfile, and qualify the combined installation.
+
 Both adapters declare Relay outputs for Agent Trajectory Interchange Format
 (ATIF), OpenTelemetry, and OpenInference. NeMo Fabric supplies the generated
-`FABRIC_RELAY_CONFIG_PATH`; the adapters activate only the generated document and system policy. Ambient user or project plugin configuration is ignored and left unchanged.
+`FABRIC_RELAY_CONFIG_PATH`; the adapters reject ambient user or project plugin
+configuration and activate only the generated document.
 
-Both adapters accept `RunRequest.relay_session_root` to group turns under one native Relay session. Without a usable session UUID, they preserve per-request roots. Every span from the adapter's generated trace exporters includes the native root as `session_id`, including model, tool, and function spans. Existing producer metadata takes precedence over injected additions.
+Both adapters accept `RunRequest.relay_session_root` to group ATIF trajectories
+under one `session_id`. Each invocation keeps a distinct `trajectory_id` and
+artifact. Without a usable session UUID, they use a usable UUID request ID or
+preserve the existing Relay context; Relay creates a native root when no context
+exists. `runtime_id` does not become an automatic conversation root. Per-span
+OpenTelemetry attributes depend on the Relay exporter and are not guaranteed by
+the adapter.
 
 A Relay setup failure prevents agent execution and returns a failed result. If
 artifact finalization fails after the agent completes, the adapter preserves
@@ -70,6 +85,28 @@ quarantines telemetry on later invocations.
 Relay-backed `Runtime.invoke_stream()` returns raw Agent Trajectory
 Observability Format (ATOF) records and a separate terminal result. Neither
 adapter claims native model-response streaming.
+
+### Strict Trace Capture
+
+Strict receivers that require `session_id` need an explicit mapping from Relay's
+native `gen_ai.conversation.id`. Add this mapping to the configured GenAI
+endpoint, retaining its destination URL and authentication headers:
+
+```json
+{
+  "type": "gen_ai",
+  "attribute_mappings": [
+    {"key": "gen_ai.conversation.id", "alias": "session_id"}
+  ]
+}
+```
+
+The Relay release must include both
+[native-root conversation ID export](https://github.com/NVIDIA/NeMo-Relay/issues/1737)
+and [GenAI attribute mapping support](https://github.com/NVIDIA/NeMo-Relay/pull/1613).
+The declared Relay 0.11 range does not establish that these fixes are included;
+a compatible release must be qualified before updating the package constraints.
+The adapter does not inject session metadata or add this mapping to exporters.
 
 ## Choose an Environment
 

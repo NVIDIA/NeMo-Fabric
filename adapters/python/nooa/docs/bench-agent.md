@@ -75,9 +75,13 @@ validate Relay artifacts.
 
 ## Relay Telemetry
 
-Pass the same UUID in `RunRequest.relay_session_root` on each conversation turn to group its traces under one native Relay session. Missing or unusable values preserve per-request roots. The adapter exports that native root as `session_id` on every span and preserves distinct invocation correlation IDs. It activates Fabric's generated exporter configuration explicitly, ignoring ambient user/project files while retaining system policy.
+Follow the [shared Relay setup](../README.md#configure-relay) for session
+identity, UUID fallback, configuration policy, and compatible versions.
+[Strict trace capture](../README.md#strict-trace-capture) also requires the
+GenAI endpoint mapping.
 
-Each Relay-enabled invocation installs the adapter's NOOA compatibility middleware and opens one `nooa-bench-agent-request` scope. The middleware
+Each Relay-enabled invocation installs NOOA's agent-call and LLM middleware,
+the adapter's Relay 0.11 tool-result shim, and opens one `nooa-bench-agent-request` scope. The middleware
 records nested BenchAgent methods, LLM calls, and `execute_python` tool calls.
 
 `Runtime.invoke_stream()` can consume the resulting ATOF records while the

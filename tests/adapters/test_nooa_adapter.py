@@ -773,6 +773,135 @@ async def test_human_input_reasons_complete_without_marking_work_done(
     assert result.output["completed"] is False
 
 
+@pytest.fixture(name="turn_result_types")
+def turn_result_types_fixture():
+    interactive = pytest.importorskip("nooa.interactive")
+    if not all(hasattr(interactive, name) for name in ("Done", "NeedInput", "Waiting")):
+        pytest.skip("requires NOOA's public typed turn results")
+    return interactive
+
+
+@pytest.mark.parametrize(
+    ("result_type", "fields", "reason", "explanation", "message"),
+    [
+        (
+            "Done",
+            {"explanation": "task complete", "message": "The answer is 42."},
+            "DONE",
+            "task complete",
+            "The answer is 42.",
+        ),
+        (
+            "NeedInput",
+            {"question": "Which branch should I use?"},
+            "NEED_INPUT",
+            "Which branch should I use?",
+            "Which branch should I use?",
+        ),
+        (
+            "NeedInput",
+            {"question": "Which branch?", "reason": "a branch is required"},
+            "NEED_INPUT",
+            "a branch is required",
+            "Which branch?",
+        ),
+        (
+            "NeedInput",
+            {
+                "question": "Which branch?",
+                "reason": "a branch is required",
+                "explanation": "waiting for a branch",
+            },
+            "NEED_INPUT",
+            "waiting for a branch",
+            "Which branch?",
+        ),
+        (
+            "NeedInput",
+            {"question": "Which default branch?", "reason": "   "},
+            "NEED_INPUT",
+            "Which default branch?",
+            "Which default branch?",
+        ),
+        (
+            "NeedInput",
+            {
+                "question": "Which branch?",
+                "reason": "  a branch is required  ",
+                "explanation": " \t ",
+            },
+            "NEED_INPUT",
+            "  a branch is required  ",
+            "Which branch?",
+        ),
+    ],
+)
+async def test_public_turn_results_preserve_visible_text(
+    tmp_path,
+    install_target,
+    turn_result_types,
+    result_type,
+    fields,
+    reason,
+    explanation,
+    message,
+):
+    agent, _channels, _handlers = _agent_double()
+    agent.handle.return_value = getattr(turn_result_types, result_type)(**fields)
+    install_target(MagicMock(return_value=agent))
+    runtime = adapter.NooaRuntime()
+    await runtime.start(_start_payload(tmp_path))
+    try:
+        result = await runtime.invoke(*_invocation())
+    finally:
+        await runtime.stop()
+    assert result.status is AgentRunStatus.SUCCEEDED
+    assert result.output["reason"] == reason
+    assert result.output["explanation"] == explanation
+    assert result.output["response"] == message
+    assert result.output["messages"] == [{"content": message}]
+    assert result.output["completed"] is (reason == "DONE")
+
+
+async def test_public_waiting_result_preserves_message_then_resumes(
+    tmp_path,
+    install_target,
+    turn_result_types,
+):
+    agent, channels, _handlers = _agent_double(channel_names=("user_messages", "jobs"))
+    notifications = []
+
+    async def handle(notification):
+        notifications.append(notification)
+        if len(notifications) == 1:
+            channels["jobs"].put("finished")
+            return turn_result_types.Waiting(
+                message="The job is running.",
+                explanation="waiting for job",
+                on=["jobs"],
+            )
+        return turn_result_types.Done(
+            message="The job passed.", explanation="job complete"
+        )
+
+    agent.handle.side_effect = handle
+    install_target(MagicMock(return_value=agent))
+    runtime = adapter.NooaRuntime()
+    await runtime.start(_start_payload(tmp_path))
+    try:
+        result = await runtime.invoke(*_invocation())
+    finally:
+        await runtime.stop()
+    assert notifications == [{"user_messages": ["hello"]}, {"jobs": ["finished"]}]
+    assert result.status is AgentRunStatus.SUCCEEDED
+    assert result.output["reason"] == "DONE"
+    assert result.output["response"] == "The job passed."
+    assert result.output["messages"] == [
+        {"content": "The job is running."},
+        {"content": "The job passed."},
+    ]
+
+
 async def test_invalid_input_returns_a_safe_target_failure(
     tmp_path: Path,
     install_target,
@@ -1886,8 +2015,7 @@ def _install_relay_doubles(
             current[0] = root_handle
 
     @asynccontextmanager
-    async def activate(_config: dict[str, Any], *, additional_plugins_toml: Path):
-        assert additional_plugins_toml.read_text(encoding="utf-8") == ""
+    async def activate(_config: dict[str, Any]):
         yield SimpleNamespace(report={"config": {"diagnostics": []}})
 
     install = MagicMock(name="install_nemo_relay")
@@ -1897,7 +2025,6 @@ def _install_relay_doubles(
     relay_module.__path__ = []  # type: ignore[attr-defined]
     relay_module.ScopeType = SimpleNamespace(Agent="agent")
     relay_module.plugin = SimpleNamespace(activate=activate)
-    relay_module.event_metadata = MagicMock(name="event_metadata")
     relay_module.scope = MagicMock(name="scope")
     relay_module.scope.get_handle.side_effect = lambda: current[0]
     relay_module.scope.scope.side_effect = enter_scope

@@ -15,7 +15,6 @@ from collections.abc import Awaitable
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
 from typing import TypeVar
 
@@ -117,25 +116,6 @@ def _scope_unchanged(baseline: Any) -> bool:
     if current_identity is None or current_identity is _UNREADABLE:
         return False
     return bool(baseline_identity == current_identity)
-
-
-def _session_metadata(event: Any) -> dict[str, str]:
-    root = event.to_dict().get("propagation_root_uuid")
-    return {"session_id": root} if isinstance(root, str) and root else {}
-
-
-def _promote_session_id(plugin_config: dict[str, Any]) -> None:
-    for component in plugin_config.get("components", []):
-        if component.get("kind") != "observability":
-            continue
-        traces = component.get("config", {}).get("opentelemetry", {})
-        for destination in [
-            *traces.get("endpoints", []),
-            *traces.get("file_sinks", []),
-        ]:
-            prefixes = destination.setdefault("promote_metadata_prefixes", [])
-            if "session_id" not in prefixes:
-                prefixes.append("session_id")
 
 
 def _artifact_snapshot(
@@ -246,12 +226,11 @@ class RelayTelemetry:
         try:
             _validate_config_path(runtime_context)
             _relay_version()
+            common_utils.reject_ambient_relay_plugin_config()
             plugin_config = self._plugin_config(runtime_context)
-            _promote_session_id(plugin_config)
             before = _artifact_snapshot(plugin_config)
             atif_before = relay_artifacts.snapshot_atif_files(plugin_config)
             from nemo_relay import ScopeType
-            from nemo_relay import event_metadata
             from nemo_relay import plugin
             from nemo_relay import scope
             from nemo_fabric_adapters.nooa.relay_compat import install_nemo_relay_compat
@@ -276,65 +255,43 @@ class RelayTelemetry:
         plugin_fault: str | None = None
         uninstall_fault: str | None = None
         scope_leaked = False
-        injector_name = f"nemo-fabric-nooa:{runtime_context.invocation_id}"
         try:
-            with TemporaryDirectory(prefix="nemo-fabric-nooa-relay-") as directory:
-                explicit_config = Path(directory) / "plugins.toml"
-                explicit_config.write_text("", encoding="utf-8")
-                async with plugin.activate(
-                    plugin_config, additional_plugins_toml=explicit_config
-                ) as activation:
-                    common_utils.reject_inherited_relay_plugin_config(activation.report)
-                    event_metadata.register_injector(
-                        injector_name, 0, _session_metadata
+            async with plugin.activate(plugin_config) as activation:
+                common_utils.reject_inherited_relay_plugin_config(activation.report)
+                uninstall = install_nemo_relay_compat(agent.event_manager)
+                try:
+                    request_context, metadata = common_utils.relay_request_context(
+                        runtime_context.request_id, relay_session_root
                     )
-                    try:
-                        uninstall = install_nemo_relay_compat(agent.event_manager)
+                    metadata.update(
+                        common_utils.relay_correlation_metadata(runtime_context)
+                    )
+                    with request_context:
+                        request_baseline = _scope_handle()
                         try:
-                            request_context, metadata = (
-                                common_utils.relay_request_context(
-                                    runtime_context.request_id, relay_session_root
-                                )
-                            )
-                            metadata.update(
-                                common_utils.relay_correlation_metadata(runtime_context)
-                            )
-                            with request_context:
-                                request_baseline = _scope_handle()
-                                try:
-                                    with scope.scope(
-                                        self._scope_name,
-                                        ScopeType.Agent,
-                                        metadata=metadata,
-                                    ):
-                                        called = True
-                                        result = await call()
-                                except asyncio.CancelledError:
-                                    raise
-                                except Exception as error:
-                                    scope_fault = _safe_fault(
-                                        "Relay request scope", error
-                                    )
-                                finally:
-                                    # Inspect before restoring the propagated stack; restoration
-                                    # must not hide a leaked native scope.
-                                    scope_leaked = not _scope_unchanged(
-                                        request_baseline
-                                    )
-                                    if scope_leaked:
-                                        self._quarantine = _QUARANTINE_NOTE
-                                        self._quarantine_cause = (
-                                            scope_fault or _QUARANTINE_NOTE
-                                        )
+                            with scope.scope(
+                                self._scope_name,
+                                ScopeType.Agent,
+                                metadata=metadata,
+                            ):
+                                called = True
+                                result = await call()
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as error:
+                            scope_fault = _safe_fault("Relay request scope", error)
                         finally:
-                            try:
-                                await _await_if_needed(uninstall())
-                            except Exception as error:
-                                uninstall_fault = _safe_fault(
-                                    "Relay middleware cleanup", error
-                                )
-                    finally:
-                        event_metadata.deregister_injector(injector_name)
+                            # Inspect before restoring the propagated stack; restoration
+                            # must not hide a leaked native scope.
+                            scope_leaked = not _scope_unchanged(request_baseline)
+                            if scope_leaked:
+                                self._quarantine = _QUARANTINE_NOTE
+                                self._quarantine_cause = scope_fault or _QUARANTINE_NOTE
+                finally:
+                    try:
+                        await _await_if_needed(uninstall())
+                    except Exception as error:
+                        uninstall_fault = _safe_fault("Relay middleware cleanup", error)
         except asyncio.CancelledError:
             raise
         except Exception as error:

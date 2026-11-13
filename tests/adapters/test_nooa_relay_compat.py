@@ -197,7 +197,7 @@ def test_installer_removes_all_three_handlers():
 
     uninstall = relay_compat.install_nemo_relay_compat(event_manager)
     assert event_manager.intercept.call_args_list == [
-        call(MIDDLEWARE_AGENT_CALL, relay_compat._agent_call_middleware),
+        call(MIDDLEWARE_AGENT_CALL, relay_compat.nemo_relay_agent_call_middleware),
         call(MIDDLEWARE_LLM_CALL, relay_compat.nemo_relay_llm_middleware),
         call(MIDDLEWARE_EXECUTE_PYTHON, relay_compat._tool_middleware),
     ]
@@ -215,7 +215,7 @@ def test_installer_unsubscribes_fixture_event_manager(monkeypatch: pytest.Monkey
     event_manager = _EventManager()
     uninstall = relay_compat.install_nemo_relay_compat(event_manager)
     assert event_manager._handlers == {
-        MIDDLEWARE_AGENT_CALL: [relay_compat._agent_call_middleware],
+        MIDDLEWARE_AGENT_CALL: [relay_compat.nemo_relay_agent_call_middleware],
         MIDDLEWARE_LLM_CALL: [relay_compat.nemo_relay_llm_middleware],
         MIDDLEWARE_EXECUTE_PYTHON: [relay_compat._tool_middleware],
     }
