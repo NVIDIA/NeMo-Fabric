@@ -1045,6 +1045,41 @@ def test_observation_skips_external_skills_hermes_hides(tmp_path: Path):
     ]
 
 
+def test_observation_drops_a_policy_winner_hermes_hides_under_another_name(
+    tmp_path: Path,
+):
+    """A policy's record names its winner only when Hermes loads and shows it."""
+    team = tmp_path.resolve() / "team"
+    # Without a newline after the closing ---, Hermes reads the folder name.
+    (team / "rev").mkdir(parents=True)
+    (team / "rev" / "SKILL.md").write_text("---\nname: review\n---", encoding="utf-8")
+    other = _write_skill(tmp_path / "opt" / "review")
+    agent_config = _skills_config(
+        {
+            "directories": [{"folder": str(team)}, {"skill": str(other)}],
+            "duplicates": "first_wins",
+        }
+    )
+    plan = hermes_skills.plan_skills(agent_config)
+    assert plan.load is not None
+    assert [record.selected for record in plan.load.duplicates] == [team / "rev"]
+    hidden = _catalog_row(team, team / "rev", tier=3, status="unique", name="rev")
+    catalog = [{**hidden, "visible": False}]
+
+    report = hermes_skills.observe(plan, catalog).report()
+
+    assert [record["name"] for record in report["duplicates"]] == ["review"]
+    assert report["duplicates"][0]["outcome"] == "selected"
+    assert "selected" not in report["duplicates"][0]
+    assert report["skipped"] == [
+        {
+            "path": str(team / "rev"),
+            "entry": "skills.directories[0]",
+            "reason": "native_conditions",
+        }
+    ]
+
+
 def test_observation_does_not_report_the_agents_own_skill_as_bundled(
     tmp_path: Path,
 ):

@@ -591,12 +591,30 @@ def observe(
             owner = [row for row in copies if row["status"] == "unique"]
             outcome, selected = "shadowed", _visible_dir(owner)
         duplicates.append(DuplicateRecord(name, tuple(reported), outcome, selected))
+
+    # Hermes's status, name, and visibility per external skill folder.
+    statuses: dict[Path, tuple[str, str, bool]] = {}
+    for row in external_rows:
+        if statuses.get(row["dir"], ("", "", True))[0] != "unique":
+            statuses[row["dir"]] = (row["status"], row["name"], row["visible"])
+
     # A clash the checks predicted without a policy that Hermes's catalog does
     # not show did not happen; each copy is reported as loaded under Hermes's
-    # name or skipped. A policy's choice still stands.
-    duplicates.extend(
-        record for record in records.values() if record.outcome != "ambiguous"
-    )
+    # name or skipped. A policy's choice still stands, but its selected copy
+    # is named only when Hermes loads it and shows it, whatever name Hermes
+    # reads for it.
+    for record in records.values():
+        if record.outcome == "ambiguous":
+            continue
+        loaded = (
+            record.selected is not None and statuses.get(record.selected) is not None
+        )
+        if loaded:
+            status, _name, visible = statuses[record.selected]
+            loaded = status == "unique" and visible
+        duplicates.append(
+            dataclasses.replace(record, selected=record.selected if loaded else None)
+        )
 
     deferred = (sync_result or {}).get("shadowed_by_external") or ()
     for name in deferred if plan.load is not None else ():
@@ -615,11 +633,6 @@ def observe(
                 )
             )
 
-    # Hermes's status, name, and visibility per external skill folder.
-    statuses: dict[Path, tuple[str, str, bool]] = {}
-    for row in external_rows:
-        if statuses.get(row["dir"], ("", "", True))[0] != "unique":
-            statuses[row["dir"]] = (row["status"], row["name"], row["visible"])
     reported_dirs = {path for item in duplicates for _origin, path, _ in item.copies}
     selected = []
     skipped = list(load.skipped)
