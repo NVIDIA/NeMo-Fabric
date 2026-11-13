@@ -461,3 +461,41 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert empty_chunks == []
     assert empty_result.status == "succeeded"
     assert empty_result.output["openai_stream_invocation_count"] == 2
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Unix host directory repair fixture"
+)
+@pytest.mark.parametrize("entry", ["start_runtime", "run"])
+async def test_native_failed_start_exposes_a_private_cleanup_retry(
+    blocking_adapter_config, tmp_path, entry
+):
+    from nemo_fabric import RuntimeStatus
+
+    script = tmp_path / "adapter.py"
+    source = script.read_text()
+    anchor = "        if failure.exists():\n"
+    replacement = """        if failure.exists():
+            if operation == 'start':
+                import shutil
+                directory = Path(os.environ['FABRIC_HOME'])
+                (root/'cleanup.path').write_text(str(directory))
+                shutil.rmtree(directory)
+                directory.write_text('cleanup requires repair')
+"""
+    assert source.count(anchor) == 1
+    script.write_text(source.replace(anchor, replacement))
+    (tmp_path / "fail-start").write_text("fixture_start_failure")
+    with pytest.raises(FabricRuntimeError) as caught:
+        await getattr(Fabric(), entry)(blocking_adapter_config, base_dir=tmp_path)
+    recovery = caught.value.cleanup_runtime
+    assert recovery is not None
+    assert caught.value.code == "cleanup_unconfirmed"
+    assert "runtime_binding" not in repr(caught.value)
+    assert "PRIVATE detail" not in str(caught.value)
+    directory = Path((tmp_path / "cleanup.path").read_text())
+    assert directory.is_file()
+    directory.unlink()
+    directory.mkdir(mode=0o700)
+    await recovery.stop()
+    assert recovery.status is RuntimeStatus.STOPPED

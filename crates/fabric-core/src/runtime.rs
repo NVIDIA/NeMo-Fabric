@@ -950,6 +950,8 @@ struct LocalAdapterHost {
     execution: Option<crate::ExecutionEvidence>,
     adapter_execution: Option<crate::ExecutionEvidence>,
     child: Child,
+    invocation_unavailable: bool,
+    cleanup_discovery_pending: bool,
     pending_stop: Vec<LocalHostProcess>,
     #[cfg(windows)]
     control: Arc<WindowsHostControl>,
@@ -1174,7 +1176,11 @@ pub fn start_runtime_with_service(
     let runtime = match started {
         Ok(runtime) => runtime,
         Err(error) => {
-            if let FabricError::AdapterLifecycleOperation {
+            if let FabricError::RuntimeCleanupPending(context) = &error {
+                record
+                    .active_runtime_ids
+                    .insert(context.runtime().runtime_id.clone());
+            } else let FabricError::AdapterLifecycleOperation {
                 code, runtime_id, ..
             } = &error
                 && code == "cleanup_unconfirmed"
@@ -1300,23 +1306,21 @@ fn start_service(
         LOCAL_HOST_START_TIMEOUT,
     ) {
         Ok(output) => output,
-        Err(error) => {
-            let _ = terminate_failed_start(&mut host);
-            let _ = remove_local_host_files(&host);
-            return Err(error);
+        Err(error) => return Err(retain_failed_start(&runtime, host, error)),
+    };
+    let info: AdapterServiceInfo = match serde_json::from_value(output) {
+        Ok(info) => info,
+        Err(source) => {
+            let cause = lifecycle_error(
+                AdapterLifecycleOperation::Start,
+                &service_id,
+                "invalid_service_info",
+                format!("adapter returned invalid service information: {source}"),
+                local_host_diagnostics(&host),
+            );
+            return Err(retain_failed_start(&runtime, host, cause));
         }
     };
-    let info: AdapterServiceInfo = serde_json::from_value(output).map_err(|source| {
-        let _ = terminate_failed_start(&mut host);
-        let _ = remove_local_host_files(&host);
-        lifecycle_error(
-            AdapterLifecycleOperation::Start,
-            &service_id,
-            "invalid_service_info",
-            format!("adapter returned invalid service information: {source}"),
-            local_host_diagnostics(&host),
-        )
-    })?;
     let software_report = if plan.config.provenance.enabled {
         host.adapter_execution
             .as_ref()
@@ -2024,6 +2028,9 @@ impl RuntimeAdapter for LocalHostAdapter {
         guard.cleanup_pending = true;
         PENDING_LOCAL_CLEANUP.lock().unwrap_or_else(|error| error.into_inner())
             .insert(runtime.runtime_id.clone(), guard.cleanup_scope.clone());
+        if guard.cleanup_discovery_pending {
+            interrupted = Some(interrupt_local_host(runtime)?);
+        }
         #[cfg(unix)]
         if frozen_tree_is_pending(&runtime.runtime_id) {
             interrupted = Some(interrupt_local_host(runtime)?);
@@ -2436,42 +2443,7 @@ fn start_local_runtime(
     .and_then(|output| confirm_native_session(plan, &mut runtime, &mut host, output));
     if let Err(error) = started {
         crate::check::invalidate_runtime(&runtime);
-        if terminate_local_host(&mut host).is_err() {
-            host.cleanup_pending = true;
-            // Startup errors can contain credentials. Keep details private and
-            // return only the path while cleanup ownership remains retained.
-            let diagnostic_path = host.runtime_dir.join("startup-error.log");
-            let mut options = File::options();
-            options.create_new(true).write(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.mode(0o600);
-            }
-            let diagnostics = options
-                .open(&diagnostic_path)
-                .and_then(|mut file| {
-                    file.write_all(error.to_string().as_bytes())?;
-                    file.sync_all()
-                })
-                .map(|()| diagnostic_path.display().to_string())
-                .unwrap_or_else(|_| "Startup diagnostics could not be saved".to_string());
-            let scope = host.cleanup_scope.clone();
-            local_hosts().insert(runtime.runtime_id.clone(), Arc::new(Mutex::new(host)));
-            PENDING_LOCAL_CLEANUP
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .insert(runtime.runtime_id.clone(), scope);
-            return Err(lifecycle_error(
-                AdapterLifecycleOperation::Start,
-                &runtime.runtime_id,
-                "cleanup_unconfirmed",
-                "failed start left native cleanup unconfirmed",
-                diagnostics,
-            ));
-        }
-        let _ = remove_local_host_files(&host);
-        return Err(error);
+        return Err(retain_failed_start(&runtime, host, error));
     }
     #[cfg(windows)]
     windows_host_controls().insert(runtime.runtime_id.clone(), host.control.clone());
@@ -2770,6 +2742,15 @@ fn run_local_host_invocation_with_timeout(
             return Err(session_error(
                 "session_identity_changed",
                 "runtime handle does not match its bound native session",
+            ));
+        }
+        if host_guard.invocation_unavailable {
+            return Err(lifecycle_error(
+                operation,
+                &runtime.runtime_id,
+                "host_unavailable",
+                "The retained host is available only for cleanup.",
+                "",
             ));
         }
         let artifacts = host_guard.artifacts.clone();
@@ -3166,7 +3147,9 @@ fn invalidate_timed_out_local_host_with(
     terminate: impl FnOnce(&mut LocalAdapterHost) -> std::io::Result<()>,
 ) {
     host.cleanup_pending = true;
+    host.invocation_unavailable = true;
     if terminate(host).is_err() {
+        host.cleanup_discovery_pending = true;
         return;
     }
     host.cleanup_pending = false;
@@ -3645,6 +3628,8 @@ fn spawn_local_host(
         execution: crate::provenance::core_snapshot(&plan.config.provenance),
         adapter_execution: None,
         child,
+        invocation_unavailable: false,
+        cleanup_discovery_pending: false,
         pending_stop: Vec::new(),
         #[cfg(windows)]
         control,
@@ -3922,26 +3907,36 @@ fn take_local_host_stderr(host: &mut LocalAdapterHost) -> String {
     String::from_utf8_lossy(&bytes[start..]).into_owned()
 }
 
-fn terminate_failed_start(host: &mut LocalAdapterHost) -> std::io::Result<()> {
-    terminate_failed_start_with(host, terminate_local_host)
+fn retain_failed_start(
+    runtime: &RuntimeHandle,
+    host: LocalAdapterHost,
+    cause: FabricError,
+) -> FabricError {
+    retain_failed_start_with(runtime, host, cause, terminate_local_host)
 }
 
-fn terminate_failed_start_with(
-    host: &mut LocalAdapterHost,
+fn retain_failed_start_with(
+    runtime: &RuntimeHandle,
+    mut host: LocalAdapterHost,
+    cause: FabricError,
     terminate: impl FnOnce(&mut LocalAdapterHost) -> std::io::Result<()>,
-) -> std::io::Result<()> {
-    let outcome = terminate(host);
-    if outcome.is_err() {
-        // A failed start has no published cleanup handle. Always attempt to
-        // terminate its directly owned child before dropping the host record.
-        // Keep the error: this fallback does not confirm descendant cleanup.
-        let _ = host.child.kill();
-        let deadline = Instant::now() + LOCAL_HOST_EXIT_GRACE;
-        while matches!(host.child.try_wait(), Ok(None)) && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(10));
-        }
+) -> FabricError {
+    let process = LocalHostProcess::new(host.child.id(), SystemTime::now());
+    let terminated = terminate(&mut host).is_ok();
+    if terminated && remove_local_host_files(&host).is_ok() {
+        return cause;
     }
-    outcome
+    host.invocation_unavailable = true;
+    host.cleanup_discovery_pending |= !terminated;
+    #[cfg(windows)]
+    windows_host_controls().insert(runtime.runtime_id.clone(), host.control.clone());
+    local_host_processes().insert(runtime.runtime_id.clone(), process);
+    local_hosts().insert(runtime.runtime_id.clone(), Arc::new(Mutex::new(host)));
+    FabricError::RuntimeCleanupPending(Box::new(crate::RuntimeCleanupPending::new(
+        runtime.clone(),
+        None,
+        cause,
+    )))
 }
 
 fn terminate_local_host(host: &mut LocalAdapterHost) -> std::io::Result<()> {
@@ -5475,6 +5470,14 @@ for line in sys.stdin:
     message = json.loads(line)
     operation = message["operation"]
     if operation == "start":
+        if MODE == "connected_start_cleanup_failure" and message["payload"].get("service", {}).get("operation") == "connect":
+            import shutil
+            directory = os.environ["FABRIC_HOME"]
+            shutil.rmtree(directory)
+            with open(directory, "w", encoding="utf-8") as stream:
+                stream.write("startup cleanup requires a retry")
+            response("start", error=failure("start", "fixture_start_failure", "start rejected"))
+            continue
         if MODE == "start_failure":
             print("start diagnostic", file=sys.stderr, flush=True)
             response("start", error=failure("start", "fake_start", "start rejected"))
@@ -5948,41 +5951,110 @@ else:
     }
 
     #[test]
-    fn failed_start_cleanup_kills_owned_runtime_and_service_hosts() {
+    fn failed_start_discovery_error_retains_runtime_and_service_owners() {
         for service in [false, true] {
-            let (root, plan) = local_host_plan("success");
-            if service {
+            let (root, plan) = local_host_plan("child_after_start");
+            let (runtime, host) = if service {
                 let handle = prepare_service(&plan).unwrap();
-                let record = local_services().get(&handle.service_id).unwrap().clone();
-                let mut record = record.lock().unwrap();
-                let outcome = terminate_failed_start_with(&mut record.host, |_| {
-                    Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
-                });
-                let exited = record.host.child.try_wait().unwrap().is_some();
-                drop(record);
-                release_service(&plan, &handle).unwrap();
-                assert_eq!(
-                    outcome.unwrap_err().kind(),
-                    std::io::ErrorKind::PermissionDenied
-                );
-                assert!(exited, "a failed service start cannot abandon its host");
+                let record = local_services().remove(&handle.service_id).unwrap();
+                let record = Arc::try_unwrap(record).ok().unwrap().into_inner().unwrap();
+                (record.runtime, record.host)
             } else {
                 let runtime = start_runtime(&plan).unwrap();
-                let host = local_hosts().get(&runtime.runtime_id).unwrap().clone();
-                let mut host = host.lock().unwrap();
-                let outcome = terminate_failed_start_with(&mut host, |_| {
-                    Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
-                });
-                let exited = host.child.try_wait().unwrap().is_some();
-                drop(host);
-                stop_runtime(&plan, &runtime).unwrap();
-                assert_eq!(
-                    outcome.unwrap_err().kind(),
-                    std::io::ErrorKind::PermissionDenied
-                );
-                assert!(exited, "a failed runtime start cannot abandon its host");
-            }
+                let host = local_hosts().remove(&runtime.runtime_id).unwrap();
+                let host = Arc::try_unwrap(host).ok().unwrap().into_inner().unwrap();
+                (runtime, host)
+            };
+            let child_pid: u32 = fs::read_to_string(root.join("child.pid"))
+                .unwrap()
+                .parse()
+                .unwrap();
+            let cause = lifecycle_error(
+                AdapterLifecycleOperation::Start,
+                &runtime.runtime_id,
+                "fixture_start_failure",
+                "PRIVATE_START_CAUSE",
+                "",
+            );
+            let error = retain_failed_start_with(&runtime, host, cause, |_| {
+                Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+            });
+            assert!(!format!("{error:?}").contains("PRIVATE_START_CAUSE"));
+            assert!(!error.to_string().contains(&runtime.runtime_binding));
+            let FabricError::RuntimeCleanupPending(pending) = error else {
+                panic!("failed startup must retain cleanup context");
+            };
+            assert_eq!(pending.runtime(), &runtime);
+            assert!(local_hosts().contains_key(&runtime.runtime_id));
+            assert!(local_host_directory(&runtime.runtime_id).exists());
+            let denied = invoke_runtime(&plan, &runtime, RunRequest::text("must not invoke"));
+            stop_runtime(&plan, pending.runtime()).unwrap();
+            #[cfg(unix)]
+            assert!(owned_process_has_exited(&LocalHostProcess::new(
+                child_pid,
+                SystemTime::now()
+            )));
+            #[cfg(windows)]
+            let _ = child_pid;
+            assert!(!local_hosts().contains_key(&runtime.runtime_id));
+            assert!(
+                matches!(denied, Err(FabricError::AdapterLifecycleOperation {code, ..}) if code == "host_unavailable")
+            );
             fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retained_connected_start_blocks_service_release_until_cleanup() {
+        let (root, plan) = local_host_plan("connected_start_cleanup_failure");
+        let service = prepare_service(&plan).unwrap();
+        let error = start_runtime_with_service(&plan, &service).unwrap_err();
+        let FabricError::RuntimeCleanupPending(context) = error else {
+            panic!("connected startup must retain cleanup context");
+        };
+        let release = release_service(&plan, &service);
+        assert!(matches!(release, Err(FabricError::ServiceInUse { .. })));
+        let directory = local_host_directory(&context.runtime().runtime_id);
+        assert!(directory.is_file());
+        fs::remove_file(&directory).unwrap();
+        fs::create_dir(&directory).unwrap();
+        stop_runtime(&plan, context.runtime()).unwrap();
+        release_service(&plan, &service).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn retained_timeout_host_rejects_queued_and_later_invocations() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let host = local_hosts().get(&runtime.runtime_id).unwrap().clone();
+        let mut guard = host.lock().unwrap();
+        let queued_plan = plan.clone();
+        let queued_runtime = runtime.clone();
+        let queued = thread::spawn(move || {
+            invoke_runtime(&queued_plan, &queued_runtime, RunRequest::text("queued"))
+        });
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Arc::strong_count(&host) < 3 {
+            assert!(
+                Instant::now() < deadline,
+                "queued invocation did not acquire the host record"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+        invalidate_timed_out_local_host_with(&runtime.runtime_id, &host, &mut guard, |_| {
+            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+        });
+        drop(guard);
+        let queued = queued.join().unwrap();
+        let later = invoke_runtime(&plan, &runtime, RunRequest::text("later"));
+        stop_runtime(&plan, &runtime).unwrap();
+        fs::remove_dir_all(root).unwrap();
+        for outcome in [queued, later] {
+            assert!(
+                matches!(outcome, Err(FabricError::AdapterLifecycleOperation {code, ..}) if code == "host_unavailable")
+            );
         }
     }
 
@@ -8455,7 +8527,7 @@ else:
         ));
         assert!(matches!(
             second_error,
-            FabricError::AdapterLifecycleOperation { code, .. } if code == "host_crashed"
+            FabricError::AdapterLifecycleOperation { code, .. } if code == "host_unavailable"
         ));
         assert!(!local_hosts().contains_key(&runtime.runtime_id));
         let stopped = stop_runtime(&plan, &runtime).expect("stop after timeout is idempotent");

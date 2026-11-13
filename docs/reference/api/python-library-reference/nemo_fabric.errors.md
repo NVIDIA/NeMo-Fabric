@@ -69,7 +69,7 @@ Initialize a structured NeMo Fabric exception.
 
 ### <kbd>property</kbd> cleanup_runtime
 
-Original runtime for a failed one-shot cleanup retry, or ``None``.
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
 
 This in-memory capability is excluded from error text and structured details.
 
@@ -119,7 +119,7 @@ Initialize a structured NeMo Fabric exception.
 
 ### <kbd>property</kbd> cleanup_runtime
 
-Original runtime for a failed one-shot cleanup retry, or ``None``.
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
 
 This in-memory capability is excluded from error text and structured details.
 
@@ -169,7 +169,7 @@ Initialize a structured NeMo Fabric exception.
 
 ### <kbd>property</kbd> cleanup_runtime
 
-Original runtime for a failed one-shot cleanup retry, or ``None``.
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
 
 This in-memory capability is excluded from error text and structured details.
 
@@ -219,7 +219,7 @@ Initialize a structured NeMo Fabric exception.
 
 ### <kbd>property</kbd> cleanup_runtime
 
-Original runtime for a failed one-shot cleanup retry, or ``None``.
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
 
 This in-memory capability is excluded from error text and structured details.
 
@@ -269,7 +269,7 @@ Initialize a structured NeMo Fabric exception.
 
 ### <kbd>property</kbd> cleanup_runtime
 
-Original runtime for a failed one-shot cleanup retry, or ``None``.
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
 
 This in-memory capability is excluded from error text and structured details.
 
@@ -319,7 +319,7 @@ Initialize a structured NeMo Fabric exception.
 
 ### <kbd>property</kbd> cleanup_runtime
 
-Original runtime for a failed one-shot cleanup retry, or ``None``.
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
 
 This in-memory capability is excluded from error text and structured details.
 
@@ -371,7 +371,7 @@ Initialize a structured NeMo Fabric exception.
 
 ### <kbd>property</kbd> cleanup_runtime
 
-Original runtime for a failed one-shot cleanup retry, or ``None``.
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
 
 This in-memory capability is excluded from error text and structured details.
 
@@ -423,7 +423,7 @@ Initialize a structured NeMo Fabric exception.
 
 ### <kbd>property</kbd> cleanup_runtime
 
-Original runtime for a failed one-shot cleanup retry, or ``None``.
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
 
 This in-memory capability is excluded from error text and structured details.
 

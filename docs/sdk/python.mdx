@@ -892,7 +892,9 @@ opaque `SessionRef`.  NeMo Fabric does not interpret that identifier.
 
 Buffered runtime shutdown can interrupt an active invocation on supported Unix and Windows hosts. Windows shutdown requires an owned process job to confirm descendant cleanup. `Runtime.stop()` waits for the interrupted invocation to settle before reporting stopped. Cleanup errors retain ownership for retry; the runtime server blocks replacement for the same agent until cleanup succeeds. Streaming shutdown continues to use the stream lifecycle.
 
-If one-shot `Fabric.run()` cannot confirm cleanup, the raised error provides `cleanup_runtime`. Keep that object and retry `await error.cleanup_runtime.stop()` in the same process. Cancellation can carry the same recovery object. The recovery handle is excluded from error text and structured details. When an exited parent leaves undiscoverable children, cleanup remains unconfirmed and the owning process or sandbox must recover.
+If `Fabric.run()`, `Fabric.start_runtime()`, `Fabric.prepare_service()`, or `Fabric.attach_service()` cannot confirm cleanup after a failed lifecycle operation, the raised error provides `cleanup_runtime`. Keep that object and retry `await error.cleanup_runtime.stop()` in the same process. Cancellation can carry the same recovery object. The recovery handle is excluded from error text and structured details. When an exited parent leaves undiscoverable children, cleanup remains unconfirmed and the owning process or sandbox must recover.
+
+Retained hosts from a timed-out invocation or failed start accept cleanup only. New and queued invocations return `host_unavailable` after acquiring the host lock. Failed connected starts keep their service membership until cleanup succeeds, so the service cannot be released while that runtime remains owned.
 
 Runtime health checks report pending shutdown as `runtime_busy`, with state `unknown` and activity `stopping`. After failed cleanup, checks report `cleanup_unconfirmed`, with state `failed` and activity `unknown`. These reports describe recorded lifecycle state and do not probe the harness during cleanup.
 

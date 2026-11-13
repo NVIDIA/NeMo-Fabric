@@ -1037,9 +1037,15 @@ async def _run_native_lifecycle(
         try:
             runtime = json.loads(native.start_runtime(plan_json))
         except FabricError as error:
+            cleanup_runtime_handle = getattr(
+                error, "_fabric_cleanup_runtime_handle", None
+            )
             _retain_runtime_evidence(error, observations)
             raise
         except Exception as error:
+            cleanup_runtime_handle = getattr(
+                error, "_fabric_cleanup_runtime_handle", None
+            )
             failure = _runtime_error(error, stage="start")
             _retain_runtime_evidence(failure, observations)
             raise failure from error

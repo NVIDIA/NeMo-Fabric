@@ -1896,3 +1896,46 @@ async def test_stop_waits_for_invocation_not_the_callers_remaining_work(mock_nat
         later_work.set()
         await task
         await stopping
+
+
+@pytest.mark.parametrize("entry", ["start_runtime", "run", "prepare_service"])
+@pytest.mark.parametrize("cancel_start", [False, True])
+async def test_failed_start_preserves_private_cleanup_runtime(
+    native_client, mock_native, entry, cancel_start
+):
+    entered, release = threading.Event(), threading.Event()
+    handle = _runtime()
+    handle["environment"]["env"] = {"TEST_STARTUP_SECRET": "private-startup-value"}
+
+    def start(*args):
+        entered.set()
+        assert release.wait(5)
+        error = RuntimeError("cleanup unconfirmed")
+        error.code = "cleanup_unconfirmed"
+        error._fabric_cleanup_runtime_handle = handle
+        raise error
+
+    method = "prepare_service" if entry == "prepare_service" else "start_runtime"
+    getattr(mock_native, method).side_effect = start
+    task = asyncio.create_task(getattr(native_client, entry)(_config()))
+    try:
+        async with asyncio.timeout(2):
+            while not entered.is_set():
+                await asyncio.sleep(0.01)
+        if cancel_start:
+            task.cancel()
+        release.set()
+        expected = asyncio.CancelledError if cancel_start else FabricRuntimeError
+        with pytest.raises(expected) as caught:
+            await task
+        recovery = caught.value.cleanup_runtime
+        assert isinstance(recovery, Runtime)
+        assert recovery.runtime_id == handle["runtime_id"]
+        assert "private-startup-value" not in repr(caught.value)
+        if isinstance(caught.value, FabricRuntimeError):
+            assert "private-startup-value" not in json.dumps(caught.value.details)
+        await recovery.stop()
+        assert recovery.status is RuntimeStatus.STOPPED
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)

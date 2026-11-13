@@ -55,7 +55,7 @@ class FabricError(RuntimeError):
 
     @property
     def cleanup_runtime(self) -> Runtime | None:
-        """Original runtime for a failed one-shot cleanup retry, or ``None``.
+        """Owned runtime for a failed lifecycle cleanup retry, or ``None``.
 
         This in-memory capability is excluded from error text and structured details.
         """
@@ -78,12 +78,16 @@ def _runtime_error(error: Exception, *, stage: str) -> FabricRuntimeError:
         "timeout" if isinstance(error, TimeoutError) else getattr(error, "code", None)
     )
     retryable = getattr(error, "retryable", False)
-    return FabricRuntimeError(
+    failure = FabricRuntimeError(
         str(error),
         stage=stage,
         code=code if isinstance(code, str) else None,
         retryable=retryable if isinstance(retryable, bool) else False,
     )
+    cleanup = getattr(error, "_fabric_cleanup_runtime_handle", None)
+    if cleanup is not None:
+        failure._fabric_cleanup_runtime_handle = cleanup
+    return failure
 
 
 class FabricStateError(FabricRuntimeError):

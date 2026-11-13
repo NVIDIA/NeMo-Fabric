@@ -235,7 +235,7 @@ pub enum FabricError {
         /// Bounded adapter-host diagnostics.
         diagnostics: String,
     },
-    /// A one-shot run could not confirm cleanup; the original runtime remains owned.
+    /// Owned lifecycle cleanup is unconfirmed; the original runtime remains owned.
     #[error("{0}")]
     RuntimeCleanupPending(Box<RuntimeCleanupPending>),
     /// A runtime handle was used with a different run plan than the one that created it.
@@ -440,7 +440,7 @@ pub enum FabricError {
     },
 }
 
-/// Cleanup context retained when [`crate::run_plan`] cannot finish stopping a runtime.
+/// Cleanup context retained when startup or invocation cannot finish owned cleanup.
 ///
 /// Retry [`crate::stop_runtime`] with the original plan and [`Self::runtime`].
 /// The handle and completed output are deliberately excluded from diagnostic formatting.
@@ -473,7 +473,7 @@ impl RuntimeCleanupPending {
         self.result.as_ref()
     }
 
-    /// The invocation or stop error that preceded the retained cleanup context.
+    /// The startup, invocation, or stop error that preceded the retained cleanup context.
     pub fn cause(&self) -> &FabricError {
         &self.cause
     }

@@ -1,7 +1,7 @@
 ---
 title: "Struct Runtime Cleanup Pending"
 sidebar-title: "RuntimeCleanupPending"
-description: "Cleanup context retained when `crate::run_plan` cannot finish stopping a runtime."
+description: "Cleanup context retained when startup or invocation cannot finish owned cleanup."
 position: 99
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -13,7 +13,7 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 pub struct RuntimeCleanupPending { /* private fields */ }
 ```
 
-Cleanup context retained when [`crate::run_plan`](../runtime/fn-run-plan.mdx) cannot finish stopping a runtime.
+Cleanup context retained when startup or invocation cannot finish owned cleanup.
 
 Retry [`crate::stop_runtime`](../runtime/fn-stop-runtime.mdx) with the original plan and [`Self::runtime`](struct-runtimecleanuppending.mdx#method.runtime). The handle and completed output are deliberately excluded from diagnostic formatting.
 
@@ -39,7 +39,7 @@ The completed invocation result, if invocation succeeded before cleanup failed.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn cause(&amp;self) -&gt; &amp;<a href=\"enum-fabricerror.mdx\">FabricError</a>"}} /></pre>
 
-The invocation or stop error that preceded the retained cleanup context.
+The startup, invocation, or stop error that preceded the retained cleanup context.
 
 ## Trait Implementations
 
