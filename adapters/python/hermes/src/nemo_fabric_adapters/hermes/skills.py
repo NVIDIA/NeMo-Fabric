@@ -51,7 +51,10 @@ ADAPTER = "Hermes"
 
 # agent/skill_utils.py EXCLUDED_SKILL_DIRS: folders Hermes's skill scan never
 # enters. Hermes also drops every skill whose path contains one of them.
-HERMES_EXCLUDED_DIRS = frozenset(
+#
+# Supported Hermes releases differ in this list, so read it from the installed
+# Hermes when it can be imported, and fall back to the newest known list.
+_FALLBACK_EXCLUDED_DIRS = frozenset(
     {
         ".git",
         ".github",
@@ -72,6 +75,17 @@ HERMES_EXCLUDED_DIRS = frozenset(
         ".ruff_cache",
     }
 )
+
+
+def _installed_excluded_dirs() -> frozenset[str]:
+    try:
+        from agent.skill_utils import EXCLUDED_SKILL_DIRS
+    except Exception:  # Hermes isn't importable here, or has no such constant.
+        return _FALLBACK_EXCLUDED_DIRS
+    return frozenset(EXCLUDED_SKILL_DIRS)
+
+
+HERMES_EXCLUDED_DIRS = _installed_excluded_dirs()
 
 # agent/skill_utils.py SKILL_SUPPORT_DIRS: a skill's support folders. Hermes's
 # skill scan never enters one that sits directly in a folder holding SKILL.md.
@@ -221,7 +235,9 @@ def skill_error(error: SkillLoadError) -> lifecycle.LifecycleError:
     if len(error.paths) > 1:
         metadata["paths"] = [str(path) for path in error.paths]
     code = (
-        "hermes_skill_not_found" if error.reason == "not_found" else "hermes_skill_invalid"
+        "hermes_skill_not_found"
+        if error.reason == "not_found"
+        else "hermes_skill_invalid"
     )
     return lifecycle.LifecycleError(code, str(error), metadata=metadata)
 
@@ -356,9 +372,7 @@ def _plan_bundled(plan: SkillPlan, bundled: BundledSkills, home: Path | None) ->
     plan.sync = True
 
 
-def external_skill_names(
-    roots: list[str], home: Path | None
-) -> set[str]:
+def external_skill_names(roots: list[str], home: Path | None) -> set[str]:
     """Return the names Hermes indexes for the skills below ``roots``.
 
     Mirrors tools/skills_sync.py ``_build_external_skill_index``: each
@@ -508,8 +522,7 @@ def native_catalog() -> list[dict[str, Any]]:
         skills_tool.clear_skills_cache()
         rows = skills_tool._skill_catalog(skip_disabled=True, include_hidden=True)
         visible = {
-            str(row["path"])
-            for row in skills_tool._skill_catalog(skip_disabled=True)
+            str(row["path"]) for row in skills_tool._skill_catalog(skip_disabled=True)
         }
         skills_tool.clear_skills_cache()
     return [{**row, "visible": str(row["path"]) in visible} for row in rows]
@@ -570,12 +583,13 @@ def observe(
             reported.append((origin, row["dir"], field))
         loads = [row for row in external if row["status"] == "unique"]
         if loads:
-            outcome, selected = "selected", loads[0]["dir"]
+            # A configured copy wins; it loads unless Hermes hides it.
+            outcome, selected = "selected", _visible_dir(loads)
         elif any(row["status"] == "ambiguous" for row in external):
             outcome, selected = "ambiguous", None
         else:
             owner = [row for row in copies if row["status"] == "unique"]
-            outcome, selected = "shadowed", owner[0]["dir"] if owner else None
+            outcome, selected = "shadowed", _visible_dir(owner)
         duplicates.append(DuplicateRecord(name, tuple(reported), outcome, selected))
     # A clash the checks predicted without a policy that Hermes's catalog does
     # not show did not happen; each copy is reported as loaded under Hermes's
@@ -597,26 +611,29 @@ def observe(
                     name,
                     copies,
                     "selected" if unique else "ambiguous",
-                    unique[0]["dir"] if unique else None,
+                    _visible_dir(unique),
                 )
             )
 
-    # Hermes's status and name per external skill folder.
-    statuses: dict[Path, tuple[str, str]] = {}
+    # Hermes's status, name, and visibility per external skill folder.
+    statuses: dict[Path, tuple[str, str, bool]] = {}
     for row in external_rows:
-        if statuses.get(row["dir"], ("", ""))[0] != "unique":
-            statuses[row["dir"]] = (row["status"], row["name"])
+        if statuses.get(row["dir"], ("", "", True))[0] != "unique":
+            statuses[row["dir"]] = (row["status"], row["name"], row["visible"])
     reported_dirs = {path for item in duplicates for _origin, path, _ in item.copies}
     selected = []
     skipped = list(load.skipped)
     for skill in load.selected:
-        status, name = statuses.get(skill.path, (None, skill.name))
-        if status == "unique":
+        status, name, visible = statuses.get(skill.path, (None, skill.name, True))
+        if status == "unique" and visible:
             selected.append(dataclasses.replace(skill, name=name))
             continue
         if status is None:
             excluded = HERMES_EXCLUDED_DIRS.intersection(skill.path.parts)
             reason = "excluded_path" if excluded else "not_loaded_by_hermes"
+        elif status == "unique":
+            # Hermes resolves it but hides it on this platform or environment.
+            reason = "native_conditions"
         elif skill.path in reported_dirs:
             # The duplicate record explains it.
             continue
@@ -632,6 +649,13 @@ def observe(
     if plan.bundled is not None:
         bundled_report, warnings = _bundled_report(plan, rows, sync_result)
     return SkillObservation(observed, bundled_report, warnings)
+
+
+def _visible_dir(rows: list[dict[str, Any]]) -> Path | None:
+    """The folder of the first copy that loads, or ``None`` when Hermes hides
+    every copy."""
+
+    return next((row["dir"] for row in rows if row["visible"]), None)
 
 
 def _row(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -700,11 +724,21 @@ def _bundled_report(
     unavailable: list[dict[str, str]] = []
     for name in plan.selected_bundled:
         copies = [row for row in local if row["name"] == name]
-        if any(row["status"] == "unique" and row["visible"] for row in copies):
+        if any(
+            row["status"] == "unique"
+            and row["visible"]
+            and _origin(row, plan) == "bundled"
+            for row in copies
+        ):
             loaded.append(name)
             continue
         if name in external or name in plan.external_names:
             reason = "provided_by_external_skill"
+        elif name in plan.local_names and any(
+            row["status"] == "unique" for row in copies
+        ):
+            # The agent's own skill in the home holds the name instead.
+            reason = "provided_by_local_skill"
         elif any(row["status"] == "unique" for row in copies):
             reason = "native_conditions"
         elif any(row["status"] == "ambiguous" for row in copies):

@@ -67,6 +67,9 @@ SKILL_FILE = contract_skills.SKILL_FILE
 # MAX_CONFIGURED_ROOT_GROUPED_SKILL_SCAN_DEPTH and MAX_GROUPED_SKILL_SCAN_DEPTH.
 EXTRA_ROOT_DEPTH = 2
 SKILLS_ROOT_DEPTH = 6
+# The deepest level below an entry's folder that discovery reaches: the
+# scanned folder's ``skills`` child, searched SKILLS_ROOT_DEPTH levels deep.
+HIDDEN_SCAN_DEPTH = SKILLS_ROOT_DEPTH + 1
 # A non-empty allowBundled list that matches no shipped skill selects none.
 NO_BUNDLED_SKILLS = "nemo-fabric:no-bundled-skills"
 BUNDLED_SOURCES = frozenset({"openclaw-bundled", "openclaw-custodian"})
@@ -555,6 +558,9 @@ def _load_directories(
     # Entries whose skills/ subfolder OpenClaw would scan but which leads
     # outside the entry's folder: OpenClaw loads nothing from them.
     escaped: dict[int, Path] = {}
+    # Entries whose scanned skills/ subfolder holds SKILL.md: OpenClaw loads
+    # that subfolder as one skill.
+    promoted_skill: set[int] = set()
     for index, entry in enumerate(directories):
         if entry.folder is None:
             entries.append(entry)
@@ -565,6 +571,8 @@ def _load_directories(
         if scanned != folder and not _contained(scanned, folder):
             escaped[index] = scanned
             scanned = folder
+        elif scanned != folder and _has_skill_file(scanned):
+            promoted_skill.add(index)
         entries.append(contract.SkillDirectory(folder=str(scanned)))
         depths[index] = (
             SKILLS_ROOT_DEPTH if scanned.name == "skills" else EXTRA_ROOT_DEPTH
@@ -595,6 +603,8 @@ def _load_directories(
         if index in escaped:
             # Only skills/ holds skills here, so nothing else is found.
             return _rules(depths[index], hidden | {"skills"})
+        if index in promoted_skill:
+            return replace(_rules(depths[index], hidden), folder_root_is_skill=True)
         return _rules(depths[index], hidden)
 
     try:
@@ -830,14 +840,29 @@ def _hidden_dir_names(folders: Sequence[Path]) -> frozenset[str]:
     """Return the names of folders starting with ``.`` that discovery could reach.
 
     OpenClaw skips every such folder; the shared discovery helper skips folders
-    by exact name.
+    by exact name. The scan follows symlinks as discovery does, but lists a
+    folder again only when it is reached with more levels left to search.
     """
 
     names: set[str] = set()
+    # Levels left to search below each folder already listed, by identity.
+    listed: dict[tuple[int, int] | Path, int] = {}
     for folder in folders:
-        stack = [(folder, 0)]
+        stack = [(folder, HIDDEN_SCAN_DEPTH)]
         while stack:
-            current, depth = stack.pop()
+            current, levels = stack.pop()
+            try:
+                status = os.stat(current)
+                identity = (
+                    (status.st_dev, status.st_ino)
+                    if status.st_ino
+                    else current.resolve()
+                )
+            except (OSError, RuntimeError):
+                continue
+            if listed.get(identity, 0) >= levels:
+                continue
+            listed[identity] = levels
             try:
                 with os.scandir(current) as listing:
                     children = list(listing)
@@ -851,8 +876,8 @@ def _hidden_dir_names(folders: Sequence[Path]) -> frozenset[str]:
                     continue
                 if child.name.startswith("."):
                     names.add(child.name)
-                elif child.name != "node_modules" and depth + 1 < SKILLS_ROOT_DEPTH:
-                    stack.append((Path(child.path), depth + 1))
+                elif child.name != "node_modules" and levels > 1:
+                    stack.append((Path(child.path), levels - 1))
     return frozenset(names)
 
 

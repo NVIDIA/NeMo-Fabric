@@ -261,7 +261,38 @@
     },
     "AgentSkillConfig": {
       "additionalProperties": false,
-      "description": "Skills made available to an adapter target.",
+      "description": "Skills made available to an adapter target.\n\nA non-null `directories` requires an empty `paths`, and a non-null\n`duplicates` requires a non-null `directories`; `null` reads as omitted.",
+      "not": {
+        "anyOf": [
+          {
+            "properties": {
+              "directories": {
+                "type": "array"
+              },
+              "paths": {
+                "minItems": 1
+              }
+            },
+            "required": [
+              "directories",
+              "paths"
+            ]
+          },
+          {
+            "properties": {
+              "directories": {
+                "type": "null"
+              },
+              "duplicates": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "duplicates"
+            ]
+          }
+        ]
+      },
       "properties": {
         "bundled": {
           "anyOf": [
@@ -433,7 +464,53 @@
     },
     "BundledSkills": {
       "additionalProperties": false,
-      "description": "Bundled-skill selection.\n\n`include` and `exclude` are mutually exclusive, and neither may be combined\nwith `enabled: false`. An empty `include` selects no bundled skills; an\nempty `exclude` selects all of them.",
+      "description": "Bundled-skill selection.\n\n`include` and `exclude` are mutually exclusive, and neither may be combined\nwith `enabled: false`; a `null` list reads as omitted. An empty `include`\nselects no bundled skills; an empty `exclude` selects all of them.",
+      "not": {
+        "anyOf": [
+          {
+            "properties": {
+              "exclude": {
+                "type": "array"
+              },
+              "include": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "include",
+              "exclude"
+            ]
+          },
+          {
+            "properties": {
+              "enabled": {
+                "const": false
+              },
+              "include": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled",
+              "include"
+            ]
+          },
+          {
+            "properties": {
+              "enabled": {
+                "const": false
+              },
+              "exclude": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled",
+              "exclude"
+            ]
+          }
+        ]
+      },
       "properties": {
         "enabled": {
           "default": true,

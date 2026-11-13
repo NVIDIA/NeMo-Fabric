@@ -42,7 +42,8 @@ def test_structured_skills_serialize_in_schema_shape(config: FabricConfig):
         "paths": [],
         "directories": [
             {"folder": "/sandbox/team-skills"},
-            {"skill": "/opt/skills/release-review"},
+            # A Path serializes with the platform's separators.
+            {"skill": str(Path("/opt/skills/release-review"))},
         ],
         "bundled": {"enabled": True, "exclude": ["pdf"]},
         "duplicates": "last_wins",
@@ -73,6 +74,21 @@ def test_empty_lists_and_unset_fields_stay_distinct(
     skills: SkillConfig, expected: dict
 ):
     assert skills.to_mapping() == expected
+
+
+@pytest.mark.parametrize(
+    ("bundled", "expected"),
+    [
+        (BundledSkills(), {"enabled": True}),
+        (BundledSkills(include=[]), {"enabled": True, "include": []}),
+        (BundledSkills(exclude=[]), {"enabled": True, "exclude": []}),
+    ],
+)
+def test_bundled_skills_mapping_keeps_explicit_empty_lists(
+    bundled: BundledSkills, expected: dict
+):
+    assert bundled.to_mapping() == expected
+    assert BundledSkills.model_validate(bundled.to_mapping()) == bundled
 
 
 @pytest.mark.parametrize(

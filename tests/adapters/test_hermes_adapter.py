@@ -2152,7 +2152,10 @@ async def test_runtime_loads_skill_directories_and_reports_on_every_result(
         ],
     }
     assert excluded not in report["bundled"]["selected"]
-    assert kept in report["bundled"]["selected"]
+    # A kept skill loads, or is reported unavailable when Hermes hides it on
+    # this platform (for example the macOS-only skills on Linux).
+    unavailable = {item["name"] for item in report["bundled"].get("unavailable", [])}
+    assert kept in report["bundled"]["selected"] or kept in unavailable
     assert "hermes-agent" in report["bundled"]["selected"]
     assert report["bundled"]["essential"] == ["hermes-agent"]
     # Bundled skills are copied into the home; the excluded one is disabled.

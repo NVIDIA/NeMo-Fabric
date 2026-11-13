@@ -416,6 +416,15 @@ class BundledSkills(FabricBaseModel):
             )
         return self
 
+    def to_mapping(self) -> dict[str, Any]:
+        """Return the selection mapping without collapsing an explicit empty list."""
+
+        data = super().to_mapping()
+        for key in ("include", "exclude"):
+            if getattr(self, key) == []:
+                data[key] = []
+        return data
+
 
 class SkillConfig(FabricBaseModel):
     """Skill capability configuration.

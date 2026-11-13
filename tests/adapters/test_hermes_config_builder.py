@@ -368,9 +368,7 @@ def test_paths_pass_through_unchanged(tmp_path: Path):
 
     assert not plan.structured
     assert without_plan == with_plan
-    assert without_plan["skills"] == {
-        "external_dirs": [str(missing), "relative/skill"]
-    }
+    assert without_plan["skills"] == {"external_dirs": [str(missing), "relative/skill"]}
     assert "skills_disabled" not in configuration.summarize_hermes_config(with_plan)
 
 
@@ -529,15 +527,17 @@ def test_entry_failures_map_to_hermes_codes(
     ("bundled", "disabled", "selected"),
     [
         pytest.param({}, [], ["arxiv", "github", "pdf"], id="enable"),
-        pytest.param(
-            {"enabled": False}, ["arxiv", "github", "pdf"], [], id="disable"
-        ),
+        pytest.param({"enabled": False}, ["arxiv", "github", "pdf"], [], id="disable"),
         pytest.param({"include": ["pdf"]}, ["arxiv", "github"], ["pdf"], id="include"),
         pytest.param(
             {"include": []}, ["arxiv", "github", "pdf"], [], id="include-none"
         ),
-        pytest.param({"exclude": ["arxiv"]}, ["arxiv"], ["github", "pdf"], id="exclude"),
-        pytest.param({"exclude": []}, [], ["arxiv", "github", "pdf"], id="exclude-none"),
+        pytest.param(
+            {"exclude": ["arxiv"]}, ["arxiv"], ["github", "pdf"], id="exclude"
+        ),
+        pytest.param(
+            {"exclude": []}, [], ["arxiv", "github", "pdf"], id="exclude-none"
+        ),
         # Hermes never disables hermes-agent, so naming it selects nothing more.
         pytest.param(
             {"include": ["hermes-agent"]},
@@ -850,6 +850,10 @@ def test_folder_entry_that_is_a_skill_loads_its_root(tmp_path: Path):
     assert plan.load.empty_entries == []
 
 
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="needs POSIX permissions enforced for a non-root user",
+)
 def test_folder_entry_with_an_unreadable_root_skill_skips_it(tmp_path: Path):
     pack = _write_skill(tmp_path / "pack").resolve()
     (pack / "SKILL.md").chmod(0)
@@ -892,7 +896,11 @@ def test_skill_support_folders_are_not_scanned(tmp_path: Path, policy: str | Non
         ("tool", team / "scripts" / "tool"),
     ]
     assert plan.load.duplicates == []
-    expected = [team] if policy is None else [team / "a", team / "b", team / "scripts" / "tool"]
+    expected = (
+        [team]
+        if policy is None
+        else [team / "a", team / "b", team / "scripts" / "tool"]
+    )
     assert plan.external_dirs == [str(path) for path in expected]
 
 
@@ -900,13 +908,17 @@ def test_skill_support_folders_are_not_scanned(tmp_path: Path, policy: str | Non
     ("entries", "external"),
     [
         pytest.param(
-            [{"folder": "team"}, {"skill": "team/review"}], ["team"], id="skill-in-folder"
+            [{"folder": "team"}, {"skill": "team/review"}],
+            ["team"],
+            id="skill-in-folder",
         ),
         pytest.param(
             [{"skill": "team/review"}, {"folder": "team"}], ["team"], id="folder-after"
         ),
         pytest.param(
-            [{"folder": "team"}, {"folder": "team/nested"}], ["team"], id="nested-folder"
+            [{"folder": "team"}, {"folder": "team/nested"}],
+            ["team"],
+            id="nested-folder",
         ),
         # Hermes's scan of team never reaches these, so they stay roots.
         pytest.param(
@@ -982,6 +994,82 @@ def test_observation_skips_a_skill_hermes_sees_but_does_not_load(tmp_path: Path)
             }
         ],
     }
+
+
+def test_observation_skips_external_skills_hermes_hides(tmp_path: Path):
+    """A skill Hermes resolves but hides on this platform does not load."""
+    team = tmp_path.resolve() / "team"
+    home = (tmp_path / "home" / "skills").resolve()
+    _write_skill(team / "macos-only")
+    _write_skill(team / "debugging")
+    _write_skill(home / "debugging")
+    agent_config = _skills_config({"directories": [{"folder": str(team)}]})
+    plan = hermes_skills.plan_skills(agent_config)
+    hidden = _catalog_row(team, team / "macos-only", tier=3, status="unique")
+    hidden_winner = _catalog_row(team, team / "debugging", tier=3, status="unique")
+    catalog = [
+        {**hidden, "visible": False},
+        {**hidden_winner, "visible": False},
+        _catalog_row(home, home / "debugging", tier=1, status="shadowed"),
+    ]
+
+    report = hermes_skills.observe(plan, catalog).report()
+
+    assert "loaded" not in report
+    assert report["skipped"] == [
+        {
+            "path": str(team / "debugging"),
+            "entry": "skills.directories[0]",
+            "reason": "native_conditions",
+        },
+        {
+            "path": str(team / "macos-only"),
+            "entry": "skills.directories[0]",
+            "reason": "native_conditions",
+        },
+    ]
+    # The configured copy wins the clash, but no copy loads.
+    assert report["duplicates"] == [
+        {
+            "name": "debugging",
+            "outcome": "selected",
+            "copies": [
+                {"origin": "local", "path": str(home / "debugging")},
+                {
+                    "origin": "external",
+                    "path": str(team / "debugging"),
+                    "entry": "skills.directories[0]",
+                },
+            ],
+        }
+    ]
+
+
+def test_observation_does_not_report_the_agents_own_skill_as_bundled(
+    tmp_path: Path,
+):
+    home = tmp_path / "home"
+    skills_dir = (home / "skills").resolve()
+    # No bundled manifest: the home's pdf is the agent's own skill.
+    _write_skill(skills_dir / "pdf")
+    agent_config = _skills_config({"bundled": {"include": ["pdf"]}})
+    plan = hermes_skills.plan_skills(
+        agent_config, inventory=lambda: _inventory(tmp_path), hermes_home=home
+    )
+    assert plan.local_names == {"pdf"}
+    catalog = [_catalog_row(skills_dir, skills_dir / "pdf", tier=1, status="unique")]
+
+    observation = hermes_skills.observe(plan, catalog)
+
+    assert observation.report() == {
+        "bundled": {
+            "selected": [],
+            "unavailable": [{"name": "pdf", "reason": "provided_by_local_skill"}],
+        }
+    }
+    assert observation.bundled_warnings == [
+        "bundled skill 'pdf' does not load: provided_by_local_skill"
+    ]
 
 
 def test_observation_follows_the_names_hermes_reads(tmp_path: Path):

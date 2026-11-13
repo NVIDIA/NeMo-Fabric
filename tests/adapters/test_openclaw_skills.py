@@ -988,6 +988,86 @@ def test_hidden_dir_names_cover_reachable_dot_folders(tmp_path: Path):
     assert os.path.isdir(tmp_path / "a")
 
 
+def test_hidden_dir_names_reach_the_deepest_skills_level(tmp_path: Path):
+    """The entry's skills child is searched 6 levels below itself."""
+    (tmp_path / "skills" / "a" / "b" / "c" / "d" / "e" / ".private").mkdir(
+        parents=True
+    )
+
+    assert openclaw_skills._hidden_dir_names([tmp_path]) == {".private"}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Requires symbolic links")
+def test_hidden_dir_names_list_each_linked_folder_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Links back to a folder do not multiply the folders listed."""
+    root = tmp_path / "loop"
+    (root / ".cache").mkdir(parents=True)
+    for index in range(6):
+        (root / f"link{index}").symlink_to(root, target_is_directory=True)
+    listed: list[str] = []
+    scandir = os.scandir
+
+    def counting_scandir(path: Any) -> Any:
+        listed.append(os.fspath(path))
+        return scandir(path)
+
+    monkeypatch.setattr(openclaw_skills.os, "scandir", counting_scandir)
+
+    assert openclaw_skills._hidden_dir_names([root]) == {".cache"}
+    assert listed == [os.fspath(root)]
+
+
+@pytest.mark.parametrize("policy", [None, "first_wins"])
+def test_hidden_skill_at_the_deepest_skills_level_is_not_loaded(
+    tmp_path: Path, workspace: Path, policy: str | None
+):
+    """OpenClaw skips dot folders at every level discovery reaches."""
+    team = tmp_path / "team"
+    top = _skill(team / "top", "top")
+    _skill(team / "skills" / "a" / "b" / "c" / "d" / "e" / ".private", "private")
+    skills: dict[str, Any] = {"directories": [{"folder": str(team)}]}
+    if policy is not None:
+        skills["duplicates"] = policy
+
+    generated, plan = _generated(tmp_path, workspace, skills)
+
+    assert _loaded(plan) == [("top", "skills.directories[0]")]
+    assert generated["skills"]["load"]["extraDirs"] == (
+        [str(team)] if policy is None else [str(top.resolve())]
+    )
+
+
+@pytest.mark.parametrize("policy", [None, "first_wins"])
+def test_promoted_skills_folder_that_is_a_skill_loads_as_one(
+    tmp_path: Path, workspace: Path, policy: str | None
+):
+    """OpenClaw scans skills/ when only it holds skills, and loads it as one skill."""
+    repository = tmp_path / "repository"
+    packed = _skill(repository / "skills", "packed")
+    _skill(packed / "nested", "nested")
+    skills: dict[str, Any] = {"directories": [{"folder": str(repository)}]}
+    if policy is not None:
+        skills["duplicates"] = policy
+
+    generated, plan = _generated(tmp_path, workspace, skills)
+
+    assert plan.report() == {
+        "loaded": [
+            {
+                "name": "packed",
+                "path": str(packed.resolve()),
+                "entry": "skills.directories[0]",
+                "origin": "external",
+            }
+        ]
+    }
+    assert generated["skills"]["load"]["extraDirs"] == (
+        [str(repository)] if policy is None else [str(packed.resolve())]
+    )
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="Requires symbolic links")
 @pytest.mark.parametrize("policy", [None, "first_wins"])
 def test_skills_linked_outside_their_folder_are_skipped(

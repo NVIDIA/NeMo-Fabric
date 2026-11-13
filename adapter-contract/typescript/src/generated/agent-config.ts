@@ -297,6 +297,9 @@ export interface AgentRuntimeConfig {
 }
 /**
  * Skills made available to an adapter target.
+ *
+ * A non-null `directories` requires an empty `paths`, and a non-null
+ * `duplicates` requires a non-null `directories`; `null` reads as omitted.
  */
 export interface AgentSkillConfig {
   /**
@@ -328,8 +331,8 @@ export interface AgentSkillConfig {
  * Bundled-skill selection.
  *
  * `include` and `exclude` are mutually exclusive, and neither may be combined
- * with `enabled: false`. An empty `include` selects no bundled skills; an
- * empty `exclude` selects all of them.
+ * with `enabled: false`; a `null` list reads as omitted. An empty `include`
+ * selects no bundled skills; an empty `exclude` selects all of them.
  */
 export interface BundledSkills {
   /**

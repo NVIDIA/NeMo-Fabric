@@ -203,8 +203,9 @@ export type AdapterRequirements = {
  * Structured skill capabilities implemented by an adapter.
  *
  * Each sub-block is optional; an omitted block means the adapter does not
- * implement that capability. `duplicates` requires `directory_loading`. The
- * adapter must also accept the `skills` config field in `config.accepts`.
+ * implement that capability; `null` reads as omitted. A non-null `duplicates`
+ * requires a non-null `directory_loading`. The adapter must also accept the
+ * `skills` config field in `config.accepts`.
  */
 export type AdapterSkillsSupport = {
   /**

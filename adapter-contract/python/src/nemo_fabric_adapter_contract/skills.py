@@ -283,7 +283,9 @@ def load_directories(
         load.entries.append((entry_field, kind, root))
         entry_rules = _entry_rules(rules, index, kind, root)
 
-        reached = Path(os.path.normpath(configured))
+        # Keep ``..`` as configured: after a symlink it leads where the file
+        # system says, which a lexical normpath would change.
+        reached = configured
         if kind == "skill":
             candidates = [_Candidate(reached, root, root_identity)]
             if (
@@ -548,12 +550,17 @@ def _discover(
 
     The walk is breadth first, so each folder is claimed by its shallowest
     path; a symlink reached deeper never hides the real folder's subtree.
-    Each folder is entered once, so symlinked folders cannot loop. The root
-    is a candidate only for a ``folder`` entry with ``folder_root_is_skill``.
+    A folder is entered again only through a path that leaves it a larger
+    depth budget, such as one inside a subroot, so symlinked folders cannot
+    loop. The root is a candidate only for a ``folder`` entry with
+    ``folder_root_is_skill``.
     """
 
     candidates: list[tuple[tuple[str, ...], _Candidate]] = []
-    visited = {identity}
+    claimed = {identity}
+    # The largest depth budget each folder has been entered with. The root
+    # is never entered again.
+    visited: dict[tuple[int, int] | Path, float] = {identity: float("inf")}
     # Walk the configured spelling so that names follow what the harness sees.
     queue = deque(
         [_Visit(_Candidate(reached, root, identity), 0, 0, rules.max_depth, ())]
@@ -563,7 +570,8 @@ def _discover(
         current = visit.folder
         is_skill = _is_file(current.reached / SKILL_FILE)
         if visit.level:
-            if is_skill:
+            if is_skill and current.identity not in claimed:
+                claimed.add(current.identity)
                 candidates.append((visit.order, current))
             if (
                 rules.traversal != "recursive"
@@ -602,14 +610,15 @@ def _discover(
                 resolved = path.resolve()
             except (OSError, RuntimeError):
                 continue
-            if child_identity in visited:
-                continue
-            visited.add(child_identity)
             depth, limit = visit.depth + 1, visit.limit
             if not visit.level and kind == "folder":
                 subroot_limit = rules.subroot_depths.get(child.name)
                 if subroot_limit is not None:
                     depth, limit = 0, subroot_limit
+            budget = float("inf") if limit is None else limit - depth
+            if visited.get(child_identity, -1) >= budget:
+                continue
+            visited[child_identity] = budget
             queue.append(
                 _Visit(
                     _Candidate(path, resolved, child_identity),
@@ -660,7 +669,10 @@ def _candidate_name(
             return None
     name = front_matter[0] if front_matter is not None else None
     if not name and rules.name_fallback:
-        name = candidate.reached.name or candidate.resolved.name
+        reached_name = candidate.reached.name
+        name = (
+            reached_name if reached_name not in ("", "..") else candidate.resolved.name
+        )
     if not name:
         skipped.append(SkippedCandidate(candidate.resolved, field, "no_name"))
         return None

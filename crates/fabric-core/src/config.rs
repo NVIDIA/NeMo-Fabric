@@ -854,10 +854,17 @@ impl AdapterConfigSupport {
 /// Structured skill capabilities implemented by an adapter.
 ///
 /// Each sub-block is optional; an omitted block means the adapter does not
-/// implement that capability. `duplicates` requires `directory_loading`. The
-/// adapter must also accept the `skills` config field in `config.accepts`.
+/// implement that capability; `null` reads as omitted. A non-null `duplicates`
+/// requires a non-null `directory_loading`. The adapter must also accept the
+/// `skills` config field in `config.accepts`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("dependentRequired" = {"duplicates": ["directory_loading"]}))]
+#[schemars(extend("not" = {
+    "required": ["duplicates"],
+    "properties": {
+        "duplicates": {"type": "object"},
+        "directory_loading": {"type": "null"}
+    }
+}))]
 pub struct AdapterSkillsSupport {
     /// Structured `skills.directories` loading.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1475,7 +1482,20 @@ fn default_environment_ownership() -> EnvironmentOwnership {
 }
 
 /// Skill capability configuration.
+///
+/// A non-null `directories` requires an empty `paths`, and a non-null
+/// `duplicates` requires a non-null `directories`; `null` reads as omitted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+#[schemars(extend("not" = {"anyOf": [
+    {
+        "required": ["directories", "paths"],
+        "properties": {"directories": {"type": "array"}, "paths": {"minItems": 1}}
+    },
+    {
+        "required": ["duplicates"],
+        "properties": {"duplicates": {"type": "string"}, "directories": {"type": "null"}}
+    }
+]}))]
 pub struct SkillConfig {
     /// Skill paths resolved relative to the config base directory.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1673,10 +1693,24 @@ where
 /// Bundled-skill selection.
 ///
 /// `include` and `exclude` are mutually exclusive, and neither may be combined
-/// with `enabled: false`. An empty `include` selects no bundled skills; an
-/// empty `exclude` selects all of them.
+/// with `enabled: false`; a `null` list reads as omitted. An empty `include`
+/// selects no bundled skills; an empty `exclude` selects all of them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(extend("not" = {"anyOf": [
+    {
+        "required": ["include", "exclude"],
+        "properties": {"include": {"type": "array"}, "exclude": {"type": "array"}}
+    },
+    {
+        "required": ["enabled", "include"],
+        "properties": {"enabled": {"const": false}, "include": {"type": "array"}}
+    },
+    {
+        "required": ["enabled", "exclude"],
+        "properties": {"enabled": {"const": false}, "exclude": {"type": "array"}}
+    }
+]}))]
 pub struct BundledSkills {
     /// Whether bundled skills load at all.
     #[serde(default = "default_true")]

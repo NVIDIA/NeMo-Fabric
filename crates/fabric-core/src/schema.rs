@@ -704,6 +704,90 @@ mod tests {
             }
         }
 
+        // The cross-field skill rules hold in the northbound and southbound
+        // schemas, with null read as absent, as validation applies them.
+        let cases = [
+            (serde_json::json!({"duplicates": "reject"}), false),
+            (
+                serde_json::json!({"directories": null, "duplicates": "reject"}),
+                false,
+            ),
+            (
+                serde_json::json!({"paths": ["/a"], "directories": []}),
+                false,
+            ),
+            (
+                serde_json::json!({"paths": ["/a"], "duplicates": "first_wins"}),
+                false,
+            ),
+            (
+                serde_json::json!({"bundled": {"include": [], "exclude": []}}),
+                false,
+            ),
+            (
+                serde_json::json!({"bundled": {"enabled": false, "include": []}}),
+                false,
+            ),
+            (
+                serde_json::json!({"bundled": {"enabled": false, "exclude": ["a"]}}),
+                false,
+            ),
+            (serde_json::json!({"duplicates": null}), true),
+            (
+                serde_json::json!({"paths": ["/a"], "directories": null}),
+                true,
+            ),
+            (
+                serde_json::json!({"paths": [], "directories": [], "duplicates": "reject"}),
+                true,
+            ),
+            (
+                serde_json::json!({"directories": [{"skill": "/a"}], "duplicates": "last_wins"}),
+                true,
+            ),
+            (serde_json::json!({"bundled": {}}), true),
+            (serde_json::json!({"bundled": {"include": []}}), true),
+            (serde_json::json!({"bundled": {"exclude": []}}), true),
+            (
+                serde_json::json!({"bundled": {"include": [], "exclude": null}}),
+                true,
+            ),
+            (
+                serde_json::json!({"bundled": {"enabled": false, "include": null}}),
+                true,
+            ),
+            (serde_json::json!({"bundled": {"enabled": false}}), true),
+        ];
+        for (name, skills_ref) in [
+            (SchemaName::Agent, "#/$defs/SkillConfig"),
+            (SchemaName::AgentConfig, "#/$defs/AgentSkillConfig"),
+        ] {
+            let schema = generate_schema(name).expect("schema generation");
+            let validator = jsonschema::validator_for(&serde_json::json!({
+                "$defs": schema["$defs"].clone(),
+                "$ref": skills_ref
+            }))
+            .expect("skills schema");
+            for (skills, valid) in &cases {
+                assert_eq!(validator.is_valid(skills), *valid, "{skills_ref}: {skills}");
+            }
+        }
+        for (skills, valid) in cases {
+            let runtime = serde_json::from_value::<FabricConfig>(serde_json::json!({
+                "schema_version": "fabric.agent/v1alpha1",
+                "metadata": {"name": "skills-parity"},
+                "harness": {"adapter_id": "test.fabric.schema", "resolution": "preinstalled"},
+                "runtime": {},
+                "environment": {"provider": "local", "workspace": "workspace"},
+                "skills": skills
+            }))
+            .map_err(|error| error.to_string())
+            .and_then(|config| {
+                crate::config::validate_config(&config).map_err(|error| error.to_string())
+            });
+            assert_eq!(runtime.is_ok(), valid, "{skills}: {runtime:?}");
+        }
+
         let schema = generate_schema(SchemaName::AdapterDescriptor).expect("schema generation");
         let validator = jsonschema::validator_for(&schema).expect("valid descriptor schema");
         let loading = &schema["$defs"]["SkillDirectoryLoadingSupport"];
@@ -801,6 +885,13 @@ mod tests {
             .expect("skills block")
             .remove("duplicates");
         assert!(validator.is_valid(&policy_only));
+        // Null reads as absent on either side of the dependency.
+        let mut null_policy = policy_only.clone();
+        null_policy["skills"]["duplicates"] = Value::Null;
+        assert!(validator.is_valid(&null_policy));
+        let mut null_loading = descriptor(serde_json::json!({"kind": "no_fixed_limit"}));
+        null_loading["skills"]["directory_loading"] = Value::Null;
+        assert!(!validator.is_valid(&null_loading));
         let mut empty_entries = descriptor(serde_json::json!({"kind": "no_fixed_limit"}));
         empty_entries["skills"]["directory_loading"]["supported_entries"] = serde_json::json!([]);
         assert!(!validator.is_valid(&empty_entries));

@@ -35,7 +35,7 @@ def openclaw_fixture() -> Path:
     )
     if not configured:
         pytest.skip("OpenClaw is not installed")
-    command = Path(configured)
+    command = _command_path(configured)
     try:
         output = subprocess.run(
             [str(command), "--version"],
@@ -48,6 +48,26 @@ def openclaw_fixture() -> Path:
     except (OSError, subprocess.SubprocessError, adapter.lifecycle.LifecycleError):
         pytest.skip("The installed OpenClaw version is not supported")
     return command
+
+
+def _command_path(configured: str) -> Path:
+    """Return a command path that still works from another working directory.
+
+    A relative path becomes absolute; a bare name keeps its ``PATH`` lookup.
+    """
+
+    if os.path.dirname(configured):
+        return Path(os.path.abspath(configured))
+    return Path(configured)
+
+
+def test_relative_command_paths_become_absolute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    assert _command_path("./bin/openclaw") == tmp_path / "bin" / "openclaw"
+    assert _command_path("openclaw") == Path("openclaw")
 
 
 def _skill(directory: Path, name: str | None, description: str | None = None) -> Path:
@@ -413,6 +433,31 @@ def test_skills_child_of_a_scanned_root_is_searched_six_levels(
 
     assert _external(status, baseline) == _loaded(plan)
     assert set(_loaded(plan)) == {"top", "deep"}
+
+
+@pytest.mark.parametrize("policy", [None, "first_wins"])
+def test_promoted_skills_folder_and_deep_hidden_folders_match_openclaw(
+    native: _Native, baseline: set[str], policy: str | None
+):
+    """A promoted skills/ that is a skill loads alone; deep dot folders never load."""
+    root = native.tmp_path
+    _skill(root / "packed" / "skills", "packed")
+    _skill(root / "packed" / "skills" / "nested", "nested")
+    _skill(root / "team" / "top", "top")
+    _skill(root / "team" / "skills" / "a" / "b" / "c" / "d" / "e" / ".hid", "hid")
+    skills: dict[str, Any] = {
+        "directories": [
+            {"folder": str(root / "packed")},
+            {"folder": str(root / "team")},
+        ]
+    }
+    if policy is not None:
+        skills["duplicates"] = policy
+
+    plan, status = native.list(skills)
+
+    assert _external(status, baseline) == _loaded(plan)
+    assert set(_loaded(plan)) == {"packed", "top"}
 
 
 def test_overlapping_folder_entries_report_each_entry_with_its_depth(

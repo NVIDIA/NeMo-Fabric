@@ -5,12 +5,14 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentSkillConfig
@@ -175,6 +177,43 @@ def test_agent_skill_config_rejects_invalid_structure(skills, path: str, message
         AgentConfig.from_mapping({"skills": skills})
 
     assert ".".join(caught.value.path) == path
+
+
+@pytest.mark.parametrize(
+    "skills",
+    [
+        {"duplicates": "reject"},
+        {"directories": None, "duplicates": "reject"},
+        {"paths": ["/a"], "directories": []},
+        {"bundled": {"include": [], "exclude": []}},
+        {"bundled": {"enabled": False, "include": []}},
+        {"duplicates": None},
+        {"paths": ["/a"], "directories": None},
+        {"directories": [], "duplicates": "reject"},
+        {"bundled": {"include": [], "exclude": None}},
+        {"bundled": {"enabled": False, "exclude": None}},
+        {"bundled": {"exclude": []}},
+    ],
+)
+def test_agent_skill_schema_matches_the_contract_model(skills: dict):
+    """The committed schema applies the cross-field rules, null read as absent."""
+    schema = json.loads(
+        (
+            Path(__file__).parents[2]
+            / "schemas/adapter-contract/agent-config.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    validator = Draft202012Validator(
+        {"$defs": schema["$defs"], "$ref": "#/$defs/AgentSkillConfig"}
+    )
+    try:
+        AgentSkillConfig.from_mapping(skills)
+    except ContractValidationError:
+        accepted = False
+    else:
+        accepted = True
+
+    assert validator.is_valid(skills) is accepted
 
 
 @pytest.mark.parametrize("value", ["", " ", Path(""), Path(".")])
@@ -610,6 +649,62 @@ def test_deeper_symlink_does_not_hide_the_real_folder(
 
     assert load.selected == [
         FoundSkill("s", skill.resolve(), "skills.directories[0]", "folder")
+    ]
+
+
+def test_dot_dot_after_a_symlink_follows_the_file_system(
+    tmp_path: Path, make_skill: Callable[..., Path]
+):
+    (tmp_path / "store" / "project").mkdir(parents=True)
+    real = make_skill(tmp_path / "store" / "skills" / "real")
+    make_skill(tmp_path / "cfg" / "skills" / "decoy")
+    (tmp_path / "cfg" / "link").symlink_to(
+        tmp_path / "store" / "project", target_is_directory=True
+    )
+
+    load = load_directories(
+        [{"folder": "cfg/link/../skills"}, {"skill": "cfg/link/../skills/real"}],
+        rules=RECURSIVE,
+        duplicates=None,
+        base_dir=tmp_path,
+    )
+
+    # The OS resolves ``link/..`` to ``store``, not lexically to ``cfg``.
+    assert load.selected == [
+        FoundSkill("real", real.resolve(), "skills.directories[0]", "folder")
+    ]
+    # A path ending in ``..`` falls back to the resolved folder's name.
+    (real / "sub").mkdir()
+    (tmp_path / "cfg" / "inner").symlink_to(real / "sub", target_is_directory=True)
+    load = load_directories(
+        [{"skill": "cfg/inner/.."}],
+        rules=IMMEDIATE,
+        duplicates=None,
+        base_dir=tmp_path,
+    )
+    assert load.selected == [
+        FoundSkill("real", real.resolve(), "skills.directories[0]", "skill")
+    ]
+
+
+def test_folder_is_entered_again_with_a_larger_depth_budget(
+    tmp_path: Path, make_skill: Callable[..., Path]
+):
+    root = tmp_path / "root"
+    review = make_skill(root / "skills" / "group" / "deep" / "review")
+    # ``a`` sorts first and claims ``group`` with the outer, smaller budget.
+    (root / "a").symlink_to(root / "skills" / "group", target_is_directory=True)
+    rules = DiscoveryRules(
+        traversal="recursive",
+        nested_skills="stop_at_skill",
+        max_depth=2,
+        subroot_depths={"skills": 6},
+    )
+
+    load = load_directories([{"folder": root}], rules=rules, duplicates=None)
+
+    assert load.selected == [
+        FoundSkill("review", review.resolve(), "skills.directories[0]", "folder")
     ]
 
 

@@ -138,8 +138,21 @@ pub struct AgentRuntimeConfig {
 }
 
 /// Skills made available to an adapter target.
+///
+/// A non-null `directories` requires an empty `paths`, and a non-null
+/// `duplicates` requires a non-null `directories`; `null` reads as omitted.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(extend("not" = {"anyOf": [
+    {
+        "required": ["directories", "paths"],
+        "properties": {"directories": {"type": "array"}, "paths": {"minItems": 1}}
+    },
+    {
+        "required": ["duplicates"],
+        "properties": {"duplicates": {"type": "string"}, "directories": {"type": "null"}}
+    }
+]}))]
 pub struct AgentSkillConfig {
     /// Skill paths resolved for the task environment.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
