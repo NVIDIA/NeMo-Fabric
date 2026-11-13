@@ -96,6 +96,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`types.SampleSummary`](./nemo_fabric.types.md#class-samplesummary): Retained native series, reductions, and collection-quality diagnostics.
 - [`types.ServiceHandle`](./nemo_fabric.types.md#class-servicehandle): Opaque identity and binding for one prepared or attached service.
 - [`types.ServiceReference`](./nemo_fabric.types.md#class-servicereference): Reference to an already-running caller-owned service.
+- [`types.SessionRef`](./nemo_fabric.types.md#class-sessionref): Portable native session identity, resolved within supplied retained storage.
 - [`types.SoftwareEntry`](./nemo_fabric.types.md#class-softwareentry): One selected software component.
 - [`types.SoftwareEnvironment`](./nemo_fabric.types.md#class-softwareenvironment): Observed installation context and selected coverage.
 - [`types.TelemetryRef`](./nemo_fabric.types.md#class-telemetryref): Reference to external or persisted telemetry for a run.
