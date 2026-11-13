@@ -130,7 +130,16 @@ def inspect_adapter(
         raise FabricConfigError("Adapter inspection requires a selected adapter")
     if descriptor is None:
         if (
-            (config.skills is not None and config.skills.paths)
+            (
+                config.skills is not None
+                # An empty directories list asks for nothing, as in core.
+                and (
+                    config.skills.paths
+                    or config.skills.directories
+                    or config.skills.bundled is not None
+                    or config.skills.duplicates is not None
+                )
+            )
             or (config.mcp is not None and config.mcp.servers)
             or (config.telemetry is not None and config.telemetry.providers)
         ):

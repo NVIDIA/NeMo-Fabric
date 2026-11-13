@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import warnings
 from importlib.metadata import version as distribution_version
@@ -26,6 +27,8 @@ from nemo_fabric import (
     RelayAtofConfig,
     RelayAtofFileSinkConfig,
     RelayObservabilityConfig,
+    SkillConfig,
+    SkillDirectory,
 )
 
 pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
@@ -300,6 +303,56 @@ async def test_skill_selection(
 
     assert result["status"] == "succeeded", result.to_mapping()
     assert_atof_skill_selection(result["output"], skill)
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+@pytest.mark.parametrize("skill", ["default", "alternate"])
+async def test_skill_directories_load_through_hermes(
+    code_review_agent_dir: Path,
+    api_server: str,
+    tmp_path: Path,
+    skill: str,
+    default_skill: Path,
+    alternate_skill: Path,
+):
+    """A folder entry and a skill entry reach Hermes's own skill loader."""
+    team = tmp_path / "team"
+    shutil.copytree(default_skill, team / "default")
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = with_relay(hermes_config())
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.tools.enabled = None
+    config.skills = SkillConfig(
+        directories=[
+            SkillDirectory(folder=team),
+            SkillDirectory(skill=alternate_skill),
+        ],
+        duplicates="reject",
+    )
+    requests.post(
+        f"{api_server}/_scenario",
+        json={"tool_call": {"name": "skill_view", "arguments": {"name": skill}}},
+        timeout=5,
+    ).raise_for_status()
+
+    result = await Fabric().run(
+        config,
+        base_dir=code_review_agent_dir,
+        input=f"Use the {skill} skill.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    assert_atof_skill_selection(result["output"], skill)
+    loaded = result["output"]["skills"]["loaded"]
+    assert [(entry["name"], entry["entry"]) for entry in loaded] == [
+        ("default", "skills.directories[0]"),
+        ("alternate", "skills.directories[1]"),
+    ]
+    assert result["output"]["hermes_native_config"]["skill_dirs"] == [
+        str((team / "default").resolve()),
+        str(alternate_skill.resolve()),
+    ]
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")

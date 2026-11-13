@@ -32,6 +32,18 @@ An adapter descriptor opts into the southbound configuration with
 `config.input=agent_config`. Python adapters using the optional common
 lifecycle host pass `AgentConfig.from_mapping` as the `config_loader`.
 
+`AgentSkillConfig` carries the legacy `paths` list and, for adapters whose
+descriptor advertises them, the structured `directories` (`SkillDirectory`
+entries naming one `skill` or a `folder` of skills), `bundled`
+(`BundledSkills`), and `duplicates` fields. The dependency-free
+`nemo_fabric_adapter_contract.skills` module checks and discovers
+`directories` entries in the task environment: `load_directories()` applies
+an adapter's `DiscoveryRules` (one set for every entry, or a callable that
+returns the rules for each entry) and duplicate policy, raises `SkillLoadError`
+with the failing field and path, and returns a `DirectoryLoad` that
+`report_block()` turns into the `output.skills` run report and `warn()`
+summarizes on standard error.
+
 `AdapterCheckRequest` and `AdapterCheckResult` define health-probe requests and results. Results preserve required null fields and use fixed reason codes and evidence-source identifiers. The common Python lifecycle host publishes an authenticated health channel for adapters with an asynchronous `check(level)` method returning an `AdapterCheckResult` mapping. The host applies the remaining deadline and invalidates observations during shutdown. A service host uses its service ID in the probe's `runtime_id` field.
 
 ## Install

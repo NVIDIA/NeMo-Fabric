@@ -634,6 +634,177 @@ mod tests {
     }
 
     #[test]
+    fn skill_schemas_match_runtime_constraints() {
+        // Structured entries are exactly one of two closed objects, northbound
+        // and southbound.
+        for (name, skills_path) in [
+            (SchemaName::Agent, "/$defs/SkillConfig"),
+            (SchemaName::AgentConfig, "/$defs/AgentSkillConfig"),
+        ] {
+            let schema = generate_schema(name).expect("schema generation");
+            let validator = jsonschema::validator_for(&schema).expect("valid schema");
+            let skills = schema.pointer(skills_path).expect("skills definition");
+            assert!(skills["properties"]["directories"].is_object());
+            let entry = &schema["$defs"]["SkillDirectory"]["oneOf"];
+            assert_eq!(entry.as_array().map(Vec::len), Some(2));
+            for (variant, key) in entry
+                .as_array()
+                .expect("variants")
+                .iter()
+                .zip(["skill", "folder"])
+            {
+                assert_eq!(variant["required"], serde_json::json!([key]));
+                assert_eq!(variant["additionalProperties"], false);
+            }
+            let entry_validator = jsonschema::validator_for(&serde_json::json!({
+                "$defs": schema["$defs"].clone(),
+                "$ref": "#/$defs/SkillDirectory"
+            }))
+            .expect("entry schema");
+            assert!(entry_validator.is_valid(&serde_json::json!({"skill": "/a"})));
+            assert!(entry_validator.is_valid(&serde_json::json!({"folder": "/a"})));
+            // The other key may appear only as null, which reads as absent.
+            for valid in [
+                serde_json::json!({"skill": "/a", "folder": null}),
+                serde_json::json!({"folder": "/a", "skill": null}),
+            ] {
+                assert!(entry_validator.is_valid(&valid), "{valid}");
+                serde_json::from_value::<crate::SkillDirectory>(valid.clone())
+                    .unwrap_or_else(|error| panic!("{valid}: {error}"));
+            }
+            for invalid in [
+                serde_json::json!({"skill": "/a", "folder": "/b"}),
+                serde_json::json!({"skill": null, "folder": null}),
+                serde_json::json!({"skill": null}),
+                serde_json::json!({"skill": "/a", "path": null}),
+                serde_json::json!({}),
+                serde_json::json!({"path": "/a"}),
+                serde_json::json!({"skill": 1}),
+                serde_json::json!({"skill": ""}),
+                serde_json::json!({"folder": " \t"}),
+            ] {
+                assert!(!entry_validator.is_valid(&invalid), "{invalid}");
+            }
+            if name == SchemaName::AgentConfig {
+                let config = serde_json::json!({"skills": {
+                    "directories": [{"skill": "/a"}, {"folder": "/b"}],
+                    "bundled": {"enabled": true, "include": []},
+                    "duplicates": "last_wins"
+                }});
+                assert!(validator.is_valid(&config));
+                let mut unknown_policy = config.clone();
+                unknown_policy["skills"]["duplicates"] = serde_json::json!("newest_wins");
+                assert!(!validator.is_valid(&unknown_policy));
+            }
+        }
+
+        let schema = generate_schema(SchemaName::AdapterDescriptor).expect("schema generation");
+        let validator = jsonschema::validator_for(&schema).expect("valid descriptor schema");
+        let loading = &schema["$defs"]["SkillDirectoryLoadingSupport"];
+        assert_eq!(
+            loading["required"],
+            serde_json::json!(["supported_entries", "skill_file", "discovery", "parsing"])
+        );
+        assert_eq!(loading["properties"]["supported_entries"]["minItems"], 1);
+        assert_eq!(
+            loading["properties"]["supported_entries"]["uniqueItems"],
+            true
+        );
+        assert_eq!(
+            loading["properties"]["skill_file"]["const"],
+            crate::SKILL_FILE
+        );
+        assert_eq!(
+            schema["$defs"]["SkillDiscoverySupport"]["required"],
+            serde_json::json!(["traversal", "nested_skills", "depth_limit"])
+        );
+        let duplicates = &schema["$defs"]["SkillDuplicatesSupport"];
+        assert_eq!(
+            duplicates["required"],
+            serde_json::json!(["supported_policies"])
+        );
+        assert_eq!(
+            duplicates["properties"]["supported_policies"]["minItems"],
+            1
+        );
+
+        let descriptor = |depth_limit: serde_json::Value| {
+            serde_json::json!({
+                "contract_version": crate::ADAPTER_CONTRACT_VERSION,
+                "adapter_id": "test.fabric.schema",
+                "adapter_kind": "python",
+                "skills": {
+                    "directory_loading": {
+                        "supported_entries": ["skill", "folder"],
+                        "skill_file": "SKILL.md",
+                        "discovery": {
+                            "traversal": "recursive",
+                            "nested_skills": "include",
+                            "depth_limit": depth_limit
+                        },
+                        "parsing": {
+                            "required_frontmatter_fields": [],
+                            "name_fallback": "directory_name",
+                            "frontmatter_errors": "recover_key_value"
+                        }
+                    },
+                    "bundled": {
+                        "default": "enabled",
+                        "supports_enable": true,
+                        "supports_disable": true,
+                        "supports_include": true,
+                        "supports_exclude": true
+                    },
+                    "duplicates": {"supported_policies": ["reject"]}
+                }
+            })
+        };
+        for valid in [
+            serde_json::json!({"kind": "fixed", "levels": 1}),
+            serde_json::json!({"kind": "no_fixed_limit"}),
+            serde_json::json!({"kind": "adapter_defined"}),
+        ] {
+            let descriptor = descriptor(valid.clone());
+            assert!(validator.is_valid(&descriptor), "{valid}");
+            serde_json::from_value::<crate::AdapterDescriptor>(descriptor)
+                .expect("schema-valid descriptor parses");
+        }
+        for invalid in [
+            serde_json::json!({"kind": "fixed", "levels": 0}),
+            serde_json::json!({"kind": "fixed"}),
+            serde_json::json!({"kind": "no_fixed_limit", "levels": 2}),
+            serde_json::json!({"kind": "unlimited"}),
+            serde_json::json!("no_fixed_limit"),
+        ] {
+            let descriptor = descriptor(invalid.clone());
+            assert!(!validator.is_valid(&descriptor), "{invalid}");
+            assert!(
+                serde_json::from_value::<crate::AdapterDescriptor>(descriptor).is_err(),
+                "{invalid}"
+            );
+        }
+        // A duplicate policy needs directory loading, in the schema and at load.
+        let mut policy_only = descriptor(serde_json::json!({"kind": "no_fixed_limit"}));
+        policy_only["skills"]
+            .as_object_mut()
+            .expect("skills block")
+            .remove("directory_loading");
+        assert!(!validator.is_valid(&policy_only));
+        policy_only["skills"]
+            .as_object_mut()
+            .expect("skills block")
+            .remove("duplicates");
+        assert!(validator.is_valid(&policy_only));
+        let mut empty_entries = descriptor(serde_json::json!({"kind": "no_fixed_limit"}));
+        empty_entries["skills"]["directory_loading"]["supported_entries"] = serde_json::json!([]);
+        assert!(!validator.is_valid(&empty_entries));
+        let mut repeated_entries = descriptor(serde_json::json!({"kind": "no_fixed_limit"}));
+        repeated_entries["skills"]["directory_loading"]["supported_entries"] =
+            serde_json::json!(["skill", "skill"]);
+        assert!(!validator.is_valid(&repeated_entries));
+    }
+
+    #[test]
     fn adapter_contract_schemas_bound_rust_integer_types() {
         let config = generate_schema(SchemaName::AgentConfig).expect("schema generation");
         for field in ["provider", "model"] {

@@ -26,7 +26,8 @@ Import these from the top-level `nemo_fabric` package:
 | `EnvironmentConfig` | Execution environment, workspace, and harness-visible variables. |
 | `ToolsConfig` / `ToolDefinitionConfig` | Named tool and tool-group definitions plus selection and blocking policy. |
 | `McpConfig` / `McpServerConfig` | MCP transport, network URL or stdio executable, separate stdio process arguments and environment, exposure, and optional per-server tool policy. |
-| `SkillConfig` | Skill directories. |
+| `SkillConfig` | Skill `paths`, or structured `directories`, plus `bundled` skill selection and the `duplicates` policy. |
+| `SkillDirectory` / `BundledSkills` | One `skill` or `folder` entry for `SkillConfig.directories`; bundled-skill `enabled`, `include`, or `exclude` selection. |
 | `TelemetryConfig` | Telemetry providers. |
 | `RelayConfig` and `Relay*Config` | NVIDIA NeMo Relay observability under the top-level `relay` block. |
 
@@ -58,7 +59,7 @@ Planning rejects unsupported modes before adapter startup.
 Construct the nested config directly, then adjust capabilities with helper
 methods that edit the typed config in place and return it:
 
-- `add_skill_path(path)` / `remove_skill_path(path)`
+- `add_skill_path(path)` / `remove_skill_path(path)` (edit `paths`; `add_skill_path` raises `ValueError` when `directories` is set)
 - `add_mcp_server(name, *, transport, url, args, env, authentication, custom_headers, exposure, allowed_tools, blocked_tools, ...)` / `remove_mcp_server(name)`
 - `enable_relay(...)` for NVIDIA NeMo Relay observability in the `relay` block
 - `ToolsConfig(enabled=..., blocked=...)` for tool policy
@@ -70,6 +71,20 @@ argument as a separate `args` element.
 
 Use `add_tool_definition(...)` only when the selected adapter accepts
 `tools.definitions` and publishes a `tool_definition_schema`.
+
+`SkillConfig.paths` keeps each adapter's own meaning. For the same meaning on
+every adapter, set `SkillConfig.directories` instead, with one
+`SkillDirectory(skill=...)` per skill folder or `SkillDirectory(folder=...)`
+per folder of skills. Use `directories` only when `paths` is empty.
+`directories=[]` loads no external skills. `bundled=None` keeps the harness default for
+bundled skills; `BundledSkills(enabled=False)`, `include`, or `exclude` select
+them, and `include` and `exclude` cannot be combined. `duplicates` (`reject`,
+`first_wins`, or `last_wins`) requires `directories`; `None` keeps the
+harness behavior. `directories`, `bundled`, and `duplicates` need an adapter
+whose descriptor advertises them, so check with `plan()` or `doctor()`. The
+adapter checks the folders when the runtime starts and reports loaded,
+skipped, and clashing skills under `output.skills`. Refer to
+[Configure Skills](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/skills.mdx).
 
 Filtered per-server MCP configurations require adapter support for both `mcp`
 and `mcp.tool_filters`. An unfiltered server with `allowed_tools=None` and an

@@ -22,6 +22,7 @@ import sys
 import tempfile
 import threading
 from collections import deque
+from collections.abc import Callable
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
@@ -39,6 +40,7 @@ from nemo_fabric_adapters.common import openai_chat
 from nemo_fabric_adapters.common import utils as common_utils
 from nemo_fabric_adapters.openclaw import _windows_job
 from nemo_fabric_adapters.openclaw import interfaces as native_interfaces
+from nemo_fabric_adapters.openclaw import skills as openclaw_skills
 
 
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 60.0
@@ -61,6 +63,8 @@ MAX_TCP_PORT = 65_535
 MCP_STATUS_TIMEOUT_SECONDS = 15.0
 # Upper bound on reaping a killed status command whose pipes stay open.
 COMMAND_REAP_SECONDS = 2.0
+# Upper bound for OpenClaw's own skill list at start.
+SKILL_STATUS_TIMEOUT_SECONDS = 30.0
 # OpenClaw's tools.effective notice for an MCP server whose last connection or
 # tool listing failed in the session.
 MCP_SERVER_DIAGNOSTIC_PREFIX = "mcp-server-diagnostic:"
@@ -123,7 +127,11 @@ def _validate_attach_config(config: contract.AgentConfig) -> None:
         unsupported.append("tools")
     if config.mcp is not None and config.mcp.servers:
         unsupported.append("mcp")
-    if config.skills is not None and config.skills.paths:
+    if config.skills is not None and (
+        config.skills.paths
+        or config.skills.directories
+        or config.skills.bundled is not None
+    ):
         unsupported.append("skills")
     settings = config.harness.settings if config.harness else {}
     for name in (
@@ -350,6 +358,62 @@ def _resolve_skill_paths(config: contract.AgentConfig, base_dir: Path) -> list[s
     return paths
 
 
+def _skill_plan(
+    config: contract.AgentConfig,
+    context: contract.RuntimeContext,
+    *,
+    base_dir: Path,
+    command: Path | None = None,
+    env: dict[str, str] | None = None,
+) -> openclaw_skills.SkillPlan:
+    """Check ``skills.directories`` and ``skills.bundled`` in the task environment.
+
+    ``paths`` keeps its own checks in :func:`_resolve_skill_paths`.
+    """
+
+    skills = config.skills
+    if skills is None or (skills.directories is None and skills.bundled is None):
+        return openclaw_skills.SkillPlan()
+    settings = config.harness.settings if config.harness else {}
+    if command is None and skills.bundled is not None:
+        command = _resolve_command(settings, base_dir)
+    bundled_dir = (
+        openclaw_skills.bundled_skills_dir(command, os.environ if env is None else env)
+        if command is not None
+        else None
+    )
+    agent_id = _agent_id(settings)
+    # The generated roster: the configured agent plus authored native settings.
+    roster: dict[str, Any] = {"agents": {"entries": {agent_id: {}}}}
+    if "agents" in settings:
+        _merge_native_settings(
+            roster, "agents", settings["agents"], field="harness.settings.agents"
+        )
+    return openclaw_skills.plan(
+        config,
+        base_dir=base_dir,
+        workspace=Path(context.environment.workspace or ".").resolve(),
+        bundled_dir=bundled_dir,
+        custodian=openclaw_skills.owns_custodian_skills(roster["agents"], agent_id),
+    )
+
+
+def _skills_section(
+    config: contract.AgentConfig,
+    base_dir: Path,
+    skill_plan: openclaw_skills.SkillPlan,
+) -> dict[str, Any]:
+    """Return the generated ``skills`` section."""
+
+    skills: dict[str, Any] = {}
+    skill_paths = _resolve_skill_paths(config, base_dir) + skill_plan.extra_dirs
+    if skill_paths:
+        skills["load"] = {"extraDirs": skill_paths}
+    if skill_plan.allow_bundled is not None:
+        skills["allowBundled"] = skill_plan.allow_bundled
+    return skills
+
+
 def _resolve_command(settings: dict[str, Any], base_dir: Path) -> Path:
     configured = settings.get("openclaw_command", "openclaw")
     if not isinstance(configured, str) or not configured.strip():
@@ -571,6 +635,7 @@ def _openclaw_config(
     token_env: str,
     service_mode: bool = False,
     dashboard: bool = False,
+    skill_plan: openclaw_skills.SkillPlan | None = None,
 ) -> dict[str, Any]:
     model = _selected_model(config)
     model_id = _model_id(model)
@@ -660,9 +725,11 @@ def _openclaw_config(
                     }
                 },
             }
-    skill_paths = _resolve_skill_paths(config, base_dir)
-    if skill_paths:
-        result["skills"] = {"load": {"extraDirs": skill_paths}}
+    if skill_plan is None:
+        skill_plan = _skill_plan(config, context, base_dir=base_dir)
+    skills = _skills_section(config, base_dir, skill_plan)
+    if skills:
+        result["skills"] = skills
     if config.tools is not None:
         tools: dict[str, list[str]] = {}
         if config.tools.enabled == []:
@@ -824,6 +891,56 @@ async def _command_output(
     return stdout.decode(errors="replace").strip()
 
 
+async def _apply_skill_status(
+    skill_plan: openclaw_skills.SkillPlan,
+    command: Path,
+    *,
+    agent_id: str,
+    env: dict[str, str],
+    timeout: float,
+    rewrite: Callable[[], None] | None = None,
+) -> None:
+    """Refine the skill report with ``openclaw skills list`` for the agent.
+
+    The list applies OpenClaw's own loading and eligibility rules to the
+    generated configuration. Without it, the report keeps what Fabric found.
+    With ``rewrite``, which writes ``skill_plan.extra_dirs`` to the generated
+    configuration, a winning copy OpenClaw refuses under an explicit
+    duplicate policy is replaced by the next copy and the list runs again.
+    """
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while (remaining := deadline - loop.time()) > 0:
+        try:
+            status = json.loads(
+                await _command_output(
+                    command,
+                    "skills",
+                    "list",
+                    "--json",
+                    "--agent",
+                    agent_id,
+                    env=env,
+                    timeout=remaining,
+                    process_group=True,
+                )
+            )
+        except (lifecycle.LifecycleError, OSError, ValueError):
+            logger.warning(
+                "OpenClaw could not list its skills; the skill report shows what "
+                "NeMo Fabric configured",
+                exc_info=True,
+            )
+            return
+        if not openclaw_skills.apply_status(
+            skill_plan, status, fallback=rewrite is not None
+        ):
+            return
+        assert rewrite is not None
+        rewrite()
+
+
 async def _kill_and_reap(
     process: asyncio.subprocess.Process, *, process_group: bool = False
 ) -> None:
@@ -956,27 +1073,29 @@ def _write_service_connection(
     gateway_url: str,
     token: str,
     agent_id: str,
+    skills: dict[str, Any] | None = None,
 ) -> None:
-    payload = (
-        json.dumps(
-            {
-                "gateway_url": gateway_url,
-                "gateway_token": token,
-                "agent_id": agent_id,
-            }
-        )
-        + "\n"
-    )
-    local_interfaces.write_private_file(path, payload)
+    connection: dict[str, Any] = {
+        "gateway_url": gateway_url,
+        "gateway_token": token,
+        "agent_id": agent_id,
+    }
+    if skills:
+        # The prepared Gateway's skill report, for runtimes that connect to it.
+        connection["skills"] = skills
+    local_interfaces.write_private_file(path, json.dumps(connection) + "\n")
 
 
-def _read_service_connection(path: Path) -> tuple[str, str, str]:
+def _read_service_connection(
+    path: Path,
+) -> tuple[str, str, str, dict[str, Any] | None]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
         gateway_url = _gateway_endpoint(value["gateway_url"])
         token = value["gateway_token"]
         agent_id = value["agent_id"]
-    except (OSError, KeyError, TypeError, ValueError) as error:
+        skills = value.get("skills")
+    except (OSError, KeyError, TypeError, ValueError, AttributeError) as error:
         raise lifecycle.LifecycleError(
             "openclaw_invalid_service_context",
             "OpenClaw service connection context is invalid",
@@ -986,12 +1105,13 @@ def _read_service_connection(path: Path) -> tuple[str, str, str]:
         or not token
         or not isinstance(agent_id, str)
         or not agent_id
+        or (skills is not None and not isinstance(skills, dict))
     ):
         raise lifecycle.LifecycleError(
             "openclaw_invalid_service_context",
             "OpenClaw service connection context is invalid",
         )
-    return gateway_url, token, agent_id
+    return gateway_url, token, agent_id, skills
 
 
 class OpenClawRuntime:
@@ -1027,6 +1147,7 @@ class OpenClawRuntime:
         self._mcp_transports: dict[str, str] = {}
         self._mcp_warned: set[str] = set()
         self._mcp_status_failed = False
+        self._skills_report: dict[str, Any] | None = None
 
     async def check(self, level: str) -> dict[str, Any]:
         """Check Gateway or runtime health using native endpoints.
@@ -1288,6 +1409,9 @@ class OpenClawRuntime:
             origin="observed",
             kind="component",
         )
+        skill_plan = _skill_plan(
+            config, context, base_dir=base_dir, command=command, env=child_env
+        )
 
         if dashboard_port is None:
             port = _select_port(settings)
@@ -1320,6 +1444,7 @@ class OpenClawRuntime:
             token_env=token_env,
             service_mode=service is not None and service.get("operation") == "prepare",
             dashboard=dashboard_port is not None,
+            skill_plan=skill_plan,
         )
         config_path.write_text(json.dumps(generated, indent=2) + "\n", encoding="utf-8")
         config_path.chmod(0o600)
@@ -1345,6 +1470,23 @@ class OpenClawRuntime:
                 env=child_env,
                 timeout=startup_remaining(),
             )
+            if skill_plan.needs_status:
+
+                def rewrite_skills() -> None:
+                    generated["skills"] = _skills_section(config, base_dir, skill_plan)
+                    config_path.write_text(
+                        json.dumps(generated, indent=2) + "\n", encoding="utf-8"
+                    )
+
+                await _apply_skill_status(
+                    skill_plan,
+                    command,
+                    agent_id=_agent_id(settings),
+                    env=child_env,
+                    timeout=min(SKILL_STATUS_TIMEOUT_SECONDS, startup_remaining()),
+                    rewrite=rewrite_skills,
+                )
+            skill_plan.warn()
             if os.name == "nt":
                 try:
                     self._windows_job = _windows_job.create_kill_on_close_job()
@@ -1437,6 +1579,7 @@ class OpenClawRuntime:
         self._context = context
         self._command = command
         self._command_env = child_env
+        self._skills_report = skill_plan.report()
         self._mcp_transports = {
             name: server["transport"]
             for name, server in generated.get("mcp", {}).get("servers", {}).items()
@@ -1452,6 +1595,7 @@ class OpenClawRuntime:
                 gateway_url=self._gateway_url,
                 token=token,
                 agent_id=self._agent_id,
+                skills=self._skills_report,
             )
             return self._service_info(
                 self._gateway_url,
@@ -1559,7 +1703,7 @@ class OpenClawRuntime:
         settings: dict[str, Any],
         service: dict[str, Any],
     ) -> None:
-        gateway_url, token, agent_id = _read_service_connection(
+        gateway_url, token, agent_id, skills = _read_service_connection(
             Path(service["connection_path"])
         )
         client = self._client_for(settings, token)
@@ -1573,6 +1717,7 @@ class OpenClawRuntime:
         self._context = context
         self._gateway_url = gateway_url
         self._agent_id = agent_id
+        self._skills_report = skills
 
     async def _attach_service(
         self,
@@ -1882,7 +2027,7 @@ class OpenClawRuntime:
         request: contract.AgentRunRequest,
         context: contract.RuntimeContext,
     ) -> contract.AgentRunResult:
-        """Run one Gateway turn and report MCP availability with its result."""
+        """Run one Gateway turn and report skills and MCP availability with its result."""
         gateway_url = self._gateway_url
         if gateway_url is None and self._port is not None:
             gateway_url = f"http://127.0.0.1:{self._port}"
@@ -1932,7 +2077,10 @@ class OpenClawRuntime:
         except httpx.HTTPStatusError as error:
             return contract.AgentRunResult(
                 status=contract.AgentRunStatus.FAILED,
-                output=await self._mcp_output(context.runtime_id, deadline),
+                output={
+                    **self._skills_output(),
+                    **await self._mcp_output(context.runtime_id, deadline),
+                },
                 error=contract.AgentRunError(
                     code="openclaw_http_error",
                     message=f"OpenClaw Gateway returned HTTP status {error.response.status_code}",
@@ -1949,7 +2097,7 @@ class OpenClawRuntime:
         except TimeoutError:
             return contract.AgentRunResult(
                 status=contract.AgentRunStatus.FAILED,
-                output={},
+                output=self._skills_output(),
                 error=contract.AgentRunError(
                     code="timeout",
                     message="OpenClaw invocation timed out",
@@ -1965,10 +2113,17 @@ class OpenClawRuntime:
             status=contract.AgentRunStatus.SUCCEEDED,
             output={
                 "response": text,
+                **self._skills_output(),
                 **await self._mcp_output(context.runtime_id, deadline),
             },
             usage=usage,
         )
+
+    def _skills_output(self) -> dict[str, Any]:
+        """Return the ``skills`` output block computed at start."""
+
+        report = self._skills_report
+        return {"skills": copy.deepcopy(report)} if report else {}
 
     async def _mcp_output(self, user: str, deadline: float) -> dict[str, Any]:
         """Return the ``mcp`` output block from OpenClaw's own session tool inventory.
@@ -2141,6 +2296,7 @@ class OpenClawRuntime:
         self._context = None
         self._command = None
         self._command_env = None
+        self._skills_report = None
         self._mcp_transports = {}
         self._port = None
         self._token = None

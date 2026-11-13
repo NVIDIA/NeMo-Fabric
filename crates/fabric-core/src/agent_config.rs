@@ -11,8 +11,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::config::{
-    AdapterConfigField, AdapterDescriptor, CapabilityPlan, FabricConfig, InstructionMode,
-    McpAuthenticationConfig, ResolvedAdapterTargetDescriptor, legacy_model_sampling_extensions,
+    AdapterConfigField, AdapterDescriptor, BundledSkills, CapabilityPlan, FabricConfig,
+    InstructionMode, McpAuthenticationConfig, ResolvedAdapterTargetDescriptor, SkillDirectory,
+    SkillDuplicatePolicy, deserialize_agent_skill_directories, legacy_model_sampling_extensions,
 };
 use crate::error::{FabricError, Result};
 
@@ -136,13 +137,30 @@ pub struct AgentRuntimeConfig {
     pub extensions: BTreeMap<String, Value>,
 }
 
-/// Skill paths made available to an adapter target.
+/// Skills made available to an adapter target.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AgentSkillConfig {
     /// Skill paths resolved for the task environment.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<PathBuf>,
+    /// Structured skill entries with paths resolved by NeMo Fabric. Sent only
+    /// to adapters that declare `skills.directory_loading`; an empty list
+    /// loads no external skills.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_agent_skill_directories"
+    )]
+    pub directories: Option<Vec<SkillDirectory>>,
+    /// Bundled-skill selection. Sent only to adapters that declare the
+    /// requested `skills.bundled` operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundled: Option<BundledSkills>,
+    /// Duplicate-name policy between `directories` entries. Sent only to
+    /// adapters that declare the policy in `skills.duplicates`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duplicates: Option<SkillDuplicatePolicy>,
     /// Adapter-owned skill fields.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extensions: BTreeMap<String, Value>,
@@ -402,12 +420,24 @@ pub(crate) fn project_agent_config(
     });
 
     let skills = config.skills.as_ref().and_then(|skills| {
-        (!capability_plan.native.skill_paths.is_empty() || !skills.extensions.is_empty()).then(
-            || AgentSkillConfig {
-                paths: capability_plan.native.skill_paths.clone(),
-                extensions: skills.extensions.clone(),
-            },
-        )
+        let native = &capability_plan.native;
+        // The contract requires `directories` with `duplicates`, so the policy
+        // is sent only alongside the entries it governs.
+        let duplicates = native
+            .skill_directories
+            .as_ref()
+            .and(native.skill_duplicates);
+        (!native.skill_paths.is_empty()
+            || native.skill_directories.is_some()
+            || native.bundled_skills.is_some()
+            || !skills.extensions.is_empty())
+        .then(|| AgentSkillConfig {
+            paths: native.skill_paths.clone(),
+            directories: native.skill_directories.clone(),
+            bundled: native.bundled_skills.clone(),
+            duplicates,
+            extensions: skills.extensions.clone(),
+        })
     });
 
     let mcp = config.mcp.as_ref().and_then(|mcp| {

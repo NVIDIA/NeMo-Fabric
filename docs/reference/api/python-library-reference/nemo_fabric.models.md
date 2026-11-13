@@ -735,9 +735,158 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
+## <kbd>class</kbd> `SkillDirectory`
+
+One structured skill entry: a single skill or a folder of skills.
+
+Set exactly one of ``skill`` (a folder holding ``SKILL.md``) or ``folder`` (a folder whose skills the adapter discovers). Relative paths resolve against the config base directory.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `skill` | `str \| Path \| None` | No | `None` | — | — |
+| `folder` | `str \| Path \| None` | No | `None` | — | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
+## <kbd>class</kbd> `BundledSkills`
+
+Selection of the skills shipped with the harness.
+
+``BundledSkills()`` enables every eligible bundled skill. ``include`` loads only the named skills and ``exclude`` loads all but them; ``[]`` and ``None`` differ, and the two lists cannot be combined. ``enabled=False`` loads no bundled skills and takes no list.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `enabled` | `bool` | No | `True` | — | — |
+| `include` | `list[str] \| None` | No | `None` | — | — |
+| `exclude` | `list[str] \| None` | No | `None` | — | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
 ## <kbd>class</kbd> `SkillConfig`
 
 Skill capability configuration.
+
+``paths`` is the existing, adapter-interpreted list of skill paths. ``directories`` is the structured alternative and may be set only when ``paths`` is empty; ``directories=[]`` loads no external skills. ``bundled`` selects harness-shipped skills (``None`` keeps the harness default), and ``duplicates`` (``"reject"``, ``"last_wins"``, or ``"first_wins"``) sets how skills that share a name across ``directories`` entries resolve (``None`` keeps the harness behavior).
 
 
 
@@ -748,6 +897,9 @@ The model defines the following fields:
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
 | `paths` | `list[str \| Path]` | No | `list()` | — | — |
+| `directories` | `list[SkillDirectory] \| None` | No | `None` | — | — |
+| `bundled` | `BundledSkills \| None` | No | `None` | — | — |
+| `duplicates` | `SkillDuplicatePolicy \| None` | No | `None` | — | — |
 
 ---
 
@@ -821,7 +973,7 @@ Remove a skill path if present.
 def to_mapping() -> dict[str, Any]
 ```
 
-Return a detached JSON-compatible mapping for Rust/core calls.
+Return the skill mapping without collapsing an explicit empty list.
 
 
 ---
@@ -2651,6 +2803,12 @@ def add_skill_path(path: str | Path) -> Self
 
 Add a skill path and return this config.
 
+
+
+**Raises:**
+
+ - <b>`ValueError`</b>:  If ``skills.directories`` is set; add a  ``SkillDirectory`` entry instead.
+
 ---
 
 
@@ -2730,6 +2888,8 @@ def remove_skill_path(path: str | Path) -> Self
 ```
 
 Remove a skill path and return this config.
+
+The skills section is dropped only when nothing else in it is set.
 
 ---
 

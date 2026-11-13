@@ -19,6 +19,7 @@ from typing import Any
 from typing import Literal
 from typing import Self
 from typing import TypeVar
+from typing import get_args
 
 from pydantic import BaseModel
 
@@ -536,25 +537,103 @@ class _EnvironmentConfig(_ConfigMapping):
         )
 
 
+SkillDuplicatePolicy = Literal["reject", "last_wins", "first_wins"]
+"""How skills that share a name across ``skills.directories`` entries resolve."""
+_SKILL_DUPLICATE_POLICIES: tuple[str, ...] = get_args(SkillDuplicatePolicy)
+
+
+def _skill_directories(value: Any) -> list[dict[str, str]]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise FabricConfigError("skills.directories must be a list")
+    entries: list[dict[str, str]] = []
+    for index, item in enumerate(value):
+        field = f"skills.directories[{index}]"
+        raw = _mapping(item, field)
+        unknown = sorted(set(raw).difference({"skill", "folder"}))
+        if unknown:
+            raise FabricConfigError(f"{field} has unknown field {unknown[0]!r}")
+        # A key set to null is absent, as it is in every other binding.
+        data = {key: path for key, path in raw.items() if path is not None}
+        if len(data) != 1:
+            raise FabricConfigError(f"{field} must set exactly one of skill or folder")
+        ((kind, path),) = data.items()
+        if not isinstance(path, str) or not path.strip():
+            raise FabricConfigError(f"{field}.{kind} must be a non-empty path string")
+        entries.append({kind: path})
+    return entries
+
+
+def _bundled_skills(value: Any) -> dict[str, Any]:
+    data = _mapping(value, "skills.bundled")
+    unknown = sorted(set(data).difference({"enabled", "include", "exclude"}))
+    if unknown:
+        raise FabricConfigError(f"skills.bundled has unknown field {unknown[0]!r}")
+    result: dict[str, Any] = {
+        "enabled": _boolean(data.get("enabled", True), "skills.bundled.enabled")
+    }
+    for key in ("include", "exclude"):
+        names = data.get(key)
+        if names is None:
+            continue
+        # Accept any sequence of names, such as a tuple, as the models do.
+        if (
+            isinstance(names, (str, bytes))
+            or not isinstance(names, Sequence)
+            or any(not isinstance(name, str) or not name.strip() for name in names)
+        ):
+            raise FabricConfigError(
+                f"skills.bundled.{key} must be a list of non-empty strings"
+            )
+        result[key] = list(names)
+    if "include" in result and "exclude" in result:
+        raise FabricConfigError("skills.bundled cannot set both include and exclude")
+    if not result["enabled"] and ("include" in result or "exclude" in result):
+        raise FabricConfigError(
+            "skills.bundled with enabled=false cannot set include or exclude"
+        )
+    return result
+
+
 class _SkillConfig(_ConfigMapping):
     """Skill capability configuration.
 
     The shape matches the ``skills`` section of ``FabricConfig`` while
-    providing small authoring helpers for Python callers.
+    providing small authoring helpers for Python callers. ``directories``,
+    ``bundled``, and ``duplicates`` are stored only when set.
     """
 
-    _fields = frozenset({"paths"})
+    _fields = frozenset({"paths", "directories", "bundled", "duplicates"})
     _omit_if_empty = frozenset({"paths"})
 
     def __init__(
         self,
         *,
         paths: Sequence[str | Path] | None = None,
+        directories: Sequence[Mapping[str, Any]] | None = None,
+        bundled: Mapping[str, Any] | None = None,
+        duplicates: str | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
         values: dict[str, Any] = {
             "paths": [str(path) for path in ([] if paths is None else paths)]
         }
+        if directories is not None:
+            if values["paths"]:
+                raise FabricConfigError(
+                    "skills.directories may be set only when skills.paths is empty"
+                )
+            values["directories"] = _skill_directories(_plain(directories))
+        if bundled is not None:
+            values["bundled"] = _bundled_skills(bundled)
+        if duplicates is not None:
+            if duplicates not in _SKILL_DUPLICATE_POLICIES:
+                raise FabricConfigError(
+                    "skills.duplicates must be one of: "
+                    + ", ".join(_SKILL_DUPLICATE_POLICIES)
+                )
+            if directories is None:
+                raise FabricConfigError("skills.duplicates requires skills.directories")
+            values["duplicates"] = duplicates
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
@@ -564,6 +643,9 @@ class _SkillConfig(_ConfigMapping):
         data = _mapping(value, "skills")
         return cls(
             paths=data.get("paths", []),
+            directories=data.get("directories"),
+            bundled=data.get("bundled"),
+            duplicates=data.get("duplicates"),
             extra_fields={
                 key: item for key, item in data.items() if key not in cls._fields
             },
@@ -572,6 +654,10 @@ class _SkillConfig(_ConfigMapping):
     def add_path(self, path: str | Path) -> "_SkillConfig":
         """Add a skill path to this config if it is not already present."""
 
+        if self.get("directories") is not None:
+            raise FabricConfigError(
+                "skills.paths cannot be combined with skills.directories"
+            )
         value = str(path)
         paths = list(self.get("paths", []))
         if value not in paths:

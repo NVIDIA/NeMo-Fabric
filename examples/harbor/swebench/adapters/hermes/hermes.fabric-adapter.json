@@ -319,6 +319,43 @@
       "replace"
     ]
   },
+  "skills": {
+    "directory_loading": {
+      "supported_entries": [
+        "skill",
+        "folder"
+      ],
+      "skill_file": "SKILL.md",
+      "discovery": {
+        "traversal": "recursive",
+        "nested_skills": "include",
+        "depth_limit": {
+          "kind": "no_fixed_limit"
+        }
+      },
+      "parsing": {
+        "required_frontmatter_fields": [],
+        "name_fallback": "directory_name",
+        "frontmatter_errors": "recover_key_value"
+      }
+    },
+    "bundled": {
+      "default": "disabled",
+      "supports_enable": true,
+      "supports_disable": true,
+      "supports_include": true,
+      "supports_exclude": true
+    },
+    "duplicates": {
+      "supported_policies": [
+        "reject",
+        "first_wins",
+        "last_wins"
+      ],
+      "native": "Two different skills with the same name in skills.external_dirs are refused as ambiguous; a skill in the Hermes home, bundled or agent-created, outranks external_dirs.",
+      "name_source": "frontmatter"
+    }
+  },
   "telemetry": {
     "providers": {
       "relay": {

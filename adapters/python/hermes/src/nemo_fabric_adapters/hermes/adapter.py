@@ -11,6 +11,7 @@ surface and invokes the installed Hermes runtime.
 from __future__ import annotations
 
 import asyncio
+import copy
 import inspect
 import logging
 import os
@@ -34,6 +35,7 @@ from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import mcp_availability
 from nemo_fabric_adapters.hermes import configuration
 from nemo_fabric_adapters.hermes import interfaces
+from nemo_fabric_adapters.hermes import skills
 from nemo_fabric_adapters.hermes import telemetry
 
 # Default agent loop budget when FabricConfig.runtime.max_turns is unset.
@@ -70,6 +72,7 @@ class HermesRuntime:
         self._enabled_toolsets: list[str] | None = None
         self._mcp_authentication_checked = False
         self._mcp_unavailable: list[dict[str, str]] = []
+        self._skills_report: dict[str, Any] | None = None
         self._conversation_history: list[dict[str, Any]] | None = None
         self._session_db: Any = None
         self._agent: Any = None
@@ -158,6 +161,14 @@ class HermesRuntime:
                 str(self._settings.get("terminal_timeout", 60)),
             )
 
+            # Check skills.directories and the bundled-skill names where the
+            # task's folders are mounted, before anything starts.
+            skill_plan = skills.plan_skills(
+                agent_config,
+                base_dir=common_utils.base_dir(payload),
+                hermes_home=self._hermes_home,
+            )
+
             if relay_enabled:
                 relay_payload = {**payload, "config": agent_config.to_mapping()}
                 (
@@ -180,7 +191,11 @@ class HermesRuntime:
                 workspace=str(runtime_context.environment.workspace or "."),
                 relay_enabled=relay_enabled,
                 interfaces=interface_ports,
+                skill_plan=skill_plan,
             )
+            if skill_plan.structured:
+                # Before the agent or any interface reads its skills.
+                self._skills_report = await _prepare_skills(skill_plan)
             api_key_env = configuration._api_key_env(model_config)
             api_key = os.environ.get(api_key_env)
             if not api_key:
@@ -303,7 +318,7 @@ class HermesRuntime:
         if self._started and not self._sdk_enabled:
             return AgentRunResult(
                 status=AgentRunStatus.FAILED,
-                output={},
+                output=self._skills_output(),
                 error=AgentRunError(
                     code="hermes_sdk_disabled",
                     message="Embedded Hermes SDK execution is disabled; use an enabled native interface",
@@ -430,6 +445,7 @@ class HermesRuntime:
         # Absent when every configured server is usable, so clean runs keep their shape.
         if mcp := mcp_availability.output_block(unavailable_mcp_servers):
             output["mcp"] = mcp
+        output.update(self._skills_output())
         error = None
         if failed:
             if isinstance(reported_error, dict):
@@ -458,6 +474,17 @@ class HermesRuntime:
             output=output,
             error=error,
         )
+
+    def _skills_output(self) -> dict[str, Any]:
+        """Return ``{"skills": report}`` for a run result, or nothing.
+
+        Present only with skills.directories or skills.bundled. Each result
+        gets its own copy of the report.
+        """
+
+        if not self._skills_report:
+            return {}
+        return {"skills": copy.deepcopy(self._skills_report)}
 
     async def _refresh_unavailable_mcp_servers(self) -> list[dict[str, str]]:
         """Read Hermes's current status of the configured MCP servers.
@@ -791,6 +818,7 @@ class HermesRuntime:
         self._enabled_toolsets = None
         self._mcp_authentication_checked = False
         self._mcp_unavailable = []
+        self._skills_report = None
         self._conversation_history = None
         self._relay_plugin_config = None
         self._relay_plugin_config_path = None
@@ -836,6 +864,39 @@ class HermesRuntime:
                 "hermes_runtime_stop_failed",
                 "Hermes runtime failed to stop cleanly",
             ) from errors[0]
+
+
+async def _prepare_skills(plan: skills.SkillPlan) -> dict[str, Any] | None:
+    """Copy the selected bundled skills into the home and observe what loads.
+
+    Hermes's own entry points copy its bundled skills into the home at start;
+    the embedded agent does not, so the adapter does whenever
+    ``skills.bundled`` is set. The copy seeds Hermes's essential skills even
+    when no bundled skill is selected, and removes a stale copy that an
+    external skill replaces. Returns the ``output.skills`` report and warns
+    once.
+    """
+
+    sync_result = None
+    if plan.sync:
+        try:
+            sync_result = await asyncio.to_thread(skills.sync_bundled)
+        except Exception as error:
+            raise lifecycle.LifecycleError(
+                "hermes_skill_invalid",
+                "Hermes could not copy its bundled skills into its home",
+                metadata={"field": "skills.bundled", "reason": "sync_failed"},
+            ) from error
+    try:
+        catalog = await asyncio.to_thread(skills.native_catalog)
+    except Exception:
+        # The report is diagnostic: keep the checked plan rather than fail start.
+        LOGGER.warning("Hermes skill catalog could not be observed", exc_info=True)
+        observation = skills.SkillObservation(plan.load or skills.DirectoryLoad())
+    else:
+        observation = skills.observe(plan, catalog, sync_result=sync_result)
+    observation.warn()
+    return observation.report()
 
 
 def _hermes_home(runtime_context: RuntimeContext, base_dir: str) -> Path:

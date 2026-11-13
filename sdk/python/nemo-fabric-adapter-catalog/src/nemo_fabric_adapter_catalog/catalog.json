@@ -1121,6 +1121,43 @@
           "required": [],
           "type": "object"
         },
+        "skills": {
+          "bundled": {
+            "default": "disabled",
+            "supports_disable": true,
+            "supports_enable": true,
+            "supports_exclude": true,
+            "supports_include": true
+          },
+          "directory_loading": {
+            "discovery": {
+              "depth_limit": {
+                "kind": "no_fixed_limit"
+              },
+              "nested_skills": "include",
+              "traversal": "recursive"
+            },
+            "parsing": {
+              "frontmatter_errors": "recover_key_value",
+              "name_fallback": "directory_name",
+              "required_frontmatter_fields": []
+            },
+            "skill_file": "SKILL.md",
+            "supported_entries": [
+              "skill",
+              "folder"
+            ]
+          },
+          "duplicates": {
+            "name_source": "frontmatter",
+            "native": "Two different skills with the same name in skills.external_dirs are refused as ambiguous; a skill in the Hermes home, bundled or agent-created, outranks external_dirs.",
+            "supported_policies": [
+              "reject",
+              "first_wins",
+              "last_wins"
+            ]
+          }
+        },
         "telemetry": {
           "providers": {
             "relay": {
@@ -1138,7 +1175,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.7.0"
       },
-      "sha256": "0a3da72a5086e275e6f3e26639d58014e95eebdd08bd0cc17906167bda0c3b70",
+      "sha256": "7ad35d95bbf88c17b72e5448acb22f5fe659f77080f969accded30701efd4ce9",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {
@@ -2481,6 +2518,45 @@
             }
           },
           "type": "object"
+        },
+        "skills": {
+          "bundled": {
+            "default": "enabled",
+            "supports_disable": true,
+            "supports_enable": true,
+            "supports_exclude": true,
+            "supports_include": true
+          },
+          "directory_loading": {
+            "discovery": {
+              "depth_limit": {
+                "kind": "adapter_defined"
+              },
+              "nested_skills": "stop_at_skill",
+              "traversal": "recursive"
+            },
+            "parsing": {
+              "frontmatter_errors": "reject",
+              "name_fallback": "directory_name",
+              "required_frontmatter_fields": [
+                "description"
+              ]
+            },
+            "skill_file": "SKILL.md",
+            "supported_entries": [
+              "skill",
+              "folder"
+            ]
+          },
+          "duplicates": {
+            "name_source": "frontmatter",
+            "native": "A higher OpenClaw source wins: workspace skills, then state-folder skills, then shipped skills, then skills.directories. Between skills.directories entries the later entry wins.",
+            "supported_policies": [
+              "reject",
+              "first_wins",
+              "last_wins"
+            ]
+          }
         }
       },
       "ecosystem": "python",
@@ -2488,7 +2564,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.7.0"
       },
-      "sha256": "ec8b5ab61b51a542e571084ebed6e428ce5c1b67d5bcc5080357032ccafaabab",
+      "sha256": "39de79c2135daaf4ede75b8299b00d6a57125b04a2aabb5079e735a1358642c4",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {

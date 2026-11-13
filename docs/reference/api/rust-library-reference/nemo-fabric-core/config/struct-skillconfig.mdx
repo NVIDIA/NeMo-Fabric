@@ -2,14 +2,14 @@
 title: "Struct Skill Config"
 sidebar-title: "SkillConfig"
 description: "Skill capability configuration."
-position: 80
+position: 86
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct SkillConfig &#123;\n    pub paths: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct SkillConfig &#123;\n    pub paths: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n    pub directories: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"enum-skilldirectory.mdx\">SkillDirectory</a>&gt;&gt;,\n    pub bundled: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-bundledskills.mdx\">BundledSkills</a>&gt;,\n    pub duplicates: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-skillduplicatepolicy.mdx\">SkillDuplicatePolicy</a>&gt;,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
 
 Skill capability configuration.
 
@@ -18,6 +18,18 @@ Skill capability configuration.
 ### `paths: Vec<PathBuf>`
 
 Skill paths resolved relative to the config base directory.
+
+### `directories: Option<Vec<SkillDirectory>>`
+
+Structured external-skill entries, resolved relative to the config base directory. Each entry names one skill folder (`skill`) or a folder of skills (`folder`). Supply only when `paths` is empty; an empty list loads no external skills. `None` means not set.
+
+### `bundled: Option<BundledSkills>`
+
+Bundled-skill selection. `None` preserves the harness default.
+
+### `duplicates: Option<SkillDuplicatePolicy>`
+
+Policy for two `directories` entries that provide skills with the same name. Requires `directories`. `None` preserves native handling.
 
 ### `extensions: BTreeMap<String, Value>`
 

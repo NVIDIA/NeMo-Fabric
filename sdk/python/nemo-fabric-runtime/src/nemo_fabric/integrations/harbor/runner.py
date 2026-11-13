@@ -15,6 +15,7 @@ from nemo_fabric import Fabric
 from nemo_fabric import FabricConfigError
 from nemo_fabric import FabricError
 from nemo_fabric import RunResult
+from nemo_fabric import SkillDirectory
 from nemo_fabric.integrations.harbor.failure import failure_evidence
 from nemo_fabric.integrations.harbor.models import FabricRunPayload
 from nemo_fabric.integrations.harbor.models import FabricRunnerError
@@ -53,16 +54,35 @@ async def run(payload: FabricRunPayload) -> RunResult:
                     stage="configuration",
                     code="harbor_skills_invalid",
                 )
-        existing_paths = (
-            {(base_dir / path).resolve() for path in config.skills.paths}
-            if config.skills is not None
-            else set()
-        )
-        for skill in skills:
-            resolved = skill.resolve()
-            if resolved not in existing_paths:
-                config.add_skill_path(skill)
-                existing_paths.add(resolved)
+        directories = config.skills.directories if config.skills is not None else None
+        if directories is not None:
+            # Keep the structured mode: one skill entry per task skill. This
+            # relies on the selected adapter supporting `skill` entries
+            # (`skills.directory_loading.supported_entries`); core rejects the
+            # run before start when it does not.
+            existing_paths = {
+                (base_dir / entry.skill).resolve()
+                for entry in directories
+                if entry.skill is not None
+            }
+            added = []
+            for skill in skills:
+                resolved = skill.resolve()
+                if resolved not in existing_paths:
+                    added.append(SkillDirectory(skill=str(skill)))
+                    existing_paths.add(resolved)
+            config.skills.directories = [*directories, *added]
+        else:
+            existing_paths = (
+                {(base_dir / path).resolve() for path in config.skills.paths}
+                if config.skills is not None
+                else set()
+            )
+            for skill in skills:
+                resolved = skill.resolve()
+                if resolved not in existing_paths:
+                    config.add_skill_path(skill)
+                    existing_paths.add(resolved)
     compatibility = (
         {"expected_descriptor_sha256": payload.adapter_descriptor_sha256}
         if payload.adapter_descriptor_sha256 is not None

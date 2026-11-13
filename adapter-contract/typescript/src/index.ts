@@ -31,6 +31,9 @@ export type AdapterKind = AdapterDescriptor["adapter_kind"];
 /** How an instruction value is applied to the selected harness. */
 export type InstructionMode = NonNullable<AgentInstructionConfig["mode"]>;
 
+/** How two `skills.directories` entries that provide the same skill name resolve. */
+export type { SkillDuplicatePolicy } from "./generated/agent-config.js";
+
 /** Where NeMo Fabric control code runs relative to the environment. */
 export type ControlLocation = EnvironmentHandle["control_location"];
 

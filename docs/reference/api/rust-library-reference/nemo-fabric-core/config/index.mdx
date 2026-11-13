@@ -2,7 +2,7 @@
 title: "Module config"
 sidebar-title: "config"
 description: "NeMo Fabric config models and loading helpers."
-position: 167
+position: 185
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -34,9 +34,12 @@ NeMo Fabric config models and loading helpers.
 - [AdapterConfigSupport](struct-adapterconfigsupport.mdx): Adapter config support.
 - [AdapterDescriptor](struct-adapterdescriptor.mdx): Language-neutral adapter descriptor for a harness integration.
 - [AdapterRequirements](struct-adapterrequirements.mdx): Adapter runtime requirements.
+- [AdapterSkillsSupport](struct-adapterskillssupport.mdx): Structured skill capabilities implemented by an adapter.
 - [AdapterTargetDescriptor](struct-adaptertargetdescriptor.mdx): Independently registered target implemented by an adapter.
 - [AdapterTelemetryProviderSupport](struct-adaptertelemetryprovidersupport.mdx): Telemetry capabilities for one adapter-supported provider.
 - [AdapterTelemetrySupport](struct-adaptertelemetrysupport.mdx): Adapter telemetry support.
+- [BundledSkills](struct-bundledskills.mdx): Bundled-skill selection.
+- [BundledSkillsSupport](struct-bundledskillssupport.mdx): Bundled-skill operations implemented by an adapter. Every field is required.
 - [CapabilityPlan](struct-capabilityplan.mdx): Resolved capability configuration.
 - [CapabilityRoute](struct-capabilityroute.mdx): One capability execution assignment.
 - [CapabilityTargetPlan](struct-capabilitytargetplan.mdx): Capabilities routed to one target.
@@ -68,6 +71,10 @@ NeMo Fabric config models and loading helpers.
 - [RuntimeCapabilities](struct-runtimecapabilities.mdx): Lifecycle behavior implemented by a resolved runtime path.
 - [RuntimeConfig](struct-runtimeconfig.mdx): Invocation runtime contract.
 - [SkillConfig](struct-skillconfig.mdx): Skill capability configuration.
+- [SkillDirectoryLoadingSupport](struct-skilldirectoryloadingsupport.mdx): How an adapter loads `skills.directories` entries. Every field is required.
+- [SkillDiscoverySupport](struct-skilldiscoverysupport.mdx): How an adapter traverses a `folder` entry.
+- [SkillDuplicatesSupport](struct-skillduplicatessupport.mdx): Duplicate-name policies implemented by an adapter.
+- [SkillParsingSupport](struct-skillparsingsupport.mdx): How an adapter parses each candidate skill's `SKILL.md`.
 - [TelemetryConfig](struct-telemetryconfig.mdx): Telemetry configuration.
 - [TelemetryPlan](struct-telemetryplan.mdx): Resolved telemetry plan.
 - [TelemetryProviderConfig](struct-telemetryproviderconfig.mdx): Provider-specific telemetry configuration.
@@ -84,6 +91,7 @@ NeMo Fabric config models and loading helpers.
 - [AdapterKind](enum-adapterkind.mdx): Adapter implementation kind.
 - [AdapterTarget](enum-adaptertarget.mdx): Type-specific Adapter Target Descriptor payload.
 - [AdapterTargetType](enum-adaptertargettype.mdx): Adapter target categories understood by this Adapter Contract version.
+- [BundledSkillsDefault](enum-bundledskillsdefault.mdx): What loads when `skills.bundled` is omitted.
 - [CapabilityKind](enum-capabilitykind.mdx): Capability kind.
 - [CapabilityTarget](enum-capabilitytarget.mdx): Component responsible for executing a configured capability.
 - [ControlLocation](enum-controllocation.mdx): Where NeMo Fabric control code runs relative to the environment.
@@ -93,6 +101,7 @@ NeMo Fabric config models and loading helpers.
 - [McpAuthenticationConfig](enum-mcpauthenticationconfig.mdx): MCP server authentication configuration.
 - [McpExposure](enum-mcpexposure.mdx): MCP exposure strategy.
 - [McpTransport](enum-mcptransport.mdx): MCP server transport.
+- [NestedSkills](enum-nestedskills.mdx): Discovery behavior below a discovered skill folder.
 - [OAuthTokenEndpointAuthMethod](enum-oauthtokenendpointauthmethod.mdx): OAuth client authentication method used at the token endpoint.
 - [RelayAtifStorageConfig](enum-relayatifstorageconfig.mdx): Relay ATIF remote storage configuration.
 - [RelayAtofMode](enum-relayatofmode.mdx): Relay ATOF file mode.
@@ -104,7 +113,19 @@ NeMo Fabric config models and loading helpers.
 - [RelayOtlpTransport](enum-relayotlptransport.mdx): Relay OTLP transport.
 - [RelayUnsupportedBehavior](enum-relayunsupportedbehavior.mdx): Relay unsupported/unknown config handling.
 - [ResolutionStrategy](enum-resolutionstrategy.mdx): Adapter install or availability strategy.
+- [SkillDepthLimit](enum-skilldepthlimit.mdx): Depth bound for skill discovery. The supplied folder is depth zero.
+- [SkillDirectory](enum-skilldirectory.mdx): One structured external-skill entry: exactly one of `{"skill": path}` or `{"folder": path}`. The other key may be present only as `null`, which reads as absent.
+- [SkillDirectoryKind](enum-skilldirectorykind.mdx): Kind of one structured external-skill entry.
+- [SkillDuplicatePolicy](enum-skillduplicatepolicy.mdx): How two `skills.directories` entries that provide the same skill name resolve.
+- [SkillFrontmatterErrors](enum-skillfrontmattererrors.mdx): Handling of front-matter parse errors in a candidate skill.
+- [SkillNameFallback](enum-skillnamefallback.mdx): Name used when a skill's front matter has no `name`.
+- [SkillNameSource](enum-skillnamesource.mdx): Source of the name compared for duplicate detection.
+- [SkillTraversal](enum-skilltraversal.mdx): Folder traversal used for skill discovery.
 - [TelemetryProvider](enum-telemetryprovider.mdx): Telemetry runtime provider.
+
+## Constants
+
+- [SKILL_FILE](constant-skill-file.mdx): File that marks a skill folder.
 
 ## Functions
 

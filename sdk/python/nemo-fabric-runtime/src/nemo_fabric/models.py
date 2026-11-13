@@ -31,6 +31,8 @@ from pydantic import field_validator
 from pydantic import model_serializer
 from pydantic import model_validator
 
+from nemo_fabric.types import SkillDuplicatePolicy
+
 
 _LEGACY_FLAT_OTEL_FIELDS = frozenset(
     {
@@ -349,14 +351,115 @@ class ModelConfig(FabricBaseModel):
         return value
 
 
+class SkillDirectory(FabricBaseModel):
+    """One structured skill entry: a single skill or a folder of skills.
+
+    Set exactly one of ``skill`` (a folder holding ``SKILL.md``) or
+    ``folder`` (a folder whose skills the adapter discovers). Relative paths
+    resolve against the config base directory.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    skill: str | Path | None = None
+    folder: str | Path | None = None
+
+    @field_validator("skill", "folder")
+    @classmethod
+    def _validate_path(cls, value: str | Path | None) -> str | Path | None:
+        # Path("") reads as ".", so a Path of exactly "." is empty too; pass
+        # the string "." for the current folder.
+        if value is not None and (
+            not str(value).strip() or (isinstance(value, Path) and str(value) == ".")
+        ):
+            raise ValueError("skill directory paths must be non-empty")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_one_kind(self) -> Self:
+        if (self.skill is None) == (self.folder is None):
+            raise ValueError(
+                "a skill directory must set exactly one of skill or folder"
+            )
+        return self
+
+
+class BundledSkills(FabricBaseModel):
+    """Selection of the skills shipped with the harness.
+
+    ``BundledSkills()`` enables every eligible bundled skill. ``include`` loads
+    only the named skills and ``exclude`` loads all but them; ``[]`` and
+    ``None`` differ, and the two lists cannot be combined. ``enabled=False``
+    loads no bundled skills and takes no list.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    include: list[str] | None = None
+    exclude: list[str] | None = None
+
+    @field_validator("include", "exclude")
+    @classmethod
+    def _validate_names(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and any(not name.strip() for name in value):
+            raise ValueError("bundled skill names must be non-empty strings")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_selection(self) -> Self:
+        if self.include is not None and self.exclude is not None:
+            raise ValueError("skills.bundled cannot set both include and exclude")
+        if not self.enabled and (self.include is not None or self.exclude is not None):
+            raise ValueError(
+                "skills.bundled with enabled=false cannot set include or exclude"
+            )
+        return self
+
+
 class SkillConfig(FabricBaseModel):
-    """Skill capability configuration."""
+    """Skill capability configuration.
+
+    ``paths`` is the existing, adapter-interpreted list of skill paths.
+    ``directories`` is the structured alternative and may be set only when
+    ``paths`` is empty; ``directories=[]`` loads no external skills.
+    ``bundled`` selects harness-shipped skills (``None`` keeps the harness
+    default), and ``duplicates`` (``"reject"``, ``"last_wins"``, or
+    ``"first_wins"``) sets how skills that share a name across
+    ``directories`` entries resolve (``None`` keeps the harness behavior).
+    """
 
     paths: list[str | Path] = Field(default_factory=list)
+    directories: list[SkillDirectory] | None = None
+    bundled: BundledSkills | None = None
+    duplicates: SkillDuplicatePolicy | None = None
+
+    @model_validator(mode="after")
+    def _validate_skill_sources(self) -> Self:
+        if self.directories is not None and self.paths:
+            raise ValueError(
+                "skills.directories may be set only when skills.paths is empty"
+            )
+        if self.duplicates is not None and self.directories is None:
+            raise ValueError("skills.duplicates requires skills.directories")
+        return self
+
+    def to_mapping(self) -> dict[str, Any]:
+        """Return the skill mapping without collapsing an explicit empty list."""
+
+        data = super().to_mapping()
+        if self.directories == []:
+            data["directories"] = []
+        return data
 
     def add_path(self, path: str | Path) -> Self:
         """Add a skill path if absent."""
 
+        if self.directories is not None:
+            raise ValueError(
+                "skills.paths cannot be combined with skills.directories; "
+                "add a SkillDirectory entry instead"
+            )
         value = str(path)
         paths = [str(item) for item in self.paths]
         if value not in paths:
@@ -1250,7 +1353,12 @@ class FabricConfig(FabricBaseModel):
         return self
 
     def add_skill_path(self, path: str | Path) -> Self:
-        """Add a skill path and return this config."""
+        """Add a skill path and return this config.
+
+        Raises:
+            ValueError: If ``skills.directories`` is set; add a
+                ``SkillDirectory`` entry instead.
+        """
 
         if self.skills is None:
             self.skills = SkillConfig()
@@ -1258,11 +1366,21 @@ class FabricConfig(FabricBaseModel):
         return self
 
     def remove_skill_path(self, path: str | Path) -> Self:
-        """Remove a skill path and return this config."""
+        """Remove a skill path and return this config.
+
+        The skills section is dropped only when nothing else in it is set.
+        """
 
         if self.skills is not None:
             self.skills.remove_path(path)
-            if not self.skills.paths:
+            skills = self.skills
+            if (
+                not skills.paths
+                and skills.directories is None
+                and skills.bundled is None
+                and skills.duplicates is None
+                and not skills.extra_fields
+            ):
                 self.skills = None
         return self
 

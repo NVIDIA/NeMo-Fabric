@@ -1,0 +1,329 @@
+---
+title: "Configure Skills"
+description: "Load skills from folders, choose bundled skills, and set how NVIDIA NeMo Fabric adapters handle skills that share a name."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+The `skills` section of `FabricConfig` tells NVIDIA NeMo Fabric which skills an agent can load. A skill is a folder that holds a `SKILL.md` file, plus any scripts or reference files the skill uses.
+
+The section has four fields:
+
+| Field | What It Sets |
+| --- | --- |
+| `paths` | A list of skill paths. Each adapter decides what a path means. |
+| `directories` | A list of entries. Each entry names one skill or a folder of skills. NeMo Fabric defines the rules. |
+| `bundled` | Which skills that ship with the harness load. |
+| `duplicates` | What happens when two `directories` entries supply skills with the same name. |
+
+Use `paths` or `directories`, not both. `directories`, `bundled`, and `duplicates` work only with adapters that support them. Planning rejects a request that the selected adapter does not support. Refer to [Adapter Support](#adapter-support).
+
+## Choose `paths` or `directories`
+
+`skills.paths` works as it always has. Each adapter defines what a path must contain and how the harness loads it, so the same `paths` list can load different skills on different harnesses. Refer to each adapter guide for its rules.
+
+`skills.directories` gives every adapter the same meaning. Each entry sets exactly one key:
+
+- `skill`: one skill's folder. It must hold a readable `SKILL.md`.
+- `folder`: a folder of skills. The adapter finds the skills inside it.
+
+The following rules apply:
+
+- Set `directories` only when `paths` is empty. `paths: []` is the same as leaving `paths` out.
+- An entry with both keys, neither key, or another key fails validation. Each path must be a non-empty string.
+- `directories: []` is valid and loads no external skills. It needs no adapter support.
+- Relative paths resolve against the config base directory, as `paths` do. NeMo Fabric does not expand `~` or environment variables such as `${VAR}`.
+
+The following layout contains five skills:
+
+```text
+/mnt/team-skills/
+├── debugging/
+│   ├── SKILL.md
+│   └── scripts/
+│       └── collect-logs.sh
+├── code-review/
+│   ├── SKILL.md
+│   └── references/
+│       └── checklist.md
+├── drafts/                  # Ignored: no SKILL.md
+└── README.md                # Ignored: not a folder
+
+/mnt/project-skills/
+├── project-setup/
+│   └── SKILL.md
+└── integration-testing/
+    └── SKILL.md
+
+/mnt/release-review/
+├── SKILL.md
+└── references/
+    └── release-checklist.md
+```
+
+Assume that each `SKILL.md` names its skill after its folder. A `folder` entry for `/mnt/team-skills` supplies `debugging` and `code-review`. A `skill` entry for `/mnt/release-review` supplies `release-review`. Whether the agent can use each skill also depends on the harness's own rules, such as required front-matter fields.
+
+## Common Setups
+
+NeMo Fabric does not decide whether an agent can change a skill. File system and mount permissions decide that. Mount a folder read-only to keep skills fixed, or read-write to let the agent change them. The harness edits skills only where those permissions allow. NeMo Fabric does not grant write access.
+
+The following examples show the `skills` section in YAML and in Python. Each Python example assumes a `config` that is a `FabricConfig`.
+
+### Load a Folder of Skills, Read-Only
+
+Mount the folder read-only, then add one `folder` entry:
+
+```yaml
+skills:
+  directories:
+    - folder: /mnt/team-skills
+```
+
+```python
+from nemo_fabric import SkillConfig, SkillDirectory
+
+config.skills = SkillConfig(
+    directories=[SkillDirectory(folder="/mnt/team-skills")],
+)
+```
+
+### Load Chosen Skills, Read-Only
+
+Mount each skill read-only, then add one `skill` entry for each skill:
+
+```yaml
+skills:
+  directories:
+    - skill: /mnt/skills/code-review
+    - skill: /mnt/skills/release-review
+```
+
+```python
+from nemo_fabric import SkillConfig, SkillDirectory
+
+config.skills = SkillConfig(
+    directories=[
+        SkillDirectory(skill="/mnt/skills/code-review"),
+        SkillDirectory(skill="/mnt/skills/release-review"),
+    ],
+)
+```
+
+### Load a Folder the Agent Can Change
+
+Mount the folder read-write, then add one `folder` entry. The harness can edit the skills in place. Whether the harness also saves new skills into this folder depends on the harness. Refer to the adapter guide.
+
+```yaml
+skills:
+  directories:
+    - folder: /mnt/agent-skills
+```
+
+```python
+from nemo_fabric import SkillConfig, SkillDirectory
+
+config.skills = SkillConfig(
+    directories=[SkillDirectory(folder="/mnt/agent-skills")],
+)
+```
+
+### Mix Entries
+
+One list can hold both entry kinds and both kinds of mount. The following example loads a read-only team folder, a read-write folder for the agent, and one read-only skill. It also sets a duplicate policy, so a later entry's skill wins over an earlier one with the same name:
+
+```yaml
+skills:
+  directories:
+    - folder: /mnt/team-skills       # read-only
+    - folder: /mnt/agent-skills      # read-write
+    - skill: /mnt/release-review     # read-only
+  duplicates: last_wins
+```
+
+```python
+from nemo_fabric import SkillConfig, SkillDirectory
+
+config.skills = SkillConfig(
+    directories=[
+        SkillDirectory(folder="/mnt/team-skills"),
+        SkillDirectory(folder="/mnt/agent-skills"),
+        SkillDirectory(skill="/mnt/release-review"),
+    ],
+    duplicates="last_wins",
+)
+```
+
+## How the Adapter Loads `directories`
+
+The adapter checks each entry in the task environment when the runtime starts, because that is where the folders are mounted. It checks the entries in list order.
+
+### Start Checks
+
+Start fails when an entry breaks one of these rules:
+
+| Problem | Failure Reason |
+| --- | --- |
+| The path does not exist. | `not_found` |
+| The path is not a folder, or it cannot be accessed. | `invalid` |
+| A `skill` entry has no readable `SKILL.md`. | `invalid` |
+| A `folder` entry cannot be listed. | `invalid` |
+| Skills share a name under an explicit `duplicates` policy. Refer to [Skills That Share a Name](#skills-that-share-a-name). | `duplicate` |
+
+A `not_found` failure uses the adapter's `<adapter>_skill_not_found` error code, such as `hermes_skill_not_found`. Every other failure uses `<adapter>_skill_invalid`. The error metadata gives the failing `field`, such as `skills.directories[1].skill`, the `reason`, and the `path`. An adapter can add checks of its own. Refer to [Harness Differences](#harness-differences).
+
+An empty `folder` entry is valid. It loads nothing, and the run report lists it.
+
+### Discovery Inside a Folder
+
+A candidate is a folder that holds `SKILL.md`. The adapter searches a `folder` entry by the rules in its descriptor: how deep it searches, and whether it looks for more skills inside a skill. Refer to [Harness Differences](#harness-differences).
+
+The following rules apply to every adapter that uses the shared NeMo Fabric loader:
+
+- A candidate that fails the harness's parsing rules is skipped, never silently. The run report gives the reason, such as `unreadable`, `no_name`, or `missing_frontmatter_field:<field>`. An adapter can add reasons of its own.
+- Discovery does not enter `.git` or `node_modules` folders, or other folders that the harness skips. Subfolders that cannot be read hold no skills.
+- The same folder reached through several entries loads once.
+- A skill's name is the `name` field of its `SKILL.md` front matter. When the front matter has no name, the adapter uses the folder name if its descriptor allows that fallback. Otherwise it skips the skill with the reason `no_name`.
+
+NeMo Fabric reads only the front matter. It never reports file contents.
+
+## Bundled Skills
+
+Some harnesses ship their own skills. `skills.bundled` chooses which of them load. It works with `paths` or `directories`, or with neither.
+
+| Configuration | What Loads |
+| --- | --- |
+| `bundled` left out | The harness default. |
+| `bundled: {}` or `BundledSkills()` | Every eligible bundled skill. |
+| `enabled: false` | No bundled skills. |
+| `include: [a, b]` | Only bundled skills `a` and `b`. |
+| `include: []` | No bundled skills. |
+| `exclude: [a]` | Every bundled skill except `a`. |
+| `exclude: []` | Every eligible bundled skill. |
+
+Validation rejects these combinations:
+
+- `include` and `exclude` together, even when one is empty.
+- `enabled: false` with either list.
+- An empty name in either list.
+
+The following example loads every bundled skill except `github-auth`:
+
+```yaml
+skills:
+  bundled:
+    exclude: [github-auth]
+```
+
+```python
+from nemo_fabric import BundledSkills, SkillConfig
+
+config.skills = SkillConfig(bundled=BundledSkills(exclude=["github-auth"]))
+```
+
+At start, the adapter reads the list of bundled skills from the installed harness, because that list changes between harness versions. A name in `include` or `exclude` that is not on the list fails start with `<adapter>_skill_invalid` and the reason `unknown_bundled_skill`. The error names the field and the name. Bundled selection does not bypass the harness's own requirements for a skill, and it does not grant extra tools or permissions.
+
+A bundled skill that `bundled` leaves out can still hide a configured skill with the same name on some harnesses. Refer to [Harness Differences](#harness-differences).
+
+## Skills That Share a Name
+
+`skills.duplicates` sets what happens when two `directories` entries supply skills with the same name. It requires `directories`.
+
+| Value | Result |
+| --- | --- |
+| Left out | The harness's own behavior, as before. |
+| `reject` | Start fails and names both entries. |
+| `first_wins` | The earlier entry's skill loads. |
+| `last_wins` | The later entry's skill loads. |
+
+The following rules apply:
+
+- A policy applies only between separate `directories` entries, in list order.
+- With any policy set, two skills with the same name inside one `folder` entry fail start. The error names the entry and both paths.
+- With `first_wins` or `last_wins`, the other copies do not load. The run report lists them.
+- A clash with a bundled skill or a skill in the harness's own folders follows the harness's own order. The policy does not change it.
+- When `duplicates` is left out, every copy reaches the harness unchanged and the harness decides. The run report lists each clash. Its outcome is `ambiguous` unless the adapter can tell which copy the harness loads.
+
+## Run Report
+
+When a run uses `directories` or `bundled`, the adapter adds a `skills` block to the result `output`. It leaves out empty parts. The block never includes file contents.
+
+| Key | Contents |
+| --- | --- |
+| `loaded` | Each loaded skill: `name`, `path`, `entry` (the field that supplied it), and `origin` (`external`). |
+| `empty_entries` | The fields of `folder` entries that found no skills. |
+| `skipped` | Each skipped candidate: `path`, `entry`, and `reason`. |
+| `duplicates` | Each clash: `name`, `outcome` (`selected`, `shadowed`, or `ambiguous`), the `selected` path when known, and each copy's `origin` (`external`, `bundled`, or `local`), `path`, and `entry`. |
+| `bundled` | `selected`: the selected bundled skills that load. `unavailable`: each selected bundled skill that does not load, with `name` and `reason`. An adapter guide lists any extra keys, such as Hermes's `essential`. |
+
+The following example shows a report for the mixed setup. In this example, `/mnt/team-skills` also holds a `release-review` skill, its `debugging` skill has no `description` field that the adapter requires, and `/mnt/agent-skills` is empty:
+
+```json
+{
+  "skills": {
+    "loaded": [
+      {"name": "code-review", "path": "/mnt/team-skills/code-review", "entry": "skills.directories[0]", "origin": "external"},
+      {"name": "release-review", "path": "/mnt/release-review", "entry": "skills.directories[2]", "origin": "external"}
+    ],
+    "empty_entries": ["skills.directories[1]"],
+    "skipped": [
+      {"path": "/mnt/team-skills/debugging", "entry": "skills.directories[0]", "reason": "missing_frontmatter_field:description"}
+    ],
+    "duplicates": [
+      {
+        "name": "release-review",
+        "outcome": "selected",
+        "selected": "/mnt/release-review",
+        "copies": [
+          {"origin": "external", "path": "/mnt/team-skills/release-review", "entry": "skills.directories[0]"},
+          {"origin": "external", "path": "/mnt/release-review", "entry": "skills.directories[2]"}
+        ]
+      }
+    ]
+  }
+}
+```
+
+The adapter also writes one line to standard error for each skipped candidate, empty entry, and clash when the runtime starts.
+
+## Adapter Support
+
+Each Adapter Descriptor states which structured skill features its adapter implements, in a top-level `skills` block. Planning, `plan(...)`, and `doctor(...)` check the configuration against that block before the runtime starts:
+
+| Configuration | Required Descriptor Support |
+| --- | --- |
+| A non-empty `directories` | `skills.directory_loading`, with every entry kind used listed in `supported_entries`. |
+| `bundled` with no lists | `skills.bundled.supports_enable` |
+| `bundled.enabled: false` | `skills.bundled.supports_disable` |
+| `bundled.include`, including `[]` | `skills.bundled.supports_include` |
+| `bundled.exclude`, including `[]` | `skills.bundled.supports_exclude` |
+| `duplicates: <policy>` | `skills.duplicates.supported_policies` lists the policy. |
+
+The adapter must also list `skills` in `config.accepts`. An unsupported request fails with the field and the reason. For example, a policy the adapter does not support fails at `skills.duplicates`, and the error lists the policies it does support. NeMo Fabric never drops a skill setting silently. `paths` keeps its existing check.
+
+Refer to [Stage 1: Describe the Adapter](../../adapter-contract/tutorials/adapter-descriptor.md) for the `skills` block fields.
+
+## Harness Differences
+
+The OpenClaw and Hermes Agent adapters support `directories`, `bundled`, and `duplicates`. Their harnesses still load skills in different ways:
+
+| Behavior | Hermes Agent | OpenClaw |
+| --- | --- | --- |
+| A `paths` entry | Passed to `skills.external_dirs` without checks. | Must be a folder that holds `SKILL.md`. Passed to `skills.load.extraDirs`. |
+| Where `directories` entries go | `skills.external_dirs`. With a `duplicates` policy, the adapter passes each selected skill's folder instead. A folder that Hermes Agent already searches through another passed folder is not passed again. | `skills.load.extraDirs`. With a `duplicates` policy, the adapter passes each selected skill's folder instead. |
+| Search inside a `folder` entry | Every level below the folder, with no fixed depth limit. | 2 levels deep, or 6 when the folder it searches is named `skills`. A `skills` subfolder directly inside the searched folder is searched 6 levels deep. When only the entry's `skills` subfolder holds skills, OpenClaw searches that subfolder. A skill whose real folder is outside the searched folder does not load and is reported with the reason `path_escape`. |
+| A `folder` entry that holds `SKILL.md` | The folder loads as a skill, along with the skills below it. | Start fails with the reason `folder_is_skill`. Use a `skill` entry instead. |
+| Skills inside a skill's folder | Also load. With a `duplicates` policy, start fails when a copy that should not load sits inside a selected skill's folder. | Do not load. Discovery stops at a skill's folder. |
+| Folders discovery skips | The folders Hermes Agent skips, such as `.git`, `.hub`, `.archive`, `node_modules`, and `__pycache__`, and a skill's `references`, `templates`, `assets`, and `scripts` folders. | Every folder whose name starts with `.`, and `node_modules`. |
+| Required front-matter fields | None | `description` |
+| Name when the front matter has none | The folder name | The folder name |
+| Front matter that does not parse | Simple `key: value` lines are recovered. | The skill is skipped with the reason `rejected_by_openclaw`. Under `first_wins` or `last_wins`, the next copy of its name loads instead. |
+| Two configured skills share a name and `duplicates` is left out | Hermes Agent refuses both as ambiguous. It also refuses a skill whose name is another skill's folder name. | The copy from the later entry loads. Copies inside one entry are reported as `ambiguous`. |
+| The harness's own skill folders, ranked above the configured entries | The Hermes home's `skills` folder, which holds the bundled skills and the skills the agent creates. | The workspace's `skills` and `.agents/skills` folders, the state folder's `skills` folder, the Skill Workshop folder, and the shipped skills. |
+| How bundled skills are chosen | `skills.disabled` | `skills.allowBundled` |
+| A bundled skill that `bundled` leaves out shares a name with a configured skill | The configured skill, from `paths` or `directories`, loads. The agent's own skill with that name in the Hermes home stays enabled too; the Hermes Agent guide covers when it loads. | The bundled skill still hides the configured skill. The run report lists the configured skill as `shadowed`. |
+| Bundled skills that always load | `hermes-agent`. Listing it in `exclude` fails start. | None |
+| Error codes | `hermes_skill_not_found`, `hermes_skill_invalid` | `openclaw_skill_not_found`, `openclaw_skill_invalid` |
+
+A skill in one of the harness's own folders, including a skill the agent writes, can hide a configured skill with the same name. The run report lists these clashes where the adapter can see them at start.
+
+Refer to the [Hermes Agent guide](./hermes/hermes.mdx) and the [OpenClaw guide](./openclaw/openclaw.mdx) for details.

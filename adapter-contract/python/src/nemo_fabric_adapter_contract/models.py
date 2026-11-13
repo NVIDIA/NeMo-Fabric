@@ -242,11 +242,115 @@ class AgentRuntimeConfig(AgentContractBlock):
             )
 
 
+SkillDuplicatePolicy = Literal["reject", "last_wins", "first_wins"]
+"""How an adapter resolves two ``skills.directories`` skills that share a name."""
+
+
+@dataclass(slots=True, kw_only=True)
+class SkillDirectory(ContractModel):
+    """One ``skills.directories`` entry: a single skill or a folder of skills.
+
+    Exactly one of ``skill`` and ``folder`` is set. NeMo Fabric core resolves
+    the path against the config base directory before it reaches the adapter.
+    """
+
+    skill: str | Path | None = _optional()
+    """A folder that holds one skill's ``SKILL.md``."""
+    folder: str | Path | None = _optional()
+    """A folder whose skills are discovered by the adapter."""
+
+    @property
+    def kind(self) -> Literal["skill", "folder"] | None:
+        """Return which entry key is set, or ``None`` when neither is."""
+
+        if self.skill is not None:
+            return "skill"
+        if self.folder is not None:
+            return "folder"
+        return None
+
+    @property
+    def path(self) -> str | Path:
+        """Return the entry's configured path."""
+
+        value = self.skill if self.skill is not None else self.folder
+        assert value is not None
+        return value
+
+    def _validate(self) -> None:
+        # A key set to None is absent, as it is on the wire.
+        if (self.skill is None) == (self.folder is None):
+            raise ContractValidationError("must set exactly one of skill or folder")
+        if _is_empty_path(self.path):
+            raise ContractValidationError("must be a non-empty path", path=(self.kind,))
+
+
+def _is_empty_path(value: str | Path) -> bool:
+    """Return whether a skill entry path is blank.
+
+    ``Path("")`` reads as ``"."``, so a ``Path`` that is exactly ``"."`` counts
+    as empty; pass the string ``"."`` for the current folder.
+    """
+
+    if isinstance(value, Path):
+        return not str(value).strip() or str(value) == "."
+    return not value.strip()
+
+
+@dataclass(slots=True, kw_only=True)
+class BundledSkills(ContractModel):
+    """Selection of the skills shipped with the harness.
+
+    ``include`` and ``exclude`` are mutually exclusive; ``None`` and ``[]``
+    differ. ``enabled=False`` selects no bundled skills and takes no list.
+    """
+
+    enabled: bool = True
+    include: list[str] | None = _optional()
+    exclude: list[str] | None = _optional()
+
+    def _validate(self) -> None:
+        for name in ("include", "exclude"):
+            values = getattr(self, name)
+            if values is not None and any(not item.strip() for item in values):
+                raise ContractValidationError(
+                    "bundled skill names must not be empty", path=(name,)
+                )
+        if self.include is not None and self.exclude is not None:
+            raise ContractValidationError(
+                "include and exclude cannot both be set", path=("exclude",)
+            )
+        if not self.enabled and (self.include is not None or self.exclude is not None):
+            raise ContractValidationError(
+                "enabled=false cannot be combined with include or exclude",
+                path=("enabled",),
+            )
+
+
 @dataclass(slots=True, kw_only=True)
 class AgentSkillConfig(AgentContractBlock):
-    """Skill paths made available to the adapter target."""
+    """Skills made available to the adapter target.
+
+    ``paths`` is the legacy, validation-free list. ``directories``,
+    ``bundled``, and ``duplicates`` reach an adapter only when its descriptor
+    advertises support for them.
+    """
 
     paths: list[str | Path] = _empty_list()
+    directories: list[SkillDirectory] | None = _optional()
+    bundled: BundledSkills | None = _optional()
+    duplicates: SkillDuplicatePolicy | None = _optional()
+
+    def _validate(self) -> None:
+        if self.directories is not None and self.paths:
+            raise ContractValidationError(
+                "directories may be set only when paths is empty",
+                path=("directories",),
+            )
+        if self.duplicates is not None and self.directories is None:
+            raise ContractValidationError(
+                "duplicates requires directories", path=("duplicates",)
+            )
 
 
 def _validate_tool_names(value: list[str] | None, field_name: str, label: str) -> None:

@@ -59,6 +59,13 @@ translation:
   legacy omitted-value behavior, which means `replace` only.
 - Declare `mcp.auth.oauth2` or `mcp.auth.service_account` only when the adapter
   implements the corresponding MCP authentication mode.
+- Declare a top-level `skills` block only for the structured skill features the
+  adapter implements: `directory_loading` for `skills.directories` (supported
+  `skill` and `folder` entries, discovery traversal, nested skills, a required
+  `depth_limit`, and parsing rules), `bundled` for `skills.bundled` (`default`
+  and the four `supports_*` flags), and `duplicates` for `skills.duplicates`
+  (`supported_policies`). Planning rejects a structured skill field that the
+  block does not cover. `skills.paths` needs only `skills` in `config.accepts`.
 - Publish closed `settings_schema`, `model_schema`, `tool_definition_schema`,
   and `extension_schemas` where applicable. Use
   `model_schema` only for static model/provider compatibility and model settings;
@@ -118,6 +125,18 @@ adapter boundary:
   and adds the configured content after it.
 - Convert MCP servers, tool definitions, tool policy, and skills into native
   target constructs.
+- Check `skills.directories` entries in `start`, where the folders are mounted.
+  Python adapters can call `load_directories()` from
+  `nemo_fabric_adapter_contract.skills` with `DiscoveryRules` that match the
+  descriptor and what the harness actually loads (root skills, folders the
+  harness skips inside a skill, symlinks that leave the entry, and per-folder
+  depths). Map `SkillLoadError` reasons to stable codes (`not_found` to a
+  `<adapter>_skill_not_found` code, `invalid` and `duplicate` to
+  `<adapter>_skill_invalid`) with the failing field and path. Return
+  `report_block()` as `output.skills` in each result. With an explicit
+  `duplicates` policy, pass only the selected skills to the harness. Fail
+  `start` when a `skills.bundled` name is not a bundled skill. Refer to
+  [Configure Skills](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/skills.mdx).
 - Resolve workflow entry points and construction settings during `start` in
   the task environment.
 - Read identity, environment, artifacts, telemetry, and the invocation

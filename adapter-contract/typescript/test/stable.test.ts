@@ -246,3 +246,11 @@ void mapJson;
 // @ts-expect-error symbols are not JSON
 const symbolJson: JsonValue = Symbol("not JSON");
 void symbolJson;
+
+type SkillEntries = NonNullable<NonNullable<AgentConfig["skills"]>["directories"]>;
+// A skill entry sets one key; the other may appear only as null.
+const skillEntries: SkillEntries = [{ skill: "/opt/review" }, { folder: "/sandbox/team", skill: null }];
+void skillEntries;
+// @ts-expect-error a skill entry cannot set both keys
+const bothSkillKeys: SkillEntries = [{ skill: "/a", folder: "/b" }];
+void bothSkillKeys;

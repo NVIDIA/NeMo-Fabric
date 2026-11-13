@@ -144,7 +144,7 @@ fn code_review_config(preset: Preset) -> Result<FabricConfig, String> {
     if preset.name != "scripted" {
         config.skills = Some(SkillConfig {
             paths: vec![PathBuf::from("skills/code-review.md")],
-            extensions: BTreeMap::new(),
+            ..SkillConfig::default()
         });
     }
     Ok(config)

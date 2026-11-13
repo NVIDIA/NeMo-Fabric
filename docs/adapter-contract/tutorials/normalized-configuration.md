@@ -55,7 +55,7 @@ needs and applies it.
 | `models` | Named model roles with provider, model, credential-variable name, endpoint, temperature, and provider settings. |
 | `instructions` | Portable target instructions. |
 | `runtime` | Target-applied behavior, such as a turn limit. |
-| `skills` | Skill paths resolved for the execution environment. |
+| `skills` | Skill paths, or structured skill `directories`, resolved for the execution environment, plus bundled-skill selection and the duplicate policy when the descriptor advertises them. |
 | `mcp` | Named Model Context Protocol (MCP) servers, authentication metadata, headers, and effective per-server tool policy. |
 | `tools` | Named tool or tool-group definitions plus effective enabled and blocked policy. |
 | `workflow` | A registered custom-agent entry point and immutable construction settings. |
@@ -86,7 +86,9 @@ control projection. Planning applies these rules:
    Descriptor, then project that target's entry point into `workflow`.
 5. Validate every named tool definition against `tool_definition_schema`.
 6. Project skills and MCP servers assigned to the adapter by the capability
-   plan.
+   plan. Project `skills.directories`, `skills.bundled`, and
+   `skills.duplicates` only when the descriptor's `skills` block covers
+   them.
 7. Validate adapter-owned extensions against the schema for their exact
    extension point.
 8. Reject configured behavior that the selected adapter cannot apply.
@@ -201,6 +203,104 @@ failing requirement or configuration field without exposing secret values.
 **Success Check**: Planning validates static shape without running adapter
 code, while environment-dependent checks run during `start`.
 
+### 7. Check Skill Directories at Start
+
+`AgentConfig.skills` can carry these fields:
+
+| Field | Contents |
+| --- | --- |
+| `paths` | Skill paths. The adapter defines what a path means. |
+| `directories` | A list of entries. Each sets exactly one of `skill` (one skill's folder) or `folder` (a folder of skills). NeMo Fabric resolves each path against the config base directory before the adapter receives it. Can be an empty list. |
+| `bundled` | `enabled`, plus at most one of `include` or `exclude`. `None` and `[]` differ for both lists. |
+| `duplicates` | `reject`, `first_wins`, or `last_wins`. Present only with `directories`. |
+
+A non-empty `paths` never arrives together with `directories`. The folders in
+`directories` exist only in the task environment, so check them in `start`.
+Python adapters can use the dependency-free
+`nemo_fabric_adapter_contract.skills` module. The following example raises
+a lifecycle failure through the optional common Python host from
+[Stage 3](execution.md):
+
+```python
+from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapter_contract.skills import (
+    DiscoveryRules,
+    SkillLoadError,
+    load_directories,
+    warn,
+)
+from nemo_fabric_adapters.common import lifecycle
+
+RULES = DiscoveryRules(
+    traversal="recursive",
+    nested_skills="stop_at_skill",
+    max_depth=6,
+    required_frontmatter_fields=("description",),
+)
+
+def load_skills(config: AgentConfig):
+    skills = config.skills
+    if skills is None or skills.directories is None:
+        return None
+    try:
+        load = load_directories(
+            skills.directories, rules=RULES, duplicates=skills.duplicates
+        )
+    except SkillLoadError as error:
+        code = "not_found" if error.reason == "not_found" else "invalid"
+        raise lifecycle.LifecycleError(
+            f"acme_skill_{code}",
+            str(error),
+            metadata={
+                "field": error.field,
+                "reason": error.reason,
+                "path": str(error.paths[0]) if error.paths else None,
+            },
+        ) from None
+    warn("acme", load)
+    return load
+```
+
+`load_directories()` follows the rules that callers see:
+
+1. It checks each entry in list order. A missing path fails with `not_found`.
+   A path that is not a folder or cannot be accessed, a `skill` entry without
+   a readable `SKILL.md`, and a `folder` entry that cannot be listed fail with
+   `invalid`. `SkillLoadError.field` names the failing key, such as
+   `skills.directories[1].skill`.
+2. It finds skills inside each `folder` entry by the `DiscoveryRules`. Make
+   these rules match the descriptor's `directory_loading` block, and match
+   what the harness actually loads:
+   - `folder_root_is_skill`: the harness loads a `SKILL.md` at the root of a
+     `folder` entry as a skill.
+   - `support_dir_names`: folders the harness does not search inside a skill,
+     such as `scripts`.
+   - `allow_symlink_escape=False`: the harness refuses a skill whose real
+     path is outside the entry. Such a skill is skipped with `path_escape`.
+   - `subroot_depths`: a root child, such as `skills`, that the harness
+     searches to a different depth than the rest of the entry.
+
+   When entries need different rules, pass a function of the entry's index,
+   kind, and resolved path as `rules`.
+3. It records skipped candidates and empty `folder` entries instead of
+   failing.
+4. It applies the `duplicates` policy between entries. With a policy set, two
+   skills with the same name inside one `folder` entry fail with `duplicate`.
+   With no policy, it records each clash as `ambiguous`.
+
+Pass the selected skills to the harness's native skill loader.
+`DirectoryLoad.selected` lists the skills that load. With an explicit policy,
+pass each selected skill's folder, so that shadowed copies never load.
+Apply `bundled` with the harness's native controls, and fail `start` when an
+`include` or `exclude` name is not a bundled skill. Return
+`report_block(load, bundled=...)` as `output.skills` in each result. Refer to
+[Configure Skills](../../integrations/harness/skills.mdx) for the full
+behavior.
+
+**Success Check**: A missing `skills.directories` path fails `start` with the
+entry's field, and each result reports the loaded skills under
+`output.skills`.
+
 ## Summary
 
 In this tutorial, you have:
@@ -211,6 +311,7 @@ In this tutorial, you have:
 - Translated configuration once at the adapter boundary.
 - Used extensions only where a normalized field cannot express the behavior.
 - Split static planning validation from environment-dependent startup checks.
+- Checked `skills.directories` entries in the task environment at start.
 
 ## Next Steps
 
