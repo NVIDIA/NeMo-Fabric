@@ -1994,6 +1994,8 @@ impl RuntimeAdapter for LocalHostAdapter {
                 .unwrap_or_default();
             confirm_stopped_descendants(runtime, &pending)?;
             local_host_processes().remove(&runtime.runtime_id);
+            #[cfg(unix)]
+            frozen_process_trees().remove(&runtime.runtime_id);
             #[cfg(windows)]
             windows_host_controls().remove(&runtime.runtime_id);
             STOPPING_PROCESSES
@@ -2022,6 +2024,11 @@ impl RuntimeAdapter for LocalHostAdapter {
         guard.cleanup_pending = true;
         PENDING_LOCAL_CLEANUP.lock().unwrap_or_else(|error| error.into_inner())
             .insert(runtime.runtime_id.clone(), guard.cleanup_scope.clone());
+        #[cfg(unix)]
+        if frozen_tree_is_pending(&runtime.runtime_id) {
+            interrupted = Some(interrupt_local_host(runtime)?);
+        }
+        let was_interrupted = interrupted.is_some();
         if let Some(processes) = interrupted {
             guard.pending_stop.extend(processes);
         }
@@ -2061,6 +2068,8 @@ impl RuntimeAdapter for LocalHostAdapter {
         remove_local_host_files(&guard).map_err(|_| cleanup_unconfirmed(runtime))?;
         local_hosts().remove(&runtime.runtime_id);
         local_host_processes().remove(&runtime.runtime_id);
+        #[cfg(unix)]
+        frozen_process_trees().remove(&runtime.runtime_id);
         #[cfg(windows)]
         windows_host_controls().remove(&runtime.runtime_id);
         STOPPING_PROCESSES
@@ -2069,10 +2078,11 @@ impl RuntimeAdapter for LocalHostAdapter {
             .remove(&runtime.runtime_id);
         PENDING_LOCAL_CLEANUP.lock().unwrap_or_else(|error| error.into_inner())
             .remove(&runtime.runtime_id);
-        let host_crashed = matches!(
-            &result,
-            Err(FabricError::AdapterLifecycleOperation { code, .. }) if code == "host_crashed"
-        );
+        let host_crashed = was_interrupted
+            || matches!(
+                &result,
+                Err(FabricError::AdapterLifecycleOperation { code, .. }) if code == "host_crashed"
+            );
         if !host_crashed {
             result?;
         }
@@ -2165,6 +2175,83 @@ fn freeze_owned_process(process: &LocalHostProcess, deadline: Instant) -> std::i
     }
 }
 
+#[cfg(unix)]
+struct FrozenProcessTree {
+    pending: Vec<LocalHostProcess>,
+    processes: Vec<LocalHostProcess>,
+    lost_parent: bool,
+}
+
+#[cfg(unix)]
+static FROZEN_PROCESS_TREES: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<FrozenProcessTree>>>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
+
+#[cfg(unix)]
+fn frozen_process_trees()
+-> std::sync::MutexGuard<'static, BTreeMap<String, Arc<Mutex<FrozenProcessTree>>>> {
+    FROZEN_PROCESS_TREES
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
+
+#[cfg(unix)]
+fn frozen_tree_is_pending(runtime_id: &str) -> bool {
+    let tree = frozen_process_trees().get(runtime_id).cloned();
+    tree.is_some_and(|tree| {
+        let tree = tree.lock().unwrap_or_else(|error| error.into_inner());
+        tree.lost_parent || !tree.pending.is_empty()
+    })
+}
+
+#[cfg(unix)]
+fn collect_frozen_host_with(
+    runtime: &RuntimeHandle,
+    process: &LocalHostProcess,
+    mut children: impl FnMut(libc::pid_t) -> std::io::Result<Vec<libc::pid_t>>,
+) -> Result<Vec<LocalHostProcess>> {
+    let tree = frozen_process_trees()
+        .entry(runtime.runtime_id.clone())
+        .or_insert_with(|| {
+            Arc::new(Mutex::new(FrozenProcessTree {
+                pending: vec![process.clone()],
+                processes: vec![process.clone()],
+                lost_parent: false,
+            }))
+        })
+        .clone();
+    let mut tree = tree.lock().unwrap_or_else(|error| error.into_inner());
+    if tree.lost_parent {
+        return Err(cleanup_unconfirmed(runtime));
+    }
+    let deadline = Instant::now() + LOCAL_HOST_STOP_TIMEOUT;
+    while let Some(parent) = tree.pending.last().cloned() {
+        if freeze_owned_process(&parent, deadline).is_err() {
+            tree.lost_parent |= owned_process_has_exited(&parent);
+            return Err(cleanup_unconfirmed(runtime));
+        }
+        if owned_process_has_exited(&parent) {
+            tree.lost_parent = true;
+            return Err(cleanup_unconfirmed(runtime));
+        }
+        let listed =
+            children(parent.pid() as libc::pid_t).map_err(|_| cleanup_unconfirmed(runtime))?;
+        // An exited parent can have already lost its children to reparenting.
+        // Keep that missing evidence across retries rather than guessing empty.
+        if owned_process_has_exited(&parent) {
+            tree.lost_parent = true;
+            return Err(cleanup_unconfirmed(runtime));
+        }
+        let listed: Vec<_> = listed
+            .into_iter()
+            .map(|pid| LocalHostProcess::new(pid as u32, SystemTime::now()))
+            .collect();
+        tree.pending.pop();
+        tree.processes.extend(listed.clone());
+        tree.pending.extend(listed);
+    }
+    Ok(tree.processes.clone())
+}
+
 fn interrupt_local_host(runtime: &RuntimeHandle) -> Result<Vec<LocalHostProcess>> {
     #[cfg(unix)]
     {
@@ -2172,41 +2259,11 @@ fn interrupt_local_host(runtime: &RuntimeHandle) -> Result<Vec<LocalHostProcess>
             .get(&runtime.runtime_id)
             .cloned()
             .ok_or_else(|| cleanup_unconfirmed(runtime))?;
-        if process.has_exited() == Some(true) {
-            return Ok(Vec::new());
-        }
-        if !process.is_current() {
-            return Err(cleanup_unconfirmed(runtime));
-        }
-        let deadline = Instant::now() + LOCAL_HOST_STOP_TIMEOUT;
-        // Freeze each parent before listing its children. A frozen parent cannot
-        // create another child after that list was read. Retain every discovered
-        // identity before suspension so a partial failure remains retryable.
-        let mut parents = vec![process.clone()];
-        while let Some(parent) = parents.pop() {
-            freeze_owned_process(&parent, deadline).map_err(|_| cleanup_unconfirmed(runtime))?;
-            if owned_process_has_exited(&parent) {
-                continue;
-            }
-            let children: Vec<_> = child_pids(parent.pid() as libc::pid_t)
-                .into_iter()
-                .map(|pid| LocalHostProcess::new(pid as u32, SystemTime::now()))
-                .collect();
-            STOPPING_PROCESSES
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .entry(runtime.runtime_id.clone())
-                .or_default()
-                .extend(children.clone());
-            parents.extend(children);
-        }
-        let descendants = {
-            let mut retained = STOPPING_PROCESSES
-                .lock()
-                .unwrap_or_else(|error| error.into_inner());
-            let previous = retained.entry(runtime.runtime_id.clone()).or_default();
-            previous.clone()
-        };
+        let descendants = collect_frozen_host_with(runtime, &process, child_pids)?;
+        STOPPING_PROCESSES
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .insert(runtime.runtime_id.clone(), descendants.clone());
         for child in descendants.iter().rev() {
             signal_owned_process(child).map_err(|_| cleanup_unconfirmed(runtime))?;
         }
@@ -2232,6 +2289,10 @@ fn confirm_stopped_descendants(
     runtime: &RuntimeHandle,
     processes: &[LocalHostProcess],
 ) -> Result<()> {
+    #[cfg(unix)]
+    if frozen_tree_is_pending(&runtime.runtime_id) {
+        return Err(cleanup_unconfirmed(runtime));
+    }
     #[cfg(windows)]
     let control = windows_host_controls().get(&runtime.runtime_id).cloned();
     let deadline = Instant::now() + LOCAL_HOST_EXIT_GRACE;
@@ -3944,7 +4005,7 @@ fn host_descendants(host_pid: u32) -> Vec<libc::pid_t> {
     let mut descendants = Vec::new();
     let mut parents = vec![host_pid];
     while let Some(parent) = parents.pop() {
-        let children = child_pids(parent);
+        let children = child_pids(parent).unwrap_or_default();
         parents.extend(&children);
         descendants.extend(children);
     }
@@ -3952,53 +4013,55 @@ fn host_descendants(host_pid: u32) -> Vec<libc::pid_t> {
 }
 
 #[cfg(target_os = "linux")]
-fn child_pids(parent: libc::pid_t) -> Vec<libc::pid_t> {
-    let Ok(entries) = std::fs::read_dir("/proc") else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
-        .filter_map(|entry| {
-            let pid = entry.file_name().to_str()?.parse().ok()?;
-            let stat = std::fs::read_to_string(entry.path().join("stat")).ok()?;
-            // The command name may contain spaces or parentheses; the parent PID
-            // is the second field after it.
-            let ppid: libc::pid_t = stat
-                .rsplit_once(')')?
-                .1
-                .split_whitespace()
-                .nth(1)?
-                .parse()
-                .ok()?;
-            (ppid == parent).then_some(pid)
-        })
-        .collect()
+fn child_pids(parent: libc::pid_t) -> std::io::Result<Vec<libc::pid_t>> {
+    let mut children = Vec::new();
+    for entry in std::fs::read_dir("/proc")? {
+        let entry = entry?;
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|value| value.parse().ok())
+        else {
+            continue;
+        };
+        let stat = match std::fs::read_to_string(entry.path().join("stat")) {
+            Ok(stat) => stat,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+        let ppid = stat
+            .rsplit_once(')')
+            .and_then(|(_, fields)| fields.split_whitespace().nth(1))
+            .and_then(|value| value.parse::<libc::pid_t>().ok())
+            .ok_or_else(|| std::io::Error::other("process parent is unreadable"))?;
+        if ppid == parent {
+            children.push(pid);
+        }
+    }
+    Ok(children)
 }
 
 #[cfg(target_os = "macos")]
-fn child_pids(parent: libc::pid_t) -> Vec<libc::pid_t> {
+fn child_pids(parent: libc::pid_t) -> std::io::Result<Vec<libc::pid_t>> {
     let mut children = vec![0; 64];
     loop {
-        let Ok(bytes) = i32::try_from(std::mem::size_of_val(children.as_slice())) else {
-            return Vec::new();
-        };
+        let bytes = i32::try_from(std::mem::size_of_val(children.as_slice()))
+            .map_err(|_| std::io::Error::other("process child list is too large"))?;
         // SAFETY: the buffer is writable and sized in bytes as libproc requires.
         let count =
             unsafe { libc::proc_listchildpids(parent, children.as_mut_ptr().cast(), bytes) };
-        let Ok(count) = usize::try_from(count) else {
-            return Vec::new();
-        };
+        let count = usize::try_from(count).map_err(|_| std::io::Error::last_os_error())?;
         if count < children.len() {
             children.truncate(count);
-            return children;
+            return Ok(children);
         }
         children.resize(children.len() * 2, 0);
     }
 }
 
 #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
-fn child_pids(_parent: libc::pid_t) -> Vec<libc::pid_t> {
-    Vec::new()
+fn child_pids(_parent: libc::pid_t) -> std::io::Result<Vec<libc::pid_t>> {
+    Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
 }
 
 /// Puts the suspended host in a job object so a forced kill reaches every
@@ -5791,6 +5854,53 @@ else:
 
     fn stopped_agents() -> Vec<String> {
         TEST_STOPPED_AGENTS.lock().expect("stop tracker").clone()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unlisted_parent_exit_remains_unconfirmed_on_stop_retry() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let host = local_hosts().get(&runtime.runtime_id).unwrap().clone();
+        let mut guard = host.lock().unwrap();
+        guard.child.kill().unwrap();
+        guard.child.wait().unwrap();
+        let first = stop_runtime(&plan, &runtime);
+        drop(guard);
+        let retried = stop_runtime(&plan, &runtime);
+        let retained = local_hosts().contains_key(&runtime.runtime_id);
+        // This fixture has no descendants; remove only its injected uncertainty
+        // after checking that production retry does not erase missing evidence.
+        frozen_process_trees().remove(&runtime.runtime_id);
+        stop_runtime(&plan, &runtime).unwrap();
+        assert!(
+            matches!(first, Err(FabricError::AdapterLifecycleOperation { code, .. }) if code == "cleanup_unconfirmed")
+        );
+        assert!(
+            matches!(retried, Err(FabricError::AdapterLifecycleOperation { code, .. }) if code == "cleanup_unconfirmed")
+        );
+        assert!(retained);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_child_listing_retains_a_retryable_frozen_parent() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let process = local_host_processes()
+            .get(&runtime.runtime_id)
+            .unwrap()
+            .clone();
+        let failed = collect_frozen_host_with(&runtime, &process, |_| {
+            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+        });
+        let retained = frozen_process_trees().contains_key(&runtime.runtime_id);
+        stop_runtime(&plan, &runtime).expect("retry with readable process evidence");
+        assert!(failed.is_err());
+        assert!(retained);
+        assert!(!local_hosts().contains_key(&runtime.runtime_id));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

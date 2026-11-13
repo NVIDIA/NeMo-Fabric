@@ -527,6 +527,8 @@ class Fabric:
         an empty text input. Use ``RunRequest`` when the invocation needs a
         caller-owned request ID, context, or overrides.
         NeMo Fabric attempts to stop a started runtime even when invocation fails.
+        Unconfirmed cleanup raises an error with ``cleanup_runtime`` for an
+        explicit stop retry in the same process.
 
         Args:
             config: Complete typed ``FabricConfig``.
@@ -567,6 +569,15 @@ class Fabric:
                 await _run_native_lifecycle(native, plan.to_mapping(), request_payload)
             )
         except (FabricError, asyncio.CancelledError) as error:
+            cleanup_handle = getattr(error, "_fabric_cleanup_runtime_handle", None)
+            if cleanup_handle is not None:
+                recovery = Runtime(client=self, plan=plan, runtime=cleanup_handle)
+                recovery._status = RuntimeStatus.FAILED
+                if isinstance(error, FabricError):
+                    error._cleanup_runtime = recovery
+                else:
+                    error.cleanup_runtime = recovery
+                del error._fabric_cleanup_runtime_handle
             # The selected report already includes the caller and guest SDK facts.
             # Optional evidence must not change the lifecycle exception or cause.
             if isinstance(error, FabricError):

@@ -303,6 +303,16 @@ class RuntimeServer:
         if owned.agent != command["agent"]:
             raise ProtocolError("wrong_agent", "check")
         runtime = owned.runtime
+        if owned.state in {"stopping", "unknown"}:
+            pending = owned.state == "stopping"
+            report = runtime_report(
+                request, "runtime_busy" if pending else "cleanup_unconfirmed", started
+            )
+            report["runtime"] = {
+                "state": "unknown" if pending else "failed",
+                "activity": "stopping" if pending else "unknown",
+            }
+            return check_response(report)
         if (
             self.shutting_down
             or owned.state != "running"

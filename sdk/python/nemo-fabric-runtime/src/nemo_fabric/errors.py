@@ -7,7 +7,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .runtime import Runtime
 
 
 class FabricError(RuntimeError):
@@ -48,6 +51,15 @@ class FabricError(RuntimeError):
         self.code = code
         self.retryable = retryable
         self.details = deepcopy(dict(details or {}))
+        self._cleanup_runtime: Runtime | None = None
+
+    @property
+    def cleanup_runtime(self) -> Runtime | None:
+        """Original runtime for a failed one-shot cleanup retry, or ``None``.
+
+        This in-memory capability is excluded from error text and structured details.
+        """
+        return self._cleanup_runtime
 
 
 class FabricConfigError(FabricError):

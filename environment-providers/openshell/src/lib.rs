@@ -564,6 +564,7 @@ fn valid_diagnostic_code(code: &str) -> bool {
             | "session_resume_unsupported"
             | "runtime_busy"
             | "cleanup_unconfirmed"
+            | "runtime_busy"
             | "invalid_request"
             | "interface_unsupported"
             | "wrong_agent"
@@ -2560,6 +2561,28 @@ mod tests {
                 .any(|pair| pair == ["--runtime-id", "runtime-1"])
         );
         assert_eq!(arguments.last().unwrap(), "--ready");
+    }
+
+    #[test]
+    fn cleanup_health_evidence_survives_the_provider_decoder() {
+        for (code, state, activity) in [
+            ("runtime_busy", "unknown", "stopping"),
+            ("cleanup_unconfirmed", "failed", "unknown"),
+        ] {
+            let report = json!({
+                "schema_version": "fabric.check/v1alpha1", "scope": "runtime",
+                "runtime_id": "runtime-1", "requested_level": "live",
+                "outcome": "unknown", "reason_code": code,
+                "completed_at": "2026-11-12T12:00:00Z", "elapsed_ms": 1,
+                "server": null, "runtime": {"state": state, "activity": activity}, "checks": []
+            });
+            let response = json!({"operation": "check", "status": "failed", "changed": false,
+                "result": report, "error": {"code": code, "stage": "check", "effects": "none", "message": "PRIVATE"}});
+            let decoded =
+                decode_sdk_command_response("check", 1, response.to_string().as_bytes()).unwrap();
+            assert_eq!(decoded, json!({"status": "returned", "value": report}));
+            assert!(!decoded.to_string().contains("PRIVATE"));
+        }
     }
 
     #[test]

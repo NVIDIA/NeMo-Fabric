@@ -542,7 +542,10 @@ async def test_shutdown_waits_for_a_pending_stop(host, host_request, mock_runtim
     await entered.wait()
     shutdown = asyncio.create_task(host.shutdown())
     try:
-        await asyncio.sleep(0.05)
+        async with asyncio.timeout(1):
+            while not host.shutting_down:
+                await asyncio.sleep(0)
+        assert not shutdown.done()
         release.set()
         assert (await stopping)["status"] == "succeeded"
         await shutdown

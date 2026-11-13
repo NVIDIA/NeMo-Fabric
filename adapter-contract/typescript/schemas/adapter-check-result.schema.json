@@ -39,6 +39,16 @@
           "type": "string"
         },
         {
+          "const": "runtime_busy",
+          "description": "Runtime cleanup is in progress.",
+          "type": "string"
+        },
+        {
+          "const": "cleanup_unconfirmed",
+          "description": "Owned runtime cleanup could not be confirmed.",
+          "type": "string"
+        },
+        {
           "const": "runtime_unavailable",
           "description": "No matching runtime binding exists.",
           "type": "string"

@@ -94,6 +94,10 @@ pub enum CheckReason {
     ServerStopping,
     /// Advertised capability evidence is unavailable.
     CapabilitiesUnverified,
+    /// Runtime cleanup is in progress.
+    RuntimeBusy,
+    /// Owned runtime cleanup could not be confirmed.
+    CleanupUnconfirmed,
     /// No matching runtime binding exists.
     RuntimeUnavailable,
     /// No matching active service binding exists.

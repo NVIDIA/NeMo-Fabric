@@ -29,6 +29,8 @@ CheckOutcome = Literal["passed", "failed", "unknown", "unsupported"]
 CheckReason = Literal[
     "server_stopping",
     "capabilities_unverified",
+    "runtime_busy",
+    "cleanup_unconfirmed",
     "runtime_unavailable",
     "service_unavailable",
     "agent_exited",

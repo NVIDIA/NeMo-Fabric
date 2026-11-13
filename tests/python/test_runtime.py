@@ -160,6 +160,122 @@ def _runtime_wrapper(
     )
 
 
+@pytest.mark.parametrize("cancel_invocation", [False, True])
+async def test_stop_settles_an_invocation_when_the_default_executor_is_full(
+    mock_native, cancel_invocation
+):
+    runtime = _runtime_wrapper(mock_native)
+    loop = asyncio.get_running_loop()
+    await asyncio.to_thread(lambda: None)
+    previous = loop._default_executor
+    occupied, release, stopped = threading.Event(), threading.Event(), threading.Event()
+    original_invoke = mock_native.invoke_runtime.side_effect
+
+    def invoke(*args):
+        assert stopped.wait(5)
+        return original_invoke(*args)
+
+    def stop(*args):
+        stopped.set()
+        return json.dumps([])
+
+    mock_native.invoke_runtime.side_effect = invoke
+    mock_native.stop_runtime.side_effect = stop
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        loop.set_default_executor(executor)
+        worker = asyncio.create_task(
+            asyncio.to_thread(lambda: (occupied.set(), release.wait(5)))
+        )
+        invoking = None
+        stopping = None
+        try:
+            async with asyncio.timeout(1):
+                while not occupied.is_set():
+                    await asyncio.sleep(0)
+            invoking = asyncio.create_task(runtime.invoke(input="queued turn"))
+            async with asyncio.timeout(1):
+                while runtime._current_task is not invoking:
+                    await asyncio.sleep(0)
+            if cancel_invocation:
+                invoking.cancel()
+            stopping = asyncio.create_task(runtime.stop())
+            done, _ = await asyncio.wait({stopping}, timeout=0.5)
+            completed_before_release = stopping in done
+        finally:
+            release.set()
+            stopped.set()
+            await worker
+            if invoking is not None:
+                outcome = (await asyncio.gather(invoking, return_exceptions=True))[0]
+            if stopping is not None:
+                await stopping
+            loop.set_default_executor(previous)
+    assert isinstance(outcome, asyncio.CancelledError) == cancel_invocation
+    assert completed_before_release
+    assert runtime.status is RuntimeStatus.STOPPED
+
+
+@pytest.mark.parametrize("invoke_fails", [False, True])
+async def test_one_shot_retains_a_cleanup_runtime_without_exposing_its_handle(
+    native_client, mock_native, invoke_fails
+):
+    handle = _runtime()
+    handle["environment"]["env"] = {"RECOVERY_TEST_SECRET": "private-cleanup-value"}
+    mock_native.start_runtime.return_value = json.dumps(handle)
+    original = FabricRuntimeError(
+        "test invocation failure", stage="invoke", code="test_failure"
+    )
+    if invoke_fails:
+        mock_native.invoke_runtime.side_effect = original
+    mock_native.stop_runtime.side_effect = [
+        FabricRuntimeError(
+            "test cleanup failure", stage="stop", code="cleanup_unconfirmed"
+        ),
+        json.dumps([]),
+    ]
+    with pytest.raises(FabricRuntimeError) as caught:
+        await native_client.run(_config(), input="hello")
+    if invoke_fails:
+        assert caught.value is original
+    cleanup_runtime = caught.value.cleanup_runtime
+    assert isinstance(cleanup_runtime, Runtime)
+    assert cleanup_runtime.handle.runtime_id == "runtime-1"
+    assert "private-cleanup-value" not in repr(caught.value)
+    assert "fabric-runtime-binding-test" not in json.dumps(caught.value.details)
+    await cleanup_runtime.stop()
+    assert cleanup_runtime.status is RuntimeStatus.STOPPED
+    assert mock_native.stop_runtime.call_count == 2
+
+
+async def test_cancelled_one_shot_retains_a_cleanup_runtime(native_client, mock_native):
+    entered, release = threading.Event(), threading.Event()
+
+    def stop(*args):
+        if mock_native.stop_runtime.call_count == 1:
+            entered.set()
+            assert release.wait(5)
+            raise FabricRuntimeError(
+                "test cleanup failure", stage="stop", code="cleanup_unconfirmed"
+            )
+        return json.dumps([])
+
+    mock_native.stop_runtime.side_effect = stop
+    running = asyncio.create_task(native_client.run(_config(), input="hello"))
+    try:
+        async with asyncio.timeout(2):
+            while not entered.is_set():
+                await asyncio.sleep(0.01)
+        running.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError) as caught:
+            await running
+        await caught.value.cleanup_runtime.stop()
+        assert mock_native.stop_runtime.call_count == 2
+    finally:
+        release.set()
+        await asyncio.gather(running, return_exceptions=True)
+
+
 async def test_stop_does_not_wait_for_a_saturated_default_executor(mock_native):
     runtime = _runtime_wrapper(mock_native)
     loop = asyncio.get_running_loop()
