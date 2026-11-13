@@ -65,6 +65,8 @@ COMMAND_REAP_SECONDS = 2.0
 # OpenClaw's tools.effective notice for an MCP server whose last connection or
 # tool listing failed in the session.
 MCP_SERVER_DIAGNOSTIC_PREFIX = "mcp-server-diagnostic:"
+# Harness settings written into the Gateway's native openclaw.json.
+NATIVE_SETTING_SECTIONS = ("agents", "tools", "plugins")
 
 
 logger = logging.getLogger(__name__)
@@ -131,6 +133,7 @@ def _validate_attach_config(config: contract.AgentConfig) -> None:
         "port_range",
         "startup_timeout_seconds",
         "shutdown_timeout_seconds",
+        *NATIVE_SETTING_SECTIONS,
     ):
         if name in settings:
             unsupported.append(f"harness.settings.{name}")
@@ -533,6 +536,33 @@ def _unavailable_mcp_servers(
     return list(entries.values())
 
 
+def _merge_native_settings(
+    target: dict[str, Any], key: str, authored: Any, *, field: str
+) -> None:
+    """Write authored native leaves without replacing generated configuration.
+
+    The descriptor's closed schema keeps these sections apart from the keys the
+    adapter generates; a collision is refused rather than overwritten.
+    """
+    existing = target.get(key)
+    if not isinstance(authored, dict) or (
+        existing is not None and not isinstance(existing, dict)
+    ):
+        if key in target:
+            raise lifecycle.LifecycleError(
+                "openclaw_invalid_configuration",
+                "OpenClaw native setting conflicts with NeMo Fabric-generated configuration",
+                metadata={"field": field},
+            )
+        target[key] = authored
+        return
+    section = {} if existing is None else existing
+    for name, value in authored.items():
+        _merge_native_settings(section, name, value, field=f"{field}.{name}")
+    if section:
+        target[key] = section
+
+
 def _openclaw_config(
     config: contract.AgentConfig,
     context: contract.RuntimeContext,
@@ -648,6 +678,15 @@ def _openclaw_config(
     mcp = _mcp_config(config)
     if mcp:
         result["mcp"] = {"servers": mcp}
+    settings = config.harness.settings if config.harness else {}
+    for section in NATIVE_SETTING_SECTIONS:
+        if section in settings:
+            _merge_native_settings(
+                result,
+                section,
+                settings[section],
+                field=f"harness.settings.{section}",
+            )
     provider: dict[str, Any] = {}
     if model.base_url is not None:
         provider.update(

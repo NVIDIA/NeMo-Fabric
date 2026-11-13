@@ -16,7 +16,7 @@ You can use OpenClaw through the NVIDIA NeMo Fabric adapter in four ways:
 
 ## Shared Configuration
 
-All four paths execute through one OpenClaw Gateway and its native agent runtime. NeMo Fabric translates `FabricConfig` into one private `openclaw.json`, with a fresh state directory, configured model/endpoint/credential references, generation parameters, workspace, tool policy, MCP servers, and skill paths.
+All four paths execute through one OpenClaw Gateway and its native agent runtime. NeMo Fabric translates `FabricConfig` into one private `openclaw.json`, with a fresh state directory, configured model/endpoint/credential references, generation parameters, workspace, tool policy, MCP servers, skill paths, and any authored [native Gateway controls](#native-gateway-controls).
 
 When a native interface is enabled, a small adapter-owned plugin adds the configured instruction through OpenClaw's public `before_prompt_build` hook for the selected agent. It preserves OpenClaw's native system prompt, including tool guidance. SDK requests then omit their separate instruction injection, so each client receives the Fabric instruction once. SDK-only and service configurations retain their existing system-message handling.
 
@@ -132,6 +132,49 @@ For an exact dashboard base port, use the [native interface settings](#select-na
 For a [NeMo Fabric-owned service](./openclaw-sdk.mdx#use-a-shared-service), `harness.settings.channel_config` accepts OpenClaw-native `channels` and `bindings`, including multiple accounts for Telegram and other channels.
 
 Every binding must target the configured `agent_id`. OpenClaw validates the nested channel settings. Channel traffic flows directly between the channel and OpenClaw; it does not pass through a NeMo Fabric runtime.
+
+### Native Gateway Controls
+
+The following optional `harness.settings` fields use OpenClaw's native `openclaw.json` structure:
+
+```yaml
+harness:
+  adapter_id: nvidia.fabric.openclaw
+  settings:
+    agents:
+      defaults:
+        heartbeat:
+          every: 0m
+        compaction:
+          memoryFlush:
+            enabled: false
+    tools:
+      exec:
+        notifyOnExit: false
+      toolSearch: false
+      codeMode: false
+    plugins:
+      entries:
+        memory-core:
+          config:
+            dreaming:
+              enabled: false
+```
+
+| Setting | Values | Behavior |
+| --- | --- | --- |
+| `agents.defaults.heartbeat.every` | Duration with units, such as `30m`, `1h30m`, or `500ms` | Recurring heartbeat interval. `0m` disables the recurring cadence; it does not stop event-driven turns. |
+| `agents.defaults.compaction.memoryFlush.enabled` | boolean | `false` turns off the pre-compaction memory flush turn. Compaction itself still runs. |
+| `tools.exec.notifyOnExit` | boolean | `false` stops the system event and heartbeat when a backgrounded `exec` process exits. |
+| `tools.toolSearch` | boolean | `false` presents tool schemas directly instead of behind tool search. |
+| `tools.codeMode` | boolean | Code Mode. When enabled, it can take precedence over tool search and exposes only `exec` and `wait`, so do not combine it with blocking `exec` through `tools.blocked`. |
+| `plugins.entries.memory-core.config.dreaming.enabled` | boolean | `false` turns off scheduled dreaming in the `memory-core` plugin. |
+
+The adapter merges only the fields you set into the generated `openclaw.json` before the Gateway starts. It adds them beside the generated `agents.defaults`, the `tools.allow` and `tools.deny` lists, and any adapter-owned plugin entry without replacing generated keys. Omitting a field preserves the current behavior. The closed descriptor schema rejects unknown fields and invalid values. Heartbeat durations require units. OpenClaw treats an unparseable value such as `30 minutes` as no heartbeat, so the schema rejects it, and it also rejects bare numbers such as `30` to avoid ambiguity.
+
+- **Ownership:** Managed runtimes and NeMo Fabric-owned prepared services apply these controls, so they reach SDK invocations, every runtime connected to a prepared service, and the native API, dashboard, and terminal clients of a managed runtime. A caller-owned Gateway keeps its deployment-owned configuration: `attach_service()` rejects these fields with `openclaw_attach_configuration_unverifiable`.
+- **Tool selection:** `harness.settings.tools` is OpenClaw's native tools section. It is separate from NeMo Fabric's normalized top-level `tools.enabled` and `tools.blocked` selectors, which still generate `tools.allow` and `tools.deny`.
+- **Scope:** These controls reduce automatic background turns; they do not stop context compaction. They apply to every session on the Gateway and do not correlate concurrent sessions, so a consumer that tracks only the latest model request must use one session at a time. They do not add NeMo Relay support to the OpenClaw adapter.
 
 ## Select Native Interfaces
 

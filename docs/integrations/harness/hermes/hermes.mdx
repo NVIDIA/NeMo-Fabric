@@ -118,6 +118,36 @@ Model credentials are supplied through child process environments, not public at
 - Explicit enabled tools, including an empty list, override native tool selection. A nonempty blocked list overrides native exclusions.
 - Unspecified native tool policies can differ from SDK defaults. Set explicit policies when comparing behavior across paths.
 
+### Native Harness Controls
+
+The following optional `harness.settings` fields use Hermes's native `config.yaml` structure:
+
+```yaml
+harness:
+  adapter_id: nvidia.fabric.hermes
+  settings:
+    auxiliary:
+      title_generation:
+        enabled: false
+      background_review:
+        enabled: false
+    tools:
+      tool_search:
+        enabled: "off"
+```
+
+| Setting | Values | Behavior |
+| --- | --- | --- |
+| `auxiliary.title_generation.enabled` | boolean | `false` turns off automatic session-title generation. |
+| `auxiliary.background_review.enabled` | boolean | `false` turns off automatic background memory and skill reviews after turns. Explicit native `/refine` remains available. |
+| `tools.tool_search.enabled` | `auto`, `on`, `off`, `true`, or `false` | `off` presents the selected tool schemas directly instead of behind tool search. `true` and `false` are native aliases for `on` and `off`. `auto` follows the installed Hermes release. |
+
+The adapter writes only the fields you set into `config.yaml` before the SDK agent or any native interface starts, so the SDK, API, dashboard, and terminal paths all read the same values. Omitting a field preserves the current behavior. The closed descriptor schema rejects unknown fields and invalid values, such as `tool_search.enabled: maybe`.
+
+- **Title generation and Relay:** An explicit `title_generation.enabled` value always wins. When it is omitted, a Relay-enabled runtime disables title generation, as before, and other runtimes use Hermes's default.
+- **Tool selection:** `harness.settings.tools` is Hermes's native tools section. It is separate from NeMo Fabric's normalized top-level `tools.enabled` and `tools.blocked` selectors, which still choose the Hermes toolsets.
+- **Scope:** These controls reduce automatic background model calls; they do not stop context compaction calls. They configure every conversation in the runtime the same way and do not correlate concurrent sessions, so a consumer that tracks only the latest model request must use one session at a time.
+
 ### Shared Runtime Home
 
 The default Hermes home is `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. With `runtime.keep_state`, the Hermes home is `<artifact root>/.fabric/state/nvidia.fabric.hermes/<agent name>`, so runtimes of the agent share the session database, memory, skills, and logs. The SDK starts a new conversation for each runtime, and earlier sessions remain in the database. The adapter rewrites `config.yaml` at each start.

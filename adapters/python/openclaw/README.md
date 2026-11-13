@@ -127,6 +127,14 @@ The following settings are specific to the OpenClaw adapter:
 | `shutdown_timeout_seconds` | `15` | Graceful Gateway shutdown timeout. Fabric allows 30 seconds for the complete adapter stop; an override must leave time for cleanup within that limit. |
 | `connect_timeout_seconds` | `10` | Local HTTP connection timeout. |
 | `read_timeout_seconds` | None | Local HTTP response timeout. When unset, the invocation timeout bounds the response. |
+| `agents.defaults.heartbeat.every` | OpenClaw native default | Recurring heartbeat interval with units, such as `30m`; `0m` disables the recurring cadence but not event-driven turns. |
+| `agents.defaults.compaction.memoryFlush.enabled` | OpenClaw native default | Pre-compaction memory flush turn. Compaction itself still runs. |
+| `tools.exec.notifyOnExit` | OpenClaw native default | System event and heartbeat when a backgrounded `exec` process exits. |
+| `tools.toolSearch` | OpenClaw native default | Tool search for large tool catalogs. |
+| `tools.codeMode` | OpenClaw native default | Code Mode, which can take precedence over tool search and exposes only `exec` and `wait`; do not combine it with blocking `exec`. |
+| `plugins.entries.memory-core.config.dreaming.enabled` | OpenClaw native default | Scheduled dreaming in the `memory-core` plugin. |
+
+The `agents`, `tools`, and `plugins` settings use OpenClaw's native structure. The adapter merges only the fields you set into the generated `openclaw.json` for managed runtimes and prepared services, beside the generated `agents.defaults`, `tools.allow`, `tools.deny`, and adapter-owned plugin entries, without replacing generated keys. Omitting a field preserves the current behavior. `harness.settings.tools` is separate from the normalized top-level `tools.enabled` and `tools.blocked` selectors. Attached Gateways reject these settings. These controls do not stop context compaction or correlate concurrent sessions, and they do not add NeMo Relay support; refer to [Native Gateway Controls](../../../docs/integrations/harness/openclaw/openclaw.mdx#native-gateway-controls).
 
 OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses `base_port + 2` for browser control and allocates browser CDP ports from `base_port + 11` through `base_port + 110`. Set `port_range` when the consumer reserves a port range before configuring NeMo Fabric; the adapter selects a base whose complete derived footprint fits inside that range. The adapter verifies only that `base_port` and `base_port + 2` are available before startup. OpenClaw allocates the CDP ports on demand instead of reserving the complete range, so the adapter cannot guarantee that those ports will still be available when OpenClaw needs them. Keep the configured range reserved for the lifetime of the runtime when using OpenClaw browser features.
 
@@ -294,8 +302,9 @@ async with await fabric.attach_service(config, reference) as service:
 The attached configuration can contain request-level model sampling and a
 system instruction. Remove deployment-owned model endpoints, API-key
 references, tools, MCP servers, skills, the OpenClaw command, channel
-configuration, port range, and startup or shutdown timeouts because NeMo Fabric
-cannot verify or apply those fields to an existing Gateway. Connection and read
+configuration, port range, startup or shutdown timeouts, and the native
+`agents`, `tools`, and `plugins` harness settings because NeMo Fabric cannot
+verify or apply those fields to an existing Gateway. Connection and read
 timeouts and `agent_id` remain valid client-side settings. Releasing an
 attachment closes only NeMo Fabric-owned clients and private connection material; it
 does not stop the Gateway.

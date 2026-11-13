@@ -129,6 +129,9 @@ The descriptor validates the following `harness.settings` fields:
 | `terminal_timeout` | positive number | `60` | Limits a Hermes terminal tool operation in seconds; it does not enable a TUI. |
 | `interfaces.api`, `interfaces.dashboard`, `interfaces.terminal` | object | None | Serve Hermes's API or shared dashboard/terminal TUI backend, with an exact `port` and optional `enabled`. Dashboard and terminal ports must match when both are enabled; API requires a distinct port; see [Hermes invocation paths](../../../docs/integrations/harness/hermes/hermes.mdx). |
 | `startup_timeout_seconds` | number, greater than 0 and at most 75 | `60` | Time from the start of the runtime for every enabled interface to pass its health check. |
+| `auxiliary.title_generation.enabled` | boolean | Hermes native default; `false` with Relay | Native automatic session-title generation. An explicit value wins over the Relay default. |
+| `auxiliary.background_review.enabled` | boolean | Hermes native default | Native automatic background memory and skill review after turns. Explicit native `/refine` remains available. |
+| `tools.tool_search.enabled` | `auto`, `on`, `off`, or boolean | Hermes native default | Native tool search; `true` and `false` are aliases for `on` and `off`. `off` presents the selected tool schemas directly. |
 
 For example:
 
@@ -146,6 +149,12 @@ harness = HarnessConfig(
     },
 )
 ```
+
+### Native Harness Controls
+
+The `auxiliary` and `tools` settings use Hermes's native `config.yaml` structure. The adapter writes only the fields you set, before any SDK agent or native interface starts, so all four execution paths read them. Omitting a field keeps the current behavior. For title generation, an explicit value always wins; when it is omitted, a Relay-enabled runtime keeps writing `false` and other runtimes keep Hermes's default. `harness.settings.tools` is Hermes's native tools section and is separate from NeMo Fabric's normalized top-level `tools.enabled` and `tools.blocked`.
+
+These controls reduce automatic background model calls. They do not stop context compaction calls and do not correlate concurrent sessions; refer to the [Hermes guide](../../../docs/integrations/harness/hermes/hermes.mdx#native-harness-controls).
 
 ## Configuration Mapping and Ownership
 
