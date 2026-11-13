@@ -692,8 +692,11 @@ class HermesRuntime:
     async def _wait_for_mcp_servers(self, api: Any, names: set[str]) -> set[str]:
         """Return the servers still not connected after a bounded wait.
 
-        A reconnect after sign-in runs on Hermes's MCP loop, so the status can
-        lag the probe that stored the tokens.
+        A reconnect after sign-in runs on Hermes's MCP loop, and Hermes reports a
+        server as connected before it finishes listing the server's tools. Wait
+        until each server is connected and reports its tools, so the agent's tool
+        refresh sees them. A connected server that still reports no tools when
+        the wait ends is accepted, since a server may have none.
         """
 
         deadline = asyncio.get_running_loop().time() + MCP_RECONNECT_WAIT_SECONDS
@@ -702,11 +705,16 @@ class HermesRuntime:
                 status["name"]: status
                 for status in await asyncio.to_thread(api.get_mcp_status)
             }
-            pending = {
+            disconnected = {
                 name for name in names if not statuses.get(name, {}).get("connected")
             }
-            if not pending or asyncio.get_running_loop().time() >= deadline:
-                return pending
+            discovering = {
+                name for name in names - disconnected if not statuses[name].get("tools")
+            }
+            if not disconnected and not discovering:
+                return set()
+            if asyncio.get_running_loop().time() >= deadline:
+                return disconnected
             await asyncio.sleep(MCP_RECONNECT_POLL_SECONDS)
 
     def _finalize_relay_session(self) -> None:
