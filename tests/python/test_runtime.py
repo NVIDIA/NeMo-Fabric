@@ -2009,3 +2009,20 @@ async def test_failed_start_preserves_private_cleanup_runtime(
     finally:
         release.set()
         await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_failed_result_finalization_retains_runtime_evidence(mock_native):
+    mock_native.invoke_runtime.side_effect = FabricRuntimeError(
+        "synthetic invocation failure", stage="invoke", code="host_crashed"
+    )
+    mock_native._finish_failed_run_result.side_effect = RuntimeError(
+        "synthetic storage failure"
+    )
+    with pytest.raises(FabricRuntimeError) as caught:
+        await runtime_mod._run_native_lifecycle(
+            mock_native, _plan(), {"request_id": "failed-request", "input": "synthetic"}
+        )
+    assert caught.value.code == "result_storage_failed"
+    assert caught.value.stage == "result"
+    assert caught.value.details["runtime_evidence"]["runtime_id"] == "runtime-1"
+    assert caught.value.details["runtime_evidence"]["request_id"] == "failed-request"
