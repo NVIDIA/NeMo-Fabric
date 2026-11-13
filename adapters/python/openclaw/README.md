@@ -109,6 +109,12 @@ skills:
     include: [github, weather]       # optional
 ```
 
+The mount or file system enforces read-only access, not NeMo Fabric, which
+doesn't change permissions. On a read-only mount, OpenClaw's write fails with
+a permission error. Before you mount one read-write folder into several
+sandboxes, read
+[Sharing a Writable Skills Volume](../../../docs/integrations/harness/skills.mdx#sharing-a-writable-skills-volume).
+
 Without `duplicates`, the adapter passes each entry's folder to
 `skills.load.extraDirs` and OpenClaw keeps the copy from the later entry. With
 a policy, it passes only the folder of each selected skill. OpenClaw-specific

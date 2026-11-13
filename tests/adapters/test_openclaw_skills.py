@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
+from _utils.utils import POSIX_PERMISSIONS
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentRunRequest
 from nemo_fabric_adapter_contract.models import RuntimeContext
@@ -275,6 +276,80 @@ def test_empty_folder_and_empty_list(tmp_path: Path, workspace: Path):
     generated, plan = _generated(tmp_path, workspace, {"directories": []})
     assert "skills" not in generated
     assert plan.report() is None
+
+
+@POSIX_PERMISSIONS
+@pytest.mark.parametrize("kind", ["folder", "skill"], ids=["folder", "chosen-skills"])
+def test_read_only_entries_load_and_cannot_be_changed(
+    tmp_path: Path, workspace: Path, make_read_only, kind: str
+):
+    """Start checks need only read access, and never change a skill."""
+    team = tmp_path / "team"
+    debugging = _skill(team / "debugging", "debugging")
+    review = _skill(team / "review", "review")
+    make_read_only(team)
+    entries = (
+        [{"folder": str(team)}]
+        if kind == "folder"
+        else [{"skill": str(debugging)}, {"skill": str(review)}]
+    )
+
+    generated, plan = _generated(tmp_path, workspace, {"directories": entries})
+
+    assert generated["skills"]["load"]["extraDirs"] == [
+        entry[kind] for entry in entries
+    ]
+    assert [name for name, _ in _loaded(plan)] == ["debugging", "review"]
+    with pytest.raises(PermissionError):
+        (review / "SKILL.md").write_text("changed", encoding="utf-8")
+    with pytest.raises(PermissionError):
+        _skill(team / "new-skill", "new-skill")
+
+
+def test_skill_written_into_a_writable_folder_loads_at_the_next_start(
+    tmp_path: Path, workspace: Path
+):
+    """The plan is made at start: a skill written later loads after a restart."""
+    agent_skills = tmp_path / "agent-skills"
+    agent_skills.mkdir()
+    skills = {"directories": [{"folder": str(agent_skills)}]}
+
+    first = _plan(tmp_path, workspace, skills)
+    # The agent saves a new skill into its read-write folder.
+    _skill(agent_skills / "triage", "triage")
+
+    assert first.report() == {"empty_entries": ["skills.directories[0]"]}
+    assert _loaded(_plan(tmp_path, workspace, skills)) == [
+        ("triage", "skills.directories[0]")
+    ]
+
+
+@POSIX_PERMISSIONS
+def test_agent_adds_skills_beside_read_only_skills_it_cannot_change(
+    tmp_path: Path, workspace: Path, make_read_only
+):
+    team = tmp_path / "team"
+    protected = _skill(team / "review", "review") / "SKILL.md"
+    original = protected.read_text(encoding="utf-8")
+    make_read_only(team)
+    agent_skills = tmp_path / "agent-skills"
+    agent_skills.mkdir()
+    skills = {"directories": [{"folder": str(team)}, {"folder": str(agent_skills)}]}
+
+    first = _plan(tmp_path, workspace, skills)
+    with pytest.raises(PermissionError):
+        protected.write_text("changed", encoding="utf-8")
+    with pytest.raises(PermissionError):
+        _skill(team / "triage", "triage")
+    _skill(agent_skills / "triage", "triage")
+    restarted = _plan(tmp_path, workspace, skills)
+
+    assert _loaded(first) == [("review", "skills.directories[0]")]
+    assert protected.read_text(encoding="utf-8") == original
+    assert _loaded(restarted) == [
+        ("review", "skills.directories[0]"),
+        ("triage", "skills.directories[1]"),
+    ]
 
 
 def test_native_duplicates_pass_every_copy_and_report_the_later_entry(

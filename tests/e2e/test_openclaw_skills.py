@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _utils.utils import POSIX_PERMISSIONS
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.openclaw import adapter
@@ -565,3 +566,82 @@ def test_custodian_skills_hide_configured_ones_only_for_their_owner(
         assert sources == {"openclaw-extra"}
         assert set(_loaded(plan)) == {name}
         assert "duplicates" not in report
+
+
+@POSIX_PERMISSIONS
+@pytest.mark.parametrize("kind", ["folder", "skill"], ids=["folder", "chosen-skills"])
+def test_read_only_skills_load_and_cannot_be_changed(
+    native: _Native, baseline: set[str], make_read_only, kind: str
+):
+    """A read-only folder, or read-only chosen skills, load through OpenClaw as they are."""
+    team = native.tmp_path / "team"
+    debugging = _skill(team / "debugging", "debugging")
+    review = _skill(team / "review", "review")
+    make_read_only(team)
+    entries = (
+        [{"folder": str(team)}]
+        if kind == "folder"
+        else [{"skill": str(debugging)}, {"skill": str(review)}]
+    )
+
+    plan, status = native.list({"directories": entries})
+
+    assert _external(status, baseline) == _loaded(plan)
+    assert set(_loaded(plan)) == {"debugging", "review"}
+    with pytest.raises(PermissionError):
+        (review / "SKILL.md").write_text("changed", encoding="utf-8")
+    with pytest.raises(PermissionError):
+        _skill(team / "new-skill", "new-skill")
+
+
+def test_skill_written_into_a_writable_folder_survives_a_restart(
+    native: _Native, baseline: set[str]
+):
+    """Each list is a new start: a skill written after one start loads at the next."""
+    agent_skills = native.tmp_path / "agent-skills"
+    agent_skills.mkdir()
+    skills = {"directories": [{"folder": str(agent_skills)}]}
+
+    first, first_status = native.list(skills)
+    # The agent saves a new skill into its read-write folder.
+    _skill(agent_skills / "triage", "triage")
+    restarted, status = native.list(skills)
+
+    assert _external(first_status, baseline) == {}
+    assert first.report() == {"empty_entries": ["skills.directories[0]"]}
+    assert (
+        _external(status, baseline)
+        == _loaded(restarted)
+        == {"triage": "Copy at triage."}
+    )
+
+
+@POSIX_PERMISSIONS
+def test_agent_adds_skills_beside_read_only_skills_it_cannot_change(
+    native: _Native, baseline: set[str], make_read_only
+):
+    team = native.tmp_path / "team"
+    protected = _skill(team / "review", "review") / "SKILL.md"
+    original = protected.read_text(encoding="utf-8")
+    make_read_only(team)
+    agent_skills = native.tmp_path / "agent-skills"
+    agent_skills.mkdir()
+    skills = {"directories": [{"folder": str(team)}, {"folder": str(agent_skills)}]}
+
+    first, _ = native.list(skills)
+    with pytest.raises(PermissionError):
+        protected.write_text("changed", encoding="utf-8")
+    with pytest.raises(PermissionError):
+        _skill(team / "triage", "triage")
+    _skill(agent_skills / "triage", "triage")
+    restarted, status = native.list(skills)
+
+    assert set(_loaded(first)) == {"review"}
+    assert protected.read_text(encoding="utf-8") == original
+    assert _external(status, baseline) == _loaded(restarted)
+    report = restarted.report()
+    assert report is not None
+    assert [(item["name"], item["entry"]) for item in report["loaded"]] == [
+        ("review", "skills.directories[0]"),
+        ("triage", "skills.directories[1]"),
+    ]

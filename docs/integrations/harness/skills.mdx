@@ -65,7 +65,9 @@ Assume that each `SKILL.md` names its skill after its folder. A `folder` entry f
 
 ## Common Setups
 
-NeMo Fabric does not decide whether an agent can change a skill. File system and mount permissions decide that. Mount a folder read-only to keep skills fixed, or read-write to let the agent change them. The harness edits skills only where those permissions allow. NeMo Fabric does not grant write access.
+NeMo Fabric does not decide whether an agent can change a skill. The mount or the file system enforces read-only access, not NeMo Fabric. Mount a folder read-only to keep skills fixed, or read-write to let the agent change them. NeMo Fabric does not change file permissions and does not grant write access.
+
+When the agent tries to change a skill on a read-only mount, the harness's write fails with a permission error. The harness reports that failure, not NeMo Fabric. For example, Hermes Agent returns the error to the agent as the result of its tool call. The run report does not list these failures.
 
 The following examples show the `skills` section in YAML and in Python. Each Python example assumes a `config` that is a `FabricConfig`.
 
@@ -152,6 +154,17 @@ config.skills = SkillConfig(
     duplicates="last_wins",
 )
 ```
+
+### Sharing a Writable Skills Volume
+
+You can mount one read-write folder into several sandboxes at once. Each sandbox runs its own runtime. Plan for these limits:
+
+- **No locking:** NeMo Fabric does not lock skill files between sandboxes. Hermes Agent's `skill_manage` tool locks a skill while it edits it, but the lock file is in its own home, so it does not stop another sandbox.
+- **Lost changes:** Two agents that write the same skill at the same time can overwrite each other's changes or leave a mix of both.
+- **Checks run at start:** The adapter runs its start checks, applies `duplicates`, and builds the run report once, when the runtime starts. A skill that another sandbox writes later is not checked or reported until the next start.
+- **Early loading:** The harness can still load a new skill before the next start. Hermes Agent's skill tools search the passed folders again when they change. OpenClaw watches the passed folders and refreshes its skill list on the next agent turn. With a `duplicates` policy, the adapter passes each selected skill's folder instead of the entry's folder, so a new skill written beside them loads only after the next start.
+- **Names checked at start:** When two agents write skills with the same name at the same time, the adapter finds the clash only at the next start. Then the start checks and `duplicates` apply, as described in [Skills That Share a Name](#skills-that-share-a-name).
+- **Kept state is different:** With `runtime.keep_state`, each agent gets its own state folder, and NeMo Fabric locks it. A second runtime of the same agent fails to start while the first one holds the folder. A skills volume has no such lock.
 
 ## How the Adapter Loads `directories`
 

@@ -19,6 +19,7 @@ from types import ModuleType
 from unittest.mock import MagicMock
 
 import pytest
+from _utils.utils import POSIX_PERMISSIONS
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
 from nemo_fabric_adapter_contract.models import AgentRunRequest
@@ -2540,6 +2541,132 @@ async def test_runtime_ignores_skills_in_support_folders(tmp_path: Path):
                 "name": "b",
                 "path": str(second),
                 "entry": "skills.directories[0]",
+                "origin": "external",
+            },
+        ]
+    }
+
+
+async def _restarted_skills_report(payload: dict[str, object]) -> dict[str, object]:
+    """Start a new runtime with the same config, invoke it once, and return
+    the result's ``output.skills``. A new runtime ID gives it a new Hermes home."""
+    context = _runtime_context(
+        runtime_id="runtime-restarted",
+        workspace=str(payload["base_dir"]),
+        artifact_root=str(Path(str(payload["base_dir"])) / "artifacts"),
+    )
+    runtime = adapter.HermesRuntime()
+    await runtime.start({**payload, "runtime_context": context.to_mapping()})
+    try:
+        result = await runtime.invoke(AgentRunRequest(input="hello"), context)
+    finally:
+        await runtime.stop()
+    return result.output["skills"]
+
+
+@POSIX_PERMISSIONS
+@pytest.mark.parametrize("kind", ["folder", "skill"], ids=["folder", "chosen-skills"])
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_read_only_skills_load_and_cannot_be_changed(
+    tmp_path: Path, make_read_only, kind: str
+):
+    """A read-only folder, or read-only chosen skills, load through Hermes as they are."""
+    team = tmp_path / "team"
+    debugging = _write_skill(team / "debugging")
+    review = _write_skill(team / "review")
+    make_read_only(team)
+    entries = (
+        [{"folder": str(team)}]
+        if kind == "folder"
+        else [{"skill": str(debugging)}, {"skill": str(review)}]
+    )
+
+    report, _home, native = await _start_with_skills(tmp_path, {"directories": entries})
+
+    assert report is not None
+    assert [(skill["name"], skill["path"]) for skill in report["loaded"]] == [
+        ("debugging", str(debugging)),
+        ("review", str(review)),
+    ]
+    assert native["skill_dirs"] == [entry[kind] for entry in entries]
+    with pytest.raises(PermissionError):
+        (review / "SKILL.md").write_text("changed", encoding="utf-8")
+    with pytest.raises(PermissionError):
+        _write_skill(team / "new-skill")
+
+
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_skill_written_into_a_writable_folder_survives_a_restart(
+    tmp_path: Path,
+):
+    agent_skills = tmp_path / "agent-skills"
+    agent_skills.mkdir()
+    payload = _skill_payload(tmp_path, {"directories": [{"folder": str(agent_skills)}]})
+    runtime = adapter.HermesRuntime()
+
+    await runtime.start(payload)
+    try:
+        first = runtime._skills_report
+        # The agent saves a new skill into its read-write folder.
+        written = _write_skill(agent_skills / "triage")
+    finally:
+        await runtime.stop()
+    restarted = await _restarted_skills_report(payload)
+
+    assert first == {"empty_entries": ["skills.directories[0]"]}
+    assert restarted == {
+        "loaded": [
+            {
+                "name": "triage",
+                "path": str(written),
+                "entry": "skills.directories[0]",
+                "origin": "external",
+            }
+        ]
+    }
+
+
+@POSIX_PERMISSIONS
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_agent_adds_skills_beside_read_only_skills_it_cannot_change(
+    tmp_path: Path, make_read_only
+):
+    team = tmp_path / "team"
+    protected = _write_skill(team / "review")
+    original = (protected / "SKILL.md").read_text(encoding="utf-8")
+    make_read_only(team)
+    agent_skills = tmp_path / "agent-skills"
+    agent_skills.mkdir()
+    payload = _skill_payload(
+        tmp_path,
+        {"directories": [{"folder": str(team)}, {"folder": str(agent_skills)}]},
+    )
+    runtime = adapter.HermesRuntime()
+
+    await runtime.start(payload)
+    try:
+        with pytest.raises(PermissionError):
+            (protected / "SKILL.md").write_text("changed", encoding="utf-8")
+        with pytest.raises(PermissionError):
+            _write_skill(team / "triage")
+        written = _write_skill(agent_skills / "triage")
+    finally:
+        await runtime.stop()
+    restarted = await _restarted_skills_report(payload)
+
+    assert (protected / "SKILL.md").read_text(encoding="utf-8") == original
+    assert restarted == {
+        "loaded": [
+            {
+                "name": "review",
+                "path": str(protected),
+                "entry": "skills.directories[0]",
+                "origin": "external",
+            },
+            {
+                "name": "triage",
+                "path": str(written),
+                "entry": "skills.directories[1]",
                 "origin": "external",
             },
         ]

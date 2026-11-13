@@ -16,7 +16,11 @@ from packaging.version import Version
 import pytest
 import requests
 import yaml
-from _utils.utils import assert_atof_model, assert_atof_skill_selection
+from _utils.utils import (
+    POSIX_PERMISSIONS,
+    assert_atof_model,
+    assert_atof_skill_selection,
+)
 
 from examples.code_review_agent import (
     hermes_config,
@@ -352,6 +356,66 @@ async def test_skill_directories_load_through_hermes(
     assert result["output"]["hermes_native_config"]["skill_dirs"] == [
         str((team / "default").resolve()),
         str(alternate_skill.resolve()),
+    ]
+
+
+@POSIX_PERMISSIONS
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+async def test_skill_written_beside_read_only_skills_loads_after_a_restart(
+    code_review_agent_dir: Path,
+    api_server: str,
+    tmp_path: Path,
+    default_skill: Path,
+    alternate_skill: Path,
+    make_read_only,
+):
+    """A read-only folder and a read-write folder: the agent adds a skill to the
+    read-write one, cannot change the read-only one, and the new skill loads
+    through Hermes after a restart."""
+    team = tmp_path / "team"
+    shutil.copytree(default_skill, team / "default")
+    protected = team / "default" / "SKILL.md"
+    original = protected.read_text(encoding="utf-8")
+    make_read_only(team)
+    agent_skills = tmp_path / "agent-skills"
+    agent_skills.mkdir()
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = with_relay(hermes_config())
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.tools.enabled = None
+    config.skills = SkillConfig(
+        directories=[SkillDirectory(folder=team), SkillDirectory(folder=agent_skills)]
+    )
+
+    async def run_with_skill(skill: str) -> dict:
+        requests.post(
+            f"{api_server}/_scenario",
+            json={"tool_call": {"name": "skill_view", "arguments": {"name": skill}}},
+            timeout=5,
+        ).raise_for_status()
+        result = await Fabric().run(
+            config, base_dir=code_review_agent_dir, input=f"Use the {skill} skill."
+        )
+        assert result["status"] == "succeeded", result.to_mapping()
+        assert_atof_skill_selection(result["output"], skill)
+        return result["output"]["skills"]
+
+    first = await run_with_skill("default")
+    with pytest.raises(PermissionError):
+        protected.write_text("changed", encoding="utf-8")
+    # The agent saves a new skill into its read-write folder.
+    shutil.copytree(alternate_skill, agent_skills / "alternate")
+    restarted = await run_with_skill("alternate")
+
+    assert protected.read_text(encoding="utf-8") == original
+    assert [(item["name"], item["entry"]) for item in first["loaded"]] == [
+        ("default", "skills.directories[0]")
+    ]
+    assert first["empty_entries"] == ["skills.directories[1]"]
+    assert [(item["name"], item["entry"]) for item in restarted["loaded"]] == [
+        ("default", "skills.directories[0]"),
+        ("alternate", "skills.directories[1]"),
     ]
 
 

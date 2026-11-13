@@ -164,7 +164,10 @@ These controls reduce automatic background model calls. They do not stop context
 the `skills` fields. `skills.paths` is passed to Hermes Agent's
 `skills.external_dirs` as written, without checks. `skills.directories` is
 checked at startup and reported, and can't be combined with `skills.paths`.
-Mount permissions decide whether the agent can change a skill:
+Mount permissions decide whether the agent can change a skill. The mount or
+file system enforces read-only access, not NeMo Fabric, which doesn't change
+permissions. On a read-only mount, Hermes's write fails and Hermes returns the
+error to the agent as the tool's result:
 
 ```yaml
 skills:
@@ -176,6 +179,9 @@ skills:
   bundled:
     exclude: [xurl]                         # optional bundled-skill selection
 ```
+
+Before you mount one read-write folder into several sandboxes, read
+[Sharing a Writable Skills Volume](../../../docs/integrations/harness/skills.mdx#sharing-a-writable-skills-volume).
 
 Hermes-specific behavior:
 
