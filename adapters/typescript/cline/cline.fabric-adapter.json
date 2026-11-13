@@ -29,7 +29,7 @@
   "model_schema": {
     "type": "object",
     "properties": {
-      "provider": {"type": "string", "minLength": 1},
+      "provider": {"type": "string", "minLength": 1, "not": {"const": "openai"}, "description": "Cline SDK 0.0.83 uses openai-native for OpenAI. Use nvidia for the documented NVIDIA OpenAI-compatible endpoint."},
       "model": {"type": "string", "minLength": 1},
       "api_key_env": {"type": "string", "minLength": 1},
       "base_url": {"type": ["string", "null"], "format": "uri"}

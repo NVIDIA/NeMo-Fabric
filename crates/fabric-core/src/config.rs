@@ -342,6 +342,9 @@ pub struct AdapterDescriptor {
     /// JSON Schema for adapter-owned `harness.settings`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings_schema: Option<serde_json::Map<String, Value>>,
+    /// JSON Schema for static cross-field constraints on the serialized `FabricConfig`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_schema: Option<serde_json::Map<String, Value>>,
     /// JSON Schema applied to every normalized `FabricConfig.models` entry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_schema: Option<serde_json::Map<String, Value>>,
@@ -2848,6 +2851,35 @@ pub(crate) fn adapter_config_compatibility_issues(
     };
     let mut issues = Vec::new();
 
+    if let Some(schema) = &descriptor.config_schema {
+        match jsonschema::validator_for(&Value::Object(schema.clone())) {
+            Ok(validator) => {
+                let value = serde_json::to_value(config)
+                    .expect("typed configuration is always JSON serializable");
+                for error in validator.iter_errors(&value) {
+                    let path = schema_error_path(&error, "config");
+                    issues.push(incompatible(
+                        path.strip_prefix("config.").unwrap_or(&path).to_string(),
+                        // A cross-field error can contain the entire config instance.
+                        // Report only its schema location, never configured values.
+                        format!(
+                            "{} (schema path: {})",
+                            schema
+                                .get("description")
+                                .and_then(Value::as_str)
+                                .unwrap_or("does not satisfy the adapter config schema"),
+                            error.schema_path()
+                        ),
+                    ));
+                }
+            }
+            Err(_) => issues.push(incompatible(
+                "config_schema".to_string(),
+                "the adapter config schema is invalid".to_string(),
+            )),
+        }
+    }
+
     if let Some(system) = config
         .instructions
         .as_ref()
@@ -3127,6 +3159,7 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
         }
     }
     for (field, schema) in [
+        ("config_schema", descriptor.config_schema.as_ref()),
         ("settings_schema", descriptor.settings_schema.as_ref()),
         ("model_schema", descriptor.model_schema.as_ref()),
         (
@@ -6181,6 +6214,80 @@ mod tests {
         assert!(issues.iter().any(|issue| {
             issue.adapter_id == "nvidia.fabric.claude" && issue.field == "models.review.base_url"
         }));
+    }
+
+    #[test]
+    fn cline_rejects_openai_provider_alias_before_planning() {
+        let mut config = config_with_model("nvidia.fabric.cline", "openai");
+        config.models.get_mut("default").unwrap().api_key_env = Some("TEST_API_KEY".into());
+        let error =
+            resolve_run_plan_from_config(config, ResolveContext::new("/tmp/fabric-cline-provider"))
+                .expect_err("Cline uses openai-native, not the openai provider alias");
+        assert!(
+            matches!(error, FabricError::AdapterCompatibility { field, .. } if field == "models.default.provider")
+        );
+    }
+
+    #[test]
+    fn nooa_requires_a_workflow_before_planning() {
+        let error = resolve_run_plan_from_config(
+            typed_config("nvidia.fabric.nooa"),
+            ResolveContext::new("/tmp/fabric-workflow-required"),
+        )
+        .expect_err("NOOA needs a registered workflow before installation");
+        assert!(matches!(
+            error,
+            FabricError::AdapterCompatibility { field, .. } if field == "workflow"
+        ));
+    }
+
+    #[test]
+    fn deepagents_local_shell_requires_explicit_tool_policy_before_planning() {
+        for tools in [
+            serde_json::Value::Null,
+            serde_json::json!({}),
+            serde_json::json!({"blocked": ["read_file"]}),
+        ] {
+            let mut config = typed_config("nvidia.fabric.langchain.deepagents");
+            config.harness.as_mut().unwrap().settings = serde_json::from_value(
+                serde_json::json!({"deepagents": {"backend": {"type": "local_shell"}}}),
+            )
+            .unwrap();
+            config.tools = serde_json::from_value(tools).unwrap();
+            let error = resolve_run_plan_from_config(
+                config,
+                ResolveContext::new("/tmp/fabric-local-shell-policy"),
+            )
+            .expect_err("local shell policy must be explicit before installation");
+            assert!(matches!(error, FabricError::AdapterCompatibility { .. }));
+        }
+    }
+
+    #[test]
+    fn deepagents_local_shell_preserves_intentional_tool_policy() {
+        for tools in [
+            serde_json::json!({"enabled": []}),
+            serde_json::json!({"enabled": ["execute", "read_file"]}),
+            serde_json::json!({"blocked": ["execute"]}),
+        ] {
+            let mut config = typed_config("nvidia.fabric.langchain.deepagents");
+            config.harness.as_mut().unwrap().settings = serde_json::from_value(
+                serde_json::json!({"deepagents": {"backend": {"type": "local_shell"}}}),
+            )
+            .unwrap();
+            config.tools = Some(serde_json::from_value(tools).unwrap());
+            let expected = config.tools.clone();
+            let plan = resolve_run_plan_from_config(
+                config,
+                ResolveContext::new("/tmp/fabric-local-shell-policy"),
+            )
+            .expect("an intentional tool policy is accepted");
+            assert_eq!(plan.config.tools, expected);
+            let projected = plan.agent_config.tools.expect("projected policy");
+            let expected = expected.expect("configured policy");
+            assert_eq!(projected.enabled, expected.enabled);
+            assert_eq!(projected.blocked, expected.blocked);
+        }
     }
 
     #[test]

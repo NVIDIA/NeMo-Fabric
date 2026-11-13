@@ -72,6 +72,8 @@ For a source build, use
 `adapters/typescript/cline/cline.fabric-adapter.json`. Relative skill paths
 resolve from the `base_dir` passed to `plan()`, `doctor()`, or `run()`.
 
+The pinned Cline SDK uses provider `openai-native` for OpenAI, not `openai`. Planning rejects the `openai` alias. Use `nvidia` for the NVIDIA OpenAI-compatible endpoint shown above. Provider availability in the installed SDK, authentication, and endpoint health are still checked at startup.
+
 The initial adapter supports a configured model, an API-key environment
 reference, an optional model base URL, replacement system instructions, Cline
 built-in tool enable/block policy, runtime-scoped native skills, and

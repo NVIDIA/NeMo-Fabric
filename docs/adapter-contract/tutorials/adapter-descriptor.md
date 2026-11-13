@@ -125,10 +125,15 @@ validated by the normalized contract alone:
 
 | Descriptor Field | Validates |
 | --- | --- |
+| `config_schema` | Static cross-field constraints on the serialized `FabricConfig`, including workflow selection and conditional tool policy. |
 | `settings_schema` | `FabricConfig.harness.settings` for this adapter. |
 | `model_schema` | Every configured model role, including provider compatibility and closed model settings. |
 | `tool_definition_schema` | Every normalized named tool or tool-group definition. |
 | `extension_schemas` | Adapter-owned data at named southbound extension points. |
+
+Use `config_schema` for requirements that span configuration blocks. For example, a shared adapter can declare `{"type": "object", "required": ["workflow"]}`. Planning and host metadata inspection apply this schema before installation or startup. It supplements the normalized contract and the other descriptor schemas; it does not grant support for fields missing from `config.accepts`. Leave unrelated top-level fields open so the schema does not duplicate the evolving northbound contract. Model extensions use their serialized, flattened northbound names in this schema.
+
+Keep installed-package availability, native catalog lookup, credentials, network access, and dynamic target state in startup validation. Successful planning establishes declared configuration compatibility, not runtime health. Keep references local to each schema object.
 
 The following closed settings schema permits one optional command timeout:
 

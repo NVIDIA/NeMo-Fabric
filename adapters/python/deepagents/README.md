@@ -189,7 +189,7 @@ The `deepagents` object is closed and supports the following properties:
 > multi-tenant workloads.
 
 The adapter requires `environment.workspace` and an explicit Fabric tool policy
-when `local_shell` is selected. The policy is applied to the main agent and all
+when `local_shell` is selected. Planning and host metadata inspection reject a missing policy before installation. An explicit empty `tools.enabled` allowlist is valid and disables all tools. The policy is applied to the main agent and all
 declarative subagents, including a subagent that replaces the parent's
 `interrupt_on` map. Include `execute` in `tools.enabled` to permit commands;
 omit it from that allowlist or add it to `tools.blocked` to prevent commands.

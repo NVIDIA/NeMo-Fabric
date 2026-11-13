@@ -125,7 +125,7 @@ descriptor metadata, not executable adapters. The host does not need to install
 each harness SDK to derive the agent's instance capabilities.
 
 `FabricAgent` uses the shared `inspect_adapter()` API and the existing native
-planner to validate the requested configuration. Skills and MCP support come
+planner to validate the requested configuration, including descriptor `config_schema` constraints such as NOOA's required workflow and Deep Agents' explicit local-shell tool policy. These checks run before scheduling or installation. Installed dependencies, Pi native catalog membership, credentials, and endpoint health remain runtime checks. Skills and MCP support come
 from the descriptor's accepted configuration sections. ATIF requires a selected
 provider that declares ATIF output; Relay also requires an explicitly enabled,
 unambiguous observability component. These are admission claims, not proof that
