@@ -102,6 +102,8 @@ if pid_path := os.environ.get("FAKE_OPENCLAW_PID"):
 
 
 def stop_gateway(*_unused):
+    if delay := os.environ.get("FAKE_OPENCLAW_SHUTDOWN_DELAY"):
+        time.sleep(float(delay))
     if stopped_path := os.environ.get("FAKE_OPENCLAW_STOPPED"):
         with open(stopped_path, "w", encoding="utf-8") as stream:
             stream.write("stopped")

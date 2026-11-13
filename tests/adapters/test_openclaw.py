@@ -24,6 +24,7 @@ import pytest
 import httpx
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
+from nemo_fabric import RuntimeStatus
 from nemo_fabric.errors import FabricConfigError
 from nemo_fabric.errors import FabricRuntimeError
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -3229,10 +3230,6 @@ async def test_openclaw_attach_rejects_native_controls(tmp_path: Path, section: 
     assert not (tmp_path / "service-connection.json").exists()
 
 
-
-
-
-
 @pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
 @pytest.mark.parametrize("agent_id", ["default", "Reviewer", "agent_1-A"])
 async def test_openclaw_retains_native_state_and_explicitly_resumes_the_selected_session(
@@ -3791,3 +3788,94 @@ async def test_retained_mcp_status_targets_the_selected_conversation(
     arguments = status.await_args.args
     params = json.loads(arguments[arguments.index("--params") + 1])
     assert params["sessionKey"] == runtime._native_session.key
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock CLI directly")
+async def test_openclaw_public_stop_waits_for_gateway_ownership_release(
+    mock_openclaw: Path, tmp_path: Path
+):
+    stopped_path = tmp_path / "stopped.txt"
+    pid_path = tmp_path / "gateway.pid"
+    environment = {
+        "FAKE_OPENCLAW_CAPTURE": str(tmp_path / "config.json"),
+        "FAKE_OPENCLAW_REQUEST": str(tmp_path / "request.json"),
+        "FAKE_OPENCLAW_PID": str(pid_path),
+        "FAKE_OPENCLAW_STOPPED": str(stopped_path),
+        # Cross both former deadlines (5 s adapter, 10 s native host). The
+        # child writes its release marker only after handling SIGTERM.
+        "FAKE_OPENCLAW_SHUTDOWN_DELAY": "12",
+    }
+    os.environ.update(environment)
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "openclaw-stop-test"},
+            "harness": {
+                "adapter_id": "nvidia.fabric.openclaw",
+                "resolution": "preinstalled",
+                "settings": {"openclaw_command": str(mock_openclaw)},
+            },
+            "models": {
+                "default": {
+                    "provider": "test",
+                    "model": "fabric-echo",
+                    "base_url": "https://models.example.test/v1",
+                }
+            },
+            "environment": {"env_names": list(environment)},
+        }
+    )
+    runtime = await Fabric().start_runtime(config, base_dir=tmp_path)
+    try:
+        result = await runtime.invoke(input="Complete a turn before shutdown.")
+        assert result.status == "succeeded"
+        gateway_pid = int(pid_path.read_text(encoding="utf-8"))
+    finally:
+        await runtime.stop()
+
+    assert runtime.status is RuntimeStatus.STOPPED
+    assert stopped_path.read_text(encoding="utf-8") == "stopped"
+    with pytest.raises(ProcessLookupError):
+        os.kill(gateway_pid, 0)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+async def test_openclaw_stop_allows_gateway_to_release_ownership(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.pid = 1234
+    mock_process.returncode = None
+    ownership_released = False
+    wait_for = asyncio.wait_for
+
+    # Compress the observed seven-second native cleanup and the production
+    # grace period equally; this regression must not take seconds to run.
+    async def scaled_wait_for(awaitable, timeout):
+        return await wait_for(awaitable, timeout=timeout / 100)
+
+    async def finish_shutdown():
+        nonlocal ownership_released
+        if mock_process.returncode is not None:
+            return mock_process.returncode
+        await asyncio.sleep(0.07)
+        ownership_released = True
+        mock_process.returncode = 0
+        return 0
+
+    mock_process.wait = AsyncMock(side_effect=finish_shutdown)
+    runtime._process = mock_process
+    signals = []
+
+    def signal_group(pid, signum, *, fallback_to_pid=True):
+        signals.append((pid, signum, fallback_to_pid))
+
+    monkeypatch.setattr(adapter.asyncio, "wait_for", scaled_wait_for)
+    monkeypatch.setattr(adapter.common_utils, "signal_process_group", signal_group)
+
+    await runtime.stop()
+
+    assert ownership_released, "Gateway must release ownership before escalation"
+    assert mock_process.returncode == 0
+    assert (1234, signal.SIGKILL, True) not in signals

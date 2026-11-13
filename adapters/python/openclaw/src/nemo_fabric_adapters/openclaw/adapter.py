@@ -43,8 +43,9 @@ from nemo_fabric_adapters.openclaw import sessions
 
 
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 60.0
-# Fabric gives the adapter host 10 s to stop, including this wait.
-DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 5.0
+# OpenShell can delay native broker cleanup for seven seconds before lease release.
+# Leave time for adapter cleanup within NeMo Fabric's 30-second stop deadline.
+DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 15.0
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
 DEFAULT_READ_TIMEOUT_SECONDS = 600.0
 HEALTH_CHECK_INTERVAL_SECONDS = 2.0
