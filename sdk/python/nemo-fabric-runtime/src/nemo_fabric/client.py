@@ -105,7 +105,7 @@ class Fabric:
         self._pending_runtime_starts: set[object] = set()
         self._runtimes: dict[str, Runtime] = {}
         self._stopped_status: OrderedDict[
-            str, tuple[tuple[str, str], RuntimeStatusReport]
+            str, tuple[tuple[str, str], RuntimeStatusReport, str | None]
         ] = OrderedDict()
 
     async def invocation_result(
@@ -148,28 +148,28 @@ class Fabric:
                     "Result lookup supports local and OpenShell environments."
                 )
             runtime = self._runtimes.get(runtime_id)
-            if environment is not None and (
-                runtime is None
-                or (
+            record = self._stopped_status.get(runtime_id)
+            if runtime is not None:
+                environment_identity = (
                     runtime.handle.environment["provider"],
                     runtime.handle.environment["environment_id"],
                 )
-                != (environment.provider, environment.environment_id)
+                configured_artifacts = self._runtime_artifacts(runtime)
+            elif record is not None:
+                environment_identity, _, configured_artifacts = record
+            else:
+                environment_identity, configured_artifacts = None, None
+            if environment is not None and environment_identity != (
+                environment.provider,
+                environment.environment_id,
             ):
                 raise FabricStateError(
                     "The selected environment does not own this runtime.",
                     stage="result",
                     code="runtime_unavailable",
                 )
-            if artifacts is None and runtime is not None:
-                mapping = runtime._plan.to_mapping()
-                configured = mapping["config"].get("runtime", {}).get(
-                    "artifacts"
-                ) or runtime.handle.environment.get("artifacts")
-                if configured is not None:
-                    from pathlib import Path
-
-                    artifacts = str(Path(mapping["base_dir"]) / configured)
+            if artifacts is None:
+                artifacts = configured_artifacts
             artifact_path = os.fspath(artifacts) if artifacts is not None else None
             operation = lambda: native.invocation_result(
                 artifact_path, agent_name, runtime_id, request_id
@@ -333,7 +333,7 @@ class Fabric:
                     stage="status",
                     code="runtime_unavailable",
                 )
-            environment_identity, report = record
+            environment_identity, report, _ = record
         if report.agent_name != agent_name:
             raise FabricStateError(
                 "The request does not identify this agent.",
@@ -351,6 +351,18 @@ class Fabric:
                 code="runtime_unavailable",
             )
         return report
+
+    @staticmethod
+    def _runtime_artifacts(runtime: Runtime) -> str | None:
+        mapping = runtime._plan.to_mapping()
+        configured = mapping["config"].get("runtime", {}).get(
+            "artifacts"
+        ) or runtime.handle.environment.get("artifacts")
+        if configured is None:
+            return None
+        from pathlib import Path
+
+        return str(Path(mapping["base_dir"]) / configured)
 
     def _record_stopped_runtime(self, runtime: Runtime) -> None:
         with self._runtime_records_lock:
@@ -371,6 +383,7 @@ class Fabric:
                         "server_state": None,
                     }
                 ),
+                self._runtime_artifacts(runtime),
             )
             self._stopped_status.move_to_end(runtime.runtime_id)
             self._runtimes.pop(runtime.runtime_id, None)

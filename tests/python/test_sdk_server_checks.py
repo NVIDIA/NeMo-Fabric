@@ -505,8 +505,10 @@ async def test_remote_result_lookup_during_and_after_invocation(
         )
     finally:
         (tmp_path / "release").touch()
-        await turn
-        await host.shutdown()
+        try:
+            await turn
+        finally:
+            await host.shutdown()
 
 
 async def test_remote_result_errors_do_not_expose_provider_details(

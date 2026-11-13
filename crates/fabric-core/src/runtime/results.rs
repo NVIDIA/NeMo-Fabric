@@ -166,6 +166,17 @@ fn runtime_directory(root: &Path, runtime_id: &str, create: bool) -> Result<Path
     directory(&fabric, runtime_id, create, runtime_id)
 }
 
+pub(super) fn host_directory(root: &Path, runtime_id: &str) -> Result<PathBuf> {
+    if !leaf(runtime_id) {
+        return Err(failure(runtime_id, "invalid_result_target"));
+    }
+    create_artifact_root(root).map_err(|_| failure(runtime_id, "result_storage_failed"))?;
+    let root = fs::canonicalize(root).map_err(|_| failure(runtime_id, "result_storage_failed"))?;
+    trusted_ancestry(&root, runtime_id)?;
+    let hosts = directory(&root, "hosts", true, runtime_id)?;
+    directory(&hosts, runtime_id, true, runtime_id)
+}
+
 pub(super) fn invocation_directory(
     root: &Path,
     runtime_id: &str,
