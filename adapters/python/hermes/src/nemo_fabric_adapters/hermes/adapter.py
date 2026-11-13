@@ -728,8 +728,9 @@ class HermesRuntime:
         A reconnect after sign-in runs on Hermes's MCP loop, and Hermes reports a
         server as connected before it finishes listing the server's tools. A
         server is ready once Hermes has finished tool discovery, which may find
-        no tools. Hermes versions without that signal fall back to a connected
-        server that reports at least one tool.
+        no tools. Hermes versions without that signal cannot tell a server with
+        no tools from one still listing them, so a connected server is accepted
+        once it reports a tool or the wait ends.
         """
 
         deadline = asyncio.get_running_loop().time() + MCP_RECONNECT_WAIT_SECONDS
@@ -739,6 +740,7 @@ class HermesRuntime:
                 for status in await asyncio.to_thread(api.get_mcp_status)
             }
             pending = set()
+            without_tools = set()
             for name in names:
                 status = statuses.get(name, {})
                 if not status.get("connected"):
@@ -747,8 +749,10 @@ class HermesRuntime:
                     if not await asyncio.to_thread(api.server_ready, name):
                         pending.add(name)
                 elif not status.get("tools"):
-                    pending.add(name)
-            if not pending or asyncio.get_running_loop().time() >= deadline:
+                    without_tools.add(name)
+            if not pending and not without_tools:
+                return set()
+            if asyncio.get_running_loop().time() >= deadline:
                 return pending
             await asyncio.sleep(MCP_RECONNECT_POLL_SECONDS)
 

@@ -1239,6 +1239,27 @@ async def test_runtime_without_ready_signal_waits_for_tools(monkeypatch):
     calls["server_ready"].assert_not_called()
 
 
+async def test_runtime_without_ready_signal_accepts_server_without_tools(monkeypatch):
+    """Older Hermes: a connected server that never reports tools is accepted at the end."""
+    monkeypatch.setattr(adapter, "MCP_RECONNECT_WAIT_SECONDS", 0)
+    empty = [{"name": "jira", "connected": True, "status": "connected", "tools": 0}]
+    calls = _install_hermes_oauth_modules(
+        monkeypatch,
+        layout="legacy",
+        statuses=[[{"name": "jira", "connected": False, "status": "failed"}], empty],
+    )
+    runtime = adapter.HermesRuntime()
+    runtime._agent = MagicMock()
+    runtime._hermes_config = {"mcp_servers": {"jira": {"auth": "oauth"}}}
+
+    await runtime._authenticate_mcp_servers()
+
+    calls["refresh_agent_mcp_tools"].assert_called_once_with(
+        runtime._agent, quiet_mode=True
+    )
+    assert runtime._mcp_authentication_checked is True
+
+
 async def test_runtime_reports_failed_oauth_mcp_authentication(monkeypatch):
     """A server still disconnected after sign-in fails the invocation."""
     monkeypatch.setattr(adapter, "MCP_RECONNECT_WAIT_SECONDS", 0)
