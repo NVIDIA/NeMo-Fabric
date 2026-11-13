@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 from threading import Lock
 from collections import OrderedDict
@@ -188,11 +189,17 @@ class Fabric:
             ):
                 raise ValueError()
             return result
-        except Exception:
+        except Exception as error:
+            code = getattr(error, "code", None)
+            if (
+                not isinstance(code, str)
+                or re.fullmatch(r"[a-z][a-z0-9_]{0,63}", code) is None
+            ):
+                code = "result_unavailable"
             raise FabricRuntimeError(
                 "The invocation result could not be retrieved; do not replay uncertain work.",
                 stage="result",
-                code="result_unavailable",
+                code=code,
             ) from None
 
     async def runtime_status(

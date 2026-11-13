@@ -1031,6 +1031,10 @@ async def _run_native_lifecycle(
         invoke_error: FabricError | None = None
         try:
             try:
+                if runtime.get("environment", {}).get("provider") == "local":
+                    native._begin_run_result(
+                        plan_json, runtime_json, json.dumps(dict(request))
+                    )
                 result = json.loads(
                     native.invoke_runtime(
                         plan_json, runtime_json, json.dumps(dict(request))

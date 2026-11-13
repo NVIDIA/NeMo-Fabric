@@ -132,3 +132,5 @@ fabric-agent-ctl result --agent researcher --runtime-id RUNTIME_ID --request-id 
 A null result means no completed result is available; it does not prove the request is still running or safe to repeat. A retry of the same request identifier and input returns the saved result, or reports that the original invocation is pending. Reusing that identifier with different input is rejected. Failed or interrupted reservations are not automatically replayed.
 
 For OpenShell, pass `environment=environment` instead of `artifacts` to query the original server through the provider. The CLI requires a retained ownership record on that server. A later local SDK client can read retained files using the explicit artifact root even after runtime stop. Neither path reconstructs a missing result. Remote results retain task-side artifact paths.
+
+The Unix default result root is specific to the effective user. Local one-shot lookup remains unavailable until the shutdown outcome is saved; interrupted or failed finalization does not expose an earlier success.

@@ -295,7 +295,7 @@ fn invocation_result(
 ) -> PyResult<String> {
     let root = artifacts
         .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::temp_dir().join("nemo-fabric"));
+        .unwrap_or_else(nemo_fabric_core::runtime::default_artifact_root);
     let result = py
         .detach(|| {
             nemo_fabric_core::runtime::invocation_result(&root, &agent, &runtime_id, &request_id)
@@ -306,6 +306,23 @@ fn invocation_result(
             )
         })?;
     to_json(&result)
+}
+
+/// Mark a local one-shot result as awaiting lifecycle finalization.
+#[pyfunction]
+fn _begin_run_result(
+    py: Python<'_>,
+    plan_json: String,
+    runtime_json: String,
+    request_json: String,
+) -> PyResult<()> {
+    let plan = parse_run_plan(plan_json)?;
+    let runtime = parse_runtime_handle(runtime_json)?;
+    let request: RunRequest = serde_json::from_str(&request_json).map_err(|_| {
+        pyo3::exceptions::PyValueError::new_err("The invocation request is invalid.")
+    })?;
+    py.detach(|| nemo_fabric_core::runtime::begin_run_result(&plan, &runtime, &request))
+        .map_err(to_py_error)
 }
 
 /// Persist a result after the Python one-shot lifecycle finishes cleanup.
@@ -343,10 +360,18 @@ fn invocation_result_environment(
                 &request_id,
             )
         })
-        .map_err(|_| {
-            PyRuntimeError::new_err(
+        .map_err(|error| {
+            let failure = PyRuntimeError::new_err(
                 "The invocation result is unavailable; do not replay uncertain work.",
-            )
+            );
+            if let FabricError::EnvironmentProviderOperation { code, .. } = error {
+                match Python::attach(|py| failure.value(py).setattr("code", code)) {
+                    Ok(()) => failure,
+                    Err(error) => error,
+                }
+            } else {
+                failure
+            }
         })?;
     to_json(&result)
 }
@@ -460,6 +485,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(runtime_status_environment, m)?)?;
     m.add_function(wrap_pyfunction!(invocation_result, m)?)?;
     m.add_function(wrap_pyfunction!(_save_run_result, m)?)?;
+    m.add_function(wrap_pyfunction!(_begin_run_result, m)?)?;
     m.add_function(wrap_pyfunction!(invocation_result_environment, m)?)?;
     m.add_function(wrap_pyfunction!(check_service, m)?)?;
     m.add("ServiceInUseError", m.py().get_type::<ServiceInUseError>())?;

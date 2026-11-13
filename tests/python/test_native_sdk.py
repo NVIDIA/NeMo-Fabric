@@ -527,3 +527,61 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert empty_chunks == []
     assert empty_result.status == "succeeded"
     assert empty_result.output["openai_stream_invocation_count"] == 2
+
+
+async def test_failed_final_save_never_exposes_pre_cleanup_success(
+    hermes_shim_agent_dir, monkeypatch
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    original_stop = native.stop_runtime
+
+    def stop(*args):
+        original_stop(*args)
+        raise RuntimeError("test-only stop failure")
+
+    def save(*args):
+        raise RuntimeError("test-only final save failure")
+
+    monkeypatch.setattr(native, "stop_runtime", stop)
+    monkeypatch.setattr(native, "_save_run_result", save)
+    client = Fabric()
+    with pytest.raises(FabricRuntimeError) as caught:
+        await client.run(
+            hermes_shim_config(), base_dir=hermes_shim_agent_dir, input="hello"
+        )
+    assert caught.value.code == "result_storage_failed"
+    partial = caught.value.details["runtime_evidence"]["partial_result"]
+    assert partial["status"] == "failed"
+    saved = await client.invocation_result(
+        artifacts=hermes_shim_agent_dir / "artifacts",
+        agent_name=partial["agent_name"],
+        runtime_id=partial["runtime_id"],
+        request_id=partial["request_id"],
+    )
+    assert saved is None
+
+
+async def test_default_result_root_matches_native_writes_and_lookup(
+    hermes_shim_agent_dir,
+):
+    import shutil
+
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = hermes_shim_config()
+    config.runtime.artifacts = None
+    config.environment.artifacts = None
+    client = Fabric()
+    result = await client.run(
+        config, base_dir=hermes_shim_agent_dir, input="default storage"
+    )
+    try:
+        saved = await client.invocation_result(
+            agent_name=result.agent_name,
+            runtime_id=result.runtime_id,
+            request_id=result.request_id,
+        )
+        assert saved == result
+    finally:
+        directory = Path(result.metadata["fabric_home"]).parent
+        assert directory.name == result.runtime_id
+        shutil.rmtree(directory)

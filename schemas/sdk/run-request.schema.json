@@ -26,7 +26,9 @@
       ]
     },
     "request_id": {
-      "description": "Request id.",
+      "description": "Nonblank request identifier. `Default` and `text` generate an identifier before dispatch.",
+      "minLength": 1,
+      "pattern": "^[^\\x00]*[^\\s\\x00][^\\x00]*$",
       "type": "string"
     }
   },
