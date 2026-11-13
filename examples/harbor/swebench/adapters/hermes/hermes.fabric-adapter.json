@@ -342,7 +342,7 @@
     "bundled": {
       "default": "disabled",
       "supports_enable": true,
-      "supports_disable": true,
+      "supports_disable": false,
       "supports_include": true,
       "supports_exclude": true
     },

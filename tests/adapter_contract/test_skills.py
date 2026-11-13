@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+import yaml
 from jsonschema import Draft202012Validator
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -973,9 +974,9 @@ def test_discovery_rules_stay_immutable_and_hashable():
         ("---\nname: null # unset\n---\n", "review"),
         ("---\nname: Null\n---\n", "review"),
         ("---\nname: NULL\n---\n", "review"),
-        ("---\nname: >\n  folded\n---\n", "review"),
-        ("---\nname: |-\n  literal\n---\n", "review"),
-        ("---\nname: >2 # indented\n  folded\n---\n", "review"),
+        ("---\nname: >\n  folded\n---\n", "folded"),
+        ("---\nname: |-\n  literal\n---\n", "literal"),
+        ("---\nname: >2 # indented\n  folded\n---\n", "folded"),
         ("---\nname: [a, b]\n---\n", "review"),
         ("---\nname: {first: a}\n---\n", "review"),
         ('---\n"name": quoted-key\n---\n', "quoted-key"),
@@ -998,6 +999,366 @@ def test_skill_name_follows_front_matter(tmp_path: Path, text: str, name: str):
     load = load_directories([{"skill": review}], rules=IMMEDIATE, duplicates=None)
 
     assert [skill.name for skill in load.selected] == [name]
+
+
+# Front matter as harnesses pass it to YAML: the text between the fences,
+# without the final line break.
+_YAML_NAMES = [
+    # Plain scalars.
+    "name: review",
+    "name: code review",
+    "name: code  review",
+    "name: code#review",
+    "name: code-review # comment",
+    "name: -review",
+    "name: review:v2",
+    "name: review\ndescription: d",
+    # Quoted scalars and escapes.
+    "name: 'review'",
+    "name: 'it''s'",
+    "name: 'review' # comment",
+    'name: "say \\"hi\\" \\u0041"',
+    'name: "tab\\there"',
+    'name: "\\x41\\U0001F600\\\\"',
+    "name: 'null'",
+    "name: '123'",
+    "name: ''",
+    'name: "multi\n  line"',
+    "name: 'multi\n\n  paragraph'",
+    'name: "joined\\\n  line"',
+    'name: "starts\nat column 0"\ndescription: d',
+    # Block scalars: literal and folded, each chomping indicator.
+    "name: |\n  review",
+    "name: |\n  review\ndescription: d",
+    "name: |-\n  review\ndescription: d",
+    "name: |+\n  review\n\ndescription: d",
+    "name: |+\n  review\n\n",
+    "name: >\n  code\n  review\ndescription: d",
+    "name: >-\n  code\n  review",
+    "name: >+\n  review\n\n\ndescription: d",
+    "name: >-\n  a\n\n  b\n    more\n  c",
+    "name: >-\n  a\n    more\n  b",
+    "name: |-\n  literal\n   more",
+    "name: |-\n\n  leading blank line",
+    "name: |-\n \n  short blank line",
+    "name: |\ndescription: d",
+    "name: > # comment\n  review\n# comment\ndescription: d",
+    # Explicit indentation indicators, before or after chomping.
+    "name: |2-\n    indented\ndescription: d",
+    "name: >-2\n  review",
+    "name: >1\n review",
+    "name: |2\n  review\n   more\ndescription: d",
+    # Values on the lines below the key.
+    "name: code\n  review",
+    "name: code\n  review\n\n  again\ndescription: d",
+    "name: code\n   review\n  again",
+    "name: code # comment\ndescription: d",
+    "name:\n  review",
+    "name: # comment\n  review",
+    "name:\n# comment\n  review",
+    "name:\n  >-\n    review",
+    "name:\n  'review'",
+    # Null tokens.
+    "name:",
+    "name:\ndescription: d",
+    "name: ~",
+    "name: null",
+    "name: Null # comment",
+    "name: NULL",
+    # Other scalars that are not strings.
+    "name: 123",
+    "name: 1.5",
+    "name: 0x1F",
+    "name: 1_000",
+    "name: 1:20",
+    "name: .inf",
+    "name: true",
+    "name: yes",
+    "name: Off",
+    "name: 2024-01-02",
+    "name: 2024-01-02 10:00:00",
+    # Tags and anchors.
+    "name: !!str 123",
+    "name: !!str |-\n  review",
+    "name: &anchor review",
+    "name: ! 12",
+    "name: !!int 3",
+    # Collections.
+    "name: [a, b]",
+    "name: {first: a}",
+    "name:\n  - a",
+    "name:\n- a",
+    "name:\n  first: a",
+    "name: &anchor\n  first: a",
+    # Keys.
+    '"name": quoted-key',
+    "'name' : quoted-spaced",
+    "name : spaced-key",
+    "namespace: other",
+    "metadata:\n  name: nested",
+    "name: first\nname: second",
+    "name: first\nname:",
+]
+
+
+@pytest.mark.parametrize("front_matter", _YAML_NAMES)
+def test_skill_name_matches_what_yaml_reads(tmp_path: Path, front_matter: str):
+    folder = tmp_path / "folder-name"
+    folder.mkdir()
+    (folder / "SKILL.md").write_text(
+        f"---\n{front_matter}\n---\n# Skill\n", encoding="utf-8"
+    )
+    value = yaml.safe_load(front_matter).get("name")
+    # A value that YAML reads as anything but a non-empty string, such as
+    # null, a number, a boolean, a date, a sequence, or a mapping, is no name,
+    # so the folder name is used. Hermes skips such names the same way, so
+    # this deliberately differs from str(value).
+    expected = value if isinstance(value, str) and value else "folder-name"
+
+    load = load_directories([{"skill": folder}], rules=IMMEDIATE, duplicates=None)
+
+    assert [skill.name for skill in load.selected] == [expected]
+
+
+@pytest.mark.parametrize(
+    ("front_matter", "name"),
+    [
+        ('name: "unclosed', '"unclosed'),
+        ("name: 'unclosed\n  still open", "'unclosed"),
+        ("name: a: b", "a: b"),
+        ("name:\ttabbed", "tabbed"),
+        ("name: @at # comment", "@at"),
+        ("name: |0\n  review", "folder-name"),
+        ("name: 'review' trailing", "'review' trailing"),
+        ("name: code # comment\n  review", "code"),
+    ],
+)
+def test_invalid_yaml_name_uses_the_text_on_its_line(
+    tmp_path: Path, front_matter: str, name: str
+):
+    with pytest.raises(yaml.YAMLError):
+        yaml.safe_load(front_matter)
+    folder = tmp_path / "folder-name"
+    folder.mkdir()
+    (folder / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
+
+    load = load_directories([{"skill": folder}], rules=IMMEDIATE, duplicates=None)
+
+    assert [skill.name for skill in load.selected] == [name]
+
+
+OPENCLAW = DiscoveryRules(
+    traversal="immediate_children",
+    nested_skills="stop_at_skill",
+    max_depth=1,
+    name_style="openclaw",
+)
+
+# Front matter and the name OpenClaw 2026.9.34 lists for it, checked against
+# its own parser: YAML 1.2 core schema, then trimmed strings, String() of
+# numbers and booleans, JSON of collections, and the line text for a null.
+_OPENCLAW_NAMES = [
+    # The cases the end-to-end test checks against the installed OpenClaw.
+    ("name: >-\n  folded-name", "folded-name"),
+    ("name: |-\n  literal-name", "literal-name"),
+    ('name: "escaped\\tname"', "escaped\tname"),
+    ("name: plain # comment", "plain"),
+    ("name:", "folder-name"),
+    ("name: >\n  folded\n  clipped", "folded clipped"),
+    ("name: '  quoted name '", "quoted name"),
+    ("name: ~", "~"),
+    ("name: 42", "42"),
+    ("name: yes", "yes"),
+    ("name: true", "true"),
+    ("name: 2026-01-02", "2026-01-02"),
+    ("name: [a, b]", '["a","b"]'),
+    # Strings, trimmed as JavaScript trims them.
+    ("name: review", "review"),
+    ("name: review:v2", "review:v2"),
+    ('name: "  padded \\t"', "padded"),
+    ("name: |\n  literal\n", "literal"),
+    ('name: "\\u3000wide\\u00a0"', "wide"),
+    ('name: "\\x85kept"', "\x85kept"),
+    # YAML 1.1 booleans, sexagesimals, binary, and timestamps are strings.
+    ("name: no", "no"),
+    ("name: On", "On"),
+    ("name: y", "y"),
+    ("name: 1_000", "1_000"),
+    ("name: 1:20", "1:20"),
+    ("name: 0b11", "0b11"),
+    ("name: 2026-01-02 10:00:00", "2026-01-02 10:00:00"),
+    # YAML 1.2 booleans and numbers, as String() writes them.
+    ("name: True", "true"),
+    ("name: FALSE", "false"),
+    ("name: 0o17", "15"),
+    ("name: 0x1F", "31"),
+    ("name: 017", "17"),
+    ("name: +5", "5"),
+    ("name: -0", "0"),
+    ("name: 1.50", "1.5"),
+    ("name: 1.", "1"),
+    ("name: .5", "0.5"),
+    ("name: 1e3", "1000"),
+    ("name: 1e21", "1e+21"),
+    ("name: 1e-7", "1e-7"),
+    ("name: 0.000001", "0.000001"),
+    ("name: 12345678901234567890", "12345678901234567000"),
+    ("name: .inf", "Infinity"),
+    ("name: -.Inf", "-Infinity"),
+    ("name: .nan", "NaN"),
+    # Tags and anchors.
+    ("name: !!str 42", "42"),
+    ("name: ! 42", "42"),
+    ("name: !!int 42", "42"),
+    ("name: !!int '0x10'", "16"),
+    ("name: !!int abc", "abc"),
+    ("name: !!float 1.50", "1.5"),
+    ("name: !!bool yes", "yes"),
+    ("name: !foo bar", "bar"),
+    ("name: !<tag:yaml.org,2002:int> 7", "7"),
+    ("name: &anchor review", "review"),
+    ("name: !!str", "folder-name"),
+    # A null takes the text on an unquoted key's line, or the indented lines
+    # below an empty one; an empty string does not.
+    ("name: null # unset", "null # unset"),
+    ("name: !!null", "!!null"),
+    ("name: &anchor ~", "&anchor ~"),
+    ("name:\n  # comment\n\n  below", "below"),
+    ("name: ''", "folder-name"),
+    ("name: '   '", "folder-name"),
+    ('"name": ~', "folder-name"),
+    ("name : ~", "folder-name"),
+    # Collections become JSON, unless the key's line holds a colon.
+    (
+        'name: [1, 2.5, -0, 1e21, .inf, true, ~, "a\\"b\\n"]',
+        '[1,2.5,0,1e+21,null,true,null,"a\\"b\\n"]',
+    ),
+    ("name: [ a\n   b , c]", '["a b","c"]'),
+    ("name: [a,\n]", '["a"]'),
+    ("name: {a}", '{"a":null}'),
+    ("name: {a: b}", "{a: b}"),
+    ('name: [a, "b:c"]', '[a, "b:c"]'),
+    ("name:\n- a\n- b", '["a","b"]'),
+    (
+        "name:\n  - a\n  -\n  - - x\n    - y\n  - k: v\n    k2: [1]",
+        '["a",null,["x","y"],{"k":"v","k2":[1]}]',
+    ),
+    ("name:\n  a:\n    b: c\n  d: e", '{"a":{"b":"c"},"d":"e"}'),
+    ("name:\n  a:\n  - x\n  - y", '{"a":["x","y"]}'),
+    ("name:\n  k: v w\n     x", '{"k":"v w x"}'),
+    # JavaScript lists integer-like keys first; equal property names merge.
+    ("name:\n  b: 1\n  2: x\n  1: y", '{"1":"y","2":"x","b":1}'),
+    ("name:\n  z: 1\n  '0': 2\n  -1: 3", '{"0":2,"z":1,"-1":3}'),
+    ('name:\n  1: a\n  "1": b', '{"1":"b"}'),
+    # JSON escapes control characters and lone surrogates.
+    ('name: ["\\x01\\x1f"]', '["\\u0001\\u001f"]'),
+    ('name: ["\\ud83d\\ude00", "\\ud83d"]', '["\U0001f600","\\ud83d"]'),
+]
+
+
+@pytest.mark.parametrize(("front_matter", "name"), _OPENCLAW_NAMES)
+def test_openclaw_style_reads_names_as_openclaw(
+    tmp_path: Path, front_matter: str, name: str
+):
+    folder = tmp_path / "folder-name"
+    folder.mkdir()
+    (folder / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
+
+    load = load_directories([{"skill": folder}], rules=OPENCLAW, duplicates=None)
+
+    assert [skill.name for skill in load.selected] == [name]
+
+
+@pytest.mark.parametrize(
+    ("front_matter", "name"),
+    [
+        # Values whose OpenClaw text the helper does not derive.
+        ("x: &a foo\nname: *a", "folder-name"),
+        ("name: !!timestamp 2026-01-02", "folder-name"),
+        ("name: !!binary aGk=", "folder-name"),
+        ("name: [? a]", "folder-name"),
+        ("name:\n  - |\n    block", "folder-name"),
+        # OpenClaw rejects front matter that is not valid YAML; the text on
+        # the line is kept, as in the pyyaml style.
+        ("name: a: b", "a: b"),
+        ("name: 'a' trailing", "'a' trailing"),
+        ("name:\n  k: v\n  k: w", "folder-name"),
+    ],
+)
+def test_openclaw_style_falls_back_where_it_cannot_match(
+    tmp_path: Path, front_matter: str, name: str
+):
+    folder = tmp_path / "folder-name"
+    folder.mkdir()
+    (folder / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
+
+    load = load_directories([{"skill": folder}], rules=OPENCLAW, duplicates=None)
+
+    assert [skill.name for skill in load.selected] == [name]
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="Windows folder names cannot end in a space"
+)
+def test_openclaw_style_trims_the_folder_name_fallback(tmp_path: Path):
+    folder = tmp_path / "padded "
+    folder.mkdir()
+    (folder / "SKILL.md").write_text("---\nname: ''\n---\n", encoding="utf-8")
+
+    pyyaml = load_directories([{"skill": folder}], rules=IMMEDIATE, duplicates=None)
+    openclaw = load_directories([{"skill": folder}], rules=OPENCLAW, duplicates=None)
+
+    assert [skill.name for skill in pyyaml.selected] == ["padded "]
+    assert [skill.name for skill in openclaw.selected] == ["padded"]
+
+
+@pytest.mark.parametrize(
+    ("front_matter", "pyyaml", "openclaw"),
+    [
+        ("name: '  spaced '", "  spaced ", "spaced"),
+        ("name: yes", "folder-name", "yes"),
+        ("name: 42", "folder-name", "42"),
+        ("name: ~", "folder-name", "~"),
+    ],
+)
+def test_name_style_defaults_to_pyyaml(
+    tmp_path: Path, front_matter: str, pyyaml: str, openclaw: str
+):
+    folder = tmp_path / "folder-name"
+    folder.mkdir()
+    (folder / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
+
+    default = load_directories([{"skill": folder}], rules=IMMEDIATE, duplicates=None)
+    chosen = load_directories([{"skill": folder}], rules=OPENCLAW, duplicates=None)
+
+    assert IMMEDIATE.name_style == "pyyaml"
+    assert [skill.name for skill in default.selected] == [pyyaml]
+    assert [skill.name for skill in chosen.selected] == [openclaw]
+
+
+@pytest.mark.parametrize(
+    ("policy", "selected"), [("first_wins", 0), ("last_wins", 1), ("reject", None)]
+)
+def test_block_scalar_names_take_part_in_duplicate_policies(
+    tmp_path: Path, policy: str, selected: int | None
+):
+    folded = tmp_path / "folded"
+    folded.mkdir()
+    (folded / "SKILL.md").write_text("---\nname: >-\n  review\n---\n", "utf-8")
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    (plain / "SKILL.md").write_text("---\nname: review\n---\n", "utf-8")
+    entries = [{"skill": folded}, {"skill": plain}]
+
+    if selected is None:
+        with pytest.raises(SkillLoadError, match="configured twice"):
+            load_directories(entries, rules=IMMEDIATE, duplicates=policy)
+        return
+    load = load_directories(entries, rules=IMMEDIATE, duplicates=policy)
+
+    assert [(skill.name, skill.path) for skill in load.selected] == [
+        ("review", (folded, plain)[selected].resolve())
+    ]
 
 
 @pytest.mark.parametrize(
@@ -1087,6 +1448,13 @@ def test_discovery_rules_reject_invalid_values():
         DiscoveryRules(traversal="deep", nested_skills="include", max_depth=None)
     with pytest.raises(ValueError, match="nested"):
         DiscoveryRules(traversal="recursive", nested_skills="all", max_depth=None)
+    with pytest.raises(ValueError, match="name style"):
+        DiscoveryRules(
+            traversal="recursive",
+            nested_skills="include",
+            max_depth=None,
+            name_style="yaml",  # type: ignore[arg-type]
+        )
 
 
 # Duplicates
@@ -1164,6 +1532,25 @@ def test_explicit_policy_rejects_duplicates_inside_one_folder(
 
     assert caught.value.reason == "duplicate"
     assert caught.value.field == "skills.directories[0]"
+    assert caught.value.paths == (first, second)
+
+
+@pytest.mark.parametrize("policy", ["reject", "first_wins", "last_wins"])
+@pytest.mark.parametrize("folder_first", [True, False])
+def test_duplicates_inside_one_folder_fail_when_another_entry_reaches_one(
+    tmp_path: Path, make_skill: Callable[..., Path], policy: str, folder_first: bool
+):
+    first = make_skill(tmp_path / "team" / "a", "review").resolve()
+    second = make_skill(tmp_path / "team" / "b", "review").resolve()
+    entries = [{"folder": tmp_path / "team"}, {"skill": tmp_path / "team" / "b"}]
+    if not folder_first:
+        entries.reverse()
+
+    with pytest.raises(SkillLoadError, match="appears twice") as caught:
+        load_directories(entries, rules=IMMEDIATE, duplicates=policy)
+
+    assert caught.value.reason == "duplicate"
+    assert caught.value.field == f"skills.directories[{0 if folder_first else 1}]"
     assert caught.value.paths == (first, second)
 
 

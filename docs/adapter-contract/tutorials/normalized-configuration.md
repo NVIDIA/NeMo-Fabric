@@ -285,7 +285,8 @@ def load_skills(config: AgentConfig):
 3. It records skipped candidates and empty `folder` entries instead of
    failing.
 4. It applies the `duplicates` policy between entries. With a policy set, two
-   skills with the same name inside one `folder` entry fail with `duplicate`.
+   skills with the same name inside one `folder` entry fail with `duplicate`,
+   even when another entry also reaches one of them.
    With no policy, it records each clash as `ambiguous`.
 
 Pass the selected skills to the harness's native skill loader.

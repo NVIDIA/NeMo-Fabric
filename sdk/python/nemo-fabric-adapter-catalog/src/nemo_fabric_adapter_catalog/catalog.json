@@ -1125,7 +1125,7 @@
         "skills": {
           "bundled": {
             "default": "disabled",
-            "supports_disable": true,
+            "supports_disable": false,
             "supports_enable": true,
             "supports_exclude": true,
             "supports_include": true
@@ -1176,7 +1176,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.7.0"
       },
-      "sha256": "3fd4aeac984ee954ba3bb798ab66d3b0f5fc0d471483af1fc637edd3dcfc3878",
+      "sha256": "ea03d6a201e80ab769e9a3613ec35c7f018d1ecd5c5ec1f0473589c9cfe3c282",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {

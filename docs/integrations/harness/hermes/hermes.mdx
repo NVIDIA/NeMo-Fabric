@@ -199,7 +199,7 @@ Hermes discovers skills as follows:
 - **Overlapping entries:** When an entry lies inside another entry's folder, such as a `skill` entry inside a `folder` entry, the adapter passes only the outer folder, because Hermes refuses a skill it reaches through two folders. An entry under a folder Hermes skips, such as `node_modules` or a skill's `scripts` folder, is still passed.
 - **Precedence:** A skill in the Hermes home's `skills` folder, bundled or created by the agent, outranks a skill from `skills.directories` with the same name. `skills.duplicates` doesn't change this.
 - **Duplicates:** With `skills.duplicates` omitted, Hermes refuses two different skills that share a name across or within entries, so neither loads. It also refuses a skill whose name is another skill's folder name; the report lists that skill under `skipped` with the reason `ambiguous`. With `first_wins` or `last_wins`, the adapter passes only the selected skill folders to Hermes. Start fails when a dropped copy is nested inside a selected skill's folder, because Hermes would still load it. With `reject`, start fails when two entries supply the same name.
-- **Agent-written skills:** Hermes writes new skills to the `skills` folder of the Hermes home, which persists only with `runtime.keep_state`. Hermes edits an existing skill from `skills.directories` in its configured folder. On a read-only mount, the edit fails.
+- **Agent-written skills:** Hermes's `skill_manage` tool writes new skills to the `skills` folder of the Hermes home, never to a `skills.directories` entry, because the adapter doesn't set Hermes's `skills.create_dir`. That folder persists only with `runtime.keep_state`, which makes the agent's state folder the Hermes home, so the next runtime for the same agent loads the skills it wrote. Hermes edits an existing skill from `skills.directories` in its configured folder. On a read-only mount, the edit fails, the file stays as it was, and the tool returns the permission error to the agent.
 
 #### Bundled Skills
 
@@ -215,11 +215,18 @@ skills:
 | --- | --- |
 | omitted | Hermes's default, described above |
 | `{}` or `exclude: []` | All |
-| `enabled: false` or `include: []` | Only `hermes-agent` |
-| `include: [a, b]` | `a`, `b`, and `hermes-agent` |
+| `include: [hermes-agent, a, b]` | `hermes-agent`, `a`, and `b` |
+| `include: [hermes-agent]` | Only `hermes-agent` |
 | `exclude: [a]` | All except `a` |
+| `enabled: false`, `include: []`, or an `include` list without `hermes-agent` | Rejected |
 
-The adapter writes the skills that aren't selected to Hermes's `skills.disabled`. Hermes always loads its `hermes-agent` skill: `exclude` can't name it, and the report lists it under `bundled.essential` and `bundled.selected`. An unknown name in `include` or `exclude` fails startup.
+Hermes always loads its `hermes-agent` skill, whatever `skills.disabled` says, so NeMo Fabric rejects any selection that leaves it out rather than load a skill you didn't select:
+
+- `include` must name `hermes-agent`. `include: []` and a list without it fail startup with `hermes_skill_invalid`, the reason `essential_bundled_skill`, the field `skills.bundled.include`, and the name `hermes-agent`.
+- `exclude` can't name `hermes-agent`. Naming it fails startup the same way, with the field `skills.bundled.exclude`.
+- `enabled: false` isn't supported. The descriptor advertises `supports_disable: false`, so planning rejects it before the runtime starts. To load the fewest bundled skills, use `include: [hermes-agent]`.
+
+The adapter writes the skills that aren't selected to Hermes's `skills.disabled`. The report lists exactly the selected skills that load under `bundled.selected`, and lists `hermes-agent` under `bundled.essential` as well. An unknown name in `include` or `exclude` fails startup.
 
 `skills.disabled` hides every skill with a name, not only the bundled copy, so the adapter leaves some names out of it:
 
@@ -235,7 +242,7 @@ When `skills.directories` or `skills.bundled` is set, every result reports what 
 | `loaded` | Each external skill that loads, with `name`, `path`, `entry`, and `origin` |
 | `empty_entries` | `folder` entries that contain no skills |
 | `skipped` | Skills that don't load, with `path`, `entry`, and `reason` |
-| `duplicates` | Each shared name, with every copy's `origin` (`external`, `bundled`, or `local`) and `path`, and the outcome: `selected` (a configured copy loads), `shadowed` (a copy in the Hermes home wins), or `ambiguous` (Hermes refuses the name) |
+| `duplicates` | Each name that more than one skill folder provides among the skills Hermes sees, including a bundled copy and the agent's own skill in the Hermes home with no external copy. Every copy has its `origin` (`external`, `bundled`, or `local`) and `path`. The outcome is `selected` (a configured copy loads, or, with no configured copy, Hermes loads one copy), `shadowed` (a copy in the Hermes home wins over the configured copies), or `ambiguous` (Hermes refuses the name) |
 | `bundled` | Selected bundled skills that load (`selected`), selected skills that don't load, with a reason (`unavailable`), and `essential`, the skills Hermes always loads, which `selected` also lists |
 
 The report reflects the Hermes home at startup. A skill the agent writes later can shadow a configured skill in later runtimes.
@@ -243,9 +250,9 @@ The report reflects the Hermes home at startup. A skill the agent writes later c
 | Error code | Cause |
 | --- | --- |
 | `hermes_skill_not_found` | A `skills.directories` path doesn't exist |
-| `hermes_skill_invalid` | An entry isn't a folder or can't be read, a `skill` entry has no `SKILL.md`, a duplicate name under `skills.duplicates`, or an unknown or essential bundled skill name |
+| `hermes_skill_invalid` | An entry isn't a folder or can't be read, a `skill` entry has no `SKILL.md`, a duplicate name under `skills.duplicates`, an unknown bundled skill name, or a bundled selection that leaves out `hermes-agent` |
 
-Error metadata names the `field`, such as `skills.directories[1].skill` or `skills.bundled.exclude`, the `reason`, and the `path` or bundled skill `name`.
+Error metadata names the `field`, such as `skills.directories[1].skill` or `skills.bundled.include`, the `reason`, and the `path` or bundled skill `name`.
 
 ### Shared Runtime Home
 

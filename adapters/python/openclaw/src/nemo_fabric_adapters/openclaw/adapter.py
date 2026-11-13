@@ -409,8 +409,6 @@ def _skills_section(
     skill_paths = _resolve_skill_paths(config, base_dir) + skill_plan.extra_dirs
     if skill_paths:
         skills["load"] = {"extraDirs": skill_paths}
-    if skill_plan.allow_bundled is not None:
-        skills["allowBundled"] = skill_plan.allow_bundled
     return skills
 
 
@@ -1462,6 +1460,13 @@ class OpenClawRuntime:
             self._shutdown_timeout = _positive_setting(
                 settings, "shutdown_timeout_seconds", DEFAULT_SHUTDOWN_TIMEOUT_SECONDS
             )
+            # OpenClaw loads only the selected shipped skills, from a copy that
+            # lives and is removed with this runtime.
+            bundled_dir = openclaw_skills.stage_bundled(
+                skill_plan, Path(temp_dir.name) / "bundled"
+            )
+            if bundled_dir is not None:
+                child_env[openclaw_skills.BUNDLED_SKILLS_ENV] = str(bundled_dir)
             await _command_output(
                 command,
                 "config",

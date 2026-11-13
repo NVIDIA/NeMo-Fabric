@@ -132,7 +132,10 @@ class SkillPlan:
     """Bundled skill names to add to ``skills.disabled``."""
     bundled: BundledSkills | None = None
     inventory: dict[str, Path] = dataclass_field(default_factory=dict)
-    """Bundled skill name to its folder in the Hermes installation."""
+    """Bundled skill name to its folder in the Hermes installation. Read at
+    planning for ``bundled``, and at start for reporting origins."""
+    bundled_root: Path | None = None
+    """The Hermes installation's bundled-skills folder that ``inventory`` is in."""
     selected_bundled: list[str] = dataclass_field(default_factory=list)
     """Bundled skills the configuration selects, in name order."""
     sync: bool = False
@@ -215,7 +218,11 @@ def plan_skills(
     if skills.bundled is not None:
         home = _home(hermes_home)
         plan.bundled = skills.bundled
-        plan.inventory = (inventory or bundled_inventory)()
+        if inventory is None:
+            load_inventory(plan)
+        else:
+            plan.inventory = inventory()
+            plan.bundled_root = _common_root(plan.inventory)
         roots = (
             plan.external_dirs
             if plan.external_dirs is not None
@@ -324,6 +331,11 @@ def _home(hermes_home: str | os.PathLike[str] | None) -> Path | None:
 
 def _plan_bundled(plan: SkillPlan, bundled: BundledSkills, home: Path | None) -> None:
     inventory = plan.inventory
+    # Hermes loads its essential skills whatever skills.disabled says, so a
+    # request that leaves one out cannot be honored and is refused.
+    essential = sorted(ESSENTIAL_SKILLS.intersection(inventory))
+    if not bundled.enabled and essential:
+        raise _essential_error("skills.bundled.enabled", essential[0])
     for field_name in ("include", "exclude"):
         names = getattr(bundled, field_name)
         for name in names or ():
@@ -338,22 +350,14 @@ def _plan_bundled(plan: SkillPlan, bundled: BundledSkills, home: Path | None) ->
                     },
                 )
             if field_name == "exclude" and name in ESSENTIAL_SKILLS:
-                raise lifecycle.LifecycleError(
-                    "hermes_skill_invalid",
-                    f"Hermes always loads its bundled skill {name!r}",
-                    metadata={
-                        "field": "skills.bundled.exclude",
-                        "reason": "essential_bundled_skill",
-                        "name": name,
-                    },
-                )
-    if not bundled.enabled:
-        selected: set[str] = set()
-    elif bundled.include is not None:
+                raise _essential_error("skills.bundled.exclude", name)
+    if bundled.include is not None:
+        missing = [name for name in essential if name not in bundled.include]
+        if missing:
+            raise _essential_error("skills.bundled.include", missing[0])
         selected = set(bundled.include)
     else:
         selected = set(inventory) - set(bundled.exclude or ())
-    selected -= ESSENTIAL_SKILLS
     plan.selected_bundled = sorted(selected)
     # skills.disabled hides every copy of a name, not only the bundled one, so
     # names that an external skill or the agent's own skill in the home
@@ -370,6 +374,22 @@ def _plan_bundled(plan: SkillPlan, bundled: BundledSkills, home: Path | None) ->
     # Hermes's sync seeds its essential skills even into a home that opts out
     # of bundled skills, and removes a stale copy an external skill replaces.
     plan.sync = True
+
+
+def _essential_error(field: str, name: str) -> lifecycle.LifecycleError:
+    """Refuse a bundled selection that leaves out a skill Hermes always loads."""
+
+    if field == "skills.bundled.include":
+        detail = f"{field} must name it"
+    elif field == "skills.bundled.exclude":
+        detail = f"{field} cannot name it"
+    else:
+        detail = f"{field} cannot be false; use include to name the skills to keep"
+    return lifecycle.LifecycleError(
+        "hermes_skill_invalid",
+        f"Hermes always loads its bundled skill {name!r}, so {detail}",
+        metadata={"field": field, "reason": "essential_bundled_skill", "name": name},
+    )
 
 
 def external_skill_names(roots: list[str], home: Path | None) -> set[str]:
@@ -415,20 +435,26 @@ def local_skill_names(home: Path | None) -> set[str]:
     if home is None:
         return set()
     skills_dir = home / "skills"
-    manifest: set[str] = set()
-    try:
-        lines = (skills_dir / BUNDLED_MANIFEST).read_text(encoding="utf-8-sig")
-    except OSError:
-        lines = ""
-    for line in lines.splitlines():
-        name = line.partition(":")[0].strip()
-        if name:
-            manifest.add(name)
     names = {
         read_skill_name(skill_md, skill_md.parent.name)
         for skill_md in _skill_files(skills_dir)
     }
-    return names - manifest
+    return names - manifest_names(skills_dir)
+
+
+def manifest_names(skills_dir: Path) -> set[str]:
+    """Return the bundled skills Hermes's sync recorded copying into ``skills_dir``.
+
+    Mirrors tools/skills_sync.py ``_read_manifest``.
+    """
+
+    try:
+        lines = (skills_dir / BUNDLED_MANIFEST).read_text(encoding="utf-8-sig")
+    except OSError:
+        return set()
+    return {
+        name for line in lines.splitlines() if (name := line.partition(":")[0].strip())
+    }
 
 
 def _skill_files(root: Path) -> list[Path]:
@@ -497,6 +523,30 @@ def bundled_inventory() -> dict[str, Path]:
     }
 
 
+def bundled_dir() -> Path:
+    """Return the Hermes installation's bundled-skills folder."""
+
+    with redirect_stdout(StringIO()):
+        from tools import skills_sync
+
+    return Path(skills_sync._get_bundled_dir())
+
+
+def load_inventory(plan: SkillPlan) -> None:
+    """Read Hermes's bundled inventory into ``plan``, once."""
+
+    if plan.bundled_root is None:
+        plan.inventory = bundled_inventory()
+        plan.bundled_root = bundled_dir()
+
+
+def _common_root(inventory: Mapping[str, Path]) -> Path | None:
+    """The folder that holds every skill of an inventory read some other way."""
+
+    parents = [os.fspath(Path(path).parent) for path in inventory.values()]
+    return Path(os.path.commonpath(parents)) if parents else None
+
+
 def sync_bundled() -> dict[str, Any]:
     """Copy the bundled skills into the Hermes home, as Hermes's own entry points do."""
 
@@ -539,22 +589,27 @@ def observe(
     Hermes's catalog decides what loads. External skills that Hermes does not
     resolve as ``unique`` leave the loaded list, and loaded skills carry the
     name Hermes reads, which can differ from the checked name for unusual
-    front matter. Every name an external skill shares with another copy that
-    Hermes sees is reported as a duplicate with Hermes's outcome: ``selected``
-    when the configured copy loads, ``shadowed`` when the home's copy wins,
-    and ``ambiguous`` when Hermes refuses a same-tier clash. A skill that
-    Hermes sees but does not load for another reason, such as a clash with
-    another skill's folder name, is skipped with Hermes's status as the
-    reason.
+    front matter. A skill that Hermes sees but does not load for another
+    reason, such as a clash with another skill's folder name, is skipped with
+    Hermes's status as the reason.
+
+    Every name that more than one skill folder in Hermes's catalog provides is
+    reported as a duplicate, with each copy's origin (``external``,
+    ``bundled``, or ``local``) and path, and Hermes's outcome. When an
+    external copy takes part, the outcome is ``selected`` when it loads,
+    ``shadowed`` when a copy in the Hermes home wins, and ``ambiguous`` when
+    Hermes refuses the name. Otherwise it is ``selected`` when Hermes loads
+    one copy and ``ambiguous`` when it refuses them all. Copies are matched
+    by the name Hermes reads, never by the checks' reading of the front
+    matter.
     """
 
     load = plan.load or DirectoryLoad()
-    rows = [_row(row) for row in catalog]
+    places = _bundled_places(plan, catalog)
+    rows = [_row(row, places) for row in catalog]
     external_rows = [row for row in rows if row["tier"] == TIER_EXTERNAL]
     by_name: dict[str, list[dict[str, Any]]] = {}
-    # Clashes are reported for skills.directories only; skills.paths is
-    # passed through unchecked.
-    for row in rows if plan.load is not None else ():
+    for row in rows:
         if row["name"]:
             by_name.setdefault(row["name"], []).append(row)
 
@@ -569,27 +624,30 @@ def observe(
         record = records.get(name)
         if record is not None and record.outcome == "ambiguous":
             record = None
-        if not external or (len(copies) < 2 and record is None):
+        if len({row["dir"] for row in copies}) < 2 and record is None:
             continue
         records.pop(name, None)
         reported = list(record.copies) if record is not None else []
         seen = {(path, field) for _origin, path, field in reported}
         for row in sorted(copies, key=lambda row: row["tier"]):
-            origin = _origin(row, plan)
+            origin = row["origin"]
             field = _field(row, fields, plan) if origin == "external" else ""
             if (row["dir"], field) in seen:
                 continue
             seen.add((row["dir"], field))
             reported.append((origin, row["dir"], field))
         loads = [row for row in external if row["status"] == "unique"]
+        owner = [row for row in copies if row["status"] == "unique"]
         if loads:
             # A configured copy wins; it loads unless Hermes hides it.
             outcome, selected = "selected", _visible_dir(loads)
-        elif any(row["status"] == "ambiguous" for row in external):
+        elif any(row["status"] == "ambiguous" for row in external) or not owner:
             outcome, selected = "ambiguous", None
-        else:
-            owner = [row for row in copies if row["status"] == "unique"]
+        elif external:
             outcome, selected = "shadowed", _visible_dir(owner)
+        else:
+            # No configured copy: Hermes's own order picks one of the home's.
+            outcome, selected = "selected", _visible_dir(owner)
         duplicates.append(DuplicateRecord(name, tuple(reported), outcome, selected))
 
     # Hermes's status, name, and visibility per external skill folder.
@@ -616,10 +674,16 @@ def observe(
             dataclasses.replace(record, selected=record.selected if loaded else None)
         )
 
+    # Bundled copies Hermes's sync left out of the home because an external
+    # skill provides the name. Hermes's catalog never shows them.
     deferred = (sync_result or {}).get("shadowed_by_external") or ()
-    for name in deferred if plan.load is not None else ():
-        if name in plan.inventory and name not in {item.name for item in duplicates}:
-            loads = [row for row in external_rows if row["name"] == name]
+    for name in deferred:
+        loads = [row for row in external_rows if row["name"] == name]
+        if (
+            loads
+            and name in plan.inventory
+            and name not in {item.name for item in duplicates}
+        ):
             copies = tuple(
                 ("external", row["dir"], _field(row, fields, plan)) for row in loads
             ) + (("bundled", plan.inventory[name], ""),)
@@ -671,28 +735,68 @@ def _visible_dir(rows: list[dict[str, Any]]) -> Path | None:
     return next((row["dir"] for row in rows if row["visible"]), None)
 
 
-def _row(row: Mapping[str, Any]) -> dict[str, Any]:
+def _row(row: Mapping[str, Any], places: Mapping[Path, str]) -> dict[str, Any]:
     skill_md = Path(row["path"])
-    try:
-        directory = skill_md.parent.resolve()
-    except OSError:
-        directory = skill_md.parent
-    try:
-        root = Path(row["root"]).resolve()
-    except OSError:
-        root = Path(row["root"])
+    directory = _resolved(skill_md.parent)
+    root = _resolved(Path(row["root"]))
     status = row.get("status")
     if status == "unique" and "load_name" in row and not row["load_name"]:
         # Hermes lists a skill with an empty name but cannot load it.
         status = "no_name"
+    tier = int(row["tier"])
+    bundled = places.get(directory) if tier == TIER_LOCAL else None
+    if tier == TIER_EXTERNAL:
+        origin = "external"
+    else:
+        origin = "bundled" if bundled is not None else "local"
     return {
         "name": str(row["name"]),
-        "tier": int(row["tier"]),
+        "tier": tier,
         "root": root,
         "dir": directory,
         "status": status,
         "visible": row.get("visible", True),
+        "origin": origin,
+        "bundled": bundled,
     }
+
+
+def _resolved(path: Path) -> Path:
+    try:
+        return path.resolve()
+    except OSError:
+        return path
+
+
+def _bundled_places(plan: SkillPlan, catalog: list[dict[str, Any]]) -> dict[Path, str]:
+    """Folders in the Hermes home that hold Hermes's copy of a bundled skill.
+
+    Hermes's sync copies a bundled skill to the same place below the home's
+    ``skills`` folder as below its bundled folder, and records the name in the
+    home's manifest. Any other skill in the home is the agent's (or user's)
+    own, whatever its front matter says, so origins never depend on how a
+    name is read.
+    """
+
+    if not plan.inventory or plan.bundled_root is None:
+        return {}
+    roots = {
+        _resolved(Path(row["root"]))
+        for row in catalog
+        if int(row["tier"]) == TIER_LOCAL
+    }
+    places: dict[Path, str] = {}
+    for root in roots:
+        manifest = manifest_names(root)
+        for name, source in plan.inventory.items():
+            if name not in manifest:
+                continue
+            try:
+                place = Path(source).relative_to(plan.bundled_root)
+            except ValueError:
+                continue
+            places[_resolved(root / place)] = name
+    return places
 
 
 def _field(row: Mapping[str, Any], fields: Mapping[Path, str], plan: SkillPlan) -> str:
@@ -712,18 +816,6 @@ def _skill_fields(load: DirectoryLoad) -> dict[Path, str]:
     return fields
 
 
-def _origin(row: Mapping[str, Any], plan: SkillPlan) -> str:
-    if row["tier"] == TIER_EXTERNAL:
-        return "external"
-    if (
-        row["tier"] == TIER_LOCAL
-        and row["name"] in plan.inventory
-        and row["name"] not in plan.local_names
-    ):
-        return "bundled"
-    return "local"
-
-
 def _bundled_report(
     plan: SkillPlan,
     rows: list[dict[str, Any]],
@@ -736,25 +828,24 @@ def _bundled_report(
     loaded: list[str] = []
     unavailable: list[dict[str, str]] = []
     for name in plan.selected_bundled:
+        # Hermes's copies of this bundled skill, matched by place, and every
+        # skill in the home that Hermes reads under its name.
+        own_copies = [row for row in local if row["bundled"] == name]
         copies = [row for row in local if row["name"] == name]
-        if any(
-            row["status"] == "unique"
-            and row["visible"]
-            and _origin(row, plan) == "bundled"
-            for row in copies
-        ):
+        if any(row["status"] == "unique" and row["visible"] for row in own_copies):
             loaded.append(name)
             continue
+        candidates = own_copies + copies
         if name in external or name in plan.external_names:
             reason = "provided_by_external_skill"
-        elif name in plan.local_names and any(
-            row["status"] == "unique" for row in copies
+        elif any(
+            row["origin"] == "local" and row["status"] == "unique" for row in copies
         ):
             # The agent's own skill in the home holds the name instead.
             reason = "provided_by_local_skill"
-        elif any(row["status"] == "unique" for row in copies):
+        elif any(row["status"] == "unique" for row in candidates):
             reason = "native_conditions"
-        elif any(row["status"] == "ambiguous" for row in copies):
+        elif any(row["status"] == "ambiguous" for row in candidates):
             reason = "ambiguous"
         elif name in suppressed:
             reason = "suppressed"
@@ -763,13 +854,9 @@ def _bundled_report(
         else:
             reason = "not_in_home"
         unavailable.append({"name": name, "reason": reason})
-    # Hermes always loads these; they are listed under selected as well.
-    essential = sorted(
-        name
-        for name in ESSENTIAL_SKILLS
-        if any(row["name"] == name and row["status"] == "unique" for row in local)
-    )
-    report: dict[str, Any] = {"selected": sorted({*loaded, *essential})}
+    # Hermes always loads these, so every selection names them.
+    essential = [name for name in loaded if name in ESSENTIAL_SKILLS]
+    report: dict[str, Any] = {"selected": loaded}
     if unavailable:
         report["unavailable"] = unavailable
     if essential:

@@ -111,8 +111,7 @@ async def test_hermes_persistent_host_with_relay(
     ]
     assert (
         sum(
-            record["name"] == "hermes.session"
-            and record.get("scope_category") == "end"
+            record["name"] == "hermes.session" and record.get("scope_category") == "end"
             for record in atof_records
         )
         == 2
@@ -417,6 +416,119 @@ async def test_skill_written_beside_read_only_skills_loads_after_a_restart(
         ("default", "skills.directories[0]"),
         ("alternate", "skills.directories[1]"),
     ]
+
+
+def _hermes_skill_manage(home: Path, arguments: dict[str, object]) -> dict:
+    """Run Hermes's own skill_manage tool, through Hermes's tool registry as the
+    agent's tool call reaches it, against the Hermes home ``home``."""
+    from agent import skill_utils
+    from tools import skill_manager_tool  # noqa: F401  # registers skill_manage
+    from tools import skills_tool
+    from tools.registry import registry
+
+    previous = os.environ.get("HERMES_HOME")
+    os.environ["HERMES_HOME"] = str(home)
+    try:
+        skill_utils._external_dirs_cache_clear()
+        skills_tool.clear_skills_cache()
+        return json.loads(registry.dispatch("skill_manage", arguments))
+    finally:
+        if previous is None:
+            os.environ.pop("HERMES_HOME", None)
+        else:
+            os.environ["HERMES_HOME"] = previous
+        skill_utils._external_dirs_cache_clear()
+        skills_tool.clear_skills_cache()
+
+
+@POSIX_PERMISSIONS
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+async def test_skill_created_by_hermes_loads_in_the_next_runtime_with_kept_state(
+    code_review_agent_dir: Path,
+    api_server: str,
+    tmp_path: Path,
+    default_skill: Path,
+    alternate_skill: Path,
+    make_read_only,
+):
+    """Hermes's own skill_manage tool saves a new skill in the agent's kept
+    Hermes home, cannot change a read-only mounted skill, and the next runtime
+    for the same agent loads the new skill."""
+    mounted = tmp_path / "mounted" / "default"
+    shutil.copytree(default_skill, mounted)
+    protected = mounted / "SKILL.md"
+    original = protected.read_text(encoding="utf-8")
+    make_read_only(mounted)
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = with_relay(hermes_config())
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.tools.enabled = None
+    config.runtime.keep_state = True
+    config.skills = SkillConfig(directories=[SkillDirectory(skill=mounted)])
+
+    async with await Fabric().start_runtime(
+        config, base_dir=code_review_agent_dir
+    ) as first:
+        # The agent's state folder, which keep_state makes the Hermes home.
+        home = (
+            code_review_agent_dir
+            / "artifacts"
+            / "hermes"
+            / ".fabric"
+            / "state"
+            / "nvidia.fabric.hermes"
+            / config.metadata.name
+        )
+        assert (home / "config.yaml").is_file(), sorted(home.parent.iterdir())
+        created = _hermes_skill_manage(
+            home,
+            {
+                "action": "create",
+                "name": "alternate",
+                "content": (alternate_skill / "SKILL.md").read_text(encoding="utf-8"),
+            },
+        )
+        edited = _hermes_skill_manage(
+            home,
+            {
+                "action": "patch",
+                "name": "default",
+                "old_string": "default skill loaded",
+                "new_string": "changed",
+            },
+        )
+        first_id = first.runtime_id
+
+    assert created.get("success") is True, created
+    assert (home / "skills" / "alternate" / "SKILL.md").is_file()
+    assert edited.get("success") is not True, edited
+    assert "Permission denied" in str(edited["error"]), edited
+    assert protected.read_text(encoding="utf-8") == original
+
+    requests.post(
+        f"{api_server}/_scenario",
+        json={"tool_call": {"name": "skill_view", "arguments": {"name": "alternate"}}},
+        timeout=5,
+    ).raise_for_status()
+    async with await Fabric().start_runtime(
+        config, base_dir=code_review_agent_dir
+    ) as second:
+        assert second.runtime_id != first_id
+        result = await second.invoke(input="Use the alternate skill.")
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    # Hermes loads the agent-created skill from the kept home.
+    assert_atof_skill_selection(result["output"], "alternate")
+    assert result["output"]["skills"]["loaded"] == [
+        {
+            "name": "default",
+            "path": str(mounted.resolve()),
+            "entry": "skills.directories[0]",
+            "origin": "external",
+        }
+    ]
+    assert protected.read_text(encoding="utf-8") == original
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")

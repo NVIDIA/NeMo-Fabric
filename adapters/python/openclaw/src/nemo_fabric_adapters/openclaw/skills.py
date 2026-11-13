@@ -37,11 +37,20 @@ rules are chosen per entry:
   ``openclaw skills list`` at start reports the skills OpenClaw refuses; under
   ``first_wins`` or ``last_wins`` the next copy replaces a refused winner.
 
-``skills.allowBundled`` filters bundled and Custodian skills after names are
-resolved, so a filtered-out bundled skill still hides a lower-precedence
-copy. An empty list means no filter, so selecting no bundled skills uses a
-list that names no shipped skill. Custodian skills load only for the agent
-that owns them (``resolveCustodianSkillAgentId``).
+OpenClaw's own ``skills.allowBundled`` filters bundled and Custodian skills
+after names are resolved, so a filtered-out shipped skill would still hide a
+configured or workspace copy. ``skills.bundled`` therefore never uses it.
+When the selection leaves out a shipped skill, the adapter copies the
+selected shipped skills into the runtime's own folder and points
+``OPENCLAW_BUNDLED_SKILLS_DIR`` at it (:func:`stage_bundled`). OpenClaw reads
+the Custodian skills from ``custodian-skills`` beside that folder
+(``resolveWorkspaceSkillSourcePlan``), so the copy holds the selected ones
+there too. A left-out skill is then never loaded and hides nothing. The
+skills are copied rather than linked because OpenClaw refuses a shipped
+skill whose real path is outside that folder (``bundled-symlink-escape``)
+and hard-linked shipped files (``shouldRejectHardlinkedPluginFiles``).
+Custodian skills load only for the agent that owns them
+(``resolveCustodianSkillAgentId``).
 """
 
 from __future__ import annotations
@@ -49,6 +58,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sys
 from collections.abc import Mapping
 from collections.abc import Sequence
@@ -70,8 +80,8 @@ SKILLS_ROOT_DEPTH = 6
 # The deepest level below an entry's folder that discovery reaches: the
 # scanned folder's ``skills`` child, searched SKILLS_ROOT_DEPTH levels deep.
 HIDDEN_SCAN_DEPTH = SKILLS_ROOT_DEPTH + 1
-# A non-empty allowBundled list that matches no shipped skill selects none.
-NO_BUNDLED_SKILLS = "nemo-fabric:no-bundled-skills"
+BUNDLED_SKILLS_ENV = "OPENCLAW_BUNDLED_SKILLS_DIR"
+CUSTODIAN_SKILLS_DIR = "custodian-skills"
 BUNDLED_SOURCES = frozenset({"openclaw-bundled", "openclaw-custodian"})
 # normalizeAgentId: invalid characters become "-", outer dashes are trimmed.
 _AGENT_ID_INVALID = re.compile(r"[^a-z0-9_-]+")
@@ -87,6 +97,8 @@ class BundledInventory:
     """``skills/`` of the package: loaded for every agent."""
     custodian: dict[str, Path]
     """``custodian-skills/``: loaded only for the configured Custodian agent."""
+    root: Path | None = None
+    """The resolved shipped skills folder; ``custodian-skills`` is beside it."""
 
     @property
     def names(self) -> set[str]:
@@ -105,7 +117,9 @@ class SkillPlan:
     """OpenClaw settings and the ``output.skills`` report for one runtime."""
 
     extra_dirs: list[str] = dataclass_field(default_factory=list)
-    allow_bundled: list[str] | None = None
+    stage_bundled: bool = False
+    """Whether ``bundled`` leaves out a shipped skill, so OpenClaw must read
+    the selected ones from a staged folder (:func:`stage_bundled`)."""
     load: contract_skills.DirectoryLoad | None = None
     bundled_selected: list[str] | None = None
     bundled_unavailable: list[dict[str, Any]] = dataclass_field(default_factory=list)
@@ -179,6 +193,8 @@ def plan(
     if skills is None:
         return result
     result.duplicates = skills.duplicates
+    if skills.directories is None and skills.bundled is None:
+        return result
     if skills.bundled is not None:
         if bundled_dir is None:
             raise lifecycle.LifecycleError(
@@ -188,7 +204,7 @@ def plan(
                 metadata={"field": "skills.bundled", "reason": "inventory_unavailable"},
             )
         result.inventory = bundled_inventory(bundled_dir)
-        result.allow_bundled, result.bundled_selected = _select_bundled(
+        result.stage_bundled, result.bundled_selected = _select_bundled(
             skills.bundled, result.inventory
         )
         if not custodian:
@@ -199,27 +215,81 @@ def plan(
                 and name not in result.inventory.skills
             ]
     if skills.directories is None:
-        return result
-    load = _load_directories(
-        skills.directories, duplicates=skills.duplicates, base_dir=base_dir
-    )
-    if skills.duplicates is None:
-        load = _with_native_extra_outcomes(load)
-        result.extra_dirs = _unique(
-            path for _, _, path in _configured(load, base_dir, skills.directories)
-        )
+        load = contract_skills.DirectoryLoad()
     else:
-        result.extra_dirs = _unique(str(skill.path) for skill in load.selected)
+        load = _load_directories(
+            skills.directories, duplicates=skills.duplicates, base_dir=base_dir
+        )
+        if skills.duplicates is None:
+            load = _with_native_extra_outcomes(load)
+            result.extra_dirs = _unique(
+                path for _, _, path in _configured(load, base_dir, skills.directories)
+            )
+        else:
+            result.extra_dirs = _unique(str(skill.path) for skill in load.selected)
     if result.inventory is None and bundled_dir is not None:
         result.inventory = bundled_inventory(bundled_dir)
-    result.load = _with_native_tiers(
+    load = _with_native_sources(
         load,
         workspace=workspace,
         inventory=result.inventory,
-        allow_bundled=result.allow_bundled,
+        bundled=(
+            set(result.bundled_selected)
+            if result.bundled_selected is not None
+            else None
+        ),
         custodian=custodian,
     )
+    if skills.directories is not None or load.duplicates:
+        result.load = load
     return result
+
+
+def stage_bundled(plan_: SkillPlan, root: Path) -> Path | None:
+    """Copy the selected shipped skills into ``root`` for OpenClaw to load.
+
+    Returns the folder to pass as ``OPENCLAW_BUNDLED_SKILLS_DIR``, or ``None``
+    when ``bundled`` selects every shipped skill, so OpenClaw keeps its own
+    folder. Selected Custodian skills go to ``custodian-skills`` beside it,
+    where OpenClaw looks for them. Each skill keeps its path relative to the
+    shipped folder.
+
+    Raises:
+        lifecycle.LifecycleError: If the copy cannot be written.
+    """
+
+    inventory = plan_.inventory
+    if not plan_.stage_bundled or inventory is None:
+        return None
+    skills_dir = root / "skills"
+    selected = set(plan_.bundled_selected or ())
+    try:
+        for target, shipped, source_root in (
+            (skills_dir, inventory.skills, inventory.root),
+            (
+                root / CUSTODIAN_SKILLS_DIR,
+                inventory.custodian,
+                inventory.root.parent / CUSTODIAN_SKILLS_DIR
+                if inventory.root is not None
+                else None,
+            ),
+        ):
+            target.mkdir(parents=True, exist_ok=True)
+            for name in sorted(selected & set(shipped)):
+                source = shipped[name]
+                relative = (
+                    source.relative_to(source_root)
+                    if source_root is not None and source.is_relative_to(source_root)
+                    else Path(source.name)
+                )
+                shutil.copytree(source, target / relative, symlinks=True)
+    except OSError as error:
+        raise lifecycle.LifecycleError(
+            "openclaw_skill_invalid",
+            f"NeMo Fabric could not copy the selected shipped OpenClaw skills: {error}",
+            metadata={"field": "skills.bundled", "reason": "staging_failed"},
+        ) from None
+    return skills_dir
 
 
 def owns_custodian_skills(agents: Mapping[str, Any], agent_id: str) -> bool:
@@ -301,7 +371,8 @@ def bundled_inventory(bundled_dir: Path) -> BundledInventory:
 
     return BundledInventory(
         skills=names(bundled_dir),
-        custodian=names(bundled_dir.parent / "custodian-skills"),
+        custodian=names(bundled_dir.parent / CUSTODIAN_SKILLS_DIR),
+        root=_resolved(bundled_dir),
     )
 
 
@@ -508,13 +579,14 @@ def _rules(max_depth: int, hidden: frozenset[str]) -> contract_skills.DiscoveryR
         excluded_dir_names=frozenset({"node_modules"}) | hidden,
         allow_symlink_escape=False,
         subroot_depths={"skills": SKILLS_ROOT_DEPTH},
+        name_style="openclaw",
     )
 
 
 def _select_bundled(
     bundled: contract.BundledSkills, inventory: BundledInventory
-) -> tuple[list[str] | None, list[str]]:
-    """Return ``skills.allowBundled`` and the selected names for ``bundled``."""
+) -> tuple[bool, list[str]]:
+    """Return whether to stage the shipped skills, and the names ``bundled`` selects."""
 
     known = inventory.names
     for name, values in (("include", bundled.include), ("exclude", bundled.exclude)):
@@ -530,14 +602,12 @@ def _select_bundled(
                     },
                 )
     if not bundled.enabled:
-        return [NO_BUNDLED_SKILLS], []
-    if bundled.include is not None:
+        selected: list[str] = []
+    elif bundled.include is not None:
         selected = sorted(set(bundled.include))
-    elif bundled.exclude:
-        selected = sorted(known - set(bundled.exclude))
     else:
-        return None, sorted(known)
-    return (selected or [NO_BUNDLED_SKILLS]), selected
+        selected = sorted(known - set(bundled.exclude or ()))
+    return set(selected) != known, selected
 
 
 def _load_directories(
@@ -660,38 +730,42 @@ def _with_native_extra_outcomes(
     )
 
 
-def _with_native_tiers(
+def _with_native_sources(
     load: contract_skills.DirectoryLoad,
     *,
     workspace: Path,
     inventory: BundledInventory | None,
-    allow_bundled: list[str] | None,
+    bundled: set[str] | None,
     custodian: bool,
 ) -> contract_skills.DirectoryLoad:
-    """Record configured skills that a higher OpenClaw source hides.
+    """Record every name that more than one source OpenClaw loads at start provides.
 
-    The workspace's ``skills/`` and ``.agents/skills/`` folders and the shipped
-    skills, with the Custodian skills when the agent owns them, are checked. The state folder and Skill Workshop folder are new
-    and empty at start, so they hide nothing yet.
+    OpenClaw keeps the copy from the highest source (``mergeSkillRecords``):
+    the workspace's ``skills/`` over its ``.agents/skills/``, both over the
+    shipped skills, and those over ``skills.load.extraDirs``. Between shipped
+    skills with one name, the Custodian copy wins. ``bundled`` is the
+    selected shipped names, or ``None`` when every shipped skill loads; a
+    left-out shipped skill is not staged, so it hides nothing. Custodian
+    skills count only when the agent owns them. The state folder and Skill
+    Workshop folder are new and empty at start, so they provide nothing yet.
+
+    A configured copy that a higher source hides is ``shadowed``. A clash
+    with no configured copy is ``selected`` when one copy wins, or
+    ``ambiguous`` when the winning folder holds several copies. Clashes only
+    between configured entries keep the outcome already recorded.
     """
 
-    native: dict[str, tuple[str, Path, bool]] = {}
+    # (origin, path, rank) per native copy, lowest precedence first.
+    native: dict[str, list[tuple[str, Path, int]]] = {}
     if inventory is not None:
-        allowed = set(allow_bundled) if allow_bundled is not None else None
-        # Custodian skills load only for the agent that owns them.
-        shipped = (
-            {**inventory.custodian, **inventory.skills}
-            if custodian
-            else inventory.skills
-        )
-        for name in sorted(shipped):
-            # A filtered-out shipped skill still hides the lower copy.
-            native[name] = (
-                "bundled",
-                shipped[name],
-                allowed is None or name in allowed,
-            )
-    for relative in _LOCAL_SKILL_FOLDERS:
+        shipped = [(inventory.skills, 0)]
+        if custodian:
+            shipped.append((inventory.custodian, 1))
+        for skills, rank in shipped:
+            for name, path in skills.items():
+                if bundled is None or name in bundled:
+                    native.setdefault(name, []).append(("bundled", path, rank))
+    for rank, relative in enumerate(_LOCAL_SKILL_FOLDERS, start=2):
         folder = workspace / relative
         if not _is_dir(folder):
             continue
@@ -704,39 +778,50 @@ def _with_native_tiers(
         except contract_skills.SkillLoadError:
             continue
         for skill in local.selected:
-            native[skill.name] = ("local", skill.path, True)
-    hidden = {skill.name for skill in load.selected if skill.name in native}
-    if not hidden:
-        return load
-    records = [record for record in load.duplicates if record.name not in hidden]
-    for name in sorted(hidden):
-        origin, path, loads = native[name]
-        existing = next(
-            (record for record in load.duplicates if record.name == name), None
-        )
-        copies = (
-            existing.copies
-            if existing is not None
-            else tuple(
+            native.setdefault(skill.name, []).append(("local", skill.path, rank))
+    existing = {record.name: record for record in load.duplicates}
+    external: dict[str, list[tuple[str, Path, str]]] = {}
+    for name, record in existing.items():
+        external[name] = [copy for copy in record.copies if copy[0] == "external"]
+    for skill in load.selected:
+        if skill.name not in existing:
+            external.setdefault(skill.name, []).append(
                 ("external", skill.path, skill.field)
-                for skill in load.selected
-                if skill.name == name
             )
+    updated: dict[str, contract_skills.DuplicateRecord] = {}
+    for name in sorted(native):
+        configured = external.get(name, [])
+        # A configured folder can also be a native one; the same file is one copy.
+        same = {path for _, path, _ in configured}
+        copies = sorted(
+            (copy for copy in native[name] if copy[1] not in same),
+            key=lambda copy: copy[2],
         )
-        records.append(
-            contract_skills.DuplicateRecord(
-                name,
-                (*copies, (origin, path, "")),
-                "shadowed",
-                path if loads else None,
-            )
+        if not copies or len(configured) + len(copies) < 2:
+            continue
+        top = [copy for copy in copies if copy[2] == copies[-1][2]]
+        winner = top[0][1] if len(top) == 1 else None
+        outcome: contract_skills.DuplicateOutcome = (
+            "shadowed" if configured else "selected" if winner else "ambiguous"
         )
+        updated[name] = contract_skills.DuplicateRecord(
+            name,
+            (*configured, *((origin, path, "") for origin, path, _ in copies)),
+            outcome,
+            winner,
+        )
+    if not updated:
+        return load
+    hidden = {name for name in updated if external.get(name)}
     return contract_skills.DirectoryLoad(
         selected=[skill for skill in load.selected if skill.name not in hidden],
         entries=load.entries,
         empty_entries=load.empty_entries,
         skipped=load.skipped,
-        duplicates=records,
+        duplicates=[
+            *(record for record in load.duplicates if record.name not in updated),
+            *updated.values(),
+        ],
     )
 
 

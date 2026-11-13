@@ -940,6 +940,12 @@ async def _prepare_skills(plan: skills.SkillPlan) -> dict[str, Any] | None:
                 metadata={"field": "skills.bundled", "reason": "sync_failed"},
             ) from error
     try:
+        # Tells Hermes's copies of bundled skills from the agent's own skills
+        # when only skills.directories is set.
+        await asyncio.to_thread(skills.load_inventory, plan)
+    except Exception:
+        LOGGER.warning("Hermes bundled skills could not be listed", exc_info=True)
+    try:
         catalog = await asyncio.to_thread(skills.native_catalog)
     except Exception:
         # The report is diagnostic: keep the checked plan rather than fail start.

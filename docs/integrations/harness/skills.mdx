@@ -235,7 +235,9 @@ config.skills = SkillConfig(bundled=BundledSkills(exclude=["github-auth"]))
 
 At start, the adapter reads the list of bundled skills from the installed harness, because that list changes between harness versions. A name in `include` or `exclude` that is not on the list fails start with `<adapter>_skill_invalid` and the reason `unknown_bundled_skill`. The error names the field and the name. Bundled selection does not bypass the harness's own requirements for a skill, and it does not grant extra tools or permissions.
 
-A bundled skill that `bundled` leaves out can still hide a configured skill with the same name on some harnesses. Refer to [Harness Differences](#harness-differences).
+A bundled skill that `bundled` leaves out does not hide a configured or local skill with the same name.
+
+Some harnesses always load certain bundled skills. An adapter that can't leave them out doesn't advertise `supports_disable`, so planning rejects `enabled: false`, and an `include` list that leaves them out fails start. Refer to [Harness Differences](#harness-differences).
 
 ## Skills That Share a Name
 
@@ -331,10 +333,10 @@ The OpenClaw and Hermes Agent adapters support `directories`, `bundled`, and `du
 | Name when the front matter has none | The folder name | The folder name |
 | Front matter that does not parse | Simple `key: value` lines are recovered. | The skill is skipped with the reason `rejected_by_openclaw`. Under `first_wins` or `last_wins`, the next copy of its name loads instead. |
 | Two configured skills share a name and `duplicates` is left out | Hermes Agent refuses both as ambiguous. It also refuses a skill whose name is another skill's folder name. | The copy from the later entry loads. Copies inside one entry are reported as `ambiguous`. |
-| The harness's own skill folders, ranked above the configured entries | The Hermes home's `skills` folder, which holds the bundled skills and the skills the agent creates. | The workspace's `skills` and `.agents/skills` folders, the state folder's `skills` folder, the Skill Workshop folder, and the shipped skills. |
-| How bundled skills are chosen | `skills.disabled` | `skills.allowBundled` |
-| A bundled skill that `bundled` leaves out shares a name with a configured skill | The configured skill, from `paths` or `directories`, loads. The agent's own skill with that name in the Hermes home stays enabled too; the Hermes Agent guide covers when it loads. | The bundled skill still hides the configured skill. The run report lists the configured skill as `shadowed`. |
-| Bundled skills that always load | `hermes-agent`. Listing it in `exclude` fails start. | None |
+| The harness's own skill folders, ranked above the configured entries | The Hermes home's `skills` folder, which holds the bundled skills and the skills the agent creates. Hermes Agent saves every new skill there, never in a `directories` entry. | The workspace's `skills` and `.agents/skills` folders, the state folder's `skills` folder, the Skill Workshop folder, and the selected shipped skills. |
+| How bundled skills are chosen | `skills.disabled` | When the selection leaves out a shipped skill, OpenClaw reads a per-runtime copy of the selected shipped skills through `OPENCLAW_BUNDLED_SKILLS_DIR`. Otherwise it reads the package folder. |
+| A bundled skill that `bundled` leaves out shares a name with a configured skill | The configured skill, from `paths` or `directories`, loads. The agent's own skill with that name in the Hermes home stays enabled too; the Hermes Agent guide covers when it loads. | The configured skill loads. The left-out bundled skill is not loaded at all, so it hides nothing. |
+| Bundled skills that always load | `hermes-agent`. Every selection must keep it: `include` must name it, `exclude` can't name it, and `enabled: false` isn't supported. Start fails otherwise, so `include: []` fails too. | None |
 | Error codes | `hermes_skill_not_found`, `hermes_skill_invalid` | `openclaw_skill_not_found`, `openclaw_skill_invalid` |
 
 A skill in one of the harness's own folders, including a skill the agent writes, can hide a configured skill with the same name. The run report lists these clashes where the adapter can see them at start.

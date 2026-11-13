@@ -200,15 +200,25 @@ Hermes-specific behavior:
   `folder` entry, the adapter passes only the outer folder, because Hermes
   refuses a skill it reaches through two folders.
 - A skill in the Hermes home's `skills` folder, bundled or written by the
-  agent, outranks a configured skill with the same name. Hermes writes new
-  skills there and edits a configured skill in place when its mount is
-  writable.
+  agent, outranks a configured skill with the same name. Hermes's
+  `skill_manage` tool writes every new skill there, never into a
+  `skills.directories` entry, because the adapter doesn't set Hermes's
+  `skills.create_dir`. With `runtime.keep_state` the home is the agent's state
+  folder, so the next runtime for the same agent loads those skills. Hermes
+  edits a configured skill in place when its mount is writable; on a
+  read-only mount the edit fails and the file is unchanged.
 - An SDK-only runtime starts with no bundled skills in a new home: the
   embedded SDK agent doesn't copy them. Runtimes with the API, dashboard, or
   terminal interface get Hermes's own copy at start. Whenever `skills.bundled`
   is set, the adapter copies them at startup, as Hermes does. The copy always
-  includes `hermes-agent`, which Hermes always loads, so `exclude` can't name
-  it.
+  includes `hermes-agent`, which Hermes always loads.
+- Because Hermes always loads `hermes-agent`, NeMo Fabric rejects a bundled
+  selection that leaves it out: `include` must name it (so `include: []`
+  fails), `exclude` can't name it, and `enabled: false` isn't supported (the
+  descriptor sets `supports_disable: false`). Use `include: [hermes-agent]`
+  for the fewest bundled skills. A rejected `include` or `exclude` fails
+  startup with `hermes_skill_invalid` and the reason
+  `essential_bundled_skill`.
 - `skills.bundled` hides unselected bundled skills by name through Hermes's
   `skills.disabled`, which hides every skill with that name. Names that a
   `skills.paths` or `skills.directories` skill provides stay enabled, and
@@ -222,7 +232,10 @@ Hermes-specific behavior:
 
 With `skills.directories` or `skills.bundled`, every result carries
 `output.skills` (`loaded`, `empty_entries`, `skipped`, `duplicates`, and
-`bundled`). `bundled.selected` lists the selected bundled skills that load,
+`bundled`). `duplicates` lists every name that more than one skill folder
+Hermes sees provides, including a bundled copy and the agent's own skill in
+the Hermes home with no configured copy, with each copy's origin and path and
+Hermes's outcome. `bundled.selected` lists the selected bundled skills that load,
 `bundled.unavailable` lists selected skills that don't with a reason, and the
 Hermes-specific `bundled.essential` lists the skills Hermes always loads,
 which `selected` also includes. Failures stop startup with

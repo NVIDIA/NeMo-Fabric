@@ -139,11 +139,21 @@ rules:
   next copy in policy order and the skills are listed again. If the list
   cannot run, a refused winner goes unnoticed and no copy of its name loads.
 - Workspace (`skills`, `.agents/skills`), state-folder, Skill Workshop, and
-  shipped skills outrank configured ones. A shipped skill left out by
-  `bundled` still hides a configured skill with the same name.
-- `bundled` maps to `skills.allowBundled` over the package's `skills` and
-  `custodian-skills` folders. Selecting none uses a list that names no shipped
-  skill, because OpenClaw treats an empty list as no filter. Results report
+  selected shipped skills outrank configured ones. When several sources hold
+  a name, results list every copy found at start under
+  `output.skills.duplicates`, with its origin (`external`, `bundled`, or
+  `local`) and path, and the copy OpenClaw loads: `shadowed` when a higher
+  source hides the configured copies, `selected` when only shipped and
+  workspace copies clash, and `ambiguous` when the winning folder holds two
+  copies. `duplicates` policies choose only between `directories` entries.
+- `bundled` doesn't use OpenClaw's `skills.allowBundled`, which filters
+  shipped skills only after names are resolved. When the selection leaves out
+  a shipped skill, the adapter copies the selected skills from the package's
+  `skills` and `custodian-skills` folders into the runtime's temporary folder
+  and sets `OPENCLAW_BUNDLED_SKILLS_DIR` for OpenClaw. A left-out shipped
+  skill therefore never loads and never hides a configured or workspace skill
+  with the same name. Without `bundled`, or when it selects every shipped
+  skill, OpenClaw reads its own folder as usual. Results report
   `output.skills.bundled` as `selected` names of the selected bundled skills
   that load and `unavailable` entries (`name`, `reason`) for the others, from
   `openclaw skills list`, which runs at start. Custodian skills load, and hide
@@ -151,9 +161,13 @@ rules:
   the configured agent when it is the only one.
 - Runtimes that connect to a prepared service report the skills the service
   loaded at prepare.
-- Agent-installed workspace skills go to `<workspace>/skills`. Skill Workshop
-  and shared installs write to the per-runtime state folder, which is removed
-  when the runtime stops, so those skills are temporary.
+- Skills written into a read-write `directories` folder load at the next
+  start. Agent-installed workspace skills go to `<workspace>/skills`. Skills
+  the agent installs through OpenClaw itself, with Skill Workshop or a shared
+  install, go to the per-runtime state folder, which is removed when the
+  runtime stops. Keeping that folder across restarts is outstanding work
+  ([#578](https://github.com/NVIDIA/NeMo-Fabric/issues/578)); until then
+  those skills are lost at stop.
 
 For custom OpenAI-compatible providers, set `models.<role>.base_url`; the
 adapter generates an OpenClaw custom provider using the

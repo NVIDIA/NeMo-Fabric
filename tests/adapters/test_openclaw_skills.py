@@ -567,10 +567,8 @@ def test_paths_behavior_is_unchanged(tmp_path: Path, workspace: Path, package: P
         package,
     )
 
-    assert generated["skills"] == {
-        "load": {"extraDirs": [str(skill.resolve())]},
-        "allowBundled": ["weather"],
-    }
+    assert generated["skills"] == {"load": {"extraDirs": [str(skill.resolve())]}}
+    assert plan.stage_bundled is True
     assert plan.report() == {"bundled": {"selected": ["weather"]}}
     generated, plan = _generated(tmp_path, workspace, {"paths": ["skills"]})
     assert generated["skills"] == {"load": {"extraDirs": [str(skill.resolve())]}}
@@ -578,42 +576,105 @@ def test_paths_behavior_is_unchanged(tmp_path: Path, workspace: Path, package: P
 
 
 @pytest.mark.parametrize(
-    ("bundled", "allow", "selected"),
+    ("bundled", "staged", "selected"),
     [
         ({}, None, ["diagnose-gateway", "github", "tmux", "weather"]),
         ({"exclude": []}, None, ["diagnose-gateway", "github", "tmux", "weather"]),
-        ({"enabled": False}, [openclaw_skills.NO_BUNDLED_SKILLS], []),
-        ({"include": []}, [openclaw_skills.NO_BUNDLED_SKILLS], []),
+        (
+            {"include": ["diagnose-gateway", "github", "tmux", "weather"]},
+            None,
+            ["diagnose-gateway", "github", "tmux", "weather"],
+        ),
+        ({"enabled": False}, ([], []), []),
+        ({"include": []}, ([], []), []),
         (
             {"include": ["weather", "github"]},
-            ["github", "weather"],
+            (["github", "weather"], []),
             ["github", "weather"],
         ),
         (
             {"exclude": ["tmux"]},
-            ["diagnose-gateway", "github", "weather"],
+            (["github", "weather"], ["diagnose-gateway"]),
             ["diagnose-gateway", "github", "weather"],
         ),
         (
             {"exclude": ["diagnose-gateway", "github", "tmux", "weather"]},
-            [openclaw_skills.NO_BUNDLED_SKILLS],
+            ([], []),
             [],
         ),
     ],
 )
-def test_bundled_selection_uses_allow_bundled(
+def test_bundled_selection_stages_only_the_selected_shipped_skills(
     tmp_path: Path,
     workspace: Path,
     package: Path,
     bundled: dict[str, Any],
-    allow: list[str] | None,
+    staged: tuple[list[str], list[str]] | None,
     selected: list[str],
 ):
-    """Bundled selection maps onto skills.allowBundled with empty-list semantics."""
+    """A selection that leaves out a shipped skill copies only the selected ones.
+
+    Selecting every shipped skill keeps OpenClaw's own folder. OpenClaw's
+    ``skills.allowBundled`` is never written.
+    """
     generated, plan = _generated(tmp_path, workspace, {"bundled": bundled}, package)
 
-    assert generated.get("skills", {}).get("allowBundled") == allow
+    assert "allowBundled" not in generated.get("skills", {})
     assert plan.report() == {"bundled": {"selected": selected}}
+    folder = openclaw_skills.stage_bundled(plan, tmp_path / "stage")
+    if staged is None:
+        assert folder is None
+        assert not (tmp_path / "stage").exists()
+        return
+    assert folder == tmp_path / "stage/skills"
+    custodian = tmp_path / "stage/custodian-skills"
+    assert (
+        sorted(child.name for child in folder.iterdir()),
+        sorted(child.name for child in custodian.iterdir()),
+    ) == staged
+    for name in staged[0]:
+        assert (folder / name / "SKILL.md").read_bytes() == (
+            package / "skills" / name / "SKILL.md"
+        ).read_bytes()
+
+
+def test_staged_shipped_skills_keep_their_layout_and_files(
+    tmp_path: Path, workspace: Path, package: Path
+):
+    """A staged skill keeps its path below the shipped folder and its support files."""
+    nested = _skill(package / "skills/group/nested", "nested")
+    script = nested / "scripts/run.sh"
+    script.parent.mkdir()
+    script.write_text("#!/bin/sh\n", encoding="utf-8")
+    script.chmod(0o755)
+
+    plan = _plan(tmp_path, workspace, {"bundled": {"include": ["nested"]}}, package)
+    folder = openclaw_skills.stage_bundled(plan, tmp_path / "stage")
+
+    assert folder is not None
+    copied = folder / "group/nested/scripts/run.sh"
+    assert copied.read_text(encoding="utf-8") == "#!/bin/sh\n"
+    assert os.access(copied, os.X_OK) or os.name == "nt"
+    assert not copied.is_symlink()
+    assert sorted(path.name for path in folder.iterdir()) == ["group"]
+
+
+def test_staging_failure_names_the_bundled_field(
+    tmp_path: Path, workspace: Path, package: Path
+):
+    """A staged folder that cannot be written fails start naming skills.bundled."""
+    plan = _plan(tmp_path, workspace, {"bundled": {"exclude": ["tmux"]}}, package)
+    blocked = tmp_path / "stage"
+    blocked.write_text("not a folder", encoding="utf-8")
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        openclaw_skills.stage_bundled(plan, blocked)
+
+    assert caught.value.code == "openclaw_skill_invalid"
+    assert caught.value.metadata == {
+        "field": "skills.bundled",
+        "reason": "staging_failed",
+    }
 
 
 @pytest.mark.parametrize("field", ["include", "exclude"])
@@ -673,7 +734,7 @@ def test_bundled_folder_follows_openclaw_override(tmp_path: Path, package: Path)
 def test_higher_sources_hide_configured_skills(
     tmp_path: Path, workspace: Path, package: Path
 ):
-    """Workspace and shipped skills outrank skills.directories."""
+    """Workspace and selected shipped skills outrank skills.directories."""
     team = tmp_path / "team"
     mine = _skill(team / "review", "review")
     github = _skill(team / "github", "github")
@@ -690,9 +751,12 @@ def test_higher_sources_hide_configured_skills(
 
     report = plan.report()
     assert report is not None
-    assert [item["name"] for item in report["loaded"]] == ["kept"]
+    # The excluded shipped weather is not staged, so the configured copy loads.
+    assert [item["name"] for item in report["loaded"]] == ["kept", "weather"]
     assert report["loaded"][0]["path"] == str(kept.resolve())
+    assert report["loaded"][1]["path"] == str(weather.resolve())
     duplicates = {item["name"]: item for item in report["duplicates"]}
+    assert set(duplicates) == {"github", "review"}
     assert duplicates["review"] == {
         "name": "review",
         "outcome": "shadowed",
@@ -706,14 +770,157 @@ def test_higher_sources_hide_configured_skills(
             {"origin": "local", "path": str(local.resolve())},
         ],
     }
-    assert duplicates["github"]["selected"] == str(
-        (package / "skills/github").resolve()
+    assert duplicates["github"] == {
+        "name": "github",
+        "outcome": "shadowed",
+        "selected": str((package / "skills/github").resolve()),
+        "copies": [
+            {
+                "origin": "external",
+                "path": str(github.resolve()),
+                "entry": "skills.directories[0]",
+            },
+            {"origin": "bundled", "path": str((package / "skills/github").resolve())},
+        ],
+    }
+
+
+def test_collisions_list_every_copy_from_every_source(
+    tmp_path: Path, workspace: Path, package: Path
+):
+    """Each copy is listed with its origin, whichever sources clash."""
+    team = tmp_path / "team"
+    mine = _skill(team / "github", "github")
+    agents = _skill(workspace / ".agents/skills/github", "github")
+    local = _skill(workspace / "skills/github", "github")
+    tmux = _skill(workspace / ".agents/skills/tmux", "tmux")
+    first = _skill(workspace / "skills/one/twin", "twin")
+    second = _skill(workspace / "skills/two/twin", "twin")
+    shipped = (package / "skills/github").resolve()
+
+    _, plan = _generated(
+        tmp_path, workspace, {"directories": [{"folder": str(team)}]}, package
     )
-    assert duplicates["github"]["copies"][0]["path"] == str(github.resolve())
-    # An excluded shipped skill still hides the configured copy, so neither loads.
-    assert duplicates["weather"]["outcome"] == "shadowed"
-    assert "selected" not in duplicates["weather"]
-    assert duplicates["weather"]["copies"][0]["path"] == str(weather.resolve())
+
+    report = plan.report()
+    assert report is not None
+    assert "loaded" not in report
+    duplicates = {item["name"]: item for item in report["duplicates"]}
+    assert duplicates["github"] == {
+        "name": "github",
+        "outcome": "shadowed",
+        "selected": str(local.resolve()),
+        "copies": [
+            {
+                "origin": "external",
+                "path": str(mine.resolve()),
+                "entry": "skills.directories[0]",
+            },
+            {"origin": "bundled", "path": str(shipped)},
+            {"origin": "local", "path": str(agents.resolve())},
+            {"origin": "local", "path": str(local.resolve())},
+        ],
+    }
+    # No configured copy: the workspace copy beats the shipped one.
+    assert duplicates["tmux"] == {
+        "name": "tmux",
+        "outcome": "selected",
+        "selected": str(tmux.resolve()),
+        "copies": [
+            {"origin": "bundled", "path": str((package / "skills/tmux").resolve())},
+            {"origin": "local", "path": str(tmux.resolve())},
+        ],
+    }
+    # Two copies in the winning folder: OpenClaw's scan order decides.
+    assert duplicates["twin"] == {
+        "name": "twin",
+        "outcome": "ambiguous",
+        "copies": [
+            {"origin": "local", "path": str(first.resolve())},
+            {"origin": "local", "path": str(second.resolve())},
+        ],
+    }
+    assert "diagnose-gateway" not in duplicates
+
+
+def test_bundled_only_selection_reports_shipped_and_local_clashes(
+    tmp_path: Path, workspace: Path, package: Path
+):
+    """Without directories, a selected shipped skill a workspace skill hides is reported."""
+    local = _skill(workspace / "skills/weather", "weather")
+    _skill(workspace / "skills/tmux", "tmux")
+
+    _, plan = _generated(
+        tmp_path, workspace, {"bundled": {"exclude": ["tmux"]}}, package
+    )
+
+    report = plan.report()
+    assert report is not None
+    # tmux is left out, so only weather clashes.
+    assert report["duplicates"] == [
+        {
+            "name": "weather",
+            "outcome": "selected",
+            "selected": str(local.resolve()),
+            "copies": [
+                {
+                    "origin": "bundled",
+                    "path": str((package / "skills/weather").resolve()),
+                },
+                {"origin": "local", "path": str(local.resolve())},
+            ],
+        }
+    ]
+    assert report["bundled"] == {"selected": ["diagnose-gateway", "github", "weather"]}
+
+
+def test_explicit_policy_applies_only_between_entries(
+    tmp_path: Path, workspace: Path, package: Path
+):
+    """first_wins picks between entries; a higher source still hides the winner."""
+    first = _skill(tmp_path / "a/github", "github")
+    second = _skill(tmp_path / "b/github", "github")
+
+    generated, plan = _generated(
+        tmp_path,
+        workspace,
+        {
+            "directories": [
+                {"folder": str(tmp_path / "a")},
+                {"folder": str(tmp_path / "b")},
+            ],
+            "duplicates": "first_wins",
+        },
+        package,
+    )
+
+    assert generated["skills"]["load"]["extraDirs"] == [str(first.resolve())]
+    report = plan.report()
+    assert report is not None
+    assert "loaded" not in report
+    assert report["duplicates"] == [
+        {
+            "name": "github",
+            "outcome": "shadowed",
+            "selected": str((package / "skills/github").resolve()),
+            "copies": [
+                {
+                    "origin": "external",
+                    "path": str(first.resolve()),
+                    "entry": "skills.directories[0]",
+                },
+                {
+                    "origin": "external",
+                    "path": str(second.resolve()),
+                    "entry": "skills.directories[1]",
+                },
+                {
+                    "origin": "bundled",
+                    "path": str((package / "skills/github").resolve()),
+                },
+            ],
+        }
+    ]
 
 
 def test_status_reports_rejected_and_unavailable_skills(
@@ -995,6 +1202,8 @@ async def test_start_writes_the_plan_and_reports_it(
     command.write_text(
         "#!/bin/sh\n"
         'if [ "$1" = skills ]; then printf "%s\\n" "$*" > "$FAKE_SKILLS_ARGS"; '
+        'printf "%s\\n" "$OPENCLAW_BUNDLED_SKILLS_DIR" > "$FAKE_SKILLS_STAGED"; '
+        'ls "$OPENCLAW_BUNDLED_SKILLS_DIR" >> "$FAKE_SKILLS_STAGED"; '
         'exec cat "$FAKE_SKILLS_STATUS"; fi\n'
         f'exec "{sys.executable}" "{mock_openclaw}" "$@"\n',
         encoding="utf-8",
@@ -1003,6 +1212,7 @@ async def test_start_writes_the_plan_and_reports_it(
     monkeypatch.setenv("FAKE_OPENCLAW_CAPTURE", str(capture))
     monkeypatch.setenv("FAKE_SKILLS_STATUS", str(status))
     monkeypatch.setenv("FAKE_SKILLS_ARGS", str(tmp_path / "args.txt"))
+    monkeypatch.setenv("FAKE_SKILLS_STAGED", str(tmp_path / "staged.txt"))
     config = _config(
         {"directories": [{"folder": str(team)}], "bundled": {"include": ["github"]}},
         command,
@@ -1024,10 +1234,7 @@ async def test_start_writes_the_plan_and_reports_it(
         await runtime.stop()
 
     generated = json.loads(capture.read_text(encoding="utf-8"))
-    assert generated["skills"] == {
-        "load": {"extraDirs": [str(team)]},
-        "allowBundled": ["github"],
-    }
+    assert generated["skills"] == {"load": {"extraDirs": [str(team)]}}
     assert (tmp_path / "args.txt").read_text(encoding="utf-8").split() == [
         "skills",
         "list",
@@ -1035,6 +1242,13 @@ async def test_start_writes_the_plan_and_reports_it(
         "--agent",
         "default",
     ]
+    # OpenClaw read the shipped skills from a per-runtime copy of the selection,
+    # which stop removes with the rest of the runtime's state.
+    staged, *listed = (tmp_path / "staged.txt").read_text(encoding="utf-8").split()
+    assert listed == ["github"]
+    assert Path(staged).name == "skills"
+    assert not Path(staged).is_relative_to(package)
+    assert not Path(staged).exists()
     assert report == {
         "loaded": [
             {
@@ -1065,9 +1279,7 @@ def test_hidden_dir_names_cover_reachable_dot_folders(tmp_path: Path):
 
 def test_hidden_dir_names_reach_the_deepest_skills_level(tmp_path: Path):
     """The entry's skills child is searched 6 levels below itself."""
-    (tmp_path / "skills" / "a" / "b" / "c" / "d" / "e" / ".private").mkdir(
-        parents=True
-    )
+    (tmp_path / "skills" / "a" / "b" / "c" / "d" / "e" / ".private").mkdir(parents=True)
 
     assert openclaw_skills._hidden_dir_names([tmp_path]) == {".private"}
 

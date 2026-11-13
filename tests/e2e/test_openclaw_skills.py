@@ -141,6 +141,10 @@ class _Native:
             "OPENCLAW_GATEWAY_TOKEN": "TEST_ONLY_GATEWAY_TOKEN",
             "DO_NOT_TRACK": "1",
         }
+        # As start does: OpenClaw reads only the selected shipped skills.
+        staged = openclaw_skills.stage_bundled(plan, run / "bundled")
+        if staged is not None:
+            env[openclaw_skills.BUNDLED_SKILLS_ENV] = str(staged)
         result = subprocess.run(
             [str(self.command), "skills", "list", "--json", "--agent", "default"],
             cwd=self.workspace,
@@ -270,6 +274,41 @@ def test_reported_skills_are_the_ones_openclaw_loads(native: _Native):
     }
 
 
+@pytest.mark.parametrize(
+    "name_lines",
+    [
+        pytest.param(["name: >-", "  folded-name"], id="folded-strip"),
+        pytest.param(["name: |-", "  literal-name"], id="literal-strip"),
+        pytest.param(['name: "escaped\\tname"'], id="double-quoted"),
+        pytest.param(["name: plain # comment"], id="comment"),
+        pytest.param(["name:"], id="empty"),
+        pytest.param(["name: >", "  folded", "  clipped"], id="folded-clip"),
+        pytest.param(["name: '  quoted name '"], id="single-quoted"),
+        pytest.param(["name: ~"], id="null"),
+        pytest.param(["name: 42"], id="number"),
+        pytest.param(["name: yes"], id="yes"),
+        pytest.param(["name: true"], id="true"),
+        pytest.param(["name: 2026-01-02"], id="date"),
+        pytest.param(["name: [a, b]"], id="sequence"),
+    ],
+)
+def test_reported_names_match_openclaw(
+    native: _Native, baseline: set[str], name_lines: list[str]
+):
+    """The name Fabric reads from front matter is the one OpenClaw lists."""
+    skill = native.tmp_path / "team" / "named"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "\n".join(["---", *name_lines, "description: Copy at named.", "---", ""]),
+        encoding="utf-8",
+    )
+
+    plan, status = native.list({"directories": [{"folder": str(skill.parent)}]})
+
+    assert _external(status, baseline) == _loaded(plan)
+    assert len(_loaded(plan)) == 1
+
+
 @pytest.mark.parametrize("policy", [None, "first_wins", "last_wins"])
 def test_duplicate_outcomes_match_openclaw(native: _Native, policy: str | None):
     """The reported copy of a duplicated name is the one OpenClaw loads."""
@@ -304,31 +343,25 @@ def test_duplicate_outcomes_match_openclaw(native: _Native, policy: str | None):
 def test_bundled_selection_matches_openclaw(
     native: _Native, bundled: dict[str, Any], allowed: set[str] | str | None
 ):
-    """skills.bundled selects exactly the shipped skills OpenClaw allows."""
+    """skills.bundled selects exactly the shipped skills OpenClaw loads."""
     plan, status = native.list({"bundled": bundled})
 
     shipped = {row["name"] for row in status["skills"] if row["bundled"]}
-    unblocked = {
-        row["name"]
-        for row in status["skills"]
-        if row["bundled"] and not row["blockedByAllowlist"]
-    }
     report = plan.report()
     assert report is not None
     assert plan.inventory is not None
-    assert shipped == plan.inventory.names
     expected = (
-        shipped
+        plan.inventory.names
         if allowed is None
-        else shipped - {"weather"}
+        else plan.inventory.names - {"weather"}
         if allowed == "all-but-weather"
         else allowed
     )
-    assert unblocked == expected
+    # A left-out shipped skill is not loaded at all, not merely blocked.
+    assert shipped == expected
+    assert not any(row["blockedByAllowlist"] for row in status["skills"])
     eligible = {
-        row["name"]
-        for row in status["skills"]
-        if row["bundled"] and row["eligible"] and not row["blockedByAllowlist"]
+        row["name"] for row in status["skills"] if row["bundled"] and row["eligible"]
     }
     unavailable = {item["name"] for item in report["bundled"].get("unavailable", [])}
     assert unavailable == expected - eligible
@@ -336,8 +369,32 @@ def test_bundled_selection_matches_openclaw(
     assert set(report["bundled"]["selected"]) == expected & eligible
 
 
+@pytest.mark.parametrize(
+    "bundled",
+    [{"exclude": ["weather"]}, {"include": ["github"]}, {"enabled": False}],
+)
+def test_left_out_shipped_skill_does_not_hide_a_configured_copy(
+    native: _Native, bundled: dict[str, Any]
+):
+    """A configured weather loads when bundled leaves out the shipped weather."""
+    _skill(native.tmp_path / "team" / "weather", "weather", "Configured weather.")
+
+    plan, status = native.list(
+        {"directories": [{"folder": str(native.tmp_path / "team")}], "bundled": bundled}
+    )
+
+    rows = [row for row in status["skills"] if row["name"] == "weather"]
+    assert [(row["source"], row["description"]) for row in rows] == [
+        ("openclaw-extra", "Configured weather.")
+    ]
+    report = plan.report()
+    assert report is not None
+    assert [item["name"] for item in report["loaded"]] == ["weather"]
+    assert "duplicates" not in report
+
+
 def test_higher_sources_hide_configured_skills_as_reported(native: _Native):
-    """Workspace and shipped skills win over configured copies, as reported."""
+    """Workspace and selected shipped skills win over configured copies, as reported."""
     root = native.tmp_path
     team = root / "team"
     _skill(team / "github", "github")
@@ -353,11 +410,10 @@ def test_higher_sources_hide_configured_skills_as_reported(native: _Native):
     rows = {row["name"]: row for row in status["skills"]}
     assert rows["review"]["source"] == "openclaw-workspace"
     assert rows["github"]["source"] == "openclaw-bundled"
-    assert rows["weather"]["source"] == "openclaw-bundled"
-    assert rows["weather"]["blockedByAllowlist"] is True
+    assert rows["weather"]["source"] == "openclaw-extra"
     report = plan.report()
     assert report is not None
-    assert [item["name"] for item in report["loaded"]] == ["kept"]
+    assert [item["name"] for item in report["loaded"]] == ["kept", "weather"]
     outcomes = {
         item["name"]: (item["outcome"], item.get("selected"))
         for item in report["duplicates"]
@@ -367,8 +423,72 @@ def test_higher_sources_hide_configured_skills_as_reported(native: _Native):
         str((native.workspace / "skills" / "review").resolve()),
     )
     assert outcomes["github"][0] == "shadowed"
-    # The excluded shipped copy still hides the configured one: neither loads.
-    assert outcomes["weather"] == ("shadowed", None)
+    assert "weather" not in outcomes
+
+
+def test_every_copy_of_a_clash_is_reported_with_openclaws_winner(native: _Native):
+    """Configured, shipped, and workspace copies are all listed; OpenClaw's pick is selected."""
+    root = native.tmp_path
+    _skill(root / "team" / "github", "github", "Configured github.")
+    _skill(native.workspace / "skills" / "github", "github", "Workspace github.")
+    _skill(native.workspace / ".agents" / "skills" / "tmux", "tmux", "Project tmux.")
+
+    plan, status = native.list(
+        {"directories": [{"folder": str(root / "team")}], "bundled": {}}
+    )
+
+    rows = {row["name"]: row for row in status["skills"]}
+    assert (rows["github"]["source"], rows["github"]["description"]) == (
+        "openclaw-workspace",
+        "Workspace github.",
+    )
+    assert (rows["tmux"]["source"], rows["tmux"]["description"]) == (
+        "agents-skills-project",
+        "Project tmux.",
+    )
+    report = plan.report()
+    assert report is not None
+    duplicates = {item["name"]: item for item in report["duplicates"]}
+    assert plan.inventory is not None
+    assert duplicates["github"] == {
+        "name": "github",
+        "outcome": "shadowed",
+        "selected": str((native.workspace / "skills" / "github").resolve()),
+        "copies": [
+            {
+                "origin": "external",
+                "path": str((root / "team" / "github").resolve()),
+                "entry": "skills.directories[0]",
+            },
+            {"origin": "bundled", "path": str(plan.inventory.skills["github"])},
+            {
+                "origin": "local",
+                "path": str((native.workspace / "skills" / "github").resolve()),
+            },
+        ],
+    }
+    # A clash with no configured copy is reported too.
+    assert duplicates["tmux"] == {
+        "name": "tmux",
+        "outcome": "selected",
+        "selected": str((native.workspace / ".agents/skills/tmux").resolve()),
+        "copies": [
+            {"origin": "bundled", "path": str(plan.inventory.skills["tmux"])},
+            {
+                "origin": "local",
+                "path": str((native.workspace / ".agents/skills/tmux").resolve()),
+            },
+        ],
+    }
+    # The shipped copies hidden by the workspace are reported as such.
+    unavailable = {
+        item["name"]: item for item in report["bundled"].get("unavailable", [])
+    }
+    assert unavailable["github"] == {
+        "name": "github",
+        "reason": "shadowed",
+        "by": "openclaw-workspace",
+    }
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Requires symbolic links")
@@ -594,10 +714,14 @@ def test_read_only_skills_load_and_cannot_be_changed(
         _skill(team / "new-skill", "new-skill")
 
 
-def test_skill_written_into_a_writable_folder_survives_a_restart(
+def test_skill_written_into_a_writable_folder_loads_from_a_new_configuration(
     native: _Native, baseline: set[str]
 ):
-    """Each list is a new start: a skill written after one start loads at the next."""
+    """A skill written after one generated configuration is listed with the next.
+
+    This lists skills twice without a Gateway; the restart of a real runtime
+    is covered by :func:`test_real_runtime_restart_loads_skills_written_meanwhile`.
+    """
     agent_skills = native.tmp_path / "agent-skills"
     agent_skills.mkdir()
     skills = {"directories": [{"folder": str(agent_skills)}]}
@@ -645,3 +769,91 @@ def test_agent_adds_skills_beside_read_only_skills_it_cannot_change(
         ("review", "skills.directories[0]"),
         ("triage", "skills.directories[1]"),
     ]
+
+
+async def _start_runtime(
+    native: _Native, skills: dict[str, Any]
+) -> adapter.OpenClawRuntime:
+    """Start a real OpenClaw Gateway for ``skills``; no model is called."""
+
+    runtime = adapter.OpenClawRuntime()
+    context = native._context().to_mapping()
+    home = native.tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    context["environment"]["env"] = {"HOME": str(home)}
+    await runtime.start(
+        {
+            "config": native._config(skills, {"startup_timeout_seconds": 120}),
+            "runtime_context": context,
+            "base_dir": str(native.tmp_path),
+        }
+    )
+    return runtime
+
+
+def _running_skills(runtime: adapter.OpenClawRuntime) -> dict[str, dict]:
+    """List a running runtime's skills with the environment its Gateway uses."""
+
+    assert runtime._command is not None and runtime._command_env is not None
+    result = subprocess.run(
+        [str(runtime._command), "skills", "list", "--json", "--agent", "default"],
+        env=runtime._command_env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    return {row["name"]: row for row in json.loads(result.stdout)["skills"]}
+
+
+async def test_real_runtime_restart_loads_skills_written_meanwhile(native: _Native):
+    """Stop a running Gateway, add a skill, and start again: the report follows.
+
+    Both starts keep the excluded shipped weather out, so the configured
+    weather loads; the runtime's copy of the selected shipped skills goes away
+    when it stops.
+    """
+    agent_skills = native.tmp_path / "agent-skills"
+    agent_skills.mkdir()
+    _skill(agent_skills / "weather", "weather", "Configured weather.")
+    skills = {
+        "directories": [{"folder": str(agent_skills)}],
+        "bundled": {"exclude": ["weather"]},
+    }
+
+    runtime = await _start_runtime(native, skills)
+    try:
+        assert runtime._process is not None and runtime._process.returncode is None
+        first = runtime._skills_output()["skills"]
+        rows = _running_skills(runtime)
+        assert runtime._command_env is not None
+        staged = Path(runtime._command_env[openclaw_skills.BUNDLED_SKILLS_ENV])
+        assert staged.is_dir()
+    finally:
+        await runtime.stop()
+    assert not staged.exists()
+    assert [(item["name"], item["entry"]) for item in first["loaded"]] == [
+        ("weather", "skills.directories[0]")
+    ]
+    assert (rows["weather"]["source"], rows["weather"]["description"]) == (
+        "openclaw-extra",
+        "Configured weather.",
+    )
+    # The agent saves a new skill into its read-write folder while stopped.
+    _skill(agent_skills / "triage", "triage")
+
+    runtime = await _start_runtime(native, skills)
+    try:
+        assert runtime._process is not None and runtime._process.returncode is None
+        restarted = runtime._skills_output()["skills"]
+        rows = _running_skills(runtime)
+    finally:
+        await runtime.stop()
+    assert [(item["name"], item["entry"]) for item in restarted["loaded"]] == [
+        ("triage", "skills.directories[0]"),
+        ("weather", "skills.directories[0]"),
+    ]
+    assert rows["triage"]["source"] == "openclaw-extra"
+    assert rows["weather"]["description"] == "Configured weather."
+    assert restarted["bundled"]["selected"] == first["bundled"]["selected"]
+    assert "weather" not in restarted["bundled"]["selected"]
