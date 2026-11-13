@@ -1,0 +1,24 @@
+---
+title: "Core Workflow"
+description: "Configure an agent, submit a request, and handle the result."
+slug: "/sdk/core-workflow"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+The NVIDIA NeMo Fabric Python SDK follows three steps: describe the agent, submit its task, and handle the outcome. These guides explain each part of that sequence. For a complete runnable example, use the [Quickstart](../getting-started/quickstart-overview.mdx).
+
+{/* Card href values use relative published routes. */}
+<CardGroup cols={2}>
+  <Card title="Configure Agents" icon="fa-solid fa-sliders" href="configure">
+    Select the harness, model, instructions, runtime settings, and execution environment with a typed `FabricConfig`.
+  </Card>
+  <Card title="Run Requests" icon="fa-solid fa-play" href="requests">
+    Submit task input and request metadata through a single run or an existing runtime.
+  </Card>
+  <Card title="Results, Errors, and Run Artifacts" icon="fa-solid fa-list-check" href="results">
+    Check the outcome before reading output, handle failures, and locate retained artifacts.
+  </Card>
+</CardGroup>
+
+After the first request works, choose [Execution Options](execution-options.mdx) to extend it or [Diagnostics and Observability](diagnostics-and-observability.mdx) to investigate a run.

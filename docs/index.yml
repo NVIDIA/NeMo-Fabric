@@ -13,6 +13,7 @@ navigation:
   - page: Release Notes
     path: ./about-nemo-fabric/release-notes.mdx
 - section: Getting Started
+  path: ./getting-started/overview.mdx
   collapsed: open-by-default
   contents:
   - section: Quickstart
@@ -28,18 +29,16 @@ navigation:
     - page: "4. Run in OpenShell (Optional)"
       path: ./getting-started/openshell.mdx
   - section: Installation
+    path: ./getting-started/install.mdx
     collapsed: open-by-default
     contents:
-    - page: Installation Overview
-      path: ./getting-started/install.mdx
     - page: Install the NeMo Fabric Runtime
       path: ./getting-started/install-fabric-runtime.mdx
       icon: fa-solid fa-microchip
     - section: Install a Harness Adapter
+      path: ./getting-started/install-adapters.mdx
       collapsed: open-by-default
       contents:
-      - page: Overview
-        path: ./getting-started/install-adapters.mdx
       - page: Install a Complete Runtime and Harness
         path: ./getting-started/install-complete.mdx
         hidden: true
@@ -145,6 +144,7 @@ navigation:
   collapsed: open-by-default
   contents:
   - section: Core Workflow
+    path: ./sdk/core-workflow.mdx
     collapsed: open-by-default
     contents:
     - page: Configure Agents
@@ -154,6 +154,7 @@ navigation:
     - page: Results, Errors, and Run Artifacts
       path: ./sdk/results.mdx
   - section: Execution Options
+    path: ./sdk/execution-options.mdx
     collapsed: open-by-default
     contents:
     - page: Tools, Skills, and MCP
@@ -173,6 +174,7 @@ navigation:
     - page: Shared Services
       path: ./sdk/services.mdx
   - section: Diagnostics and Observability
+    path: ./sdk/diagnostics-and-observability.mdx
     collapsed: open-by-default
     contents:
     - page: Plan and Diagnose
@@ -186,8 +188,9 @@ navigation:
   - page: Advanced Integration
     path: ./sdk/advanced.mdx
   - section: Python API Reference
+    path: ./sdk/api-reference.mdx
     contents:
-    - page: Overview
+    - page: Module Index
       path: ./reference/api/python-library-reference/index.md
     - page: Client
       path: ./reference/api/python-library-reference/nemo_fabric.client.md
@@ -230,6 +233,7 @@ navigation:
   - page: Custom-Agent Integrations
     path: ./adapter-contract/custom-agents.md
   - section: Tutorials
+    path: ./adapter-contract/tutorials/overview.mdx
     collapsed: open-by-default
     contents:
     - page: "1. Describe the Adapter"

@@ -1,0 +1,33 @@
+---
+title: "Adapter Tutorials"
+description: "Follow six stages to implement and verify a NeMo Fabric adapter."
+slug: "/adapter-contract/tutorials/overview"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Build an adapter that makes your harness or custom agent work with NVIDIA NeMo Fabric. Follow these six tutorials in order, or return to the stage you are implementing. The [Adapter Contract overview](../README.md#choose-an-integration-shape) helps you choose the adapter boundary before writing its lifecycle.
+
+{/* Card href values use relative published routes. */}
+<CardGroup cols={2}>
+  <Card title="1. Describe the Adapter" icon="fa-solid fa-file-code" href="describe-adapter">
+    Identify the target and declare its runtime binding and supported capabilities in a descriptor.
+  </Card>
+  <Card title="2. Map Normalized Configuration" icon="fa-solid fa-sliders" href="map-normalized-configuration">
+    Translate supported configuration into the target's native settings and reject unsupported values.
+  </Card>
+  <Card title="3. Implement Execution" icon="fa-solid fa-play" href="implement-execution">
+    Implement `start`, `invoke`, and `stop` with runtime isolation and cleanup.
+  </Card>
+  <Card title="4. Normalize Results and Telemetry" icon="fa-solid fa-list-check" href="normalize-results-and-telemetry">
+    Return terminal outcomes, failures, artifact references, and supported telemetry.
+  </Card>
+  <Card title="5. Register and Discover the Adapter" icon="fa-solid fa-box" href="register-and-discover-adapter">
+    Package the descriptor so NeMo Fabric can find and resolve the intended adapter.
+  </Card>
+  <Card title="6. Verify the Adapter" icon="fa-solid fa-check" href="verify-adapter">
+    Check lifecycle behavior, cleanup, isolation, and the capabilities advertised by the descriptor.
+  </Card>
+</CardGroup>
+
+Use [Examples and References](../examples.md) for implementation examples and the published contract packages.

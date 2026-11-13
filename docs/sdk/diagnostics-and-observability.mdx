@@ -1,0 +1,27 @@
+---
+title: "Diagnostics and Observability"
+description: "Choose the checks and execution evidence that answer your question."
+slug: "/sdk/diagnostics-and-observability"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use these NVIDIA NeMo Fabric Python SDK guides to inspect configuration, diagnose runtime problems, or collect execution evidence. Choose the guide that answers your question; separate planning and diagnostic calls are optional additions to the [core workflow](core-workflow.mdx).
+
+{/* Card href values use relative published routes. */}
+<CardGroup cols={2}>
+  <Card title="Plan and Diagnose" icon="fa-solid fa-magnifying-glass" href="plan">
+    Inspect the selected adapter, supported configuration, and declared requirements before starting a runtime.
+  </Card>
+  <Card title="Health Checks" icon="fa-solid fa-heart-pulse" href="health-checks">
+    Inspect supported server, runtime, or service health when investigating readiness and execution problems.
+  </Card>
+  <Card title="Resource Usage and Stats" icon="fa-solid fa-chart-line" href="resource-usage-and-stats">
+    Collect available local CPU, memory, process, and GPU measurements for a run.
+  </Card>
+  <Card title="Software Execution Evidence" icon="fa-solid fa-file-lines" href="evidence">
+    Inspect observed software versions, their sources, and coverage limits.
+  </Card>
+</CardGroup>
+
+For live execution records, use [NeMo Relay Streaming](relay-streaming.mdx). For common setup and run failures, use [Troubleshooting](../troubleshooting.mdx).

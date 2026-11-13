@@ -1,0 +1,28 @@
+---
+title: "Execution Options"
+description: "Choose capabilities, runtime lifecycles, streaming, and execution environments."
+slug: "/sdk/execution-options"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Extend the [core workflow](core-workflow.mdx) to match your application's execution needs. NVIDIA NeMo Fabric exposes these options through the Python SDK; availability depends on the selected adapter and environment. Refer to [Harness Compatibility](../reference/compatibility.mdx) when choosing a combination.
+
+{/* Card href values use relative published routes. */}
+<CardGroup cols={2}>
+  <Card title="Tools, Skills, and MCP" icon="fa-solid fa-puzzle-piece" href="capabilities">
+    Give an agent additional instructions and tools, connect MCP servers, and configure supported tool policies.
+  </Card>
+  <Card title="Multi-Turn Runtimes and Parallel Work" icon="fa-solid fa-arrows-split-up-and-left" href="runtimes">
+    Reuse a runtime for related turns or create independent runtimes for parallel tasks.
+  </Card>
+  <Card title="Streaming" icon="fa-solid fa-stream" href="streaming">
+    Choose between native OpenAI output chunks and NeMo Relay execution records.
+  </Card>
+  <Card title="Environments and Sandboxes" icon="fa-solid fa-cube" href="environments">
+    Select where the adapter and harness execute, including supported OpenShell sandbox workflows.
+  </Card>
+  <Card title="Shared Services" icon="fa-solid fa-server" href="services">
+    Prepare or attach to a long-lived service, such as a shared OpenClaw Gateway, and manage its ownership.
+  </Card>
+</CardGroup>
