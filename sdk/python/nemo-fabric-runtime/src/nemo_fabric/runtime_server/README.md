@@ -51,7 +51,7 @@ Each completed check preserves an immutable `fabric.check/v1alpha1` report in `r
 
 An unavailable runtime returns `unknown/runtime_unavailable` with no agent observations. If the server knows the runtime is stopped or the SDK records a stopped or failed lifecycle, `runtime.state` preserves that state. A failed lifecycle leaves activity unknown. These lifecycle records do not establish that the agent's child processes exited.
 
-`fabric.check/v1alpha1` identifies the shared health request and report format so readers can reject formats they do not support. The identifier stays the same across SDK releases while the health format remains compatible. `fabric-agent-ctl` ships with `nemo-fabric-runtime`; the executable and all subcommands follow the SDK package release.
+`fabric.check/v1alpha1` identifies the shared health request and report format so readers can reject formats they do not support. The identifier stays the same across SDK releases while the health format remains compatible. `fabric-agent-ctl` ships with `nemo-fabric-runtime`; the executable and all subcommands follow the SDK package release. Health readers validate reason codes strictly. The caller, server, and `fabric-agent-ctl` must use the same `nemo-fabric-runtime` release; mixed-release health reports are not supported. The format identifier does not negotiate SDK releases.
 
 Report timing covers the client call, including connection, response decoding, and validation. `completed_at` records client completion; each `observed_at` records when the server collected the evidence. Successful checks, confirmed failures, and timeouts use the same timing interval.
 
