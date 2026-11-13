@@ -75,8 +75,13 @@ validate Relay artifacts.
 
 ## Relay Telemetry
 
-Each Relay-enabled invocation installs NOOA's public `install_nemo_relay()`
-middleware and opens one `nooa-bench-agent-request` scope. The middleware
+Follow the [shared Relay setup](../README.md#configure-relay) for session
+identity, UUID fallback, configuration policy, and compatible versions.
+[Strict trace capture](../README.md#strict-trace-capture) also requires the
+GenAI endpoint mapping.
+
+Each Relay-enabled invocation installs NOOA's agent-call and LLM middleware,
+the adapter's Relay 0.11 tool-result shim, and opens one `nooa-bench-agent-request` scope. The middleware
 records nested BenchAgent methods, LLM calls, and `execute_python` tool calls.
 
 `Runtime.invoke_stream()` can consume the resulting ATOF records while the

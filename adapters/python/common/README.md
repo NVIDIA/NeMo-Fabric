@@ -165,7 +165,10 @@ the parent; otherwise the session root is also the parent. Relay derives ATIF
 `session_id` from the root, so invocations that share a session root export
 separate trajectories under one session. A missing value, a non-string, a
 string that is not a UUID, the nil UUID, or a UUID whose final eight bytes are
-zero falls back to the request root without an error.
+zero falls back to a usable UUID request ID without an error. If neither ID is
+usable, the helper preserves the existing Relay context; Relay creates a native
+root when no context exists. `runtime_id` remains correlation metadata and does
+not become an automatic conversation root.
 
 This helper does not apply to adapters that send telemetry through an external
 Relay gateway or whose upstream integration creates an isolated scope context.
@@ -208,9 +211,8 @@ with (
 
 Nested scopes do not repeat the keys because the Relay scope hierarchy already
 links them to the root scope. The LangChain Deep Agents, mini-SWE-agent, and
-NOOA adapters attach all three keys. NOOA calls only
-`relay_correlation_metadata()`, so its request ID does not become the
-propagated Relay root.
+NOOA adapters attach all three keys and use `relay_request_context()` to preserve
+the caller's session root or a usable request root.
 
 Claude, Codex, and Pi send telemetry through an external Relay gateway and do
 not yet carry per-invocation NeMo Fabric IDs into Relay. Hermes Agent emits

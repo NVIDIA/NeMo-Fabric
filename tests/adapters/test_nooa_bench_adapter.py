@@ -402,11 +402,20 @@ async def test_bench_runtime_maps_task_result_usage_and_cleanup(
 
     await runtime.start(_start_payload(tmp_path))
     result = await runtime.invoke(
-        AgentRunRequest.from_mapping({"input": "Fix the failing test."}),
+        AgentRunRequest.from_mapping(
+            {
+                "input": "Fix the failing test.",
+                "relay_session_root": "11111111-1111-4111-8111-111111111111",
+            }
+        ),
         _runtime_context(),
     )
     await runtime.stop()
 
+    assert (
+        bench_dependencies["telemetry"].invoke.await_args.kwargs["relay_session_root"]
+        == "11111111-1111-4111-8111-111111111111"
+    )
     bench_dependencies["get_llm_client"].assert_called_once_with(
         "openai/fixture-model",
         client_type=None,

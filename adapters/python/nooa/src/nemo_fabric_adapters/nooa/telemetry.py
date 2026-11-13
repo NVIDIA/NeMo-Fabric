@@ -193,6 +193,7 @@ class RelayTelemetry:
         agent: Any,
         runtime_context: RuntimeContext,
         call: Callable[[], Awaitable[T]],
+        relay_session_root: str | None = None,
     ) -> RelayInvocation:
         telemetry = runtime_context.telemetry
         if telemetry is None or not telemetry.relay_enabled:
@@ -253,24 +254,39 @@ class RelayTelemetry:
         scope_fault: str | None = None
         plugin_fault: str | None = None
         uninstall_fault: str | None = None
+        scope_leaked = False
         try:
             async with plugin.activate(plugin_config) as activation:
                 common_utils.reject_inherited_relay_plugin_config(activation.report)
                 uninstall = install_nemo_relay_compat(agent.event_manager)
                 try:
-                    metadata = common_utils.relay_correlation_metadata(runtime_context)
-                    try:
-                        with scope.scope(
-                            self._scope_name,
-                            ScopeType.Agent,
-                            metadata=metadata,
-                        ):
-                            called = True
-                            result = await call()
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as error:
-                        scope_fault = _safe_fault("Relay request scope", error)
+                    request_context, metadata = common_utils.relay_request_context(
+                        runtime_context.request_id, relay_session_root
+                    )
+                    metadata.update(
+                        common_utils.relay_correlation_metadata(runtime_context)
+                    )
+                    with request_context:
+                        request_baseline = _scope_handle()
+                        try:
+                            with scope.scope(
+                                self._scope_name,
+                                ScopeType.Agent,
+                                metadata=metadata,
+                            ):
+                                called = True
+                                result = await call()
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as error:
+                            scope_fault = _safe_fault("Relay request scope", error)
+                        finally:
+                            # Inspect before restoring the propagated stack; restoration
+                            # must not hide a leaked native scope.
+                            scope_leaked = not _scope_unchanged(request_baseline)
+                            if scope_leaked:
+                                self._quarantine = _QUARANTINE_NOTE
+                                self._quarantine_cause = scope_fault or _QUARANTINE_NOTE
                 finally:
                     try:
                         await _await_if_needed(uninstall())
@@ -282,7 +298,9 @@ class RelayTelemetry:
             plugin_fault = _safe_fault("Relay plugin lifecycle", error)
 
         telemetry_fault = _join_faults(scope_fault, uninstall_fault, plugin_fault)
-        if telemetry_fault is not None and not _scope_unchanged(baseline):
+        if scope_leaked or (
+            telemetry_fault is not None and not _scope_unchanged(baseline)
+        ):
             self._quarantine = _QUARANTINE_NOTE
             self._quarantine_cause = telemetry_fault
             telemetry_fault = _join_faults(telemetry_fault, _QUARANTINE_NOTE)

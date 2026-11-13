@@ -482,18 +482,46 @@ async def _close_resources(
         raise primary
 
 
-def _reason(result: Any) -> tuple[str, str]:
+def _reason(result: Any) -> tuple[str, str, str | None]:
     kind = getattr(result, "kind", None)
     value = getattr(kind, "value", kind)
     explanation = getattr(result, "explanation", None)
+    message = None
+    if value is None:
+        try:
+            from nooa.interactive import Done
+            from nooa.interactive import NeedInput
+            from nooa.interactive import Waiting
+        except ImportError:
+            pass
+        else:
+            if isinstance(result, Done):
+                value, message = "DONE", result.message
+            elif isinstance(result, NeedInput):
+                value, message = "NEED_INPUT", result.question
+                explanation = next(
+                    (
+                        text
+                        for text in (result.explanation, result.reason, result.question)
+                        if isinstance(text, str) and text.strip()
+                    ),
+                    None,
+                )
+            elif isinstance(result, Waiting):
+                value, message = "WAIT", result.message
     if value not in _TERMINAL_REASONS | {"WAIT"}:
         raise _InvalidRespondResult("unsupported response reason")
     if not isinstance(explanation, str) or not explanation.strip():
         raise _InvalidRespondResult("missing response explanation")
-    return value, explanation
+    return value, explanation, message
 
 
-async def dispatch(target: InteractiveAgentTarget, text: str) -> tuple[str, str]:
+async def dispatch(
+    target: InteractiveAgentTarget,
+    text: str,
+    *,
+    on_message: Callable[[str], None] | None = None,
+) -> tuple[str, str]:
     """Submit one user message and run the standard InteractiveAgent wake loop."""
 
     agent = target.agent
@@ -510,7 +538,9 @@ async def dispatch(target: InteractiveAgentTarget, text: str) -> tuple[str, str]
                 notification.setdefault(name, []).extend(drained)
 
         result = await agent.handle(notification)
-        reason, explanation = _reason(result)
+        reason, explanation, message = _reason(result)
+        if message is not None and on_message is not None:
+            on_message(message)
         continue_after = False
         if reason != "WAIT" and target.continue_after is not None:
             continue_after = bool(
@@ -705,7 +735,11 @@ class NooaRuntime:
             unsubscribe: Callable[[], None] | None = None
             try:
                 unsubscribe = agent.event_manager.on("AgentMessage", capture_message)
-                reason, explanation = await dispatch(self._target, request.input)
+                reason, explanation = await dispatch(
+                    self._target,
+                    request.input,
+                    on_message=lambda content: messages.append({"content": content}),
+                )
             except asyncio.CancelledError:
                 raise
             except _InvalidRespondResult:
@@ -738,6 +772,7 @@ class NooaRuntime:
             agent=agent,
             runtime_context=runtime_context,
             call=invoke_target,
+            relay_session_root=request.relay_session_root,
         )
         if not relay_invocation.called:
             result = _failure_output(
