@@ -45,8 +45,8 @@ from nemo_fabric_adapters.openclaw import skills as openclaw_skills
 
 
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 60.0
-# The pinned Gateway can take ~7 s to release ownership when OpenShell denies
-# process-group cleanup. Leave room within Fabric's 30 s host stop deadline.
+# OpenShell can delay native broker cleanup for seven seconds before lease release.
+# Leave time for adapter cleanup within NeMo Fabric's 30-second stop deadline.
 DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 15.0
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
 DEFAULT_READ_TIMEOUT_SECONDS = 600.0

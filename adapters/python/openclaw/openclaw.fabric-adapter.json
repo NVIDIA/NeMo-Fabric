@@ -125,7 +125,7 @@
         "type": "number",
         "exclusiveMinimum": 0,
         "default": 15,
-        "description": "Maximum graceful Gateway shutdown time before forced termination. Fabric allows 30 seconds for the complete adapter stop; leave time for cleanup within that limit."
+        "description": "Maximum graceful Gateway shutdown time before forced termination. NeMo Fabric allows 30 seconds for the complete adapter stop. Leave time for cleanup within that limit."
       },
       "connect_timeout_seconds": {
         "type": "number",

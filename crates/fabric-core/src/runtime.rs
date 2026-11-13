@@ -95,7 +95,7 @@ const LOCAL_HOST_START_TIMEOUT: Duration = Duration::from_secs(90);
 // Adapters receive a deadline this much earlier than the host timeout so they
 // can interrupt native work and return a normalized result before it fires.
 const LOCAL_HOST_ADAPTER_RESERVE: Duration = Duration::from_secs(10);
-// Allow the OpenClaw Gateway's 15 s graceful stop plus adapter cleanup and reaping.
+// Allow the OpenClaw Gateway's 15-second graceful stop plus adapter cleanup.
 const LOCAL_HOST_STOP_TIMEOUT: Duration = Duration::from_secs(30);
 const LOCAL_HOST_EXIT_GRACE: Duration = Duration::from_secs(2);
 const LOCAL_HOST_DIAGNOSTIC_LIMIT: usize = 16 * 1024;
