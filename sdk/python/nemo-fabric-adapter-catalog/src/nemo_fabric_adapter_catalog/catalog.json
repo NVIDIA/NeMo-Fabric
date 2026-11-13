@@ -2442,8 +2442,8 @@
               "type": "number"
             },
             "shutdown_timeout_seconds": {
-              "default": 5,
-              "description": "Maximum graceful Gateway shutdown time before forced termination.",
+              "default": 15,
+              "description": "Maximum graceful Gateway shutdown time before forced termination. Fabric allows 30 seconds for the complete adapter stop; leave time for cleanup within that limit.",
               "exclusiveMinimum": 0,
               "type": "number"
             },
@@ -2488,7 +2488,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.7.0"
       },
-      "sha256": "ec8b5ab61b51a542e571084ebed6e428ce5c1b67d5bcc5080357032ccafaabab",
+      "sha256": "8f46125311f88793c941d5a1eef14b60492d8ce03d13a7211afaec2df2c5b815",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {

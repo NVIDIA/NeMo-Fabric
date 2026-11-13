@@ -89,6 +89,7 @@ harness = HarnessConfig(
 | --- | --- |
 | `openclaw_command` | Omit to find `openclaw` on `PATH`. A relative path containing a directory is resolved from the NeMo Fabric base directory. The same executable is used for version checks, configuration validation, and Gateway startup. |
 | `startup_timeout_seconds` | One deadline covering the executable check through Gateway readiness. Defaults to 60 seconds; maximum 75 seconds, within NeMo Fabric's 90-second start limit. |
+| `shutdown_timeout_seconds` | Graceful Gateway shutdown before forced termination. Defaults to 15 seconds, within Fabric's 30-second adapter stop limit. Overrides must leave time for cleanup within that limit. |
 
 The adapter supports OpenClaw's default `openclaw` execution runtime.
 
