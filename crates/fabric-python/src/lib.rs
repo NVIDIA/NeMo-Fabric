@@ -284,6 +284,121 @@ fn check_environment(
     to_json(&report)
 }
 
+/// Read a saved result from the configured artifact root.
+#[pyfunction]
+fn invocation_result(
+    py: Python<'_>,
+    artifacts: Option<String>,
+    agent: String,
+    runtime_id: String,
+    request_id: String,
+) -> PyResult<String> {
+    let root = artifacts
+        .map(PathBuf::from)
+        .map_or_else(nemo_fabric_core::runtime::default_artifact_root, Ok)
+        .map_err(to_py_error)?;
+    let result = py
+        .detach(|| {
+            nemo_fabric_core::runtime::invocation_result(&root, &agent, &runtime_id, &request_id)
+        })
+        .map_err(|_| {
+            PyRuntimeError::new_err(
+                "The invocation result is unavailable; do not replay uncertain work.",
+            )
+        })?;
+    to_json(&result)
+}
+
+/// Mark a local one-shot result as awaiting lifecycle finalization.
+#[pyfunction]
+fn _begin_run_result(
+    py: Python<'_>,
+    plan_json: String,
+    runtime_json: String,
+    request_json: String,
+) -> PyResult<()> {
+    let plan = parse_run_plan(plan_json)?;
+    let runtime = parse_runtime_handle(runtime_json)?;
+    let request: RunRequest = serde_json::from_str(&request_json).map_err(|_| {
+        pyo3::exceptions::PyValueError::new_err("The invocation request is invalid.")
+    })?;
+    py.detach(|| nemo_fabric_core::runtime::begin_run_result(&plan, &runtime, &request))
+        .map_err(to_py_error)
+}
+
+/// Finalize a saved one-shot protocol failure after cleanup.
+#[pyfunction]
+fn _finish_failed_run_result(
+    py: Python<'_>,
+    plan_json: String,
+    runtime_json: String,
+    request_json: String,
+    events_json: String,
+) -> PyResult<()> {
+    let plan = parse_run_plan(plan_json)?;
+    let runtime = parse_runtime_handle(runtime_json)?;
+    let request: RunRequest = serde_json::from_str(&request_json).map_err(|_| {
+        pyo3::exceptions::PyValueError::new_err("The invocation request is invalid.")
+    })?;
+    let events: Vec<nemo_fabric_core::FabricEvent> = serde_json::from_str(&events_json)
+        .map_err(|_| pyo3::exceptions::PyValueError::new_err("The cleanup events are invalid."))?;
+    py.detach(|| {
+        nemo_fabric_core::runtime::finish_failed_run_result(&plan, &runtime, &request, events)
+    })
+    .map_err(to_py_error)
+}
+
+/// Persist a result after the Python one-shot lifecycle finishes cleanup.
+#[pyfunction]
+fn _save_run_result(
+    py: Python<'_>,
+    plan_json: String,
+    runtime_json: String,
+    result_json: String,
+) -> PyResult<()> {
+    let plan = parse_run_plan(plan_json)?;
+    let runtime = parse_runtime_handle(runtime_json)?;
+    let result: nemo_fabric_core::RunResult = serde_json::from_str(&result_json)
+        .map_err(|_| pyo3::exceptions::PyValueError::new_err("The completed result is invalid."))?;
+    py.detach(|| nemo_fabric_core::runtime::save_run_result(&plan, &runtime, &result))
+        .map_err(|_| PyRuntimeError::new_err("The final invocation result could not be saved."))
+}
+
+/// Read a saved result through an OpenShell environment.
+#[pyfunction]
+fn invocation_result_environment(
+    py: Python<'_>,
+    environment_json: String,
+    agent: String,
+    runtime_id: String,
+    request_id: String,
+) -> PyResult<String> {
+    let environment = parse_environment_handle(environment_json)?;
+    let result = py
+        .detach(|| {
+            nemo_fabric_core::runtime::invocation_result_environment(
+                &environment,
+                &agent,
+                &runtime_id,
+                &request_id,
+            )
+        })
+        .map_err(|error| {
+            let failure = PyRuntimeError::new_err(
+                "The invocation result is unavailable; do not replay uncertain work.",
+            );
+            if let FabricError::EnvironmentProviderOperation { code, .. } = error {
+                match Python::attach(|py| failure.value(py).setattr("code", code)) {
+                    Ok(()) => failure,
+                    Err(error) => error,
+                }
+            } else {
+                failure
+            }
+        })?;
+    to_json(&result)
+}
+
 /// Read recorded runtime status through an OpenShell environment.
 #[pyfunction]
 fn runtime_status_environment(
@@ -391,6 +506,11 @@ fn runtime_resource_snapshot(
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(check_environment, m)?)?;
     m.add_function(wrap_pyfunction!(runtime_status_environment, m)?)?;
+    m.add_function(wrap_pyfunction!(invocation_result, m)?)?;
+    m.add_function(wrap_pyfunction!(_save_run_result, m)?)?;
+    m.add_function(wrap_pyfunction!(_finish_failed_run_result, m)?)?;
+    m.add_function(wrap_pyfunction!(_begin_run_result, m)?)?;
+    m.add_function(wrap_pyfunction!(invocation_result_environment, m)?)?;
     m.add_function(wrap_pyfunction!(check_service, m)?)?;
     m.add("ServiceInUseError", m.py().get_type::<ServiceInUseError>())?;
     m.add(

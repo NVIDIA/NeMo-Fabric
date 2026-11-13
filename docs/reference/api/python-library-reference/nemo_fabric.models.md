@@ -2761,6 +2761,8 @@ Return a detached mapping matching the Rust ``FabricConfig`` schema.
 
 One validated NeMo Fabric invocation request.
 
+Request identifiers must not be blank or contain NUL.
+
 
 
 ### Fields

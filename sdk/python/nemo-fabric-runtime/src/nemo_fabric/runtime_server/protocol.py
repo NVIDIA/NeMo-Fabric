@@ -18,7 +18,7 @@ CALL_SECONDS = 320.0
 READ_SECONDS = 10.0
 SHUTDOWN_SECONDS = 4.0
 SOCKET_PATH = "/sandbox/fabric.sock"
-OPERATIONS = ("start", "invoke", "stop", "serve", "check", "status")
+OPERATIONS = ("start", "invoke", "stop", "serve", "check", "status", "result")
 # A cause is an SDK or adapter error code, never its message or other values.
 CAUSE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 CAUSE_SUFFIX = re.compile(rf" Cause: ({CAUSE.pattern})\.\Z")
@@ -47,6 +47,8 @@ MESSAGES = {
     "runtime_limit_reached": "The client runtime limit has been reached; stop an owned runtime before starting another.",
     "status_failed": "Fabric could not read the recorded runtime status.",
     "stop_failed": "Fabric could not complete the stop operation.",
+    "result_failed": "Fabric could not retrieve the saved invocation result.",
+    "invocation_timeout": "The invocation reply exceeded its deadline; work may continue. Retrieve the result using the original request ID; do not submit it again with a new ID.",
     "invoke_failed": "Fabric did not report a successful invocation.",
     "host_stopping": "The Fabric host is shutting down.",
     "runtime_unavailable": "No active Fabric runtime is available.",
@@ -132,9 +134,9 @@ def validate_request(request: Any) -> str:
     ):
         raise ProtocolError("interface_unsupported", unsupported=True)
     required = {"interface_version", "operation"}
-    if operation in ("start", "invoke", "stop", "status"):
+    if operation in ("start", "invoke", "stop", "status", "result"):
         required.add("agent")
-    if operation in ("invoke", "stop", "status"):
+    if operation in ("invoke", "stop", "status", "result"):
         required.add("runtime_id")
     if operation == "start":
         required.add("config")
@@ -143,6 +145,8 @@ def validate_request(request: Any) -> str:
         if len(payload_fields) != 1:
             raise ProtocolError()
         required.update(payload_fields)
+    if operation == "result":
+        required.add("request_id")
     allowed = required.copy()
     if operation == "start":
         allowed.add("session_ref")
@@ -165,7 +169,7 @@ def validate_request(request: Any) -> str:
             raise ProtocolError()
     if not required <= request.keys() or not request.keys() <= allowed:
         raise ProtocolError()
-    for field in ("agent", "runtime_id"):
+    for field in ("agent", "runtime_id", "request_id"):
         if field in request and (
             not isinstance(request[field], str)
             or not request[field].strip()
@@ -244,10 +248,12 @@ def encode_response(response: dict[str, Any]) -> bytes:
     return _encode(
         envelope(
             response["operation"],
-            changed=False if response["operation"] in ("check", "status") else None,
+            changed=False
+            if response["operation"] in ("check", "status", "result")
+            else None,
             error=ProtocolError("response_too_large", "transport"),
             effects="none"
-            if response["operation"] in ("check", "status")
+            if response["operation"] in ("check", "status", "result")
             else "unknown",
         )
     )
@@ -281,6 +287,7 @@ def validate_response(response: dict[str, Any], operation: str) -> None:
                 "invoke",
                 "check",
                 "status",
+                "result",
                 "transport",
             )
             or error["effects"] not in ("none", "applied", "unknown")
@@ -295,7 +302,7 @@ def validate_response(response: dict[str, Any], operation: str) -> None:
         error["message"] = str(
             ProtocolError(error["code"], cause=cause[1] if cause else None)
         )
-        if operation == "status":
+        if operation in ("status", "result"):
             if (
                 response["changed"] is not False
                 or error["effects"] != "none"
@@ -314,6 +321,11 @@ def validate_response(response: dict[str, Any], operation: str) -> None:
             if response["changed"] is not False or report.server_state is None:
                 raise invalid
             response["result"] = report.to_mapping()
+        elif operation == "result":
+            if result is not None:
+                RunResult.from_mapping(result)
+            if response["changed"] is not False:
+                raise invalid
         elif operation == "invoke":
             RunResult.from_mapping(result)
             if response["changed"] is not None:

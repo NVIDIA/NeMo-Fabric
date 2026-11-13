@@ -346,7 +346,7 @@ async fn runtime_command<F: GatewayFactory>(
         ));
     }
     if executed.stdout.is_empty() {
-        if operation == "status" {
+        if matches!(operation, "status" | "result") {
             strict_json::validate(&executed.stderr).map_err(|_| {
                 ProviderError::contract("invalid_response", "status command returned invalid JSON")
             })?;
@@ -360,7 +360,7 @@ async fn runtime_command<F: GatewayFactory>(
             || diagnostic.operation != operation
             || !matches!(diagnostic.status.as_str(), "failed" | "unsupported")
             || !matches!(error.effects.as_str(), "none" | "applied" | "unknown")
-            || (operation == "status" && error.effects != "none")
+            || (matches!(operation, "status" | "result") && error.effects != "none")
             || !matches!(
                 error.stage.as_str(),
                 "request"
@@ -368,6 +368,7 @@ async fn runtime_command<F: GatewayFactory>(
                     | "start"
                     | "invoke"
                     | "stop"
+                    | "result"
                     | "check"
                     | "status"
                     | "transport"
@@ -402,7 +403,7 @@ fn decode_sdk_command_response(
             "task command output was not one SDK response envelope",
         ));
     }
-    if operation == "status" {
+    if matches!(operation, "status" | "result") {
         strict_json::validate(stdout).map_err(|_| {
             ProviderError::contract("invalid_response", "status command returned invalid JSON")
         })?;
@@ -443,7 +444,7 @@ fn decode_sdk_command_response(
     let status = response["status"].as_str().unwrap_or_default();
     let result = &response["result"];
     let error = &response["error"];
-    if operation == "status"
+    if matches!(operation, "status" | "result")
         && (response["changed"] != false || (!error.is_null() && error["effects"] != "none"))
     {
         return Err(ProviderError::contract(
@@ -494,7 +495,9 @@ fn decode_sdk_command_response(
         if exit_code != 0
             || !error.is_null()
             || (operation == "stop" && !result.is_null())
-            || (operation != "stop" && !result.is_object())
+            || (operation != "stop"
+                && !(operation == "result" && result.is_null())
+                && !result.is_object())
         {
             return Err(ProviderError::contract(
                 "invalid_response",
@@ -536,6 +539,7 @@ fn decode_sdk_command_response(
                 | "stop"
                 | "check"
                 | "status"
+                | "result"
                 | "transport"
         )
         || !matches!(effects, "none" | "applied" | "unknown")
@@ -573,6 +577,8 @@ fn valid_diagnostic_code(code: &str) -> bool {
             | "start_uncertain"
             | "runtime_id_conflict"
             | "status_failed"
+            | "result_failed"
+            | "invocation_timeout"
             | "stop_failed"
             | "invoke_failed"
             | "host_stopping"
@@ -1422,6 +1428,11 @@ enum TaskCommand {
         agent: String,
         runtime_id: String,
     },
+    Result {
+        agent: String,
+        runtime_id: String,
+        request_id: String,
+    },
     Stop {
         agent: String,
         runtime_id: String,
@@ -1510,6 +1521,31 @@ impl TaskCommand {
                 runtime_id,
                 request,
             } => ("invoke", agent, Some(runtime_id), Some(request)),
+            Self::Result {
+                agent,
+                runtime_id,
+                request_id,
+            } => {
+                if [agent.as_str(), runtime_id.as_str(), request_id.as_str()]
+                    .iter()
+                    .any(|value| value.trim().is_empty() || value.contains('\0'))
+                {
+                    return Err(ProviderError::contract(
+                        "invalid_runtime_command",
+                        "invalid result target",
+                    ));
+                }
+                arguments.extend([
+                    "result".into(),
+                    "--agent".into(),
+                    agent,
+                    "--runtime-id".into(),
+                    runtime_id,
+                    "--request-id".into(),
+                    request_id,
+                ]);
+                return Ok(("result", arguments, None));
+            }
             Self::Status { agent, runtime_id } => ("status", agent, Some(runtime_id), None),
             Self::Stop { agent, runtime_id } => ("stop", agent, Some(runtime_id), None),
         };
@@ -3830,6 +3866,52 @@ mod tests {
             ),
         }
     }
+    #[test]
+    fn result_command_is_a_read_with_request_identity() {
+        let command: TaskCommand = serde_json::from_value(json!({"operation": "result", "agent": "researcher", "runtime_id": "runtime-1", "request_id": "request-1"})).unwrap();
+        let (operation, arguments, payload) = command.arguments().unwrap();
+        assert_eq!(operation, "result");
+        assert_eq!(
+            arguments,
+            vec![
+                "fabric-agent-ctl",
+                "result",
+                "--agent",
+                "researcher",
+                "--runtime-id",
+                "runtime-1",
+                "--request-id",
+                "request-1"
+            ]
+        );
+        assert!(payload.is_none());
+        let response = json!({"operation": "result", "status": "succeeded", "changed": false, "result": null, "error": null});
+        assert_eq!(
+            decode_sdk_command_response("result", 0, response.to_string().as_bytes()).unwrap(),
+            json!({"status": "returned", "value": null})
+        );
+        let duplicate = br#"{"operation":"result","status":"succeeded","changed":false,"result":null,"result":{},"error":null}"#;
+        assert!(decode_sdk_command_response("result", 0, duplicate).is_err());
+    }
+
+    #[test]
+    fn result_and_timeout_diagnostics_keep_their_specific_codes() {
+        for (operation, code, stage, effects) in [
+            ("result", "result_failed", "result", "none"),
+            ("invoke", "invocation_timeout", "transport", "unknown"),
+        ] {
+            let response = json!({"operation": operation, "status": "failed", "changed": if operation == "result" { json!(false) } else { Value::Null }, "result": null,
+                "error": {"code": code, "stage": stage, "effects": effects, "message": "TEST_ONLY_PRIVATE"}});
+            let decoded =
+                decode_sdk_command_response(operation, 1, response.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                decoded,
+                json!({"status": "rejected", "error": {"code": code, "stage": stage, "effects": effects}})
+            );
+            assert!(!decoded.to_string().contains("TEST_ONLY_PRIVATE"));
+        }
+    }
+
     #[test]
     fn status_command_names_the_agent_and_runtime_without_payload() {
         let command: TaskCommand = serde_json::from_value(json!({

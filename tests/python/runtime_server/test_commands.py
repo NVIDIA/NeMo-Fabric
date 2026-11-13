@@ -296,3 +296,49 @@ def test_unusable_input_preserves_existing_bridge_error_code(
     assert response["error"]["code"] == "invalid_input"
     assert response["error"]["effects"] == "none"
     assert response["changed"] is False
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [[], ["--request-id", ""], ["--request-id", "first", "--request-id", "second"]],
+)
+def test_result_command_rejects_invalid_request_id_before_transport(
+    flags, monkeypatch, capsys
+):
+    from unittest.mock import AsyncMock
+
+    client = AsyncMock()
+    monkeypatch.setattr(cli.transport, "client", client)
+    assert (
+        cli.main(
+            ["result", "--agent", "researcher", "--runtime-id", "runtime-1", *flags]
+        )
+        == 1
+    )
+    response = json.loads(capsys.readouterr().out)
+    assert response["error"]["code"] == "invalid_request"
+    assert response["error"]["effects"] == "none"
+    assert response["changed"] is False
+    client.assert_not_awaited()
+
+
+def test_result_command_targets_one_request():
+    from nemo_fabric.runtime_server.cli import parse_command
+
+    assert parse_command(
+        [
+            "result",
+            "--agent",
+            "researcher",
+            "--runtime-id",
+            "runtime-1",
+            "--request-id",
+            "request-1",
+        ]
+    ) == {
+        "interface_version": 2,
+        "operation": "result",
+        "agent": "researcher",
+        "runtime_id": "runtime-1",
+        "request_id": "request-1",
+    }

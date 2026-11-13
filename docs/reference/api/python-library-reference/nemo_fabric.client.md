@@ -197,6 +197,26 @@ Doctor checks the resolved adapter, capability mappings, and declared environmen
 ---
 
 
+### <kbd>method</kbd> `invocation_result`
+
+```python
+async def invocation_result(
+    *,
+    agent_name: str,
+    runtime_id: str,
+    request_id: str,
+    artifacts: str | os.PathLike[str] | None = None,
+    environment: EnvironmentHandle | None = None,
+) -> RunResult | None
+```
+
+Retrieve a saved invocation without executing or repeating work.
+
+Supply the original request identifier. A null result means no completed result is available; it does not prove that work is running or safe to repeat. Local reads use the configured artifact root. OpenShell reads use the owning runtime server through ``fabric-agent-ctl result``. Files survive only while their artifact storage survives.
+
+---
+
+
 ### <kbd>method</kbd> `plan`
 
 ```python

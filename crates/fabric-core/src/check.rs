@@ -1113,7 +1113,9 @@ fn probe_target(
     let budget = Duration::try_from_secs_f64(timeout).unwrap_or(Duration::MAX);
     let remaining = || budget.saturating_sub(started.elapsed());
     let result = (|| -> std::io::Result<AdapterCheckResult> {
-        let path = crate::runtime::local_host_directory(runtime_id).join("health.endpoint.json");
+        let path = crate::runtime::local_host_directory(runtime_id)
+            .map_err(|_| std::io::Error::other("default host storage unavailable"))?
+            .join("health.endpoint.json");
         let mut options = OpenOptions::new();
         options.read(true);
         #[cfg(unix)]
@@ -1279,7 +1281,7 @@ mod tests {
 
     fn endpoint(runtime: &RuntimeHandle) -> TcpListener {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        let directory = crate::runtime::local_host_directory(&runtime.runtime_id);
+        let directory = crate::runtime::local_host_directory(&runtime.runtime_id).unwrap();
         std::fs::create_dir_all(&directory).unwrap();
         let endpoint = directory.join("health.endpoint.json");
         std::fs::write(
@@ -1375,7 +1377,8 @@ mod tests {
 
     fn cleanup(runtime: &RuntimeHandle) {
         invalidate_runtime(runtime);
-        std::fs::remove_dir_all(crate::runtime::local_host_directory(&runtime.runtime_id)).unwrap();
+        std::fs::remove_dir_all(crate::runtime::local_host_directory(&runtime.runtime_id).unwrap())
+            .unwrap();
     }
 
     fn gateway_service(runtime: &RuntimeHandle) -> crate::ServiceHandle {

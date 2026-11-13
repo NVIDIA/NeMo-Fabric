@@ -26,6 +26,72 @@ from nemo_fabric import RunRequest
 from nemo_fabric import RuntimeStatus
 
 
+@pytest.mark.parametrize("stop_fails", [False, True])
+async def test_one_shot_lookup_matches_cleanup_result(
+    hermes_shim_agent_dir, monkeypatch, stop_fails
+):
+    monkeypatch.setenv("ADAPTER_PYTHON", sys.executable)
+    original_stop = native.stop_runtime
+
+    def stop(*args):
+        events = original_stop(*args)
+        if stop_fails:
+            raise RuntimeError("test-only stop failure after confirmed cleanup")
+        return events
+
+    monkeypatch.setattr(native, "stop_runtime", stop)
+    client = Fabric()
+    result = await client.run(
+        hermes_shim_config(), base_dir=hermes_shim_agent_dir, input="final result"
+    )
+    saved = await client.invocation_result(
+        artifacts=hermes_shim_agent_dir / "artifacts",
+        agent_name=result.agent_name,
+        runtime_id=result.runtime_id,
+        request_id=result.request_id,
+    )
+    assert result.status == ("failed" if stop_fails else "succeeded")
+    assert saved == result
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix umask permissions")
+@pytest.mark.parametrize("existing_root", [False, True])
+def test_result_storage_supports_group_writable_umask(
+    hermes_shim_agent_dir, monkeypatch, existing_root
+):
+    monkeypatch.setenv("ADAPTER_PYTHON", sys.executable)
+    artifacts = hermes_shim_agent_dir / "artifacts"
+    if existing_root:
+        artifacts.mkdir(mode=0o700)
+    script = """
+import asyncio, json, os, sys
+from nemo_fabric import Fabric, FabricConfig
+os.umask(0o002)
+async def main():
+    config = FabricConfig.from_mapping(json.loads(sys.argv[1]))
+    runtime = await Fabric().start_runtime(config, base_dir=sys.argv[2])
+    try:
+        result = await runtime.invoke(input="private result storage")
+        assert result.status == "succeeded"
+    finally:
+        await runtime.stop()
+asyncio.run(main())
+"""
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+            hermes_shim_config().model_dump_json(exclude_none=True),
+            str(hermes_shim_agent_dir),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
 async def test_native_sdk(hermes_shim_agent_dir: Path):
     assert native.version()
 
@@ -461,3 +527,273 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert empty_chunks == []
     assert empty_result.status == "succeeded"
     assert empty_result.output["openai_stream_invocation_count"] == 2
+
+
+async def test_failed_final_save_never_exposes_pre_cleanup_success(
+    hermes_shim_agent_dir, monkeypatch
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    original_stop = native.stop_runtime
+
+    def stop(*args):
+        original_stop(*args)
+        raise RuntimeError("test-only stop failure")
+
+    def save(*args):
+        raise RuntimeError("test-only final save failure")
+
+    monkeypatch.setattr(native, "stop_runtime", stop)
+    monkeypatch.setattr(native, "_save_run_result", save)
+    client = Fabric()
+    with pytest.raises(FabricRuntimeError) as caught:
+        await client.run(
+            hermes_shim_config(), base_dir=hermes_shim_agent_dir, input="hello"
+        )
+    assert caught.value.code == "result_storage_failed"
+    partial = caught.value.details["runtime_evidence"]["partial_result"]
+    assert partial["status"] == "failed"
+    saved = await client.invocation_result(
+        artifacts=hermes_shim_agent_dir / "artifacts",
+        agent_name=partial["agent_name"],
+        runtime_id=partial["runtime_id"],
+        request_id=partial["request_id"],
+    )
+    assert saved is None
+
+
+async def test_default_result_root_matches_native_writes_and_lookup(
+    hermes_shim_agent_dir,
+):
+    import shutil
+
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = hermes_shim_config()
+    config.runtime.artifacts = None
+    config.environment.artifacts = None
+    client = Fabric()
+    result = await client.run(
+        config, base_dir=hermes_shim_agent_dir, input="default storage"
+    )
+    try:
+        saved = await client.invocation_result(
+            agent_name=result.agent_name,
+            runtime_id=result.runtime_id,
+            request_id=result.request_id,
+        )
+        assert saved == result
+    finally:
+        directory = Path(result.metadata["fabric_home"]).parent
+        assert directory.name == result.runtime_id
+        shutil.rmtree(directory)
+
+
+@pytest.mark.parametrize("artifact_source", ["runtime", "environment"])
+@pytest.mark.parametrize("select_environment", [False, True])
+async def test_stopped_runtime_result_lookup_retains_storage_and_environment(
+    hermes_shim_agent_dir, artifact_source, select_environment
+):
+    from nemo_fabric import EnvironmentHandle
+
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = hermes_shim_config()
+    config.runtime.artifacts = None
+    config.environment.artifacts = None
+    getattr(config, artifact_source).artifacts = "retained-results"
+    client = Fabric()
+    runtime = await client.start_runtime(config, base_dir=hermes_shim_agent_dir)
+    try:
+        result = await runtime.invoke(input="retain lookup context")
+    finally:
+        await runtime.stop()
+    environment = EnvironmentHandle.from_mapping(
+        runtime.handle.to_mapping()["environment"]
+    )
+    saved = await client.invocation_result(
+        agent_name=result.agent_name,
+        runtime_id=result.runtime_id,
+        request_id=result.request_id,
+        environment=environment if select_environment else None,
+    )
+    assert saved == result
+    assert runtime.runtime_id not in client._runtimes
+    if select_environment:
+        wrong = environment.to_mapping()
+        wrong["environment_id"] = "another-environment"
+        with pytest.raises(FabricStateError) as caught:
+            await client.invocation_result(
+                agent_name=result.agent_name,
+                runtime_id=result.runtime_id,
+                request_id=result.request_id,
+                environment=EnvironmentHandle.from_mapping(wrong),
+                artifacts=hermes_shim_agent_dir / "retained-results",
+            )
+        assert caught.value.code == "runtime_unavailable"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix shared temporary root")
+def test_default_storage_ignores_a_precreated_shared_temporary_name(
+    hermes_shim_agent_dir, tmp_path
+):
+    shared = tmp_path / "shared"
+    shared.mkdir(mode=0o777)
+    # Another user can occupy this predictable name before Fabric's first run.
+    (shared / f"nemo-fabric-{os.geteuid()}").write_text("occupied")
+    config = hermes_shim_config()
+    config.runtime.artifacts = None
+    config.environment.artifacts = None
+    script = """
+import asyncio, json, os, shutil, sys
+from pathlib import Path
+from nemo_fabric import Fabric, FabricConfig
+async def main():
+    client = Fabric()
+    result = await client.run(FabricConfig.from_mapping(json.loads(sys.argv[1])), base_dir=sys.argv[2], input="private default storage")
+    directory = Path(result.metadata["fabric_home"]).parent
+    try:
+        assert Path(sys.argv[3]) not in directory.parents
+        saved = await client.invocation_result(agent_name=result.agent_name, runtime_id=result.runtime_id, request_id=result.request_id)
+        assert saved == result
+    finally:
+        shutil.rmtree(directory)
+asyncio.run(main())
+"""
+    environment = dict(os.environ, TMPDIR=str(shared), ADAPTER_PYTHON=sys.executable)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+            config.model_dump_json(exclude_none=True),
+            str(hermes_shim_agent_dir),
+            str(shared),
+        ],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.parametrize("one_shot", [False, True])
+@pytest.mark.parametrize("failure", ["crash", "timeout", "invalid"])
+async def test_dispatched_failure_result_is_retrievable(
+    blocking_adapter_config, tmp_path, one_shot, failure
+):
+    config = blocking_adapter_config
+    config.runtime.timeout_seconds = 0.2
+    adapter = tmp_path / "adapter.py"
+    source = adapter.read_text().replace(
+        "        if operation=='invoke':",
+        "        if operation=='invoke':\n"
+        "            with (root/'executions').open('a') as count: count.write('once\\n')\n"
+        "            if (root/'crash').exists(): os._exit(17)",
+    )
+    if failure == "invalid":
+        source = source.replace(
+            "output={'status':'succeeded','output':{'response':'released'}}",
+            "output={'status':'invalid','private':'synthetic-sensitive-value'}",
+        )
+        (tmp_path / "release").touch()
+    elif failure == "crash":
+        (tmp_path / "crash").touch()
+    adapter.write_text(source)
+    client = Fabric()
+    request = RunRequest(request_id="terminal-failure", input="synthetic test")
+    runtime = None
+    try:
+        if one_shot:
+            with pytest.raises(FabricRuntimeError) as caught:
+                await client.run(config, base_dir=tmp_path, request=request)
+            runtime_id = caught.value.details["runtime_evidence"]["runtime_id"]
+        else:
+            runtime = await client.start_runtime(config, base_dir=tmp_path)
+            runtime_id = runtime.runtime_id
+            with pytest.raises(FabricRuntimeError):
+                await runtime.invoke(request=request)
+        saved = await client.invocation_result(
+            agent_name=config.metadata.name,
+            runtime_id=runtime_id,
+            request_id=request.request_id,
+            artifacts=tmp_path / "artifacts",
+        )
+        assert saved is not None
+        assert saved.status == "failed"
+        assert saved.output is None
+        assert (
+            saved.error.code
+            == {
+                "crash": "host_crashed",
+                "timeout": "host_timeout",
+                "invalid": "invalid_agent_run_result",
+            }[failure]
+        )
+        assert saved.error.retryable is False
+        assert saved.error.metadata["effects"] == "unknown"
+        assert "synthetic-sensitive-value" not in json.dumps(saved.to_mapping())
+        if runtime is not None:
+            replayed = json.loads(
+                native.invoke_runtime(
+                    json.dumps(runtime._plan.to_mapping()),
+                    json.dumps(runtime.handle.to_mapping()),
+                    json.dumps(request.to_mapping()),
+                )
+            )
+            assert replayed["invocation_id"] == saved.invocation_id
+            assert replayed["error"] == saved.error.to_mapping()
+            with pytest.raises(FabricStateError):
+                await runtime.invoke(request=request)
+        assert (tmp_path / "executions").read_text() == "once\n"
+    finally:
+        if runtime is not None:
+            await runtime.stop()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix storage ownership")
+@pytest.mark.parametrize("one_shot", [False, True])
+def test_unusable_home_uses_private_temporary_storage(
+    hermes_shim_agent_dir, tmp_path, one_shot
+):
+    temporary = tmp_path / "fallback"
+    temporary.mkdir()
+    config = hermes_shim_config()
+    config.runtime.artifacts = None
+    config.environment.artifacts = None
+    script = """
+import asyncio, json, os, pathlib, sys
+from nemo_fabric import Fabric, FabricConfig
+async def main():
+    client = Fabric()
+    config = FabricConfig.from_mapping(json.loads(sys.argv[1]))
+    if sys.argv[3] == "True":
+        result = await client.run(config, base_dir=sys.argv[2], input="home fallback")
+    else:
+        runtime = await client.start_runtime(config, base_dir=sys.argv[2])
+        try:
+            result = await runtime.invoke(input="home fallback")
+        finally:
+            await runtime.stop()
+    saved = await client.invocation_result(agent_name=result.agent_name, runtime_id=result.runtime_id, request_id=result.request_id)
+    assert saved == result
+    root = pathlib.Path(os.environ['TMPDIR']) / f'nemo-fabric-{os.geteuid()}-private'
+    assert root.stat().st_mode & 0o777 == 0o700
+    assert pathlib.Path(result.metadata['fabric_home']).is_relative_to(root)
+asyncio.run(main())
+"""
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+            config.model_dump_json(exclude_none=True),
+            str(hermes_shim_agent_dir),
+            str(one_shot),
+        ],
+        env=dict(
+            os.environ, HOME="/", TMPDIR=str(temporary), ADAPTER_PYTHON=sys.executable
+        ),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr

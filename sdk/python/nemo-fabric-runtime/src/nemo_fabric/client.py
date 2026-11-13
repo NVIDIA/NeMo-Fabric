@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 from threading import Lock
 from collections import OrderedDict
@@ -104,8 +105,102 @@ class Fabric:
         self._pending_runtime_starts: set[object] = set()
         self._runtimes: dict[str, Runtime] = {}
         self._stopped_status: OrderedDict[
-            str, tuple[tuple[str, str], RuntimeStatusReport]
+            str, tuple[tuple[str, str], RuntimeStatusReport, str | None]
         ] = OrderedDict()
+
+    async def invocation_result(
+        self,
+        *,
+        agent_name: str,
+        runtime_id: str,
+        request_id: str,
+        artifacts: str | os.PathLike[str] | None = None,
+        environment: EnvironmentHandle | None = None,
+    ) -> RunResult | None:
+        """Retrieve a saved invocation without executing or repeating work.
+
+        Supply the original request identifier. A null result means no completed
+        result is available; it does not prove that work is running or safe to
+        repeat. Local reads use the configured artifact root. OpenShell reads
+        use the owning runtime server through ``fabric-agent-ctl result``.
+        Files survive only while their artifact storage survives.
+        """
+        if any(
+            not isinstance(value, str) or not value.strip() or "\0" in value
+            for value in (agent_name, runtime_id, request_id)
+        ):
+            raise FabricConfigError("The invocation result target is invalid.")
+        environment_json = (
+            _environment_json(environment) if environment is not None else None
+        )
+        native = self._require_native_module("invocation_result")
+        if environment is not None and environment.provider == "openshell":
+            if artifacts is not None:
+                raise FabricConfigError(
+                    "Remote lookup uses the runtime's artifact storage."
+                )
+            operation = lambda: native.invocation_result_environment(
+                environment_json, agent_name, runtime_id, request_id
+            )
+        else:
+            if environment is not None and environment.provider != "local":
+                raise FabricConfigError(
+                    "Result lookup supports local and OpenShell environments."
+                )
+            runtime = self._runtimes.get(runtime_id)
+            record = self._stopped_status.get(runtime_id)
+            if runtime is not None:
+                environment_identity = (
+                    runtime.handle.environment["provider"],
+                    runtime.handle.environment["environment_id"],
+                )
+                configured_artifacts = self._runtime_artifacts(runtime)
+            elif record is not None:
+                environment_identity, _, configured_artifacts = record
+            else:
+                environment_identity, configured_artifacts = None, None
+            if environment is not None and environment_identity != (
+                environment.provider,
+                environment.environment_id,
+            ):
+                raise FabricStateError(
+                    "The selected environment does not own this runtime.",
+                    stage="result",
+                    code="runtime_unavailable",
+                )
+            if artifacts is None:
+                artifacts = configured_artifacts
+            artifact_path = os.fspath(artifacts) if artifacts is not None else None
+            operation = lambda: native.invocation_result(
+                artifact_path, agent_name, runtime_id, request_id
+            )
+        try:
+            encoded = await asyncio.get_running_loop().run_in_executor(
+                _CHECK_EXECUTOR, operation
+            )
+            raw = json.loads(encoded)
+            if raw is None:
+                return None
+            result = RunResult.from_mapping(raw)
+            if (result.agent_name, result.runtime_id, result.request_id) != (
+                agent_name,
+                runtime_id,
+                request_id,
+            ):
+                raise ValueError()
+            return result
+        except Exception as error:
+            code = getattr(error, "code", None)
+            if (
+                not isinstance(code, str)
+                or re.fullmatch(r"[a-z][a-z0-9_]{0,63}", code) is None
+            ):
+                code = "result_unavailable"
+            raise FabricRuntimeError(
+                "The invocation result could not be retrieved; do not replay uncertain work.",
+                stage="result",
+                code=code,
+            ) from None
 
     async def runtime_status(
         self,
@@ -238,7 +333,7 @@ class Fabric:
                     stage="status",
                     code="runtime_unavailable",
                 )
-            environment_identity, report = record
+            environment_identity, report, _ = record
         if report.agent_name != agent_name:
             raise FabricStateError(
                 "The request does not identify this agent.",
@@ -256,6 +351,18 @@ class Fabric:
                 code="runtime_unavailable",
             )
         return report
+
+    @staticmethod
+    def _runtime_artifacts(runtime: Runtime) -> str | None:
+        mapping = runtime._plan.to_mapping()
+        configured = mapping["config"].get("runtime", {}).get(
+            "artifacts"
+        ) or runtime.handle.environment.get("artifacts")
+        if configured is None:
+            return None
+        from pathlib import Path
+
+        return str(Path(mapping["base_dir"]) / configured)
 
     def _record_stopped_runtime(self, runtime: Runtime) -> None:
         with self._runtime_records_lock:
@@ -276,6 +383,7 @@ class Fabric:
                         "server_state": None,
                     }
                 ),
+                self._runtime_artifacts(runtime),
             )
             self._stopped_status.move_to_end(runtime.runtime_id)
             self._runtimes.pop(runtime.runtime_id, None)

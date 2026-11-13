@@ -58,6 +58,7 @@ class OwnedRuntime:
     state: str = "running"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     generation: int = 0
+    artifacts: str | None = None
 
 
 class RuntimeServer:
@@ -134,6 +135,18 @@ class RuntimeServer:
                     if self.shutting_down
                     else None,
                 )
+            if operation == "result":
+                owned = self._owned(request)
+                stage = "result"
+                result = await self.fabric.invocation_result(
+                    agent_name=request["agent"],
+                    runtime_id=request["runtime_id"],
+                    request_id=request["request_id"],
+                    artifacts=owned.artifacts,
+                )
+                return envelope(
+                    operation, result.to_mapping() if result is not None else None
+                )
             if operation == "status":
                 owned = self._owned(request)
                 stage = "status"
@@ -200,6 +213,15 @@ class RuntimeServer:
                         # uncertain and retain sandbox ownership.
                         raise ProtocolError("runtime_id_conflict", "start")
                     owned = OwnedRuntime(runtime, request["agent"], "unknown")
+                    configured = (
+                        config.runtime.artifacts
+                        or runtime.handle.environment.get("artifacts")
+                    )
+                    owned.artifacts = (
+                        str(self.directory / configured)
+                        if configured is not None
+                        else None
+                    )
                     self.runtimes[runtime.runtime_id] = owned
                     # The runtime is addressable; stop can clean it up.
                     self.start_uncertain = False

@@ -39,7 +39,10 @@ use crate::system_stats::ResourceObservation;
 use crate::system_stats::{CgroupStats, InvocationSystemStats, StatsSession, SystemReader};
 
 mod openshell;
+mod results;
 use openshell::OpenShellRuntimeAdapter;
+#[doc(hidden)]
+pub use results::invocation_result;
 
 pub(crate) fn remote_check_agent(
     environment: &EnvironmentHandle,
@@ -82,6 +85,66 @@ pub fn runtime_status_environment(
                     "invalid_response".to_string()
                 },
                 message: "The runtime status request was rejected.".to_string(),
+            })
+        }
+    }
+}
+
+/// Read a saved task-side invocation result through its verified OpenShell environment.
+#[doc(hidden)]
+pub fn invocation_result_environment(
+    environment: &EnvironmentHandle,
+    agent: &str,
+    runtime_id: &str,
+    request_id: &str,
+) -> Result<Value> {
+    if environment.provider != "openshell"
+        || environment.control_location != ControlLocation::InEnvControl
+        || [agent, runtime_id, request_id]
+            .iter()
+            .any(|value| value.trim().is_empty() || value.contains('\0'))
+    {
+        return Err(FabricError::InvalidConfig {
+            field: "invocation_result".into(),
+            reason: "a valid invocation target and verified OpenShell environment are required"
+                .into(),
+        });
+    }
+    let command = crate::task_command::TaskCommand::Result {
+        agent: agent.into(),
+        runtime_id: runtime_id.into(),
+        request_id: request_id.into(),
+    };
+    result_lookup_response(crate::environment::command_runtime(
+        environment,
+        &command,
+        10,
+    )?)
+}
+
+fn result_lookup_response(response: crate::task_command::TaskCommandResponse) -> Result<Value> {
+    match response {
+        crate::task_command::TaskCommandResponse::Returned { value } => Ok(value),
+        crate::task_command::TaskCommandResponse::Rejected { error } => {
+            Err(FabricError::EnvironmentProviderOperation {
+                provider: "openshell".into(),
+                operation: "invocation_result".into(),
+                code: if error.effects == "none"
+                    && error.code.len() <= 64
+                    && error
+                        .code
+                        .bytes()
+                        .next()
+                        .is_some_and(|first| first.is_ascii_lowercase())
+                    && error.code.bytes().all(|byte| {
+                        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
+                    }) {
+                    error.code
+                } else {
+                    "invalid_response".into()
+                },
+                message: "The result lookup could not be completed; do not replay uncertain work."
+                    .into(),
             })
         }
     }
@@ -135,12 +198,13 @@ static LOCAL_SERVICES: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<LocalServiceRec
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 /// A request passed to a NeMo Fabric-managed harness runtime.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RunRequest {
     /// Explicitly accept recovery uncertainty before submitting this new turn.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub acknowledge_recovery: bool,
-    /// Request id.
+    /// Nonblank request identifier. `Default` and `text` generate an identifier before dispatch.
+    #[schemars(length(min = 1), regex(pattern = r"^[^\x00]*[^\s\x00][^\x00]*$"))]
     pub request_id: String,
     /// Optional UUID propagation root shared across conversation turns.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -154,6 +218,19 @@ pub struct RunRequest {
     /// Per-invocation overrides allowed by the resolved config.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overrides: Option<Value>,
+}
+
+impl Default for RunRequest {
+    fn default() -> Self {
+        Self {
+            acknowledge_recovery: false,
+            request_id: new_id("request"),
+            relay_session_root: None,
+            input: Value::Null,
+            context: BTreeMap::new(),
+            overrides: None,
+        }
+    }
 }
 
 impl RunRequest {
@@ -999,10 +1076,14 @@ enum LocalServiceState {
 /// Invoke a NeMo Fabric run plan.
 pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
     let runtime = start_runtime(plan)?;
-    let mut result = match invoke_runtime(plan, &runtime, request) {
+    let original_request = request.clone();
+    let invoked = begin_run_result(plan, &runtime, &request)
+        .and_then(|()| invoke_runtime(plan, &runtime, request));
+    let mut result = match invoked {
         Ok(result) => result,
         Err(error) => {
-            let _ = stop_runtime(plan, &runtime);
+            let events = stop_runtime(plan, &runtime).unwrap_or_default();
+            finish_failed_run_result(plan, &runtime, &original_request, events)?;
             return Err(error);
         }
     };
@@ -1020,7 +1101,154 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
         }
         Err(_) => {}
     }
+    if uses_local_host(plan) && runtime.environment.provider == "local" {
+        save_run_result(plan, &runtime, &result)?;
+    }
     Ok(result)
+}
+
+/// Keep local one-shot output unavailable until cleanup is finalized.
+#[doc(hidden)]
+pub fn begin_run_result(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+    request: &RunRequest,
+) -> Result<()> {
+    validate_runtime_handle(plan, runtime)?;
+    if request.request_id.trim().is_empty() || request.request_id.contains('\0') {
+        return Err(FabricError::InvalidConfig {
+            field: "request_id".into(),
+            reason: "must not be blank or contain NUL".into(),
+        });
+    }
+    if runtime.environment.provider == "local" {
+        let root = artifact_manifest(plan)?
+            .root
+            .map_or_else(default_artifact_root, Ok)?;
+        results::begin_finalization(
+            &root,
+            &runtime.agent_name,
+            &runtime.runtime_id,
+            &request.request_id,
+        )?;
+    }
+    Ok(())
+}
+
+/// Default result and host storage; Unix users have separate namespaces.
+#[doc(hidden)]
+pub fn default_artifact_root() -> Result<PathBuf> {
+    #[cfg(unix)]
+    {
+        let home = std::env::home_dir().unwrap_or_default();
+        // SAFETY: geteuid has no preconditions or side effects.
+        default_artifact_root_for_user(&home, unsafe { libc::geteuid() })
+    }
+    #[cfg(not(unix))]
+    Ok(std::env::temp_dir().join("nemo-fabric"))
+}
+
+#[cfg(unix)]
+fn default_storage_unavailable() -> FabricError {
+    FabricError::InvalidConfig {
+        field: "local_storage".into(),
+        reason: "Default local storage requires a private directory owned by the current user."
+            .into(),
+    }
+}
+
+#[cfg(unix)]
+fn default_artifact_root_for_user(home: &Path, uid: u32) -> Result<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+    // SAFETY: geteuid has no preconditions or side effects.
+    if uid != unsafe { libc::geteuid() } {
+        return Err(default_storage_unavailable());
+    }
+    if let Ok(home) = std::fs::canonicalize(home)
+        && let Ok(metadata) = std::fs::metadata(&home)
+        && metadata.is_dir()
+        && metadata.uid() == uid
+        && metadata.mode() & 0o022 == 0
+    {
+        return Ok(home.join(".cache").join(format!("nemo-fabric-{uid}")));
+    }
+    temporary_artifact_root_for_user(&std::env::temp_dir(), uid)
+}
+
+#[cfg(unix)]
+fn temporary_artifact_root_for_user(temporary: &Path, uid: u32) -> Result<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+    results::trusted_ancestry(temporary, "local-storage")
+        .map_err(|_| default_storage_unavailable())?;
+    let root = temporary.join(format!("nemo-fabric-{uid}-private"));
+    // Atomic creation and lstat reject pre-created symlinks, other owners,
+    // and writable directories. Never chmod a path supplied by another user.
+    use std::os::unix::fs::DirBuilderExt;
+    if let Err(error) = std::fs::DirBuilder::new().mode(0o700).create(&root)
+        && error.kind() != std::io::ErrorKind::AlreadyExists
+    {
+        return Err(default_storage_unavailable());
+    }
+    let metadata = std::fs::symlink_metadata(&root).map_err(|_| default_storage_unavailable())?;
+    if !metadata.is_dir()
+        || metadata.file_type().is_symlink()
+        || metadata.uid() != uid
+        || metadata.mode() & 0o077 != 0
+    {
+        return Err(default_storage_unavailable());
+    }
+    Ok(root)
+}
+
+/// Persist the final one-shot result after Python lifecycle cleanup.
+#[doc(hidden)]
+pub fn save_run_result(plan: &RunPlan, runtime: &RuntimeHandle, result: &RunResult) -> Result<()> {
+    validate_runtime_handle(plan, runtime)?;
+    let invalid = || {
+        lifecycle_error(
+            AdapterLifecycleOperation::Invoke,
+            &runtime.runtime_id,
+            "invalid_result_target",
+            "The completed result does not match its reservation.",
+            "",
+        )
+    };
+    if runtime.environment.provider != "local"
+        || result.runtime_id != runtime.runtime_id
+        || result.agent_name != runtime.agent_name
+    {
+        return Err(invalid());
+    }
+    let root = artifact_manifest(plan)?
+        .root
+        .map_or_else(default_artifact_root, Ok)?;
+    results::finalize(&root, result)
+}
+
+/// Finalize a dispatched one-shot failure after lifecycle cleanup.
+#[doc(hidden)]
+pub fn finish_failed_run_result(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+    request: &RunRequest,
+    events: Vec<FabricEvent>,
+) -> Result<()> {
+    validate_runtime_handle(plan, runtime)?;
+    if runtime.environment.provider == "local" && uses_local_host(plan) {
+        let root = artifact_manifest(plan)?
+            .root
+            .map_or_else(default_artifact_root, Ok)?;
+        if let Some(mut result) = results::unfinalized_result(
+            &root,
+            &runtime.agent_name,
+            &runtime.runtime_id,
+            &request.request_id,
+        )? {
+            result.events.extend(events);
+            save_run_result(plan, runtime, &result)?;
+        }
+    }
+    Ok(())
 }
 
 /// Prepare an execution environment for a run plan.
@@ -1247,7 +1475,7 @@ fn start_service(
     let mut artifacts = artifact_manifest(plan)?;
     let fabric_home = prepare_fabric_home(&artifacts, &runtime, &invocation)?;
     let relay_config = prepare_relay_runtime_config(plan, &runtime, &fabric_home, &mut artifacts)?;
-    let connection_path = local_host_directory(&service_id).join("service-connection.json");
+    let connection_path = local_host_directory(&service_id)?.join("service-connection.json");
     let service_context = match reference {
         Some(reference) => AdapterServiceContext::Attach {
             connection_path: connection_path.clone(),
@@ -2411,19 +2639,110 @@ impl LocalHostInvocation {
 fn run_local_host_invocation_with_timeout(
     plan: &RunPlan,
     runtime: &RuntimeHandle,
-    mut request: RunRequest,
+    request: RunRequest,
     invocation_kind: LocalHostInvocation,
     invoke_timeout: Duration,
 ) -> Result<RunResult> {
-    let operation = invocation_kind.operation();
-    if request.request_id.is_empty() {
-        request.request_id = new_id("request");
+    if request.request_id.trim().is_empty() || request.request_id.contains('\0') {
+        return Err(FabricError::InvalidConfig {
+            field: "request_id".into(),
+            reason: "must not be blank or contain NUL".into(),
+        });
     }
+    let projected = project_agent_run_request(&request)?;
+    validate_agent_run_request_extensions(&projected, plan.adapter_descriptor.as_ref())?;
     let invocation = InvocationHandle {
         invocation_id: new_id("invocation"),
         request_id: request.request_id.clone(),
         runtime_id: runtime.runtime_id.clone(),
     };
+    let root = artifact_manifest(plan)?
+        .root
+        .map_or_else(default_artifact_root, Ok)?;
+    let mut reservation = match results::reserve(
+        &root,
+        runtime,
+        &request,
+        &invocation,
+        matches!(&invocation_kind, LocalHostInvocation::OpenAiStream(_)),
+    )? {
+        results::RequestReservation::Cached(result) => return Ok(*result),
+        results::RequestReservation::Pending(pending) => pending,
+    };
+    let outcome = execute_local_host_invocation(
+        plan,
+        runtime,
+        request,
+        invocation_kind,
+        invoke_timeout,
+        invocation.clone(),
+        &mut reservation,
+    )
+    .and_then(|result| {
+        results::save(&root, &result)?;
+        Ok(result)
+    });
+    if let Err(error) = &outcome
+        && reservation.dispatched()
+    {
+        let code = match error {
+            FabricError::AdapterLifecycleOperation { code, .. }
+                if matches!(
+                    code.as_str(),
+                    "host_crashed" | "host_timeout" | "interrupted" | "invalid_agent_run_result"
+                ) =>
+            {
+                code.as_str()
+            }
+            _ => "invocation_failed",
+        };
+        let result = RunResult {
+            session_ref: None,
+            agent_name: plan.agent_name.clone(),
+            harness: harness(plan),
+            adapter_kind: adapter_kind(plan),
+            adapter_id: adapter_id(plan),
+            runtime_id: runtime.runtime_id.clone(),
+            invocation_id: invocation.invocation_id,
+            request_id: invocation.request_id,
+            status: if code == "interrupted" { RunStatus::Cancelled } else { RunStatus::Failed },
+            output: Value::Null,
+            error: Some(ErrorInfo {
+                stage: ErrorStage::Invoke,
+                code: code.into(),
+                message: "The dispatched invocation ended without a valid result; effects may be unknown. Do not replay the work.".into(),
+                retryable: false,
+                metadata: BTreeMap::from([("effects".into(), Value::String("unknown".into()))]),
+            }),
+            usage: None,
+            execution: None,
+            resource_snapshot: None,
+            system_stats: None,
+            artifacts: ArtifactManifest { root: Some(root.clone()), ..ArtifactManifest::default() },
+            telemetry: vec![],
+            events: vec![event_with_metadata(
+                "invocation_end",
+                "The dispatched invocation ended without a valid result.",
+                BTreeMap::from([("code".into(), Value::String(code.into()))]),
+            )],
+            metadata: BTreeMap::new(),
+        };
+        // Retain the dispatched reservation even if this write fails.
+        results::save(&root, &result)?;
+    }
+    outcome
+}
+
+fn execute_local_host_invocation(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+    request: RunRequest,
+    invocation_kind: LocalHostInvocation,
+    invoke_timeout: Duration,
+    invocation: InvocationHandle,
+    reservation: &mut results::PendingReservation,
+) -> Result<RunResult> {
+    let operation = invocation_kind.operation();
     let host = local_hosts()
         .get(&runtime.runtime_id)
         .cloned()
@@ -2530,11 +2849,12 @@ fn run_local_host_invocation_with_timeout(
         if let Some(sampling) = &sampling {
             sampling.start(invocation_started);
         }
-        let exchange = exchange_lifecycle_message(
+        let exchange = exchange_lifecycle_message_with_dispatch(
             &mut host_guard,
             &runtime.runtime_id,
             &lifecycle_request,
             invoke_timeout,
+            || reservation.mark_dispatched(),
         );
         // Close the memory-only sampling window before reading the clock. No
         // OS collection or sample-file I/O runs under this registration lock.
@@ -2814,7 +3134,7 @@ fn run_local_host_invocation_with_timeout(
             serde_json::to_value(&agent_result.extensions).map_err(FabricError::SerializeJson)?,
         );
     }
-    Ok(RunResult {
+    let result = RunResult {
         session_ref: runtime.session_ref.clone(),
         agent_name: plan.agent_name.clone(),
         harness: harness(plan),
@@ -2836,7 +3156,8 @@ fn run_local_host_invocation_with_timeout(
             .collect(),
         events,
         metadata,
-    })
+    };
+    Ok(result)
 }
 
 fn invalidate_timed_out_local_host(
@@ -3033,11 +3354,8 @@ fn local_services()
         .unwrap_or_else(|error| error.into_inner())
 }
 
-pub(crate) fn local_host_directory(id: &str) -> PathBuf {
-    std::env::temp_dir()
-        .join("nemo-fabric")
-        .join("hosts")
-        .join(id)
+pub(crate) fn local_host_directory(id: &str) -> Result<PathBuf> {
+    Ok(default_artifact_root()?.join("hosts").join(id))
 }
 
 fn spawn_local_host(
@@ -3060,11 +3378,7 @@ fn spawn_local_host(
     };
     // Lock acquisition creates retained storage, allowing its physical path to resolve.
     let scope = cleanup_scope(plan, state_dir.as_deref(), runtime.service_id.as_deref());
-    let runtime_dir = local_host_directory(&runtime.runtime_id);
-    std::fs::create_dir_all(&runtime_dir).map_err(|source| FabricError::Write {
-        path: runtime_dir.clone(),
-        source,
-    })?;
+    let runtime_dir = results::host_directory(&default_artifact_root()?, &runtime.runtime_id)?;
     let stderr_path = runtime_dir.join("host.stderr.log");
     let stderr = File::create(&stderr_path).map_err(|source| FabricError::Write {
         path: stderr_path.clone(),
@@ -3290,6 +3604,16 @@ fn exchange_lifecycle_message(
     request: &AdapterLifecycleRequest,
     timeout: Duration,
 ) -> Result<Value> {
+    exchange_lifecycle_message_with_dispatch(host, runtime_id, request, timeout, || {})
+}
+
+fn exchange_lifecycle_message_with_dispatch(
+    host: &mut LocalAdapterHost,
+    runtime_id: &str,
+    request: &AdapterLifecycleRequest,
+    timeout: Duration,
+    before_dispatch: impl FnOnce(),
+) -> Result<Value> {
     let operation = request.operation();
     if let Some(status) = host.child.try_wait().map_err(|source| {
         lifecycle_error(
@@ -3313,6 +3637,9 @@ fn exchange_lifecycle_message(
     }
     let mut message = serde_json::to_string(request).map_err(FabricError::SerializeJson)?;
     message.push('\n');
+    // A write can fail after partial delivery, so retain the reservation from
+    // the first possible dispatch rather than treating a write error as safe.
+    before_dispatch();
     if let Err(source) = host
         .stdin
         .write_all(message.as_bytes())
@@ -4419,7 +4746,7 @@ fn artifact_manifest(plan: &RunPlan) -> Result<ArtifactManifest> {
                 .and_then(|environment| environment.artifacts.clone())
         });
     if let Some(root) = &root {
-        std::fs::create_dir_all(root).map_err(|source| FabricError::Write {
+        results::create_artifact_root(root).map_err(|source| FabricError::Write {
             path: root.clone(),
             source,
         })?;
@@ -4438,16 +4765,8 @@ fn prepare_fabric_home(
     let root = manifest
         .root
         .clone()
-        .unwrap_or_else(|| std::env::temp_dir().join("nemo-fabric"));
-    let fabric_home = root
-        .join(".fabric")
-        .join(&runtime.runtime_id)
-        .join(&invocation.invocation_id);
-    std::fs::create_dir_all(&fabric_home).map_err(|source| FabricError::Write {
-        path: fabric_home.clone(),
-        source,
-    })?;
-    Ok(fabric_home)
+        .map_or_else(default_artifact_root, Ok)?;
+    results::invocation_directory(&root, &runtime.runtime_id, &invocation.invocation_id)
 }
 
 fn write_fabric_invocation(fabric_home: &Path, payload: &str) -> Result<PathBuf> {
@@ -5028,6 +5347,8 @@ for line in sys.stdin:
         invocations += 1
         if MODE == "invoke_stderr":
             print(f"diagnostic-{invocations}", file=sys.stderr, flush=True)
+        if MODE == "invoke_crash":
+            os._exit(17)
         if MODE == "invoke_timeout":
             print("invoke accepted without response", file=sys.stderr, flush=True)
             continue
@@ -5408,6 +5729,572 @@ else:
 
     fn stopped_agents() -> Vec<String> {
         TEST_STOPPED_AGENTS.lock().expect("stop tracker").clone()
+    }
+
+    #[test]
+    fn completed_invocation_persists_the_full_result() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start");
+        let result = invoke_runtime(&plan, &runtime, RunRequest::text("hello")).expect("invoke");
+        let path =
+            PathBuf::from(result.metadata["fabric_home"].as_str().unwrap()).join("run-result.json");
+        let saved: RunResult =
+            serde_json::from_slice(&fs::read(path).expect("saved result")).expect("valid result");
+        assert_eq!(saved, result);
+        stop_runtime(&plan, &runtime).expect("stop");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn invalid_overrides_do_not_reserve_a_request() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let mut request = RunRequest::text("hello");
+        request.request_id = "validation-retry".into();
+        request.overrides = Some(serde_json::json!([]));
+        assert!(invoke_runtime(&plan, &runtime, request.clone()).is_err());
+        request.overrides = None;
+        let retried = invoke_runtime(&plan, &runtime, request);
+        stop_runtime(&plan, &runtime).unwrap();
+        assert_eq!(retried.unwrap().output["invocation_count"], 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn pre_dispatch_host_failure_does_not_block_a_corrected_retry() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let host = local_hosts().remove(&runtime.runtime_id).unwrap();
+        let mut request = RunRequest::text("original");
+        request.request_id = "not-dispatched".into();
+        let rejected = invoke_runtime(&plan, &runtime, request.clone());
+        local_hosts().insert(runtime.runtime_id.clone(), host);
+        assert!(rejected.is_err());
+        request.input = serde_json::json!("corrected");
+        let retried = invoke_runtime(&plan, &runtime, request);
+        stop_runtime(&plan, &runtime).unwrap();
+        assert_eq!(retried.unwrap().output["invocation_count"], 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn invalid_request_ids_are_rejected_before_invocation() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        for id in ["", " ", "\t\n", "request\0id"] {
+            let mut request = RunRequest::text("hello");
+            request.request_id = id.into();
+            assert!(matches!(invoke_runtime(&plan, &runtime, request),
+                Err(FabricError::InvalidConfig { field, .. }) if field == "request_id"));
+            assert!(matches!(
+                invocation_result(&root.join("artifacts"), &runtime.agent_name, &runtime.runtime_id, id),
+                Err(FabricError::AdapterLifecycleOperation { code, .. }) if code == "invalid_result_target"
+            ));
+        }
+        let result = invoke_runtime(&plan, &runtime, RunRequest::text("valid")).unwrap();
+        stop_runtime(&plan, &runtime).unwrap();
+        assert_eq!(result.output["invocation_count"], 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn default_request_identity_is_known_before_invocation() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let request = RunRequest::default();
+        let request_id = request.request_id.clone();
+        let result = invoke_runtime(&plan, &runtime, request).unwrap();
+        stop_runtime(&plan, &runtime).unwrap();
+        assert!(!request_id.is_empty());
+        assert_eq!(result.request_id, request_id);
+        assert_eq!(
+            invocation_result(
+                &root.join("artifacts"),
+                &result.agent_name,
+                &runtime.runtime_id,
+                &request_id
+            )
+            .unwrap(),
+            Some(result)
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn one_shot_result_is_unavailable_until_cleanup_is_finalized() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let request = RunRequest::text("hello");
+        begin_run_result(&plan, &runtime, &request).unwrap();
+        let mut result = invoke_runtime(&plan, &runtime, request.clone()).unwrap();
+        assert!(
+            invocation_result(
+                &root.join("artifacts"),
+                &result.agent_name,
+                &runtime.runtime_id,
+                &request.request_id
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            matches!(invoke_runtime(&plan, &runtime, request), Err(FabricError::AdapterLifecycleOperation {code, ..}) if code == "invocation_pending")
+        );
+        result.events.extend(stop_runtime(&plan, &runtime).unwrap());
+        save_run_result(&plan, &runtime, &result).unwrap();
+        assert_eq!(
+            invocation_result(
+                &root.join("artifacts"),
+                &result.agent_name,
+                &runtime.runtime_id,
+                &result.request_id
+            )
+            .unwrap(),
+            Some(result)
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_final_save_cannot_replay_a_pre_cleanup_success() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let request = RunRequest::text("hello");
+        begin_run_result(&plan, &runtime, &request).unwrap();
+        let mut result = invoke_runtime(&plan, &runtime, request.clone()).unwrap();
+        stop_runtime(&plan, &runtime).unwrap();
+        result.status = RunStatus::Failed;
+        result.output = Value::String("x".repeat(4 * 1024 * 1024));
+        assert!(save_run_result(&plan, &runtime, &result).is_err());
+        assert!(
+            invocation_result(
+                &root.join("artifacts"),
+                &result.agent_name,
+                &runtime.runtime_id,
+                &result.request_id
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            matches!(invoke_runtime(&plan, &runtime, request), Err(FabricError::AdapterLifecycleOperation {code, ..}) if code == "invocation_pending")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn default_artifact_storage_requires_a_protected_user_home() {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        let home = std::env::temp_dir().join(new_id("fabric-private-home-test"));
+        fs::DirBuilder::new().mode(0o700).create(&home).unwrap();
+        // SAFETY: geteuid has no preconditions or side effects.
+        let uid = unsafe { libc::geteuid() };
+        let root = default_artifact_root_for_user(&home, uid).unwrap();
+        assert!(root.starts_with(fs::canonicalize(&home).unwrap()));
+        assert!(default_artifact_root_for_user(&home, uid.wrapping_add(1)).is_err());
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o777)).unwrap();
+        let unsafe_home = default_artifact_root_for_user(&home, uid);
+        fs::remove_dir_all(home).unwrap();
+        let fallback = unsafe_home.expect("shared home uses private temporary storage");
+        assert_eq!(
+            fallback,
+            std::env::temp_dir().join(format!("nemo-fabric-{uid}-private"))
+        );
+        assert_eq!(
+            fs::metadata(&fallback).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn temporary_storage_rejects_unsafe_precreated_namespaces() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let temporary = std::env::temp_dir().join(new_id("fabric-fallback-test"));
+        fs::create_dir(&temporary).unwrap();
+        // SAFETY: geteuid has no preconditions or side effects.
+        let uid = unsafe { libc::geteuid() };
+        let root = temporary.join(format!("nemo-fabric-{uid}-private"));
+        fs::create_dir(&root).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(temporary_artifact_root_for_user(&temporary, uid).is_err());
+        fs::remove_dir(&root).unwrap();
+        symlink(&temporary, &root).unwrap();
+        assert!(temporary_artifact_root_for_user(&temporary, uid).is_err());
+        fs::remove_file(&root).unwrap();
+        fs::remove_dir(&temporary).unwrap();
+    }
+
+    #[test]
+    fn result_lookup_preserves_rejection_codes_without_uncertain_effects() {
+        for (effects, expected) in [("none", "wrong_agent"), ("unknown", "invalid_response")] {
+            let response = serde_json::from_value(serde_json::json!({
+                "status": "rejected", "error": {"code": "wrong_agent", "stage": "result", "effects": effects}
+            })).unwrap();
+            assert!(
+                matches!(result_lookup_response(response), Err(FabricError::EnvironmentProviderOperation {operation, code, ..}) if operation == "invocation_result" && code == expected)
+            );
+        }
+    }
+
+    #[test]
+    fn dispatched_failures_have_terminal_results_without_reexecution() {
+        for (mode, expected) in [
+            ("invoke_timeout", "host_timeout"),
+            ("invoke_crash", "host_crashed"),
+            ("blank_error_code", "invalid_agent_run_result"),
+            ("invoke_failure", "invocation_failed"),
+        ] {
+            let (root, plan) = local_host_plan(mode);
+            let runtime = start_runtime(&plan).unwrap();
+            let request = RunRequest::text("hello");
+            let error = run_local_host_adapter_with_timeout(
+                &plan,
+                &runtime,
+                request.clone(),
+                Duration::from_millis(100),
+            )
+            .unwrap_err();
+            assert!(!error.to_string().is_empty());
+            let saved = invocation_result(
+                &root.join("artifacts"),
+                &runtime.agent_name,
+                &runtime.runtime_id,
+                &request.request_id,
+            )
+            .unwrap();
+            stop_runtime(&plan, &runtime).unwrap();
+            let saved = saved.expect("dispatched failure has a terminal result");
+            assert_eq!(saved.status, RunStatus::Failed);
+            assert!(saved.output.is_null());
+            assert_eq!(saved.error.as_ref().unwrap().code, expected);
+            assert!(!saved.error.as_ref().unwrap().retryable);
+            assert_eq!(saved.error.as_ref().unwrap().metadata["effects"], "unknown");
+            assert_eq!(invoke_runtime(&plan, &runtime, request).unwrap(), saved);
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn one_shot_dispatched_failure_is_finalized_after_cleanup() {
+        let (root, plan) = local_host_plan("blank_error_code");
+        let request = RunRequest::text("hello");
+        run_plan(&plan, request.clone()).unwrap_err();
+        let runtimes = fs::read_dir(root.join("artifacts/.fabric")).unwrap();
+        let runtime = runtimes
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .find(|name| name.starts_with("runtime-"))
+            .unwrap();
+        let saved = invocation_result(
+            &root.join("artifacts"),
+            &plan.agent_name,
+            &runtime,
+            &request.request_id,
+        )
+        .unwrap()
+        .expect("one-shot failure must be retrievable");
+        assert_eq!(saved.status, RunStatus::Failed);
+        assert!(
+            saved
+                .events
+                .iter()
+                .any(|event| event.kind == "runtime_stop")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn one_shot_lookup_returns_the_final_result_after_stop() {
+        for mode in ["success", "stop_failure"] {
+            let (root, plan) = local_host_plan(mode);
+            let result = run_plan(&plan, RunRequest::text("hello")).unwrap();
+            let saved = invocation_result(
+                &root.join("artifacts"),
+                &result.agent_name,
+                &result.runtime_id,
+                &result.request_id,
+            )
+            .unwrap();
+            assert_eq!(saved, Some(result));
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn final_result_save_requires_original_runtime_and_reserved_identity() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let result = invoke_runtime(&plan, &runtime, RunRequest::text("hello")).unwrap();
+        stop_runtime(&plan, &runtime).unwrap();
+        let mut wrong_runtime = runtime.clone();
+        wrong_runtime.runtime_binding = "wrong-binding".into();
+        assert!(save_run_result(&plan, &wrong_runtime, &result).is_err());
+        for field in ["agent", "runtime", "request", "invocation"] {
+            let mut wrong_result = result.clone();
+            match field {
+                "agent" => wrong_result.agent_name.push_str("-other"),
+                "runtime" => wrong_result.runtime_id.push_str("-other"),
+                "request" => wrong_result.request_id.push_str("-other"),
+                _ => wrong_result.invocation_id = "../../escape".into(),
+            }
+            assert!(save_run_result(&plan, &runtime, &wrong_result).is_err());
+        }
+        assert_eq!(
+            invocation_result(
+                &root.join("artifacts"),
+                &result.agent_name,
+                &result.runtime_id,
+                &result.request_id
+            )
+            .unwrap(),
+            Some(result)
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn oversized_results_do_not_replace_a_readable_saved_result() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let result = invoke_runtime(&plan, &runtime, RunRequest::text("hello")).unwrap();
+        let mut oversized = result.clone();
+        oversized.output = Value::String("x".repeat(4 * 1024 * 1024));
+        let saved = results::save(&root.join("artifacts"), &oversized);
+        stop_runtime(&plan, &runtime).unwrap();
+        assert!(saved.is_err());
+        assert_eq!(
+            invocation_result(
+                &root.join("artifacts"),
+                &result.agent_name,
+                &result.runtime_id,
+                &result.request_id,
+            )
+            .unwrap(),
+            Some(result)
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn buffered_results_cannot_satisfy_a_stream_request() {
+        let (root, mut plan) = local_host_plan("success");
+        plan.capabilities.streaming = true;
+        plan.adapter_descriptor
+            .as_mut()
+            .unwrap()
+            .descriptor
+            .capabilities
+            .streaming = true;
+        let runtime = start_runtime(&plan).unwrap();
+        let request = RunRequest::text("hello");
+        let result = invoke_runtime(&plan, &runtime, request.clone()).unwrap();
+        let streamed = invoke_openai_stream(
+            &plan,
+            &runtime,
+            request,
+            OpenAiStreamTransport {
+                port: 1,
+                token: "test-stream-token".into(),
+            },
+        );
+        stop_runtime(&plan, &runtime).unwrap();
+        assert!(
+            matches!(streamed, Err(FabricError::AdapterLifecycleOperation { code, .. })
+            if code == "request_conflict")
+        );
+        assert_eq!(
+            invocation_result(
+                &root.join("artifacts"),
+                &result.agent_name,
+                &result.runtime_id,
+                &result.request_id,
+            )
+            .unwrap(),
+            Some(result)
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn explicit_shared_artifact_roots_allow_private_results() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        for mode in [0o775, 0o777] {
+            let (root, plan) = local_host_plan("success");
+            fs::set_permissions(&root, fs::Permissions::from_mode(mode)).unwrap();
+            let artifacts = root.join("artifacts");
+            fs::create_dir_all(&artifacts).unwrap();
+            fs::set_permissions(&artifacts, fs::Permissions::from_mode(mode)).unwrap();
+            let runtime = start_runtime(&plan).unwrap();
+            let result = invoke_runtime(&plan, &runtime, RunRequest::text("hello")).unwrap();
+            stop_runtime(&plan, &runtime).unwrap();
+            assert_eq!(
+                invocation_result(
+                    &artifacts,
+                    &result.agent_name,
+                    &runtime.runtime_id,
+                    &result.request_id
+                )
+                .unwrap(),
+                Some(result)
+            );
+            assert_eq!(
+                fs::metadata(artifacts.join(".fabric")).unwrap().mode() & 0o777,
+                0o700
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn result_lookup_rejects_an_unsafe_existing_namespace() {
+        use std::os::unix::fs::PermissionsExt;
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let result = invoke_runtime(&plan, &runtime, RunRequest::text("hello")).unwrap();
+        let namespace = root.join("artifacts/.fabric");
+        fs::set_permissions(&namespace, fs::Permissions::from_mode(0o777)).unwrap();
+        let lookup = invocation_result(
+            &root.join("artifacts"),
+            &result.agent_name,
+            &result.runtime_id,
+            &result.request_id,
+        );
+        fs::set_permissions(&namespace, fs::Permissions::from_mode(0o700)).unwrap();
+        stop_runtime(&plan, &runtime).unwrap();
+        assert!(lookup.is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn result_lookup_and_duplicate_request_preserve_one_invocation() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start");
+        let mut request = RunRequest::text("hello");
+        request.request_id = "same-request".into();
+        let first = invoke_runtime(&plan, &runtime, request.clone()).expect("invoke");
+        let second = invoke_runtime(&plan, &runtime, request.clone()).expect("retry");
+        assert_eq!(first, second);
+        let artifacts = root.join("artifacts");
+        assert_eq!(
+            invocation_result(
+                &artifacts,
+                &plan.agent_name,
+                &runtime.runtime_id,
+                "same-request"
+            )
+            .unwrap(),
+            Some(first.clone())
+        );
+        request.input = serde_json::json!("different input");
+        assert!(invoke_runtime(&plan, &runtime, request).is_err());
+        stop_runtime(&plan, &runtime).expect("stop");
+        assert_eq!(
+            invocation_result(
+                &artifacts,
+                &plan.agent_name,
+                &runtime.runtime_id,
+                "same-request"
+            )
+            .unwrap(),
+            Some(first)
+        );
+        assert!(
+            invocation_result(
+                &artifacts,
+                "wrong-agent",
+                &runtime.runtime_id,
+                "same-request"
+            )
+            .is_err()
+        );
+        assert!(
+            invocation_result(&artifacts, &plan.agent_name, "../../escape", "same-request")
+                .is_err()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn result_lookup_rejects_symlinked_result_files() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start");
+        let mut request = RunRequest::text("hello");
+        request.request_id = "private-request".into();
+        let result = invoke_runtime(&plan, &runtime, request).expect("invoke");
+        let path =
+            PathBuf::from(result.metadata["fabric_home"].as_str().unwrap()).join("run-result.json");
+        let outside = root.join("outside-result.json");
+        fs::rename(&path, &outside).unwrap();
+        std::os::unix::fs::symlink(&outside, &path).unwrap();
+        assert!(
+            invocation_result(
+                &root.join("artifacts"),
+                &plan.agent_name,
+                &runtime.runtime_id,
+                "private-request"
+            )
+            .is_err()
+        );
+        stop_runtime(&plan, &runtime).expect("stop");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn duplicate_pending_request_is_not_submitted_again() {
+        let (root, plan) = local_host_plan("invoke_timeout");
+        let runtime = start_runtime(&plan).unwrap();
+        let stderr = local_hosts()
+            .get(&runtime.runtime_id)
+            .unwrap()
+            .lock()
+            .unwrap()
+            .stderr_path
+            .clone();
+        let mut request = RunRequest::text("slow");
+        request.request_id = "pending-request".into();
+        let worker_plan = plan.clone();
+        let worker_runtime = runtime.clone();
+        let worker_request = request.clone();
+        let worker = thread::spawn(move || {
+            run_local_host_adapter_with_timeout(
+                &worker_plan,
+                &worker_runtime,
+                worker_request,
+                Duration::from_millis(500),
+            )
+        });
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !fs::read_to_string(&stderr)
+            .unwrap()
+            .contains("invoke accepted without response")
+        {
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(10));
+        }
+        let error =
+            invoke_runtime(&plan, &runtime, request).expect_err("pending request must not replay");
+        assert!(
+            matches!(error, FabricError::AdapterLifecycleOperation { code, .. } if code == "invocation_pending")
+        );
+        worker
+            .join()
+            .unwrap()
+            .expect_err("original invocation times out");
+        let terminal = invocation_result(
+            &root.join("artifacts"),
+            &plan.agent_name,
+            &runtime.runtime_id,
+            "pending-request",
+        )
+        .unwrap()
+        .expect("timed-out invocation has a terminal result");
+        assert_eq!(terminal.error.unwrap().code, "host_timeout");
+        stop_runtime(&plan, &runtime).unwrap();
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -6427,7 +7314,8 @@ else:
         let runtime = start_runtime(&plan).expect("start local host");
         let (transport, capture) = openai_stream_listener("stream-secret");
 
-        let result = invoke_openai_stream(&plan, &runtime, RunRequest::text("stream"), transport)
+        let request = RunRequest::text("stream");
+        let result = invoke_openai_stream(&plan, &runtime, request.clone(), transport.clone())
             .expect("stream invocation");
         let records = capture.join().expect("stream capture");
 
@@ -6469,6 +7357,14 @@ else:
         assert_eq!(persisted["stream"]["invocation_id"], result.invocation_id);
         assert_eq!(persisted["stream"]["request_id"], result.request_id);
 
+        let replayed = invoke_openai_stream(&plan, &runtime, request.clone(), transport);
+        assert!(
+            matches!(replayed, Err(FabricError::AdapterLifecycleOperation { code, .. })
+            if code == "stream_replay_unsupported")
+        );
+        assert!(matches!(invoke_runtime(&plan, &runtime, request),
+            Err(FabricError::AdapterLifecycleOperation { code, .. })
+            if code == "request_conflict"));
         stop_runtime(&plan, &runtime).expect("stop local host");
         let _ = fs::remove_dir_all(root);
     }
@@ -8039,7 +8935,9 @@ else:
             .unwrap()
             .clone();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = local_host_directory(&runtime.runtime_id).join("health.endpoint.json");
+        let endpoint = local_host_directory(&runtime.runtime_id)
+            .unwrap()
+            .join("health.endpoint.json");
         fs::write(
             &endpoint,
             serde_json::to_vec(&serde_json::json!({

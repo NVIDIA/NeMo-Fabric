@@ -893,6 +893,12 @@ class Runtime:
                 await self._collector.aclose()
 
     def _absorb(self, result: RunResult) -> None:
+        identity = (result.runtime_id, result.invocation_id, result.request_id)
+        if any(
+            (item["runtime_id"], item["invocation_id"], item["request_id"]) == identity
+            for item in self._invocations
+        ):
+            return
         self._invocations.append(
             {
                 "request_id": result.request_id,
@@ -1025,6 +1031,10 @@ async def _run_native_lifecycle(
         invoke_error: FabricError | None = None
         try:
             try:
+                if runtime.get("environment", {}).get("provider") == "local":
+                    native._begin_run_result(
+                        plan_json, runtime_json, json.dumps(dict(request))
+                    )
                 result = json.loads(
                     native.invoke_runtime(
                         plan_json, runtime_json, json.dumps(dict(request))
@@ -1064,7 +1074,38 @@ async def _run_native_lifecycle(
             )
             if result is not None:
                 observations["partial_result"] = result
+                if runtime.get("environment", {}).get("provider") == "local":
+                    try:
+                        native._save_run_result(
+                            plan_json, runtime_json, json.dumps(result)
+                        )
+                    except Exception as error:
+                        failure = FabricRuntimeError(
+                            "The final invocation result could not be saved.",
+                            stage="result",
+                            code="result_storage_failed",
+                        )
+                        _retain_runtime_evidence(failure, observations)
+                        raise failure from error
             if invoke_error is not None:
+                if runtime.get("environment", {}).get("provider") == "local":
+                    try:
+                        native._finish_failed_run_result(
+                            plan_json,
+                            runtime_json,
+                            json.dumps(dict(request)),
+                            json.dumps(
+                                stop_events if isinstance(stop_events, list) else []
+                            ),
+                        )
+                    except Exception as error:
+                        failure = FabricRuntimeError(
+                            "The final invocation result could not be saved.",
+                            stage="result",
+                            code="result_storage_failed",
+                        )
+                        _retain_runtime_evidence(failure, observations)
+                        raise failure from error
                 # Keep obtained identity and cleanup evidence beside the original
                 # exception. A protocol failure is not a normalized invocation.
                 _retain_runtime_evidence(invoke_error, observations)
