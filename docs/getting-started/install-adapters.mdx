@@ -1,0 +1,166 @@
+---
+title: "Install a Harness Adapter"
+description: "Install a ready-made NeMo Fabric adapter and the dependencies required by its harness."
+slug: "/getting-started/installation/adapters"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+NVIDIA NeMo Fabric provides ready-made adapters for supported agent harnesses. An **adapter** translates NeMo Fabric configuration, requests, and results for a particular **harness**, the agent software that performs your task. Install the adapter and its required harness dependencies; you do not need to write an adapter to use a supported harness.
+
+## Choose an Installation Option
+
+| Your setup | Installation guide |
+| --- | --- |
+| New local environment with the runtime, adapter, and harness together | [Install a Complete Runtime and Harness](install-adapters.mdx#runtime-and-adapter-together) |
+| Application runtime and harness in separate Python environments | [Install an Adapter and Harness Without the Runtime](install-adapters.mdx#separate-python-environments) |
+| Harness already installed in an environment you manage | [Add an Adapter to an Existing Harness Environment](install-adapters.mdx#existing-harness-environment) |
+
+For example, the following command installs the NeMo Fabric runtime, the Deep Agents adapter, and its supported harness dependencies together:
+
+```bash
+python -m pip install 'nemo-fabric[deepagents]'
+```
+
+The [complete installation guide](install-adapters.mdx#runtime-and-adapter-together) lists other Python harness extras. Use matching NeMo Fabric runtime and adapter releases unless another combination has been validated.
+
+## Runtime and Adapter Together
+
+Prepare one Python environment to run agent tasks through NVIDIA NeMo Fabric. A [harness integration](../integrations/harness/overview.mdx) connects NeMo Fabric to the agent that executes your tasks; this guide installs the runtime and a selected adapter with its supported dependencies. Some harnesses also require a separate installation, as described below.
+
+Choose the command for your harness. Use a `nemo-fabric` harness extra when the runtime, adapter, and harness run in the same Python environment:
+
+```bash
+pip install "nemo-fabric[claude]"
+pip install "nemo-fabric[codex]"
+pip install "nemo-fabric[deepagents]"
+pip install "nemo-fabric[mini-swe-agent]"
+pip install "nemo-fabric[nooa]"
+pip install "nemo-fabric[openclaw]"
+pip install "nemo-fabric[openhands]"
+```
+
+The root extras install the dependencies selected for each adapter. Some include
+the harness; OpenClaw, OpenHands, and Hermes require separate harness installation
+as described in the individual harness guides. You can combine independent `nemo-fabric` extras. For
+example, the following command also installs Harbor; the Claude harness extra
+supplies the Relay CLI, while `relay` supplies the Relay Python package:
+
+```bash
+pip install "nemo-fabric[claude,harbor,relay]"
+```
+
+The NOOA extra supports Python 3.12 and 3.13 only. On another supported Python
+version, the command can succeed while its environment marker omits the NOOA
+adapter.
+
+The OpenClaw extra installs its adapter and HTTP client, but not OpenClaw.
+Install the `openclaw` npm package separately before using that adapter.
+
+OpenHands requires Python 3.12 or later. The root extra installs the adapter
+but not OpenHands. Install the supported `openhands-sdk` and `openhands-tools`
+packages separately as described in the
+[OpenHands adapter guide](../integrations/harness/openhands.mdx).
+
+The Claude and Codex harness extras install the `nemo-relay` CLI required for
+Relay-enabled runs. The root `relay` extra installs only the Relay Python
+package for SDK-native integrations.
+
+Use the dedicated guides for [Hermes Agent](install-hermes.mdx), [Cline](install-cline.mdx), [Factory Droid](install-droid.mdx), and [Kiro](install-kiro.mdx).
+
+Continue with your selected [harness integration guide](../integrations/harness/overview.mdx) to configure and run a task. The [Quickstart](quickstart.mdx) provides a complete Deep Agents walkthrough.
+
+## Separate Python Environments
+
+Prepare an adapter and harness in a Python environment separate from the NVIDIA NeMo Fabric runtime. The [harness adapter](../integrations/harness/overview.mdx) translates NeMo Fabric configuration and requests for the agent that executes your tasks. Use this route to isolate the harness's dependencies while your application runs NeMo Fabric in another locally accessible environment.
+
+Choose the command for your harness. Use an adapter package's `harness` extra when a different environment runs NeMo Fabric:
+
+```bash
+pip install "nemo-fabric-adapters-claude[harness]"
+pip install "nemo-fabric-adapters-codex[harness]"
+pip install "nemo-fabric-adapters-deepagents[harness]"
+pip install "nemo-fabric-adapters-nooa[harness]"
+```
+
+This installation mode keeps the runtime dependencies out of the adapter
+environment. Set `ADAPTER_PYTHON` in the runtime environment to the adapter
+environment's Python interpreter. A Python adapter and its Python harness must
+use the same interpreter. Use matching NeMo Fabric
+release versions for the runtime and adapter package unless a different pairing
+has been explicitly validated.
+
+The OpenClaw adapter does not provide `harness` or `full` extras. Install
+`nemo-fabric-adapters-openclaw` directly and install the `openclaw` npm package
+separately.
+
+The OpenHands adapter also omits `harness` and `full` extras. Install the bare
+adapter and the supported OpenHands packages separately.
+
+### Select the Adapter Environment
+
+The NeMo Fabric runtime and agent harness can run in separate, locally accessible Python environments. This scenario isolates their Python dependencies while the runtime launches the adapter through the adapter environment's interpreter.
+
+Install `nemo-fabric` in the runtime environment. Install the adapter and harness in the second environment, then set `ADAPTER_PYTHON` in the runtime environment:
+
+```bash
+export ADAPTER_PYTHON="/path/to/adapter-environment/bin/python"
+```
+
+On Windows, use the adapter environment's Python executable:
+
+```powershell
+$env:ADAPTER_PYTHON = "C:\path\to\adapter-environment\Scripts\python.exe"
+```
+
+Use matching NeMo Fabric release versions for the runtime and adapter unless a different pairing has been validated.
+
+Return to the [Installation Overview](install.mdx) to compare deployment scenarios.
+
+## Existing Harness Environment
+
+Connect a harness you already manage to NVIDIA NeMo Fabric by installing its [harness adapter](../integrations/harness/overview.mdx), the integration that translates NeMo Fabric requests into calls to that agent. Use this route to keep your existing compatible harness installation while adding NeMo Fabric support.
+
+Choose the command for your harness. Install an adapter package without an extra when the environment already supplies and manages a compatible harness:
+
+```bash
+pip install nemo-fabric-adapters-claude
+pip install nemo-fabric-adapters-codex
+pip install nemo-fabric-adapters-deepagents
+pip install nemo-fabric-adapters-hermes
+pip install nemo-fabric-adapters-nooa
+pip install nemo-fabric-adapters-openclaw
+pip install nemo-fabric-adapters-openhands
+```
+
+Bare adapter distributions install only adapter-owned dependencies. They do not
+install the NeMo Fabric runtime or the harness.
+
+If the existing harness and runtime share an environment, install the runtime
+and bare adapter together. The following example preserves the existing Codex
+SDK instead of installing the adapter's supported SDK version:
+
+```bash
+pip install nemo-fabric nemo-fabric-adapters-codex
+```
+
+For a separate runtime interpreter, follow [Install an Adapter and Harness Without the Runtime](install-adapters.mdx#separate-python-environments). Use your selected harness's integration guide to configure and run a task from the runtime environment.
+
+## Adapters with Additional Setup
+
+These adapters have dedicated installation pages because their harnesses need additional setup. They are not the only supported adapters or a preference ranking.
+
+| Adapter | What you install separately |
+| --- | --- |
+| [Hermes Adapter](install-hermes.mdx) | Hermes Agent in its supported Python 3.14 environment |
+| [Cline Adapter](install-cline.mdx) | The supported Cline TypeScript SDK |
+| [Factory Droid Adapter](install-droid.mdx) | Factory Droid CLI and its SDK |
+| [Kiro Adapter](install-kiro.mdx) | Kiro CLI and authentication |
+
+An adapter package's `full` extra applies to the adapter environment; it does not install the NeMo Fabric runtime. For Claude and Codex, `full` and `harness` install the supported harness and NeMo Relay CLI. For Deep Agents and mini-SWE-agent, `full` installs the harness and Relay Python package. For Hermes, it installs Relay dependencies but not Hermes Agent itself.
+
+## Configure Your Harness
+
+After installation, use [Harness Integrations](../integrations/harness/overview.mdx) for configuration and usage, and [Harness Compatibility](../reference/compatibility.mdx) to compare supported features. The [Quickstart](quickstart-overview.mdx) guides you through a first run.
+
+For an unsupported or custom agent, use the [Adapter Contract](../adapter-contract/README.md) to build an adapter instead.

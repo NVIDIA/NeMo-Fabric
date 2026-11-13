@@ -6,83 +6,58 @@ slug: "/getting-started/install"
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-Choose an installation of [NVIDIA NeMo Fabric](../about-nemo-fabric/overview.mdx), which lets your application configure and run agent harnesses through a shared interface. This overview helps you select a supported environment and the packages needed to run your chosen harness. The runtime, adapter, harness, and optional telemetry dependencies have separate responsibilities: installing the runtime alone does not install an agent harness.
+<style>{`
+.fabric-installation-overview { font-size: 14px; line-height: 22px; }
+.fabric-installation-overview > h2 { font-size: 22px; line-height: 28px; margin-top: 16px; margin-bottom: 8px; }
+.fabric-installation-overview > p { line-height: 22px; margin-top: 4px; margin-bottom: 4px; }
+.fabric-installation-overview .fern-table-root { margin-top: 8px; margin-bottom: 12px; }
+.fabric-installation-overview th, .fabric-installation-overview td { font-size: 13px; line-height: 20px; padding: 6px 8px; }
+`}</style>
 
-For a guided first run, start with [Quickstart](quickstart-overview.mdx). Otherwise, check the requirements, choose a deployment scenario and package combination, then open the matching installation guide.
+<div className="fabric-installation-overview">
+
+Install the [NVIDIA NeMo Fabric](../about-nemo-fabric/overview.mdx) runtime and an adapter for your chosen harness. Some harnesses require a separate installation. For a guided first run, follow the [Quickstart](quickstart-overview.mdx).
 
 ## Requirements and Supported Platforms
 
-### Python Versions
-
-NeMo Fabric supports Python 3.11 through 3.14. Some integrations and adapters have additional requirements. The supported Hermes Agent v0.22.5 release requires Python 3.14; OpenHands and the Harbor integration require Python 3.12 or later.
-
-### Platforms
-
-NeMo Fabric supports the following platforms:
-
-- Linux (x86_64 and arm64)
-- macOS (arm64)
-- Windows (x86_64)
-
-Harness versions and required native tools differ. Choose a [harness guide](../integrations/harness/overview.mdx) before installing its dependencies. The runtime package does not install every harness.
+**Python 3.11–3.14.** Linux (x86_64, arm64), macOS (arm64), and Windows (x86_64). Hermes Agent v0.22.5 requires Python 3.14; OpenHands and Harbor require 3.12+. Check your [harness guide](../integrations/harness/overview.mdx) for additional requirements.
 
 ## Deployment Scenarios
 
-Choose where the runtime, adapter, and harness execute before installing packages.
-
 | Scenario | What runs where | Installation route |
 | --- | --- | --- |
-| Runtime and harness together | The application, runtime, adapter, and harness share one environment. This is the simplest local setup. | [Install a Complete Runtime and Harness](install-complete.mdx), or [add an adapter to an existing harness](install-existing-harness.mdx) |
-| Separate local Python environments | The application and runtime launch an adapter through the interpreter that contains its harness dependencies. | [Install an Adapter and Harness Without the Runtime](install-adapter-harness.mdx), then set `ADAPTER_PYTHON` |
-| Isolated task environment | The host constructs configuration; the task environment contains NeMo Fabric, the adapter, and the harness. Discovery and task paths resolve there. | Follow the [Harbor integration](../integrations/consumer/harbor.mdx) or [Environments and Sandboxes](../sdk/environments.mdx) for the chosen deployment |
-
-The runtime and adapter should use matching NeMo Fabric releases unless another combination has been validated. Environment isolation and credential delivery belong to the selected deployment system. For a Hermes task with Relay, install `nemo-fabric-adapters-hermes[relay]` in the Hermes environment; the root Relay extra selects a different Relay release.
-
+| Shared environment | Runtime, adapter, and harness together | [Complete setup](install-adapters.mdx#runtime-and-adapter-together) or [existing harness](install-adapters.mdx#existing-harness-environment) |
+| Separate environments | Runtime launches the adapter environment's Python | [Adapter and harness](install-adapters.mdx#separate-python-environments) |
+| Isolated task | Runtime, adapter, and harness in the task environment | [Harbor](../integrations/consumer/harbor.mdx) or [Environments](../sdk/environments.mdx) |
 
 ## Choose an Installation
 
-The following table shows a representative subset of package expressions and
-the components they install. The individual installation guides below describe each route. A **No** entry means that the expression does not
-install that component; the component can already exist in the environment or
-be managed separately.
+What each package installs. **No** means the component must already exist or be installed separately. These are representative combinations; [adapter installation](install-adapters.mdx) covers the available routes.
 
 | Installation | Runtime | Collector | Adapter | Harness | Relay Python | Relay CLI |
 | --- | --- | --- | --- | --- | --- | --- |
-| `nemo-fabric` | Yes | No | No | No | No | No |
-| `nemo-fabric[streaming]` | Yes | Yes | No | No | No | No |
-| `nemo-fabric[relay]` | Yes | No | No | No | Yes | No |
-| `nemo-fabric[hermes-agent]` | Yes | No | Yes | No | No | No |
-| `nemo-fabric[hermes-agent]` plus `nemo-fabric-adapters-hermes[relay]` | Yes | No | Yes | No | Yes | No |
-| `nemo-fabric-adapters-claude[harness]` | No | No | Yes | Yes | No | Yes |
-| `nemo-fabric-adapters-claude[full]` | No | No | Yes | Yes | No | Yes |
-| `nemo-fabric-adapters-deepagents[full]` | No | No | Yes | Yes | Yes | No |
-| `nemo-fabric-adapters-mini-swe-agent[full]` | No | No | Yes | Yes | Yes | No |
-| `nemo-fabric-adapters-nooa[full]` | No | No | Yes | Yes | Yes | No |
-| `nemo-fabric-adapters-openclaw` | No | No | Yes | No | No | No |
-| `nemo-fabric-adapters-openhands` | No | No | Yes | No | No | No |
-| `nemo-fabric-adapters-hermes[full]` | No | No | Yes | No | Yes | No |
-| `nemo-fabric-adapters-hermes[relay]` | No | No | Yes | No | Yes | No |
-| `nemo-fabric-adapters-claude` | No | No | Yes | No | No | No |
+| `nemo-fabric` | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> |
+| `nemo-fabric[streaming]` | <Badge intent="success">Yes</Badge> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> |
+| `nemo-fabric[relay]` | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> |
+| `nemo-fabric[hermes-agent]` | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> |
+| `nemo-fabric[hermes-agent]` plus `nemo-fabric-adapters-hermes[relay]` | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> |
+| `nemo-fabric-adapters-claude[harness]` | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> |
+| `nemo-fabric-adapters-claude[full]` | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> |
+| `nemo-fabric-adapters-deepagents[full]` | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <Badge intent="success">Yes</Badge> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> |
+| `nemo-fabric-adapters-mini-swe-agent[full]` | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <Badge intent="success">Yes</Badge> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> |
+| `nemo-fabric-adapters-nooa[full]` | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <Badge intent="success">Yes</Badge> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> |
+| `nemo-fabric-adapters-openclaw` | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> |
+| `nemo-fabric-adapters-openhands` | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> |
+| `nemo-fabric-adapters-hermes[full]` | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> |
+| `nemo-fabric-adapters-hermes[relay]` | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> |
+| `nemo-fabric-adapters-claude` | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <Badge intent="success">Yes</Badge> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> | <span style={{ backgroundColor: "#494e54", color: "#ffffff", borderRadius: "999px", padding: "2px 8px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" }}>No</span> |
 
-An adapter package's `full` extra is scoped to the adapter environment and does
-not install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent
-to `harness`; both install the supported harness and `nemo-relay` CLI. For
-LangChain Deep Agents and mini-SWE-agent, `full` installs the harness and NeMo
-Relay Python package without the CLI. For Hermes Agent, `full` installs the
-adapter and Relay Python package; Hermes Agent must be installed separately.
+An adapter's `full` extra does not install the NeMo Fabric runtime; its contents vary by adapter. Hermes Agent must be installed separately. Refer to [Install a Harness Adapter](install-adapters.mdx) for setup options and dedicated adapter guides.
 
-## Installation Guides
+Use matching runtime and adapter releases unless another combination has been validated. For Hermes telemetry, use `nemo-fabric-adapters-hermes[relay]`; the root Relay extra selects a different Relay release.
 
-| What you need | Guide |
-| --- | --- |
-| Runtime package or the optional streaming collector | [Install the NeMo Fabric Runtime](install-fabric-runtime.mdx) |
-| Runtime, adapter, and a supported harness stack | [Install a Complete Runtime and Harness](install-complete.mdx) |
-| Hermes Agent and its separate supported Python environment | [Install Hermes Agent](install-hermes.mdx) |
-| Cline SDK and adapter | [Install Cline](install-cline.mdx) |
-| Factory Droid CLI, SDK, and adapter | [Install Factory Droid](install-droid.mdx) |
-| Kiro CLI and adapter | [Install Kiro](install-kiro.mdx) |
-| Adapter and harness in a separate runtime environment | [Install an Adapter and Harness Without the Runtime](install-adapter-harness.mdx) |
-| Adapter beside a compatible harness you already manage | [Add an Adapter to an Existing Harness Environment](install-existing-harness.mdx) |
-| Relay instrumentation and streaming dependencies | [NeMo Relay and Streaming Dependencies](install-relay.mdx) |
+## Next Steps
 
-After installation, run a task with your selected [harness integration guide](../integrations/harness/overview.mdx). The [Quickstart](quickstart.mdx) provides a complete first run with Deep Agents and explains the expected result. For registry names, refer to [Packages and Distribution](artifacts.mdx). Source contributors use [Development Setup](../contributing/setup.mdx).
+[Install the runtime](install-fabric-runtime.mdx), [install a harness adapter](install-adapters.mdx), or add [NeMo Relay and streaming dependencies](install-relay.mdx). For package names, refer to [Packages and Distribution](artifacts.mdx). Source contributors use [Development Setup](../contributing/setup.mdx).
+
+</div>

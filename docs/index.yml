@@ -25,34 +25,42 @@ navigation:
       path: ./getting-started/switch-harnesses.mdx
     - page: "3. Add Skills and MCP"
       path: ./getting-started/skills-and-mcp.mdx
-  - section: Installation Overview
-    path: ./getting-started/install.mdx
+    - page: "4. Run in OpenShell (Optional)"
+      path: ./getting-started/openshell.mdx
+  - section: Installation
     collapsed: open-by-default
     contents:
+    - page: Installation Overview
+      path: ./getting-started/install.mdx
     - page: Install the NeMo Fabric Runtime
       path: ./getting-started/install-fabric-runtime.mdx
       icon: fa-solid fa-microchip
-    - page: Install a Complete Runtime and Harness
-      path: ./getting-started/install-complete.mdx
-      icon: fa-solid fa-cubes
-    - page: Install Hermes Agent
-      path: ./getting-started/install-hermes.mdx
-      icon: fa-solid fa-feather-pointed
-    - page: Install Cline
-      path: ./getting-started/install-cline.mdx
-      icon: fa-solid fa-robot
-    - page: Install Factory Droid
-      path: ./getting-started/install-droid.mdx
-      icon: fa-solid fa-industry
-    - page: Install Kiro
-      path: ./getting-started/install-kiro.mdx
-      icon: fa-solid fa-ghost
-    - page: Install an Adapter and Harness Without the Runtime
-      path: ./getting-started/install-adapter-harness.mdx
-      icon: fa-solid fa-plug
-    - page: Add an Adapter to an Existing Harness Environment
-      path: ./getting-started/install-existing-harness.mdx
-      icon: fa-solid fa-puzzle-piece
+    - section: Install a Harness Adapter
+      collapsed: open-by-default
+      contents:
+      - page: Overview
+        path: ./getting-started/install-adapters.mdx
+      - page: Install a Complete Runtime and Harness
+        path: ./getting-started/install-complete.mdx
+        hidden: true
+      - page: Install an Adapter and Harness Without the Runtime
+        path: ./getting-started/install-adapter-harness.mdx
+        hidden: true
+      - page: Add an Adapter to an Existing Harness Environment
+        path: ./getting-started/install-existing-harness.mdx
+        hidden: true
+      - page: Hermes Adapter
+        path: ./getting-started/install-hermes.mdx
+        icon: fa-solid fa-feather-pointed
+      - page: Cline Adapter
+        path: ./getting-started/install-cline.mdx
+        icon: fa-solid fa-robot
+      - page: Factory Droid Adapter
+        path: ./getting-started/install-droid.mdx
+        icon: fa-solid fa-industry
+      - page: Kiro Adapter
+        path: ./getting-started/install-kiro.mdx
+        icon: fa-solid fa-ghost
     - page: NeMo Relay and Streaming Dependencies
       path: ./getting-started/install-relay.mdx
       icon: fa-solid fa-tower-broadcast

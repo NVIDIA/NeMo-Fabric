@@ -1,0 +1,58 @@
+---
+title: "4. Run in OpenShell (Optional)"
+description: "Run the source-checkout Hermes code-review example in an OpenShell sandbox."
+slug: "/getting-started/quickstart/openshell"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Run a Hermes code-review agent inside an [OpenShell](https://github.com/NVIDIA/OpenShell) sandbox, controlled by the NVIDIA NeMo Fabric Python SDK on the host. OpenShell supplies isolation and policy; the adapter and harness execute the task inside the sandbox.
+
+This optional continuation uses the repository's [Hermes code-review example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent#run-hermes-in-openshell). It requires a source checkout and a Linux host. It packages a sample repository and skill in a task image rather than automatically moving the scripts or MCP server from the preceding guides into a sandbox.
+
+<Steps toc={true} tocDepth={2}>
+
+<Step title="Prepare a Linux Host" id="prepare-a-linux-host">
+
+Use a NeMo Fabric source checkout with its Python SDK and native extension installed, following [Development Setup](../contributing/setup.mdx). The shared launcher requires Docker with Linux containers, Rust/Cargo, `uv`, Python 3, `curl`, `openssl`, and `tar`. The Docker daemon must be running. The launcher currently supports Linux x86_64 and arm64 hosts; this procedure does not run directly on macOS or Windows.
+
+From the repository root, select your installed host SDK environment and provide the NVIDIA API key used for model access:
+
+```bash
+export UV_PROJECT_ENVIRONMENT="$PWD/.venv"
+export NVIDIA_API_KEY='<your-key>'
+```
+
+The image contains its own Hermes installation and adapter. You do not need to reuse the local Hermes interpreter from quickstart two. Refer to the [shared launcher requirements](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/openshell/README.md#requirements) if your host environment is elsewhere.
+
+</Step>
+
+<Step title="Run the Sandboxed Code Review" id="run-the-sandboxed-review">
+
+Run from the repository root:
+
+```bash
+OPENSHELL_EXAMPLE_MODE=fabric_owned \
+  bash examples/openshell/run-demo.sh \
+  examples/code_review_agent/demo-openshell-hermes-sdk.sh
+```
+
+The launcher builds the provider and task images, downloads its pinned OpenShell release, starts a local gateway, and configures model access. The host consumer prepares a sandbox, runs two review turns on one runtime, then stops the runtime and releases the sandbox. NeMo Relay is off by default.
+
+The example uses its own configured NVIDIA model. To select another model available to your key, set `OPENSHELL_CODE_REVIEW_MODEL` before launching. Alternate endpoints also need a matching OpenShell provider policy, as described in the [example's model-access instructions](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent#run-hermes-in-openshell).
+
+</Step>
+
+<Step title="Inspect the Result" id="inspect-the-result">
+
+Open `.tmp/code-review-hermes/fabric_owned-report.json`. A completed run has top-level `status: "succeeded"` and two entries in `reviews`, each with status `succeeded`. Inspect each review's `output.response` for the finding and follow-up explanation. The second review should recall the example's `cedar-4827` review tag. Collected runtime artifacts appear under `.tmp/code-review-hermes/artifacts/`.
+
+The consumer attempts runtime shutdown and environment release even after a failure. The launcher checks sandbox removal in this ownership mode and cleans up its gateway resources. If the command fails, inspect the report's `error` field and launcher output; the [OpenShell example guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/openshell/README.md) explains setup, networking, and ownership modes.
+
+</Step>
+
+</Steps>
+
+## Next Steps
+
+Use [Environments and Sandboxes](../sdk/environments.mdx) to integrate sandbox preparation and release into your application. The [custom LangGraph example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/langgraph_custom_agent#run-the-custom-agent-in-openshell) demonstrates the same deployment path with an application-owned agent and adapter.

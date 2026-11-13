@@ -1,94 +1,151 @@
 ---
 slug: "/getting-started/quickstart/skills-and-mcp"
 title: "3. Add Skills and MCP"
-description: "Extend the original agent with a skill and an MCP server, then run a task."
+description: "Extend the Hermes variant with a review skill and a working local MCP tool."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-This third quickstart adds a local skill and a caller-supplied stdio MCP server to Deep Agents. After [2. Switch Harnesses](switch-harnesses.mdx), return to the original configuration in `first_agent.py` from [1. Install One Harness](quickstart.mdx). Reuse that configuration for the following steps. This guide does not install an MCP server for you; provide an installed server and its launch command.
+Extend the Hermes variant from [2. Switch Harnesses](switch-harnesses.mdx) with a code-review skill and a local Model Context Protocol (MCP) tool. This third quickstart reuses the model and configuration in `first_agent.py`, the Hermes environment with MCP support, and `HERMES_ADAPTER_PYTHON`. Keep your application's `.venv` active.
 
 <Steps toc={true} tocDepth={2}>
 
-<Step title="Add a Skill" id="add-a-skill">
+<Step title="Add a Review Skill" id="add-a-skill">
 
-Create `skills/review/SKILL.md` beside `first_agent.py`:
+Create `skills/review/SKILL.md` beside `first_agent.py` with the following content:
 
 ```markdown
 ---
 name: review
-description: Use when summarizing a project for a new contributor.
+description: Use when reviewing a Python function for correctness.
 ---
 
-Identify the project's purpose, its likely entry points, and two questions
-that a new contributor should investigate. Separate observations from guesses.
+Report findings under the heading "Review checks". Include the triggering
+input, what fails, and a suggested correction. When the check_average MCP
+tool is available, use it with an empty list and with [2, 4, 6] to check the
+example's edge case and ordinary case. Distinguish tool results from your
+own reasoning.
 ```
 
-Save the following as `extended_agent.py` beside `first_agent.py`. It copies the original configuration and adds the skill path:
-
-```python
-import asyncio
-
-from first_agent import config
-from nemo_fabric import Fabric
-
-variant = config.model_copy(deep=True)
-variant.add_skill_path("./skills/review")
-```
-
-The skill gives the agent instructions for a project-summary task. The final step runs the extended configuration.
+The skill supplies review instructions. The MCP server in the next step supplies an executable tool; these are separate capabilities.
 
 </Step>
 
-<Step title="Connect an MCP Server" id="connect-an-mcp-server">
+<Step title="Create a Local MCP Tool" id="connect-an-mcp-server">
 
-Choose an installed stdio MCP server, then supply its executable and actual arguments. Add the following below the skill configuration in `extended_agent.py`, replacing the command with the server's documented launch command:
+The Hermes environment created in step two includes MCP 2.3 through its `mcp` extra. This example uses that version's `MCPServer` API. Save this complete server as `review_tools.py` beside `first_agent.py`. It computes the example's average without network access and records each tool call in a local JSON Lines file:
 
 ```python
-variant.add_mcp_server(
-    "project-tools",
-    transport="stdio",
-    url="/absolute/path/to/your-mcp-server",
-    args=[],
-    exposure="harness_native",
-)
+import json
+from pathlib import Path
+
+from mcp.server.mcpserver import MCPServer
+
+server = MCPServer("review-tools", log_level="ERROR")
+call_log = Path(__file__).with_name("mcp-tool-calls.jsonl")
+
+
+@server.tool()
+def check_average(values: list[float]) -> dict:
+    """Check the average calculation, including the empty-list edge case."""
+    if values:
+        result = {"average": sum(values) / len(values), "error": None}
+    else:
+        result = {"average": None, "error": "division_by_zero"}
+    with call_log.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"values": values, **result}) + "\n")
+    return result
+
+
+if __name__ == "__main__":
+    server.run(transport="stdio")
 ```
 
-This is a configuration template; replace the executable path and arguments before running it. Deep Agents does not support per-server MCP filtering or OAuth through this normalized surface. Other adapters have different support.
+Do not start the server manually. The harness launches it through stdio when the agent starts. Keep protocol output on stdout; the example writes call evidence to the file instead.
 
 </Step>
 
 <Step title="Run the Extended Agent" id="run-the-extended-agent">
 
-Append the following to `extended_agent.py`. Adjust the input to request a task that uses one of your MCP server's known tools:
+Save this complete example as `extended_agent.py` beside the other files. It selects the already-installed Hermes adapter and uses the same Hermes interpreter for the adapter and MCP server:
 
 ```python
+import asyncio
+import os
+from pathlib import Path
+
+from first_agent import config
+from nemo_fabric import Fabric, HarnessConfig
+
+app_dir = Path(__file__).resolve().parent
+hermes_python = os.environ["HERMES_ADAPTER_PYTHON"]
+variant = config.model_copy(deep=True)
+variant.harness = HarnessConfig(adapter_id="nvidia.fabric.hermes")
+variant.add_skill_path(app_dir / "skills" / "review")
+variant.add_mcp_server(
+    "review-tools",
+    transport="stdio",
+    url=hermes_python,
+    args=[str(app_dir / "review_tools.py")],
+    exposure="harness_native",
+)
+
+
 async def main():
-    result = await Fabric().run(
-        variant,
-        input="Use the review skill to summarize this project for a new contributor. Use relevant project-tools MCP tools to support the summary.",
-    )
-    print("Status:", result.status)
-    if result.status == "succeeded":
-        print(result.output.response)
-    else:
-        print("Error:", result.error)
-    print("Artifacts:", result.artifacts)
+    original_python = os.environ.get("ADAPTER_PYTHON")
+    os.environ["ADAPTER_PYTHON"] = hermes_python
+    try:
+        result = await Fabric().run(
+            variant,
+            input=(
+                "Use the review skill to review this Python function. "
+                "Call the check_average MCP tool with [] and [2, 4, 6], "
+                "then explain the bug and a correction.\n\n"
+                "def average(values):\n"
+                "    return sum(values) / len(values)\n"
+            ),
+        )
+        print("Status:", result.status)
+        if result.status == "succeeded":
+            print(result.output.response)
+        else:
+            print("Error:", result.error)
+    finally:
+        if original_python is None:
+            os.environ.pop("ADAPTER_PYTHON", None)
+        else:
+            os.environ["ADAPTER_PYTHON"] = original_python
+
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Run the script from the directory containing `first_agent.py` and the skill:
+From the application directory, run:
 
 ```bash
 python extended_agent.py
 ```
 
-A successful run returns status `succeeded` and a project summary. Check the response and available execution evidence for use of the skill and the requested MCP tool. Successful execution alone does not establish that either was used. If startup or invocation fails, follow [Troubleshooting](../troubleshooting.mdx). For optional configuration inspection, refer to [Plan and Diagnose](../sdk/plan.mdx).
+The environment-variable selection is sequential, as in step two. Production launchers should establish consistent execution environments instead of changing process-wide variables around concurrent starts.
 
-Continue with [Tools, Skills, and MCP](../sdk/capabilities.mdx) for authentication, headers, tool policy, and compatibility details. The maintained [custom-agent example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/langgraph_custom_agent) includes a complete example MCP tool and consumer.
+</Step>
+
+<Step title="Check the Review and Tool Calls" id="check-the-outcome">
+
+Look for status `succeeded` and a review that identifies the empty-list division error under the skill's requested heading. Inspect `mcp-tool-calls.jsonl` for these records; ordering and repeat calls can vary:
+
+```jsonl
+{"values": [], "average": null, "error": "division_by_zero"}
+{"values": [2.0, 4.0, 6.0], "average": 4.0, "error": null}
+```
+
+The log proves the local tool ran. A successful agent response alone does not prove tool use or skill loading; the requested heading is an observable sign that the skill's instructions influenced the review. For a repeat run, distinguish newly appended records from earlier calls. If startup or invocation fails, follow [Troubleshooting](../troubleshooting.mdx). If the run succeeds without the required checks, inspect the response and tool log before treating the task as complete.
 
 </Step>
 
 </Steps>
+
+## Next Steps
+
+Continue to [4. Run in OpenShell (Optional)](openshell.mdx) for the source-checkout sandbox example. Refer to [Tools, Skills, and MCP](../sdk/capabilities.mdx) for authentication, tool policy, and adapter differences, or [Plan and Diagnose](../sdk/plan.mdx) to inspect configuration before execution.

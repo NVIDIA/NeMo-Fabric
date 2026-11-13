@@ -6,29 +6,4 @@ slug: "/getting-started/installation/existing-harness"
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-Connect a harness you already manage to NVIDIA NeMo Fabric by installing its [harness adapter](../integrations/harness/overview.mdx), the integration that translates NeMo Fabric requests into calls to that agent. Use this route to keep your existing compatible harness installation while adding NeMo Fabric support.
-
-Choose the command for your harness. Install an adapter package without an extra when the environment already supplies and manages a compatible harness:
-
-```bash
-pip install nemo-fabric-adapters-claude
-pip install nemo-fabric-adapters-codex
-pip install nemo-fabric-adapters-deepagents
-pip install nemo-fabric-adapters-hermes
-pip install nemo-fabric-adapters-nooa
-pip install nemo-fabric-adapters-openclaw
-pip install nemo-fabric-adapters-openhands
-```
-
-Bare adapter distributions install only adapter-owned dependencies. They do not
-install the NeMo Fabric runtime or the harness.
-
-If the existing harness and runtime share an environment, install the runtime
-and bare adapter together. The following example preserves the existing Codex
-SDK instead of installing the adapter's supported SDK version:
-
-```bash
-pip install nemo-fabric nemo-fabric-adapters-codex
-```
-
-For a separate runtime interpreter, follow [Install an Adapter and Harness Without the Runtime](install-adapter-harness.mdx#select-the-adapter-environment). Use your selected harness's integration guide to configure and run a task from the runtime environment.
+This installation procedure is now part of [Install a Harness Adapter](install-adapters.mdx#existing-harness-environment).

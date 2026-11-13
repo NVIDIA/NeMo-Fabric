@@ -1,12 +1,12 @@
 ---
-title: "Install Hermes Agent"
+title: "Install the Hermes Adapter"
 description: "Prepare a supported Hermes Agent environment with the NeMo Fabric runtime and adapter."
 slug: "/getting-started/installation/hermes"
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-Install [Hermes Agent](https://github.com/NousResearch/hermes-agent), an open source agent from Nous Research, as the harness for NVIDIA NeMo Fabric. This guide prepares the supported Hermes environment and adds the NeMo Fabric runtime and adapter so your application can run tasks through Hermes.
+Install the ready-made NVIDIA NeMo Fabric adapter for [Hermes Agent](https://github.com/NousResearch/hermes-agent), an open source agent from Nous Research. Hermes Agent is the harness that executes tasks; the adapter connects it to your application through NeMo Fabric.
 
 Hermes Agent 0.20 and later is no longer installable from PyPI. End users must
 follow the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation),
@@ -17,7 +17,15 @@ that runs Hermes Agent:
 pip install "nemo-fabric[hermes-agent]"
 ```
 
-These packages do not install Hermes Agent. Use [Hermes Agent v0.22.5](https://github.com/NousResearch/hermes-agent/releases/tag/v0.22.5) with Python 3.14. This release includes dependency security fixes absent from v2026.9.24 and supports ordinary runs, Relay 0.10 telemetry, and streaming. For local development, create the isolated environment from the repository root:
+These packages do not install Hermes Agent. Use [Hermes Agent v0.22.5](https://github.com/NousResearch/hermes-agent/releases/tag/v0.22.5) with Python 3.14. Hermes supports this interpreter for its current dependency stack; this is not a general NeMo Fabric Python requirement. A separate environment keeps those dependencies apart from your application and other harnesses.
+
+## Install in a Separate Environment
+
+For a complete package-based setup with a pinned Hermes checkout, follow [Switch Harnesses](switch-harnesses.mdx#install-the-second-harness). That procedure creates the Python 3.14 environment, installs Hermes with MCP support from its lockfile, and adds the adapter version matching your application.
+
+## Install from a NeMo Fabric Checkout
+
+For local NeMo Fabric development, run the following from the repository root. The recipe creates `.venv-hermes` and installs Hermes Agent v0.22.5 at commit `bf0203a794a07aac3ff764972ab9087baa4e4f4e`, together with the local runtime and adapter packages:
 
 ```bash
 just install-hermes-agent
