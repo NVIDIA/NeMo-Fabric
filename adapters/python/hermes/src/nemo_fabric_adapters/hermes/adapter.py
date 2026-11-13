@@ -50,6 +50,56 @@ def main() -> None:
     lifecycle.serve(HermesRuntime, config_loader=AgentConfig.from_mapping)
 
 
+# How long to wait for MCP servers to reconnect after an interactive sign-in.
+MCP_RECONNECT_WAIT_SECONDS = 15.0
+MCP_RECONNECT_POLL_SECONDS = 0.25
+
+
+def _hermes_mcp_oauth_api() -> Any:
+    """Resolve the Hermes MCP functions used for interactive OAuth sign-in.
+
+    Hermes moved these out of ``tools.mcp_tool`` into separate modules; the
+    older layout is still accepted. ``probe_server`` is ``None`` on Hermes
+    versions without the interactive login probe, which then fall back to an
+    interactive discovery pass.
+    """
+
+    from types import SimpleNamespace
+
+    from tools.mcp_oauth import force_interactive_oauth
+
+    try:
+        from tools.mcp_tool_discovery import discover_mcp_tools
+        from tools.mcp_tool_discovery import get_mcp_status
+    except ModuleNotFoundError as error:
+        if error.name != "tools.mcp_tool_discovery":
+            raise
+        from tools.mcp_tool import discover_mcp_tools
+        from tools.mcp_tool import get_mcp_status
+    try:
+        from tools.mcp_tool_agent import refresh_agent_mcp_tools
+    except ModuleNotFoundError as error:
+        if error.name != "tools.mcp_tool_agent":
+            raise
+        from tools.mcp_tool import refresh_agent_mcp_tools
+    try:
+        # Hermes's own ``hermes mcp login`` and dashboard sign-in use these.
+        from hermes_cli.mcp_config import _probe_single_server as probe_server
+        from tools.mcp_oauth import login_connect_timeout
+        from tools.mcp_tool_loop import reconnect_mcp_server as reconnect_server
+    except ImportError:
+        probe_server = login_connect_timeout = reconnect_server = None
+    return SimpleNamespace(
+        discover_mcp_tools=discover_mcp_tools,
+        force_interactive_oauth=force_interactive_oauth,
+        get_mcp_status=get_mcp_status,
+        login_connect_timeout=login_connect_timeout,
+        probe_server=probe_server,
+        reconnect_server=reconnect_server,
+        refresh_agent_mcp_tools=refresh_agent_mcp_tools,
+    )
+
+
 class HermesRuntime:
     """SDK and native Hermes execution owned by one Fabric runtime."""
 
@@ -573,15 +623,12 @@ class HermesRuntime:
             self._mcp_authentication_checked = True
             return
 
-        from tools.mcp_oauth import force_interactive_oauth
-        from tools.mcp_tool import (
-            discover_mcp_tools,
-            get_mcp_status,
-            refresh_agent_mcp_tools,
-        )
+        api = _hermes_mcp_oauth_api()
+        servers = self._hermes_config.get("mcp_servers") or {}
 
         statuses = {
-            status["name"]: status for status in await asyncio.to_thread(get_mcp_status)
+            status["name"]: status
+            for status in await asyncio.to_thread(api.get_mcp_status)
         }
         disconnected = {
             name
@@ -598,8 +645,22 @@ class HermesRuntime:
                     # stdin carries lifecycle messages, so give only that fallback
                     # an immediate EOF while the loopback callback remains active.
                     sys.stdin = StringIO()
-                    with redirect_stdout(StringIO()), force_interactive_oauth():
-                        discover_mcp_tools()
+                    with redirect_stdout(StringIO()), api.force_interactive_oauth():
+                        if api.probe_server is None:
+                            api.discover_mcp_tools()
+                            return
+                        # Same steps as Hermes's own ``hermes mcp login``: an
+                        # interactive probe stores the tokens, then the parked
+                        # server reconnects with them.
+                        for name in sorted(disconnected):
+                            config = servers[name]
+                            api.probe_server(
+                                name,
+                                config,
+                                connect_timeout=api.login_connect_timeout(config),
+                            )
+                            api.reconnect_server(name)
+                        api.discover_mcp_tools()
                 finally:
                     sys.stdin = lifecycle_stdin
 
@@ -612,15 +673,7 @@ class HermesRuntime:
                     metadata={"servers": sorted(disconnected)},
                 ) from error
 
-            statuses = {
-                status["name"]: status
-                for status in await asyncio.to_thread(get_mcp_status)
-            }
-            disconnected = {
-                name
-                for name in oauth_server_names
-                if not statuses.get(name, {}).get("connected")
-            }
+            disconnected = await self._wait_for_mcp_servers(api, disconnected)
             if disconnected:
                 raise lifecycle.LifecycleError(
                     "hermes_mcp_authentication_failed",
@@ -629,12 +682,32 @@ class HermesRuntime:
                 )
 
             await asyncio.to_thread(
-                refresh_agent_mcp_tools,
+                api.refresh_agent_mcp_tools,
                 self._agent,
                 quiet_mode=True,
             )
 
         self._mcp_authentication_checked = True
+
+    async def _wait_for_mcp_servers(self, api: Any, names: set[str]) -> set[str]:
+        """Return the servers still not connected after a bounded wait.
+
+        A reconnect after sign-in runs on Hermes's MCP loop, so the status can
+        lag the probe that stored the tokens.
+        """
+
+        deadline = asyncio.get_running_loop().time() + MCP_RECONNECT_WAIT_SECONDS
+        while True:
+            statuses = {
+                status["name"]: status
+                for status in await asyncio.to_thread(api.get_mcp_status)
+            }
+            pending = {
+                name for name in names if not statuses.get(name, {}).get("connected")
+            }
+            if not pending or asyncio.get_running_loop().time() >= deadline:
+                return pending
+            await asyncio.sleep(MCP_RECONNECT_POLL_SECONDS)
 
     def _finalize_relay_session(self) -> None:
         if (

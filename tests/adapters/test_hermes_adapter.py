@@ -998,59 +998,77 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
     assert caught.value.code == "hermes_runtime_stop_failed"
 
 
-async def test_runtime_authenticates_oauth_mcp_servers_before_invoke(monkeypatch):
-    thread_calls = []
+def _install_hermes_oauth_modules(
+    monkeypatch,
+    *,
+    statuses: list[list[dict[str, object]]],
+    layout: str = "current",
+) -> dict[str, MagicMock]:
+    """Install fake Hermes MCP modules in the current or the older layout."""
 
-    async def to_thread(function, *args, **kwargs):
-        thread_calls.append((function, args, kwargs))
-        return function(*args, **kwargs)
+    calls: dict[str, MagicMock] = {
+        "force_interactive_oauth": MagicMock(),
+        "discover_mcp_tools": MagicMock(),
+        "get_mcp_status": MagicMock(side_effect=statuses),
+        "refresh_agent_mcp_tools": MagicMock(),
+        "probe_server": MagicMock(return_value=[("search", "Search issues")]),
+        "login_connect_timeout": MagicMock(return_value=315.0),
+        "reconnect_server": MagicMock(return_value=True),
+    }
+    oauth = ModuleType("tools.mcp_oauth")
+    oauth.force_interactive_oauth = calls["force_interactive_oauth"]  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "tools", ModuleType("tools"))
+    monkeypatch.setitem(sys.modules, "tools.mcp_oauth", oauth)
+    if layout == "current":
+        oauth.login_connect_timeout = calls["login_connect_timeout"]  # type: ignore[attr-defined]
+        discovery = ModuleType("tools.mcp_tool_discovery")
+        discovery.discover_mcp_tools = calls["discover_mcp_tools"]  # type: ignore[attr-defined]
+        discovery.get_mcp_status = calls["get_mcp_status"]  # type: ignore[attr-defined]
+        agent = ModuleType("tools.mcp_tool_agent")
+        agent.refresh_agent_mcp_tools = calls["refresh_agent_mcp_tools"]  # type: ignore[attr-defined]
+        loop = ModuleType("tools.mcp_tool_loop")
+        loop.reconnect_mcp_server = calls["reconnect_server"]  # type: ignore[attr-defined]
+        cli = ModuleType("hermes_cli.mcp_config")
+        cli._probe_single_server = calls["probe_server"]  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "tools.mcp_tool_discovery", discovery)
+        monkeypatch.setitem(sys.modules, "tools.mcp_tool_agent", agent)
+        monkeypatch.setitem(sys.modules, "tools.mcp_tool_loop", loop)
+        monkeypatch.setitem(sys.modules, "hermes_cli", ModuleType("hermes_cli"))
+        monkeypatch.setitem(sys.modules, "hermes_cli.mcp_config", cli)
+    else:
+        legacy = ModuleType("tools.mcp_tool")
+        legacy.discover_mcp_tools = calls["discover_mcp_tools"]  # type: ignore[attr-defined]
+        legacy.get_mcp_status = calls["get_mcp_status"]  # type: ignore[attr-defined]
+        legacy.refresh_agent_mcp_tools = calls["refresh_agent_mcp_tools"]  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "tools.mcp_tool", legacy)
+        for name in (
+            "tools.mcp_tool_discovery",
+            "tools.mcp_tool_agent",
+            "tools.mcp_tool_loop",
+        ):
+            monkeypatch.setitem(sys.modules, name, None)
+        monkeypatch.setitem(sys.modules, "hermes_cli.mcp_config", None)
+    return calls
 
-    monkeypatch.setattr(adapter.asyncio, "to_thread", to_thread)
-    force_interactive_oauth = MagicMock()
+
+async def test_runtime_signs_in_oauth_mcp_servers_like_hermes_login(monkeypatch):
+    """Probe interactively, reconnect the parked server, then refresh the agent's tools."""
+    calls = _install_hermes_oauth_modules(
+        monkeypatch,
+        statuses=[
+            [{"name": "jira", "connected": False, "status": "failed"}],
+            [{"name": "jira", "connected": True, "status": "connected"}],
+        ],
+    )
     oauth_stdin_reads: list[str] = []
-    discover_mcp_tools = MagicMock(
-        side_effect=lambda: oauth_stdin_reads.append(sys.stdin.readline())
+    calls["probe_server"].side_effect = lambda *args, **kwargs: (
+        oauth_stdin_reads.append(sys.stdin.readline()) or []
     )
-    get_mcp_status = MagicMock(
-        side_effect=[
-            [
-                {
-                    "name": "confluence",
-                    "connected": False,
-                    "status": "failed",
-                }
-            ],
-            [
-                {
-                    "name": "confluence",
-                    "connected": True,
-                    "status": "connected",
-                }
-            ],
-        ]
-    )
-    refresh_agent_mcp_tools = MagicMock()
-
-    tools_oauth = ModuleType("tools.mcp_oauth")
-    tools_oauth.force_interactive_oauth = (  # type: ignore[attr-defined]
-        force_interactive_oauth
-    )
-    tools_mcp = ModuleType("tools.mcp_tool")
-    tools_mcp.discover_mcp_tools = discover_mcp_tools  # type: ignore[attr-defined]
-    tools_mcp.get_mcp_status = get_mcp_status  # type: ignore[attr-defined]
-    tools_mcp.refresh_agent_mcp_tools = (  # type: ignore[attr-defined]
-        refresh_agent_mcp_tools
-    )
-    monkeypatch.setitem(sys.modules, "tools.mcp_oauth", tools_oauth)
-    monkeypatch.setitem(sys.modules, "tools.mcp_tool", tools_mcp)
-
     runtime = adapter.HermesRuntime()
     runtime._agent = MagicMock()
+    jira = {"url": "https://maas.example/jira/mcp", "auth": "oauth"}
     runtime._hermes_config = {
-        "mcp_servers": {
-            "confluence": {"auth": "oauth"},
-            "time": {"transport": "stdio"},
-        }
+        "mcp_servers": {"jira": jira, "time": {"transport": "stdio"}}
     }
     lifecycle_stdin = StringIO('{"operation":"stop"}\n')
     monkeypatch.setattr(sys, "stdin", lifecycle_stdin)
@@ -1058,46 +1076,69 @@ async def test_runtime_authenticates_oauth_mcp_servers_before_invoke(monkeypatch
     await runtime._authenticate_mcp_servers()
     await runtime._authenticate_mcp_servers()
 
-    force_interactive_oauth.assert_called_once_with()
-    discover_mcp_tools.assert_called_once_with()
-    assert get_mcp_status.call_count == 2
-    refresh_agent_mcp_tools.assert_called_once_with(
-        runtime._agent,
-        quiet_mode=True,
+    calls["force_interactive_oauth"].assert_called_once_with()
+    calls["login_connect_timeout"].assert_called_once_with(jira)
+    calls["probe_server"].assert_called_once_with("jira", jira, connect_timeout=315.0)
+    calls["reconnect_server"].assert_called_once_with("jira")
+    calls["discover_mcp_tools"].assert_called_once_with()
+    calls["refresh_agent_mcp_tools"].assert_called_once_with(
+        runtime._agent, quiet_mode=True
     )
     assert oauth_stdin_reads == [""]
     assert lifecycle_stdin.readline() == '{"operation":"stop"}\n'
     assert sys.stdin is lifecycle_stdin
     assert runtime._mcp_authentication_checked is True
-    assert len(thread_calls) == 4
-    assert thread_calls[0] == (get_mcp_status, (), {})
-    assert thread_calls[1][0].__name__ == "authenticate"
-    assert thread_calls[2] == (get_mcp_status, (), {})
-    assert thread_calls[3] == (
-        refresh_agent_mcp_tools,
-        (runtime._agent,),
-        {"quiet_mode": True},
+
+
+async def test_runtime_signs_in_with_older_hermes_layout(monkeypatch):
+    """Older Hermes keeps the MCP functions in ``tools.mcp_tool`` and has no login probe."""
+    calls = _install_hermes_oauth_modules(
+        monkeypatch,
+        layout="legacy",
+        statuses=[
+            [{"name": "jira", "connected": False, "status": "failed"}],
+            [{"name": "jira", "connected": True, "status": "connected"}],
+        ],
     )
+    runtime = adapter.HermesRuntime()
+    runtime._agent = MagicMock()
+    runtime._hermes_config = {"mcp_servers": {"jira": {"auth": "oauth"}}}
+
+    await runtime._authenticate_mcp_servers()
+
+    calls["discover_mcp_tools"].assert_called_once_with()
+    calls["probe_server"].assert_not_called()
+    calls["refresh_agent_mcp_tools"].assert_called_once_with(
+        runtime._agent, quiet_mode=True
+    )
+
+
+async def test_runtime_waits_for_reconnect_after_sign_in(monkeypatch):
+    """A reconnect that lands shortly after sign-in still counts as connected."""
+    monkeypatch.setattr(adapter, "MCP_RECONNECT_POLL_SECONDS", 0)
+    calls = _install_hermes_oauth_modules(
+        monkeypatch,
+        statuses=[
+            [{"name": "jira", "connected": False, "status": "failed"}],
+            [{"name": "jira", "connected": False, "status": "connecting"}],
+            [{"name": "jira", "connected": True, "status": "connected"}],
+        ],
+    )
+    runtime = adapter.HermesRuntime()
+    runtime._agent = MagicMock()
+    runtime._hermes_config = {"mcp_servers": {"jira": {"auth": "oauth"}}}
+
+    await runtime._authenticate_mcp_servers()
+
+    assert calls["get_mcp_status"].call_count == 3
+    assert runtime._mcp_authentication_checked is True
 
 
 async def test_runtime_reports_failed_oauth_mcp_authentication(monkeypatch):
-    tools_oauth = ModuleType("tools.mcp_oauth")
-    tools_oauth.force_interactive_oauth = MagicMock()  # type: ignore[attr-defined]
-    tools_mcp = ModuleType("tools.mcp_tool")
-    tools_mcp.discover_mcp_tools = MagicMock()  # type: ignore[attr-defined]
-    tools_mcp.get_mcp_status = MagicMock(  # type: ignore[attr-defined]
-        return_value=[
-            {
-                "name": "confluence",
-                "connected": False,
-                "status": "failed",
-            }
-        ]
-    )
-    tools_mcp.refresh_agent_mcp_tools = MagicMock()  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "tools.mcp_oauth", tools_oauth)
-    monkeypatch.setitem(sys.modules, "tools.mcp_tool", tools_mcp)
-
+    """A server still disconnected after sign-in fails the invocation."""
+    monkeypatch.setattr(adapter, "MCP_RECONNECT_WAIT_SECONDS", 0)
+    failed = [{"name": "confluence", "connected": False, "status": "failed"}]
+    calls = _install_hermes_oauth_modules(monkeypatch, statuses=[failed, failed])
     runtime = adapter.HermesRuntime()
     runtime._agent = MagicMock()
     runtime._hermes_config = {"mcp_servers": {"confluence": {"auth": "oauth"}}}
@@ -1107,7 +1148,7 @@ async def test_runtime_reports_failed_oauth_mcp_authentication(monkeypatch):
 
     assert caught.value.code == "hermes_mcp_authentication_failed"
     assert caught.value.metadata == {"servers": ["confluence"]}
-    tools_mcp.refresh_agent_mcp_tools.assert_not_called()  # type: ignore[attr-defined]
+    calls["refresh_agent_mcp_tools"].assert_not_called()
     assert runtime._mcp_authentication_checked is False
 
 
@@ -2111,3 +2152,19 @@ async def test_cancelled_turn_requires_recovery_only_after_worker_finishes(
         release.set()
     await asyncio.wait_for(asyncio.shield(worker), 2)
     assert native.recovery_required
+
+
+def test_oauth_api_resolves_against_installed_hermes():
+    """The sign-in functions exist in the pinned Hermes Agent, not only in mocks."""
+    pytest.importorskip("tools.mcp_oauth", reason="needs the pinned Hermes Agent")
+    api = adapter._hermes_mcp_oauth_api()
+    for name in (
+        "discover_mcp_tools",
+        "force_interactive_oauth",
+        "get_mcp_status",
+        "login_connect_timeout",
+        "probe_server",
+        "reconnect_server",
+        "refresh_agent_mcp_tools",
+    ):
+        assert callable(getattr(api, name)), name
