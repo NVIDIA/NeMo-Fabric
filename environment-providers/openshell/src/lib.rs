@@ -564,7 +564,6 @@ fn valid_diagnostic_code(code: &str) -> bool {
             | "session_resume_unsupported"
             | "runtime_busy"
             | "cleanup_unconfirmed"
-            | "runtime_busy"
             | "invalid_request"
             | "interface_unsupported"
             | "wrong_agent"

@@ -226,8 +226,6 @@ class RuntimeServer:
 
             owned = self._owned(request)
             if operation == "stop" and owned.state != "stopped":
-                if owned.lock.locked():
-                    raise ProtocolError("runtime_busy", "stop")
                 owned.generation += 1
                 owned.state = "stopping"
             if operation == "stop":

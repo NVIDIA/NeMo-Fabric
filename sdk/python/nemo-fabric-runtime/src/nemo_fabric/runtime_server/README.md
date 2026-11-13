@@ -81,7 +81,7 @@ flowchart TD
 
 The outer server is separate from the SDK's adapter process and the selected harness. It serializes starts and invocations for each runtime ID, while separate runtimes can progress independently. Stop uses a separate path so an active buffered invocation cannot hold shutdown behind its lock. On supported Unix hosts, busy stop interrupts the owned adapter process tree and confirms exit before releasing ownership. Unconfirmed cleanup retains the runtime and blocks replacement for that agent; independent agents remain available. Direct SDK consumers can also use streaming or shared services.
 
-Ordinary SDK stop does not establish that all harness descendants exited. A successful stop response reports completion of the SDK operation. The caller must use the sandbox supervisor to terminate remaining descendants. The server does not interrupt adapters through a new forced-stop SDK API.
+A confirmed stop covers processes that remain in Fabric’s owned host tree. Processes detached before Fabric captures that tree can remain alive; the caller must use the sandbox supervisor to terminate those processes. An invocation interrupted by a requested stop reports `interrupted`, and the stop event does not report a host crash.
 
 ## Transport And Failure Behavior
 

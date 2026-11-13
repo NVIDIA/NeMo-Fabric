@@ -1180,7 +1180,7 @@ pub fn start_runtime_with_service(
                 record
                     .active_runtime_ids
                     .insert(context.runtime().runtime_id.clone());
-            } else let FabricError::AdapterLifecycleOperation {
+            } else if let FabricError::AdapterLifecycleOperation {
                 code, runtime_id, ..
             } = &error
                 && code == "cleanup_unconfirmed"
@@ -2006,7 +2006,15 @@ impl RuntimeAdapter for LocalHostAdapter {
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
                 .remove(&runtime.runtime_id);
-            return Ok(vec![local_host_stop_event(runtime, true, false)]);
+            return Ok(vec![local_host_stop_event(
+                runtime,
+                true,
+                false,
+                INTERRUPTED_RUNTIMES
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .remove(&runtime.runtime_id),
+            )]);
         };
         let deadline = Instant::now() + LOCAL_HOST_STOP_TIMEOUT;
         let mut interrupted = None;
@@ -2026,7 +2034,9 @@ impl RuntimeAdapter for LocalHostAdapter {
             }
         };
         guard.cleanup_pending = true;
-        PENDING_LOCAL_CLEANUP.lock().unwrap_or_else(|error| error.into_inner())
+        PENDING_LOCAL_CLEANUP
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
             .insert(runtime.runtime_id.clone(), guard.cleanup_scope.clone());
         if guard.cleanup_discovery_pending {
             interrupted = Some(interrupt_local_host(runtime)?);
@@ -2035,7 +2045,6 @@ impl RuntimeAdapter for LocalHostAdapter {
         if frozen_tree_is_pending(&runtime.runtime_id) {
             interrupted = Some(interrupt_local_host(runtime)?);
         }
-        let was_interrupted = interrupted.is_some();
         if let Some(processes) = interrupted {
             guard.pending_stop.extend(processes);
         }
@@ -2084,14 +2093,20 @@ impl RuntimeAdapter for LocalHostAdapter {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .remove(&runtime.runtime_id);
-        PENDING_LOCAL_CLEANUP.lock().unwrap_or_else(|error| error.into_inner())
+        PENDING_LOCAL_CLEANUP
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
             .remove(&runtime.runtime_id);
-        let host_crashed = was_interrupted
-            || matches!(
+        let was_interrupted = INTERRUPTED_RUNTIMES
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&runtime.runtime_id);
+        let host_crashed = !was_interrupted
+            && matches!(
                 &result,
                 Err(FabricError::AdapterLifecycleOperation { code, .. }) if code == "host_crashed"
             );
-        if !host_crashed {
+        if !host_crashed && !was_interrupted {
             result?;
         }
         #[cfg(test)]
@@ -2099,7 +2114,12 @@ impl RuntimeAdapter for LocalHostAdapter {
             .lock()
             .expect("stop tracker")
             .push(runtime.agent_name.clone());
-        Ok(vec![local_host_stop_event(runtime, false, host_crashed)])
+        Ok(vec![local_host_stop_event(
+            runtime,
+            false,
+            host_crashed,
+            was_interrupted,
+        )])
     }
 }
 
@@ -2284,6 +2304,12 @@ fn interrupt_local_host(runtime: &RuntimeHandle) -> Result<Vec<LocalHostProcess>
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .insert(runtime.runtime_id.clone(), descendants.clone());
+        if !owned_process_has_exited(&process) {
+            INTERRUPTED_RUNTIMES
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .insert(runtime.runtime_id.clone());
+        }
         for child in descendants.iter().rev() {
             signal_owned_process(child).map_err(|_| cleanup_unconfirmed(runtime))?;
         }
@@ -2296,6 +2322,12 @@ fn interrupt_local_host(runtime: &RuntimeHandle) -> Result<Vec<LocalHostProcess>
             .get(&runtime.runtime_id)
             .cloned()
             .ok_or_else(|| cleanup_unconfirmed(runtime))?;
+        if control.has_exited() == Some(false) {
+            INTERRUPTED_RUNTIMES
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .insert(runtime.runtime_id.clone());
+        }
         control
             .interrupt()
             .map_err(|_| cleanup_unconfirmed(runtime))?;
@@ -2505,10 +2537,44 @@ fn retry_pending_local_cleanup(
                 )
             };
             terminate_local_host(&mut host).map_err(unconfirmed)?;
+            #[cfg(unix)]
+            let discovery_pending = frozen_tree_is_pending(&runtime_id);
+            #[cfg(not(unix))]
+            let discovery_pending = false;
+            #[cfg(windows)]
+            let job_pending = host.control.cleanup_confirmed() != Some(true);
+            #[cfg(not(windows))]
+            let job_pending = false;
+            if discovery_pending
+                || job_pending
+                || host
+                    .pending_stop
+                    .iter()
+                    .any(|process| !owned_process_has_exited(process))
+            {
+                return Err(unconfirmed(std::io::Error::other(
+                    "owned cleanup remains unconfirmed",
+                )));
+            }
+            // Termination and every retained ownership check succeeded. A stale
+            // pre-termination flag adds no further evidence of live owned work.
+            host.cleanup_discovery_pending = false;
             remove_local_host_files(&host).map_err(unconfirmed)?;
             host._state_lock.take();
             local_hosts().remove(&runtime_id);
             local_host_processes().remove(&runtime_id);
+            #[cfg(unix)]
+            frozen_process_trees().remove(&runtime_id);
+            #[cfg(windows)]
+            windows_host_controls().remove(&runtime_id);
+            STOPPING_PROCESSES
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .remove(&runtime_id);
+            INTERRUPTED_RUNTIMES
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .remove(&runtime_id);
         }
         PENDING_LOCAL_CLEANUP
             .lock()
@@ -2729,6 +2795,15 @@ fn run_local_host_invocation_with_timeout(
                 "native session identity is no longer confirmed",
             ));
         }
+        if host_guard.invocation_unavailable {
+            return Err(lifecycle_error(
+                operation,
+                &runtime.runtime_id,
+                "host_unavailable",
+                "The retained host is available only for cleanup.",
+                "",
+            ));
+        }
         if host_guard.cleanup_pending {
             return Err(lifecycle_error(
                 operation,
@@ -2742,15 +2817,6 @@ fn run_local_host_invocation_with_timeout(
             return Err(session_error(
                 "session_identity_changed",
                 "runtime handle does not match its bound native session",
-            ));
-        }
-        if host_guard.invocation_unavailable {
-            return Err(lifecycle_error(
-                operation,
-                &runtime.runtime_id,
-                "host_unavailable",
-                "The retained host is available only for cleanup.",
-                "",
             ));
         }
         let artifacts = host_guard.artifacts.clone();
@@ -2932,6 +2998,22 @@ fn run_local_host_invocation_with_timeout(
                 ))
             }
             Err(error) => {
+                let error = if matches!(&error, FabricError::AdapterLifecycleOperation {code, ..} if code == "host_crashed" || code == "host_timeout")
+                    && INTERRUPTED_RUNTIMES
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .contains(&runtime.runtime_id)
+                {
+                    lifecycle_error(
+                        operation,
+                        &runtime.runtime_id,
+                        "interrupted",
+                        "The invocation was interrupted by a requested runtime stop.",
+                        "",
+                    )
+                } else {
+                    error
+                };
                 if matches!(
                     &error,
                     FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout"
@@ -3225,6 +3307,7 @@ fn local_host_stop_event(
     runtime: &RuntimeHandle,
     already_stopped: bool,
     host_crashed: bool,
+    interrupted: bool,
 ) -> FabricEvent {
     event_with_metadata(
         "runtime_stop",
@@ -3236,6 +3319,14 @@ fn local_host_stop_event(
             ),
             ("already_stopped".to_string(), Value::Bool(already_stopped)),
             ("host_crashed".to_string(), Value::Bool(host_crashed)),
+            (
+                "code".to_string(),
+                if interrupted {
+                    Value::String("interrupted".into())
+                } else {
+                    Value::Null
+                },
+            ),
         ]),
     )
 }
@@ -3243,10 +3334,15 @@ fn local_host_stop_event(
 fn stop_service_host(record: &mut LocalServiceRecord) -> Result<()> {
     record.host.cleanup_pending = true;
     #[cfg(unix)]
-    remember_host_descendants(&mut record.host).map_err(|_| lifecycle_error(
-        AdapterLifecycleOperation::Stop, &record.runtime.runtime_id, "cleanup_unconfirmed",
-        "Owned service descendants could not be inspected.", "",
-    ))?;
+    remember_host_descendants(&mut record.host).map_err(|_| {
+        lifecycle_error(
+            AdapterLifecycleOperation::Stop,
+            &record.runtime.runtime_id,
+            "cleanup_unconfirmed",
+            "Owned service descendants could not be inspected.",
+            "",
+        )
+    })?;
     let request =
         AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Stop(AdapterLifecycleStop {
             runtime_id: record.runtime.runtime_id.clone(),
@@ -3315,6 +3411,9 @@ fn service_release_event(service: &ServiceHandle, already_released: bool) -> Fab
 }
 
 // Keep identity-checked snapshots even if interruption fails before the host lock is released.
+static INTERRUPTED_RUNTIMES: LazyLock<Mutex<BTreeSet<String>>> =
+    LazyLock::new(|| Mutex::new(BTreeSet::new()));
+
 static STOPPING_PROCESSES: LazyLock<Mutex<BTreeMap<String, Vec<LocalHostProcess>>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
@@ -3926,6 +4025,34 @@ fn retain_failed_start_with(
     if terminated && remove_local_host_files(&host).is_ok() {
         return cause;
     }
+    let diagnostic_path = host.runtime_dir.join("startup-error.log");
+    let mut options = File::options();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let diagnostics = options
+        .open(&diagnostic_path)
+        .and_then(|mut file| {
+            file.write_all(cause.to_string().as_bytes())?;
+            file.sync_all()
+        })
+        .map(|()| diagnostic_path.display().to_string())
+        .unwrap_or_else(|_| "Startup diagnostics could not be saved".to_string());
+    let cause = lifecycle_error(
+        AdapterLifecycleOperation::Start,
+        &runtime.runtime_id,
+        "cleanup_unconfirmed",
+        "failed start left native cleanup unconfirmed",
+        diagnostics,
+    );
+    host.cleanup_pending = true;
+    PENDING_LOCAL_CLEANUP
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .insert(runtime.runtime_id.clone(), host.cleanup_scope.clone());
     host.invocation_unavailable = true;
     host.cleanup_discovery_pending |= !terminated;
     #[cfg(windows)]
@@ -4033,6 +4160,7 @@ fn remember_host_descendants(host: &mut LocalAdapterHost) -> std::io::Result<()>
                 .push(LocalHostProcess::new(pid as u32, SystemTime::now()));
         }
     }
+    host.cleanup_discovery_pending = false;
     Ok(())
 }
 
@@ -6014,7 +6142,10 @@ else:
             panic!("connected startup must retain cleanup context");
         };
         let release = release_service(&plan, &service);
-        assert!(matches!(release, Err(FabricError::ServiceInUse { .. })));
+        assert!(
+            matches!(release, Err(FabricError::AdapterLifecycleOperation {code, ..}) if code == "cleanup_unconfirmed")
+        );
+        assert!(local_hosts().contains_key(&context.runtime().runtime_id));
         let directory = local_host_directory(&context.runtime().runtime_id);
         assert!(directory.is_file());
         fs::remove_file(&directory).unwrap();
@@ -6359,6 +6490,39 @@ else:
     }
 
     #[test]
+    fn requested_busy_stop_is_interrupted_instead_of_crashed() {
+        let (root, plan) = local_host_plan("invoke_timeout");
+        let runtime = start_runtime(&plan).unwrap();
+        let host = local_hosts().get(&runtime.runtime_id).unwrap().clone();
+        let stderr = host.lock().unwrap().stderr_path.clone();
+        let invocation_plan = plan.clone();
+        let invocation_runtime = runtime.clone();
+        let invocation = thread::spawn(move || {
+            invoke_runtime(
+                &invocation_plan,
+                &invocation_runtime,
+                RunRequest::text("wait"),
+            )
+        });
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !fs::read_to_string(&stderr)
+            .unwrap()
+            .contains("invoke accepted")
+        {
+            assert!(Instant::now() < deadline, "invocation did not start");
+            thread::sleep(Duration::from_millis(10));
+        }
+        let events = stop_runtime(&plan, &runtime).unwrap();
+        let error = invocation.join().unwrap().unwrap_err();
+        fs::remove_dir_all(root).unwrap();
+        assert!(
+            matches!(error, FabricError::AdapterLifecycleOperation {code, ..} if code == "interrupted")
+        );
+        assert_eq!(events[0].metadata["host_crashed"], false);
+        assert_eq!(events[0].metadata["code"], "interrupted");
+    }
+
+    #[test]
     fn busy_stop_interrupts_the_owned_host_without_the_invocation_lock() {
         let (root, plan) = local_host_plan("child_after_start");
         let runtime = start_runtime(&plan).unwrap();
@@ -6623,6 +6787,44 @@ else:
         let _ = fs::remove_dir_all(root);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn automatic_scope_cleanup_retains_unfinished_frozen_discovery() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).unwrap();
+        let host = local_hosts().get(&runtime.runtime_id).unwrap().clone();
+        let scope = host.lock().unwrap().cleanup_scope.clone();
+        PENDING_LOCAL_CLEANUP
+            .lock()
+            .unwrap()
+            .insert(runtime.runtime_id.clone(), scope.clone());
+        let process = local_host_processes()
+            .get(&runtime.runtime_id)
+            .unwrap()
+            .clone();
+        let discovery = collect_frozen_host_with(&runtime, &process, |_| {
+            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+        });
+        assert!(discovery.is_err());
+        signal_owned_process(&process).unwrap();
+        host.lock().unwrap().child.wait().unwrap();
+        let retry = retry_pending_local_cleanup(&scope, AdapterLifecycleOperation::Start);
+        assert!(
+            matches!(retry, Err(FabricError::AdapterLifecycleOperation {code, ..}) if code == "cleanup_unconfirmed")
+        );
+        assert!(local_hosts().contains_key(&runtime.runtime_id));
+        assert!(
+            PENDING_LOCAL_CLEANUP
+                .lock()
+                .unwrap()
+                .contains_key(&runtime.runtime_id)
+        );
+        // This fixture had no children. Clear only its injected incomplete discovery.
+        frozen_process_trees().remove(&runtime.runtime_id);
+        stop_runtime(&plan, &runtime).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn failed_one_shot_stop_cleanup_is_retried_before_replacement() {
         for (keep_state, prepare_replacement) in
@@ -6634,9 +6836,18 @@ else:
                 local_host_plan("success")
             };
             FAIL_NEXT_HOST_TERMINATION.with(|fail| fail.set(true));
-            let result = run_plan(&plan, RunRequest::text("completed")).unwrap();
-            assert_eq!(result.status, RunStatus::Failed);
-            assert_eq!(result.error.as_ref().unwrap().stage, ErrorStage::Stop);
+            let error = run_plan(&plan, RunRequest::text("completed")).unwrap_err();
+            let FabricError::RuntimeCleanupPending(pending) = error else {
+                panic!("expected retained cleanup context")
+            };
+            let result = pending
+                .result()
+                .expect("completed invocation remains available");
+            assert_eq!(result.status, RunStatus::Succeeded);
+            assert_eq!(result.runtime_id, pending.runtime().runtime_id);
+            assert!(
+                matches!(pending.cause(), FabricError::AdapterLifecycleOperation {operation: "stop", code, ..} if code == "cleanup_unconfirmed")
+            );
             assert!(local_hosts().contains_key(&result.runtime_id));
 
             FAIL_NEXT_HOST_TERMINATION.with(|fail| fail.set(true));
@@ -6715,13 +6926,14 @@ else:
             FAIL_NEXT_HOST_TERMINATION.with(|fail| fail.set(true));
             let error = start_runtime(&plan).unwrap_err();
             let message = error.to_string();
-            let (failed_id, diagnostics) = match error {
+            let FabricError::RuntimeCleanupPending(pending) = error else {
+                panic!("expected retained startup cleanup context")
+            };
+            let failed_id = pending.runtime().runtime_id.clone();
+            let diagnostics = match pending.cause() {
                 FabricError::AdapterLifecycleOperation {
-                    code,
-                    runtime_id,
-                    diagnostics,
-                    ..
-                } if code == "cleanup_unconfirmed" => (runtime_id, diagnostics),
+                    code, diagnostics, ..
+                } if code == "cleanup_unconfirmed" => diagnostics.clone(),
                 other => panic!("unexpected startup failure: {other}"),
             };
             let diagnostic_path = PathBuf::from(diagnostics);
@@ -6767,12 +6979,10 @@ else:
             let service = prepare_service(&plan).unwrap();
             FAIL_NEXT_HOST_TERMINATION.with(|fail| fail.set(true));
             let error = start_runtime_with_service(&plan, &service).unwrap_err();
-            let failed_id = match error {
-                FabricError::AdapterLifecycleOperation {
-                    code, runtime_id, ..
-                } if code == "cleanup_unconfirmed" => runtime_id,
-                other => panic!("unexpected startup failure: {other}"),
+            let FabricError::RuntimeCleanupPending(pending) = error else {
+                panic!("expected retained connected startup context")
             };
+            let failed_id = pending.runtime().runtime_id.clone();
             let record = local_services().get(&service.service_id).cloned().unwrap();
             assert!(
                 record

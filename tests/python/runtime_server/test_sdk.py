@@ -312,7 +312,9 @@ async def test_real_sdk_busy_stop_exits_host_and_native_child(
             host.handle({**command, "operation": "stop"}), 5
         )
         assert response["status"] == "succeeded", response
-        await asyncio.wait_for(task, 1)
+        invoked = await asyncio.wait_for(task, 1)
+        assert invoked["error"]["code"] == "invoke_failed"
+        assert "Cause: interrupted." in invoked["error"]["message"]
         assert all(not process_is_running(pid) for pid in pids)
         assert host.runtimes[runtime_id].state == "stopped"
     finally:
