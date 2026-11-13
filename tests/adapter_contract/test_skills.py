@@ -652,6 +652,9 @@ def test_deeper_symlink_does_not_hide_the_real_folder(
     ]
 
 
+@pytest.mark.skipif(
+    os.name == "nt", reason="Windows collapses `..` before following a symlink"
+)
 def test_dot_dot_after_a_symlink_follows_the_file_system(
     tmp_path: Path, make_skill: Callable[..., Path]
 ):
