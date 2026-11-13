@@ -166,7 +166,7 @@ The adapter leaves the installed Hermes source unchanged. Independently started 
 
 ## Cold Resume
 
-`SessionRef` resume requires `sdk.enabled: true`, which is the default. Native-only runtimes can retain their Hermes home with `runtime.keep_state`. They expose `session_resume: false` in the run plan and reject explicit SDK session selection with `session_resume_unsupported`.
+`SessionRef` resume requires `sdk.enabled: true`, which is the default. The run plan reports the adapter's declared `session_resume` capability. Native-only runtimes can retain their Hermes home with `runtime.keep_state` and start without issuing a session reference. Hermes rejects explicit SDK session selection in native-only mode with `session_resume_unsupported`.
 
 With `runtime.keep_state`, save `Runtime.session_ref.to_mapping()` in caller-owned
 storage. Pass `session_ref=SessionRef.from_mapping(saved_reference)`
@@ -183,7 +183,8 @@ NeMo Fabric does not override those native resume rules. `RunResult.session_ref`
 confirms the selected conversation.
 
 An uncertain earlier turn produces a `session_recovery_required` startup
-warning. NeMo Fabric preserves history and does not replay the request. Inspect the
+warning. NeMo Fabric preserves history, including unfinished requests. The model
+may act on those requests after acknowledgment. Inspect the
 native and external state before issuing a new `RunRequest` with
 `acknowledge_recovery=True`. This gate applies to NeMo Fabric-controlled invocations.
 NeMo Fabric does not change native API or dashboard session selection or behavior.

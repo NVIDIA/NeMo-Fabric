@@ -216,7 +216,12 @@ def open_session(database: Any, context: RuntimeContext) -> NativeSession | None
             {
                 "stage": "start",
                 "code": "session_recovery_required",
-                "message": "Session restored; earlier turn completion is uncertain. Inspect native and external state before explicitly continuing. No request was replayed.",
+                "message": (
+                    "Session restored. Earlier turn completion is uncertain. "
+                    "Inspect native and external state before explicitly continuing. "
+                    "The restored history retains unfinished requests. The model may "
+                    "act on unfinished requests after acknowledgment."
+                ),
                 "retryable": False,
                 "metadata": {
                     **{

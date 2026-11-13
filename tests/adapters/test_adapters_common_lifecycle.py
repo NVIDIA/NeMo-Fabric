@@ -1126,13 +1126,21 @@ async def test_invocation_deadline_is_unbounded_when_host_omits_it():
 
 
 @pytest.mark.parametrize("cleanup_fails", [False, True])
+@pytest.mark.parametrize("structured_start_error", [False, True])
 def test_failed_start_reports_unconfirmed_cleanup_before_session_rejection(
     cleanup_fails,
+    structured_start_error,
 ):
     """A failed cleanup must prevent a caller from treating startup as effect-free."""
     mock_runtime = MagicMock(spec=lifecycle.AdapterRuntime)
-    mock_runtime.start.side_effect = lifecycle.LifecycleError(
-        "session_not_found", "Session unavailable"
+    mock_runtime.start.side_effect = (
+        lifecycle.LifecycleError(
+            "session_not_found",
+            "PRIVATE startup detail",
+            metadata={"private": "PRIVATE startup metadata"},
+        )
+        if structured_start_error
+        else RuntimeError("PRIVATE startup detail")
     )
     if cleanup_fails:
         mock_runtime.stop.side_effect = lifecycle.LifecycleError(
@@ -1146,8 +1154,14 @@ def test_failed_start_reports_unconfirmed_cleanup_before_session_rejection(
         lambda: mock_runtime, input_stream=input_stream, output_stream=output_stream
     )
     response = json.loads(output_stream.getvalue())
-    assert response["outcome"]["error"]["code"] == (
-        "cleanup_unconfirmed" if cleanup_fails else "session_not_found"
+    start_code = (
+        "session_not_found"
+        if structured_start_error
+        else "lifecycle_adapter_start_failed"
     )
-    assert "PRIVATE" not in output_stream.getvalue()
+    error = response["outcome"]["error"]
+    assert error["code"] == ("cleanup_unconfirmed" if cleanup_fails else start_code)
+    if cleanup_fails:
+        assert error["metadata"] == {"start_error_code": start_code}
+        assert "PRIVATE" not in output_stream.getvalue()
     mock_runtime.stop.assert_awaited_once()

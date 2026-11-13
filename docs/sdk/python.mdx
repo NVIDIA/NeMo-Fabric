@@ -914,7 +914,7 @@ Enabling `runtime.keep_state` preserves earlier Hermes sessions in the database.
 
 ### Resume a Hermes Conversation
 
-Hermes `SessionRef` resume requires `harness.settings.sdk.enabled` to be `true`, which is the default. Native-only runtimes can retain state with `runtime.keep_state`. Their `RunPlan.capabilities.session_resume` is `false`, and explicit SDK session selection returns `session_resume_unsupported` before native startup.
+Hermes `SessionRef` resume requires `harness.settings.sdk.enabled` to be `true`, which is the default. `RunPlan.capabilities.session_resume` reports the adapter's declared capability. Native-only runtimes can retain state with `runtime.keep_state` and start without a session reference. Hermes rejects explicit SDK session selection in native-only mode with `session_resume_unsupported` before native startup.
 
 Retention preserves state. Omitting `session_ref` starts a fresh conversation.
 Resume requires the exact `SessionRef` and access to the original retained
@@ -958,8 +958,10 @@ errors expose codes such as `session_not_found`, `session_adapter_mismatch`,
 
 If a previous turn might be incomplete, Hermes can restore the native history
 and return `Runtime.recovery_warnings` with `session_recovery_required`. NeMo Fabric
-does not replay the request or supply fabricated tool results. Inspect the
-native history and any external effects before sending a new request with
+does not automatically submit another invocation or supply fabricated tool results.
+The restored history retains unfinished requests, and the model may act on those
+requests after acknowledgment. Acknowledgment allows continuation with that history.
+Inspect the native history and any external effects before sending a new request with
 `RunRequest(input=..., acknowledge_recovery=True)`. Ordinary NeMo Fabric invocations
 remain blocked until acknowledgment. A durable completed response does not
 become uncertain merely because the caller lost the reply. A recorded tool
@@ -975,6 +977,16 @@ failed connection cleanup. A local one-shot run whose shutdown could not be
 confirmed also retains cleanup ownership. The next start for the same storage
 retries that cleanup before starting a replacement. Ownership remains held when
 cleanup fails.
+
+These local cleanup checks apply to every adapter, including runtimes with
+`runtime.keep_state: false`. If the operating system prevents NeMo Fabric from
+confirming a surviving child's identity, further starts for the same cleanup
+scope remain blocked with `cleanup_unconfirmed`. Retrying while that child
+remains unidentifiable cannot confirm cleanup. Use operating system controls to
+confirm that the old adapter and native child processes have stopped, then retry
+cleanup. If the application cannot recover its cleanup handle, restart the
+application that embeds NeMo Fabric after confirming those processes have stopped.
+
 Hermes native interface children retain the state
 lock when their adapter host exits, so a surviving writer prevents replacement.
 These controls do not change how the native Hermes API or dashboard chooses

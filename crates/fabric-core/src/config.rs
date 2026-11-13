@@ -2706,7 +2706,7 @@ fn resolve_selected_descriptors(
     if enforce_compatibility {
         validate_capability_plan_compatibility(&capability_plan, descriptor)?;
     }
-    let capabilities = resolve_runtime_capabilities(&config, descriptor);
+    let capabilities = resolve_runtime_capabilities(descriptor);
     let telemetry_plan = resolve_telemetry_plan(&config, descriptor)?;
     let agent_config = project_agent_config(
         &config,
@@ -3748,10 +3748,7 @@ fn validate_control_location(
     Ok(())
 }
 
-fn resolve_runtime_capabilities(
-    config: &FabricConfig,
-    descriptor: Option<&AdapterDescriptor>,
-) -> RuntimeCapabilities {
+fn resolve_runtime_capabilities(descriptor: Option<&AdapterDescriptor>) -> RuntimeCapabilities {
     let implemented_runtime = descriptor.is_some_and(|descriptor| {
         matches!(
             descriptor.adapter_kind,
@@ -3761,19 +3758,8 @@ fn resolve_runtime_capabilities(
     let descriptor_capabilities = descriptor
         .map(|descriptor| descriptor.capabilities.clone())
         .unwrap_or_default();
-    // Native-only Hermes retains state without issuing an SDK session identity.
-    let hermes_sdk_disabled = descriptor
-        .is_some_and(|descriptor| descriptor.adapter_id == "nvidia.fabric.hermes")
-        && config
-            .harness
-            .as_ref()
-            .and_then(|harness| harness.settings.get("sdk"))
-            .and_then(|sdk| sdk.get("enabled"))
-            == Some(&Value::Bool(false));
     RuntimeCapabilities {
-        session_resume: implemented_runtime
-            && descriptor_capabilities.session_resume
-            && !hermes_sdk_disabled,
+        session_resume: implemented_runtime && descriptor_capabilities.session_resume,
         service: implemented_runtime && descriptor_capabilities.service,
         streaming: implemented_runtime && descriptor_capabilities.streaming,
         updates: implemented_runtime && descriptor_capabilities.updates,
@@ -4423,12 +4409,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hermes_session_resume_depends_on_the_selected_sdk_backend() {
-        let descriptor = load_adapter_descriptor(
-            repository_adapter_dir().join("python/hermes/hermes.fabric-adapter.json"),
-        )
-        .expect("Hermes descriptor");
-        for (enabled, expected) in [(None, true), (Some(true), true), (Some(false), false)] {
+    fn session_resume_capability_comes_from_the_adapter_descriptor() {
+        for enabled in [None, Some(true), Some(false)] {
             let mut config = typed_config("nvidia.fabric.hermes");
             let settings = &mut config.harness.as_mut().unwrap().settings;
             settings.insert(
@@ -4438,9 +4420,11 @@ mod tests {
             if let Some(enabled) = enabled {
                 settings.insert("sdk".into(), serde_json::json!({"enabled": enabled}));
             }
-            assert_eq!(
-                resolve_runtime_capabilities(&config, Some(&descriptor)).session_resume,
-                expected
+            assert!(
+                resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
+                    .expect("resolve Hermes configuration")
+                    .capabilities
+                    .session_resume,
             );
         }
     }

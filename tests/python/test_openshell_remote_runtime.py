@@ -85,6 +85,38 @@ def remote_config_fixture(tmp_path, monkeypatch):
     )
 
 
+async def test_remote_retained_runtime_can_start_without_a_native_session(
+    remote_config, tmp_path
+):
+    descriptor_path = tmp_path / "task/echo.fabric-adapter.json"
+    descriptor = json.loads(descriptor_path.read_text())
+    descriptor["config"]["accepts"] = ["runtime.keep_state"]
+    descriptor["capabilities"]["session_resume"] = True
+    descriptor_path.write_text(json.dumps(descriptor))
+    remote_config.runtime.keep_state = True
+    fabric = Fabric()
+    environment = await fabric.attach_environment(
+        remote_config,
+        EnvironmentReference.from_mapping(
+            {
+                "provider": "openshell",
+                "resource": {
+                    "sandbox_name": "echo",
+                    "sandbox_id": remote_config.environment.connection["sandbox_id"],
+                },
+            }
+        ),
+    )
+    try:
+        async with await fabric.start_runtime_in(remote_config, environment) as runtime:
+            assert runtime.session_ref is None
+            result = await runtime.invoke(input="A fresh native-only runtime.")
+            assert result.status == "succeeded"
+            assert result.session_ref is None
+    finally:
+        await fabric.release_environment(environment)
+
+
 async def test_real_task_sdk_retains_state_and_collects_declared_artifacts(
     remote_config, tmp_path
 ):

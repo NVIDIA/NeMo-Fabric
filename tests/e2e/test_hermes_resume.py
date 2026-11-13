@@ -284,7 +284,7 @@ async def test_uncertain_native_turn_resumes_with_warning_without_replay(
 
 
 async def test_acknowledged_recovery_allows_a_new_explicit_turn(
-    resume_config, tmp_path
+    resume_config, tmp_path, api_server
 ):
     from hermes_state import SessionDB
 
@@ -302,6 +302,10 @@ async def test_acknowledged_recovery_allows_a_new_explicit_turn(
     async with await Fabric().start_runtime(
         resume_config, base_dir=tmp_path, session_ref=reference
     ) as resumed:
+        assert (
+            "model may act on unfinished requests"
+            in resumed.recovery_warnings[0].message
+        )
         result = await resumed.invoke(
             request=RunRequest(
                 input="I inspected the state; answer this new request.",
@@ -309,6 +313,10 @@ async def test_acknowledged_recovery_allows_a_new_explicit_turn(
             )
         )
         assert result.status == "succeeded"
+    captured = requests.get(api_server + "/_requests", timeout=5).json()
+    messages = json.dumps(captured[-1]["messages"])
+    assert "An interrupted request." in messages
+    assert "I inspected the state; answer this new request." in messages
 
 
 async def test_managed_server_explicitly_resumes_a_stopped_runtime_session(
@@ -435,20 +443,15 @@ async def test_native_only_retention_preserves_startup_without_sdk_session_selec
     }
     config = FabricConfig.from_mapping(mapping)
     fabric = Fabric()
-    assert fabric.plan(config, base_dir=tmp_path).capabilities.session_resume is False
+    assert fabric.plan(config, base_dir=tmp_path).capabilities.session_resume is True
+    async with await fabric.start_runtime(resume_config, base_dir=tmp_path) as seeded:
+        reference = seeded.session_ref
     runtime_ids = []
     for _ in range(2):
         async with await fabric.start_runtime(config, base_dir=tmp_path) as runtime:
             assert runtime.session_ref is None
             runtime_ids.append(runtime.runtime_id)
     assert runtime_ids[0] != runtime_ids[1]
-    reference = SessionRef.from_mapping(
-        {
-            "schema_version": "fabric.session_ref/v1alpha1",
-            "adapter_id": "nvidia.fabric.hermes",
-            "session_id": "native-session",
-        }
-    )
     with pytest.raises(FabricRuntimeError) as caught:
         await fabric.start_runtime(config, base_dir=tmp_path, session_ref=reference)
     assert caught.value.code == "session_resume_unsupported"

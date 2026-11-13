@@ -81,6 +81,21 @@ def test_recorded_tool_failure_followed_by_final_response_is_complete(session_st
     assert not open_session(database, context).recovery_required
 
 
+def test_interrupted_history_is_preserved_with_a_warning_about_future_actions(
+    session_store,
+):
+    database, context, _marker = session_store
+    unfinished = [{"role": "user", "content": "Write 400 animal names."}]
+    database.get_messages.return_value = [{"id": 1, **unfinished[0]}]
+    database.get_resume_conversations.return_value = (unfinished, [])
+    restored = open_session(database, context)
+    assert restored.recovery_required
+    assert restored.history == unfinished
+    assert "model may act on unfinished requests" in restored.warnings[0]["message"]
+    assert "after acknowledgment" in restored.warnings[0]["message"]
+    assert "No request was replayed" not in restored.warnings[0]["message"]
+
+
 @pytest.mark.parametrize(
     "value",
     [

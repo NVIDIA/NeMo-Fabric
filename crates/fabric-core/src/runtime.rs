@@ -2263,13 +2263,17 @@ fn confirm_native_session(
     let id = output
         .get("session_id")
         .and_then(Value::as_str)
-        .filter(|id| !id.trim().is_empty())
-        .ok_or_else(|| {
-            session_error(
+        .filter(|id| !id.trim().is_empty());
+    let Some(id) = id else {
+        return if selected.is_some() {
+            Err(session_error(
                 "session_resume_unconfirmed",
                 "adapter did not confirm the durable session identity",
-            )
-        })?;
+            ))
+        } else {
+            Ok(())
+        };
+    };
     let reference = SessionRef {
         schema_version: SESSION_REF_SCHEMA_VERSION.to_string(),
         adapter_id: adapter_id(plan).unwrap_or_else(|| harness(plan)),
@@ -5011,7 +5015,10 @@ for line in sys.stdin:
                 "metadata": {"ready": True},
             })
         else:
-            response("start", output={"session_id": "native-session"} if MODE == "durable_changed_result" else None)
+            confirms_session = MODE == "durable_changed_result" or (
+                MODE == "durable_unconfirmed_resume" and not message["payload"]["runtime_context"].get("session_ref")
+            )
+            response("start", output={"session_id": "native-session"} if confirms_session else None)
         if MODE == "crash_after_start":
             os.close(0)
             print("host crashed intentionally", file=sys.stderr, flush=True)
@@ -5536,8 +5543,30 @@ else:
     }
 
     #[test]
-    fn durable_session_start_requires_native_confirmation() {
+    fn retained_start_without_selection_can_omit_native_session_identity() {
         let (root, plan) = durable_session_plan("success");
+        let runtime = start_runtime(&plan).expect("start without a durable session");
+        assert!(runtime.session_ref.is_none());
+        assert!(runtime.recovery_warnings.is_empty());
+        let result = invoke_runtime(&plan, &runtime, RunRequest::text("continue")).unwrap();
+        assert_eq!(result.status, RunStatus::Succeeded);
+        assert!(result.session_ref.is_none());
+        stop_runtime(&plan, &runtime).unwrap();
+        assert!(
+            !root
+                .join("artifacts/.fabric/state/acme.fabric.local-host/.sessions")
+                .exists()
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn explicit_session_selection_requires_native_confirmation() {
+        let (root, mut plan) = durable_session_plan("durable_unconfirmed_resume");
+        let runtime = start_runtime(&plan).unwrap();
+        stop_runtime(&plan, &runtime).unwrap();
+        plan.session_ref = runtime.session_ref.clone();
+        assert!(plan.session_ref.is_some());
         let error = start_runtime(&plan).expect_err("missing native identity");
         assert!(
             matches!(error, FabricError::Session { code, .. } if code == "session_resume_unconfirmed")
@@ -5576,8 +5605,14 @@ else:
 
     #[test]
     fn failed_one_shot_stop_cleanup_is_retried_before_replacement() {
-        for prepare_replacement in [false, true] {
-            let (root, plan) = local_host_plan_keeping_state();
+        for (keep_state, prepare_replacement) in
+            [(false, false), (false, true), (true, false), (true, true)]
+        {
+            let (root, plan) = if keep_state {
+                local_host_plan_keeping_state()
+            } else {
+                local_host_plan("success")
+            };
             FAIL_NEXT_HOST_TERMINATION.with(|fail| fail.set(true));
             let result = run_plan(&plan, RunRequest::text("completed")).unwrap();
             assert_eq!(result.status, RunStatus::Failed);

@@ -470,7 +470,7 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
                     && reference.validate().is_ok()
                     && Some(reference.adapter_id.clone()) == adapter_id(plan)
             }
-            (None, None) => !crate::session::durable(plan),
+            (None, None) => true,
             _ => false,
         };
         if !confirmed {
