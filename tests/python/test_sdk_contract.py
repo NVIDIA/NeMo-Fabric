@@ -1846,6 +1846,13 @@ class NativeRecorder:
         assert json.loads(runtime_json)["runtime_id"] == "runtime-1"
         assert json.loads(request_json)["request_id"]
 
+    def _finish_failed_run_result(
+        self, plan_json: str, runtime_json: str, request_json: str, events_json: str
+    ) -> None:
+        self._begin_run_result(plan_json, runtime_json, request_json)
+        assert self.stopped > 0
+        assert isinstance(json.loads(events_json), list)
+
     def _save_run_result(
         self, plan_json: str, runtime_json: str, result_json: str
     ) -> None:

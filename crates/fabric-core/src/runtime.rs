@@ -223,6 +223,7 @@ pub struct RunRequest {
 impl Default for RunRequest {
     fn default() -> Self {
         Self {
+            acknowledge_recovery: false,
             request_id: new_id("request"),
             relay_session_root: None,
             input: Value::Null,
@@ -1075,12 +1076,14 @@ enum LocalServiceState {
 /// Invoke a NeMo Fabric run plan.
 pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
     let runtime = start_runtime(plan)?;
+    let original_request = request.clone();
     let invoked = begin_run_result(plan, &runtime, &request)
         .and_then(|()| invoke_runtime(plan, &runtime, request));
     let mut result = match invoked {
         Ok(result) => result,
         Err(error) => {
-            let _ = stop_runtime(plan, &runtime);
+            let events = stop_runtime(plan, &runtime).unwrap_or_default();
+            finish_failed_run_result(plan, &runtime, &original_request, events)?;
             return Err(error);
         }
     };
@@ -1137,7 +1140,7 @@ pub fn begin_run_result(
 pub fn default_artifact_root() -> Result<PathBuf> {
     #[cfg(unix)]
     {
-        let home = std::env::home_dir().ok_or_else(default_storage_unavailable)?;
+        let home = std::env::home_dir().unwrap_or_default();
         // SAFETY: geteuid has no preconditions or side effects.
         default_artifact_root_for_user(&home, unsafe { libc::geteuid() })
     }
@@ -1149,19 +1152,52 @@ pub fn default_artifact_root() -> Result<PathBuf> {
 fn default_storage_unavailable() -> FabricError {
     FabricError::InvalidConfig {
         field: "local_storage".into(),
-        reason: "Default local storage requires a trusted user home directory.".into(),
+        reason: "Default local storage requires a private directory owned by the current user."
+            .into(),
     }
 }
 
 #[cfg(unix)]
 fn default_artifact_root_for_user(home: &Path, uid: u32) -> Result<PathBuf> {
     use std::os::unix::fs::MetadataExt;
-    let home = std::fs::canonicalize(home).map_err(|_| default_storage_unavailable())?;
-    let metadata = std::fs::metadata(&home).map_err(|_| default_storage_unavailable())?;
-    if !metadata.is_dir() || metadata.uid() != uid || metadata.mode() & 0o022 != 0 {
+    // SAFETY: geteuid has no preconditions or side effects.
+    if uid != unsafe { libc::geteuid() } {
         return Err(default_storage_unavailable());
     }
-    Ok(home.join(".cache").join(format!("nemo-fabric-{uid}")))
+    if let Ok(home) = std::fs::canonicalize(home)
+        && let Ok(metadata) = std::fs::metadata(&home)
+        && metadata.is_dir()
+        && metadata.uid() == uid
+        && metadata.mode() & 0o022 == 0
+    {
+        return Ok(home.join(".cache").join(format!("nemo-fabric-{uid}")));
+    }
+    temporary_artifact_root_for_user(&std::env::temp_dir(), uid)
+}
+
+#[cfg(unix)]
+fn temporary_artifact_root_for_user(temporary: &Path, uid: u32) -> Result<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+    results::trusted_ancestry(temporary, "local-storage")
+        .map_err(|_| default_storage_unavailable())?;
+    let root = temporary.join(format!("nemo-fabric-{uid}-private"));
+    // Atomic creation and lstat reject pre-created symlinks, other owners,
+    // and writable directories. Never chmod a path supplied by another user.
+    use std::os::unix::fs::DirBuilderExt;
+    if let Err(error) = std::fs::DirBuilder::new().mode(0o700).create(&root)
+        && error.kind() != std::io::ErrorKind::AlreadyExists
+    {
+        return Err(default_storage_unavailable());
+    }
+    let metadata = std::fs::symlink_metadata(&root).map_err(|_| default_storage_unavailable())?;
+    if !metadata.is_dir()
+        || metadata.file_type().is_symlink()
+        || metadata.uid() != uid
+        || metadata.mode() & 0o077 != 0
+    {
+        return Err(default_storage_unavailable());
+    }
+    Ok(root)
 }
 
 /// Persist the final one-shot result after Python lifecycle cleanup.
@@ -1187,6 +1223,32 @@ pub fn save_run_result(plan: &RunPlan, runtime: &RuntimeHandle, result: &RunResu
         .root
         .map_or_else(default_artifact_root, Ok)?;
     results::finalize(&root, result)
+}
+
+/// Finalize a dispatched one-shot failure after lifecycle cleanup.
+#[doc(hidden)]
+pub fn finish_failed_run_result(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+    request: &RunRequest,
+    events: Vec<FabricEvent>,
+) -> Result<()> {
+    validate_runtime_handle(plan, runtime)?;
+    if runtime.environment.provider == "local" && uses_local_host(plan) {
+        let root = artifact_manifest(plan)?
+            .root
+            .map_or_else(default_artifact_root, Ok)?;
+        if let Some(mut result) = results::unfinalized_result(
+            &root,
+            &runtime.agent_name,
+            &runtime.runtime_id,
+            &request.request_id,
+        )? {
+            result.events.extend(events);
+            save_run_result(plan, runtime, &result)?;
+        }
+    }
+    Ok(())
 }
 
 /// Prepare an execution environment for a run plan.
@@ -2581,7 +2643,6 @@ fn run_local_host_invocation_with_timeout(
     invocation_kind: LocalHostInvocation,
     invoke_timeout: Duration,
 ) -> Result<RunResult> {
-    let operation = invocation_kind.operation();
     if request.request_id.trim().is_empty() || request.request_id.contains('\0') {
         return Err(FabricError::InvalidConfig {
             field: "request_id".into(),
@@ -2608,6 +2669,80 @@ fn run_local_host_invocation_with_timeout(
         results::RequestReservation::Cached(result) => return Ok(*result),
         results::RequestReservation::Pending(pending) => pending,
     };
+    let outcome = execute_local_host_invocation(
+        plan,
+        runtime,
+        request,
+        invocation_kind,
+        invoke_timeout,
+        invocation.clone(),
+        &mut reservation,
+    )
+    .and_then(|result| {
+        results::save(&root, &result)?;
+        Ok(result)
+    });
+    if let Err(error) = &outcome
+        && reservation.dispatched()
+    {
+        let code = match error {
+            FabricError::AdapterLifecycleOperation { code, .. }
+                if matches!(
+                    code.as_str(),
+                    "host_crashed" | "host_timeout" | "interrupted" | "invalid_agent_run_result"
+                ) =>
+            {
+                code.as_str()
+            }
+            _ => "invocation_failed",
+        };
+        let result = RunResult {
+            session_ref: None,
+            agent_name: plan.agent_name.clone(),
+            harness: harness(plan),
+            adapter_kind: adapter_kind(plan),
+            adapter_id: adapter_id(plan),
+            runtime_id: runtime.runtime_id.clone(),
+            invocation_id: invocation.invocation_id,
+            request_id: invocation.request_id,
+            status: if code == "interrupted" { RunStatus::Cancelled } else { RunStatus::Failed },
+            output: Value::Null,
+            error: Some(ErrorInfo {
+                stage: ErrorStage::Invoke,
+                code: code.into(),
+                message: "The dispatched invocation ended without a valid result; effects may be unknown. Do not replay the work.".into(),
+                retryable: false,
+                metadata: BTreeMap::from([("effects".into(), Value::String("unknown".into()))]),
+            }),
+            usage: None,
+            execution: None,
+            resource_snapshot: None,
+            system_stats: None,
+            artifacts: ArtifactManifest { root: Some(root.clone()), ..ArtifactManifest::default() },
+            telemetry: vec![],
+            events: vec![event_with_metadata(
+                "invocation_end",
+                "The dispatched invocation ended without a valid result.",
+                BTreeMap::from([("code".into(), Value::String(code.into()))]),
+            )],
+            metadata: BTreeMap::new(),
+        };
+        // Retain the dispatched reservation even if this write fails.
+        results::save(&root, &result)?;
+    }
+    outcome
+}
+
+fn execute_local_host_invocation(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+    request: RunRequest,
+    invocation_kind: LocalHostInvocation,
+    invoke_timeout: Duration,
+    invocation: InvocationHandle,
+    reservation: &mut results::PendingReservation,
+) -> Result<RunResult> {
+    let operation = invocation_kind.operation();
     let host = local_hosts()
         .get(&runtime.runtime_id)
         .cloned()
@@ -3022,7 +3157,6 @@ fn run_local_host_invocation_with_timeout(
         events,
         metadata,
     };
-    results::save(&root, &result)?;
     Ok(result)
 }
 
@@ -5213,6 +5347,8 @@ for line in sys.stdin:
         invocations += 1
         if MODE == "invoke_stderr":
             print(f"diagnostic-{invocations}", file=sys.stderr, flush=True)
+        if MODE == "invoke_crash":
+            os._exit(17)
         if MODE == "invoke_timeout":
             print("invoke accepted without response", file=sys.stderr, flush=True)
             continue
@@ -5760,7 +5896,34 @@ else:
         fs::set_permissions(&home, fs::Permissions::from_mode(0o777)).unwrap();
         let unsafe_home = default_artifact_root_for_user(&home, uid);
         fs::remove_dir_all(home).unwrap();
-        assert!(unsafe_home.is_err());
+        let fallback = unsafe_home.expect("shared home uses private temporary storage");
+        assert_eq!(
+            fallback,
+            std::env::temp_dir().join(format!("nemo-fabric-{uid}-private"))
+        );
+        assert_eq!(
+            fs::metadata(&fallback).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn temporary_storage_rejects_unsafe_precreated_namespaces() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let temporary = std::env::temp_dir().join(new_id("fabric-fallback-test"));
+        fs::create_dir(&temporary).unwrap();
+        // SAFETY: geteuid has no preconditions or side effects.
+        let uid = unsafe { libc::geteuid() };
+        let root = temporary.join(format!("nemo-fabric-{uid}-private"));
+        fs::create_dir(&root).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(temporary_artifact_root_for_user(&temporary, uid).is_err());
+        fs::remove_dir(&root).unwrap();
+        symlink(&temporary, &root).unwrap();
+        assert!(temporary_artifact_root_for_user(&temporary, uid).is_err());
+        fs::remove_file(&root).unwrap();
+        fs::remove_dir(&temporary).unwrap();
     }
 
     #[test]
@@ -5773,6 +5936,72 @@ else:
                 matches!(result_lookup_response(response), Err(FabricError::EnvironmentProviderOperation {operation, code, ..}) if operation == "invocation_result" && code == expected)
             );
         }
+    }
+
+    #[test]
+    fn dispatched_failures_have_terminal_results_without_reexecution() {
+        for (mode, expected) in [
+            ("invoke_timeout", "host_timeout"),
+            ("invoke_crash", "host_crashed"),
+            ("blank_error_code", "invalid_agent_run_result"),
+            ("invoke_failure", "invocation_failed"),
+        ] {
+            let (root, plan) = local_host_plan(mode);
+            let runtime = start_runtime(&plan).unwrap();
+            let request = RunRequest::text("hello");
+            let error = run_local_host_adapter_with_timeout(
+                &plan,
+                &runtime,
+                request.clone(),
+                Duration::from_millis(100),
+            )
+            .unwrap_err();
+            assert!(!error.to_string().is_empty());
+            let saved = invocation_result(
+                &root.join("artifacts"),
+                &runtime.agent_name,
+                &runtime.runtime_id,
+                &request.request_id,
+            )
+            .unwrap();
+            stop_runtime(&plan, &runtime).unwrap();
+            let saved = saved.expect("dispatched failure has a terminal result");
+            assert_eq!(saved.status, RunStatus::Failed);
+            assert!(saved.output.is_null());
+            assert_eq!(saved.error.as_ref().unwrap().code, expected);
+            assert!(!saved.error.as_ref().unwrap().retryable);
+            assert_eq!(saved.error.as_ref().unwrap().metadata["effects"], "unknown");
+            assert_eq!(invoke_runtime(&plan, &runtime, request).unwrap(), saved);
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn one_shot_dispatched_failure_is_finalized_after_cleanup() {
+        let (root, plan) = local_host_plan("blank_error_code");
+        let request = RunRequest::text("hello");
+        run_plan(&plan, request.clone()).unwrap_err();
+        let runtimes = fs::read_dir(root.join("artifacts/.fabric")).unwrap();
+        let runtime = runtimes
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .find(|name| name.starts_with("runtime-"))
+            .unwrap();
+        let saved = invocation_result(
+            &root.join("artifacts"),
+            &plan.agent_name,
+            &runtime,
+            &request.request_id,
+        )
+        .unwrap()
+        .expect("one-shot failure must be retrievable");
+        assert_eq!(saved.status, RunStatus::Failed);
+        assert!(
+            saved
+                .events
+                .iter()
+                .any(|event| event.kind == "runtime_stop")
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -5889,43 +6118,33 @@ else:
 
     #[cfg(unix)]
     #[test]
-    fn result_lookup_rejects_a_writable_storage_root() {
-        use std::os::unix::fs::PermissionsExt;
-        let (root, plan) = local_host_plan("success");
-        let runtime = start_runtime(&plan).unwrap();
-        let result = invoke_runtime(&plan, &runtime, RunRequest::text("hello")).unwrap();
-        let artifacts = root.join("artifacts");
-        fs::set_permissions(&artifacts, fs::Permissions::from_mode(0o777)).unwrap();
-        let lookup = invocation_result(
-            &artifacts,
-            &result.agent_name,
-            &result.runtime_id,
-            &result.request_id,
-        );
-        fs::set_permissions(&artifacts, fs::Permissions::from_mode(0o700)).unwrap();
-        stop_runtime(&plan, &runtime).unwrap();
-        assert!(lookup.is_err());
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn result_lookup_rejects_a_writable_storage_ancestor() {
-        use std::os::unix::fs::PermissionsExt;
-        let (root, plan) = local_host_plan("success");
-        let runtime = start_runtime(&plan).unwrap();
-        let result = invoke_runtime(&plan, &runtime, RunRequest::text("hello")).unwrap();
-        fs::set_permissions(&root, fs::Permissions::from_mode(0o777)).unwrap();
-        let lookup = invocation_result(
-            &root.join("artifacts"),
-            &result.agent_name,
-            &result.runtime_id,
-            &result.request_id,
-        );
-        fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
-        stop_runtime(&plan, &runtime).unwrap();
-        assert!(lookup.is_err());
-        fs::remove_dir_all(root).unwrap();
+    fn explicit_shared_artifact_roots_allow_private_results() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        for mode in [0o775, 0o777] {
+            let (root, plan) = local_host_plan("success");
+            fs::set_permissions(&root, fs::Permissions::from_mode(mode)).unwrap();
+            let artifacts = root.join("artifacts");
+            fs::create_dir_all(&artifacts).unwrap();
+            fs::set_permissions(&artifacts, fs::Permissions::from_mode(mode)).unwrap();
+            let runtime = start_runtime(&plan).unwrap();
+            let result = invoke_runtime(&plan, &runtime, RunRequest::text("hello")).unwrap();
+            stop_runtime(&plan, &runtime).unwrap();
+            assert_eq!(
+                invocation_result(
+                    &artifacts,
+                    &result.agent_name,
+                    &runtime.runtime_id,
+                    &result.request_id
+                )
+                .unwrap(),
+                Some(result)
+            );
+            assert_eq!(
+                fs::metadata(artifacts.join(".fabric")).unwrap().mode() & 0o777,
+                0o700
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[cfg(unix)]
@@ -6065,16 +6284,15 @@ else:
             .join()
             .unwrap()
             .expect_err("original invocation times out");
-        assert!(
-            invocation_result(
-                &root.join("artifacts"),
-                &plan.agent_name,
-                &runtime.runtime_id,
-                "pending-request"
-            )
-            .unwrap()
-            .is_none()
-        );
+        let terminal = invocation_result(
+            &root.join("artifacts"),
+            &plan.agent_name,
+            &runtime.runtime_id,
+            "pending-request",
+        )
+        .unwrap()
+        .expect("timed-out invocation has a terminal result");
+        assert_eq!(terminal.error.unwrap().code, "host_timeout");
         stop_runtime(&plan, &runtime).unwrap();
         fs::remove_dir_all(root).unwrap();
     }

@@ -326,6 +326,28 @@ fn _begin_run_result(
         .map_err(to_py_error)
 }
 
+/// Finalize a saved one-shot protocol failure after cleanup.
+#[pyfunction]
+fn _finish_failed_run_result(
+    py: Python<'_>,
+    plan_json: String,
+    runtime_json: String,
+    request_json: String,
+    events_json: String,
+) -> PyResult<()> {
+    let plan = parse_run_plan(plan_json)?;
+    let runtime = parse_runtime_handle(runtime_json)?;
+    let request: RunRequest = serde_json::from_str(&request_json).map_err(|_| {
+        pyo3::exceptions::PyValueError::new_err("The invocation request is invalid.")
+    })?;
+    let events: Vec<nemo_fabric_core::FabricEvent> = serde_json::from_str(&events_json)
+        .map_err(|_| pyo3::exceptions::PyValueError::new_err("The cleanup events are invalid."))?;
+    py.detach(|| {
+        nemo_fabric_core::runtime::finish_failed_run_result(&plan, &runtime, &request, events)
+    })
+    .map_err(to_py_error)
+}
+
 /// Persist a result after the Python one-shot lifecycle finishes cleanup.
 #[pyfunction]
 fn _save_run_result(
@@ -486,6 +508,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(runtime_status_environment, m)?)?;
     m.add_function(wrap_pyfunction!(invocation_result, m)?)?;
     m.add_function(wrap_pyfunction!(_save_run_result, m)?)?;
+    m.add_function(wrap_pyfunction!(_finish_failed_run_result, m)?)?;
     m.add_function(wrap_pyfunction!(_begin_run_result, m)?)?;
     m.add_function(wrap_pyfunction!(invocation_result_environment, m)?)?;
     m.add_function(wrap_pyfunction!(check_service, m)?)?;

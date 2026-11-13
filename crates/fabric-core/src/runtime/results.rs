@@ -47,6 +47,10 @@ pub(super) struct PendingReservation {
 }
 
 impl PendingReservation {
+    pub(super) fn dispatched(&self) -> bool {
+        self.dispatched
+    }
+
     pub(super) fn mark_dispatched(&mut self) {
         self.dispatched = true;
     }
@@ -79,7 +83,7 @@ fn leaf(value: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
 }
 
-fn trusted_ancestry(root: &Path, runtime_id: &str) -> Result<()> {
+pub(super) fn trusted_ancestry(root: &Path, runtime_id: &str) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -161,7 +165,6 @@ fn runtime_directory(root: &Path, runtime_id: &str, create: bool) -> Result<Path
         create_artifact_root(root).map_err(|_| failure(runtime_id, "result_storage_failed"))?;
     }
     let root = fs::canonicalize(root).map_err(|_| failure(runtime_id, "result_storage_failed"))?;
-    trusted_ancestry(&root, runtime_id)?;
     let fabric = directory(&root, ".fabric", create, runtime_id)?;
     directory(&fabric, runtime_id, create, runtime_id)
 }
@@ -432,6 +435,25 @@ pub fn invocation_result(
     runtime_id: &str,
     request_id: &str,
 ) -> Result<Option<RunResult>> {
+    lookup(root, agent, runtime_id, request_id, true)
+}
+
+pub(super) fn unfinalized_result(
+    root: &Path,
+    agent: &str,
+    runtime_id: &str,
+    request_id: &str,
+) -> Result<Option<RunResult>> {
+    lookup(root, agent, runtime_id, request_id, false)
+}
+
+fn lookup(
+    root: &Path,
+    agent: &str,
+    runtime_id: &str,
+    request_id: &str,
+    finalized: bool,
+) -> Result<Option<RunResult>> {
     if [request_id, agent]
         .iter()
         .any(|value| value.trim().is_empty() || value.contains('\0'))
@@ -446,7 +468,6 @@ pub fn invocation_result(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err(failure(runtime_id, "result_storage_failed")),
     };
-    trusted_ancestry(&root, runtime_id)?;
     let fabric = root.join(".fabric");
     let runtime = fabric.join(runtime_id);
     let requests = runtime.join("requests");
@@ -470,5 +491,9 @@ pub fn invocation_result(
     {
         return Err(failure(runtime_id, "invalid_result_target"));
     }
-    completed(&runtime, &record)
+    if finalized {
+        completed(&runtime, &record)
+    } else {
+        completed_result(&runtime, &record)
+    }
 }
