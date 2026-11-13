@@ -1003,8 +1003,13 @@ def _install_hermes_oauth_modules(
     *,
     statuses: list[list[dict[str, object]]],
     layout: str = "current",
+    ready: list[bool] | None = None,
 ) -> dict[str, MagicMock]:
-    """Install fake Hermes MCP modules in the current or the older layout."""
+    """Install fake Hermes MCP modules in the current or the older layout.
+
+    ``ready`` is the sequence the current layout's discovery-ready check returns;
+    it defaults to always ready.
+    """
 
     calls: dict[str, MagicMock] = {
         "force_interactive_oauth": MagicMock(),
@@ -1014,7 +1019,16 @@ def _install_hermes_oauth_modules(
         "probe_server": MagicMock(return_value=[("search", "Search issues")]),
         "login_connect_timeout": MagicMock(return_value=315.0),
         "reconnect_server": MagicMock(return_value=True),
+        "server_ready": MagicMock(
+            side_effect=list(ready) if ready is not None else None,
+            return_value=True,
+        ),
     }
+    monkeypatch.setattr(
+        adapter,
+        "_hermes_server_ready_check",
+        lambda: calls["server_ready"] if layout == "current" else None,
+    )
     oauth = ModuleType("tools.mcp_oauth")
     oauth.force_interactive_oauth = calls["force_interactive_oauth"]  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "tools", ModuleType("tools"))
@@ -1137,8 +1151,78 @@ async def test_runtime_waits_for_reconnect_after_sign_in(monkeypatch):
 async def test_runtime_waits_for_tool_discovery_after_reconnect(monkeypatch):
     """A server that is connected but still listing its tools is not ready yet."""
     monkeypatch.setattr(adapter, "MCP_RECONNECT_POLL_SECONDS", 0)
+    connected = [{"name": "jira", "connected": True, "status": "connected", "tools": 0}]
     calls = _install_hermes_oauth_modules(
         monkeypatch,
+        statuses=[
+            [{"name": "jira", "connected": False, "status": "failed"}],
+            connected,
+            connected,
+        ],
+        ready=[False, True],
+    )
+    runtime = adapter.HermesRuntime()
+    runtime._agent = MagicMock()
+    runtime._hermes_config = {"mcp_servers": {"jira": {"auth": "oauth"}}}
+
+    await runtime._authenticate_mcp_servers()
+
+    assert calls["server_ready"].call_count == 2
+    calls["refresh_agent_mcp_tools"].assert_called_once_with(
+        runtime._agent, quiet_mode=True
+    )
+
+
+async def test_runtime_accepts_server_whose_discovery_found_no_tools(monkeypatch):
+    """Finished discovery with zero tools is ready; no wait for tools that never come."""
+    empty = [{"name": "jira", "connected": True, "status": "connected", "tools": 0}]
+    calls = _install_hermes_oauth_modules(
+        monkeypatch,
+        statuses=[[{"name": "jira", "connected": False, "status": "failed"}], empty],
+        ready=[True],
+    )
+    runtime = adapter.HermesRuntime()
+    runtime._agent = MagicMock()
+    runtime._hermes_config = {"mcp_servers": {"jira": {"auth": "oauth"}}}
+
+    await runtime._authenticate_mcp_servers()
+
+    assert calls["get_mcp_status"].call_count == 2
+    calls["refresh_agent_mcp_tools"].assert_called_once_with(
+        runtime._agent, quiet_mode=True
+    )
+
+
+async def test_runtime_fails_when_discovery_outlasts_the_wait(monkeypatch):
+    """A server still listing its tools when the wait ends fails the invocation."""
+    monkeypatch.setattr(adapter, "MCP_RECONNECT_WAIT_SECONDS", 0)
+    connected = [{"name": "jira", "connected": True, "status": "connected", "tools": 0}]
+    calls = _install_hermes_oauth_modules(
+        monkeypatch,
+        statuses=[
+            [{"name": "jira", "connected": False, "status": "failed"}],
+            connected,
+        ],
+        ready=[False],
+    )
+    runtime = adapter.HermesRuntime()
+    runtime._agent = MagicMock()
+    runtime._hermes_config = {"mcp_servers": {"jira": {"auth": "oauth"}}}
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime._authenticate_mcp_servers()
+
+    assert caught.value.code == "hermes_mcp_authentication_failed"
+    assert caught.value.metadata == {"servers": ["jira"]}
+    calls["refresh_agent_mcp_tools"].assert_not_called()
+
+
+async def test_runtime_without_ready_signal_waits_for_tools(monkeypatch):
+    """Older Hermes without a discovery-ready signal waits for a tool count."""
+    monkeypatch.setattr(adapter, "MCP_RECONNECT_POLL_SECONDS", 0)
+    calls = _install_hermes_oauth_modules(
+        monkeypatch,
+        layout="legacy",
         statuses=[
             [{"name": "jira", "connected": False, "status": "failed"}],
             [{"name": "jira", "connected": True, "status": "connected", "tools": 0}],
@@ -1152,29 +1236,7 @@ async def test_runtime_waits_for_tool_discovery_after_reconnect(monkeypatch):
     await runtime._authenticate_mcp_servers()
 
     assert calls["get_mcp_status"].call_count == 3
-    calls["refresh_agent_mcp_tools"].assert_called_once_with(
-        runtime._agent, quiet_mode=True
-    )
-
-
-async def test_runtime_accepts_connected_server_without_tools(monkeypatch):
-    """A connected server that reports no tools is accepted when the wait ends."""
-    monkeypatch.setattr(adapter, "MCP_RECONNECT_WAIT_SECONDS", 0)
-    empty = [{"name": "jira", "connected": True, "status": "connected", "tools": 0}]
-    calls = _install_hermes_oauth_modules(
-        monkeypatch,
-        statuses=[[{"name": "jira", "connected": False, "status": "failed"}], empty],
-    )
-    runtime = adapter.HermesRuntime()
-    runtime._agent = MagicMock()
-    runtime._hermes_config = {"mcp_servers": {"jira": {"auth": "oauth"}}}
-
-    await runtime._authenticate_mcp_servers()
-
-    calls["refresh_agent_mcp_tools"].assert_called_once_with(
-        runtime._agent, quiet_mode=True
-    )
-    assert runtime._mcp_authentication_checked is True
+    calls["server_ready"].assert_not_called()
 
 
 async def test_runtime_reports_failed_oauth_mcp_authentication(monkeypatch):
@@ -2209,5 +2271,8 @@ def test_oauth_api_resolves_against_installed_hermes():
         "probe_server",
         "reconnect_server",
         "refresh_agent_mcp_tools",
+        "server_ready",
     ):
         assert callable(getattr(api, name)), name
+    # A server name Hermes has never connected is reported as not ready.
+    assert api.server_ready("fabric-test-unknown-server") is False

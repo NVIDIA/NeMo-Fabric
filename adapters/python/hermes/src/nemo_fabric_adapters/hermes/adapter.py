@@ -50,8 +50,9 @@ def main() -> None:
     lifecycle.serve(HermesRuntime, config_loader=AgentConfig.from_mapping)
 
 
-# How long to wait for MCP servers to reconnect after an interactive sign-in.
-MCP_RECONNECT_WAIT_SECONDS = 15.0
+# How long to wait for MCP servers to reconnect and list their tools after an
+# interactive sign-in.
+MCP_RECONNECT_WAIT_SECONDS = 60.0
 MCP_RECONNECT_POLL_SECONDS = 0.25
 
 
@@ -90,6 +91,7 @@ def _hermes_mcp_oauth_api() -> Any:
     except ImportError:
         probe_server = login_connect_timeout = reconnect_server = None
     return SimpleNamespace(
+        server_ready=_hermes_server_ready_check(),
         discover_mcp_tools=discover_mcp_tools,
         force_interactive_oauth=force_interactive_oauth,
         get_mcp_status=get_mcp_status,
@@ -98,6 +100,37 @@ def _hermes_mcp_oauth_api() -> Any:
         reconnect_server=reconnect_server,
         refresh_agent_mcp_tools=refresh_agent_mcp_tools,
     )
+
+
+def _hermes_server_ready_check() -> Any:
+    """Return a check for whether Hermes finished connecting a server and listing its tools.
+
+    Hermes reports a server as connected before it lists the server's tools, and
+    sets the server's ``_ready`` event only after tool discovery completes. This
+    reads that event through the same registry Hermes's ``reconnect_mcp_server``
+    uses. Returns ``None`` when this Hermes does not expose it.
+    """
+
+    try:
+        import tools.mcp_tool as core
+        from tools.mcp_tool_scope import _resolve_server_key
+    except ImportError:
+        return None
+    if not all(hasattr(core, name) for name in ("_lock", "_servers")):
+        return None
+
+    def server_ready(name: str) -> bool:
+        with core._lock:
+            server = core._servers.get(_resolve_server_key(name))
+        ready = getattr(server, "_ready", None)
+        return (
+            server is not None
+            and getattr(server, "session", None) is not None
+            and ready is not None
+            and ready.is_set()
+        )
+
+    return server_ready
 
 
 class HermesRuntime:
@@ -690,13 +723,13 @@ class HermesRuntime:
         self._mcp_authentication_checked = True
 
     async def _wait_for_mcp_servers(self, api: Any, names: set[str]) -> set[str]:
-        """Return the servers still not connected after a bounded wait.
+        """Return the servers not ready after a bounded wait.
 
         A reconnect after sign-in runs on Hermes's MCP loop, and Hermes reports a
-        server as connected before it finishes listing the server's tools. Wait
-        until each server is connected and reports its tools, so the agent's tool
-        refresh sees them. A connected server that still reports no tools when
-        the wait ends is accepted, since a server may have none.
+        server as connected before it finishes listing the server's tools. A
+        server is ready once Hermes has finished tool discovery, which may find
+        no tools. Hermes versions without that signal fall back to a connected
+        server that reports at least one tool.
         """
 
         deadline = asyncio.get_running_loop().time() + MCP_RECONNECT_WAIT_SECONDS
@@ -705,16 +738,18 @@ class HermesRuntime:
                 status["name"]: status
                 for status in await asyncio.to_thread(api.get_mcp_status)
             }
-            disconnected = {
-                name for name in names if not statuses.get(name, {}).get("connected")
-            }
-            discovering = {
-                name for name in names - disconnected if not statuses[name].get("tools")
-            }
-            if not disconnected and not discovering:
-                return set()
-            if asyncio.get_running_loop().time() >= deadline:
-                return disconnected
+            pending = set()
+            for name in names:
+                status = statuses.get(name, {})
+                if not status.get("connected"):
+                    pending.add(name)
+                elif api.server_ready is not None:
+                    if not await asyncio.to_thread(api.server_ready, name):
+                        pending.add(name)
+                elif not status.get("tools"):
+                    pending.add(name)
+            if not pending or asyncio.get_running_loop().time() >= deadline:
+                return pending
             await asyncio.sleep(MCP_RECONNECT_POLL_SECONDS)
 
     def _finalize_relay_session(self) -> None:
