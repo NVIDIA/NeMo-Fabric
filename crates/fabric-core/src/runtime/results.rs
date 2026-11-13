@@ -28,6 +28,14 @@ struct Reservation {
     streaming: Option<bool>,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Finalization {
+    agent_name: String,
+    runtime_id: String,
+    request_id: String,
+}
+
 pub(super) enum RequestReservation {
     Cached(Box<RunResult>),
     Pending(PendingReservation),
@@ -213,7 +221,72 @@ fn index_name(request_id: &str) -> String {
     format!("{:x}.json", Sha256::digest(request_id.as_bytes()))
 }
 
+fn finalization_path(requests: &Path, request_id: &str) -> PathBuf {
+    requests.join(format!("{}.finalizing", index_name(request_id)))
+}
+
+pub(super) fn begin_finalization(
+    root: &Path,
+    agent: &str,
+    runtime_id: &str,
+    request_id: &str,
+) -> Result<()> {
+    let runtime = runtime_directory(root, runtime_id, true)?;
+    let requests = directory(&runtime, "requests", true, runtime_id)?;
+    let path = finalization_path(&requests, request_id);
+    let marker = Finalization {
+        agent_name: agent.into(),
+        runtime_id: runtime_id.into(),
+        request_id: request_id.into(),
+    };
+    let bytes = serde_json::to_vec(&marker).map_err(crate::FabricError::SerializeJson)?;
+    if bytes.len() as u64 > MAX_RESULT_BYTES {
+        return Err(failure(runtime_id, "result_storage_failed"));
+    }
+    match options().write(true).create_new(true).open(&path) {
+        Ok(mut file) => {
+            if file
+                .write_all(&bytes)
+                .and_then(|_| file.sync_all())
+                .is_err()
+            {
+                let _ = fs::remove_file(path);
+                return Err(failure(runtime_id, "result_storage_failed"));
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            let existing: Finalization = read(&path, runtime_id)?
+                .ok_or_else(|| failure(runtime_id, "result_storage_failed"))?;
+            if existing.agent_name != agent
+                || existing.runtime_id != runtime_id
+                || existing.request_id != request_id
+            {
+                return Err(failure(runtime_id, "invalid_result_target"));
+            }
+        }
+        Err(_) => return Err(failure(runtime_id, "result_storage_failed")),
+    }
+    Ok(())
+}
+
 fn completed(runtime: &Path, record: &Reservation) -> Result<Option<RunResult>> {
+    if let Some(marker) = read::<Finalization>(
+        &finalization_path(&runtime.join("requests"), &record.request_id),
+        &record.runtime_id,
+    )? {
+        if marker.agent_name != record.agent_name
+            || marker.runtime_id != record.runtime_id
+            || marker.request_id != record.request_id
+        {
+            return Err(failure(&record.runtime_id, "invalid_result_target"));
+        }
+        // Invocation output alone does not establish one-shot cleanup finality.
+        return Ok(None);
+    }
+    completed_result(runtime, record)
+}
+
+fn completed_result(runtime: &Path, record: &Reservation) -> Result<Option<RunResult>> {
     if !leaf(&record.invocation_id) {
         return Err(failure(&record.runtime_id, "invalid_result_target"));
     }
@@ -311,6 +384,35 @@ pub(super) fn save(root: &Path, result: &RunResult) -> Result<()> {
     Ok(())
 }
 
+pub(super) fn finalize(root: &Path, result: &RunResult) -> Result<()> {
+    let runtime = runtime_directory(root, &result.runtime_id, false)?;
+    let requests = directory(&runtime, "requests", false, &result.runtime_id)?;
+    let record: Reservation = read(
+        &requests.join(index_name(&result.request_id)),
+        &result.runtime_id,
+    )?
+    .ok_or_else(|| failure(&result.runtime_id, "invalid_result_target"))?;
+    if record.agent_name != result.agent_name
+        || record.runtime_id != result.runtime_id
+        || record.request_id != result.request_id
+        || record.invocation_id != result.invocation_id
+    {
+        return Err(failure(&result.runtime_id, "invalid_result_target"));
+    }
+    completed_result(&runtime, &record)?
+        .ok_or_else(|| failure(&result.runtime_id, "invalid_result_target"))?;
+    begin_finalization(
+        root,
+        &result.agent_name,
+        &result.runtime_id,
+        &result.request_id,
+    )?;
+    save(root, result)?;
+    // Publish cleanup finality only after the replacement result is saved.
+    fs::remove_file(finalization_path(&requests, &result.request_id))
+        .map_err(|_| failure(&result.runtime_id, "result_storage_failed"))
+}
+
 /// Read a saved result. Absence does not establish whether the request ran.
 #[doc(hidden)]
 pub fn invocation_result(
@@ -321,7 +423,7 @@ pub fn invocation_result(
 ) -> Result<Option<RunResult>> {
     if [request_id, agent]
         .iter()
-        .any(|value| value.trim().is_empty() || value.contains(' '))
+        .any(|value| value.trim().is_empty() || value.contains('\0'))
     {
         return Err(failure(runtime_id, "invalid_result_target"));
     }

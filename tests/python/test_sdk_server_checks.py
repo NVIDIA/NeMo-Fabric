@@ -556,3 +556,33 @@ async def test_result_lookup_rejects_untyped_environment_before_native_dispatch(
         )
     native.invocation_result.assert_not_called()
     native.invocation_result_environment.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "code, expected",
+    [
+        ("wrong_agent", "wrong_agent"),
+        ("invalid_response", "invalid_response"),
+        ("private value with spaces", "result_unavailable"),
+    ],
+)
+async def test_result_lookup_preserves_safe_rejection_codes(
+    server_environment, monkeypatch, code, expected
+):
+    from nemo_fabric import FabricRuntimeError
+
+    native = MagicMock()
+    native.invocation_result_environment.side_effect = FabricRuntimeError(
+        "private native message", code=code
+    )
+    monkeypatch.setattr("nemo_fabric.client._native", native)
+    with pytest.raises(FabricRuntimeError) as caught:
+        await Fabric().invocation_result(
+            environment=server_environment,
+            agent_name="demo",
+            runtime_id="runtime-1",
+            request_id="request-1",
+        )
+    assert caught.value.code == expected
+    assert "private native message" not in str(caught.value)
+    assert "private value with spaces" not in repr(caught.value.details)

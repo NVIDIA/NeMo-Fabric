@@ -21,7 +21,7 @@ Explicitly accept recovery uncertainty before submitting this new turn.
 
 ### `request_id: String`
 
-Request id.
+Nonblank request identifier. `Default` and `text` generate an identifier before dispatch.
 
 ### `relay_session_root: Option<String>`
 
@@ -79,7 +79,7 @@ Build a text request.
 
 #### `default`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/default/trait.Default.html#tymethod.default\">default</a>() -&gt; <a href=\"struct-runrequest.mdx\">RunRequest</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/default/trait.Default.html#tymethod.default\">default</a>() -&gt; Self"}} /></pre>
 
 ### `impl<'de> Deserialize<'de> for RunRequest`
 
