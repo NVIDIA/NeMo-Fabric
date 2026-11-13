@@ -295,7 +295,8 @@ fn invocation_result(
 ) -> PyResult<String> {
     let root = artifacts
         .map(PathBuf::from)
-        .unwrap_or_else(nemo_fabric_core::runtime::default_artifact_root);
+        .map_or_else(nemo_fabric_core::runtime::default_artifact_root, Ok)
+        .map_err(to_py_error)?;
     let result = py
         .detach(|| {
             nemo_fabric_core::runtime::invocation_result(&root, &agent, &runtime_id, &request_id)

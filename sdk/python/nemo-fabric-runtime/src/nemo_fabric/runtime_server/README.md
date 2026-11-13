@@ -133,4 +133,4 @@ A null result means no completed result is available; it does not prove the requ
 
 For OpenShell, pass `environment=environment` instead of `artifacts` to query the original server through the provider. The CLI requires a retained ownership record on that server. A later local SDK client can read retained files using the explicit artifact root even after runtime stop. Neither path reconstructs a missing result. Remote results retain task-side artifact paths.
 
-The Unix default result root is specific to the effective user. Local one-shot lookup remains unavailable until the shutdown outcome is saved; interrupted or failed finalization does not expose an earlier success.
+The Unix default result root is `~/.cache/nemo-fabric-<effective user ID>` under a user-owned home directory that other users cannot write. Local host directories use the same protected root. Local one-shot lookup remains unavailable until the shutdown outcome is saved; interrupted or failed finalization does not expose an earlier success.

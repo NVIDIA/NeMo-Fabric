@@ -1121,7 +1121,7 @@ pub fn begin_run_result(
     if runtime.environment.provider == "local" {
         let root = artifact_manifest(plan)?
             .root
-            .unwrap_or_else(default_artifact_root);
+            .map_or_else(default_artifact_root, Ok)?;
         results::begin_finalization(
             &root,
             &runtime.agent_name,
@@ -1134,19 +1134,34 @@ pub fn begin_run_result(
 
 /// Default result and host storage; Unix users have separate namespaces.
 #[doc(hidden)]
-pub fn default_artifact_root() -> PathBuf {
+pub fn default_artifact_root() -> Result<PathBuf> {
     #[cfg(unix)]
     {
+        let home = std::env::home_dir().ok_or_else(default_storage_unavailable)?;
         // SAFETY: geteuid has no preconditions or side effects.
-        default_artifact_root_for_user(unsafe { libc::geteuid() })
+        default_artifact_root_for_user(&home, unsafe { libc::geteuid() })
     }
     #[cfg(not(unix))]
-    std::env::temp_dir().join("nemo-fabric")
+    Ok(std::env::temp_dir().join("nemo-fabric"))
 }
 
 #[cfg(unix)]
-fn default_artifact_root_for_user(uid: u32) -> PathBuf {
-    std::env::temp_dir().join(format!("nemo-fabric-{uid}"))
+fn default_storage_unavailable() -> FabricError {
+    FabricError::InvalidConfig {
+        field: "local_storage".into(),
+        reason: "Default local storage requires a trusted user home directory.".into(),
+    }
+}
+
+#[cfg(unix)]
+fn default_artifact_root_for_user(home: &Path, uid: u32) -> Result<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+    let home = std::fs::canonicalize(home).map_err(|_| default_storage_unavailable())?;
+    let metadata = std::fs::metadata(&home).map_err(|_| default_storage_unavailable())?;
+    if !metadata.is_dir() || metadata.uid() != uid || metadata.mode() & 0o022 != 0 {
+        return Err(default_storage_unavailable());
+    }
+    Ok(home.join(".cache").join(format!("nemo-fabric-{uid}")))
 }
 
 /// Persist the final one-shot result after Python lifecycle cleanup.
@@ -1170,7 +1185,7 @@ pub fn save_run_result(plan: &RunPlan, runtime: &RuntimeHandle, result: &RunResu
     }
     let root = artifact_manifest(plan)?
         .root
-        .unwrap_or_else(default_artifact_root);
+        .map_or_else(default_artifact_root, Ok)?;
     results::finalize(&root, result)
 }
 
@@ -1398,7 +1413,7 @@ fn start_service(
     let mut artifacts = artifact_manifest(plan)?;
     let fabric_home = prepare_fabric_home(&artifacts, &runtime, &invocation)?;
     let relay_config = prepare_relay_runtime_config(plan, &runtime, &fabric_home, &mut artifacts)?;
-    let connection_path = local_host_directory(&service_id).join("service-connection.json");
+    let connection_path = local_host_directory(&service_id)?.join("service-connection.json");
     let service_context = match reference {
         Some(reference) => AdapterServiceContext::Attach {
             connection_path: connection_path.clone(),
@@ -2582,7 +2597,7 @@ fn run_local_host_invocation_with_timeout(
     };
     let root = artifact_manifest(plan)?
         .root
-        .unwrap_or_else(default_artifact_root);
+        .map_or_else(default_artifact_root, Ok)?;
     let mut reservation = match results::reserve(
         &root,
         runtime,
@@ -3205,8 +3220,8 @@ fn local_services()
         .unwrap_or_else(|error| error.into_inner())
 }
 
-pub(crate) fn local_host_directory(id: &str) -> PathBuf {
-    default_artifact_root().join("hosts").join(id)
+pub(crate) fn local_host_directory(id: &str) -> Result<PathBuf> {
+    Ok(default_artifact_root()?.join("hosts").join(id))
 }
 
 fn spawn_local_host(
@@ -3229,11 +3244,7 @@ fn spawn_local_host(
     };
     // Lock acquisition creates retained storage, allowing its physical path to resolve.
     let scope = cleanup_scope(plan, state_dir.as_deref(), runtime.service_id.as_deref());
-    let runtime_dir = local_host_directory(&runtime.runtime_id);
-    std::fs::create_dir_all(&runtime_dir).map_err(|source| FabricError::Write {
-        path: runtime_dir.clone(),
-        source,
-    })?;
+    let runtime_dir = results::host_directory(&default_artifact_root()?, &runtime.runtime_id)?;
     let stderr_path = runtime_dir.join("host.stderr.log");
     let stderr = File::create(&stderr_path).map_err(|source| FabricError::Write {
         path: stderr_path.clone(),
@@ -4617,7 +4628,10 @@ fn prepare_fabric_home(
     runtime: &RuntimeHandle,
     invocation: &InvocationHandle,
 ) -> Result<PathBuf> {
-    let root = manifest.root.clone().unwrap_or_else(default_artifact_root);
+    let root = manifest
+        .root
+        .clone()
+        .map_or_else(default_artifact_root, Ok)?;
     results::invocation_directory(&root, &runtime.runtime_id, &invocation.invocation_id)
 }
 
@@ -5734,12 +5748,19 @@ else:
 
     #[cfg(unix)]
     #[test]
-    fn default_artifact_storage_is_separate_for_each_unix_user() {
-        let first = default_artifact_root_for_user(1001);
-        let second = default_artifact_root_for_user(1002);
-        assert_ne!(first, second);
-        assert_eq!(first.parent(), second.parent());
-        assert_ne!(first, std::env::temp_dir().join("nemo-fabric"));
+    fn default_artifact_storage_requires_a_protected_user_home() {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        let home = std::env::temp_dir().join(new_id("fabric-private-home-test"));
+        fs::DirBuilder::new().mode(0o700).create(&home).unwrap();
+        // SAFETY: geteuid has no preconditions or side effects.
+        let uid = unsafe { libc::geteuid() };
+        let root = default_artifact_root_for_user(&home, uid).unwrap();
+        assert!(root.starts_with(fs::canonicalize(&home).unwrap()));
+        assert!(default_artifact_root_for_user(&home, uid.wrapping_add(1)).is_err());
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o777)).unwrap();
+        let unsafe_home = default_artifact_root_for_user(&home, uid);
+        fs::remove_dir_all(home).unwrap();
+        assert!(unsafe_home.is_err());
     }
 
     #[test]
@@ -8696,7 +8717,9 @@ else:
             .unwrap()
             .clone();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = local_host_directory(&runtime.runtime_id).join("health.endpoint.json");
+        let endpoint = local_host_directory(&runtime.runtime_id)
+            .unwrap()
+            .join("health.endpoint.json");
         fs::write(
             &endpoint,
             serde_json::to_vec(&serde_json::json!({
