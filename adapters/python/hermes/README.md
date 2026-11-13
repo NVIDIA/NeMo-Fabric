@@ -115,6 +115,13 @@ not distinguish timeouts.
 An OAuth server that cannot be authenticated still fails the invocation with
 `hermes_mcp_authentication_failed`.
 
+For MCP servers configured with `oauth2` authentication, the first invocation
+signs in to each server that has no token yet, using the same steps as
+`hermes mcp login`: Hermes opens a browser for the authorization, stores the
+tokens in the Hermes home, and reconnects the server. The invocation timeout
+must leave room for the sign-in, which Hermes allows up to five minutes per
+server.
+
 System instructions support `instructions.system.mode: replace`. Use `runtime.max_turns` to control the agent loop.
 
 The descriptor validates the following `harness.settings` fields:
