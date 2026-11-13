@@ -668,7 +668,14 @@ class HermesRuntime:
             for name in oauth_server_names
             if not statuses.get(name, {}).get("connected")
         }
-        if disconnected:
+        # A connected server may still be listing its tools, for example after an
+        # earlier invocation timed out waiting for it; wait for it as well.
+        discovering = set()
+        if api.server_ready is not None:
+            for name in oauth_server_names - disconnected:
+                if not await asyncio.to_thread(api.server_ready, name):
+                    discovering.add(name)
+        if disconnected or discovering:
 
             def authenticate() -> None:
                 lifecycle_stdin = sys.stdin
@@ -697,16 +704,19 @@ class HermesRuntime:
                 finally:
                     sys.stdin = lifecycle_stdin
 
-            try:
-                await asyncio.to_thread(authenticate)
-            except Exception as error:
-                raise lifecycle.LifecycleError(
-                    "hermes_mcp_authentication_failed",
-                    "Hermes could not authenticate the configured MCP servers",
-                    metadata={"servers": sorted(disconnected)},
-                ) from error
+            if disconnected:
+                try:
+                    await asyncio.to_thread(authenticate)
+                except Exception as error:
+                    raise lifecycle.LifecycleError(
+                        "hermes_mcp_authentication_failed",
+                        "Hermes could not authenticate the configured MCP servers",
+                        metadata={"servers": sorted(disconnected)},
+                    ) from error
 
-            disconnected = await self._wait_for_mcp_servers(api, disconnected)
+            disconnected = await self._wait_for_mcp_servers(
+                api, disconnected | discovering
+            )
             if disconnected:
                 raise lifecycle.LifecycleError(
                     "hermes_mcp_authentication_failed",

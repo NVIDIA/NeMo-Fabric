@@ -1217,6 +1217,56 @@ async def test_runtime_fails_when_discovery_outlasts_the_wait(monkeypatch):
     calls["refresh_agent_mcp_tools"].assert_not_called()
 
 
+async def test_retry_after_discovery_timeout_waits_again(monkeypatch):
+    """A retry does not skip a server that is connected but still listing tools."""
+    monkeypatch.setattr(adapter, "MCP_RECONNECT_WAIT_SECONDS", 0)
+    connected = [{"name": "jira", "connected": True, "status": "connected", "tools": 0}]
+    calls = _install_hermes_oauth_modules(
+        monkeypatch,
+        statuses=[
+            [{"name": "jira", "connected": False, "status": "failed"}],
+            connected,
+            connected,
+            connected,
+        ],
+        ready=[False, False, False],
+    )
+    runtime = adapter.HermesRuntime()
+    runtime._agent = MagicMock()
+    runtime._hermes_config = {"mcp_servers": {"jira": {"auth": "oauth"}}}
+
+    for _ in range(2):
+        with pytest.raises(adapter.lifecycle.LifecycleError):
+            await runtime._authenticate_mcp_servers()
+
+    calls["probe_server"].assert_called_once()
+    calls["refresh_agent_mcp_tools"].assert_not_called()
+    assert runtime._mcp_authentication_checked is False
+
+
+async def test_retry_after_discovery_finishes_refreshes_tools(monkeypatch):
+    """Once discovery finishes, the retry refreshes the agent without a new sign-in."""
+    connected = [
+        {"name": "jira", "connected": True, "status": "connected", "tools": 16}
+    ]
+    calls = _install_hermes_oauth_modules(
+        monkeypatch,
+        statuses=[connected, connected],
+        ready=[False, True],
+    )
+    runtime = adapter.HermesRuntime()
+    runtime._agent = MagicMock()
+    runtime._hermes_config = {"mcp_servers": {"jira": {"auth": "oauth"}}}
+
+    await runtime._authenticate_mcp_servers()
+
+    calls["probe_server"].assert_not_called()
+    calls["refresh_agent_mcp_tools"].assert_called_once_with(
+        runtime._agent, quiet_mode=True
+    )
+    assert runtime._mcp_authentication_checked is True
+
+
 async def test_runtime_without_ready_signal_waits_for_tools(monkeypatch):
     """Older Hermes without a discovery-ready signal waits for a tool count."""
     monkeypatch.setattr(adapter, "MCP_RECONNECT_POLL_SECONDS", 0)
