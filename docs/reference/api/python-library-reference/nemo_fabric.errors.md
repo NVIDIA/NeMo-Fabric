@@ -10,6 +10,9 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 Public exception hierarchy for the NeMo Fabric Python SDK.
 
+**Global Variables**
+---------------
+- **TYPE_CHECKING**
 
 
 ---
@@ -62,6 +65,14 @@ Initialize a structured NeMo Fabric exception.
  - <b>`details`</b>:  Optional structured diagnostic context. The exception  stores a deep copy.
 
 
+---
+
+### <kbd>property</kbd> cleanup_runtime
+
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
+
+This in-memory capability is excluded from error text and structured details.
+
 
 
 
@@ -103,6 +114,14 @@ Initialize a structured NeMo Fabric exception.
  - <b>`retryable`</b>:  Whether callers may safely retry unchanged input.
  - <b>`details`</b>:  Optional structured diagnostic context. The exception  stores a deep copy.
 
+
+---
+
+### <kbd>property</kbd> cleanup_runtime
+
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
+
+This in-memory capability is excluded from error text and structured details.
 
 
 
@@ -146,6 +165,14 @@ Initialize a structured NeMo Fabric exception.
  - <b>`details`</b>:  Optional structured diagnostic context. The exception  stores a deep copy.
 
 
+---
+
+### <kbd>property</kbd> cleanup_runtime
+
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
+
+This in-memory capability is excluded from error text and structured details.
+
 
 
 
@@ -187,6 +214,14 @@ Initialize a structured NeMo Fabric exception.
  - <b>`retryable`</b>:  Whether callers may safely retry unchanged input.
  - <b>`details`</b>:  Optional structured diagnostic context. The exception  stores a deep copy.
 
+
+---
+
+### <kbd>property</kbd> cleanup_runtime
+
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
+
+This in-memory capability is excluded from error text and structured details.
 
 
 
@@ -230,6 +265,14 @@ Initialize a structured NeMo Fabric exception.
  - <b>`details`</b>:  Optional structured diagnostic context. The exception  stores a deep copy.
 
 
+---
+
+### <kbd>property</kbd> cleanup_runtime
+
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
+
+This in-memory capability is excluded from error text and structured details.
+
 
 
 
@@ -271,6 +314,14 @@ Initialize a structured NeMo Fabric exception.
  - <b>`retryable`</b>:  Whether callers may safely retry unchanged input.
  - <b>`details`</b>:  Optional structured diagnostic context. The exception  stores a deep copy.
 
+
+---
+
+### <kbd>property</kbd> cleanup_runtime
+
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
+
+This in-memory capability is excluded from error text and structured details.
 
 
 
@@ -316,6 +367,14 @@ Initialize a structured NeMo Fabric exception.
  - <b>`details`</b>:  Optional structured diagnostic context. The exception  stores a deep copy.
 
 
+---
+
+### <kbd>property</kbd> cleanup_runtime
+
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
+
+This in-memory capability is excluded from error text and structured details.
+
 
 
 
@@ -359,6 +418,14 @@ Initialize a structured NeMo Fabric exception.
  - <b>`retryable`</b>:  Whether callers may safely retry unchanged input.
  - <b>`details`</b>:  Optional structured diagnostic context. The exception  stores a deep copy.
 
+
+---
+
+### <kbd>property</kbd> cleanup_runtime
+
+Owned runtime for a failed lifecycle cleanup retry, or ``None``.
+
+This in-memory capability is excluded from error text and structured details.
 
 
 

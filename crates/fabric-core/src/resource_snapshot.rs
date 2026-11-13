@@ -89,6 +89,12 @@ impl LocalHostProcess {
         platform::has_exited(self.pid, self.identity)
     }
 
+    /// Whether the same process is suspended and cannot create children.
+    #[cfg(unix)]
+    pub(crate) fn is_stopped(&self) -> Option<bool> {
+        platform::is_stopped(self.pid, self.identity?)
+    }
+
     /// Record the host `pid`, started by NeMo Fabric at `started_at`.
     pub(crate) fn new(pid: u32, started_at: SystemTime) -> Self {
         Self {
@@ -328,6 +334,7 @@ mod platform {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub(super) struct Stat {
         pub zombie: bool,
+        pub stopped: bool,
         pub ppid: u32,
         /// `utime + stime + cutime + cstime`, in clock ticks.
         pub cpu_ticks: u64,
@@ -348,6 +355,7 @@ mod platform {
             .sum::<Option<u64>>()?;
         Some(Stat {
             zombie: fields.first() == Some(&"Z"),
+            stopped: matches!(fields.first(), Some(&"T" | &"t")),
             ppid: u32::try_from(number(1)?).ok()?,
             cpu_ticks: ticks,
             start: number(19)?,
@@ -538,6 +546,11 @@ mod platform {
             Err(ReadError::Gone) => Some(true),
             Err(ReadError::Unavailable(_)) => None,
         }
+    }
+
+    pub(super) fn is_stopped(pid: u32, identity: u64) -> Option<bool> {
+        let stat = stat(pid).ok()?;
+        Some(stat.start == identity && stat.stopped)
     }
 
     fn sysconf(name: libc::c_int) -> u64 {
@@ -731,6 +744,26 @@ mod platform {
         }
     }
 
+    pub(super) fn is_stopped(pid: u32, identity: u64) -> Option<bool> {
+        // SAFETY: proc_bsdinfo is an output structure with a valid zero representation.
+        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+        let size = std::mem::size_of_val(&info) as libc::c_int;
+        // SAFETY: the writable buffer matches PROC_PIDTBSDINFO and its size.
+        let read = unsafe {
+            libc::proc_pidinfo(
+                pid as libc::c_int,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                (&mut info as *mut libc::proc_bsdinfo).cast(),
+                size,
+            )
+        };
+        if read != size || start_identity(pid) != Some(identity) {
+            return None;
+        }
+        Some(info.pbi_status == libc::SSTOP)
+    }
+
     pub(super) fn read_tree(root: u32, identity: u64) -> Result<TreeRead, &'static str> {
         let timebase = timebase().ok_or(PROCESS_UNREADABLE)?;
         read_tree_with(&Live { timebase }, root, identity)
@@ -748,6 +781,11 @@ mod platform {
     }
 
     pub(super) fn has_exited(_pid: u32, _identity: Option<u64>) -> Option<bool> {
+        None
+    }
+
+    #[cfg(unix)]
+    pub(super) fn is_stopped(_pid: u32, _identity: u64) -> Option<bool> {
         None
     }
 

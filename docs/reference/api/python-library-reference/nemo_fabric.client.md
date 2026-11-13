@@ -350,7 +350,7 @@ async def run(
 
 Execute one complete start, invoke, and stop lifecycle.
 
-``input`` and ``request`` are mutually exclusive. Omitting both produces an empty text input. Use ``RunRequest`` when the invocation needs a caller-owned request ID, context, or overrides. NeMo Fabric attempts to stop a started runtime even when invocation fails.
+``input`` and ``request`` are mutually exclusive. Omitting both produces an empty text input. Use ``RunRequest`` when the invocation needs a caller-owned request ID, context, or overrides. NeMo Fabric attempts to stop a started runtime even when invocation fails. Unconfirmed cleanup raises an error with ``cleanup_runtime`` for an explicit stop retry in the same process.
 
 
 

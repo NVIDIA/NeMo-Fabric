@@ -1,0 +1,60 @@
+---
+title: "Struct Runtime Cleanup Pending"
+sidebar-title: "RuntimeCleanupPending"
+description: "Cleanup context retained when startup or invocation cannot finish owned cleanup."
+position: 99
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+```rust
+pub struct RuntimeCleanupPending { /* private fields */ }
+```
+
+Cleanup context retained when startup or invocation cannot finish owned cleanup.
+
+Retry [`crate::stop_runtime`](../runtime/fn-stop-runtime.mdx) with the original plan and [`Self::runtime`](struct-runtimecleanuppending.mdx#method.runtime). The handle and completed output are deliberately excluded from diagnostic formatting.
+
+## Implementations
+
+### `impl RuntimeCleanupPending`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"struct-runtimecleanuppending.mdx\">RuntimeCleanupPending</a>"}} /></pre>
+
+#### `runtime`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn runtime(&amp;self) -&gt; &amp;<a href=\"../runtime/struct-runtimehandle.mdx\">RuntimeHandle</a>"}} /></pre>
+
+The original handle required for a cleanup retry in this process.
+
+#### `result`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn result(&amp;self) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;&amp;<a href=\"../runtime/struct-runresult.mdx\">RunResult</a>&gt;"}} /></pre>
+
+The completed invocation result, if invocation succeeded before cleanup failed.
+
+#### `cause`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn cause(&amp;self) -&gt; &amp;<a href=\"enum-fabricerror.mdx\">FabricError</a>"}} /></pre>
+
+The startup, invocation, or stop error that preceded the retained cleanup context.
+
+## Trait Implementations
+
+### `impl Debug for RuntimeCleanupPending`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/trait.Debug.html\">Debug</a> for <a href=\"struct-runtimecleanuppending.mdx\">RuntimeCleanupPending</a>"}} /></pre>
+
+#### `fmt`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/trait.Debug.html#tymethod.fmt\">fmt</a>(&amp;self, f: &amp;mut <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/struct.Formatter.html\">Formatter</a>&lt;'_&gt;) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/type.Result.html\">Result</a>"}} /></pre>
+
+### `impl Display for RuntimeCleanupPending`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/trait.Display.html\">Display</a> for <a href=\"struct-runtimecleanuppending.mdx\">RuntimeCleanupPending</a>"}} /></pre>
+
+#### `fmt`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/trait.Display.html#tymethod.fmt\">fmt</a>(&amp;self, f: &amp;mut <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/struct.Formatter.html\">Formatter</a>&lt;'_&gt;) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/type.Result.html\">Result</a>"}} /></pre>

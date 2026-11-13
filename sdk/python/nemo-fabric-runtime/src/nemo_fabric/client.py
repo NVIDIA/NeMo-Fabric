@@ -527,6 +527,8 @@ class Fabric:
         an empty text input. Use ``RunRequest`` when the invocation needs a
         caller-owned request ID, context, or overrides.
         NeMo Fabric attempts to stop a started runtime even when invocation fails.
+        Unconfirmed cleanup raises an error with ``cleanup_runtime`` for an
+        explicit stop retry in the same process.
 
         Args:
             config: Complete typed ``FabricConfig``.
@@ -567,6 +569,7 @@ class Fabric:
                 await _run_native_lifecycle(native, plan.to_mapping(), request_payload)
             )
         except (FabricError, asyncio.CancelledError) as error:
+            self._attach_cleanup_runtime(error, plan)
             # The selected report already includes the caller and guest SDK facts.
             # Optional evidence must not change the lifecycle exception or cause.
             if isinstance(error, FabricError):
@@ -579,6 +582,43 @@ class Fabric:
             evidence["execution"] = (
                 plan.to_mapping()["config"].get("provenance", {}).get("reports")
             )
+            raise
+
+    def _attach_cleanup_runtime(self, error: BaseException, plan: RunPlan) -> None:
+        cleanup = getattr(error, "_fabric_cleanup_runtime_handle", None)
+        if cleanup is not None:
+            recovery = Runtime(client=self, plan=plan, runtime=cleanup)
+            recovery._status = RuntimeStatus.FAILED
+            if isinstance(error, FabricError):
+                error._cleanup_runtime = recovery
+            else:
+                error.cleanup_runtime = recovery
+            del error._fabric_cleanup_runtime_handle
+
+    async def _call_start_with_cleanup(self, start: Any, plan: RunPlan) -> Any:
+        cleanup = None
+
+        def call():
+            nonlocal cleanup
+            try:
+                return start()
+            except Exception as error:
+                cleanup = getattr(error, "_fabric_cleanup_runtime_handle", None)
+                raise
+
+        try:
+            return await _call_blocking(call)
+        except BaseException as error:
+            if cleanup is not None:
+                failure = (
+                    error
+                    if isinstance(error, (FabricError, asyncio.CancelledError))
+                    else _runtime_error(error, stage="start")
+                )
+                failure._fabric_cleanup_runtime_handle = cleanup
+                self._attach_cleanup_runtime(failure, plan)
+                if failure is not error:
+                    raise failure from error
             raise
 
     async def start_runtime(
@@ -1086,7 +1126,7 @@ class Fabric:
             return started_runtime
 
         try:
-            runtime = await _call_blocking(start)
+            runtime = await self._call_start_with_cleanup(start, plan)
         except asyncio.CancelledError:
             if started_runtime is not None:
                 try:
@@ -1181,7 +1221,9 @@ class Fabric:
             return started_service
 
         try:
-            handle = ServiceHandle.from_mapping(await _call_blocking(prepare))
+            handle = ServiceHandle.from_mapping(
+                await self._call_start_with_cleanup(prepare, plan)
+            )
         except BaseException as error:
             await _release_registered_service(native, plan, started_service)
             if isinstance(error, (asyncio.CancelledError, FabricError)):
@@ -1242,7 +1284,9 @@ class Fabric:
             return attached_service
 
         try:
-            handle = ServiceHandle.from_mapping(await _call_blocking(attach))
+            handle = ServiceHandle.from_mapping(
+                await self._call_start_with_cleanup(attach, plan)
+            )
         except BaseException as error:
             await _release_registered_service(native, plan, attached_service)
             if isinstance(error, (asyncio.CancelledError, FabricError)):

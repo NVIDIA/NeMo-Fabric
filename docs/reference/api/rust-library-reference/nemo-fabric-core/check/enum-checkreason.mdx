@@ -13,6 +13,8 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 pub enum CheckReason {
     ServerStopping,
     CapabilitiesUnverified,
+    RuntimeBusy,
+    CleanupUnconfirmed,
     RuntimeUnavailable,
     ServiceUnavailable,
     AgentExited,
@@ -43,6 +45,18 @@ The server is stopping.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "CapabilitiesUnverified"}} /></pre>
 
 Advertised capability evidence is unavailable.
+
+### `RuntimeBusy`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "RuntimeBusy"}} /></pre>
+
+Runtime cleanup is in progress.
+
+### `CleanupUnconfirmed`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "CleanupUnconfirmed"}} /></pre>
+
+Owned runtime cleanup could not be confirmed.
 
 ### `RuntimeUnavailable`
 

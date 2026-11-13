@@ -51,7 +51,7 @@ Each completed check preserves an immutable `fabric.check/v1alpha1` report in `r
 
 An unavailable runtime returns `unknown/runtime_unavailable` with no agent observations. If the server knows the runtime is stopped or the SDK records a stopped or failed lifecycle, `runtime.state` preserves that state. A failed lifecycle leaves activity unknown. These lifecycle records do not establish that the agent's child processes exited.
 
-`fabric.check/v1alpha1` identifies the shared health request and report format so readers can reject formats they do not support. The identifier stays the same across SDK releases while the health format remains compatible. `fabric-agent-ctl` ships with `nemo-fabric-runtime`; the executable and all subcommands follow the SDK package release.
+`fabric.check/v1alpha1` identifies the shared health request and report format so readers can reject formats they do not support. The identifier stays the same across SDK releases while the health format remains compatible. `fabric-agent-ctl` ships with `nemo-fabric-runtime`; the executable and all subcommands follow the SDK package release. Health readers validate reason codes strictly. The caller, server, and `fabric-agent-ctl` must use the same `nemo-fabric-runtime` release; mixed-release health reports are not supported. The format identifier does not negotiate SDK releases.
 
 Report timing covers the client call, including connection, response decoding, and validation. `completed_at` records client completion; each `observed_at` records when the server collected the evidence. Successful checks, confirmed failures, and timeouts use the same timing interval.
 
@@ -79,9 +79,9 @@ flowchart TD
     Caller --> Bridge --> Socket --> Host --> Runtime
 ```
 
-The outer server is separate from the SDK's adapter process and the selected harness. It serializes starts and serializes invoke/stop operations for each runtime ID, while separate runtimes can progress independently. A busy stop returns `runtime_busy` promptly and retains ownership. Retry stop after the invocation ends. Direct SDK consumers can also use streaming or shared services.
+The outer server is separate from the SDK's adapter process and the selected harness. It serializes starts and invocations for each runtime ID, while separate runtimes can progress independently. Stop uses a separate path so an active buffered invocation cannot hold shutdown behind its lock. On supported Unix hosts, busy stop interrupts the owned adapter process tree and confirms exit before releasing ownership. Unconfirmed cleanup retains the runtime and blocks replacement for that agent; independent agents remain available. Direct SDK consumers can also use streaming or shared services.
 
-Ordinary SDK stop does not establish that all harness descendants exited. A successful stop response reports completion of the SDK operation. The caller must use the sandbox supervisor to terminate remaining descendants. The server does not interrupt adapters through a new forced-stop SDK API.
+A confirmed stop covers processes that remain in Fabric’s owned host tree. Processes detached before Fabric captures that tree can remain alive; the caller must use the sandbox supervisor to terminate those processes. An invocation interrupted by a requested stop reports `interrupted`, and the stop event does not report a host crash.
 
 ## Transport And Failure Behavior
 

@@ -365,11 +365,11 @@ Service checks evaluate earlier levels in order under the same three-second defa
 
 `fabric.check/v1alpha1` identifies the shared report schema returned by
 `Fabric.check()` and `fabric-agent-ctl check`. The executable ships with
-`nemo-fabric-runtime` and follows the SDK package release.
+`nemo-fabric-runtime` and follows the SDK package release. Health readers validate reason codes strictly. Use the same `nemo-fabric-runtime` release for the caller, sandbox server, and `fabric-agent-ctl`; mixed-release health reports are not supported. The schema identifier does not negotiate SDK releases.
 
 `fabric-agent-ctl serve` starts one runtime server per sandbox. The `start`, `invoke`, `stop`, and `status` commands call `Fabric.start_runtime()`, `Runtime.invoke()`, `Runtime.stop()`, and `Fabric.runtime_status()`. Start accepts `FabricConfig` and returns the SDK `RuntimeHandle` mapping. Invoke accepts a full `RunRequest` through `--request` or any JSON SDK input through `--input`, and returns the SDK `RunResult` mapping. Stop returns JSON null. These payloads occupy the response envelope's `result` field; command diagnostics remain separate. Targeted commands require the returned runtime ID and exact agent name. The caller waits for the private socket before start. Caller-side preflight uses `Fabric.plan()` and `Fabric.doctor()`; startup validates configuration against installed descriptors.
 
-One sandbox can own multiple runtimes, each addressed by its returned runtime ID. Invoke and stop operations are independent across IDs; stopping one runtime leaves the others usable, and another runtime can be started after a stop. An uncertain start blocks further starts because the server cannot safely determine whether an unaddressable runtime exists. Ordinary SDK stop does not confirm descendant cleanup, so the runtime server retains `fabric.unclean` after runtime use and reports `cleanup_unconfirmed` if previous sandbox process cleanup cannot be confirmed. Refer to the [runtime server command guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md).
+One sandbox can own multiple runtimes, each addressed by its returned runtime ID. Invoke and stop operations are independent across IDs; stopping one runtime leaves the others usable, and another runtime can be started after a stop. An uncertain start blocks further starts because the server cannot safely determine whether an unaddressable runtime exists. Buffered SDK stop confirms owned process cleanup before reporting success and retains ownership when cleanup is unconfirmed. The runtime server also retains `fabric.unclean` after runtime use or an uncertain start until previous sandbox process cleanup can be confirmed. Refer to the [runtime server command guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md).
 
 ## Configure Agents In Code
 
@@ -889,6 +889,14 @@ on one live thread, Deep Agents invokes one compiled graph and checkpointer,
 Hermes Agent reuses one agent and session database, and Claude keeps one connected SDK
 client. Durable Hermes conversations expose their native identifier inside an
 opaque `SessionRef`.  NeMo Fabric does not interpret that identifier.
+
+Buffered runtime shutdown can interrupt an active invocation on supported Unix and Windows hosts. Windows shutdown requires an owned process job to confirm descendant cleanup. `Runtime.stop()` waits for the interrupted invocation to settle before reporting stopped. Cleanup errors retain ownership for retry; the runtime server blocks replacement for the same agent until cleanup succeeds. Streaming shutdown continues to use the stream lifecycle. An invocation interrupted by a requested stop reports `interrupted`; genuine host crashes still report `host_crashed`. Cleanup confirms processes that remain in Fabric’s owned host tree. The sandbox supervisor must terminate processes that detached before Fabric captured that tree.
+
+If `Fabric.run()`, `Fabric.start_runtime()`, `Fabric.prepare_service()`, or `Fabric.attach_service()` cannot confirm cleanup after a failed lifecycle operation, the raised error provides `cleanup_runtime`. Keep that object and retry `await error.cleanup_runtime.stop()` in the same process. Cancellation can carry the same recovery object. The recovery handle is excluded from error text and structured details. When an exited parent leaves undiscoverable children, cleanup remains unconfirmed and the owning process or sandbox must recover.
+
+Retained hosts from a timed-out invocation or failed start accept cleanup only. New and queued invocations return `host_unavailable` after acquiring the host lock. Failed connected starts keep their service membership until cleanup succeeds, so the service cannot be released while that runtime remains owned.
+
+Runtime health checks report pending shutdown as `runtime_busy`, with state `unknown` and activity `stopping`. After failed cleanup, checks report `cleanup_unconfirmed`, with state `failed` and activity `unknown`. These reports describe recorded lifecycle state and do not probe the harness during cleanup.
 
 ### Keep Agent State Across Runtimes
 
