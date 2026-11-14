@@ -97,7 +97,7 @@
               "port"
             ],
             "additionalProperties": false,
-            "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token."
+            "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <state_dir>/interfaces/dashboard.token with runtime.keep_state, or <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token for ephemeral state."
           },
           "terminal": {
             "type": "object",
@@ -124,8 +124,8 @@
       "shutdown_timeout_seconds": {
         "type": "number",
         "exclusiveMinimum": 0,
-        "default": 5,
-        "description": "Maximum graceful Gateway shutdown time before forced termination."
+        "default": 15,
+        "description": "Maximum graceful Gateway shutdown time before forced termination. NeMo Fabric allows 30 seconds for the complete adapter stop. Leave time for cleanup within that limit."
       },
       "connect_timeout_seconds": {
         "type": "number",
@@ -308,6 +308,7 @@
       "models.top_p",
       "models.max_tokens",
       "instructions.system",
+      "runtime.keep_state",
       "tools.enabled",
       "tools.blocked",
       "mcp",
@@ -316,6 +317,7 @@
     "system_instruction_modes": ["replace"]
   },
   "capabilities": {
+    "session_resume": true,
     "service": true,
     "metadata": {"service_health_checks": ["live", "active", "ready"], "health_checks": ["live", "active", "ready"]},
     "streaming": false,

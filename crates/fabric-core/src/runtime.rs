@@ -97,7 +97,8 @@ const LOCAL_HOST_INVOKE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 // Adapters receive a deadline this much earlier than the host timeout so they
 // can interrupt native work and return a normalized result before it fires.
 const LOCAL_HOST_ADAPTER_RESERVE: Duration = Duration::from_secs(10);
-const LOCAL_HOST_STOP_TIMEOUT: Duration = Duration::from_secs(10);
+// Allow the OpenClaw Gateway's 15-second graceful stop plus adapter cleanup.
+const LOCAL_HOST_STOP_TIMEOUT: Duration = Duration::from_secs(30);
 const LOCAL_HOST_EXIT_GRACE: Duration = Duration::from_secs(2);
 const LOCAL_HOST_DIAGNOSTIC_LIMIT: usize = 16 * 1024;
 #[cfg(test)]
@@ -1812,6 +1813,8 @@ fn service_binding(
     let mut binding_plan = plan.clone();
     // Bind relative plans to the directory used when the service was prepared.
     binding_plan.base_dir = absolute_path(binding_plan.base_dir)?;
+    // Conversation selection belongs to the connected runtime.
+    binding_plan.session_ref = None;
     binding_plan.config.provenance = Default::default();
     stable_hash(
         "fabric-service-binding",
@@ -6192,6 +6195,60 @@ else:
             .expect("run isolated app");
         let _ = fs::remove_dir_all(root);
         assert!(app.success(), "{app}");
+    }
+
+    #[test]
+    fn cold_resume_selection_does_not_rebind_a_retained_service() {
+        let (root, plan) = local_host_plan_keeping_state();
+        let service = prepare_service(&plan).expect("prepare service");
+        let mut selected = plan.clone();
+        selected.session_ref = Some(SessionRef {
+            schema_version: SESSION_REF_SCHEMA_VERSION.to_string(),
+            adapter_id: "acme.fabric.local-host".to_string(),
+            session_id: "native-conversation".to_string(),
+        });
+        let validation = validate_service_handle(&selected, &service);
+        release_service(&plan, &service).expect("release service");
+        let _ = fs::remove_dir_all(root);
+        validation.expect("conversation selection does not change the service");
+    }
+
+    #[test]
+    fn cold_resume_kept_state_is_excluded_from_tracked_workspace_artifacts() {
+        let (root, plan) = local_host_plan_keeping_state();
+        let runtime = start_runtime(&plan).expect("start runtime");
+        let state = root.join("artifacts/.fabric/state/acme.fabric.local-host/assistant");
+        fs::write(root.join("notes.txt"), "public workspace note\n").unwrap();
+        fs::write(state.join("credentials.json"), "retained-private-marker\n").unwrap();
+        for arguments in [
+            vec!["init", "-q"],
+            vec!["add", "--intent-to-add", "--", "."],
+        ] {
+            assert!(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(&root)
+                    .args(arguments)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
+        let destination = root.join("captured");
+        fs::create_dir(&destination).unwrap();
+        let mut manifest = ArtifactManifest {
+            root: Some(root.join("artifacts")),
+            artifacts: Vec::new(),
+        };
+        let mut observed = runtime.clone();
+        observed.environment.workspace = Some(root.clone());
+        collect_workspace_artifacts(&mut manifest, &destination, &observed, &mut Vec::new())
+            .unwrap();
+        let patch = fs::read_to_string(destination.join("workspace.patch")).unwrap();
+        stop_runtime(&plan, &runtime).unwrap();
+        let _ = fs::remove_dir_all(root);
+        assert!(patch.contains("public workspace note"));
+        assert!(!patch.contains("retained-private-marker"));
     }
 
     fn local_host_plan_with_env_name(name: &str) -> (PathBuf, RunPlan) {

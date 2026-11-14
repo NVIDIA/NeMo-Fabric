@@ -24,6 +24,7 @@ import pytest
 import httpx
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
+from nemo_fabric import RuntimeStatus
 from nemo_fabric.errors import FabricConfigError
 from nemo_fabric.errors import FabricRuntimeError
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -3227,3 +3228,730 @@ async def test_openclaw_attach_rejects_native_controls(tmp_path: Path, section: 
     assert caught.value.code == "openclaw_attach_configuration_unverifiable"
     assert caught.value.metadata == {"fields": [f"harness.settings.{section}"]}
     assert not (tmp_path / "service-connection.json").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
+@pytest.mark.parametrize("agent_id", ["default", "Reviewer", "agent_1-A"])
+async def test_openclaw_retains_native_state_and_explicitly_resumes_the_selected_session(
+    tmp_path: Path, mock_openclaw: Path, agent_id
+):
+    from nemo_fabric_adapter_contract.models import SessionRef
+
+    home = tmp_path / "retained"
+    home.mkdir()
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    os.environ["FAKE_OPENCLAW_REQUEST"] = str(tmp_path / "request.json")
+    os.environ["FAKE_OPENCLAW_MEMORY_REPLY"] = "1"
+    config = _config(mock_openclaw)
+    config.harness.settings["agent_id"] = agent_id
+
+    async def start(runtime_id, reference=None):
+        context = _context(tmp_path, runtime_id)
+        context.state_dir = str(home)
+        context.session_ref = reference
+        runtime = adapter.OpenClawRuntime()
+        try:
+            output = await runtime.start(
+                {
+                    "config": config,
+                    "runtime_context": context.to_mapping(),
+                    "base_dir": str(tmp_path),
+                }
+            )
+        except BaseException:
+            await runtime.stop()
+            raise
+        return runtime, context, output
+
+    first, context, output = await start("first-runtime")
+    try:
+        assert isinstance(output, dict)
+        reference = SessionRef(
+            schema_version="fabric.session_ref/v1alpha1",
+            adapter_id="nvidia.fabric.openclaw",
+            session_id=output["session_id"],
+        )
+        await first.invoke(
+            AgentRunRequest(input="The private code is meadow-7483."), context
+        )
+        (home / "memory").mkdir()
+        (home / "memory/fact.txt").write_text("retained memory")
+        (home / "skills").mkdir()
+        (home / "skills/installed.md").write_text("retained skill")
+    finally:
+        await first.stop()
+
+    assert (home / "memory/fact.txt").read_text() == "retained memory"
+    assert (home / "skills/installed.md").read_text() == "retained skill"
+    fresh, context, fresh_output = await start("newer-runtime")
+    try:
+        assert fresh_output["session_id"] != reference.session_id
+        result = await fresh.invoke(
+            AgentRunRequest(input="A separate conversation."), context
+        )
+        assert "meadow-7483" not in result.output["response"]
+    finally:
+        await fresh.stop()
+
+    resumed, context, resumed_output = await start("replacement-runtime", reference)
+    try:
+        assert resumed_output["session_id"] == reference.session_id
+        result = await resumed.invoke(
+            AgentRunRequest(input="Recall the private code."), context
+        )
+        assert "meadow-7483" in result.output["response"]
+        sent = json.loads((tmp_path / "request.json").read_text())
+        assert "meadow-7483" not in json.dumps(sent)
+    finally:
+        await resumed.stop()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
+async def test_openclaw_explicit_resume_rejects_a_missing_native_session(
+    tmp_path: Path, mock_openclaw: Path
+):
+    from nemo_fabric_adapter_contract.models import SessionRef
+
+    context = _context(tmp_path)
+    context.state_dir = str(tmp_path / "retained")
+    context.session_ref = SessionRef(
+        schema_version="fabric.session_ref/v1alpha1",
+        adapter_id="nvidia.fabric.openclaw",
+        session_id="2b734539-7fa7-49d3-b07b-b6f06f83c90d",
+    )
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    os.environ["FAKE_OPENCLAW_REQUEST"] = str(tmp_path / "request.json")
+    runtime = adapter.OpenClawRuntime()
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.start(
+                {
+                    "config": _config(mock_openclaw),
+                    "runtime_context": context.to_mapping(),
+                    "base_dir": str(tmp_path),
+                }
+            )
+        assert caught.value.code == "session_not_found"
+        assert not (tmp_path / "request.json").exists()
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
+async def test_openclaw_retained_service_resumes_after_connected_runtime_stops(
+    tmp_path: Path, mock_openclaw: Path
+):
+    from nemo_fabric_adapter_contract.models import SessionRef
+
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    os.environ["FAKE_OPENCLAW_REQUEST"] = str(tmp_path / "request.json")
+    os.environ["FAKE_OPENCLAW_MEMORY_REPLY"] = "1"
+    home = tmp_path / "retained"
+    config = _config(mock_openclaw)
+    context = _context(tmp_path, "service-host")
+    context.state_dir = str(home)
+    connection = tmp_path / "private/service.json"
+    owner = adapter.OpenClawRuntime()
+    await owner.start(
+        {
+            "config": config,
+            "runtime_context": context.to_mapping(),
+            "base_dir": str(tmp_path),
+            "service": {"operation": "prepare", "connection_path": str(connection)},
+        }
+    )
+    process = owner._process
+    try:
+        for number in range(2):
+            context = _context(tmp_path, f"connected-{number}")
+            context.state_dir = str(home)
+            if number:
+                context.session_ref = reference
+            runtime = adapter.OpenClawRuntime()
+            try:
+                output = await runtime.start(
+                    {
+                        "config": config,
+                        "runtime_context": context.to_mapping(),
+                        "base_dir": str(tmp_path),
+                        "service": {
+                            "operation": "connect",
+                            "connection_path": str(connection),
+                        },
+                    }
+                )
+                assert isinstance(output, dict)
+                if not number:
+                    reference = SessionRef(
+                        schema_version="fabric.session_ref/v1alpha1",
+                        adapter_id="nvidia.fabric.openclaw",
+                        session_id=output["session_id"],
+                    )
+                else:
+                    assert output["session_id"] == reference.session_id
+                result = await runtime.invoke(
+                    AgentRunRequest(
+                        input="Remember copper-9182."
+                        if not number
+                        else "Recall the saved code."
+                    ),
+                    context,
+                )
+                assert "copper-9182" in result.output["response"]
+            finally:
+                await runtime.stop()
+            assert process.returncode is None
+    finally:
+        await owner.stop()
+    assert home.is_dir()
+
+
+async def test_openclaw_retained_attach_fails_before_accessing_caller_owned_service(
+    tmp_path: Path,
+):
+    context = _context(tmp_path)
+    context.state_dir = str(tmp_path / "retained")
+    runtime = adapter.OpenClawRuntime()
+    config = AgentConfig.from_mapping(
+        {"models": {"default": {"provider": "test", "model": "echo"}}}
+    )
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(
+            {
+                "config": config,
+                "runtime_context": context.to_mapping(),
+                "base_dir": str(tmp_path),
+                "service": {
+                    "operation": "attach",
+                    "connection_path": str(tmp_path / "caller.json"),
+                    "reference": {},
+                },
+            }
+        )
+    assert caught.value.code == "session_resume_unsupported"
+    assert not (tmp_path / "caller.json").exists()
+
+
+@pytest.mark.parametrize("platform", ["posix", "nt"])
+async def test_openclaw_failed_gateway_cleanup_retains_process_for_retry(
+    monkeypatch, platform
+):
+    mock_os = MagicMock(spec=os, wraps=os)
+    mock_os.name = platform
+    monkeypatch.setattr(adapter, "os", mock_os)
+    runtime = adapter.OpenClawRuntime()
+    process = MagicMock(spec=asyncio.subprocess.Process)
+    process.pid = 12345
+    process.returncode = None
+    process.wait = AsyncMock(return_value=0)
+    process.terminate.side_effect = PermissionError("denied")
+    runtime._process = process
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            adapter.common_utils,
+            "signal_process_group",
+            MagicMock(side_effect=PermissionError("denied")),
+        )
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.stop()
+    assert caught.value.code == "cleanup_unconfirmed"
+    assert runtime._process is process
+    if platform == "nt":
+        process.terminate.assert_called_once_with()
+    else:
+        process.terminate.assert_not_called()
+    process.returncode = 0
+    await runtime.stop()
+    assert runtime._process is None
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Uses POSIX inherited writer locks")
+async def test_openclaw_gateway_holds_the_state_lock_after_controller_releases_it(
+    tmp_path: Path, mock_openclaw: Path
+):
+    import fcntl
+
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    os.environ["FAKE_OPENCLAW_REQUEST"] = str(tmp_path / "request.json")
+    lock = (tmp_path / "state.lock").open("w")
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    os.environ["FABRIC_STATE_LOCK_FD"] = str(lock.fileno())
+    runtime = adapter.OpenClawRuntime()
+    context = _context(tmp_path)
+    context.state_dir = str(tmp_path / "retained")
+    try:
+        await runtime.start(
+            {
+                "config": _config(mock_openclaw),
+                "runtime_context": context.to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+        lock.close()
+        with (tmp_path / "state.lock").open("w") as competing:
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(competing, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        await runtime.stop()
+        with (tmp_path / "state.lock").open("w") as replacement:
+            fcntl.flock(replacement, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    finally:
+        lock.close()
+        await runtime.stop()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
+async def test_openclaw_uncertain_turn_warns_and_waits_for_explicit_acknowledgement(
+    tmp_path: Path, mock_openclaw: Path
+):
+    from nemo_fabric_adapter_contract.models import SessionRef
+
+    home = tmp_path / "retained"
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    os.environ["FAKE_OPENCLAW_REQUEST"] = str(tmp_path / "request.json")
+    context = _context(tmp_path, "first-runtime")
+    context.state_dir = str(home)
+    config = _config(mock_openclaw)
+    first = adapter.OpenClawRuntime()
+    output = await first.start(
+        {
+            "config": config,
+            "runtime_context": context.to_mapping(),
+            "base_dir": str(tmp_path),
+        }
+    )
+    try:
+        await first.invoke(AgentRunRequest(input="Create a ticket."), context)
+    finally:
+        await first.stop()
+    reference = SessionRef(
+        schema_version="fabric.session_ref/v1alpha1",
+        adapter_id="nvidia.fabric.openclaw",
+        session_id=output["session_id"],
+    )
+    path = home / "mock-native-sessions.json"
+    native = json.loads(path.read_text())
+    entry = next(iter(native.values()))
+    entry["messages"].pop()
+    entry["abortedLastRun"] = True
+    path.write_text(json.dumps(native))
+    marker = home / ".fabric-turns" / f"{reference.session_id}.json"
+    marker.write_text(
+        json.dumps(
+            {
+                "state": "running",
+                "message_count": 0,
+                "request_id": "interrupted-request",
+            }
+        )
+    )
+    previous_request = (tmp_path / "request.json").read_bytes()
+    context = _context(tmp_path, "replacement")
+    context.state_dir = str(home)
+    context.session_ref = reference
+    resumed = adapter.OpenClawRuntime()
+    try:
+        output = await resumed.start(
+            {
+                "config": config,
+                "runtime_context": context.to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+        assert output["session_id"] == reference.session_id
+        assert output["recovery_warnings"][0]["code"] == "session_recovery_required"
+        assert (
+            output["recovery_warnings"][0]["metadata"]["request_id"]
+            == "interrupted-request"
+        )
+        blocked = await resumed.invoke(AgentRunRequest(input="Continue."), context)
+        assert blocked.error.code == "session_recovery_required"
+        assert (tmp_path / "request.json").read_bytes() == previous_request
+        result = await resumed.invoke(
+            AgentRunRequest(
+                input="The ticket exists. Continue using ticket 123.",
+                acknowledge_recovery=True,
+            ),
+            context,
+        )
+        assert result.status == "succeeded"
+    finally:
+        await resumed.stop()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
+async def test_openclaw_retained_start_removes_stale_dashboard_token_when_disabled(
+    tmp_path: Path, mock_openclaw: Path
+):
+    home = tmp_path / "retained"
+    token = home / "interfaces/dashboard.token"
+    token.parent.mkdir(parents=True)
+    token.write_text("obsolete-test-token")
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    os.environ["FAKE_OPENCLAW_REQUEST"] = str(tmp_path / "request.json")
+    context = _context(tmp_path)
+    context.state_dir = str(home)
+    runtime = adapter.OpenClawRuntime()
+    try:
+        await runtime.start(
+            {
+                "config": _config(mock_openclaw),
+                "runtime_context": context.to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+        assert not token.exists()
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
+async def test_openclaw_does_not_claim_the_old_identity_after_a_native_session_reset(
+    tmp_path: Path, mock_openclaw: Path
+):
+    home = tmp_path / "retained"
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    os.environ["FAKE_OPENCLAW_REQUEST"] = str(tmp_path / "request.json")
+    context = _context(tmp_path)
+    context.state_dir = str(home)
+    runtime = adapter.OpenClawRuntime()
+    try:
+        await runtime.start(
+            {
+                "config": _config(mock_openclaw),
+                "runtime_context": context.to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+        native_path = home / "mock-native-sessions.json"
+        values = json.loads(native_path.read_text())
+        entry = next(iter(values.values()))
+        entry["sessionId"] = "4fbc1ff2-6b43-4618-b2b3-29d7b2a7ed38"
+        native_path.write_text(json.dumps(values))
+        # A second Gateway process sees the reset state after replacement.
+        runtime._session_call = AsyncMock(
+            side_effect=lambda method, _params: (
+                {"session": entry}
+                if method == "sessions.describe"
+                else {"messages": []}
+            )
+        )
+        runtime._native_session.call = runtime._session_call
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.invoke(
+                AgentRunRequest(input="Use the original conversation."), context
+            )
+        assert caught.value.code == "session_identity_changed"
+        assert not (tmp_path / "request.json").exists()
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Uses POSIX descriptor inheritance")
+@pytest.mark.parametrize("descriptor", ["1", "-1", "invalid", "99999999"])
+async def test_openclaw_rejects_an_invalid_inherited_state_lock(
+    tmp_path: Path, mock_openclaw: Path, descriptor: str
+):
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    context = _context(tmp_path)
+    context.environment.env["FABRIC_STATE_LOCK_FD"] = descriptor
+    runtime = adapter.OpenClawRuntime()
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.start(
+                {
+                    "config": _config(mock_openclaw),
+                    "runtime_context": context.to_mapping(),
+                    "base_dir": str(tmp_path),
+                }
+            )
+        assert caught.value.code == "session_lock_invalid"
+        assert runtime._process is None
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
+async def test_openclaw_retained_dashboard_token_rotates_and_remains_private(
+    tmp_path: Path, mock_openclaw: Path, dashboard_port: int
+):
+    import stat
+
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    context = _context(tmp_path)
+    home = tmp_path / "retained"
+    context.state_dir = str(home)
+    token_path = home / "interfaces/dashboard.token"
+    config = _dashboard_config(mock_openclaw, {"port": dashboard_port})
+    tokens = []
+    for _ in range(2):
+        runtime = adapter.OpenClawRuntime()
+        try:
+            await runtime.start(
+                {
+                    "config": config,
+                    "runtime_context": context.to_mapping(),
+                    "base_dir": str(tmp_path),
+                }
+            )
+            tokens.append(token_path.read_text())
+            assert tokens[-1] == runtime._token
+            if os.name == "posix":
+                assert stat.S_IMODE(home.stat().st_mode) == 0o700
+                assert stat.S_IMODE(token_path.stat().st_mode) == 0o600
+                assert (
+                    stat.S_IMODE(runtime._native_session.marker.stat().st_mode) == 0o600
+                )
+        finally:
+            await runtime.stop()
+        assert not token_path.exists()
+    assert tokens[0] != tokens[1]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
+@pytest.mark.parametrize("failure", ["timeout", "http429", "http500", "unconfirmed"])
+async def test_retained_invocation_failure_preserves_identity_and_recovery_gate(
+    tmp_path: Path, mock_openclaw: Path, failure: str
+):
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    os.environ["FAKE_OPENCLAW_REQUEST"] = str(tmp_path / "request.json")
+    context = _context(tmp_path)
+    context.state_dir = str(tmp_path / "retained")
+    runtime = adapter.OpenClawRuntime()
+    try:
+        started = await runtime.start(
+            {
+                "config": _config(mock_openclaw),
+                "runtime_context": context.to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+        await runtime.invoke(
+            AgentRunRequest(input="An earlier completed turn."), context
+        )
+        (tmp_path / "request.json").unlink()
+        original = runtime._invoke_monitored_gateway
+        if failure == "timeout":
+            error = TimeoutError()
+        elif failure != "unconfirmed":
+            response = httpx.Response(
+                int(failure[4:]),
+                request=httpx.Request("POST", "http://127.0.0.1/v1/chat/completions"),
+            )
+            error = httpx.HTTPStatusError(
+                "Native invocation failed", request=response.request, response=response
+            )
+        runtime._invoke_monitored_gateway = (
+            AsyncMock(return_value=("A response without durable completion.", None))
+            if failure == "unconfirmed"
+            else AsyncMock(side_effect=error)
+        )
+        failed = await runtime.invoke(
+            AgentRunRequest(input="Create a ticket."), context
+        )
+        assert failed.session_id == started["session_id"]
+        if failure == "unconfirmed":
+            assert failed.status == "succeeded"
+        else:
+            assert failed.error.code == (
+                "timeout" if failure == "timeout" else "openclaw_http_error"
+            )
+        marker = runtime._native_session.marker.read_bytes()
+        blocked = await runtime.invoke(
+            AgentRunRequest(input="Retry the ticket."), context
+        )
+        assert blocked.error.code == "session_recovery_required"
+        assert blocked.session_id == started["session_id"]
+        assert runtime._native_session.marker.read_bytes() == marker
+        runtime._invoke_monitored_gateway.assert_awaited_once()
+        assert not (tmp_path / "request.json").exists()
+        runtime._invoke_monitored_gateway = original
+        continued = await runtime.invoke(
+            AgentRunRequest(
+                input="I inspected the ticket service. Continue.",
+                acknowledge_recovery=True,
+            ),
+            context,
+        )
+        assert continued.status == "succeeded"
+        assert continued.session_id == started["session_id"]
+    finally:
+        await runtime.stop()
+
+
+async def test_retained_mcp_status_targets_the_selected_conversation(
+    tmp_path, monkeypatch
+):
+    runtime, status = _mcp_status_runtime(tmp_path, monkeypatch, [{"groups": []}])
+    runtime._native_session = MagicMock(spec=adapter.sessions.NativeSession)
+    runtime._native_session.key = "agent:reviewer:openai-user:retained-conversation"
+    await runtime._mcp_output("Runtime-1", asyncio.get_running_loop().time() + 10)
+    arguments = status.await_args.args
+    params = json.loads(arguments[arguments.index("--params") + 1])
+    assert params["sessionKey"] == runtime._native_session.key
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Runs the mock CLI directly")
+async def test_openclaw_public_stop_waits_for_gateway_ownership_release(
+    mock_openclaw: Path, tmp_path: Path
+):
+    stopped_path = tmp_path / "stopped.txt"
+    pid_path = tmp_path / "gateway.pid"
+    environment = {
+        "FAKE_OPENCLAW_CAPTURE": str(tmp_path / "config.json"),
+        "FAKE_OPENCLAW_REQUEST": str(tmp_path / "request.json"),
+        "FAKE_OPENCLAW_PID": str(pid_path),
+        "FAKE_OPENCLAW_STOPPED": str(stopped_path),
+        # Cross both former deadlines (5 s adapter, 10 s native host). The
+        # child writes its release marker only after handling SIGTERM.
+        "FAKE_OPENCLAW_SHUTDOWN_DELAY": "12",
+    }
+    os.environ.update(environment)
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "openclaw-stop-test"},
+            "harness": {
+                "adapter_id": "nvidia.fabric.openclaw",
+                "resolution": "preinstalled",
+                "settings": {"openclaw_command": str(mock_openclaw)},
+            },
+            "models": {
+                "default": {
+                    "provider": "test",
+                    "model": "fabric-echo",
+                    "base_url": "https://models.example.test/v1",
+                }
+            },
+            "environment": {"env_names": list(environment)},
+        }
+    )
+    runtime = await Fabric().start_runtime(config, base_dir=tmp_path)
+    try:
+        result = await runtime.invoke(input="Complete a turn before shutdown.")
+        assert result.status == "succeeded"
+        gateway_pid = int(pid_path.read_text(encoding="utf-8"))
+    finally:
+        await runtime.stop()
+
+    assert runtime.status is RuntimeStatus.STOPPED
+    assert stopped_path.read_text(encoding="utf-8") == "stopped"
+    with pytest.raises(ProcessLookupError):
+        os.kill(gateway_pid, 0)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+async def test_openclaw_stop_allows_gateway_to_release_ownership(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime = adapter.OpenClawRuntime()
+    mock_process = MagicMock(spec=asyncio.subprocess.Process)
+    mock_process.pid = 1234
+    mock_process.returncode = None
+    ownership_released = False
+    wait_for = asyncio.wait_for
+
+    # Compress the observed seven-second native cleanup and the production
+    # grace period equally; this regression must not take seconds to run.
+    async def scaled_wait_for(awaitable, timeout):
+        return await wait_for(awaitable, timeout=timeout / 100)
+
+    async def finish_shutdown():
+        nonlocal ownership_released
+        if mock_process.returncode is not None:
+            return mock_process.returncode
+        await asyncio.sleep(0.07)
+        ownership_released = True
+        mock_process.returncode = 0
+        return 0
+
+    mock_process.wait = AsyncMock(side_effect=finish_shutdown)
+    runtime._process = mock_process
+    signals = []
+
+    def signal_group(pid, signum, *, fallback_to_pid=True):
+        signals.append((pid, signum, fallback_to_pid))
+
+    monkeypatch.setattr(adapter.asyncio, "wait_for", scaled_wait_for)
+    monkeypatch.setattr(adapter.common_utils, "signal_process_group", signal_group)
+
+    await runtime.stop()
+
+    assert ownership_released, "Gateway must release ownership before escalation"
+    assert mock_process.returncode == 0
+    assert (1234, signal.SIGKILL, True) not in signals
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Uses POSIX subprocesses")
+@pytest.mark.parametrize("cancel", [False, True])
+@pytest.mark.parametrize("deny_group_signals", [False, True])
+async def test_session_command_cleanup_is_bounded_with_inherited_pipes(
+    tmp_path, monkeypatch, cancel, deny_group_signals
+):
+    pids = tmp_path / "owned.pids"
+    command = tmp_path / "openclaw-session"
+    command.write_text(
+        f"#!{sys.executable}\n"
+        "import os, pathlib, subprocess, sys, time\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True)\n"
+        f"pathlib.Path({str(pids)!r}).write_text(f'{{os.getpid()}} {{child.pid}}')\n"
+        "time.sleep(60)\n"
+    )
+    command.chmod(0o755)
+    runtime = adapter.OpenClawRuntime()
+    runtime._command = command
+    runtime._session_environment = dict(os.environ)
+    runtime._session_deadline = asyncio.get_running_loop().time() + 5
+    monkeypatch.setattr(adapter, "COMMAND_REAP_SECONDS", 0.05)
+    processes = []
+    create_subprocess = asyncio.create_subprocess_exec
+
+    async def record_subprocess(*args, **kwargs):
+        process = await create_subprocess(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(adapter.asyncio, "create_subprocess_exec", record_subprocess)
+    if deny_group_signals:
+        mock_os = MagicMock(spec=os, wraps=os)
+        mock_os.name = os.name
+        mock_os.killpg.side_effect = PermissionError("group signals denied")
+        monkeypatch.setattr(adapter, "os", mock_os)
+    task = asyncio.create_task(
+        runtime._session_call("sessions.get", {"key": "owned-test-session"})
+    )
+    try:
+        until = asyncio.get_running_loop().time() + 5
+        while not pids.exists():
+            if task.done():
+                error = task.exception()
+                cause = getattr(error, "__cause__", None)
+                pytest.fail(
+                    f"owned test command exited before readiness: {getattr(cause, 'metadata', {})}"
+                )
+            assert asyncio.get_running_loop().time() < until
+            await asyncio.sleep(0.01)
+        if cancel:
+            task.cancel()
+        done, _pending = await asyncio.wait({task}, timeout=7)
+        assert task in done, "session command cleanup exceeded its deadline"
+        if cancel:
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        else:
+            with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+                await task
+            assert caught.value.code == "session_incompatible"
+            assert caught.value.__cause__.code == "openclaw_command_timeout"
+    finally:
+        for process in processes:
+            if process.returncode is None:
+                with suppress(ProcessLookupError):
+                    process.kill()
+        if pids.exists():
+            # The escaped child deliberately retains the pipes until teardown.
+            child_pid = int(pids.read_text().split()[1])
+            with suppress(ProcessLookupError):
+                os.kill(child_pid, signal.SIGKILL)
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

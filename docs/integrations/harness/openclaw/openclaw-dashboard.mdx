@@ -34,8 +34,8 @@ harness = HarnessConfig(
   a configured dashboard off.
 - After the Gateway starts, the adapter writes the sign-in token, generated at
   each start, to
-  `<artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token`
-  with mode `0600` on POSIX hosts; on Windows, the file inherits the artifact
+  `<artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token`.
+  With `runtime.keep_state=true`, the path is `<state_dir>/interfaces/dashboard.token` inside the retained home. The file uses mode `0600` on POSIX hosts. On Windows, the file inherits the artifact
   root's permissions. `stop` removes it; if the adapter host is killed, the file
   can remain.
 - Open `http://127.0.0.1:<port>/#token=<token>` through a forward to that
