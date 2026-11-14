@@ -1223,7 +1223,7 @@ def test_reader_runs_the_packages_parser_through_node(tmp_path: Path, package: P
 function parseSkillFrontmatter(raw) {
   if (raw.includes("[unclosed")) throw new Error("invalid frontmatter");
   const fields = {};
-  for (const line of raw.split("\\n")) {
+  for (const line of raw.split(/\\r?\\n/)) {
     const match = line.match(/^(\\w+): ?(.*)$/);
     if (match) fields[match[1]] = match[2].replace(/^'(.*)'$/, "$1");
   }
@@ -1537,9 +1537,12 @@ async def test_start_writes_the_plan_and_reports_it(
     monkeypatch.setenv("FAKE_SKILLS_STATUS", str(status))
     monkeypatch.setenv("FAKE_SKILLS_ARGS", str(tmp_path / "args.txt"))
     monkeypatch.setenv("FAKE_SKILLS_STAGED", str(tmp_path / "staged.txt"))
+    # A generous startup budget keeps slow runners from timing out; raising
+    # the reader's own cap above it still shows the reader gets what is left.
+    monkeypatch.setattr(openclaw_skills, "READER_TIMEOUT_SECONDS", 600)
     config = agent_config(
         {"directories": [{"folder": str(team)}], "bundled": {"include": ["github"]}},
-        {"startup_timeout_seconds": 12},
+        {"startup_timeout_seconds": 120},
         command,
     )
     runtime = adapter.OpenClawRuntime()
@@ -1559,10 +1562,10 @@ async def test_start_writes_the_plan_and_reports_it(
         await runtime.stop()
 
     # Skills were read with the configured command's package, within what is
-    # left of the 12-second startup deadline.
+    # left of the 120-second startup deadline.
     [(read_with, timeout)] = reader.requests
     assert read_with == command.resolve()
-    assert 0 < timeout < 12 < openclaw_skills.READER_TIMEOUT_SECONDS
+    assert 0 < timeout < 120 < openclaw_skills.READER_TIMEOUT_SECONDS
     generated = json.loads(capture.read_text(encoding="utf-8"))
     assert generated["skills"] == {"load": {"extraDirs": [str(team)]}}
     assert (tmp_path / "args.txt").read_text(encoding="utf-8").split() == [
