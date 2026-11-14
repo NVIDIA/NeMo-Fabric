@@ -50,7 +50,22 @@ def native_session_fixture():
 
 @pytest.fixture(name="session_call")
 def session_call_fixture(native_session):
-    def respond(method, _params):
+    def respond(method, params):
+        if (
+            method == "sessions.resolve"
+            and params["sessionId"] != native_session["sessionId"]
+        ):
+            if params.get("allowMissing") is True:
+                return {"ok": False}
+            raise LifecycleError("native_rpc_error", "No matching native session")
+        if method == "sessions.get":
+            return {"messages": native_session["messages"][-params.get("limit", 200) :]}
+        if method == "chat.history":
+            return {
+                "sessionId": native_session["sessionId"],
+                "sessionKey": native_session["key"],
+                "totalMessages": len(native_session["messages"]),
+            }
         return {
             "sessions.resolve": {
                 "ok": True,
@@ -58,7 +73,6 @@ def session_call_fixture(native_session):
                 "agentId": "default",
             },
             "sessions.describe": {"session": native_session},
-            "sessions.get": {"messages": native_session["messages"]},
         }[method]
 
     return AsyncMock(side_effect=respond)
@@ -95,24 +109,20 @@ async def test_wrong_adapter_is_rejected_without_native_access(
 
 
 @pytest.mark.parametrize(
-    "change",
+    ("change", "error_code"),
     [
-        {"sessionId": "another-id"},
-        {"key": "agent:reviewer:other"},
-        {"activeRunIds": ["still-running"]},
+        ({"sessionId": "another-id"}, "session_not_found"),
+        ({"key": "agent:reviewer:other"}, "session_incompatible"),
+        ({"activeRunIds": ["still-running"]}, "state_in_use"),
     ],
 )
 async def test_native_identity_and_active_work_are_validated(
-    session_context, session_call, native_session, change
+    session_context, session_call, native_session, change, error_code
 ):
     native_session.update(change)
     with pytest.raises(LifecycleError) as caught:
         await sessions.open_session(session_context, "default", session_call)
-    assert caught.value.code in {
-        "session_resume_unconfirmed",
-        "session_incompatible",
-        "state_in_use",
-    }
+    assert caught.value.code == error_code
 
 
 async def test_recorded_native_completion_resolves_a_lost_response(
@@ -137,7 +147,8 @@ async def test_recorded_native_completion_resolves_a_lost_response(
     assert result.warnings == []
     assert not result.recovery_required
     assert all(
-        call.args[0] in {"sessions.resolve", "sessions.describe", "sessions.get"}
+        call.args[0]
+        in {"sessions.resolve", "sessions.describe", "sessions.get", "chat.history"}
         for call in session_call.call_args_list
     )
 
@@ -431,10 +442,11 @@ async def test_native_session_selection_uses_canonical_agent_identity(
     assert selected.session_id == NATIVE_ID
     assert selected.key == native_session["key"]
     assert selected.agent_id == agent_id.lower()
-    assert all(
-        call.args[1]["agentId"] == agent_id.lower()
-        for call in session_call.call_args_list
-    )
+    for call in session_call.call_args_list:
+        if call.args[0] == "chat.history":
+            assert call.args[1]["sessionKey"].startswith(f"agent:{agent_id.lower()}:")
+        else:
+            assert call.args[1]["agentId"] == agent_id.lower()
 
 
 @pytest.mark.parametrize("sync_fails", [False, True])
@@ -486,3 +498,271 @@ async def test_malformed_completion_state_has_a_structured_resume_error(
     with pytest.raises(LifecycleError) as caught:
         await sessions.open_session(session_context, "default", session_call)
     assert caught.value.code == "session_incompatible"
+
+
+async def test_missing_native_session_has_the_specific_not_found_error(
+    session_context, session_call
+):
+    session_context.session_ref.session_id = "9ae11b64-c7cb-46e6-9c98-11d5f442cdd4"
+    with pytest.raises(LifecycleError) as caught:
+        await sessions.open_session(session_context, "default", session_call)
+    assert caught.value.code == "session_not_found"
+
+
+@pytest.mark.parametrize("phase", ["open", "begin", "finish"])
+async def test_native_reset_during_history_read_is_rejected(
+    session_context, session_call, native_session, phase
+):
+    if phase != "open":
+        selected = await sessions.open_session(session_context, "default", session_call)
+        if phase == "finish":
+            await selected.begin_turn(session_context)
+    original = session_call.side_effect
+
+    def reset_during_get(method, params):
+        if method == "sessions.get":
+            native_session["sessionId"] = "9ae11b64-c7cb-46e6-9c98-11d5f442cdd4"
+            return {"messages": [{"role": "user", "content": "replacement history"}]}
+        return original(method, params)
+
+    session_call.side_effect = reset_during_get
+    with pytest.raises(LifecycleError) as caught:
+        if phase == "open":
+            await sessions.open_session(session_context, "default", session_call)
+        elif phase == "begin":
+            await selected.begin_turn(session_context)
+        else:
+            await selected.finish_turn()
+    assert caught.value.code == "session_identity_changed"
+
+
+@pytest.mark.parametrize("observed_call", [False, True])
+async def test_history_window_cannot_hide_an_unresolved_tool_call(
+    session_context, session_call, native_session, observed_call
+):
+    selected = await sessions.open_session(session_context, "default", session_call)
+    await selected.begin_turn(session_context)
+    native_session["messages"].append(
+        {
+            "role": "assistant",
+            "stopReason": "tool_use",
+            "content": [{"type": "toolCall", "id": "old-unresolved-operation"}],
+        }
+    )
+    if observed_call:
+        await selected.messages()
+    native_session["messages"].extend(
+        {"role": "assistant", "stopReason": "stop", "content": f"Later answer {index}"}
+        for index in range(1001)
+    )
+    assert await selected.finish_turn() is False
+    assert json.loads(selected.marker.read_text())["state"] == "running"
+    restored = await sessions.open_session(session_context, "default", session_call)
+    assert restored.recovery_required
+    assert restored.warnings[0]["metadata"]["history_incomplete"]
+    if observed_call:
+        assert restored.warnings[0]["metadata"]["pending_tool_call_ids"] == [
+            "old-unresolved-operation"
+        ]
+
+
+async def test_acknowledged_history_gap_allows_confirmed_new_work(
+    session_context, session_call, native_session
+):
+    native_session["messages"] = [
+        {
+            "role": "assistant",
+            "stopReason": "stop",
+            "content": f"Earlier answer {index}",
+        }
+        for index in range(1001)
+    ]
+    selected = await sessions.open_session(session_context, "default", session_call)
+    assert selected.recovery_required
+    assert await selected.begin_turn(session_context) is False
+    assert await selected.begin_turn(session_context, acknowledge_recovery=True) is True
+    native_session["messages"].append(
+        {
+            "role": "assistant",
+            "stopReason": "stop",
+            "content": "New completed answer",
+        }
+    )
+    assert await selected.finish_turn() is True
+    restored = await sessions.open_session(session_context, "default", session_call)
+    assert not restored.recovery_required
+
+
+async def test_a_new_history_gap_blocks_dispatch_until_acknowledged(
+    session_context, session_call, native_session
+):
+    native_session["messages"] = [
+        {"role": "assistant", "stopReason": "stop", "content": "Earlier answer"}
+    ]
+    selected = await sessions.open_session(session_context, "default", session_call)
+    await selected.begin_turn(session_context)
+    native_session["messages"].append(
+        {"role": "assistant", "stopReason": "stop", "content": "Completed turn"}
+    )
+    assert await selected.finish_turn() is True
+    native_session["messages"].extend(
+        {"role": "assistant", "stopReason": "stop", "content": f"Outside turn {index}"}
+        for index in range(1001)
+    )
+    assert await selected.begin_turn(session_context) is False
+    assert selected.recovery_required
+
+
+async def test_native_reset_during_marker_write_is_rejected_before_dispatch(
+    session_context, session_call, native_session, monkeypatch
+):
+    selected = await sessions.open_session(session_context, "default", session_call)
+    write = selected._write
+
+    def reset_after_write(value):
+        write(value)
+        native_session["sessionId"] = "9ae11b64-c7cb-46e6-9c98-11d5f442cdd4"
+
+    monkeypatch.setattr(selected, "_write", reset_after_write)
+    with pytest.raises(LifecycleError) as caught:
+        await selected.begin_turn(session_context)
+    assert caught.value.code == "session_identity_changed"
+    assert json.loads(selected.marker.read_text())["state"] == "running"
+
+
+@pytest.mark.parametrize(
+    "bad_record",
+    [
+        {"pending_tool_calls": []},
+        {"pending_tool_calls": {"call": False}},
+        {"history_incomplete": "false"},
+        {"history_anchor": []},
+    ],
+)
+async def test_invalid_retained_history_evidence_is_rejected(
+    session_context, session_call, tmp_path, bad_record
+):
+    directory = tmp_path / ".fabric-turns"
+    directory.mkdir()
+    (directory / f"{NATIVE_ID}.json").write_text(
+        json.dumps({"state": "complete", **bad_record})
+    )
+    with pytest.raises(LifecycleError) as caught:
+        await sessions.open_session(session_context, "default", session_call)
+    assert caught.value.code == "session_incompatible"
+
+
+async def test_native_byte_limit_cannot_hide_older_tool_calls(
+    session_context, session_call, native_session
+):
+    native_session["messages"] = [
+        {
+            "role": "assistant",
+            "content": [{"type": "toolCall", "id": "omitted-call"}],
+            "stopReason": "tool_use",
+        },
+        {"role": "user", "content": "A later request"},
+        {"role": "assistant", "content": "A later answer", "stopReason": "stop"},
+    ]
+    original = session_call.side_effect
+
+    def omit_old_messages(method, params):
+        if method == "sessions.get":
+            return {"messages": native_session["messages"][-2:]}
+        return original(method, params)
+
+    session_call.side_effect = omit_old_messages
+    selected = await sessions.open_session(session_context, "default", session_call)
+    assert selected.recovery_required
+    assert selected.warnings[0]["metadata"]["history_incomplete"]
+
+
+async def test_retained_native_message_identity_survives_projection_changes(
+    session_context, session_call, native_session
+):
+    native_session["messages"] = [
+        {
+            "role": "assistant",
+            "content": [{"type": "toolCall", "id": "inspected-call"}],
+            "stopReason": "tool_use",
+            "__openclaw": {"id": "native-message-1", "seq": 1, "transcriptPosition": 1},
+        }
+    ]
+    selected = await sessions.open_session(session_context, "default", session_call)
+    assert selected.recovery_required
+    await selected.begin_turn(session_context, acknowledge_recovery=True)
+    native_session["messages"].append(
+        {
+            "role": "assistant",
+            "content": "Completed after inspection",
+            "stopReason": "stop",
+            "__openclaw": {"id": "native-message-2", "seq": 2, "transcriptPosition": 2},
+        }
+    )
+    assert await selected.finish_turn() is True
+    for row in native_session["messages"]:
+        row["__openclaw"]["seq"] += 10
+        row["__openclaw"]["transcriptPosition"] += 10
+    restored = await sessions.open_session(session_context, "default", session_call)
+    assert not restored.recovery_required
+
+
+@pytest.mark.parametrize("invalid_count", [None, -1, True, "1"])
+async def test_invalid_native_history_count_is_rejected(
+    session_context, session_call, invalid_count
+):
+    original = session_call.side_effect
+
+    def invalid_boundary(method, params):
+        result = original(method, params)
+        if method == "chat.history":
+            result["totalMessages"] = invalid_count
+        return result
+
+    session_call.side_effect = invalid_boundary
+    with pytest.raises(LifecycleError) as caught:
+        await sessions.open_session(session_context, "default", session_call)
+    assert caught.value.code == "session_incompatible"
+
+
+async def test_concurrent_history_append_is_rejected_before_consuming_the_page(
+    session_context, session_call, native_session
+):
+    original = session_call.side_effect
+
+    def append_during_get(method, params):
+        result = original(method, params)
+        if method == "sessions.get":
+            native_session["messages"].append(
+                {"role": "user", "content": "Concurrent work"}
+            )
+        return result
+
+    session_call.side_effect = append_during_get
+    with pytest.raises(LifecycleError) as caught:
+        await sessions.open_session(session_context, "default", session_call)
+    assert caught.value.code == "state_in_use"
+
+
+async def test_projection_changes_do_not_confirm_an_unfinished_turn(
+    session_context, session_call, native_session
+):
+    native_session["messages"] = [
+        {
+            "role": "assistant",
+            "stopReason": "stop",
+            "content": "Earlier answer",
+            "__openclaw": {
+                "id": "unchanged-native-message",
+                "seq": 1,
+                "transcriptPosition": 1,
+            },
+        }
+    ]
+    selected = await sessions.open_session(session_context, "default", session_call)
+    await selected.begin_turn(session_context)
+    native_session["messages"][0]["__openclaw"]["seq"] = 20
+    native_session["messages"][0]["__openclaw"]["transcriptPosition"] = 20
+    assert await selected.finish_turn() is False
+    restored = await sessions.open_session(session_context, "default", session_call)
+    assert restored.recovery_required

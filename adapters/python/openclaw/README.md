@@ -177,6 +177,10 @@ The retained home preserves native conversations, indexes, installed skills, cac
 
 An interrupted turn can have unknown external effects. When native history cannot confirm completion, startup returns `recovery_warnings` and invocation requires `acknowledge_recovery=True` after inspection. Earlier work is never automatically retried.
 
+NeMo Fabric retains known unresolved tool calls in its completion record. A gap in the Gateway's recent history window also requires recovery acknowledgment. New work can confirm completion after acknowledgment when its history remains visible.
+
+Keep native session resets separate from SDK invocations. The adapter checks the native session UUID around history reads and before dispatch. OpenClaw 2026.9.34 has no expected-UUID condition on Chat Completions requests, so a reset after the final check can still redirect a turn. Eliminating that remaining race requires a Gateway change.
+
 A prepared service keeps the Gateway and retained-state lock until release. Stopping a connected runtime closes that runtime's client. The service continues serving native chat channels. A retained namespace allows one connected runtime at a time. Failed Gateway cleanup retains ownership and can be retried before a replacement starts. Caller-owned attached services reject retained sessions because the current service reference cannot verify a native storage boundary.
 
 With retention enabled, the dashboard token lives at `<state_dir>/interfaces/dashboard.token`, where `state_dir` is the retained home supplied by NeMo Fabric. Each managed start rotates the token and removes stale token material, including when the dashboard is disabled. The token is private and removed on stop. To remove retained data, stop all runtimes, release any owned service, then remove the selected retained home and its NeMo Fabric session metadata from the artifact storage.

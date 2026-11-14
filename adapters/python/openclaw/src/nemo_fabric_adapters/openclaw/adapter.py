@@ -840,7 +840,7 @@ async def _kill_and_reap(
     if process_group and os.name != "nt":
         try:
             os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
             pass
     if process.returncode is None:
         try:
@@ -1616,6 +1616,7 @@ class OpenClawRuntime:
                 str(max(int(timeout * 1000), 1)),
                 env=self._session_environment,
                 timeout=timeout,
+                process_group=True,
             )
             result = json.loads(output)
             if not isinstance(result, dict):
@@ -2071,19 +2072,6 @@ class OpenClawRuntime:
                 "openclaw_runtime_mismatch",
                 "OpenClaw invocation does not match the active runtime",
             )
-        if self._native_session and self._native_session.recovery_required:
-            if not request.acknowledge_recovery:
-                return contract.AgentRunResult(
-                    status=contract.AgentRunStatus.FAILED,
-                    output={},
-                    session_id=self._native_session.session_id,
-                    error=contract.AgentRunError(
-                        code="session_recovery_required",
-                        message="Inspect native and external state before explicitly continuing",
-                        retryable=False,
-                    ),
-                )
-            self._native_session.recovery_required = False
         messages: list[dict[str, str]] = []
         instruction = (
             self._config.instructions.system if self._config.instructions else None
@@ -2106,9 +2094,20 @@ class OpenClawRuntime:
         try:
             async with asyncio.timeout_at(deadline):
                 if native_session:
-                    await native_session.begin_turn(
+                    ready = await native_session.begin_turn(
                         context, acknowledge_recovery=request.acknowledge_recovery
                     )
+                    if not ready:
+                        return contract.AgentRunResult(
+                            status=contract.AgentRunStatus.FAILED,
+                            output={},
+                            session_id=native_session.session_id,
+                            error=contract.AgentRunError(
+                                code="session_recovery_required",
+                                message="Inspect native and external state before explicitly continuing",
+                                retryable=False,
+                            ),
+                        )
                     turn_started = True
                 text, usage = await self._invoke_monitored_gateway(
                     self._client,

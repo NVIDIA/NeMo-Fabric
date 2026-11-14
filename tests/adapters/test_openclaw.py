@@ -3879,3 +3879,79 @@ async def test_openclaw_stop_allows_gateway_to_release_ownership(
     assert ownership_released, "Gateway must release ownership before escalation"
     assert mock_process.returncode == 0
     assert (1234, signal.SIGKILL, True) not in signals
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Uses POSIX subprocesses")
+@pytest.mark.parametrize("cancel", [False, True])
+@pytest.mark.parametrize("deny_group_signals", [False, True])
+async def test_session_command_cleanup_is_bounded_with_inherited_pipes(
+    tmp_path, monkeypatch, cancel, deny_group_signals
+):
+    pids = tmp_path / "owned.pids"
+    command = tmp_path / "openclaw-session"
+    command.write_text(
+        f"#!{sys.executable}\n"
+        "import os, pathlib, subprocess, sys, time\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True)\n"
+        f"pathlib.Path({str(pids)!r}).write_text(f'{{os.getpid()}} {{child.pid}}')\n"
+        "time.sleep(60)\n"
+    )
+    command.chmod(0o755)
+    runtime = adapter.OpenClawRuntime()
+    runtime._command = command
+    runtime._session_environment = dict(os.environ)
+    runtime._session_deadline = asyncio.get_running_loop().time() + 5
+    monkeypatch.setattr(adapter, "COMMAND_REAP_SECONDS", 0.05)
+    processes = []
+    create_subprocess = asyncio.create_subprocess_exec
+
+    async def record_subprocess(*args, **kwargs):
+        process = await create_subprocess(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(adapter.asyncio, "create_subprocess_exec", record_subprocess)
+    if deny_group_signals:
+        mock_os = MagicMock(spec=os, wraps=os)
+        mock_os.name = os.name
+        mock_os.killpg.side_effect = PermissionError("group signals denied")
+        monkeypatch.setattr(adapter, "os", mock_os)
+    task = asyncio.create_task(
+        runtime._session_call("sessions.get", {"key": "owned-test-session"})
+    )
+    try:
+        until = asyncio.get_running_loop().time() + 5
+        while not pids.exists():
+            if task.done():
+                error = task.exception()
+                cause = getattr(error, "__cause__", None)
+                pytest.fail(
+                    f"owned test command exited before readiness: {getattr(cause, 'metadata', {})}"
+                )
+            assert asyncio.get_running_loop().time() < until
+            await asyncio.sleep(0.01)
+        if cancel:
+            task.cancel()
+        done, _pending = await asyncio.wait({task}, timeout=7)
+        assert task in done, "session command cleanup exceeded its deadline"
+        if cancel:
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        else:
+            with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+                await task
+            assert caught.value.code == "session_incompatible"
+            assert caught.value.__cause__.code == "openclaw_command_timeout"
+    finally:
+        for process in processes:
+            if process.returncode is None:
+                with suppress(ProcessLookupError):
+                    process.kill()
+        if pids.exists():
+            # The escaped child deliberately retains the pipes until teardown.
+            child_pid = int(pids.read_text().split()[1])
+            with suppress(ProcessLookupError):
+                os.kill(child_pid, signal.SIGKILL)
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
