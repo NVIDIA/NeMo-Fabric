@@ -110,6 +110,33 @@ reported counters under
 observations add `zero_unverified`. These observations do not establish
 complete accounting for retries, compaction, child agents, or background work.
 
+### Skills
+
+The adapter supports `skills.paths`, `skills.directories`, `skills.bundled`,
+and `skills.duplicates`. `skills.paths` is unchanged: each path must be a
+folder that holds `SKILL.md`, and is passed, resolved, to
+`skills.load.extraDirs`. For example:
+
+```yaml
+skills:
+  directories:
+    - folder: /mnt/team-skills       # a folder of skills, read-only
+    - skill: /mnt/release-review     # one chosen skill, read-only
+  duplicates: last_wins
+  bundled:
+    include: [github, weather]
+```
+
+At start, the adapter reads each skill's front matter with OpenClaw's own
+parser, through the `node` that runs OpenClaw, and runs
+`openclaw skills list` to confirm what loads.
+[Configure Skills](../../../docs/integrations/harness/skills.mdx) describes
+the fields, the common setups, start checks, the run report, and how OpenClaw
+differs from other harnesses. The
+[OpenClaw guide](../../../docs/integrations/harness/openclaw/openclaw.mdx#skills)
+covers OpenClaw's skip reasons, what happens when the parser can't run,
+precedence, and bundled-skill handling.
+
 ### Harness Settings
 
 Only OpenClaw's default `openclaw` agent runtime is supported.

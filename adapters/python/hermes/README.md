@@ -90,7 +90,9 @@ The adapter receives a normalized payload from NeMo Fabric and materializes a na
 - replacement `instructions.system` and `runtime.max_turns`;
 - workspace and explicit environment variables through `environment`;
 - invocation timeout through `runtime.timeout_seconds`;
-- NeMo Fabric skills as external skill directories for Hermes Agent;
+- `skills.paths` and `skills.directories` as Hermes Agent's
+  `skills.external_dirs`, and `skills.bundled` as a staged
+  `HERMES_BUNDLED_SKILLS` folder (see [Skills](#skills));
 - NeMo Fabric MCP servers as Hermes Agent MCP server config;
 - `tools.enabled` and `tools.blocked` as Hermes-native toolset selection and
   blocking policy;
@@ -155,6 +157,30 @@ harness = HarnessConfig(
 The `auxiliary` and `tools` settings use Hermes's native `config.yaml` structure. The adapter writes only the fields you set, before any SDK agent or native interface starts, so all four execution paths read them. Omitting a field keeps the current behavior. For title generation, an explicit value always wins; when it is omitted, a Relay-enabled runtime keeps writing `false` and other runtimes keep Hermes's default. `harness.settings.tools` is Hermes's native tools section and is separate from NeMo Fabric's normalized top-level `tools.enabled` and `tools.blocked`.
 
 These controls reduce automatic background model calls. They do not stop context compaction calls and do not correlate concurrent sessions; refer to the [Hermes guide](../../../docs/integrations/harness/hermes/hermes.mdx#native-harness-controls).
+
+## Skills
+
+The adapter supports `skills.paths`, `skills.directories`, `skills.bundled`,
+and `skills.duplicates`, and writes the configured skills to Hermes Agent's
+`skills.external_dirs`. Hermes always loads its `hermes-agent` bundled skill,
+so a bundled selection must keep it. For example:
+
+```yaml
+skills:
+  directories:
+    - folder: /sandbox/team-skills          # a folder of skills, read-only mount
+    - skill: /opt/skills/release-review     # one chosen skill
+  duplicates: first_wins
+  bundled:
+    exclude: [xurl]
+```
+
+[Configure Skills](../../../docs/integrations/harness/skills.mdx) describes
+the fields, the common setups, start checks, the run report, and how Hermes
+differs from other harnesses. The
+[Hermes guide](../../../docs/integrations/harness/hermes/hermes.mdx#skills)
+covers Hermes's skip reasons, agent-written skills, and bundled-skill
+handling.
 
 ## Configuration Mapping and Ownership
 

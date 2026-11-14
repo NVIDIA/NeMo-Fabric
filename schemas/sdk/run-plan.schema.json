@@ -209,6 +209,17 @@
             "null"
           ]
         },
+        "skills": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdapterSkillsSupport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Structured skill capabilities. `None` means only `skills.paths` (when\n`config.accepts` includes `skills`)."
+        },
         "target_types": {
           "description": "Registered target categories this adapter can execute.",
           "items": {
@@ -300,6 +311,59 @@
             "type": "string"
           },
           "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "AdapterSkillsSupport": {
+      "additionalProperties": true,
+      "description": "Structured skill capabilities implemented by an adapter.\n\nEach sub-block is optional; an omitted block means the adapter does not\nimplement that capability; `null` reads as omitted. A non-null `duplicates`\nrequires a non-null `directory_loading`. The adapter must also accept the\n`skills` config field in `config.accepts`.",
+      "not": {
+        "properties": {
+          "directory_loading": {
+            "type": "null"
+          },
+          "duplicates": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "duplicates"
+        ]
+      },
+      "properties": {
+        "bundled": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BundledSkillsSupport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Bundled-skill selection through `skills.bundled`."
+        },
+        "directory_loading": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SkillDirectoryLoadingSupport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Structured `skills.directories` loading."
+        },
+        "duplicates": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SkillDuplicatesSupport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Duplicate-name policies for `skills.duplicates`."
         }
       },
       "type": "object"
@@ -761,8 +825,71 @@
     },
     "AgentSkillConfig": {
       "additionalProperties": false,
-      "description": "Skill paths made available to an adapter target.",
+      "description": "Skills made available to an adapter target.\n\nA non-null `directories` requires an empty `paths`, and a non-null\n`duplicates` requires a non-null `directories`; `null` reads as omitted.",
+      "not": {
+        "anyOf": [
+          {
+            "properties": {
+              "directories": {
+                "type": "array"
+              },
+              "paths": {
+                "minItems": 1
+              }
+            },
+            "required": [
+              "directories",
+              "paths"
+            ]
+          },
+          {
+            "properties": {
+              "directories": {
+                "type": "null"
+              },
+              "duplicates": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "duplicates"
+            ]
+          }
+        ]
+      },
       "properties": {
+        "bundled": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BundledSkills"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Bundled-skill selection. Sent only to adapters that declare the\nrequested `skills.bundled` operation."
+        },
+        "directories": {
+          "description": "Structured skill entries with paths resolved by NeMo Fabric. Sent only\nto adapters that declare `skills.directory_loading`; an empty list\nloads no external skills.",
+          "items": {
+            "$ref": "#/$defs/SkillDirectory"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "duplicates": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SkillDuplicatePolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Duplicate-name policy between `directories` entries. Sent only to\nadapters that declare the policy in `skills.duplicates`."
+        },
         "extensions": {
           "additionalProperties": true,
           "description": "Adapter-owned skill fields.",
@@ -899,6 +1026,142 @@
       ],
       "type": "object"
     },
+    "BundledSkills": {
+      "additionalProperties": false,
+      "description": "Bundled-skill selection.\n\n`include` and `exclude` are mutually exclusive, and neither may be combined\nwith `enabled: false`; a `null` list reads as omitted. An empty `include`\nselects no bundled skills; an empty `exclude` selects all of them.",
+      "not": {
+        "anyOf": [
+          {
+            "properties": {
+              "exclude": {
+                "type": "array"
+              },
+              "include": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "include",
+              "exclude"
+            ]
+          },
+          {
+            "properties": {
+              "enabled": {
+                "const": false
+              },
+              "include": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled",
+              "include"
+            ]
+          },
+          {
+            "properties": {
+              "enabled": {
+                "const": false
+              },
+              "exclude": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled",
+              "exclude"
+            ]
+          }
+        ]
+      },
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Whether bundled skills load at all.",
+          "type": "boolean"
+        },
+        "exclude": {
+          "description": "Load every bundled skill except these. `None` and `[]` differ.",
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "include": {
+          "description": "Load only these bundled skills. `None` and `[]` differ.",
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "BundledSkillsDefault": {
+      "description": "What loads when `skills.bundled` is omitted.",
+      "oneOf": [
+        {
+          "const": "enabled",
+          "description": "Bundled skills load by default.",
+          "type": "string"
+        },
+        {
+          "const": "disabled",
+          "description": "Bundled skills do not load by default.",
+          "type": "string"
+        },
+        {
+          "const": "none",
+          "description": "The harness ships no bundled skills.",
+          "type": "string"
+        }
+      ]
+    },
+    "BundledSkillsSupport": {
+      "additionalProperties": true,
+      "description": "Bundled-skill operations implemented by an adapter. Every field is required.",
+      "properties": {
+        "default": {
+          "$ref": "#/$defs/BundledSkillsDefault",
+          "description": "What loads when `skills.bundled` is omitted."
+        },
+        "supports_disable": {
+          "description": "Whether `enabled: false` is implemented.",
+          "type": "boolean"
+        },
+        "supports_enable": {
+          "description": "Whether `BundledSkills()` (enabled, no lists) is implemented.",
+          "type": "boolean"
+        },
+        "supports_exclude": {
+          "description": "Whether `exclude` (including `[]`) is implemented.",
+          "type": "boolean"
+        },
+        "supports_include": {
+          "description": "Whether `include` (including `[]`) is implemented.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "default",
+        "supports_enable",
+        "supports_disable",
+        "supports_include",
+        "supports_exclude"
+      ],
+      "type": "object"
+    },
     "CapabilityKind": {
       "description": "Capability kind.",
       "oneOf": [
@@ -909,7 +1172,7 @@
         },
         {
           "const": "skills",
-          "description": "Skill paths.",
+          "description": "Skills.",
           "type": "string"
         },
         {
@@ -922,6 +1185,17 @@
     "CapabilityPlan": {
       "description": "Resolved capability configuration.",
       "properties": {
+        "bundled_skills": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BundledSkills"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Bundled-skill selection."
+        },
         "managed": {
           "$ref": "#/$defs/CapabilityTargetPlan",
           "default": {
@@ -949,6 +1223,27 @@
             "$ref": "#/$defs/CapabilityRoute"
           },
           "type": "array"
+        },
+        "skill_directories": {
+          "description": "Structured skill entries with paths resolved against the base directory.",
+          "items": {
+            "$ref": "#/$defs/SkillDirectory"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "skill_duplicates": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SkillDuplicatePolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Duplicate-name policy between `skill_directories` entries."
         },
         "skill_paths": {
           "description": "Resolved skill paths.",
@@ -1028,12 +1323,44 @@
     "CapabilityTargetPlan": {
       "description": "Capabilities routed to one target.",
       "properties": {
+        "bundled_skills": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BundledSkills"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Bundled-skill selection for this target."
+        },
         "mcp_servers": {
           "additionalProperties": {
             "$ref": "#/$defs/McpServerPlan"
           },
           "description": "MCP servers for this target.",
           "type": "object"
+        },
+        "skill_directories": {
+          "description": "Resolved structured skill entries for this target.",
+          "items": {
+            "$ref": "#/$defs/SkillDirectory"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "skill_duplicates": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SkillDuplicatePolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Duplicate-name policy for this target."
         },
         "skill_paths": {
           "description": "Resolved skill paths for this target.",
@@ -2095,6 +2422,21 @@
       ],
       "type": "object"
     },
+    "NestedSkills": {
+      "description": "Discovery behavior below a discovered skill folder.",
+      "oneOf": [
+        {
+          "const": "include",
+          "description": "Further skills below a discovered skill folder are discovered too.",
+          "type": "string"
+        },
+        {
+          "const": "stop_at_skill",
+          "description": "Discovery stops at a skill folder.",
+          "type": "string"
+        }
+      ]
+    },
     "OAuthTokenEndpointAuthMethod": {
       "description": "OAuth client authentication method used at the token endpoint.",
       "oneOf": [
@@ -3065,8 +3407,71 @@
     },
     "SkillConfig": {
       "additionalProperties": true,
-      "description": "Skill capability configuration.",
+      "description": "Skill capability configuration.\n\nA non-null `directories` requires an empty `paths`, and a non-null\n`duplicates` requires a non-null `directories`; `null` reads as omitted.",
+      "not": {
+        "anyOf": [
+          {
+            "properties": {
+              "directories": {
+                "type": "array"
+              },
+              "paths": {
+                "minItems": 1
+              }
+            },
+            "required": [
+              "directories",
+              "paths"
+            ]
+          },
+          {
+            "properties": {
+              "directories": {
+                "type": "null"
+              },
+              "duplicates": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "duplicates"
+            ]
+          }
+        ]
+      },
       "properties": {
+        "bundled": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BundledSkills"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Bundled-skill selection. `None` preserves the harness default."
+        },
+        "directories": {
+          "description": "Structured external-skill entries, resolved relative to the config base\ndirectory. Each entry names one skill folder (`skill`) or a folder of\nskills (`folder`). Supply only when `paths` is empty; an empty list loads\nno external skills. `None` means not set.",
+          "items": {
+            "$ref": "#/$defs/SkillDirectory"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "duplicates": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SkillDuplicatePolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Policy for two `directories` entries that provide skills with the same\nname. Requires `directories`. `None` preserves native handling."
+        },
         "paths": {
           "description": "Skill paths resolved relative to the config base directory.",
           "items": {
@@ -3076,6 +3481,329 @@
         }
       },
       "type": "object"
+    },
+    "SkillDepthLimit": {
+      "description": "Depth bound for skill discovery. The supplied folder is depth zero.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "One numeric bound; immediate children are depth one.",
+          "properties": {
+            "kind": {
+              "const": "fixed",
+              "type": "string"
+            },
+            "levels": {
+              "description": "Maximum discovery depth, at least one.",
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "levels"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "No explicit depth cap; exclusions and other constraints still apply.",
+          "properties": {
+            "kind": {
+              "const": "no_fixed_limit",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Context-dependent bounds documented and implemented by the adapter.",
+          "properties": {
+            "kind": {
+              "const": "adapter_defined",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SkillDirectory": {
+      "description": "One structured external-skill entry: exactly one of `{\"skill\": path}` or\n`{\"folder\": path}`. The other key may be present only as `null`, which\nreads as absent.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "One skill's folder; it must contain `SKILL.md`.",
+          "properties": {
+            "folder": {
+              "type": "null"
+            },
+            "skill": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            }
+          },
+          "required": [
+            "skill"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A folder of skills discovered by the selected adapter.",
+          "properties": {
+            "folder": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "skill": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "folder"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SkillDirectoryKind": {
+      "description": "Kind of one structured external-skill entry.",
+      "oneOf": [
+        {
+          "const": "skill",
+          "description": "One skill's folder, which contains `SKILL.md`.",
+          "type": "string"
+        },
+        {
+          "const": "folder",
+          "description": "A folder whose skills the adapter discovers.",
+          "type": "string"
+        }
+      ]
+    },
+    "SkillDirectoryLoadingSupport": {
+      "additionalProperties": true,
+      "description": "How an adapter loads `skills.directories` entries. Every field is required.",
+      "properties": {
+        "discovery": {
+          "$ref": "#/$defs/SkillDiscoverySupport",
+          "description": "How the adapter discovers skills inside a `folder` entry."
+        },
+        "parsing": {
+          "$ref": "#/$defs/SkillParsingSupport",
+          "description": "How the adapter parses each candidate's `SKILL.md`."
+        },
+        "skill_file": {
+          "const": "SKILL.md",
+          "description": "File that marks a skill folder. Must be `SKILL.md`.",
+          "type": "string"
+        },
+        "supported_entries": {
+          "description": "Entry kinds the adapter implements. Non-empty and unique.",
+          "items": {
+            "$ref": "#/$defs/SkillDirectoryKind"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "supported_entries",
+        "skill_file",
+        "discovery",
+        "parsing"
+      ],
+      "type": "object"
+    },
+    "SkillDiscoverySupport": {
+      "additionalProperties": true,
+      "description": "How an adapter traverses a `folder` entry.",
+      "properties": {
+        "depth_limit": {
+          "$ref": "#/$defs/SkillDepthLimit",
+          "description": "Depth bound for discovery. Required: there is no implicit unlimited default."
+        },
+        "nested_skills": {
+          "$ref": "#/$defs/NestedSkills",
+          "description": "Whether discovery continues below a discovered skill folder."
+        },
+        "traversal": {
+          "$ref": "#/$defs/SkillTraversal",
+          "description": "Whether only immediate children or the whole tree is searched."
+        }
+      },
+      "required": [
+        "traversal",
+        "nested_skills",
+        "depth_limit"
+      ],
+      "type": "object"
+    },
+    "SkillDuplicatePolicy": {
+      "description": "How two `skills.directories` entries that provide the same skill name resolve.",
+      "oneOf": [
+        {
+          "const": "reject",
+          "description": "Start fails, naming both entries.",
+          "type": "string"
+        },
+        {
+          "const": "last_wins",
+          "description": "The later entry's skill loads.",
+          "type": "string"
+        },
+        {
+          "const": "first_wins",
+          "description": "The earlier entry's skill loads.",
+          "type": "string"
+        }
+      ]
+    },
+    "SkillDuplicatesSupport": {
+      "additionalProperties": true,
+      "description": "Duplicate-name policies implemented by an adapter.",
+      "properties": {
+        "name_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SkillNameSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whether skill names are compared by front matter or by folder name."
+        },
+        "native": {
+          "description": "Short description of the harness's own handling when `duplicates` is omitted.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "supported_policies": {
+          "description": "Policies accepted in `skills.duplicates`. Non-empty and unique.",
+          "items": {
+            "$ref": "#/$defs/SkillDuplicatePolicy"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "supported_policies"
+      ],
+      "type": "object"
+    },
+    "SkillFrontmatterErrors": {
+      "description": "Handling of front-matter parse errors in a candidate skill.",
+      "oneOf": [
+        {
+          "const": "recover_key_value",
+          "description": "Recover simple `key: value` lines.",
+          "type": "string"
+        },
+        {
+          "const": "reject",
+          "description": "A parser-reported failure rejects that candidate.",
+          "type": "string"
+        },
+        {
+          "const": "adapter_defined",
+          "description": "Documented and implemented by the adapter.",
+          "type": "string"
+        }
+      ]
+    },
+    "SkillNameFallback": {
+      "description": "Name used when a skill's front matter has no `name`.",
+      "oneOf": [
+        {
+          "const": "directory_name",
+          "description": "The skill folder name.",
+          "type": "string"
+        },
+        {
+          "const": "none",
+          "description": "No fallback.",
+          "type": "string"
+        }
+      ]
+    },
+    "SkillNameSource": {
+      "description": "Source of the name compared for duplicate detection.",
+      "oneOf": [
+        {
+          "const": "frontmatter",
+          "description": "The front-matter `name`.",
+          "type": "string"
+        },
+        {
+          "const": "directory",
+          "description": "The skill folder name.",
+          "type": "string"
+        }
+      ]
+    },
+    "SkillParsingSupport": {
+      "additionalProperties": true,
+      "description": "How an adapter parses each candidate skill's `SKILL.md`.",
+      "properties": {
+        "frontmatter_errors": {
+          "$ref": "#/$defs/SkillFrontmatterErrors",
+          "description": "How front-matter parse errors are handled."
+        },
+        "name_fallback": {
+          "$ref": "#/$defs/SkillNameFallback",
+          "description": "Whether a missing name falls back to the skill folder name."
+        },
+        "required_frontmatter_fields": {
+          "description": "Front-matter fields the loading path requires. May be empty; unique.",
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "required_frontmatter_fields",
+        "name_fallback",
+        "frontmatter_errors"
+      ],
+      "type": "object"
+    },
+    "SkillTraversal": {
+      "description": "Folder traversal used for skill discovery.",
+      "oneOf": [
+        {
+          "const": "immediate_children",
+          "description": "Search only the folder's immediate children.",
+          "type": "string"
+        },
+        {
+          "const": "recursive",
+          "description": "Search the folder recursively.",
+          "type": "string"
+        }
+      ]
     },
     "SoftwareEntry": {
       "additionalProperties": false,

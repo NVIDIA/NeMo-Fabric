@@ -2,14 +2,14 @@
 title: "Struct Capability Plan"
 sidebar-title: "CapabilityPlan"
 description: "Resolved capability configuration."
-position: 52
+position: 56
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct CapabilityPlan &#123;\n    pub tools: <a href=\"struct-toolsplan.mdx\">ToolsPlan</a>,\n    pub tools_configured: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>,\n    pub skill_paths: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n    pub mcp_servers: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"struct-mcpserverplan.mdx\">McpServerPlan</a>&gt;,\n    pub native: <a href=\"struct-capabilitytargetplan.mdx\">CapabilityTargetPlan</a>,\n    pub managed: <a href=\"struct-capabilitytargetplan.mdx\">CapabilityTargetPlan</a>,\n    pub unsupported: <a href=\"struct-capabilitytargetplan.mdx\">CapabilityTargetPlan</a>,\n    pub routes: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-capabilityroute.mdx\">CapabilityRoute</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct CapabilityPlan &#123;\n    pub tools: <a href=\"struct-toolsplan.mdx\">ToolsPlan</a>,\n    pub tools_configured: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>,\n    pub skill_paths: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n    pub skill_directories: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"enum-skilldirectory.mdx\">SkillDirectory</a>&gt;&gt;,\n    pub bundled_skills: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-bundledskills.mdx\">BundledSkills</a>&gt;,\n    pub skill_duplicates: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-skillduplicatepolicy.mdx\">SkillDuplicatePolicy</a>&gt;,\n    pub mcp_servers: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"struct-mcpserverplan.mdx\">McpServerPlan</a>&gt;,\n    pub native: <a href=\"struct-capabilitytargetplan.mdx\">CapabilityTargetPlan</a>,\n    pub managed: <a href=\"struct-capabilitytargetplan.mdx\">CapabilityTargetPlan</a>,\n    pub unsupported: <a href=\"struct-capabilitytargetplan.mdx\">CapabilityTargetPlan</a>,\n    pub routes: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-capabilityroute.mdx\">CapabilityRoute</a>&gt;,\n&#125;"}} /></pre>
 
 Resolved capability configuration.
 
@@ -26,6 +26,18 @@ Whether tool configuration was provided.
 ### `skill_paths: Vec<PathBuf>`
 
 Resolved skill paths.
+
+### `skill_directories: Option<Vec<SkillDirectory>>`
+
+Structured skill entries with paths resolved against the base directory.
+
+### `bundled_skills: Option<BundledSkills>`
+
+Bundled-skill selection.
+
+### `skill_duplicates: Option<SkillDuplicatePolicy>`
+
+Duplicate-name policy between `skill_directories` entries.
 
 ### `mcp_servers: BTreeMap<String, McpServerPlan>`
 

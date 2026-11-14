@@ -358,6 +358,10 @@ pub struct AdapterDescriptor {
     /// NeMo Fabric config areas this adapter consumes or generates.
     #[serde(default)]
     pub config: AdapterConfigSupport,
+    /// Structured skill capabilities. `None` means only `skills.paths` (when
+    /// `config.accepts` includes `skills`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<AdapterSkillsSupport>,
     /// Telemetry support declared by this adapter.
     #[serde(default)]
     pub telemetry: AdapterTelemetrySupport,
@@ -847,6 +851,333 @@ impl AdapterConfigSupport {
     }
 }
 
+/// Structured skill capabilities implemented by an adapter.
+///
+/// Each sub-block is optional; an omitted block means the adapter does not
+/// implement that capability; `null` reads as omitted. A non-null `duplicates`
+/// requires a non-null `directory_loading`. The adapter must also accept the
+/// `skills` config field in `config.accepts`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[schemars(extend("not" = {
+    "required": ["duplicates"],
+    "properties": {
+        "duplicates": {"type": "object"},
+        "directory_loading": {"type": "null"}
+    }
+}))]
+pub struct AdapterSkillsSupport {
+    /// Structured `skills.directories` loading.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub directory_loading: Option<SkillDirectoryLoadingSupport>,
+    /// Bundled-skill selection through `skills.bundled`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundled: Option<BundledSkillsSupport>,
+    /// Duplicate-name policies for `skills.duplicates`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duplicates: Option<SkillDuplicatesSupport>,
+    /// Additive skill capability fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// How an adapter loads `skills.directories` entries. Every field is required.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SkillDirectoryLoadingSupport {
+    /// Entry kinds the adapter implements. Non-empty and unique.
+    #[serde(deserialize_with = "deserialize_supported_skill_entries")]
+    #[schemars(length(min = 1), extend("uniqueItems" = true))]
+    pub supported_entries: Vec<SkillDirectoryKind>,
+    /// File that marks a skill folder. Must be `SKILL.md`.
+    #[serde(deserialize_with = "deserialize_skill_file")]
+    #[schemars(extend("const" = SKILL_FILE))]
+    pub skill_file: String,
+    /// How the adapter discovers skills inside a `folder` entry.
+    pub discovery: SkillDiscoverySupport,
+    /// How the adapter parses each candidate's `SKILL.md`.
+    pub parsing: SkillParsingSupport,
+    /// Additive directory-loading fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// File that marks a skill folder.
+pub const SKILL_FILE: &str = "SKILL.md";
+
+fn deserialize_supported_skill_entries<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<SkillDirectoryKind>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let entries = Vec::<SkillDirectoryKind>::deserialize(deserializer)?;
+    if entries.is_empty() {
+        return Err(D::Error::custom(
+            "skills.directory_loading.supported_entries must contain at least one entry kind",
+        ));
+    }
+    if has_duplicates(&entries) {
+        return Err(D::Error::custom(
+            "skills.directory_loading.supported_entries must not contain duplicate entry kinds",
+        ));
+    }
+    Ok(entries)
+}
+
+fn deserialize_skill_file<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let skill_file = String::deserialize(deserializer)?;
+    if skill_file != SKILL_FILE {
+        return Err(D::Error::custom(format!(
+            "skills.directory_loading.skill_file must be `{SKILL_FILE}`, found `{skill_file}`"
+        )));
+    }
+    Ok(skill_file)
+}
+
+fn has_duplicates<T: PartialEq>(items: &[T]) -> bool {
+    items
+        .iter()
+        .enumerate()
+        .any(|(index, item)| items[..index].contains(item))
+}
+
+/// How an adapter traverses a `folder` entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SkillDiscoverySupport {
+    /// Whether only immediate children or the whole tree is searched.
+    pub traversal: SkillTraversal,
+    /// Whether discovery continues below a discovered skill folder.
+    pub nested_skills: NestedSkills,
+    /// Depth bound for discovery. Required: there is no implicit unlimited default.
+    pub depth_limit: SkillDepthLimit,
+    /// Additive discovery fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// Folder traversal used for skill discovery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillTraversal {
+    /// Search only the folder's immediate children.
+    ImmediateChildren,
+    /// Search the folder recursively.
+    Recursive,
+}
+
+/// Discovery behavior below a discovered skill folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum NestedSkills {
+    /// Further skills below a discovered skill folder are discovered too.
+    Include,
+    /// Discovery stops at a skill folder.
+    StopAtSkill,
+}
+
+/// Depth bound for skill discovery. The supplied folder is depth zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SkillDepthLimit {
+    /// One numeric bound; immediate children are depth one.
+    Fixed {
+        /// Maximum discovery depth, at least one.
+        #[schemars(range(min = 1))]
+        levels: u32,
+    },
+    /// No explicit depth cap; exclusions and other constraints still apply.
+    NoFixedLimit,
+    /// Context-dependent bounds documented and implemented by the adapter.
+    AdapterDefined,
+}
+
+/// Wire form of [`SkillDepthLimit`]. The public impl first requires an object,
+/// since serde would otherwise accept a bare `"no_fixed_limit"` string, and the
+/// empty struct variants make serde reject extra keys such as `levels`.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum SkillDepthLimitWire {
+    Fixed {
+        #[serde(deserialize_with = "deserialize_depth_levels")]
+        levels: u32,
+    },
+    NoFixedLimit {},
+    AdapterDefined {},
+}
+
+impl<'de> Deserialize<'de> for SkillDepthLimit {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        if !value.is_object() {
+            return Err(D::Error::custom(
+                "skills.directory_loading.discovery.depth_limit must be an object with a `kind`",
+            ));
+        }
+        Ok(
+            match serde_json::from_value(value).map_err(D::Error::custom)? {
+                SkillDepthLimitWire::Fixed { levels } => Self::Fixed { levels },
+                SkillDepthLimitWire::NoFixedLimit {} => Self::NoFixedLimit,
+                SkillDepthLimitWire::AdapterDefined {} => Self::AdapterDefined,
+            },
+        )
+    }
+}
+
+fn deserialize_depth_levels<'de, D>(deserializer: D) -> std::result::Result<u32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let levels = u32::deserialize(deserializer)?;
+    if levels == 0 {
+        return Err(D::Error::custom(
+            "skills.directory_loading.discovery.depth_limit.levels must be at least 1",
+        ));
+    }
+    Ok(levels)
+}
+
+/// How an adapter parses each candidate skill's `SKILL.md`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SkillParsingSupport {
+    /// Front-matter fields the loading path requires. May be empty; unique.
+    #[serde(deserialize_with = "deserialize_required_frontmatter_fields")]
+    #[schemars(inner(length(min = 1), regex(pattern = r"\S")), extend("uniqueItems" = true))]
+    pub required_frontmatter_fields: Vec<String>,
+    /// Whether a missing name falls back to the skill folder name.
+    pub name_fallback: SkillNameFallback,
+    /// How front-matter parse errors are handled.
+    pub frontmatter_errors: SkillFrontmatterErrors,
+    /// Additive parsing fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+fn deserialize_required_frontmatter_fields<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let fields = Vec::<String>::deserialize(deserializer)?;
+    if fields.iter().any(|field| field.trim().is_empty()) {
+        return Err(D::Error::custom(
+            "skills.directory_loading.parsing.required_frontmatter_fields entries must be non-empty strings",
+        ));
+    }
+    if has_duplicates(&fields) {
+        return Err(D::Error::custom(
+            "skills.directory_loading.parsing.required_frontmatter_fields must not contain duplicates",
+        ));
+    }
+    Ok(fields)
+}
+
+/// Name used when a skill's front matter has no `name`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillNameFallback {
+    /// The skill folder name.
+    DirectoryName,
+    /// No fallback.
+    None,
+}
+
+/// Handling of front-matter parse errors in a candidate skill.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillFrontmatterErrors {
+    /// Recover simple `key: value` lines.
+    RecoverKeyValue,
+    /// A parser-reported failure rejects that candidate.
+    Reject,
+    /// Documented and implemented by the adapter.
+    AdapterDefined,
+}
+
+/// Bundled-skill operations implemented by an adapter. Every field is required.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BundledSkillsSupport {
+    /// What loads when `skills.bundled` is omitted.
+    pub default: BundledSkillsDefault,
+    /// Whether `BundledSkills()` (enabled, no lists) is implemented.
+    pub supports_enable: bool,
+    /// Whether `enabled: false` is implemented.
+    pub supports_disable: bool,
+    /// Whether `include` (including `[]`) is implemented.
+    pub supports_include: bool,
+    /// Whether `exclude` (including `[]`) is implemented.
+    pub supports_exclude: bool,
+    /// Additive bundled-skill fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// What loads when `skills.bundled` is omitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BundledSkillsDefault {
+    /// Bundled skills load by default.
+    Enabled,
+    /// Bundled skills do not load by default.
+    Disabled,
+    /// The harness ships no bundled skills.
+    None,
+}
+
+/// Duplicate-name policies implemented by an adapter.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SkillDuplicatesSupport {
+    /// Policies accepted in `skills.duplicates`. Non-empty and unique.
+    #[serde(deserialize_with = "deserialize_supported_duplicate_policies")]
+    #[schemars(length(min = 1), extend("uniqueItems" = true))]
+    pub supported_policies: Vec<SkillDuplicatePolicy>,
+    /// Short description of the harness's own handling when `duplicates` is omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub native: Option<String>,
+    /// Whether skill names are compared by front matter or by folder name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name_source: Option<SkillNameSource>,
+    /// Additive duplicate-handling fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+fn deserialize_supported_duplicate_policies<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<SkillDuplicatePolicy>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let policies = Vec::<SkillDuplicatePolicy>::deserialize(deserializer)?;
+    if policies.is_empty() {
+        return Err(D::Error::custom(
+            "skills.duplicates.supported_policies must contain at least one policy",
+        ));
+    }
+    if has_duplicates(&policies) {
+        return Err(D::Error::custom(
+            "skills.duplicates.supported_policies must not contain duplicate policies",
+        ));
+    }
+    Ok(policies)
+}
+
+/// Source of the name compared for duplicate detection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillNameSource {
+    /// The front-matter `name`.
+    Frontmatter,
+    /// The skill folder name.
+    Directory,
+}
+
 /// Adapter-translated normalized NVIDIA NeMo Fabric configuration fields.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
@@ -1151,14 +1482,282 @@ fn default_environment_ownership() -> EnvironmentOwnership {
 }
 
 /// Skill capability configuration.
+///
+/// A non-null `directories` requires an empty `paths`, and a non-null
+/// `duplicates` requires a non-null `directories`; `null` reads as omitted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+#[schemars(extend("not" = {"anyOf": [
+    {
+        "required": ["directories", "paths"],
+        "properties": {"directories": {"type": "array"}, "paths": {"minItems": 1}}
+    },
+    {
+        "required": ["duplicates"],
+        "properties": {"duplicates": {"type": "string"}, "directories": {"type": "null"}}
+    }
+]}))]
 pub struct SkillConfig {
     /// Skill paths resolved relative to the config base directory.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<PathBuf>,
+    /// Structured external-skill entries, resolved relative to the config base
+    /// directory. Each entry names one skill folder (`skill`) or a folder of
+    /// skills (`folder`). Supply only when `paths` is empty; an empty list loads
+    /// no external skills. `None` means not set.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_config_skill_directories"
+    )]
+    pub directories: Option<Vec<SkillDirectory>>,
+    /// Bundled-skill selection. `None` preserves the harness default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundled: Option<BundledSkills>,
+    /// Policy for two `directories` entries that provide skills with the same
+    /// name. Requires `directories`. `None` preserves native handling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duplicates: Option<SkillDuplicatePolicy>,
     /// Additive skill fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
+}
+
+/// Kind of one structured external-skill entry.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillDirectoryKind {
+    /// One skill's folder, which contains `SKILL.md`.
+    Skill,
+    /// A folder whose skills the adapter discovers.
+    Folder,
+}
+
+impl SkillDirectoryKind {
+    /// Stable wire name for this entry kind.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Skill => "skill",
+            Self::Folder => "folder",
+        }
+    }
+}
+
+/// One structured external-skill entry: exactly one of `{"skill": path}` or
+/// `{"folder": path}`. The other key may be present only as `null`, which
+/// reads as absent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[schemars(transform = allow_null_skill_directory_key)]
+pub enum SkillDirectory {
+    /// One skill's folder; it must contain `SKILL.md`.
+    Skill(#[schemars(length(min = 1), regex(pattern = r"\S"))] PathBuf),
+    /// A folder of skills discovered by the selected adapter.
+    Folder(#[schemars(length(min = 1), regex(pattern = r"\S"))] PathBuf),
+}
+
+impl SkillDirectory {
+    /// Entry kind.
+    pub fn kind(&self) -> SkillDirectoryKind {
+        match self {
+            Self::Skill(_) => SkillDirectoryKind::Skill,
+            Self::Folder(_) => SkillDirectoryKind::Folder,
+        }
+    }
+
+    /// Configured path.
+    pub fn path(&self) -> &Path {
+        match self {
+            Self::Skill(path) | Self::Folder(path) => path,
+        }
+    }
+
+    fn with_path(&self, path: PathBuf) -> Self {
+        match self {
+            Self::Skill(_) => Self::Skill(path),
+            Self::Folder(_) => Self::Folder(path),
+        }
+    }
+
+    /// Parse one entry, reporting failures relative to `field`.
+    fn from_value(field: &str, value: Value) -> std::result::Result<Self, String> {
+        let Value::Object(mut entry) = value else {
+            return Err(format!(
+                "{field}: must be an object with exactly one of `skill` or `folder`"
+            ));
+        };
+        if let Some(unknown) = entry
+            .keys()
+            .find(|key| !matches!(key.as_str(), "skill" | "folder"))
+        {
+            return Err(format!(
+                "{field}: unknown key `{unknown}`; expected exactly one of `skill` or `folder`"
+            ));
+        }
+        // A key set to null is absent, as in the Python bindings.
+        entry.retain(|_, path| !path.is_null());
+        if entry.len() != 1 {
+            let found = if entry.is_empty() { "neither" } else { "both" };
+            return Err(format!(
+                "{field}: must contain exactly one of `skill` or `folder`, found {found}"
+            ));
+        }
+        let (key, path) = entry.into_iter().next().expect("entry has exactly one key");
+        let Value::String(path) = path else {
+            return Err(format!("{field}.{key}: must be a string path"));
+        };
+        if path.trim().is_empty() {
+            return Err(format!("{field}.{key}: must be a non-empty path"));
+        }
+        let path = PathBuf::from(path);
+        Ok(if key == "skill" {
+            Self::Skill(path)
+        } else {
+            Self::Folder(path)
+        })
+    }
+}
+
+/// Let each closed `SkillDirectory` variant carry the other key as `null`,
+/// matching [`SkillDirectory::from_value`].
+fn allow_null_skill_directory_key(schema: &mut schemars::Schema) {
+    let Some(variants) = schema.get_mut("oneOf").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for variant in variants {
+        let Some(properties) = variant.get_mut("properties").and_then(Value::as_object_mut) else {
+            continue;
+        };
+        let other = if properties.contains_key("skill") {
+            "folder"
+        } else {
+            "skill"
+        };
+        properties.insert(other.to_string(), serde_json::json!({"type": "null"}));
+    }
+}
+
+impl<'de> Deserialize<'de> for SkillDirectory {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::from_value("skill directory entry", Value::deserialize(deserializer)?)
+            .map_err(D::Error::custom)
+    }
+}
+
+fn deserialize_skill_directories_at<'de, D>(
+    deserializer: D,
+    field: &str,
+) -> std::result::Result<Option<Vec<SkillDirectory>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(entries) = Option::<Value>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    let Value::Array(entries) = entries else {
+        return Err(D::Error::custom(format!(
+            "{field}: must be a list of skill directory entries"
+        )));
+    };
+    entries
+        .into_iter()
+        .enumerate()
+        .map(|(index, entry)| SkillDirectory::from_value(&format!("{field}[{index}]"), entry))
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map(Some)
+        .map_err(D::Error::custom)
+}
+
+fn deserialize_config_skill_directories<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<Vec<SkillDirectory>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_skill_directories_at(deserializer, "skills.directories")
+}
+
+pub(crate) fn deserialize_agent_skill_directories<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<Vec<SkillDirectory>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_skill_directories_at(deserializer, "agent_config.skills.directories")
+}
+
+/// Bundled-skill selection.
+///
+/// `include` and `exclude` are mutually exclusive, and neither may be combined
+/// with `enabled: false`; a `null` list reads as omitted. An empty `include`
+/// selects no bundled skills; an empty `exclude` selects all of them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(extend("not" = {"anyOf": [
+    {
+        "required": ["include", "exclude"],
+        "properties": {"include": {"type": "array"}, "exclude": {"type": "array"}}
+    },
+    {
+        "required": ["enabled", "include"],
+        "properties": {"enabled": {"const": false}, "include": {"type": "array"}}
+    },
+    {
+        "required": ["enabled", "exclude"],
+        "properties": {"enabled": {"const": false}, "exclude": {"type": "array"}}
+    }
+]}))]
+pub struct BundledSkills {
+    /// Whether bundled skills load at all.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Load only these bundled skills. `None` and `[]` differ.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(inner(length(min = 1), regex(pattern = r"\S")))]
+    pub include: Option<Vec<String>>,
+    /// Load every bundled skill except these. `None` and `[]` differ.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(inner(length(min = 1), regex(pattern = r"\S")))]
+    pub exclude: Option<Vec<String>>,
+}
+
+impl Default for BundledSkills {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            include: None,
+            exclude: None,
+        }
+    }
+}
+
+/// How two `skills.directories` entries that provide the same skill name resolve.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillDuplicatePolicy {
+    /// Start fails, naming both entries.
+    Reject,
+    /// The later entry's skill loads.
+    LastWins,
+    /// The earlier entry's skill loads.
+    FirstWins,
+}
+
+impl SkillDuplicatePolicy {
+    /// Stable wire name for this policy.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Reject => "reject",
+            Self::LastWins => "last_wins",
+            Self::FirstWins => "first_wins",
+        }
+    }
 }
 
 /// MCP capability configuration.
@@ -1932,6 +2531,9 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
             }
         }
     }
+    if let Some(skills) = &config.skills {
+        validate_skill_config(skills)?;
+    }
     if config.runtime.max_turns == Some(0) {
         return invalid_config("runtime.max_turns", "must be greater than zero");
     }
@@ -2393,6 +2995,178 @@ fn relay_legacy_flat_otel_field(contains_field: impl Fn(&str) -> bool) -> Option
     LEGACY_FLAT_OTEL_FIELDS
         .into_iter()
         .find(|field| contains_field(field))
+}
+
+/// Check the structured skill rules that do not depend on the selected adapter.
+fn validate_skill_config(skills: &SkillConfig) -> Result<()> {
+    if skills.directories.is_some() && !skills.paths.is_empty() {
+        return invalid_config(
+            "skills.directories",
+            "cannot be combined with skills.paths; use one or the other (an empty skills.paths is the same as omitting it)",
+        );
+    }
+    // Serde already rejects blank paths; this covers values built in Rust.
+    for (index, entry) in skills.directories.iter().flatten().enumerate() {
+        if entry.path().to_string_lossy().trim().is_empty() {
+            return invalid_config(
+                format!("skills.directories[{index}].{}", entry.kind().as_str()),
+                "must be a non-empty path",
+            );
+        }
+    }
+    if skills.duplicates.is_some() && skills.directories.is_none() {
+        return invalid_config("skills.duplicates", "requires skills.directories");
+    }
+    if let Some(bundled) = &skills.bundled {
+        if bundled.include.is_some() && bundled.exclude.is_some() {
+            return invalid_config(
+                "skills.bundled",
+                "set at most one of include or exclude, even when empty",
+            );
+        }
+        for (field, names) in [
+            ("skills.bundled.include", &bundled.include),
+            ("skills.bundled.exclude", &bundled.exclude),
+        ] {
+            let Some(names) = names else {
+                continue;
+            };
+            if !bundled.enabled {
+                return invalid_config(field, "cannot be set when skills.bundled.enabled is false");
+            }
+            validate_names(field, names)?;
+        }
+    }
+    Ok(())
+}
+
+/// Return every adapter-capability problem with the structured skill fields
+/// (`directories`, `bundled` and `duplicates`) as `(field, reason)` pairs.
+///
+/// `skills.paths` keeps its route-based check in [`resolve_capability_plan`].
+fn skill_support_issues(
+    skills: &SkillConfig,
+    descriptor: Option<&AdapterDescriptor>,
+) -> Vec<(String, String)> {
+    let accepts_skills = descriptor.is_some_and(|descriptor| {
+        descriptor
+            .config
+            .accepts
+            .contains(&AdapterConfigField::Skills)
+    });
+    let support = descriptor.and_then(|descriptor| descriptor.skills.as_ref());
+    let mut issues = Vec::new();
+    let not_accepted =
+        || "the adapter does not declare `skills` support in config.accepts".to_string();
+
+    if let Some(directories) = skills.directories.as_ref().filter(|dirs| !dirs.is_empty()) {
+        match support.and_then(|support| support.directory_loading.as_ref()) {
+            _ if !accepts_skills => issues.push(("skills.directories".to_string(), not_accepted())),
+            None => issues.push((
+                "skills.directories".to_string(),
+                "the adapter does not declare `skills.directory_loading` support".to_string(),
+            )),
+            Some(loading) => {
+                for (index, entry) in directories.iter().enumerate() {
+                    let kind = entry.kind();
+                    if !loading.supported_entries.contains(&kind) {
+                        let supported = loading
+                            .supported_entries
+                            .iter()
+                            .map(|kind| kind.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        issues.push((
+                            format!("skills.directories[{index}].{}", kind.as_str()),
+                            format!(
+                                "the adapter does not support `{}` entries; supported entries: {supported}",
+                                kind.as_str()
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(bundled) = &skills.bundled {
+        match support.and_then(|support| support.bundled.as_ref()) {
+            _ if !accepts_skills => issues.push(("skills.bundled".to_string(), not_accepted())),
+            None => issues.push((
+                "skills.bundled".to_string(),
+                "the adapter does not declare `skills.bundled` support".to_string(),
+            )),
+            Some(bundled_support) => {
+                let (field, supported, operation) = if !bundled.enabled {
+                    (
+                        "skills.bundled.enabled",
+                        bundled_support.supports_disable,
+                        "disabling bundled skills (`supports_disable`)",
+                    )
+                } else if bundled.include.is_some() {
+                    (
+                        "skills.bundled.include",
+                        bundled_support.supports_include,
+                        "selecting bundled skills with include (`supports_include`)",
+                    )
+                } else if bundled.exclude.is_some() {
+                    (
+                        "skills.bundled.exclude",
+                        bundled_support.supports_exclude,
+                        "filtering bundled skills with exclude (`supports_exclude`)",
+                    )
+                } else {
+                    (
+                        "skills.bundled",
+                        bundled_support.supports_enable,
+                        "enabling all bundled skills (`supports_enable`)",
+                    )
+                };
+                if !supported {
+                    issues.push((
+                        field.to_string(),
+                        format!("the adapter does not support {operation}"),
+                    ));
+                }
+            }
+        }
+    }
+
+    if let Some(policy) = skills.duplicates {
+        match support.and_then(|support| support.duplicates.as_ref()) {
+            _ if !accepts_skills => issues.push(("skills.duplicates".to_string(), not_accepted())),
+            None => issues.push((
+                "skills.duplicates".to_string(),
+                "the adapter does not declare `skills.duplicates` support".to_string(),
+            )),
+            // The policy travels with `directories`, so it needs directory
+            // loading too. Loaded descriptors cannot omit it; built ones can.
+            Some(_) if support.is_some_and(|support| support.directory_loading.is_none()) => issues
+                .push((
+                    "skills.duplicates".to_string(),
+                    "the adapter does not declare `skills.directory_loading` support, which \
+                     `skills.duplicates` requires"
+                        .to_string(),
+                )),
+            Some(duplicates) if !duplicates.supported_policies.contains(&policy) => {
+                let supported = duplicates
+                    .supported_policies
+                    .iter()
+                    .map(|policy| policy.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                issues.push((
+                    "skills.duplicates".to_string(),
+                    format!(
+                        "policy `{}` is not supported; supported policies: {supported}",
+                        policy.as_str()
+                    ),
+                ));
+            }
+            Some(_) => {}
+        }
+    }
+    issues
 }
 
 fn validate_names(field: &str, names: &[String]) -> Result<()> {
@@ -2902,6 +3676,13 @@ pub(crate) fn adapter_config_compatibility_issues(
             "the adapter does not consume normalized tool definitions".to_string(),
         ));
     }
+    if let Some(skills) = &config.skills {
+        issues.extend(
+            skill_support_issues(skills, Some(descriptor))
+                .into_iter()
+                .map(|(field, reason)| incompatible(field, reason)),
+        );
+    }
     if !config.models.is_empty() && !accepts(AdapterConfigField::Models) {
         issues.push(incompatible(
             "models".to_string(),
@@ -3125,6 +3906,17 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
                 "config.system_instruction_modes must not contain duplicate modes",
             );
         }
+    }
+    // A duplicate policy applies only between `skills.directories` entries,
+    // which reach only adapters that load them.
+    if let Some(skills) = &descriptor.skills
+        && skills.duplicates.is_some()
+        && skills.directory_loading.is_none()
+    {
+        return invalid_adapter_descriptor(
+            path,
+            "skills.duplicates requires skills.directory_loading",
+        );
     }
     for (field, schema) in [
         ("settings_schema", descriptor.settings_schema.as_ref()),
@@ -3836,6 +4628,41 @@ fn resolve_capability_plan(
         })
         .unwrap_or_default();
     let skills_are_native = !skill_paths.is_empty() && accepts(AdapterConfigField::Skills);
+    let skill_directories: Option<Vec<SkillDirectory>> = config
+        .skills
+        .as_ref()
+        .and_then(|skills| skills.directories.as_ref())
+        .map(|directories| {
+            directories
+                .iter()
+                .map(|entry| entry.with_path(resolve_path(base_dir, entry.path())))
+                .collect()
+        });
+    let bundled_skills = config
+        .skills
+        .as_ref()
+        .and_then(|skills| skills.bundled.clone());
+    let skill_duplicates = config.skills.as_ref().and_then(|skills| skills.duplicates);
+    let skill_issues = config
+        .skills
+        .as_ref()
+        .map(|skills| {
+            skill_support_issues(
+                skills,
+                adapter_descriptor.map(|adapter| &adapter.descriptor),
+            )
+        })
+        .unwrap_or_default();
+    let skill_issue = |field: &str| {
+        skill_issues
+            .iter()
+            .find(|(issue, _)| {
+                issue
+                    .strip_prefix(field)
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with(['.', '[']))
+            })
+            .map(|(_, reason)| reason.clone())
+    };
     let mcp_servers: BTreeMap<String, McpServerPlan> = config
         .mcp
         .as_ref()
@@ -3952,6 +4779,60 @@ fn resolve_capability_plan(
         }
     }
 
+    // An empty `directories` list asks for no external skills, so it only
+    // reaches adapters that implement directory loading and never fails.
+    let empty_directories_supported = accepts(AdapterConfigField::Skills)
+        && adapter_descriptor
+            .and_then(|adapter| adapter.descriptor.skills.as_ref())
+            .is_some_and(|skills| skills.directory_loading.is_some());
+    let directories_requested = skill_directories
+        .as_ref()
+        .is_some_and(|directories| !directories.is_empty() || empty_directories_supported);
+    for (requested, field, description) in [
+        (
+            directories_requested,
+            "skills.directories",
+            "structured skill directories",
+        ),
+        (
+            bundled_skills.is_some(),
+            "skills.bundled",
+            "bundled-skill selection",
+        ),
+        (
+            skill_duplicates.is_some(),
+            "skills.duplicates",
+            "skill duplicate policy",
+        ),
+    ] {
+        if !requested {
+            continue;
+        }
+        let issue = skill_issue(field);
+        let target = if issue.is_some() {
+            &mut unsupported
+        } else {
+            &mut native
+        };
+        match field {
+            "skills.directories" => target.skill_directories = skill_directories.clone(),
+            "skills.bundled" => target.bundled_skills = bundled_skills.clone(),
+            _ => target.skill_duplicates = skill_duplicates,
+        }
+        routes.push(CapabilityRoute {
+            kind: CapabilityKind::Skills,
+            name: field.to_string(),
+            target: if issue.is_some() {
+                CapabilityTarget::Unsupported
+            } else {
+                CapabilityTarget::HarnessNative
+            },
+            reason: issue.unwrap_or_else(|| {
+                format!("selected adapter declares support for the NeMo Fabric {description}")
+            }),
+        });
+    }
+
     for (name, server) in &mcp_servers {
         let filters_configured = server.allowed_tools.is_some() || !server.blocked_tools.is_empty();
         let can_map_native = accepts(AdapterConfigField::Mcp)
@@ -3998,6 +4879,9 @@ fn resolve_capability_plan(
         },
         tools_configured,
         skill_paths,
+        skill_directories,
+        bundled_skills,
+        skill_duplicates,
         mcp_servers,
         native,
         managed,
@@ -4251,6 +5135,15 @@ pub struct CapabilityPlan {
     /// Resolved skill paths.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skill_paths: Vec<PathBuf>,
+    /// Structured skill entries with paths resolved against the base directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill_directories: Option<Vec<SkillDirectory>>,
+    /// Bundled-skill selection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundled_skills: Option<BundledSkills>,
+    /// Duplicate-name policy between `skill_directories` entries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill_duplicates: Option<SkillDuplicatePolicy>,
     /// MCP server exposure plan.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub mcp_servers: BTreeMap<String, McpServerPlan>,
@@ -4291,6 +5184,15 @@ pub struct CapabilityTargetPlan {
     /// Resolved skill paths for this target.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skill_paths: Vec<PathBuf>,
+    /// Resolved structured skill entries for this target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill_directories: Option<Vec<SkillDirectory>>,
+    /// Bundled-skill selection for this target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundled_skills: Option<BundledSkills>,
+    /// Duplicate-name policy for this target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill_duplicates: Option<SkillDuplicatePolicy>,
     /// MCP servers for this target.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub mcp_servers: BTreeMap<String, McpServerPlan>,
@@ -4316,8 +5218,9 @@ impl CapabilityRoute {
     pub(crate) fn config_field(&self) -> String {
         match self.kind {
             CapabilityKind::Mcp => format!("mcp.servers.{}", self.name),
-            CapabilityKind::Skills => "skills".to_string(),
-            CapabilityKind::Tools => self.name.clone(),
+            // `skills` for paths; `skills.directories`, `skills.bundled` or
+            // `skills.duplicates` for the structured fields.
+            CapabilityKind::Skills | CapabilityKind::Tools => self.name.clone(),
         }
     }
 }
@@ -4328,7 +5231,7 @@ impl CapabilityRoute {
 pub enum CapabilityKind {
     /// Tool config.
     Tools,
-    /// Skill paths.
+    /// Skills.
     Skills,
     /// MCP server.
     Mcp,
@@ -7780,5 +8683,1073 @@ mod tests {
                 matches!(error, FabricError::InvalidConfig {field, ..} if field == "environment.workspace")
             );
         }
+    }
+
+    // Structured skills: `directories`, `bundled` and `duplicates`.
+
+    fn config_with_skills(skills: Value) -> FabricConfig {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.skills = Some(serde_json::from_value(skills).expect("typed skills config"));
+        config
+    }
+
+    fn full_skills_support() -> AdapterSkillsSupport {
+        serde_json::from_value(serde_json::json!({
+            "directory_loading": {
+                "supported_entries": ["skill", "folder"],
+                "skill_file": "SKILL.md",
+                "discovery": {
+                    "traversal": "recursive",
+                    "nested_skills": "include",
+                    "depth_limit": {"kind": "no_fixed_limit"}
+                },
+                "parsing": {
+                    "required_frontmatter_fields": [],
+                    "name_fallback": "directory_name",
+                    "frontmatter_errors": "recover_key_value"
+                }
+            },
+            "bundled": {
+                "default": "enabled",
+                "supports_enable": true,
+                "supports_disable": true,
+                "supports_include": true,
+                "supports_exclude": true
+            },
+            "duplicates": {
+                "supported_policies": ["reject", "first_wins", "last_wins"]
+            }
+        }))
+        .expect("full skills support")
+    }
+
+    fn hermes_with_skills(skills: Option<AdapterSkillsSupport>) -> ResolvedAdapterDescriptor {
+        let path = repository_root().join("adapters/python/hermes/hermes.fabric-adapter.json");
+        let mut descriptor = load_adapter_descriptor(&path).expect("Hermes descriptor");
+        assert!(
+            descriptor
+                .config
+                .accepts
+                .contains(&AdapterConfigField::Skills)
+        );
+        descriptor.skills = skills;
+        resolved_adapter(path, descriptor)
+    }
+
+    fn plan_with(
+        config: FabricConfig,
+        adapter: ResolvedAdapterDescriptor,
+        enforce_compatibility: bool,
+    ) -> Result<RunPlan> {
+        resolve_selected_descriptors(
+            config,
+            PathBuf::from("/tmp/fabric-skills"),
+            Some(adapter),
+            None,
+            enforce_compatibility,
+        )
+    }
+
+    fn compatibility_field(error: FabricError) -> (String, String) {
+        match error {
+            FabricError::AdapterCompatibility { field, reason, .. } => (field, reason),
+            other => panic!("expected an adapter compatibility error, found {other:?}"),
+        }
+    }
+
+    fn invalid_config_field(error: FabricError) -> (String, String) {
+        match error {
+            FabricError::InvalidConfig { field, reason } => (field, reason),
+            other => panic!("expected an invalid config error, found {other:?}"),
+        }
+    }
+
+    #[test]
+    fn skill_config_round_trips_structured_fields_without_leaking_into_extensions() {
+        let value = serde_json::json!({
+            "directories": [
+                {"skill": "skills/review"},
+                {"folder": "/sandbox/team-skills"}
+            ],
+            "bundled": {"enabled": true, "include": []},
+            "duplicates": "last_wins",
+            "profile": {"mode": "strict"}
+        });
+        let skills: SkillConfig = serde_json::from_value(value.clone()).expect("skills config");
+
+        assert_eq!(
+            skills.directories,
+            Some(vec![
+                SkillDirectory::Skill(PathBuf::from("skills/review")),
+                SkillDirectory::Folder(PathBuf::from("/sandbox/team-skills")),
+            ])
+        );
+        assert_eq!(
+            skills.bundled,
+            Some(BundledSkills {
+                enabled: true,
+                include: Some(Vec::new()),
+                exclude: None,
+            })
+        );
+        assert_eq!(skills.duplicates, Some(SkillDuplicatePolicy::LastWins));
+        assert_eq!(
+            skills.extensions.keys().collect::<Vec<_>>(),
+            vec!["profile"],
+            "named skill fields must not leak into extensions"
+        );
+        assert_eq!(serde_json::to_value(&skills).expect("skills JSON"), value);
+
+        let defaults: SkillConfig = serde_json::from_value(serde_json::json!({
+            "directories": null,
+            "bundled": {},
+            "duplicates": null
+        }))
+        .expect("null structured fields");
+        assert_eq!(defaults.directories, None);
+        assert_eq!(defaults.duplicates, None);
+        assert_eq!(defaults.bundled, Some(BundledSkills::default()));
+        assert!(defaults.extensions.is_empty());
+        assert_eq!(
+            serde_json::to_value(&defaults).expect("defaults JSON"),
+            serde_json::json!({"bundled": {"enabled": true}})
+        );
+        let error = serde_json::from_value::<SkillConfig>(serde_json::json!({
+            "bundled": {"exlude": ["a"]}
+        }))
+        .expect_err("bundled fields are closed");
+        assert!(
+            error.to_string().contains("unknown field `exlude`"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn skill_directory_entries_need_exactly_one_string_path() {
+        for (entry, expected) in [
+            (
+                serde_json::json!({"skill": "/a", "folder": "/b"}),
+                "skills.directories[1]: must contain exactly one of `skill` or `folder`, found both",
+            ),
+            (
+                serde_json::json!({}),
+                "skills.directories[1]: must contain exactly one of `skill` or `folder`, found neither",
+            ),
+            (
+                serde_json::json!({"path": "/a"}),
+                "skills.directories[1]: unknown key `path`; expected exactly one of `skill` or `folder`",
+            ),
+            (
+                serde_json::json!({"skill": "/a", "extra": true}),
+                "skills.directories[1]: unknown key `extra`; expected exactly one of `skill` or `folder`",
+            ),
+            (
+                serde_json::json!({"skill": 3}),
+                "skills.directories[1].skill: must be a string path",
+            ),
+            (
+                serde_json::json!({"folder": null}),
+                "skills.directories[1]: must contain exactly one of `skill` or `folder`, found neither",
+            ),
+            (
+                serde_json::json!({"skill": null, "folder": null}),
+                "skills.directories[1]: must contain exactly one of `skill` or `folder`, found neither",
+            ),
+            (
+                serde_json::json!({"skill": "/a", "path": null}),
+                "skills.directories[1]: unknown key `path`; expected exactly one of `skill` or `folder`",
+            ),
+            (
+                serde_json::json!({"skill": ""}),
+                "skills.directories[1].skill: must be a non-empty path",
+            ),
+            (
+                serde_json::json!({"folder": " \t"}),
+                "skills.directories[1].folder: must be a non-empty path",
+            ),
+            (
+                serde_json::json!("/a"),
+                "skills.directories[1]: must be an object with exactly one of `skill` or `folder`",
+            ),
+        ] {
+            let mut value =
+                serde_json::to_value(typed_config("nvidia.fabric.hermes")).expect("config JSON");
+            value["skills"] = serde_json::json!({
+                "directories": [{"folder": "/ok"}, entry]
+            });
+            let error =
+                serde_json::from_value::<FabricConfig>(value).expect_err("invalid entry must fail");
+            assert!(error.to_string().contains(expected), "{error}");
+        }
+
+        let error = serde_json::from_value::<SkillConfig>(serde_json::json!({
+            "directories": {"skill": "/a"}
+        }))
+        .expect_err("directories must be a list");
+        assert!(
+            error
+                .to_string()
+                .contains("skills.directories: must be a list of skill directory entries"),
+            "{error}"
+        );
+
+        let error = serde_json::from_value::<AgentSkillConfig>(serde_json::json!({
+            "directories": [{"skill": "/a", "folder": "/b"}]
+        }))
+        .expect_err("southbound entries are checked too");
+        assert!(
+            error
+                .to_string()
+                .contains("agent_config.skills.directories[0]: must contain exactly one"),
+            "{error}"
+        );
+        let single = serde_json::from_value::<SkillDirectory>(serde_json::json!({"folder": "/a"}))
+            .expect("one entry");
+        assert_eq!(single.kind(), SkillDirectoryKind::Folder);
+        assert_eq!(single.path(), Path::new("/a"));
+
+        // A key set to null is absent, northbound and southbound, as in the
+        // Python bindings.
+        for entry in [
+            serde_json::json!({"skill": "/a", "folder": null}),
+            serde_json::json!({"folder": null, "skill": "/a"}),
+        ] {
+            let parsed = serde_json::from_value::<SkillDirectory>(entry.clone())
+                .unwrap_or_else(|error| panic!("{entry}: {error}"));
+            assert_eq!(parsed, SkillDirectory::Skill(PathBuf::from("/a")));
+            assert_eq!(
+                serde_json::to_value(&parsed).expect("entry JSON"),
+                serde_json::json!({"skill": "/a"})
+            );
+            let skills = serde_json::from_value::<SkillConfig>(
+                serde_json::json!({"directories": [entry.clone()]}),
+            )
+            .expect("config entry");
+            assert_eq!(skills.directories, Some(vec![parsed.clone()]));
+            let agent = serde_json::from_value::<AgentSkillConfig>(
+                serde_json::json!({"directories": [entry]}),
+            )
+            .expect("agent entry");
+            assert_eq!(agent.directories, Some(vec![parsed]));
+        }
+    }
+
+    #[test]
+    fn skill_config_validation_names_the_failing_field() {
+        for (skills, field, reason) in [
+            (
+                serde_json::json!({"paths": ["skills/review"], "directories": []}),
+                "skills.directories",
+                "cannot be combined with skills.paths",
+            ),
+            (
+                serde_json::json!({"duplicates": "reject"}),
+                "skills.duplicates",
+                "requires skills.directories",
+            ),
+            (
+                serde_json::json!({"paths": ["skills/review"], "duplicates": "first_wins"}),
+                "skills.duplicates",
+                "requires skills.directories",
+            ),
+            (
+                serde_json::json!({"bundled": {"include": [], "exclude": []}}),
+                "skills.bundled",
+                "set at most one of include or exclude",
+            ),
+            (
+                serde_json::json!({"bundled": {"enabled": false, "include": ["a"]}}),
+                "skills.bundled.include",
+                "cannot be set when skills.bundled.enabled is false",
+            ),
+            (
+                serde_json::json!({"bundled": {"enabled": false, "exclude": []}}),
+                "skills.bundled.exclude",
+                "cannot be set when skills.bundled.enabled is false",
+            ),
+            (
+                serde_json::json!({"bundled": {"include": ["a", " "]}}),
+                "skills.bundled.include",
+                "entries must be non-empty strings",
+            ),
+            (
+                serde_json::json!({"bundled": {"exclude": [""]}}),
+                "skills.bundled.exclude",
+                "entries must be non-empty strings",
+            ),
+        ] {
+            let error = validate_config(&config_with_skills(skills.clone()))
+                .expect_err("invalid skills config must fail");
+            let (actual_field, actual_reason) = invalid_config_field(error);
+            assert_eq!(actual_field, field, "{skills}");
+            assert!(actual_reason.contains(reason), "{actual_reason}");
+        }
+
+        for skills in [
+            serde_json::json!({"paths": [], "directories": [{"skill": "a"}]}),
+            serde_json::json!({"directories": []}),
+            serde_json::json!({"directories": [], "duplicates": "reject"}),
+            serde_json::json!({"paths": ["skills/review"], "bundled": {"exclude": []}}),
+            serde_json::json!({"bundled": {"enabled": false}}),
+            serde_json::json!({"bundled": {"include": []}}),
+        ] {
+            validate_config(&config_with_skills(skills.clone()))
+                .unwrap_or_else(|error| panic!("{skills} must be valid: {error}"));
+        }
+
+        // Entries built in Rust bypass serde; validation still names the field.
+        for (entry, field) in [
+            (
+                SkillDirectory::Skill(PathBuf::new()),
+                "skills.directories[1].skill",
+            ),
+            (
+                SkillDirectory::Folder(PathBuf::from("  ")),
+                "skills.directories[1].folder",
+            ),
+        ] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            config.skills = Some(SkillConfig {
+                directories: Some(vec![SkillDirectory::Folder(PathBuf::from("/ok")), entry]),
+                ..SkillConfig::default()
+            });
+            let (actual_field, reason) =
+                invalid_config_field(validate_config(&config).expect_err("blank path must fail"));
+            assert_eq!(actual_field, field);
+            assert_eq!(reason, "must be a non-empty path");
+        }
+
+        let error = resolve_run_plan_from_config(
+            config_with_skills(serde_json::json!({"duplicates": "reject"})),
+            ResolveContext::new("/tmp/fabric-skills"),
+        )
+        .expect_err("plan resolution validates skills");
+        assert_eq!(invalid_config_field(error).0, "skills.duplicates");
+    }
+
+    #[test]
+    fn structured_skills_resolve_relative_paths_and_reach_the_adapter() {
+        let config = config_with_skills(serde_json::json!({
+            "directories": [
+                {"skill": "skills/review"},
+                {"folder": "./team/../shared-skills"},
+                {"folder": "/sandbox/team-skills"}
+            ],
+            "bundled": {"include": []},
+            "duplicates": "last_wins",
+            "profile": "strict"
+        }));
+        let mut adapter = hermes_with_skills(Some(full_skills_support()));
+        adapter.descriptor.extension_schemas.insert(
+            AdapterExtensionPoint::Skills,
+            serde_json::json!({
+                "type": "object",
+                "properties": {"profile": {"type": "string"}},
+                "additionalProperties": false
+            })
+            .as_object()
+            .expect("skills extension schema")
+            .clone(),
+        );
+        let plan = plan_with(config, adapter, true).expect("supported structured skills");
+        let expected = vec![
+            SkillDirectory::Skill(PathBuf::from("/tmp/fabric-skills/skills/review")),
+            SkillDirectory::Folder(PathBuf::from("/tmp/fabric-skills/team/../shared-skills")),
+            SkillDirectory::Folder(PathBuf::from("/sandbox/team-skills")),
+        ];
+
+        assert_eq!(
+            plan.capability_plan.skill_directories,
+            Some(expected.clone())
+        );
+        assert_eq!(
+            plan.capability_plan.native.skill_directories,
+            Some(expected)
+        );
+        assert_eq!(
+            plan.capability_plan.unsupported,
+            CapabilityTargetPlan::default()
+        );
+        assert!(plan.capability_plan.skill_paths.is_empty());
+        assert_eq!(
+            plan.capability_plan
+                .routes
+                .iter()
+                .map(|route| (route.name.as_str(), route.target))
+                .collect::<Vec<_>>(),
+            vec![
+                ("skills.directories", CapabilityTarget::HarnessNative),
+                ("skills.bundled", CapabilityTarget::HarnessNative),
+                ("skills.duplicates", CapabilityTarget::HarnessNative),
+            ]
+        );
+        assert_eq!(
+            serde_json::to_value(plan.agent_config.skills).expect("agent skills JSON"),
+            serde_json::json!({
+                "directories": [
+                    {"skill": "/tmp/fabric-skills/skills/review"},
+                    {"folder": "/tmp/fabric-skills/team/../shared-skills"},
+                    {"folder": "/sandbox/team-skills"}
+                ],
+                "bundled": {"enabled": true, "include": []},
+                "duplicates": "last_wins",
+                "extensions": {"profile": "strict"}
+            })
+        );
+    }
+
+    #[test]
+    fn skills_block_reaches_the_adapter_for_each_structured_field_alone() {
+        let support = Some(full_skills_support());
+        for (skills, expected) in [
+            (
+                serde_json::json!({"directories": []}),
+                serde_json::json!({"directories": []}),
+            ),
+            (
+                serde_json::json!({"bundled": {"enabled": false}}),
+                serde_json::json!({"bundled": {"enabled": false}}),
+            ),
+            (
+                serde_json::json!({"directories": [], "duplicates": "reject"}),
+                serde_json::json!({"directories": [], "duplicates": "reject"}),
+            ),
+            (
+                serde_json::json!({"paths": ["skills/review"], "bundled": {"exclude": ["a"]}}),
+                serde_json::json!({
+                    "paths": ["/tmp/fabric-skills/skills/review"],
+                    "bundled": {"enabled": true, "exclude": ["a"]}
+                }),
+            ),
+        ] {
+            let plan = plan_with(
+                config_with_skills(skills.clone()),
+                hermes_with_skills(support.clone()),
+                true,
+            )
+            .unwrap_or_else(|error| panic!("{skills}: {error}"));
+            assert_eq!(
+                serde_json::to_value(plan.agent_config.skills).expect("agent skills JSON"),
+                expected,
+                "{skills}"
+            );
+        }
+
+        // An empty list asks for no external skills: it needs no capability and
+        // is not sent to adapters without directory loading.
+        let mut support = full_skills_support();
+        support.directory_loading = None;
+        for adapter in [hermes_with_skills(Some(support)), hermes_with_skills(None)] {
+            let plan = plan_with(
+                config_with_skills(serde_json::json!({"directories": []})),
+                adapter,
+                true,
+            )
+            .expect("empty directories never fail");
+            assert_eq!(plan.agent_config.skills, None);
+            assert!(plan.capability_plan.routes.is_empty());
+            assert_eq!(plan.capability_plan.skill_directories, Some(Vec::new()));
+            assert_eq!(plan.capability_plan.native.skill_directories, None);
+        }
+    }
+
+    #[test]
+    fn duplicates_are_sent_only_with_directories() {
+        // Descriptors cannot declare a duplicate policy without directory
+        // loading.
+        let path = repository_root().join("adapters/python/hermes/hermes.fabric-adapter.json");
+        let mut descriptor = load_adapter_descriptor(&path).expect("Hermes descriptor");
+        let mut support = full_skills_support();
+        support.directory_loading = None;
+        descriptor.skills = Some(support.clone());
+        let error = validate_adapter_descriptor_shape(&descriptor, &path)
+            .expect_err("duplicates without directory loading");
+        assert!(
+            matches!(
+                &error,
+                FabricError::InvalidAdapterDescriptor { message, .. }
+                    if message == "skills.duplicates requires skills.directory_loading"
+            ),
+            "{error:?}"
+        );
+        support.duplicates = None;
+        descriptor.skills = Some(support);
+        validate_adapter_descriptor_shape(&descriptor, &path)
+            .expect("bundled support alone stays valid");
+
+        // The projection never sends a policy without the entries it governs.
+        let config = config_with_skills(serde_json::json!({
+            "directories": [], "duplicates": "reject"
+        }));
+        let adapter = hermes_with_skills(Some(full_skills_support()));
+        let mut capability_plan = plan_with(config.clone(), adapter.clone(), true)
+            .expect("supported plan")
+            .capability_plan;
+        assert_eq!(
+            capability_plan.native.skill_duplicates,
+            Some(SkillDuplicatePolicy::Reject)
+        );
+        capability_plan.native.skill_directories = None;
+        let projected =
+            project_agent_config(&config, &capability_plan, Some(&adapter.descriptor), None);
+        assert_eq!(projected.skills, None);
+        capability_plan.native.bundled_skills = Some(BundledSkills::default());
+        let projected =
+            project_agent_config(&config, &capability_plan, Some(&adapter.descriptor), None);
+        let skills = projected.skills.expect("bundled skills are sent");
+        assert_eq!((skills.directories, skills.duplicates), (None, None));
+    }
+
+    #[test]
+    fn structured_skills_require_the_matching_descriptor_capability() {
+        let without = |edit: fn(&mut AdapterSkillsSupport)| {
+            let mut support = full_skills_support();
+            edit(&mut support);
+            Some(support)
+        };
+        let cases: Vec<(Value, Option<AdapterSkillsSupport>, &str, &str)> = vec![
+            // Missing blocks.
+            (
+                serde_json::json!({"directories": [{"folder": "/a"}]}),
+                None,
+                "skills.directories",
+                "does not declare `skills.directory_loading` support",
+            ),
+            (
+                serde_json::json!({"directories": [{"folder": "/a"}]}),
+                without(|support| support.directory_loading = None),
+                "skills.directories",
+                "does not declare `skills.directory_loading` support",
+            ),
+            (
+                serde_json::json!({"bundled": {}}),
+                without(|support| support.bundled = None),
+                "skills.bundled",
+                "does not declare `skills.bundled` support",
+            ),
+            (
+                serde_json::json!({"directories": [], "duplicates": "reject"}),
+                without(|support| support.duplicates = None),
+                "skills.duplicates",
+                "does not declare `skills.duplicates` support",
+            ),
+            // Unsupported entry kinds.
+            (
+                serde_json::json!({"directories": [{"folder": "/a"}, {"skill": "/b"}]}),
+                without(|support| {
+                    support
+                        .directory_loading
+                        .as_mut()
+                        .expect("directory loading")
+                        .supported_entries = vec![SkillDirectoryKind::Folder];
+                }),
+                "skills.directories[1].skill",
+                "does not support `skill` entries; supported entries: folder",
+            ),
+            (
+                serde_json::json!({"directories": [{"skill": "/b"}, {"folder": "/a"}]}),
+                without(|support| {
+                    support
+                        .directory_loading
+                        .as_mut()
+                        .expect("directory loading")
+                        .supported_entries = vec![SkillDirectoryKind::Skill];
+                }),
+                "skills.directories[1].folder",
+                "does not support `folder` entries; supported entries: skill",
+            ),
+            // Unsupported bundled operations.
+            (
+                serde_json::json!({"bundled": {}}),
+                without(|support| {
+                    support.bundled.as_mut().expect("bundled").supports_enable = false;
+                }),
+                "skills.bundled",
+                "does not support enabling all bundled skills (`supports_enable`)",
+            ),
+            (
+                serde_json::json!({"bundled": {"enabled": false}}),
+                without(|support| {
+                    support.bundled.as_mut().expect("bundled").supports_disable = false;
+                }),
+                "skills.bundled.enabled",
+                "does not support disabling bundled skills (`supports_disable`)",
+            ),
+            (
+                serde_json::json!({"bundled": {"include": []}}),
+                without(|support| {
+                    support.bundled.as_mut().expect("bundled").supports_include = false;
+                }),
+                "skills.bundled.include",
+                "(`supports_include`)",
+            ),
+            (
+                serde_json::json!({"bundled": {"exclude": []}}),
+                without(|support| {
+                    support.bundled.as_mut().expect("bundled").supports_exclude = false;
+                }),
+                "skills.bundled.exclude",
+                "(`supports_exclude`)",
+            ),
+            // A policy without directory loading, from a descriptor built in
+            // code; loaded descriptors reject this shape.
+            (
+                serde_json::json!({"directories": [], "duplicates": "reject"}),
+                without(|support| support.directory_loading = None),
+                "skills.duplicates",
+                "which `skills.duplicates` requires",
+            ),
+            // Unsupported duplicate policies.
+            (
+                serde_json::json!({"directories": [], "duplicates": "last_wins"}),
+                without(|support| {
+                    support
+                        .duplicates
+                        .as_mut()
+                        .expect("duplicates")
+                        .supported_policies = vec![
+                        SkillDuplicatePolicy::Reject,
+                        SkillDuplicatePolicy::FirstWins,
+                    ];
+                }),
+                "skills.duplicates",
+                "policy `last_wins` is not supported; supported policies: reject, first_wins",
+            ),
+        ];
+        for (skills, support, field, reason) in cases {
+            let config = config_with_skills(skills.clone());
+            let adapter = hermes_with_skills(support);
+            let issues = adapter_config_compatibility_issues(&config, Some(&adapter.descriptor));
+            assert_eq!(issues.len(), 1, "{skills}: {issues:?}");
+            assert_eq!(issues[0].field, field, "{skills}");
+            assert!(issues[0].reason.contains(reason), "{}", issues[0].reason);
+
+            let (actual_field, actual_reason) = compatibility_field(
+                plan_with(config.clone(), adapter.clone(), true)
+                    .expect_err("unsupported skills must fail planning"),
+            );
+            assert_eq!(actual_field, field, "{skills}");
+            assert!(actual_reason.contains(reason), "{actual_reason}");
+
+            // Diagnostic plans keep the unsupported request out of the adapter.
+            let plan = plan_with(config, adapter, false).expect("diagnostic plan");
+            assert!(
+                plan.capability_plan
+                    .routes
+                    .iter()
+                    .any(|route| route.target == CapabilityTarget::Unsupported
+                        && field.starts_with(&route.config_field())),
+                "{skills}: {:?}",
+                plan.capability_plan.routes
+            );
+            assert!(
+                plan.agent_config.skills.as_ref().is_none_or(|skills| {
+                    skills.directories.as_ref().is_none_or(Vec::is_empty)
+                        && skills.bundled.is_none()
+                        && skills.duplicates.is_none()
+                }),
+                "{skills}: {:?}",
+                plan.agent_config.skills
+            );
+        }
+    }
+
+    #[test]
+    fn structured_skills_require_the_adapter_to_accept_skills() {
+        let mut adapter = hermes_with_skills(Some(full_skills_support()));
+        adapter
+            .descriptor
+            .config
+            .accepts
+            .retain(|field| *field != AdapterConfigField::Skills);
+        let config = config_with_skills(serde_json::json!({
+            "directories": [{"skill": "/a"}],
+            "bundled": {},
+            "duplicates": "reject"
+        }));
+        let issues = adapter_config_compatibility_issues(&config, Some(&adapter.descriptor));
+        assert_eq!(
+            issues
+                .iter()
+                .map(|issue| issue.field.as_str())
+                .collect::<Vec<_>>(),
+            vec!["skills.directories", "skills.bundled", "skills.duplicates"]
+        );
+        assert!(
+            issues
+                .iter()
+                .all(|issue| issue.reason.contains("does not declare `skills` support"))
+        );
+        let (field, _) =
+            compatibility_field(plan_with(config, adapter, true).expect_err("must fail"));
+        assert_eq!(field, "skills.directories");
+    }
+
+    #[test]
+    fn paths_only_skills_plan_is_unchanged_by_structured_support() {
+        let without_block = plan_with(
+            typed_config("nvidia.fabric.hermes"),
+            hermes_with_skills(None),
+            true,
+        )
+        .expect("paths-only plan");
+        let with_block = plan_with(
+            typed_config("nvidia.fabric.hermes"),
+            hermes_with_skills(Some(full_skills_support())),
+            true,
+        )
+        .expect("paths-only plan with structured support");
+
+        let expected_capability_plan = serde_json::json!({
+            "tools": {},
+            "tools_configured": false,
+            "skill_paths": ["/tmp/fabric-skills/skills/review"],
+            "native": {
+                "tools_configured": false,
+                "skill_paths": ["/tmp/fabric-skills/skills/review"]
+            },
+            "managed": {"tools_configured": false},
+            "unsupported": {"tools_configured": false},
+            "routes": [{
+                "kind": "skills",
+                "name": "skills",
+                "target": "harness_native",
+                "reason": "selected adapter accepts NeMo Fabric skills config"
+            }]
+        });
+        for plan in [&without_block, &with_block] {
+            assert_eq!(
+                serde_json::to_value(&plan.capability_plan).expect("capability plan JSON"),
+                expected_capability_plan
+            );
+            assert_eq!(
+                serde_json::to_value(&plan.agent_config.skills).expect("agent skills JSON"),
+                serde_json::json!({"paths": ["/tmp/fabric-skills/skills/review"]})
+            );
+            assert_eq!(
+                serde_json::to_value(&plan.config.skills).expect("config skills JSON"),
+                serde_json::json!({"paths": ["skills/review"]})
+            );
+        }
+        assert_eq!(without_block.agent_config, with_block.agent_config);
+        assert_eq!(without_block.capability_plan, with_block.capability_plan);
+
+        // Unsupported paths keep the existing route and field.
+        let mut adapter = hermes_with_skills(None);
+        adapter
+            .descriptor
+            .config
+            .accepts
+            .retain(|field| *field != AdapterConfigField::Skills);
+        let (field, reason) = compatibility_field(
+            plan_with(typed_config("nvidia.fabric.hermes"), adapter, true)
+                .expect_err("paths need skills support"),
+        );
+        assert_eq!(field, "skills");
+        assert!(reason.contains("does not declare native skills support"));
+    }
+
+    fn descriptor_with_skills(skills: Value) -> Value {
+        let path = repository_root().join("adapters/python/hermes/hermes.fabric-adapter.json");
+        let mut descriptor: Value =
+            serde_json::from_str(&std::fs::read_to_string(path).expect("descriptor JSON"))
+                .expect("descriptor value");
+        descriptor["skills"] = skills;
+        descriptor
+    }
+
+    #[test]
+    fn descriptor_skills_block_parses_and_round_trips() {
+        let skills = serde_json::json!({
+            "directory_loading": {
+                "supported_entries": ["folder", "skill"],
+                "skill_file": "SKILL.md",
+                "discovery": {
+                    "traversal": "immediate_children",
+                    "nested_skills": "stop_at_skill",
+                    "depth_limit": {"kind": "fixed", "levels": 1}
+                },
+                "parsing": {
+                    "required_frontmatter_fields": ["description"],
+                    "name_fallback": "none",
+                    "frontmatter_errors": "reject"
+                }
+            },
+            "bundled": {
+                "default": "none",
+                "supports_enable": true,
+                "supports_disable": false,
+                "supports_include": false,
+                "supports_exclude": false
+            },
+            "duplicates": {
+                "supported_policies": ["reject"],
+                "native": "the later root wins",
+                "name_source": "frontmatter",
+                "x_note": "additive"
+            }
+        });
+        let descriptor: AdapterDescriptor =
+            serde_json::from_value(descriptor_with_skills(skills.clone())).expect("descriptor");
+        let support = descriptor.skills.as_ref().expect("skills block");
+        let loading = support
+            .directory_loading
+            .as_ref()
+            .expect("directory loading");
+        assert_eq!(
+            loading.supported_entries,
+            vec![SkillDirectoryKind::Folder, SkillDirectoryKind::Skill]
+        );
+        assert_eq!(
+            loading.discovery.depth_limit,
+            SkillDepthLimit::Fixed { levels: 1 }
+        );
+        assert_eq!(loading.parsing.name_fallback, SkillNameFallback::None);
+        let duplicates = support.duplicates.as_ref().expect("duplicates");
+        assert_eq!(duplicates.name_source, Some(SkillNameSource::Frontmatter));
+        assert_eq!(duplicates.extensions["x_note"], "additive");
+        assert!(!descriptor.extensions.contains_key("skills"));
+        assert_eq!(
+            serde_json::to_value(&descriptor).expect("descriptor JSON")["skills"],
+            skills
+        );
+
+        for depth_limit in [
+            serde_json::json!({"kind": "no_fixed_limit"}),
+            serde_json::json!({"kind": "adapter_defined"}),
+        ] {
+            let mut value = skills.clone();
+            value["directory_loading"]["discovery"]["depth_limit"] = depth_limit.clone();
+            let descriptor: AdapterDescriptor =
+                serde_json::from_value(descriptor_with_skills(value)).expect("depth limit");
+            assert_eq!(
+                serde_json::to_value(descriptor.skills).expect("skills JSON")["directory_loading"]
+                    ["discovery"]["depth_limit"],
+                depth_limit
+            );
+        }
+
+        let only_bundled: AdapterDescriptor = serde_json::from_value(descriptor_with_skills(
+            serde_json::json!({"bundled": skills["bundled"].clone()}),
+        ))
+        .expect("each sub-block is optional");
+        assert!(only_bundled.skills.as_ref().is_some_and(
+            |skills| skills.directory_loading.is_none() && skills.duplicates.is_none()
+        ));
+    }
+
+    #[test]
+    fn descriptor_skills_block_rejects_invalid_capabilities() {
+        let valid = serde_json::to_value(full_skills_support()).expect("support JSON");
+        let edit = |pointer: &str, replacement: Option<Value>| {
+            let mut value = valid.clone();
+            let (parent, key) = pointer.rsplit_once('/').expect("pointer has a parent");
+            let parent = value
+                .pointer_mut(parent)
+                .and_then(Value::as_object_mut)
+                .expect("parent object");
+            match replacement {
+                Some(replacement) => {
+                    parent.insert(key.to_string(), replacement);
+                }
+                None => {
+                    parent.remove(key);
+                }
+            }
+            value
+        };
+        for (skills, expected) in [
+            (
+                edit(
+                    "/directory_loading/supported_entries",
+                    Some(serde_json::json!([])),
+                ),
+                "supported_entries must contain at least one entry kind",
+            ),
+            (
+                edit(
+                    "/directory_loading/supported_entries",
+                    Some(serde_json::json!(["skill", "skill"])),
+                ),
+                "supported_entries must not contain duplicate entry kinds",
+            ),
+            (
+                edit(
+                    "/directory_loading/supported_entries",
+                    Some(serde_json::json!(["file"])),
+                ),
+                "unknown variant `file`",
+            ),
+            (
+                edit("/directory_loading/supported_entries", None),
+                "missing field `supported_entries`",
+            ),
+            (
+                edit("/directory_loading/skill_file", None),
+                "missing field `skill_file`",
+            ),
+            (
+                edit(
+                    "/directory_loading/skill_file",
+                    Some(serde_json::json!("skill.md")),
+                ),
+                "skill_file must be `SKILL.md`, found `skill.md`",
+            ),
+            (
+                edit("/directory_loading/discovery", None),
+                "missing field `discovery`",
+            ),
+            (
+                edit("/directory_loading/parsing", None),
+                "missing field `parsing`",
+            ),
+            (
+                edit("/directory_loading/discovery/depth_limit", None),
+                "missing field `depth_limit`",
+            ),
+            (
+                edit("/directory_loading/discovery/traversal", None),
+                "missing field `traversal`",
+            ),
+            (
+                edit("/directory_loading/discovery/nested_skills", None),
+                "missing field `nested_skills`",
+            ),
+            (
+                edit(
+                    "/directory_loading/discovery/depth_limit",
+                    Some(serde_json::json!({"kind": "fixed", "levels": 0})),
+                ),
+                "depth_limit.levels must be at least 1",
+            ),
+            (
+                edit(
+                    "/directory_loading/discovery/depth_limit",
+                    Some(serde_json::json!({"kind": "fixed"})),
+                ),
+                "missing field `levels`",
+            ),
+            (
+                edit(
+                    "/directory_loading/discovery/depth_limit",
+                    Some(serde_json::json!({"kind": "unlimited"})),
+                ),
+                "unknown variant `unlimited`",
+            ),
+            (
+                edit(
+                    "/directory_loading/discovery/depth_limit",
+                    Some(serde_json::json!({"kind": "no_fixed_limit", "levels": 2})),
+                ),
+                "unknown field `levels`",
+            ),
+            (
+                edit(
+                    "/directory_loading/discovery/depth_limit",
+                    Some(serde_json::json!("no_fixed_limit")),
+                ),
+                "depth_limit must be an object with a `kind`",
+            ),
+            (
+                edit(
+                    "/directory_loading/parsing/required_frontmatter_fields",
+                    None,
+                ),
+                "missing field `required_frontmatter_fields`",
+            ),
+            (
+                edit(
+                    "/directory_loading/parsing/required_frontmatter_fields",
+                    Some(serde_json::json!(["description", "description"])),
+                ),
+                "required_frontmatter_fields must not contain duplicates",
+            ),
+            (
+                edit(
+                    "/directory_loading/parsing/required_frontmatter_fields",
+                    Some(serde_json::json!([" "])),
+                ),
+                "required_frontmatter_fields entries must be non-empty strings",
+            ),
+            (
+                edit("/directory_loading/parsing/name_fallback", None),
+                "missing field `name_fallback`",
+            ),
+            (
+                edit("/directory_loading/parsing/frontmatter_errors", None),
+                "missing field `frontmatter_errors`",
+            ),
+            (edit("/bundled/default", None), "missing field `default`"),
+            (
+                edit("/bundled/supports_include", None),
+                "missing field `supports_include`",
+            ),
+            (
+                edit("/bundled/default", Some(serde_json::json!("on"))),
+                "unknown variant `on`",
+            ),
+            (
+                edit("/duplicates/supported_policies", None),
+                "missing field `supported_policies`",
+            ),
+            (
+                edit(
+                    "/duplicates/supported_policies",
+                    Some(serde_json::json!([])),
+                ),
+                "supported_policies must contain at least one policy",
+            ),
+            (
+                edit(
+                    "/duplicates/supported_policies",
+                    Some(serde_json::json!(["reject", "reject"])),
+                ),
+                "supported_policies must not contain duplicate policies",
+            ),
+            (
+                edit(
+                    "/duplicates/supported_policies",
+                    Some(serde_json::json!(["newest_wins"])),
+                ),
+                "unknown variant `newest_wins`",
+            ),
+            (
+                edit("/duplicates/name_source", Some(serde_json::json!("path"))),
+                "unknown variant `path`",
+            ),
+        ] {
+            let Err(error) =
+                serde_json::from_value::<AdapterDescriptor>(descriptor_with_skills(skills.clone()))
+            else {
+                panic!("invalid skills block must fail: {expected}");
+            };
+            assert!(error.to_string().contains(expected), "{expected}: {error}");
+        }
+
+        // Invalid blocks surface as descriptor load failures.
+        let path = std::env::temp_dir().join(format!(
+            "fabric-skills-{}-{}.fabric-adapter.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&descriptor_with_skills(edit(
+                "/directory_loading/discovery/depth_limit",
+                None,
+            )))
+            .expect("descriptor JSON"),
+        )
+        .expect("write descriptor");
+        let result = load_adapter_descriptor(&path);
+        std::fs::remove_file(&path).expect("remove descriptor");
+        let error = result.expect_err("invalid descriptor must not load");
+        assert!(
+            error.to_string().contains("missing field `depth_limit`"),
+            "{error}"
+        );
     }
 }

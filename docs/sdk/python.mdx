@@ -409,6 +409,7 @@ Relay subfields:
 | `tools.definitions` | No | No | No | No | No |
 | `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names | No |
 | `skills.paths` | Yes | Yes | Yes | Yes | No |
+| `skills.directories`, `.bundled`, `.duplicates` | No | No | No | Yes; refer to [Configure Skills](../integrations/harness/skills.mdx) | No |
 | `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No |
 | `mcp.servers.<name>.allowed_tools`, `.blocked_tools` | No | No | No | No | No |
 | `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No |
@@ -461,6 +462,39 @@ capability_config.enable_relay(
     output_dir="./artifacts/relay",
 )
 ```
+
+### Configure Skills
+
+`SkillConfig` holds the `skills` section. It has the following fields:
+
+| Field | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `paths` | `list[str \| Path]` | `[]` | Skill paths. Each adapter defines what a path means. |
+| `directories` | `list[SkillDirectory] \| None` | `None` | Structured entries, each naming one skill or a folder of skills. Set only when `paths` is empty. `[]` loads no external skills. |
+| `bundled` | `BundledSkills \| None` | `None` | Which skills that ship with the harness load. `None` keeps the harness default. |
+| `duplicates` | `"reject"`, `"first_wins"`, `"last_wins"`, or `None` | `None` | What happens when two `directories` entries supply skills with the same name. Requires `directories`. `None` keeps the harness behavior. |
+
+`SkillDirectory` sets exactly one of `skill`, a folder that holds `SKILL.md`, or `folder`, a folder of skills. `BundledSkills` has `enabled` (default `True`), `include`, and `exclude`. `include` and `exclude` cannot both be set, and `enabled=False` takes neither list. For both lists, `None` and `[]` mean different things.
+
+The following example loads a folder of skills and one more skill, leaves out one bundled skill, and lets the later entry win a name clash:
+
+```python
+from nemo_fabric import BundledSkills, SkillConfig, SkillDirectory
+
+skills_config = config.model_copy(deep=True)
+skills_config.skills = SkillConfig(
+    directories=[
+        SkillDirectory(folder="./skills"),
+        SkillDirectory(skill="/mnt/release-review"),
+    ],
+    bundled=BundledSkills(exclude=["github-auth"]),
+    duplicates="last_wins",
+)
+```
+
+Relative paths resolve against `base_dir`. `add_skill_path(path)` adds to `paths`, so it raises `ValueError` when `directories` is set; add a `SkillDirectory` entry instead. `remove_skill_path(path)` removes the `skills` section only when nothing else in it is set.
+
+`directories`, `bundled`, and `duplicates` need an adapter whose descriptor advertises them. Planning rejects them otherwise. Refer to [Configure Skills](../integrations/harness/skills.mdx) for start checks, the `output.skills` run report, and harness differences.
 
 ### Set Environment Values Or Forward Them By Name
 

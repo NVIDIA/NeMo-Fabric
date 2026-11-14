@@ -57,6 +57,18 @@ export type AdapterConfigField =
  */
 export type InstructionMode = "replace" | "append";
 /**
+ * Kind of one structured external-skill entry.
+ */
+export type SkillDirectoryKind = "skill" | "folder";
+/**
+ * Source of the name compared for duplicate detection.
+ */
+export type SkillNameSource = "frontmatter" | "directory";
+/**
+ * How two `skills.directories` entries that provide the same skill name resolve.
+ */
+export type SkillDuplicatePolicy = "reject" | "last_wins" | "first_wins";
+/**
  * Adapter target categories understood by this Adapter Contract version.
  */
 export type AdapterTargetType = "workflow";
@@ -96,6 +108,11 @@ export type AdapterDescriptor = {
    * JSON Schema for adapter-owned `harness.settings`.
    */
   settings_schema?: JsonObject | null;
+  /**
+   * Structured skill capabilities. `None` means only `skills.paths` (when
+   * `config.accepts` includes `skills`).
+   */
+  skills?: AdapterSkillsSupport | null;
   /**
    * Registered target categories this adapter can execute.
    */
@@ -181,6 +198,136 @@ export type AdapterRequirements = {
    * Required services.
    */
   services?: string[];
+} & JsonObject;
+/**
+ * Structured skill capabilities implemented by an adapter.
+ *
+ * Each sub-block is optional; an omitted block means the adapter does not
+ * implement that capability; `null` reads as omitted. A non-null `duplicates`
+ * requires a non-null `directory_loading`. The adapter must also accept the
+ * `skills` config field in `config.accepts`.
+ */
+export type AdapterSkillsSupport = {
+  /**
+   * Bundled-skill selection through `skills.bundled`.
+   */
+  bundled?: BundledSkillsSupport | null;
+  /**
+   * Structured `skills.directories` loading.
+   */
+  directory_loading?: SkillDirectoryLoadingSupport | null;
+  /**
+   * Duplicate-name policies for `skills.duplicates`.
+   */
+  duplicates?: SkillDuplicatesSupport | null;
+} & JsonObject;
+/**
+ * Bundled-skill operations implemented by an adapter. Every field is required.
+ */
+export type BundledSkillsSupport = {
+  /**
+   * What loads when `skills.bundled` is omitted.
+   */
+  default: "enabled" | "disabled" | "none";
+  /**
+   * Whether `enabled: false` is implemented.
+   */
+  supports_disable: boolean;
+  /**
+   * Whether `BundledSkills()` (enabled, no lists) is implemented.
+   */
+  supports_enable: boolean;
+  /**
+   * Whether `exclude` (including `[]`) is implemented.
+   */
+  supports_exclude: boolean;
+  /**
+   * Whether `include` (including `[]`) is implemented.
+   */
+  supports_include: boolean;
+} & JsonObject;
+/**
+ * How an adapter loads `skills.directories` entries. Every field is required.
+ */
+export type SkillDirectoryLoadingSupport = {
+  discovery: SkillDiscoverySupport;
+  parsing: SkillParsingSupport;
+  /**
+   * File that marks a skill folder. Must be `SKILL.md`.
+   */
+  skill_file: "SKILL.md";
+  /**
+   * Entry kinds the adapter implements. Non-empty and unique.
+   *
+   * @minItems 1
+   */
+  supported_entries: [SkillDirectoryKind, ...SkillDirectoryKind[]];
+} & JsonObject;
+/**
+ * How the adapter discovers skills inside a `folder` entry.
+ */
+export type SkillDiscoverySupport = {
+  /**
+   * Depth bound for discovery. Required: there is no implicit unlimited default.
+   */
+  depth_limit:
+    | {
+        kind: "fixed";
+        /**
+         * Maximum discovery depth, at least one.
+         */
+        levels: number;
+      }
+    | {
+        kind: "no_fixed_limit";
+      }
+    | {
+        kind: "adapter_defined";
+      };
+  /**
+   * Whether discovery continues below a discovered skill folder.
+   */
+  nested_skills: "include" | "stop_at_skill";
+  /**
+   * Whether only immediate children or the whole tree is searched.
+   */
+  traversal: "immediate_children" | "recursive";
+} & JsonObject;
+/**
+ * How the adapter parses each candidate's `SKILL.md`.
+ */
+export type SkillParsingSupport = {
+  /**
+   * How front-matter parse errors are handled.
+   */
+  frontmatter_errors: "recover_key_value" | "reject" | "adapter_defined";
+  /**
+   * Whether a missing name falls back to the skill folder name.
+   */
+  name_fallback: "directory_name" | "none";
+  /**
+   * Front-matter fields the loading path requires. May be empty; unique.
+   */
+  required_frontmatter_fields: string[];
+} & JsonObject;
+/**
+ * Duplicate-name policies implemented by an adapter.
+ */
+export type SkillDuplicatesSupport = {
+  /**
+   * Whether skill names are compared by front matter or by folder name.
+   */
+  name_source?: SkillNameSource | null;
+  /**
+   * Short description of the harness's own handling when `duplicates` is omitted.
+   */
+  native?: string | null;
+  /**
+   * Policies accepted in `skills.duplicates`. Non-empty and unique.
+   *
+   * @minItems 1
+   */
+  supported_policies: [SkillDuplicatePolicy, ...SkillDuplicatePolicy[]];
 } & JsonObject;
 /**
  * Telemetry support declared by this adapter.

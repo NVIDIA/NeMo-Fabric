@@ -39,6 +39,7 @@ The primary descriptor fields are:
 | `config` | Declares the normalized fields the adapter applies and target-native files it generates. |
 | `capabilities` | Declares optional runtime operations implemented through the adapter binding. |
 | `telemetry` | Declares telemetry outputs and integration modes the adapter produces or forwards. |
+| `skills` | Declares the structured skill features the adapter implements: `skills.directories` loading, bundled-skill selection, and duplicate policies. |
 | `target_types` | Declares registered target types a shared adapter can load. Omit it for a direct harness or dedicated-agent adapter. |
 
 <Note title="Keep Claims Exact">
@@ -118,7 +119,78 @@ configured mode at `instructions.system.mode` before the adapter starts.
 **Success Check**: A configured field outside `config.accepts` fails planning
 instead of being silently ignored.
 
-### 3. Add Adapter-Owned Schemas
+### 3. Declare Structured Skill Support
+
+An adapter that lists `skills` in `config.accepts` receives `skills.paths`.
+The structured fields `skills.directories`, `skills.bundled`, and
+`skills.duplicates` need a top-level `skills` block. Each sub-block is
+optional. Leave out a sub-block when the adapter does not implement that
+feature. Planning rejects a configured field that needs a missing sub-block
+and names the field.
+
+The following block declares support for all three features:
+
+```json
+"skills": {
+  "directory_loading": {
+    "supported_entries": ["skill", "folder"],
+    "skill_file": "SKILL.md",
+    "discovery": {
+      "traversal": "recursive",
+      "nested_skills": "stop_at_skill",
+      "depth_limit": {"kind": "fixed", "levels": 6}
+    },
+    "parsing": {
+      "required_frontmatter_fields": ["description"],
+      "name_fallback": "directory_name",
+      "frontmatter_errors": "reject"
+    }
+  },
+  "bundled": {
+    "default": "enabled",
+    "supports_enable": true,
+    "supports_disable": true,
+    "supports_include": true,
+    "supports_exclude": true
+  },
+  "duplicates": {
+    "supported_policies": ["reject", "first_wins", "last_wins"],
+    "native": "The harness keeps the first copy it finds.",
+    "name_source": "frontmatter"
+  }
+}
+```
+
+The sub-blocks describe what the adapter implements, not settings a caller
+chooses:
+
+| Field | Meaning |
+| --- | --- |
+| `directory_loading.supported_entries` | The entry kinds the adapter loads: `skill`, `folder`, or both. Non-empty and unique. |
+| `directory_loading.skill_file` | The file that marks a skill folder. Must be `SKILL.md`. |
+| `directory_loading.discovery.traversal` | `immediate_children` searches only the folder's direct children. `recursive` searches every level. |
+| `directory_loading.discovery.nested_skills` | `include` also finds skills inside a skill's folder. `stop_at_skill` stops at a skill's folder. |
+| `directory_loading.discovery.depth_limit` | Required. `{"kind": "fixed", "levels": N}` with `N` at least 1, where the configured folder is depth 0. `{"kind": "no_fixed_limit"}` has no depth cap, but exclusions still apply. `{"kind": "adapter_defined"}` means the adapter documents its own bounds. |
+| `directory_loading.parsing.required_frontmatter_fields` | Front-matter fields a skill must have to load. Can be empty. |
+| `directory_loading.parsing.name_fallback` | `directory_name` uses the folder name when the front matter has no `name`. `none` skips the skill. |
+| `directory_loading.parsing.frontmatter_errors` | `recover_key_value` recovers simple `key: value` lines. `reject` rejects a skill whose front matter does not parse. `adapter_defined` means the adapter documents its own handling. |
+| `bundled.default` | What loads when `skills.bundled` is left out: `enabled`, `disabled`, or `none` when the harness ships no bundled skills. |
+| `bundled.supports_enable`, `.supports_disable`, `.supports_include`, `.supports_exclude` | Which `skills.bundled` requests the adapter implements, including the empty-list meaning of `include` and `exclude`. All four are required. |
+| `duplicates.supported_policies` | The `skills.duplicates` values the adapter implements. Non-empty and unique. |
+| `duplicates.native` | Optional. A short description of what the harness does when `skills.duplicates` is left out. |
+| `duplicates.name_source` | Optional. Whether names are compared by `frontmatter` name or by `directory` name. |
+
+Every field in `directory_loading` is required, so a descriptor cannot claim
+unlimited discovery by accident. Declare a value only after the adapter
+implements it. Refer to
+[Configure Skills](../../integrations/harness/skills.mdx) for the behavior
+callers see.
+
+**Success Check**: A configured `skills.directories`, `skills.bundled`, or
+`skills.duplicates` value that the `skills` block does not cover fails
+planning with the field path.
+
+### 4. Add Adapter-Owned Schemas
 
 Use an Adapter Descriptor schema for target-specific data that cannot be
 validated by the normalized contract alone:
@@ -157,7 +229,7 @@ surface is part of the adapter contract.
 **Success Check**: Each declared schema is a self-contained JSON Schema object
 with no external references.
 
-### 4. Register Targets for a Shared Adapter
+### 5. Register Targets for a Shared Adapter
 
 A shared framework adapter separates its static implementation descriptor from
 the custom agents it can load. The Adapter Descriptor declares the supported
@@ -228,6 +300,8 @@ In this tutorial, you have:
   planning without importing adapter code.
 - Declared the normalized configuration surface your adapter applies through
   `config.accepts` and `system_instruction_modes`.
+- Declared the structured skill features your adapter implements in the
+  `skills` block.
 - Added adapter-owned JSON Schemas for target-specific data.
 - Registered targets so a shared framework adapter can load separately
   installed custom agents.

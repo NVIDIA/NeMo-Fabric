@@ -261,8 +261,71 @@
     },
     "AgentSkillConfig": {
       "additionalProperties": false,
-      "description": "Skill paths made available to an adapter target.",
+      "description": "Skills made available to an adapter target.\n\nA non-null `directories` requires an empty `paths`, and a non-null\n`duplicates` requires a non-null `directories`; `null` reads as omitted.",
+      "not": {
+        "anyOf": [
+          {
+            "properties": {
+              "directories": {
+                "type": "array"
+              },
+              "paths": {
+                "minItems": 1
+              }
+            },
+            "required": [
+              "directories",
+              "paths"
+            ]
+          },
+          {
+            "properties": {
+              "directories": {
+                "type": "null"
+              },
+              "duplicates": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "duplicates"
+            ]
+          }
+        ]
+      },
       "properties": {
+        "bundled": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BundledSkills"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Bundled-skill selection. Sent only to adapters that declare the\nrequested `skills.bundled` operation."
+        },
+        "directories": {
+          "description": "Structured skill entries with paths resolved by NeMo Fabric. Sent only\nto adapters that declare `skills.directory_loading`; an empty list\nloads no external skills.",
+          "items": {
+            "$ref": "#/$defs/SkillDirectory"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "duplicates": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SkillDuplicatePolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Duplicate-name policy between `directories` entries. Sent only to\nadapters that declare the policy in `skills.duplicates`."
+        },
         "extensions": {
           "additionalProperties": true,
           "description": "Adapter-owned skill fields.",
@@ -397,6 +460,88 @@
         "kind",
         "ref"
       ],
+      "type": "object"
+    },
+    "BundledSkills": {
+      "additionalProperties": false,
+      "description": "Bundled-skill selection.\n\n`include` and `exclude` are mutually exclusive, and neither may be combined\nwith `enabled: false`; a `null` list reads as omitted. An empty `include`\nselects no bundled skills; an empty `exclude` selects all of them.",
+      "not": {
+        "anyOf": [
+          {
+            "properties": {
+              "exclude": {
+                "type": "array"
+              },
+              "include": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "include",
+              "exclude"
+            ]
+          },
+          {
+            "properties": {
+              "enabled": {
+                "const": false
+              },
+              "include": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled",
+              "include"
+            ]
+          },
+          {
+            "properties": {
+              "enabled": {
+                "const": false
+              },
+              "exclude": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled",
+              "exclude"
+            ]
+          }
+        ]
+      },
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Whether bundled skills load at all.",
+          "type": "boolean"
+        },
+        "exclude": {
+          "description": "Load every bundled skill except these. `None` and `[]` differ.",
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "include": {
+          "description": "Load only these bundled skills. `None` and `[]` differ.",
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
       "type": "object"
     },
     "InstructionMode": {
@@ -558,6 +703,67 @@
         {
           "const": "client_secret_basic",
           "description": "Send the client credentials with HTTP Basic authentication.",
+          "type": "string"
+        }
+      ]
+    },
+    "SkillDirectory": {
+      "description": "One structured external-skill entry: exactly one of `{\"skill\": path}` or\n`{\"folder\": path}`. The other key may be present only as `null`, which\nreads as absent.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "One skill's folder; it must contain `SKILL.md`.",
+          "properties": {
+            "folder": {
+              "type": "null"
+            },
+            "skill": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            }
+          },
+          "required": [
+            "skill"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A folder of skills discovered by the selected adapter.",
+          "properties": {
+            "folder": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "skill": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "folder"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SkillDuplicatePolicy": {
+      "description": "How two `skills.directories` entries that provide the same skill name resolve.",
+      "oneOf": [
+        {
+          "const": "reject",
+          "description": "Start fails, naming both entries.",
+          "type": "string"
+        },
+        {
+          "const": "last_wins",
+          "description": "The later entry's skill loads.",
+          "type": "string"
+        },
+        {
+          "const": "first_wins",
+          "description": "The earlier entry's skill loads.",
           "type": "string"
         }
       ]

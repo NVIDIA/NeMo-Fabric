@@ -10,6 +10,7 @@ from dataclasses import fields
 from dataclasses import is_dataclass
 from pathlib import Path
 from typing import Any
+from typing import get_args
 
 import pytest
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -22,6 +23,9 @@ from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
 from nemo_fabric_adapter_contract.models import AgentRuntimeConfig
 from nemo_fabric_adapter_contract.models import AgentSkillConfig
+from nemo_fabric_adapter_contract.models import BundledSkills
+from nemo_fabric_adapter_contract.models import SkillDirectory
+from nemo_fabric_adapter_contract.models import SkillDuplicatePolicy
 from nemo_fabric_adapter_contract.models import AgentToolDefinition
 from nemo_fabric_adapter_contract.models import AgentToolsConfig
 from nemo_fabric_adapter_contract.models import AgentWorkflowConfig
@@ -395,15 +399,38 @@ def test_agent_config_dataclasses_track_rust_schema_block_fields():
 
     assert set(blocks) == set(rust_schema["$defs"]).difference(
         {
+            "BundledSkills",
             "InstructionMode",
             "McpAuthenticationConfig",
             "OAuthTokenEndpointAuthMethod",
+            "SkillDirectory",
+            "SkillDuplicatePolicy",
         }
     )
     for name, model in blocks.items():
         assert {item.name for item in fields(model)} == set(
             rust_schema["$defs"][name]["properties"]
         )
+
+
+def test_skill_dataclasses_track_rust_schema_definitions():
+    definitions = json.loads(
+        (ROOT / "schemas/adapter-contract/agent-config.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )["$defs"]
+
+    assert {item.name for item in fields(SkillDirectory)} == {
+        key
+        for variant in definitions["SkillDirectory"]["oneOf"]
+        for key in variant["required"]
+    }
+    assert {item.name for item in fields(BundledSkills)} == set(
+        definitions["BundledSkills"]["properties"]
+    )
+    assert set(get_args(SkillDuplicatePolicy)) == {
+        variant["const"] for variant in definitions["SkillDuplicatePolicy"]["oneOf"]
+    }
 
 
 def test_mcp_authentication_dataclasses_track_rust_schema_variants():

@@ -16,7 +16,7 @@ You can use OpenClaw through the NVIDIA NeMo Fabric adapter in four ways:
 
 ## Shared Configuration
 
-All four paths execute through one OpenClaw Gateway and its native agent runtime. NeMo Fabric translates `FabricConfig` into one private `openclaw.json`, with a fresh state directory, configured model/endpoint/credential references, generation parameters, workspace, tool policy, MCP servers, skill paths, and any authored [native Gateway controls](#native-gateway-controls).
+All four paths execute through one OpenClaw Gateway and its native agent runtime. NeMo Fabric translates `FabricConfig` into one private `openclaw.json`, with a fresh state directory, configured model/endpoint/credential references, generation parameters, workspace, tool policy, MCP servers, skills, and any authored [native Gateway controls](#native-gateway-controls).
 
 When a native interface is enabled, a small adapter-owned plugin adds the configured instruction through OpenClaw's public `before_prompt_build` hook for the selected agent. It preserves OpenClaw's native system prompt, including tool guidance. SDK requests then omit their separate instruction injection, so each client receives the Fabric instruction once. SDK-only and service configurations retain their existing system-message handling.
 
@@ -109,6 +109,57 @@ The optional `models.<role>.settings.supports_usage_in_streaming` setting contro
 - Omit it to retain OpenClaw's endpoint capability detection.
 
 This setting requires `base_url`. Attached services own their model configuration and do not accept it. Reported usage has separate completeness limits; see [SDK Usage Accounting](./openclaw-sdk.mdx#usage-accounting).
+
+### Skills
+
+[Configure Skills](../skills.mdx) describes the `skills` fields, the common setups, the start checks, and the run report. Its [Harness Differences](../skills.mdx#harness-differences) table compares OpenClaw with Hermes Agent. This section covers the rest of OpenClaw 2026.9.34's behavior. The adapter supports `skills.paths`, `skills.directories`, `skills.bundled`, and `skills.duplicates`.
+
+#### How the Adapter Reads Skills
+
+At start, the adapter reads every skill's front matter with OpenClaw's own `parseSkillFrontmatter`, in one `node` process. It uses the `node` on the `PATH` that the adapter gives OpenClaw, and the parser in the OpenClaw package that holds the `openclaw` executable. So names and refusals match OpenClaw's, and names are trimmed as OpenClaw trims them.
+
+The adapter skips a skill that OpenClaw refuses before it applies `duplicates`, so the skill never counts as a copy of its name. The run report lists it under `skipped` with one of these reasons:
+
+- `invalid_frontmatter`: OpenClaw's parser rejects the front matter.
+- `missing_frontmatter_field:description`: The front matter has no `description`.
+- `empty_frontmatter_field:description`: The `description` is empty after trimming.
+- `file_too_large`: The `SKILL.md` is larger than 256,000 bytes.
+- `no_name`: The skill has no `name`, and its folder name is empty after trimming.
+- `unreadable`: The `SKILL.md` can't be read.
+
+OpenClaw skips any other skill it cannot load, such as one with a hard-linked `SKILL.md`. The run report lists those with the reason `rejected_by_openclaw`.
+
+If `node` or the parser can't be found, or the parser fails or doesn't finish in time, the adapter writes one warning and reads simple front matter instead. Refer to [How the Adapter Reads a Skill](../skills.mdx#how-the-adapter-reads-a-skill). The adapter then can't tell which skills OpenClaw refuses:
+
+- **Without `duplicates`:** Every skill is passed to OpenClaw, which decides. A name the adapter can't read, such as an explicit `? name` key, a `name` tagged `!!timestamp` or `!!binary`, or an alias, keeps the folder name and is marked `"name_uncertain": true`.
+- **With a `duplicates` policy:** Two `directories` skills that share a name fail start with `openclaw_skill_invalid` and the reason `unsupported_frontmatter`, because the policy's result depends on whether OpenClaw accepts each copy. A name the adapter can't read fails start with the reason `unsupported_frontmatter_name`. Both errors name the skill's folder. Make `node` and the OpenClaw package available to the adapter to fix them.
+
+#### Folders and Precedence
+
+- **Links outside an entry:** A skill whose real folder is outside the searched folder, such as a symbolic link to another folder, does not load, with or without `duplicates`. Nothing loads from an entry whose `skills` subfolder links outside the entry. The adapter does not set OpenClaw's `skills.load.allowSymlinkTargets`, so no link target is trusted.
+- **Policies and higher sources:** A `duplicates` policy chooses only between `directories` entries. A higher source still hides the chosen copy.
+- **Duplicate report:** When more than one source holds a name at start, the run report lists every copy under `output.skills.duplicates`. The `local` origin marks a workspace skill. A shipped copy is reported at its path in the installed package. The `outcome` is `shadowed` when a higher source hides the configured copies. It is `selected` when a configured copy wins or only shipped and workspace copies clash, and `ambiguous` when the winning folder holds two copies, so OpenClaw's scan order decides. The adapter checks each workspace and shipped copy against OpenClaw's loading rules before it predicts the winner. Then it settles every name with the source that `openclaw skills list` shows for it.
+- **Refused winners:** With `first_wins` or `last_wins`, the adapter passes only the winning copy of a name. When `openclaw skills list` shows that OpenClaw refuses that copy, the adapter passes the next copy in policy order instead, lists the skills again, and reports the refused copy as skipped with `rejected_by_openclaw`. When no copy is left, the duplicate is reported without a `selected` path. If OpenClaw cannot list its skills, a refused winner is not detected: no copy of that name loads, while the report still shows the winner.
+
+#### Bundled Skills
+
+`skills.bundled` selects from the shipped `skills` and `custodian-skills` folders of the installed OpenClaw package, or of `OPENCLAW_BUNDLED_SKILLS_DIR` when set. The adapter doesn't use OpenClaw's `skills.allowBundled`, which filters shipped skills only after names are resolved, so a filtered-out skill would still hide a configured skill with the same name. Instead, when the selection leaves out a shipped skill, the adapter copies the selected shipped skills into the runtime's temporary folder and points `OPENCLAW_BUNDLED_SKILLS_DIR` at the copy for every OpenClaw process it starts. A left-out shipped skill also hides no workspace skill with its name. Custodian skills load only for OpenClaw's Custodian agent, which is the configured agent when it is the only one, and only for that agent do they hide a configured skill with the same name.
+
+At start, the adapter runs `openclaw skills list` for the agent to confirm the configured skills and the eligibility of the selected bundled skills. This adds a few seconds to start when `directories` or `bundled` is set. Each SDK result reports `output.skills.bundled` as `{"selected": [names], "unavailable": [{"name", "reason"}]}`. The `reason` is one of these:
+
+- `missing_requirements`, with a `missing` object of the binaries, environment variables, configuration, or operating systems OpenClaw requires
+- `disabled`
+- `shadowed`, with the `by` source
+- `custodian_agent_only`
+- `not_loaded`
+
+If OpenClaw cannot list its skills, the report shows what the adapter configured. Runtimes that connect to a prepared service report the skills the service loaded at prepare.
+
+#### Skills the Agent Writes
+
+Skills written into a read-write `directories` folder, for example by the agent's file tools, are checked and reported at the next start. OpenClaw can load them sooner, as [Sharing a Writable Skills Volume](../skills.mdx#sharing-a-writable-skills-volume) describes. OpenClaw's own installs don't go there. It installs workspace skills into `<workspace>/skills`, and Skill Workshop and shared installs write to the state folder. The adapter creates that folder for each runtime and removes it when the runtime stops, so skills the agent installs through OpenClaw are lost at stop. Keeping the state folder across restarts is outstanding work, tracked in [#578](https://github.com/NVIDIA/NeMo-Fabric/issues/578).
+
+Runtimes that attach to a caller-owned Gateway do not accept `paths`, a non-empty `directories`, or `bundled`.
 
 ### Gateway Ports
 

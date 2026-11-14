@@ -964,6 +964,7 @@ def test_openclaw_service_connection_without_fchmod(tmp_path: Path, monkeypatch)
         "http://127.0.0.1:18789",
         "TEST_ONLY_GATEWAY_TOKEN",
         "default",
+        None,
     )
     assert list(connection_path.parent.iterdir()) == [connection_path]
     if os.name == "posix":
