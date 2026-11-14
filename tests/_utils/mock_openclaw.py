@@ -83,13 +83,23 @@ def session_rpc(method, params):
             if entry["sessionId"] == params["sessionId"]
         ]
         if not matches:
-            return {"ok": False}
+            if params.get("allowMissing") is True:
+                return {"ok": False}
+            raise ValueError("No matching native session")
         return {"ok": True, "key": matches[0]["key"], "agentId": params["agentId"]}
-    entry = native_sessions.get(params["key"])
+    entry = native_sessions.get(params.get("key", params.get("sessionKey")))
+    if method == "chat.history":
+        return {
+            "sessionKey": entry["key"] if entry else None,
+            "sessionId": entry["sessionId"] if entry else None,
+            "totalMessages": len(entry["messages"]) if entry else 0,
+        }
     if method == "sessions.describe":
         return {"session": entry}
     if method == "sessions.get":
-        return {"messages": entry["messages"] if entry else []}
+        return {
+            "messages": entry["messages"][-params.get("limit", 200) :] if entry else []
+        }
     raise ValueError("unknown method")
 
 
@@ -207,9 +217,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 return
             params = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            body = json.dumps(
-                session_rpc(self.path.removeprefix("/_rpc/"), params)
-            ).encode()
+            try:
+                result = session_rpc(self.path.removeprefix("/_rpc/"), params)
+            except ValueError:
+                self.send_response(400)
+                self.end_headers()
+                return
+            body = json.dumps(result).encode()
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()

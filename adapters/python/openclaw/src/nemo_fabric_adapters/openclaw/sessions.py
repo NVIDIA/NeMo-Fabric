@@ -20,6 +20,7 @@ from nemo_fabric_adapters.common.lifecycle import LifecycleError
 from nemo_fabric_adapters.common.local_interfaces import write_private_file
 
 SessionCall = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
+HISTORY_LIMIT = 1000
 
 
 def _native_id(value: Any) -> str:
@@ -67,12 +68,21 @@ def _read_marker(path: Path) -> dict[str, Any]:
             or value.get("message_count", 0) < 0
         ):
             raise ValueError("invalid completion boundary")
-        acknowledged = value.get("acknowledged_tool_calls", {})
-        if not isinstance(acknowledged, dict) or any(
-            not isinstance(identifier, str) or not isinstance(fingerprint, str)
-            for identifier, fingerprint in acknowledged.items()
+        for name in ("acknowledged_tool_calls", "pending_tool_calls"):
+            calls = value.get(name, {})
+            if not isinstance(calls, dict) or any(
+                not isinstance(identifier, str) or not isinstance(fingerprint, str)
+                for identifier, fingerprint in calls.items()
+            ):
+                raise ValueError("invalid recovery evidence")
+        if type(value.get("history_incomplete", False)) is not bool or (
+            value.get("history_anchor") is not None
+            and not isinstance(value["history_anchor"], str)
         ):
-            raise ValueError("invalid recovery acknowledgement")
+            raise ValueError("invalid history boundary")
+        count = value.get("history_count")
+        if count is not None and (type(count) is not int or count < 0):
+            raise ValueError("invalid history count")
         return value
     except (OSError, ValueError) as error:
         raise LifecycleError(
@@ -106,9 +116,40 @@ def _last_message_hash(messages: list[dict[str, Any]]) -> str | None:
     return hashlib.sha256(json.dumps(messages[-1], sort_keys=True).encode()).hexdigest()
 
 
+def _tool_call_hash(row: dict[str, Any]) -> str:
+    value = dict(row)
+    wrapped = isinstance(value.get("message"), dict)
+    message = dict(value["message"] if wrapped else value)
+    metadata = message.get("__openclaw")
+    if isinstance(metadata, dict):
+        message["__openclaw"] = {
+            key: item
+            for key, item in metadata.items()
+            if key not in {"seq", "transcriptPosition"}
+        }
+    value = value | {"message": message} if wrapped else message
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def _history_identity(row: dict[str, Any]) -> str:
+    message = row.get("message", row)
+    metadata = message.get("__openclaw") if isinstance(message, dict) else None
+    identifier = metadata.get("id") if isinstance(metadata, dict) else None
+    return (
+        f"native:{identifier}"
+        if isinstance(identifier, str) and identifier
+        else _tool_call_hash(row)
+    )
+
+
 def _finished_after_marker(
     messages: list[dict[str, Any]], marker: dict[str, Any]
 ) -> bool:
+    if "history_anchor" in marker:
+        return (
+            _completed(messages)
+            and _history_identity(messages[-1]) != marker["history_anchor"]
+        )
     return _completed(messages) and (
         _last_message_hash(messages) != marker["last_message_hash"]
         if "last_message_hash" in marker
@@ -116,8 +157,10 @@ def _finished_after_marker(
     )
 
 
-def _pending_tool_calls(messages: list[dict[str, Any]]) -> dict[str, str]:
-    pending: dict[str, str] = {}
+def _pending_tool_calls(
+    messages: list[dict[str, Any]], previous: dict[str, str] | None = None
+) -> dict[str, str]:
+    pending = dict(previous or {})
     for row in messages:
         message = row.get("message", row)
         if not isinstance(message, dict):
@@ -131,9 +174,7 @@ def _pending_tool_calls(messages: list[dict[str, Any]]) -> dict[str, str]:
                 if item.get("type") in {"toolCall", "tool_use"} and isinstance(
                     identifier, str
                 ):
-                    pending[identifier] = hashlib.sha256(
-                        json.dumps(row, sort_keys=True).encode()
-                    ).hexdigest()
+                    pending[identifier] = _tool_call_hash(row)
                 elif item.get("type") == "tool_result":
                     pending.pop(item.get("tool_use_id"), None)
         if message.get("role") in {"toolResult", "tool"}:
@@ -142,11 +183,11 @@ def _pending_tool_calls(messages: list[dict[str, Any]]) -> dict[str, str]:
 
 
 def _unacknowledged_tool_calls(
-    messages: list[dict[str, Any]], acknowledged: dict[str, str]
+    pending: dict[str, str], acknowledged: dict[str, str]
 ) -> list[str]:
     return sorted(
         identifier
-        for identifier, fingerprint in _pending_tool_calls(messages).items()
+        for identifier, fingerprint in pending.items()
         if acknowledged.get(identifier) != fingerprint
     )
 
@@ -161,11 +202,15 @@ class NativeSession:
     warnings: list[dict[str, Any]] = field(default_factory=list)
     recovery_required: bool = False
     acknowledged_tool_calls: dict[str, str] = field(default_factory=dict, repr=False)
+    pending_tool_calls: dict[str, str] = field(default_factory=dict, repr=False)
+    history_anchor: str | None = field(default=None, repr=False)
+    history_count: int | None = None
+    history_incomplete: bool = False
 
     def start_output(self) -> dict[str, Any]:
         return {"session_id": self.session_id, "recovery_warnings": self.warnings}
 
-    async def messages(self) -> list[dict[str, Any]]:
+    async def confirm_identity(self) -> None:
         described = await self.call(
             "sessions.describe", {"key": self.key, "agentId": self.agent_id}
         )
@@ -178,8 +223,12 @@ class NativeSession:
             raise LifecycleError(
                 "session_identity_changed", "Native session identity changed"
             )
+
+    async def messages(self) -> list[dict[str, Any]]:
+        before = await self._history_boundary()
         result = await self.call(
-            "sessions.get", {"key": self.key, "agentId": self.agent_id, "limit": 1000}
+            "sessions.get",
+            {"key": self.key, "agentId": self.agent_id, "limit": HISTORY_LIMIT},
         )
         messages = result.get("messages")
         if not isinstance(messages, list) or any(
@@ -188,14 +237,55 @@ class NativeSession:
             raise LifecycleError(
                 "session_incompatible", "Native session history is invalid"
             )
+        total = await self._history_boundary()
+        if before != total:
+            raise LifecycleError(
+                "state_in_use", "Native session history changed while reading"
+            )
+        # A recent window can omit unresolved calls. Carry observed evidence
+        # forward, and require inspection if the previous boundary fell out.
+        covered = len(messages) == total or (
+            self.history_count is not None
+            and 0 <= total - self.history_count <= len(messages)
+            and self.history_anchor is not None
+            and any(_history_identity(row) == self.history_anchor for row in messages)
+        )
+        self.history_incomplete = self.history_incomplete or not covered
+        self.pending_tool_calls = _pending_tool_calls(messages, self.pending_tool_calls)
+        self.history_anchor = _history_identity(messages[-1]) if messages else None
+        self.history_count = total
         return messages
+
+    async def _history_boundary(self) -> int:
+        result = await self.call(
+            "chat.history", {"sessionKey": self.key, "offset": 0, "limit": 1}
+        )
+        if (
+            result.get("sessionId") != self.session_id
+            or result.get("sessionKey") != self.key
+        ):
+            raise LifecycleError(
+                "session_identity_changed", "Native session identity changed"
+            )
+        count = result.get("totalMessages")
+        if type(count) is not int or count < 0:
+            raise LifecycleError(
+                "session_incompatible", "Native history count is invalid"
+            )
+        return count
 
     def _write(self, value: dict[str, Any]) -> None:
         if self.marker.parent.is_symlink():
             raise LifecycleError(
                 "session_incompatible", "Session completion directory is invalid"
             )
-        value = value | {"acknowledged_tool_calls": self.acknowledged_tool_calls}
+        value = value | {
+            "acknowledged_tool_calls": self.acknowledged_tool_calls,
+            "pending_tool_calls": self.pending_tool_calls,
+            "history_anchor": self.history_anchor,
+            "history_count": self.history_count,
+            "history_incomplete": self.history_incomplete,
+        }
         write_private_file(self.marker, json.dumps(value))
         if os.name == "posix":
             descriptor = os.open(
@@ -208,10 +298,22 @@ class NativeSession:
 
     async def begin_turn(
         self, context: RuntimeContext, *, acknowledge_recovery: bool = False
-    ) -> None:
+    ) -> bool:
         messages = await self.messages()
         if acknowledge_recovery:
-            self.acknowledged_tool_calls.update(_pending_tool_calls(messages))
+            self.acknowledged_tool_calls.update(self.pending_tool_calls)
+            self.history_incomplete = False
+            self.recovery_required = False
+        elif (
+            self.recovery_required
+            or self.history_incomplete
+            or _unacknowledged_tool_calls(
+                self.pending_tool_calls, self.acknowledged_tool_calls
+            )
+        ):
+            self.recovery_required = True
+            self._write(_read_marker(self.marker) | {"state": "running"})
+            return False
         self._write(
             {
                 "state": "running",
@@ -221,14 +323,23 @@ class NativeSession:
                 "request_id": context.request_id,
             }
         )
+        await self.confirm_identity()
+        return True
 
     async def finish_turn(self) -> bool:
         messages = await self.messages()
-        completed = _finished_after_marker(
-            messages, _read_marker(self.marker)
-        ) and not _unacknowledged_tool_calls(messages, self.acknowledged_tool_calls)
+        marker = _read_marker(self.marker)
+        completed = (
+            not self.history_incomplete
+            and _finished_after_marker(messages, marker)
+            and not _unacknowledged_tool_calls(
+                self.pending_tool_calls, self.acknowledged_tool_calls
+            )
+        )
         if completed:
             self._write({"state": "complete", "message_count": len(messages)})
+        else:
+            self._write(marker | {"state": "running"})
         return completed
 
 
@@ -263,7 +374,8 @@ async def open_session(
             )
         session_id = _native_id(reference.session_id)
         resolved = await call(
-            "sessions.resolve", {"sessionId": session_id, "agentId": agent_id}
+            "sessions.resolve",
+            {"sessionId": session_id, "agentId": agent_id, "allowMissing": True},
         )
         if resolved.get("ok") is not True:
             raise LifecycleError(
@@ -295,14 +407,19 @@ async def open_session(
         call,
     )
     marker = _read_marker(result.marker)
-    messages = await result.messages()
     result.acknowledged_tool_calls = dict(marker.get("acknowledged_tool_calls", {}))
+    result.pending_tool_calls = dict(marker.get("pending_tool_calls", {}))
+    result.history_anchor = marker.get("history_anchor")
+    result.history_count = marker.get("history_count")
+    result.history_incomplete = marker.get("history_incomplete", False)
+    messages = await result.messages()
     finished_after_marker = _finished_after_marker(messages, marker)
     pending_tool_calls = _unacknowledged_tool_calls(
-        messages, result.acknowledged_tool_calls
+        result.pending_tool_calls, result.acknowledged_tool_calls
     )
     result.recovery_required = bool(
         pending_tool_calls
+        or result.history_incomplete
         or (marker.get("state") == "running" and not finished_after_marker)
         or (messages and not _completed(messages))
         or (entry.get("abortedLastRun") and not finished_after_marker)
@@ -322,9 +439,11 @@ async def open_session(
                 | {
                     "external_effects": "unknown",
                     "pending_tool_call_ids": pending_tool_calls,
+                    "history_incomplete": result.history_incomplete,
                 },
             }
         ]
+        result._write(marker | {"state": "running"})
     elif reference is None:
         result._write({"state": "complete", "message_count": 0})
     return result
