@@ -181,6 +181,7 @@ Start fails when an entry breaks one of these rules:
 | A `skill` entry has no readable `SKILL.md`. | `invalid` |
 | A `folder` entry cannot be listed. | `invalid` |
 | Skills share a name under an explicit `duplicates` policy. Refer to [Skills That Share a Name](#skills-that-share-a-name). | `duplicate` |
+| Under an explicit `duplicates` policy, a skill's front matter uses YAML that the adapter can't read the name from the way the harness does, such as an explicit `?` key. | `unsupported_frontmatter_name` |
 
 A `not_found` failure uses the adapter's `<adapter>_skill_not_found` error code, such as `hermes_skill_not_found`. Every other failure uses `<adapter>_skill_invalid`. The error metadata gives the failing `field`, such as `skills.directories[1].skill`, the `reason`, and the `path`. An adapter can add checks of its own. Refer to [Harness Differences](#harness-differences).
 
@@ -264,7 +265,7 @@ When a run uses `directories` or `bundled`, the adapter adds a `skills` block to
 
 | Key | Contents |
 | --- | --- |
-| `loaded` | Each loaded skill: `name`, `path`, `entry` (the field that supplied it), and `origin` (`external`). |
+| `loaded` | Each loaded skill: `name`, `path`, `entry` (the field that supplied it), and `origin` (`external`). `name_uncertain: true` marks a skill whose front-matter name the adapter couldn't read the way the harness does. The adapter then reports the folder name, and the harness may use a different name. |
 | `empty_entries` | The fields of `folder` entries that found no skills. |
 | `skipped` | Each skipped candidate: `path`, `entry`, and `reason`. |
 | `duplicates` | Each clash: `name`, `outcome` (`selected`, `shadowed`, or `ambiguous`), the `selected` path when known, and each copy's `origin` (`external`, `bundled`, or `local`), `path`, and `entry`. |
@@ -333,9 +334,9 @@ The OpenClaw and Hermes Agent adapters support `directories`, `bundled`, and `du
 | Name when the front matter has none | The folder name | The folder name |
 | Front matter that does not parse | Simple `key: value` lines are recovered. | The skill is skipped with the reason `rejected_by_openclaw`. Under `first_wins` or `last_wins`, the next copy of its name loads instead. |
 | Two configured skills share a name and `duplicates` is left out | Hermes Agent refuses both as ambiguous. It also refuses a skill whose name is another skill's folder name. | The copy from the later entry loads. Copies inside one entry are reported as `ambiguous`. |
-| The harness's own skill folders, ranked above the configured entries | The Hermes home's `skills` folder, which holds the bundled skills and the skills the agent creates. Hermes Agent saves every new skill there, never in a `directories` entry. | The workspace's `skills` and `.agents/skills` folders, the state folder's `skills` folder, the Skill Workshop folder, and the selected shipped skills. |
-| How bundled skills are chosen | `skills.disabled` | When the selection leaves out a shipped skill, OpenClaw reads a per-runtime copy of the selected shipped skills through `OPENCLAW_BUNDLED_SKILLS_DIR`. Otherwise it reads the package folder. |
-| A bundled skill that `bundled` leaves out shares a name with a configured skill | The configured skill, from `paths` or `directories`, loads. The agent's own skill with that name in the Hermes home stays enabled too; the Hermes Agent guide covers when it loads. | The configured skill loads. The left-out bundled skill is not loaded at all, so it hides nothing. |
+| The harness's own skill folders, ranked above the configured entries | The Hermes home's `skills` folder, which holds the bundled skills and the skills the agent creates. Hermes Agent saves every new skill there, never in a `directories` entry. | The workspace's `skills` and `.agents/skills` folders, the state folder's `skills` folder, the Skill Workshop folder, and the selected shipped skills. A `directories` entry inside a workspace folder keeps that folder's rank. A copy OpenClaw refuses hides nothing. |
+| How bundled skills are chosen | When the selection leaves out a bundled skill, Hermes Agent copies the selected bundled skills into its home from a per-runtime copy, read through `HERMES_BUNDLED_SKILLS`. Otherwise it copies from its installation. | When the selection leaves out a shipped skill, OpenClaw reads a per-runtime copy of the selected shipped skills through `OPENCLAW_BUNDLED_SKILLS_DIR`. Otherwise it reads the package folder. |
+| A bundled skill that `bundled` leaves out shares a name with a configured skill | The configured skill, from `paths` or `directories`, loads. The left-out bundled skill never reaches the Hermes home, so it hides nothing, and the agent's own skill with that name in the Hermes home loads too. A changed earlier copy of the left-out skill in a kept home fails start. | The configured skill loads. The left-out bundled skill is not loaded at all, so it hides nothing. |
 | Bundled skills that always load | `hermes-agent`. Every selection must keep it: `include` must name it, `exclude` can't name it, and `enabled: false` isn't supported. Start fails otherwise, so `include: []` fails too. | None |
 | Error codes | `hermes_skill_not_found`, `hermes_skill_invalid` | `openclaw_skill_not_found`, `openclaw_skill_invalid` |
 

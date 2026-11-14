@@ -138,14 +138,21 @@ rules:
   Under `first_wins` or `last_wins`, a refused winning copy is replaced by the
   next copy in policy order and the skills are listed again. If the list
   cannot run, a refused winner goes unnoticed and no copy of its name loads.
+- A `name` written as a YAML alias takes the anchored value. A name the
+  adapter cannot read reliably, such as an explicit `? name` key, keeps the
+  folder name and is marked `name_uncertain` in the results; under a
+  `duplicates` policy it fails start with `unsupported_frontmatter_name`.
 - Workspace (`skills`, `.agents/skills`), state-folder, Skill Workshop, and
-  selected shipped skills outrank configured ones. When several sources hold
-  a name, results list every copy found at start under
-  `output.skills.duplicates`, with its origin (`external`, `bundled`, or
-  `local`) and path, and the copy OpenClaw loads: `shadowed` when a higher
-  source hides the configured copies, `selected` when only shipped and
-  workspace copies clash, and `ambiguous` when the winning folder holds two
-  copies. `duplicates` policies choose only between `directories` entries.
+  selected shipped skills outrank configured ones; a `directories` entry
+  inside a workspace folder keeps that folder's rank, and a copy OpenClaw
+  refuses hides nothing. When several sources hold a name, results list
+  every copy found at start under `output.skills.duplicates`, with its origin
+  (`external`, `bundled`, or `local`) and path, and the copy OpenClaw loads,
+  as `openclaw skills list` shows it: `shadowed` when a higher source hides
+  the configured copies, `selected` when a configured copy wins or only
+  shipped and workspace copies clash, and `ambiguous` when the winning folder
+  holds two copies. `duplicates` policies choose only between `directories`
+  entries.
 - `bundled` doesn't use OpenClaw's `skills.allowBundled`, which filters
   shipped skills only after names are resolved. When the selection leaves out
   a shipped skill, the adapter copies the selected skills from the package's

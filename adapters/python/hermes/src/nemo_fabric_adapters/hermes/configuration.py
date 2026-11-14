@@ -248,10 +248,9 @@ def _native_skills(
         external = [str(path) for path in skills.paths]
     if external:
         section["external_dirs"] = list(external)
-    # No harness setting writes skills.disabled today; a future one must merge
-    # its names here rather than replace these.
-    if skill_plan.disabled:
-        section["disabled"] = list(skill_plan.disabled)
+    # skills.bundled needs no setting here: left-out bundled skills never reach
+    # the home (see skills.stage_bundled), and skills.disabled would also hide
+    # an external or local skill of the same name.
     return section
 
 

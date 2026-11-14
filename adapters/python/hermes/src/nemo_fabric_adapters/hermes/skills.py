@@ -3,8 +3,10 @@
 
 """Map ``skills.directories``, ``skills.bundled``, and ``skills.duplicates`` to Hermes.
 
-Hermes reads external skills from ``skills.external_dirs`` and hides skills by
-name through ``skills.disabled``. Its loader ranks skill roots in tiers:
+Hermes reads external skills from ``skills.external_dirs``, and its sync copies
+the bundled skills it finds in ``HERMES_BUNDLED_SKILLS`` (by default, its
+installation's ``skills`` folder) into its home. Its loader ranks skill roots
+in tiers:
 
 1. trusted project folders (never configured by this adapter);
 2. the Hermes home's ``skills`` folder, which holds the bundled skills Hermes
@@ -16,7 +18,7 @@ A higher tier wins a name clash. Two different skills with the same name in
 one tier are refused as ambiguous.
 
 The planning functions here need no Hermes installation. The functions that
-read Hermes's bundled inventory, copy the bundled skills into the home, and
+read Hermes's bundled inventory, stage and copy the bundled skills, and
 observe Hermes's own skill catalog import Hermes lazily.
 """
 
@@ -24,6 +26,8 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import shutil
+import stat
 import sys
 from collections.abc import Callable
 from collections.abc import Mapping
@@ -111,8 +115,12 @@ HERMES_DISCOVERY = DiscoveryRules(
 # home from its installation, one ``name:hash`` (or plain ``name``) per line.
 BUNDLED_MANIFEST = ".bundled_manifest"
 
-# agent/skill_utils.py ESSENTIAL_SKILLS: Hermes removes these names from
-# skills.disabled and seeds them even into homes that opt out of bundled skills.
+# hermes_constants.py get_bundled_skills_dir: the folder Hermes's sync reads its
+# bundled skills from, when set.
+BUNDLED_SKILLS_ENV = "HERMES_BUNDLED_SKILLS"
+
+# agent/skill_utils.py ESSENTIAL_SKILLS: Hermes always loads these names, and
+# seeds them even into homes that opt out of bundled skills.
 ESSENTIAL_SKILLS = frozenset({"hermes-agent"})
 
 # agent/skill_utils.py tier numbers.
@@ -128,8 +136,6 @@ class SkillPlan:
     """Checked ``skills.directories``, or ``None`` when it is not set."""
     external_dirs: list[str] | None = None
     """``skills.external_dirs`` for ``directories``; ``None`` keeps ``paths``."""
-    disabled: list[str] = dataclass_field(default_factory=list)
-    """Bundled skill names to add to ``skills.disabled``."""
     bundled: BundledSkills | None = None
     inventory: dict[str, Path] = dataclass_field(default_factory=dict)
     """Bundled skill name to its folder in the Hermes installation. Read at
@@ -138,24 +144,34 @@ class SkillPlan:
     """The Hermes installation's bundled-skills folder that ``inventory`` is in."""
     selected_bundled: list[str] = dataclass_field(default_factory=list)
     """Bundled skills the configuration selects, in name order."""
+    excluded_bundled: list[str] = dataclass_field(default_factory=list)
+    """Bundled skills the configuration leaves out, in name order. When any
+    are, Hermes's sync reads a staged folder that holds only the selected
+    ones."""
+    stale_copies: list[tuple[str, Path]] = dataclass_field(default_factory=list)
+    """Name and folder of each unchanged copy of a left-out bundled skill that
+    Hermes's sync made in the home earlier, which the adapter removes before
+    the sync."""
     sync: bool = False
     """Whether the adapter copies the bundled skills into the Hermes home."""
     root_fields: dict[Path, str] = dataclass_field(default_factory=dict)
     """Resolved ``external_dirs`` root to the entry that supplied it."""
     external_names: set[str] = dataclass_field(default_factory=set)
     """Names Hermes indexes for the external skills, as its bundled sync does."""
-    local_names: set[str] = dataclass_field(default_factory=set)
-    """Names of the agent's own skills in the Hermes home, which Hermes's
-    bundled sync did not copy there."""
-    kept_local: list[str] = dataclass_field(default_factory=list)
-    """Unselected bundled names left out of ``skills.disabled`` because the
-    home holds the agent's own skill by that name."""
 
     @property
     def structured(self) -> bool:
         """Whether ``directories`` or ``bundled`` is configured."""
 
         return self.load is not None or self.bundled is not None
+
+    @property
+    def selection_field(self) -> str:
+        """The ``skills.bundled`` field that leaves skills out."""
+
+        if self.bundled is not None and self.bundled.include is not None:
+            return "skills.bundled.include"
+        return "skills.bundled.exclude"
 
 
 @dataclass
@@ -190,7 +206,7 @@ def plan_skills(
 
     ``hermes_home`` is the Hermes home the runtime uses; it defaults to
     ``HERMES_HOME``. Relative ``skills.paths`` resolve against it, as Hermes
-    resolves them, and the agent's own skills in it stay enabled.
+    resolves them.
 
     Raises:
         lifecycle.LifecycleError: ``hermes_skill_not_found`` or
@@ -229,7 +245,7 @@ def plan_skills(
             else [os.fspath(path) for path in skills.paths]
         )
         plan.external_names = external_skill_names(roots, home)
-        _plan_bundled(plan, skills.bundled, home)
+        _plan_bundled(plan, skills.bundled)
     return plan
 
 
@@ -329,10 +345,12 @@ def _home(hermes_home: str | os.PathLike[str] | None) -> Path | None:
     return Path(os.path.expanduser(os.path.expandvars(value))) if value else None
 
 
-def _plan_bundled(plan: SkillPlan, bundled: BundledSkills, home: Path | None) -> None:
+def _plan_bundled(plan: SkillPlan, bundled: BundledSkills) -> None:
     inventory = plan.inventory
-    # Hermes loads its essential skills whatever skills.disabled says, so a
-    # request that leaves one out cannot be honored and is refused.
+    # Hermes pins its essential skills: its system prompt points at them, its
+    # sync seeds them even into homes that opt out of bundled skills, and
+    # skills.disabled can't hide them. A request that leaves one out is
+    # refused rather than approximated.
     essential = sorted(ESSENTIAL_SKILLS.intersection(inventory))
     if not bundled.enabled and essential:
         raise _essential_error("skills.bundled.enabled", essential[0])
@@ -359,18 +377,11 @@ def _plan_bundled(plan: SkillPlan, bundled: BundledSkills, home: Path | None) ->
     else:
         selected = set(inventory) - set(bundled.exclude or ())
     plan.selected_bundled = sorted(selected)
-    # skills.disabled hides every copy of a name, not only the bundled one, so
-    # names that an external skill or the agent's own skill in the home
-    # provides stay out of the list. Hermes's sync never copies a bundled
-    # skill whose name an external skill provides, nor over the agent's own
-    # skill at the bundled copy's place in the home. An own skill elsewhere in
-    # the home gets the bundled copy beside it, and Hermes refuses both as
-    # ambiguous; the report's warning says so.
-    unselected = set(inventory) - selected - ESSENTIAL_SKILLS
-    plan.local_names = local_skill_names(home)
-    own = plan.local_names & unselected
-    plan.kept_local = sorted(own - plan.external_names)
-    plan.disabled = sorted(unselected - plan.external_names - own)
+    # Left-out bundled skills never reach Hermes's sync (see stage_bundled),
+    # so they are filtered out before Hermes resolves names across its skill
+    # folders: an external skill, or the agent's own skill in the home, with
+    # the same name loads as if the bundled skill did not exist.
+    plan.excluded_bundled = sorted(set(inventory) - selected)
     # Hermes's sync seeds its essential skills even into a home that opts out
     # of bundled skills, and removes a stale copy an external skill replaces.
     plan.sync = True
@@ -423,38 +434,10 @@ def external_skill_names(roots: list[str], home: Path | None) -> set[str]:
     return names
 
 
-def local_skill_names(home: Path | None) -> set[str]:
-    """Return the names of the agent's own skills in the Hermes home.
-
-    Hermes records each skill its sync copied into the home in the bundled
-    manifest. A skill whose name the manifest does not hold is the agent's
-    (or user's) own, and Hermes's sync never replaces it with the bundled
-    copy.
-    """
-
-    if home is None:
-        return set()
-    skills_dir = home / "skills"
-    names = {
-        read_skill_name(skill_md, skill_md.parent.name)
-        for skill_md in _skill_files(skills_dir)
-    }
-    return names - manifest_names(skills_dir)
-
-
 def manifest_names(skills_dir: Path) -> set[str]:
-    """Return the bundled skills Hermes's sync recorded copying into ``skills_dir``.
+    """Return the bundled skills Hermes's sync recorded copying into ``skills_dir``."""
 
-    Mirrors tools/skills_sync.py ``_read_manifest``.
-    """
-
-    try:
-        lines = (skills_dir / BUNDLED_MANIFEST).read_text(encoding="utf-8-sig")
-    except OSError:
-        return set()
-    return {
-        name for line in lines.splitlines() if (name := line.partition(":")[0].strip())
-    }
+    return set(_read_manifest(skills_dir))
 
 
 def _skill_files(root: Path) -> list[Path]:
@@ -545,6 +528,199 @@ def _common_root(inventory: Mapping[str, Path]) -> Path | None:
 
     parents = [os.fspath(Path(path).parent) for path in inventory.values()]
     return Path(os.path.commonpath(parents)) if parents else None
+
+
+def stage_bundled(plan: SkillPlan, folder: Path) -> None:
+    """Copy the selected bundled skills into ``folder``, laid out as Hermes's
+    bundled folder is.
+
+    Hermes's sync reads its bundled skills from ``HERMES_BUNDLED_SKILLS`` when
+    it is set, so pointing it at ``folder`` keeps every left-out bundled skill
+    out of the home. Each skill folder is copied whole, following links, as
+    Hermes's sync copies it, so the home gets the same copy it would get from
+    the installation. A left-out skill nested in a selected one stays out. A
+    category's ``DESCRIPTION.md``, which Hermes's sync also copies, is staged
+    for each category that holds a selected skill.
+    """
+
+    root = plan.bundled_root
+    if root is None:
+        raise ValueError("the plan has no bundled inventory to stage")
+    left_out = {_resolved(plan.inventory[name]) for name in plan.excluded_bundled}
+
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        return {name for name in names if _resolved(Path(directory, name)) in left_out}
+
+    categories: set[Path] = set()
+    for name in plan.selected_bundled:
+        source = Path(plan.inventory[name])
+        relative = source.relative_to(root)
+        shutil.copytree(source, folder / relative, ignore=ignore, dirs_exist_ok=True)
+        categories.update(relative.parents)
+    for description in sorted(root.rglob("DESCRIPTION.md")):
+        relative = description.relative_to(root)
+        target = folder / relative
+        if relative.parent in categories and not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(description, target)
+
+
+def excluded_copies(plan: SkillPlan, home: Path) -> list[tuple[str, Path]]:
+    """Return the copies of left-out bundled skills that Hermes's sync made in
+    ``home`` and that are unchanged since.
+
+    A kept home can hold such a copy from an earlier runtime that selected the
+    skill. Hermes's sync records each skill it copies in the home's bundled
+    manifest, with the hash of what it copied, and treats a copy that still
+    has that hash, or the installation's current hash, as its own: it updates
+    or moves only such a copy. The same proof marks a copy safe to remove.
+
+    A left-out skill's copy at the place Hermes's sync put it that no longer
+    has either hash was changed by the user or the agent. Removing it would
+    lose that work, and keeping it would load a skill the configuration
+    leaves out, so start fails. A changed copy of the name elsewhere in the
+    home is the agent's own skill and stays.
+
+    Raises:
+        lifecycle.LifecycleError: ``hermes_skill_invalid`` with the reason
+            ``excluded_bundled_skill_modified`` for a changed copy.
+    """
+
+    if not plan.excluded_bundled or plan.bundled_root is None:
+        return []
+    with redirect_stdout(StringIO()):
+        from tools import skills_sync
+
+    skills_dir = home / "skills"
+    manifest = _read_manifest(skills_dir)
+    found: list[tuple[str, Path]] = []
+    by_name: dict[str, list[Path]] | None = None
+    for name in plan.excluded_bundled:
+        if name not in manifest:
+            # Hermes's sync never copied it here: any skill of that name in
+            # the home is the agent's (or user's) own.
+            continue
+        source = Path(plan.inventory[name])
+        place = skills_dir / source.relative_to(plan.bundled_root)
+        if by_name is None:
+            by_name = {}
+            for skill_md in _skill_files(skills_dir):
+                folder = skill_md.parent
+                by_name.setdefault(read_skill_name(skill_md, folder.name), []).append(
+                    folder
+                )
+        candidates = [place] if _is_file(place / SKILL_FILE) else []
+        candidates += [folder for folder in by_name.get(name, []) if folder != place]
+        if not candidates:
+            continue
+        origin_hash = manifest[name]
+        bundled_hash = skills_sync.dir_hash(source)
+        for folder in candidates:
+            if _unchanged(skills_sync, folder, origin_hash, bundled_hash):
+                found.append((name, folder))
+            elif folder == place:
+                raise lifecycle.LifecycleError(
+                    "hermes_skill_invalid",
+                    f"The Hermes home holds a changed copy of the bundled skill "
+                    f"{name!r} at {folder}, which {plan.selection_field} leaves "
+                    "out. NeMo Fabric doesn't remove a changed copy, and it "
+                    "would still load. Select the skill, or move or delete the "
+                    "copy.",
+                    metadata={
+                        "field": plan.selection_field,
+                        "reason": "excluded_bundled_skill_modified",
+                        "name": name,
+                        "path": str(folder),
+                    },
+                )
+    return found
+
+
+def _unchanged(
+    skills_sync: Any, folder: Path, origin_hash: str, bundled_hash: str
+) -> bool:
+    """Whether ``folder`` is Hermes's copy of a bundled skill, unchanged.
+
+    Mirrors tools/skills_sync.py: ``_defer_to_external`` removes a copy with
+    the installation's hash, and ``_matches_origin_hash`` proves a copy with
+    the manifest's hash. A manifest entry without a hash proves nothing.
+    """
+
+    current = skills_sync.dir_hash(folder)
+    if current == bundled_hash:
+        return True
+    if not origin_hash:
+        return False
+    matches = getattr(skills_sync, "_matches_origin_hash", None)
+    if matches is not None:
+        return bool(matches(folder, origin_hash, current))
+    return current == origin_hash
+
+
+def remove_copies(plan: SkillPlan, home: Path) -> None:
+    """Remove ``plan.stale_copies`` from the home, and their manifest entries.
+
+    Hermes's sync removes a stale copy that an external skill replaces the
+    same way. Without the entry, a later runtime that selects the skill
+    copies it again; with it, Hermes's sync would read the missing copy as
+    deleted by the user and never copy it again.
+    """
+
+    skills_dir = (home / "skills").resolve()
+    for _name, folder in plan.stale_copies:
+        target = folder.resolve()
+        if skills_dir not in target.parents:
+            raise ValueError(f"refusing to remove {target}: not inside {skills_dir}")
+        if not target.exists():
+            # Inside a copy removed before it.
+            continue
+        if sys.version_info >= (3, 12):
+            shutil.rmtree(target, onexc=_make_writable)
+        else:
+            shutil.rmtree(target, onerror=_make_writable)
+    _drop_manifest_entries(skills_dir, {name for name, _folder in plan.stale_copies})
+
+
+def _make_writable(function: Callable[..., Any], path: str, _error: Any) -> None:
+    # tools/skills_sync.py _rmtree_writable: read-only package installs copy
+    # read-only folders, and removing an entry needs a writable parent.
+    for item in (os.path.dirname(path), path):
+        try:
+            os.chmod(item, stat.S_IRWXU)
+        except OSError:
+            pass
+    function(path)
+
+
+def _read_manifest(skills_dir: Path) -> dict[str, str]:
+    """Mirrors tools/skills_sync.py ``_read_manifest``: name to origin hash."""
+
+    try:
+        text = (skills_dir / BUNDLED_MANIFEST).read_text(encoding="utf-8-sig")
+    except OSError:
+        return {}
+    entries: dict[str, str] = {}
+    for line in text.splitlines():
+        name, _, value = line.strip().partition(":")
+        if name.strip():
+            entries[name.strip()] = value.strip()
+    return entries
+
+
+def _drop_manifest_entries(skills_dir: Path, names: set[str]) -> None:
+    """Remove ``names`` from the bundled manifest, keeping every other line."""
+
+    path = skills_dir / BUNDLED_MANIFEST
+    if not names or not path.is_file():
+        return
+    lines = path.read_text(encoding="utf-8-sig").splitlines(keepends=True)
+    kept = [line for line in lines if line.partition(":")[0].strip() not in names]
+    if kept == lines:
+        return
+    temporary = path.with_name(f"{BUNDLED_MANIFEST}.fabric-tmp")
+    temporary.write_text("".join(kept), encoding="utf-8")
+    shutil.copymode(path, temporary)
+    os.replace(temporary, path)
 
 
 def sync_bundled() -> dict[str, Any]:
@@ -866,17 +1042,4 @@ def _bundled_report(
         for item in unavailable
         if item["reason"] != "provided_by_external_skill"
     ]
-    for name in plan.kept_local:
-        statuses = {row["status"] for row in local if row["name"] == name}
-        if "unique" in statuses:
-            warnings.append(
-                f"bundled skill {name!r} is not selected, but the agent's own "
-                f"skill {name!r} in the Hermes home still loads"
-            )
-        elif "ambiguous" in statuses:
-            warnings.append(
-                f"bundled skill {name!r} is not selected, but Hermes copied it "
-                f"into its home beside the agent's own skill {name!r}; Hermes "
-                "refuses both as ambiguous"
-            )
     return report, warnings

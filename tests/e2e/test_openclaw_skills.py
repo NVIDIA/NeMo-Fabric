@@ -290,6 +290,12 @@ def test_reported_skills_are_the_ones_openclaw_loads(native: _Native):
         pytest.param(["name: true"], id="true"),
         pytest.param(["name: 2026-01-02"], id="date"),
         pytest.param(["name: [a, b]"], id="sequence"),
+        pytest.param(["label: &label aliased", "name: *label"], id="alias"),
+        pytest.param(["label: &l 0x1F", "name: *l"], id="alias-number"),
+        pytest.param(["label: &l [a, b]", "name: *l"], id="alias-sequence"),
+        pytest.param(["label: &l ~", "name: *l"], id="alias-null"),
+        pytest.param(["meta:", "  x: &l nested", "name: *l"], id="alias-nested"),
+        pytest.param(["name:", "  - |", "    block"], id="block-in-sequence"),
     ],
 )
 def test_reported_names_match_openclaw(
@@ -328,6 +334,98 @@ def test_duplicate_outcomes_match_openclaw(native: _Native, policy: str | None):
     assert _external(status, set())["review"] == loaded["review"]
     expected = "review-team" if policy == "first_wins" else "review-mounted"
     assert loaded["review"] == f"Copy at {expected}."
+
+
+@pytest.mark.parametrize("policy", ["first_wins", "last_wins", "reject"])
+def test_alias_names_take_part_in_duplicate_policies(native: _Native, policy: str):
+    """A name written as an alias clashes, as in OpenClaw, under every policy."""
+    root = native.tmp_path
+    aliased = root / "opt" / "review-aliased"
+    aliased.mkdir(parents=True)
+    (aliased / "SKILL.md").write_text(
+        "---\nlabel: &label review\nname: *label\n"
+        "description: Copy at review-aliased.\n---\n",
+        encoding="utf-8",
+    )
+    plain = _skill(root / "team" / "review-plain", "review")
+    skills = {
+        "directories": [{"skill": str(aliased)}, {"skill": str(plain)}],
+        "duplicates": policy,
+    }
+
+    if policy == "reject":
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            native.plan(skills)
+        assert caught.value.metadata["reason"] == "duplicate"
+        return
+    plan, status = native.list(skills)
+
+    loaded = _loaded(plan)
+    assert _external(status, set())["review"] == loaded["review"]
+    expected = "review-aliased" if policy == "first_wins" else "review-plain"
+    assert loaded["review"] == f"Copy at {expected}."
+
+
+def test_configured_workspace_skill_wins_as_reported(native: _Native):
+    """A configured workspace skill outranks the shipped copy, as OpenClaw decides."""
+    weather = _skill(native.workspace / "skills" / "weather", "weather", "Mine.")
+
+    plan, status = native.list(
+        {"directories": [{"skill": str(weather)}], "bundled": {}}
+    )
+
+    rows = {row["name"]: row for row in status["skills"]}
+    assert (rows["weather"]["source"], rows["weather"]["description"]) == (
+        "openclaw-workspace",
+        "Mine.",
+    )
+    report = plan.report()
+    assert report is not None
+    assert [(item["name"], item["path"]) for item in report["loaded"]] == [
+        ("weather", str(weather.resolve()))
+    ]
+    duplicates = {item["name"]: item for item in report["duplicates"]}
+    assert duplicates["weather"]["outcome"] == "selected"
+    assert duplicates["weather"]["selected"] == str(weather.resolve())
+    unavailable = {item["name"]: item for item in report["bundled"]["unavailable"]}
+    assert unavailable["weather"]["reason"] == "shadowed"
+
+
+@pytest.mark.parametrize(
+    "front_matter",
+    [
+        pytest.param(
+            "name: review\ndescription: Workspace.\nmetadata: [unclosed", id="yaml"
+        ),
+        pytest.param("name: review\ndescription: ''", id="empty-description"),
+    ],
+)
+@pytest.mark.parametrize("policy", [None, "first_wins"])
+def test_invalid_workspace_skill_does_not_hide_a_configured_one(
+    native: _Native, front_matter: str, policy: str | None
+):
+    """A workspace copy OpenClaw refuses hides nothing, as reported."""
+    team = _skill(native.tmp_path / "team" / "review", "review", "External.")
+    local = native.workspace / "skills" / "review"
+    local.mkdir(parents=True)
+    (local / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
+    skills: dict[str, Any] = {"directories": [{"skill": str(team)}]}
+    if policy is not None:
+        skills["duplicates"] = policy
+
+    plan, status = native.list(skills)
+
+    rows = {row["name"]: row for row in status["skills"]}
+    assert (rows["review"]["source"], rows["review"]["description"]) == (
+        "openclaw-extra",
+        "External.",
+    )
+    report = plan.report()
+    assert report is not None
+    assert [(item["name"], item["path"]) for item in report["loaded"]] == [
+        ("review", str(team.resolve()))
+    ]
+    assert "review" not in {item["name"] for item in report.get("duplicates", [])}
 
 
 @pytest.mark.parametrize(

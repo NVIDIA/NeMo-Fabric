@@ -42,7 +42,12 @@ an adapter's `DiscoveryRules` (one set for every entry, or a callable that
 returns the rules for each entry) and duplicate policy, raises `SkillLoadError`
 with the failing field and path, and returns a `DirectoryLoad` that
 `report_block()` turns into the `output.skills` run report and `warn()`
-summarizes on standard error.
+summarizes on standard error. `DiscoveryRules.name_style` reads front-matter
+names the way the harness does (`pyyaml`, or `openclaw` for YAML 1.2 with
+OpenClaw's trimming). `read_front_matter()` returns a skill's name, keys,
+and whether its name could be read reliably. Under an explicit duplicate
+policy, a name that can't be read reliably fails with
+`unsupported_frontmatter_name`.
 
 `AdapterCheckRequest` and `AdapterCheckResult` define health-probe requests and results. Results preserve required null fields and use fixed reason codes and evidence-source identifiers. The common Python lifecycle host publishes an authenticated health channel for adapters with an asynchronous `check(level)` method returning an `AdapterCheckResult` mapping. The host applies the remaining deadline and invalidates observations during shutdown. A service host uses its service ID in the probe's `runtime_id` field.
 

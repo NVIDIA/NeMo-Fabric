@@ -26,6 +26,7 @@ from nemo_fabric_adapter_contract.skills import FoundSkill
 from nemo_fabric_adapter_contract.skills import SkillLoadError
 from nemo_fabric_adapter_contract.skills import SkippedCandidate
 from nemo_fabric_adapter_contract.skills import load_directories
+from nemo_fabric_adapter_contract.skills import read_front_matter
 from nemo_fabric_adapter_contract.skills import report_block
 from nemo_fabric_adapter_contract.skills import warn
 
@@ -1083,6 +1084,31 @@ _YAML_NAMES = [
     "name: &anchor review",
     "name: ! 12",
     "name: !!int 3",
+    "name: !!null x",
+    "name: !!bool yes",
+    "name: !!float 1.5",
+    "name: !!timestamp 2024-01-02",
+    "name: !!binary aGk=",
+    # Aliases, resolved to the anchored value by the same rules.
+    "label: &label review\nname: *label",
+    "label: &l  review  \nname: *l",
+    "label: &l 12\nname: *l",
+    "label: &l yes\nname: *l",
+    "label: &l 2024-01-02\nname: *l",
+    "label: &l !!str 12\nname: *l",
+    "label: &l 'quoted'\nname: *l",
+    "label: &l '   '\nname: *l",
+    "label: &l |\n  text\nname: *l",
+    "label: &l ~\nname: *l",
+    "label: &l\nname: *l",
+    "label: &l [a, b]\nname: *l",
+    "label: &l\n  a: 1\nname: *l",
+    "meta:\n  x: &l deep\nname: *l",
+    "x: &a\n  - &b two\nname: *b",
+    "x: &a [1, &b two]\nname: *b",
+    "x: &a v\nname: *a # c",
+    "description: &d hi\nname: *d",
+    "name: &a first\nname: *a",
     # Collections.
     "name: [a, b]",
     "name: {first: a}",
@@ -1118,6 +1144,70 @@ def test_skill_name_matches_what_yaml_reads(tmp_path: Path, front_matter: str):
     load = load_directories([{"skill": folder}], rules=IMMEDIATE, duplicates=None)
 
     assert [skill.name for skill in load.selected] == [expected]
+    assert not load.selected[0].name_uncertain
+
+
+@pytest.mark.parametrize(
+    "front_matter",
+    [
+        # Tags this module does not resolve, or text PyYAML fails to build.
+        "name: !foo bar",
+        "name: !!int abc",
+        "name: !!timestamp foo",
+        "name: !!binary é",
+        "name: !!seq foo",
+        # An anchor in a value this module did not read, or text that only
+        # looks like one.
+        "x: &x a\n# &x hidden\nname: *x",
+        "y: &x real\nx: '&x hidden'\nname: *x",
+        # Top-level keys it does not read.
+        "? name\n: review",
+        "&k name: review",
+        "!!str name: review",
+        "{name: flow}",
+        "  name: indented",
+        "base: &b {name: merged}\n<<: *b",
+    ],
+)
+def test_pyyaml_style_marks_names_it_cannot_read_uncertain(
+    tmp_path: Path, front_matter: str
+):
+    folder = tmp_path / "folder-name"
+    folder.mkdir()
+    (folder / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
+
+    load = load_directories([{"skill": folder}], rules=IMMEDIATE, duplicates=None)
+
+    assert [(skill.name, skill.name_uncertain) for skill in load.selected] == [
+        ("folder-name", True)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("front_matter", "name"),
+    [
+        # An alias PyYAML cannot compose is not YAML; the line's text is used.
+        ("name: *undefined", "*undefined"),
+        ("x: &a v\nname: &b *a", "&b *a"),
+        ("x: &a.b v\nname: *a.b", "*a.b"),
+        ("x: &a v\nname: *a trailing", "*a trailing"),
+        ("label: &l x\nlabel2: &l y\nname: *l", "*l"),
+    ],
+)
+def test_pyyaml_style_alias_errors_use_the_text_on_the_line(
+    tmp_path: Path, front_matter: str, name: str
+):
+    with pytest.raises(yaml.YAMLError):
+        yaml.safe_load(front_matter)
+    folder = tmp_path / "folder-name"
+    folder.mkdir()
+    (folder / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
+
+    load = load_directories([{"skill": folder}], rules=IMMEDIATE, duplicates=None)
+
+    assert [(skill.name, skill.name_uncertain) for skill in load.selected] == [
+        (name, False)
+    ]
 
 
 @pytest.mark.parametrize(
@@ -1253,6 +1343,37 @@ _OPENCLAW_NAMES = [
     # JSON escapes control characters and lone surrogates.
     ('name: ["\\x01\\x1f"]', '["\\u0001\\u001f"]'),
     ('name: ["\\ud83d\\ude00", "\\ud83d"]', '["\U0001f600","\\ud83d"]'),
+    # Aliases give the anchored value, read by the same rules.
+    ("label: &label review\nname: *label", "review"),
+    ("label: &l  review  \nname: *l", "review"),
+    ("label: &l 0x1F\nname: *l", "31"),
+    ("label: &l yes\nname: *l", "yes"),
+    ("label: &l !!str 12\nname: *l", "12"),
+    ("label: &l 'quoted'\nname: *l", "quoted"),
+    ("label: &l |\n  text\nname: *l", "text"),
+    ("label: &l [a, b]\nname: *l", '["a","b"]'),
+    ("label: &l\n  a: 1\nname: *l", '{"a":1}'),
+    ("label: &l ~\nname: *l", "*l"),
+    ("x: &a ''\nname: *a", "folder-name"),
+    ("meta:\n  x: &l deep\nname: *l", "deep"),
+    ("x: &a\n  - &b two\nname: *b", "two"),
+    ("x: &a [1, &b two]\nname: [*a, *b]", '[[1,"two"],"two"]'),
+    ("x: &a [a: b]\nname: *a", '[{"a":"b"}]'),
+    ("description: &d hi\nname: *d", "hi"),
+    ("label: &l x\nlabel2: &l y\nname: *l", "y"),
+    ("x: &a.b v\nname: *a.b", "v"),
+    ("x: &a v\nname: *a # c", "v"),
+    ("name: [&a x, *a]", '["x","x"]'),
+    # Block scalars inside collections end with a line break.
+    ("name:\n  - |\n    text", '["text\\n"]'),
+    ("name:\n- |\n  x\n  y\n- >-\n  a\n  b", '["x\\ny\\n","a b"]'),
+    ("name:\n  k: |\n    v\n  j: >\n   w", '{"k":"v\\n","j":"w\\n"}'),
+    ("name:\n  - |2\n     x", '[" x\\n"]'),
+    ("name:\n- |+\n  t\n\n- u", '["t\\n\\n","u"]'),
+    ("name:\n- >\n  a\n\n  b\n   c\n  d", '["a\\nb\\n c\\nd\\n"]'),
+    ("name:\n  - k: |\n      v", '[{"k":"v\\n"}]'),
+    # A merge key is an ordinary key in YAML 1.2.
+    ("base: &b {name: merged}\n<<: *b\ndescription: d", "folder-name"),
 ]
 
 
@@ -1270,23 +1391,36 @@ def test_openclaw_style_reads_names_as_openclaw(
 
 
 @pytest.mark.parametrize(
-    ("front_matter", "name"),
+    ("front_matter", "name", "uncertain"),
     [
-        # Values whose OpenClaw text the helper does not derive.
-        ("x: &a foo\nname: *a", "folder-name"),
-        ("name: !!timestamp 2026-01-02", "folder-name"),
-        ("name: !!binary aGk=", "folder-name"),
-        ("name: [? a]", "folder-name"),
-        ("name:\n  - |\n    block", "folder-name"),
+        # Values whose OpenClaw text the helper does not derive: the folder
+        # name is used and the name is marked uncertain.
+        ("name: !!timestamp 2026-01-02", "folder-name", True),
+        ("name: !!binary aGk=", "folder-name", True),
+        ("name: !!merge x", "folder-name", True),
+        ("name: [? a]", "folder-name", True),
+        ("name:\n  ? a\n  : b", "folder-name", True),
+        ("name:\n  - &a k: v", "folder-name", True),
+        ("name: [&a [*a]]", "folder-name", True),
+        # An anchor this module did not read, or text that only looks like one.
+        ("x: &x a\n# &x hidden\nname: *x", "folder-name", True),
+        # Top-level keys it does not read.
+        ("? name\n: review", "folder-name", True),
+        ("&k name: review", "folder-name", True),
+        ("!!str name: review", "folder-name", True),
+        ("{name: flow}", "folder-name", True),
+        ("  name: indented", "folder-name", True),
         # OpenClaw rejects front matter that is not valid YAML; the text on
         # the line is kept, as in the pyyaml style.
-        ("name: a: b", "a: b"),
-        ("name: 'a' trailing", "'a' trailing"),
-        ("name:\n  k: v\n  k: w", "folder-name"),
+        ("name: a: b", "a: b", False),
+        ("name: 'a' trailing", "'a' trailing", False),
+        ("name:\n  k: v\n  k: w", "folder-name", False),
+        ("name: *undefined", "*undefined", False),
+        ("x: &a v\nname: &b *a", "&b *a", False),
     ],
 )
 def test_openclaw_style_falls_back_where_it_cannot_match(
-    tmp_path: Path, front_matter: str, name: str
+    tmp_path: Path, front_matter: str, name: str, uncertain: bool
 ):
     folder = tmp_path / "folder-name"
     folder.mkdir()
@@ -1295,6 +1429,7 @@ def test_openclaw_style_falls_back_where_it_cannot_match(
     load = load_directories([{"skill": folder}], rules=OPENCLAW, duplicates=None)
 
     assert [skill.name for skill in load.selected] == [name]
+    assert [skill.name_uncertain for skill in load.selected] == [uncertain]
 
 
 @pytest.mark.skipif(
@@ -1359,6 +1494,161 @@ def test_block_scalar_names_take_part_in_duplicate_policies(
     assert [(skill.name, skill.path) for skill in load.selected] == [
         ("review", (folded, plain)[selected].resolve())
     ]
+
+
+@pytest.mark.parametrize("rules", [IMMEDIATE, OPENCLAW], ids=["pyyaml", "openclaw"])
+@pytest.mark.parametrize(
+    ("policy", "selected"), [("first_wins", 0), ("last_wins", 1), ("reject", None)]
+)
+def test_alias_names_take_part_in_duplicate_policies(
+    tmp_path: Path, rules: DiscoveryRules, policy: str, selected: int | None
+):
+    """A name written as an alias clashes with the same name written plainly."""
+    aliased = tmp_path / "aliased"
+    aliased.mkdir()
+    (aliased / "SKILL.md").write_text(
+        "---\nlabel: &label review\nname: *label\ndescription: d\n---\n", "utf-8"
+    )
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    (plain / "SKILL.md").write_text("---\nname: review\ndescription: d\n---\n", "utf-8")
+    entries = [{"skill": aliased}, {"skill": plain}]
+
+    if selected is None:
+        with pytest.raises(SkillLoadError, match="configured twice"):
+            load_directories(entries, rules=rules, duplicates=policy)
+        return
+    load = load_directories(entries, rules=rules, duplicates=policy)
+
+    assert [(skill.name, skill.path) for skill in load.selected] == [
+        ("review", (aliased, plain)[selected].resolve())
+    ]
+
+
+@pytest.mark.parametrize("rules", [IMMEDIATE, OPENCLAW], ids=["pyyaml", "openclaw"])
+@pytest.mark.parametrize("policy", ["first_wins", "last_wins", "reject"])
+def test_uncertain_name_fails_under_a_duplicate_policy(
+    tmp_path: Path, rules: DiscoveryRules, policy: str
+):
+    """A name that may be wrong never silently picks a copy under a policy."""
+    team = tmp_path / "team"
+    unsupported = team / "unsupported"
+    unsupported.mkdir(parents=True)
+    (unsupported / "SKILL.md").write_text(
+        "---\n? name\n: review\ndescription: d\n---\n", "utf-8"
+    )
+    plain = team / "plain"
+    plain.mkdir()
+    (plain / "SKILL.md").write_text("---\nname: review\ndescription: d\n---\n", "utf-8")
+
+    with pytest.raises(SkillLoadError) as raised:
+        load_directories([{"folder": team}], rules=rules, duplicates=policy)
+
+    assert raised.value.reason == "unsupported_frontmatter_name"
+    assert raised.value.field == "skills.directories[0]"
+    assert raised.value.paths == (unsupported.resolve(),)
+    assert "unsupported_frontmatter_name" in str(raised.value)
+    assert str(unsupported.resolve() / "SKILL.md") in str(raised.value)
+
+
+def test_uncertain_name_keeps_the_fallback_and_is_reported_without_a_policy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    skill = tmp_path / "unsupported"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\n? name\n: review\n---\n", "utf-8")
+
+    load = load_directories([{"skill": skill}], rules=IMMEDIATE, duplicates=None)
+    warn("Test", load)
+
+    assert load.selected == [
+        FoundSkill(
+            "unsupported",
+            skill.resolve(),
+            "skills.directories[0]",
+            "skill",
+            name_uncertain=True,
+        )
+    ]
+    report = report_block(load)
+    assert report is not None
+    assert report["loaded"] == [
+        {
+            "name": "unsupported",
+            "path": str(skill.resolve()),
+            "entry": "skills.directories[0]",
+            "origin": "external",
+            "name_uncertain": True,
+        }
+    ]
+    assert "unsupported_frontmatter_name" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("text", "parses", "fields"),
+    [
+        (
+            "---\nname: review\ndescription: Reviews code.\n---\n",
+            True,
+            {"name": "review", "description": "Reviews code."},
+        ),
+        # Front matter the yaml package rejects.
+        (
+            "---\nname: review\ndescription: d\nmetadata: [unclosed\n---\n",
+            False,
+            {"name": "review", "description": "d", "metadata": "[unclosed"},
+        ),
+        ("---\nname: a\nname: b\n---\n", False, {"name": "b"}),
+        # A description OpenClaw may recover, and values it may read
+        # differently, are unknown.
+        ("---\ndescription: a: b\n---\n", None, {"description": "a: b"}),
+        (
+            "---\nname: !!timestamp 2026-01-02\n---\n",
+            None,
+            {"name": "!!timestamp 2026-01-02"},
+        ),
+        ("---\n? name\n: review\n---\n", None, {}),
+        # A null takes the line fallback; an empty string does not.
+        ("---\ndescription: ~\n---\n", True, {"description": "~"}),
+        ("---\ndescription: ''\n---\n", True, {"description": ""}),
+        ("---\ndescription:\n---\n", True, {}),
+        # Aliases resolve.
+        (
+            "---\nx: &d text\ndescription: *d\n---\n",
+            True,
+            {"x": "text", "description": "text"},
+        ),
+    ],
+)
+def test_read_front_matter_reports_what_openclaw_parses(
+    tmp_path: Path, text: str, parses: bool | None, fields: dict[str, str]
+):
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text(text, encoding="utf-8")
+
+    front_matter = read_front_matter(skill_file, name_style="openclaw")
+
+    assert front_matter is not None
+    assert front_matter.parses is parses
+    assert dict(front_matter.fields) == fields
+
+
+def test_read_front_matter_reads_names_in_both_styles(tmp_path: Path):
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text("---\nlabel: &l 42\nname: *l\n---\n", encoding="utf-8")
+    (tmp_path / "plain.md").write_text("No front matter.\n", encoding="utf-8")
+
+    pyyaml = read_front_matter(skill_file)
+    openclaw = read_front_matter(skill_file, name_style="openclaw")
+
+    assert pyyaml is not None and openclaw is not None
+    assert (pyyaml.name, pyyaml.name_uncertain, pyyaml.parses) == (None, False, None)
+    assert dict(pyyaml.fields) == {}
+    assert (openclaw.name, openclaw.name_uncertain) == ("42", False)
+    assert pyyaml.keys == openclaw.keys == frozenset({"label", "name"})
+    assert read_front_matter(tmp_path / "plain.md") is None
+    with pytest.raises(ValueError, match="unknown name style"):
+        read_front_matter(skill_file, name_style="yaml")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(

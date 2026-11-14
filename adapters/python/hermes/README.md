@@ -91,8 +91,8 @@ The adapter receives a normalized payload from NeMo Fabric and materializes a na
 - workspace and explicit environment variables through `environment`;
 - invocation timeout through `runtime.timeout_seconds`;
 - `skills.paths` and `skills.directories` as Hermes Agent's
-  `skills.external_dirs`, and `skills.bundled` as `skills.disabled`
-  (see [Skills](#skills));
+  `skills.external_dirs`, and `skills.bundled` as a staged
+  `HERMES_BUNDLED_SKILLS` folder (see [Skills](#skills));
 - NeMo Fabric MCP servers as Hermes Agent MCP server config;
 - `tools.enabled` and `tools.blocked` as Hermes-native toolset selection and
   blocking policy;
@@ -210,8 +210,8 @@ Hermes-specific behavior:
 - An SDK-only runtime starts with no bundled skills in a new home: the
   embedded SDK agent doesn't copy them. Runtimes with the API, dashboard, or
   terminal interface get Hermes's own copy at start. Whenever `skills.bundled`
-  is set, the adapter copies them at startup, as Hermes does. The copy always
-  includes `hermes-agent`, which Hermes always loads.
+  is set, the adapter copies the selected ones at startup, as Hermes does. The
+  copy always includes `hermes-agent`, which Hermes always loads.
 - Because Hermes always loads `hermes-agent`, NeMo Fabric rejects a bundled
   selection that leaves it out: `include` must name it (so `include: []`
   fails), `exclude` can't name it, and `enabled: false` isn't supported (the
@@ -219,16 +219,18 @@ Hermes-specific behavior:
   for the fewest bundled skills. A rejected `include` or `exclude` fails
   startup with `hermes_skill_invalid` and the reason
   `essential_bundled_skill`.
-- `skills.bundled` hides unselected bundled skills by name through Hermes's
-  `skills.disabled`, which hides every skill with that name. Names that a
-  `skills.paths` or `skills.directories` skill provides stay enabled, and
-  Hermes doesn't copy those bundled skills. Names of the agent's own skills in
-  the Hermes home, such as skills it wrote in a kept state folder, also stay
-  enabled. Hermes tells them apart from bundled copies by its
-  `skills/.bundled_manifest` file. Hermes never copies a bundled skill over
-  the agent's own skill in the same place. When the agent's skill is
-  elsewhere in the home, Hermes copies the bundled skill beside it and
-  refuses both as ambiguous; the adapter warns at start.
+- When `skills.bundled` leaves skills out, the adapter stages the selected
+  bundled skills in a temporary folder, laid out as in the installation, and
+  points `HERMES_BUNDLED_SKILLS` at it until stop. Hermes's sync, the
+  adapter's and each native interface's, copies only those skills, so a
+  left-out bundled skill never reaches the home and hides nothing: a
+  `skills.paths`, `skills.directories`, or agent-written skill with its name
+  loads normally. The adapter doesn't set Hermes's `skills.disabled`.
+- In a kept home, Hermes's earlier copy of a left-out skill is removed, with
+  its `skills/.bundled_manifest` entry, when it still matches the manifest's
+  hash or the installed skill. A changed copy at the place Hermes put it
+  isn't removed, and startup fails with `hermes_skill_invalid` and the reason
+  `excluded_bundled_skill_modified`.
 
 With `skills.directories` or `skills.bundled`, every result carries
 `output.skills` (`loaded`, `empty_entries`, `skipped`, `duplicates`, and

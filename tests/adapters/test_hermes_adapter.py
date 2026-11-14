@@ -16,6 +16,7 @@ import tomllib
 from io import StringIO
 from pathlib import Path
 from types import ModuleType
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
@@ -2159,10 +2160,12 @@ async def test_runtime_loads_skill_directories_and_reports_on_every_result(
     assert kept in report["bundled"]["selected"] or kept in unavailable
     assert "hermes-agent" in report["bundled"]["selected"]
     assert report["bundled"]["essential"] == ["hermes-agent"]
-    # Bundled skills are copied into the home; the excluded one is disabled.
-    assert next((home / "skills").rglob(f"{kept}/SKILL.md"))
-    assert f"- {excluded}" in native
-    assert first.output["hermes_native_config"]["skills_disabled"] == [excluded]
+    # Only the selected bundled skills are copied into the home, so nothing
+    # needs Hermes's skills.disabled.
+    assert kept in _home_skill_names(home)
+    assert excluded not in _home_skill_names(home)
+    assert f"- {excluded}" not in native
+    assert "skills_disabled" not in first.output["hermes_native_config"]
     assert first.output["hermes_native_config"]["skill_dirs"] == [
         str(team),
         str(opt_review),
@@ -2383,6 +2386,28 @@ def _first_bundled_name() -> str:
     return sorted(set(inventory) - hermes_skills.ESSENTIAL_SKILLS)[0]
 
 
+def _home_skill_names(home: Path) -> set[str]:
+    """Names of the skills in the Hermes home, as Hermes's sync reads them."""
+    from nemo_fabric_adapters.hermes import skills as hermes_skills
+
+    return {
+        hermes_skills.read_skill_name(skill_md, skill_md.parent.name)
+        for skill_md in (home / "skills").rglob("SKILL.md")
+    }
+
+
+def _bundled_place(name: str) -> Path:
+    """Where Hermes's sync copies a bundled skill, below the home's skills folder."""
+    from nemo_fabric_adapters.hermes import skills as hermes_skills
+
+    source = hermes_skills.bundled_inventory()[name]
+    return source.relative_to(hermes_skills.bundled_dir())
+
+
+def _skills_home(tmp_path: Path) -> Path:
+    return tmp_path / "artifacts" / ".fabric" / "hermes" / "runtimes" / "runtime-skills"
+
+
 @pytest.mark.usefixtures("mock_hermes_agent")
 async def test_runtime_seeds_the_essential_skill_into_a_fresh_home(tmp_path: Path):
     """Hermes always loads hermes-agent; its sync puts it in the home."""
@@ -2393,15 +2418,15 @@ async def test_runtime_seeds_the_essential_skill_into_a_fresh_home(tmp_path: Pat
     assert report == {
         "bundled": {"selected": ["hermes-agent"], "essential": ["hermes-agent"]}
     }
-    assert next((home / "skills").rglob("hermes-agent/SKILL.md"))
-    assert "hermes-agent" not in native["skills_disabled"]
+    assert _home_skill_names(home) == {"hermes-agent"}
+    assert "skills_disabled" not in native
 
 
 @pytest.mark.usefixtures("mock_hermes_agent")
 async def test_runtime_reports_exactly_the_included_bundled_skills(tmp_path: Path):
     other = _first_bundled_name()
 
-    report, _home, native = await _start_with_skills(
+    report, home, native = await _start_with_skills(
         tmp_path, {"bundled": {"include": ["hermes-agent", other]}}
     )
 
@@ -2411,8 +2436,9 @@ async def test_runtime_reports_exactly_the_included_bundled_skills(tmp_path: Pat
     # A selected skill loads, or is unavailable when Hermes hides it here.
     assert sorted([*loaded, *unavailable]) == sorted(["hermes-agent", other])
     assert "hermes-agent" in loaded
-    assert other not in native["skills_disabled"]
-    assert "hermes-agent" not in native["skills_disabled"]
+    # Hermes's sync copies exactly the included skills into the home.
+    assert _home_skill_names(home) == {"hermes-agent", other}
+    assert "skills_disabled" not in native
 
 
 @pytest.mark.parametrize(
@@ -2463,7 +2489,7 @@ async def test_runtime_keeps_bundled_names_of_skill_paths_enabled(tmp_path: Path
         )
     )
     try:
-        disabled = runtime._hermes_config["skills"]["disabled"]
+        native = runtime._hermes_config["skills"]
         skills_tool.clear_skills_cache()
         loadable = {
             skill["name"]: skill
@@ -2473,60 +2499,220 @@ async def test_runtime_keeps_bundled_names_of_skill_paths_enabled(tmp_path: Path
     finally:
         await runtime.stop()
 
-    assert name not in disabled
+    assert "disabled" not in native
     assert Path(loadable[name]["path"]).parent.resolve() == own
 
 
 @pytest.mark.parametrize("in_place", [True, False], ids=["bundled-place", "elsewhere"])
 @pytest.mark.usefixtures("mock_hermes_agent")
-async def test_runtime_keeps_the_agents_own_home_skill_of_an_excluded_name(
+async def test_runtime_loads_the_agents_own_home_skill_of_an_excluded_name(
     tmp_path: Path, capsys, in_place: bool
 ):
-    """An excluded bundled name stays enabled when the home's own skill uses it."""
+    """A left-out bundled skill never reaches the home, so the agent's own
+    skill of that name loads wherever it is, and nothing is ambiguous."""
+    from tools import skills_tool
+
+    excluded = _first_bundled_name()
+    place = _bundled_place(excluded)
+    own_place = place if in_place else Path("mine") / excluded
+    own = _write_skill(_skills_home(tmp_path) / "skills" / own_place)
+    runtime = adapter.HermesRuntime()
+
+    await runtime.start(_skill_payload(tmp_path, {"bundled": {"exclude": [excluded]}}))
+    try:
+        report = runtime._skills_report
+        home = runtime._hermes_home
+        native = configuration.summarize_hermes_config(runtime._hermes_config)
+        skills_tool.clear_skills_cache()
+        rows = [
+            row
+            for row in skills_tool._skill_catalog(include_hidden=True)
+            if row["name"] == excluded
+        ]
+    finally:
+        await runtime.stop()
+
+    assert report is not None
+    assert "skills_disabled" not in native
+    assert excluded not in report["bundled"]["selected"]
+    found = (home / "skills").rglob(f"{excluded}/SKILL.md")
+    assert [path.parent.resolve() for path in found] == [own]
+    # Hermes resolves the name to the agent's skill alone and loads it.
+    assert [(Path(row["path"]).parent.resolve(), row["status"]) for row in rows] == [
+        (own, "unique")
+    ]
+    assert "duplicates" not in report
+    warnings = capsys.readouterr().err
+    assert excluded not in warnings
+
+
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_runtime_stages_only_the_selected_bundled_skills(tmp_path: Path):
+    """Hermes's sync, and each interface's, reads a staged bundled folder."""
     from tools import skills_sync
 
     from nemo_fabric_adapters.hermes import skills as hermes_skills
 
     excluded = _first_bundled_name()
-    source = hermes_skills.bundled_inventory()[excluded]
-    place = source.relative_to(skills_sync._get_bundled_dir())
-    home = tmp_path / "artifacts" / ".fabric" / "hermes" / "runtimes" / "runtime-skills"
-    own_place = place if in_place else Path("mine") / excluded
-    own = _write_skill(home / "skills" / own_place)
+    real_dir = hermes_skills.bundled_dir()
+    before = os.environ.get("HERMES_BUNDLED_SKILLS")
+    runtime = adapter.HermesRuntime()
 
-    report, home, native = await _start_with_skills(
-        tmp_path, {"bundled": {"exclude": [excluded]}}
-    )
-
-    assert report is not None
-    # skills.disabled would hide the agent's own skill as well.
-    assert excluded not in native.get("skills_disabled", [])
-    assert excluded not in report["bundled"]["selected"]
-    found = (home / "skills").rglob(f"{excluded}/SKILL.md")
-    copies = sorted(path.parent.resolve() for path in found)
-    warnings = capsys.readouterr().err
-    if in_place:
-        # Hermes's sync never replaces the agent's own skill.
-        assert copies == [own]
-        assert f"the agent's own skill {excluded!r} in the Hermes home still loads" in (
-            warnings
+    await runtime.start(_skill_payload(tmp_path, {"bundled": {"exclude": [excluded]}}))
+    try:
+        stage = Path(os.environ["HERMES_BUNDLED_SKILLS"])
+        # What Hermes's sync reads while the runtime runs.
+        staged = dict(
+            skills_sync._discover_bundled_skills(skills_sync._get_bundled_dir())
         )
-        assert "duplicates" not in report
-    else:
-        # Hermes's sync copies the bundled skill beside the agent's own.
-        bundled_copy = (home / "skills" / place).resolve()
-        assert copies == sorted([own, bundled_copy])
-        assert f"beside the agent's own skill {excluded!r}" in warnings
-        # The clash has no external copy, and the report still lists it.
-        [record] = report["duplicates"]
-        assert record["name"] == excluded
-        assert record["outcome"] == "ambiguous"
-        assert "selected" not in record
-        assert sorted(record["copies"], key=lambda copy: copy["origin"]) == [
-            {"origin": "bundled", "path": str(bundled_copy)},
-            {"origin": "local", "path": str(own)},
-        ]
-        assert f"skill {excluded!r} has 2 copies, ambiguous" in warnings
+    finally:
+        await runtime.stop()
+
+    assert stage != real_dir
+    assert set(staged) == set(hermes_skills.bundled_inventory()) - {excluded}
+    # The same layout as the installation's, so the home gets the same copies.
+    for name, folder in staged.items():
+        assert folder.relative_to(stage) == _bundled_place(name)
+    # Stop removes the folder and restores the variable.
+    assert not stage.exists()
+    assert os.environ.get("HERMES_BUNDLED_SKILLS") == before
+    assert hermes_skills.bundled_dir() == real_dir
+
+
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_runtime_passes_the_staged_folder_to_native_interfaces(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The API, dashboard, and terminal processes run Hermes's sync themselves."""
+    from nemo_fabric_adapters.hermes import interfaces
+
+    if not interfaces.POSIX:
+        pytest.skip("Hermes interfaces require a POSIX host")
+    excluded = _first_bundled_name()
+    start = AsyncMock()
+    monkeypatch.setattr(interfaces.InterfaceChildren, "start", start)
+    payload = _skill_payload(tmp_path, {"bundled": {"exclude": [excluded]}})
+    config = payload["config"].to_mapping()
+    config["harness"] = {
+        "settings": {"sdk": {"enabled": False}, "interfaces": {"api": {"port": 1}}}
+    }
+    payload["config"] = _agent_config(config)
+    runtime = adapter.HermesRuntime()
+
+    await runtime.start(payload)
+    try:
+        stage = os.environ["HERMES_BUNDLED_SKILLS"]
+    finally:
+        await runtime.stop()
+
+    environment = start.call_args.kwargs["environment"]
+    assert environment["HERMES_BUNDLED_SKILLS"] == stage
+    child = interfaces._child_command(
+        "api", 1, token="token", web_dist=None, environment=environment
+    )[1]
+    assert child["HERMES_BUNDLED_SKILLS"] == stage
+
+
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_runtime_removes_an_unchanged_excluded_copy_from_a_kept_home(
+    tmp_path: Path,
+):
+    """A home's earlier, unchanged copy of a left-out skill is removed, stays
+    out, and comes back when a later runtime selects the skill again."""
+    excluded = _first_bundled_name()
+    _report, home, _native = await _start_with_skills(tmp_path, {"bundled": {}})
+    copy_path = home / "skills" / _bundled_place(excluded)
+    assert copy_path.is_dir()
+    manifest = home / "skills" / ".bundled_manifest"
+    assert f"{excluded}:" in manifest.read_text(encoding="utf-8")
+
+    for _ in range(2):
+        report, home, _native = await _start_with_skills(
+            tmp_path, {"bundled": {"exclude": [excluded]}}
+        )
+        assert report is not None
+        assert not copy_path.exists()
+        assert excluded not in _home_skill_names(home)
+        assert "hermes-agent" in report["bundled"]["selected"]
+        # Hermes's sync would read a kept entry as a deletion by the user.
+        assert f"{excluded}:" not in manifest.read_text(encoding="utf-8")
+
+    # Hermes's sync copies it again, rather than treat it as deleted.
+    report, home, _native = await _start_with_skills(tmp_path, {"bundled": {}})
+    assert copy_path.is_dir()
+    assert f"{excluded}:" in manifest.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("bundled", "field"),
+    [
+        ({"exclude": ["excluded"]}, "skills.bundled.exclude"),
+        ({"include": ["hermes-agent"]}, "skills.bundled.include"),
+    ],
+    ids=["exclude", "include"],
+)
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_runtime_refuses_a_changed_copy_of_an_excluded_skill(
+    tmp_path: Path, bundled: dict[str, list[str]], field: str
+):
+    """A changed copy is the user's or agent's work: never removed, and it
+    would still load, so start fails."""
+    excluded = _first_bundled_name()
+    if "exclude" in bundled:
+        bundled = {"exclude": [excluded]}
+    _report, home, _native = await _start_with_skills(tmp_path, {"bundled": {}})
+    copy_path = home / "skills" / _bundled_place(excluded)
+    skill_md = copy_path / "SKILL.md"
+    edited = skill_md.read_text(encoding="utf-8") + "\nAn edit.\n"
+    skill_md.write_text(edited, encoding="utf-8")
+    runtime = adapter.HermesRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(_skill_payload(tmp_path, {"bundled": bundled}))
+
+    assert caught.value.code == "hermes_skill_invalid"
+    assert caught.value.metadata == {
+        "field": field,
+        "reason": "excluded_bundled_skill_modified",
+        "name": excluded,
+        "path": str(copy_path),
+    }
+    assert str(copy_path) in str(caught.value)
+    assert runtime._started is False
+    assert skill_md.read_text(encoding="utf-8") == edited
+    assert "HERMES_BUNDLED_SKILLS" not in os.environ
+
+
+@pytest.mark.parametrize(
+    "skills", [{"bundled": {}}, {"bundled": {"exclude": []}}, {}], ids=str
+)
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_runtime_keeps_stock_bundled_behavior_without_exclusions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, skills: dict[str, object]
+):
+    """Without a left-out skill, nothing is staged or removed."""
+    from nemo_fabric_adapters.hermes import skills as hermes_skills
+
+    name = _first_bundled_name()
+    _report, home, _native = await _start_with_skills(tmp_path, {"bundled": {}})
+    copy_path = home / "skills" / _bundled_place(name)
+    stage = MagicMock(wraps=hermes_skills.stage_bundled)
+    monkeypatch.setattr(hermes_skills, "stage_bundled", stage)
+    if not skills:
+        team = tmp_path / "team"
+        _write_skill(team / "notes")
+        skills = {"directories": [{"folder": str(team)}]}
+    runtime = adapter.HermesRuntime()
+
+    await runtime.start(_skill_payload(tmp_path, skills))
+    try:
+        assert "HERMES_BUNDLED_SKILLS" not in os.environ
+    finally:
+        await runtime.stop()
+
+    stage.assert_not_called()
+    assert copy_path.is_dir()
+    assert set(hermes_skills.bundled_inventory()) <= _home_skill_names(home)
 
 
 @pytest.mark.parametrize(

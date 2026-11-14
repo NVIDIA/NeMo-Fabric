@@ -20,6 +20,7 @@ from _utils.utils import (
     POSIX_PERMISSIONS,
     assert_atof_model,
     assert_atof_skill_selection,
+    atof_records,
 )
 
 from examples.code_review_agent import (
@@ -27,6 +28,7 @@ from examples.code_review_agent import (
     with_relay,
 )
 from nemo_fabric import (
+    BundledSkills,
     Fabric,
     RelayAtofConfig,
     RelayAtofFileSinkConfig,
@@ -529,6 +531,75 @@ async def test_skill_created_by_hermes_loads_in_the_next_runtime_with_kept_state
         }
     ]
     assert protected.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+async def test_agent_skill_with_an_excluded_bundled_name_loads_in_the_next_runtime(
+    code_review_agent_dir: Path,
+    api_server: str,
+):
+    """An excluded bundled skill never reaches the kept home, so the skill the
+    agent creates with its name loads alone in the next runtime instead of
+    being refused as ambiguous beside Hermes's copy."""
+    from nemo_fabric_adapters.hermes import skills as hermes_skills
+
+    inventory = hermes_skills.bundled_inventory()
+    name = sorted(set(inventory) - hermes_skills.ESSENTIAL_SKILLS)[0]
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = with_relay(hermes_config())
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.tools.enabled = None
+    config.runtime.keep_state = True
+    config.skills = SkillConfig(bundled=BundledSkills(exclude=[name]))
+    home = (
+        code_review_agent_dir
+        / "artifacts"
+        / "hermes"
+        / ".fabric"
+        / "state"
+        / "nvidia.fabric.hermes"
+        / config.metadata.name
+    )
+    bundled_place = (
+        home / "skills" / inventory[name].relative_to(hermes_skills.bundled_dir())
+    )
+
+    async with await Fabric().start_runtime(config, base_dir=code_review_agent_dir):
+        assert (home / "config.yaml").is_file(), sorted(home.parent.iterdir())
+        assert not bundled_place.exists()
+        created = _hermes_skill_manage(
+            home,
+            {
+                "action": "create",
+                "name": name,
+                "content": (
+                    f"---\nname: {name}\ndescription: The agent's own skill.\n---\n"
+                    "agent-owned skill loaded\n"
+                ),
+            },
+        )
+    assert created.get("success") is True, created
+    created_path = Path(created["path"]).resolve()
+    assert created_path.parent != bundled_place.resolve().parent
+
+    requests.post(
+        f"{api_server}/_scenario",
+        json={"tool_call": {"name": "skill_view", "arguments": {"name": name}}},
+        timeout=5,
+    ).raise_for_status()
+    async with await Fabric().start_runtime(
+        config, base_dir=code_review_agent_dir
+    ) as second:
+        result = await second.invoke(input=f"Use the {name} skill.")
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    skills = result["output"]["skills"]
+    assert "duplicates" not in skills
+    assert name not in skills["bundled"]["selected"]
+    assert not bundled_place.exists()
+    # Hermes's skill_view returns the agent's skill, not an ambiguity error.
+    assert "agent-owned skill loaded" in json.dumps(atof_records(result["output"]))
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")

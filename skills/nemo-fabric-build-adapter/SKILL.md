@@ -130,7 +130,7 @@ adapter boundary:
   `nemo_fabric_adapter_contract.skills` with `DiscoveryRules` that match the
   descriptor and what the harness actually loads (root skills, folders the
   harness skips inside a skill, symlinks that leave the entry, and per-folder
-  depths). Map `SkillLoadError` reasons to stable codes (`not_found` to a
+  depths, and `name_style` for how the harness reads YAML names). Map `SkillLoadError` reasons to stable codes (`not_found` to a
   `<adapter>_skill_not_found` code, `invalid` and `duplicate` to
   `<adapter>_skill_invalid`) with the failing field and path. Return
   `report_block()` as `output.skills` in each result. With an explicit

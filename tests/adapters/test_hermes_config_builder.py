@@ -524,7 +524,7 @@ def test_entry_failures_map_to_hermes_codes(
 
 
 @pytest.mark.parametrize(
-    ("bundled", "disabled", "selected"),
+    ("bundled", "excluded", "selected"),
     [
         pytest.param({}, [], ["arxiv", "github", "hermes-agent", "pdf"], id="enable"),
         pytest.param(
@@ -554,10 +554,10 @@ def test_entry_failures_map_to_hermes_codes(
         ),
     ],
 )
-def test_bundled_selection_maps_to_skills_disabled(
+def test_bundled_selection_plans_the_skills_to_stage(
     tmp_path: Path,
     bundled: dict[str, object],
-    disabled: list[str],
+    excluded: list[str],
     selected: list[str],
 ):
     agent_config = _skills_config({"bundled": bundled})
@@ -572,15 +572,17 @@ def test_bundled_selection_maps_to_skills_disabled(
     )
 
     assert plan.selected_bundled == selected
+    assert plan.excluded_bundled == excluded
     # The adapter copies the bundled skills into the home whenever bundled is set.
     assert plan.sync is True
-    assert config.get("skills", {}) == ({"disabled": disabled} if disabled else {})
-    summary = configuration.summarize_hermes_config(config)
-    assert summary.get("skills_disabled", []) == disabled
+    # Left-out skills never reach the home, so Hermes's skills.disabled, which
+    # would hide an external or local skill of the same name, stays unset.
+    assert config.get("skills", {}) == {}
+    assert "skills_disabled" not in configuration.summarize_hermes_config(config)
 
 
-def test_bundled_names_provided_by_external_skills_stay_enabled(tmp_path: Path):
-    """skills.disabled hides every copy of a name, so external names stay out of it."""
+def test_bundled_names_provided_by_external_skills_are_known(tmp_path: Path):
+    """The report tells a bundled skill an external skill provides apart."""
     _write_skill(tmp_path / "team" / "github")
     _write_skill(tmp_path / "team" / "renamed", name="pdf")
     agent_config = _skills_config(
@@ -599,17 +601,16 @@ def test_bundled_names_provided_by_external_skills_stay_enabled(tmp_path: Path):
         agent_config, workspace=".", skill_plan=plan
     )
 
-    assert config["skills"] == {
-        "external_dirs": [str(tmp_path.resolve() / "team")],
-        "disabled": ["arxiv"],
-    }
+    assert config["skills"] == {"external_dirs": [str(tmp_path.resolve() / "team")]}
+    assert plan.external_names == {"github", "renamed", "pdf"}
+    assert plan.excluded_bundled == ["arxiv", "github", "pdf"]
 
 
 @pytest.mark.parametrize("relative", [False, True], ids=["absolute", "relative"])
-def test_bundled_names_provided_by_skill_paths_stay_enabled(
+def test_bundled_names_provided_by_skill_paths_are_known(
     tmp_path: Path, relative: bool
 ):
-    """skills.paths is unchecked, but its skills still keep their names enabled."""
+    """skills.paths is unchecked, but its skills' names are still read."""
     home = tmp_path / "home"
     mine = home / "mine" if relative else tmp_path / "mine"
     _write_skill(mine / "github")
@@ -630,36 +631,74 @@ def test_bundled_names_provided_by_skill_paths_stay_enabled(
         agent_config, workspace=".", skill_plan=plan
     )
 
-    assert config["skills"] == {
-        "external_dirs": ["mine" if relative else str(mine)],
-        "disabled": ["arxiv"],
+    assert config["skills"] == {"external_dirs": ["mine" if relative else str(mine)]}
+    assert plan.external_names == {"github", "renamed", "pdf"}
+
+
+def test_stage_bundled_copies_only_the_selected_skills(tmp_path: Path):
+    """The staged folder has the installation's layout, without left-out skills."""
+    root = tmp_path / "bundled"
+    _write_skill(root / "research" / "arxiv")
+    _write_skill(root / "research" / "arxiv" / "nested")
+    (root / "research" / "arxiv" / "scripts").mkdir()
+    (root / "research" / "arxiv" / "scripts" / "run.py").write_text("x", "utf-8")
+    _write_skill(root / "devops" / "github")
+    _write_skill(root / "hermes-agent")
+    (root / "research" / "DESCRIPTION.md").write_text("Research", "utf-8")
+    (root / "devops" / "DESCRIPTION.md").write_text("DevOps", "utf-8")
+    inventory = {
+        "arxiv": root / "research" / "arxiv",
+        "nested": root / "research" / "arxiv" / "nested",
+        "github": root / "devops" / "github",
+        "hermes-agent": root / "hermes-agent",
     }
-
-
-@pytest.mark.parametrize(
-    ("manifest", "disabled", "kept"),
-    [
-        pytest.param(None, ["arxiv", "github"], ["pdf"], id="own-skill"),
-        pytest.param("pdf:0123\n", ["arxiv", "github", "pdf"], [], id="bundled-copy"),
-        pytest.param("pdf\n", ["arxiv", "github", "pdf"], [], id="v1-manifest"),
-    ],
-)
-def test_bundled_names_of_the_agents_own_home_skills_stay_enabled(
-    tmp_path: Path, manifest: str | None, disabled: list[str], kept: list[str]
-):
-    """skills.disabled would also hide the agent's own skill of that name."""
-    home = tmp_path / "home"
-    _write_skill(home / "skills" / "notes" / "pdf")
-    if manifest is not None:
-        (home / "skills" / ".bundled_manifest").write_text(manifest, encoding="utf-8")
-    agent_config = _skills_config({"bundled": {"include": ["hermes-agent"]}})
-
+    agent_config = _skills_config({"bundled": {"exclude": ["github", "nested"]}})
     plan = hermes_skills.plan_skills(
-        agent_config, inventory=lambda: _inventory(tmp_path), hermes_home=home
+        agent_config, inventory=lambda: inventory, hermes_home=tmp_path / "home"
     )
+    assert plan.bundled_root == root
+    stage = tmp_path / "stage"
 
-    assert plan.disabled == disabled
-    assert plan.kept_local == kept
+    hermes_skills.stage_bundled(plan, stage)
+
+    files = sorted(
+        path.relative_to(stage).as_posix()
+        for path in stage.rglob("*")
+        if path.is_file()
+    )
+    assert files == [
+        "hermes-agent/SKILL.md",
+        "research/DESCRIPTION.md",
+        "research/arxiv/SKILL.md",
+        "research/arxiv/scripts/run.py",
+    ]
+
+
+def test_remove_copies_drops_only_their_manifest_entries(tmp_path: Path):
+    """A removed copy leaves the manifest, so a later sync copies it again."""
+    home = tmp_path / "home"
+    skills_dir = home / "skills"
+    copy_path = _write_skill(skills_dir / "research" / "arxiv")
+    kept = _write_skill(skills_dir / "devops" / "github")
+    manifest = skills_dir / ".bundled_manifest"
+    manifest.write_text("arxiv:aaa\ngithub:bbb\nhermes-agent:ccc\n", "utf-8")
+    plan = hermes_skills.SkillPlan(stale_copies=[("arxiv", copy_path)])
+
+    hermes_skills.remove_copies(plan, home)
+
+    assert not copy_path.exists()
+    assert kept.is_dir()
+    assert manifest.read_text("utf-8") == "github:bbb\nhermes-agent:ccc\n"
+
+
+def test_remove_copies_refuses_a_folder_outside_the_home(tmp_path: Path):
+    outside = _write_skill(tmp_path / "elsewhere" / "arxiv")
+    plan = hermes_skills.SkillPlan(stale_copies=[("arxiv", outside)])
+
+    with pytest.raises(ValueError, match="not inside"):
+        hermes_skills.remove_copies(plan, tmp_path / "home")
+
+    assert outside.is_dir()
 
 
 @pytest.mark.parametrize(
@@ -973,7 +1012,7 @@ def test_bundled_inventory_without_an_essential_skill_allows_any_include(
     )
 
     assert plan.selected_bundled == []
-    assert plan.disabled == ["pdf"]
+    assert plan.excluded_bundled == ["pdf"]
 
 
 def test_observation_reports_bundled_copies_deferred_to_external(tmp_path: Path):
@@ -1289,7 +1328,6 @@ def test_observation_does_not_report_the_agents_own_skill_as_bundled(
     plan = hermes_skills.plan_skills(
         agent_config, inventory=lambda: _inventory(tmp_path), hermes_home=home
     )
-    assert plan.local_names == {"pdf"}
     catalog = [
         _catalog_row(skills_dir, skills_dir / "pdf", tier=1, status="unique"),
         _catalog_row(skills_dir, skills_dir / "hermes-agent", tier=1, status="unique"),

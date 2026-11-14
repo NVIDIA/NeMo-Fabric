@@ -24,12 +24,23 @@ A skill's name is the ``name`` field of its ``SKILL.md`` front matter, read as
 the harness reads it (see :data:`NameStyle`), or its folder name when the
 front matter has none and the rules allow the fallback. Under the default
 ``pyyaml`` style, a value that YAML reads as anything but a non-empty string,
-such as null or a number, counts as no name.
+such as null or a number, counts as no name. Aliases resolve to the anchored
+value under each style's rules.
+
+Some front matter names this module cannot derive reliably, such as an alias
+whose anchor is in a value it does not read, an explicit (``?``) key, or a
+tag it does not resolve. Such a skill is marked ``name_uncertain``. Without a
+duplicate policy it keeps the folder name fallback and is reported; under an
+explicit policy, where a wrong name could pick the wrong copy, the entry fails
+with ``unsupported_frontmatter_name``.
 The module reads only front matter and never reports file contents.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
+import datetime
 import json
 import math
 import os
@@ -55,7 +66,9 @@ from nemo_fabric_adapter_contract.models import SkillDuplicatePolicy
 
 SKILL_FILE = "SKILL.md"
 
-SkillFailure = Literal["not_found", "invalid", "duplicate"]
+SkillFailure = Literal[
+    "not_found", "invalid", "duplicate", "unsupported_frontmatter_name"
+]
 DuplicatePolicy = SkillDuplicatePolicy
 """Alias of :data:`nemo_fabric_adapter_contract.models.SkillDuplicatePolicy`."""
 SkillEntryKind = Literal["skill", "folder"]
@@ -214,6 +227,29 @@ class FoundSkill:
     """The entry that supplied the skill, such as ``skills.directories[2]``."""
     kind: Literal["skill", "folder"]
     """The kind of entry that supplied the skill."""
+    name_uncertain: bool = False
+    """Whether the front matter name could not be derived reliably, so the
+    name may differ from the harness's."""
+
+
+@dataclass(frozen=True)
+class FrontMatter:
+    """What :func:`read_front_matter` reads from a ``SKILL.md`` front matter block."""
+
+    name: str | None
+    """The ``name`` value as the name style reads it, before any folder
+    fallback."""
+    name_uncertain: bool
+    """Whether the name could not be derived reliably."""
+    keys: frozenset[str]
+    """Top-level keys."""
+    parses: bool | None
+    """Under the ``openclaw`` style, whether OpenClaw's YAML parser accepts
+    the block, or ``None`` when this module cannot tell. Always ``None``
+    under ``pyyaml``."""
+    fields: Mapping[str, str]
+    """Under the ``openclaw`` style, the text OpenClaw reads for each
+    top-level key, including its line fallback. Empty under ``pyyaml``."""
 
 
 @dataclass(frozen=True)
@@ -305,10 +341,16 @@ def load_directories(
     it loads at the position of, and is attributed to, the last entry that
     reaches it; otherwise it keeps its first position.
 
+    A skill whose front matter name cannot be derived reliably keeps the
+    folder name fallback and is marked ``name_uncertain`` when ``duplicates``
+    is ``None``; under an explicit policy its entry fails with
+    ``unsupported_frontmatter_name``.
+
     Raises:
         SkillLoadError: If an entry is malformed, missing, not a folder, not
-            accessible, or cannot be read, or if skills share a name under an
-            explicit ``duplicates`` policy.
+            accessible, or cannot be read, if skills share a name under an
+            explicit ``duplicates`` policy, or if a skill's name cannot be
+            derived reliably under one.
     """
 
     if duplicates is not None and duplicates not in get_args(SkillDuplicatePolicy):
@@ -350,6 +392,7 @@ def load_directories(
             )
 
         named: list[tuple[str, _Candidate]] = []
+        uncertain: set[tuple[int, int] | Path] = set()
         for candidate in candidates:
             if not entry_rules.allow_symlink_escape and not _within(
                 candidate.resolved, root
@@ -358,7 +401,7 @@ def load_directories(
                     SkippedCandidate(candidate.resolved, entry_field, "path_escape")
                 )
                 continue
-            name = _candidate_name(
+            read = _candidate_name(
                 candidate,
                 entry_rules,
                 entry_field,
@@ -366,8 +409,25 @@ def load_directories(
                 required=kind == "skill" and candidate.resolved == root,
                 key_field=key_field,
             )
-            if name is not None:
-                named.append((name, candidate))
+            if read is None:
+                continue
+            name, name_uncertain = read
+            if name_uncertain:
+                if duplicates is not None:
+                    # A wrong name could pick the wrong copy under the policy.
+                    skill_file = candidate.resolved / SKILL_FILE
+                    raise SkillLoadError(
+                        "unsupported_frontmatter_name",
+                        f"NeMo Fabric cannot read the front matter name of "
+                        f"{skill_file} reliably, so the {duplicates} duplicate "
+                        f"policy in {entry_field} cannot be applied "
+                        f"(unsupported_frontmatter_name); write the name as a "
+                        f"plain name: value",
+                        field=entry_field,
+                        paths=(candidate.resolved,),
+                    )
+                uncertain.add(candidate.identity)
+            named.append((name, candidate))
         if kind == "folder" and not named:
             load.empty_entries.append(entry_field)
         if duplicates is not None:
@@ -384,7 +444,11 @@ def load_directories(
             loaded[candidate.identity] = len(found)
             found.append(
                 FoundSkill(
-                    name=name, path=candidate.resolved, field=entry_field, kind=kind
+                    name=name,
+                    path=candidate.resolved,
+                    field=entry_field,
+                    kind=kind,
+                    name_uncertain=candidate.identity in uncertain,
                 )
             )
 
@@ -440,20 +504,14 @@ def report_block(
     """Return the ``output.skills`` report for ``load``, or ``None`` when empty.
 
     Empty parts are omitted. ``bundled`` is the adapter's bundled-skill report
-    and is copied as given. The report never includes file contents.
+    and is copied as given. A loaded skill whose name could not be derived
+    reliably carries ``"name_uncertain": true``. The report never includes
+    file contents.
     """
 
     block: dict[str, Any] = {}
     if load.selected:
-        block["loaded"] = [
-            {
-                "name": skill.name,
-                "path": str(skill.path),
-                "entry": skill.field,
-                "origin": "external",
-            }
-            for skill in load.selected
-        ]
+        block["loaded"] = [_loaded_report(skill) for skill in load.selected]
     if load.empty_entries:
         block["empty_entries"] = list(load.empty_entries)
     if load.skipped:
@@ -468,12 +526,32 @@ def report_block(
     return block or None
 
 
+def _loaded_report(skill: FoundSkill) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "name": skill.name,
+        "path": str(skill.path),
+        "entry": skill.field,
+        "origin": "external",
+    }
+    if skill.name_uncertain:
+        item["name_uncertain"] = True
+    return item
+
+
 def warn(adapter: str, load: DirectoryLoad) -> None:
-    """Write one stderr line per skipped candidate, empty entry, and duplicate."""
+    """Write one stderr line per skipped candidate, empty entry, duplicate, and
+    skill whose name could not be derived reliably."""
 
     lines = [
         f"{adapter}: skipped skill {item.path} from {item.field}: {item.reason}"
         for item in load.skipped
+    ]
+    lines += [
+        f"{adapter}: skill {skill.path} from {skill.field} loads as {skill.name!r}, "
+        "but its front matter name could not be read reliably "
+        "(unsupported_frontmatter_name)"
+        for skill in load.selected
+        if skill.name_uncertain
     ]
     lines += [f"{adapter}: {field} contains no skills" for field in load.empty_entries]
     for item in load.duplicates:
@@ -714,7 +792,10 @@ def _candidate_name(
     *,
     required: bool,
     key_field: str,
-) -> str | None:
+) -> tuple[str, bool] | None:
+    """Return the candidate's name and whether it is uncertain, or ``None``
+    when the candidate is skipped."""
+
     skill_file = candidate.resolved / SKILL_FILE
     try:
         with skill_file.open(encoding="utf-8-sig", errors="replace") as lines:
@@ -730,7 +811,7 @@ def _candidate_name(
             ) from None
         skipped.append(SkippedCandidate(candidate.resolved, field, "unreadable"))
         return None
-    keys = front_matter[1] if front_matter is not None else frozenset()
+    keys = front_matter.keys if front_matter is not None else frozenset()
     for name in rules.required_frontmatter_fields:
         if name not in keys:
             skipped.append(
@@ -739,7 +820,8 @@ def _candidate_name(
                 )
             )
             return None
-    name = front_matter[0] if front_matter is not None else None
+    name = front_matter.name if front_matter is not None else None
+    uncertain = front_matter is not None and front_matter.name_uncertain
     if not name and rules.name_fallback:
         reached_name = candidate.reached.name
         name = (
@@ -751,7 +833,7 @@ def _candidate_name(
     if not name:
         skipped.append(SkippedCandidate(candidate.resolved, field, "no_name"))
         return None
-    return name
+    return name, uncertain
 
 
 def _resolve_duplicates(
@@ -816,10 +898,27 @@ def _identity(directory: Path) -> tuple[int, int] | Path:
     return (status.st_dev, status.st_ino) if status.st_ino else directory.resolve()
 
 
+def read_front_matter(
+    skill_file: str | os.PathLike[str], *, name_style: NameStyle = "pyyaml"
+) -> FrontMatter | None:
+    """Read the front matter of a ``SKILL.md`` file as ``name_style`` reads it.
+
+    Returns ``None`` when the file has no complete ``---`` front matter block.
+
+    Raises:
+        OSError: If the file cannot be read.
+    """
+
+    if name_style not in get_args(NameStyle):
+        raise ValueError(f"unknown name style: {name_style!r}")
+    with open(skill_file, encoding="utf-8-sig", errors="replace") as lines:
+        return _front_matter(lines, name_style)
+
+
 def _front_matter(
     lines: Iterable[str], style: NameStyle = "pyyaml"
-) -> tuple[str | None, frozenset[str]] | None:
-    """Return the ``name`` value and top-level keys of a ``---`` front matter block."""
+) -> FrontMatter | None:
+    """Read a ``---`` front matter block, or return ``None`` when there is none."""
 
     lines = iter(lines)
     if next(lines, "").rstrip() != "---":
@@ -833,45 +932,240 @@ def _front_matter(
     else:
         # Without its closing line the block is not front matter.
         return None
-    name: str | None = None
+    return _read_block(block, style)
+
+
+# Keys whose invalid value OpenClaw may rewrite as a quoted string and parse
+# again (normalizeFreeformFieldAtError).
+_FREEFORM_FIELDS = frozenset({"description", "read_when", "summary"})
+_PARSE_ORDER = {False: 0, None: 1, True: 2}
+
+
+def _read_block(block: list[str], style: NameStyle) -> FrontMatter:
+    """Read the lines between the fences of a front matter block."""
+
+    text = "\n".join(block)
+    offsets: list[int] = []
+    position = 0
+    for line in block:
+        offsets.append(position)
+        position += len(line) + 1
+    anchors = _Anchors(text, style)
+    # The pyyaml style reads the other values only for anchors an alias may
+    # need; OpenClaw's rules need every value.
+    read_all = style == "openclaw" or "&" in text
     keys: set[str] = set()
-    # Lines up to this index belong to the value of the ``name`` key.
+    values: dict[str, object] = {}
+    key_lines: dict[str, int] = {}
+    name: str | None = None
+    name_from_yaml = False
+    name_uncertain = False
+    layout_uncertain = _indented_mapping(block)
+    parses: bool | None = None if style == "pyyaml" or layout_uncertain else True
+    # Lines up to this index belong to the value of the last key read.
     value_end = 0
     for index, line in enumerate(block):
         if index < value_end:
+            continue
+        if _unsupported_key(line):
+            layout_uncertain = True
+            parses = _least(parses, None)
             continue
         match = _KEY.fullmatch(line.rstrip())
         if not match:
             continue
         key = _unquote(match.group(1))
-        if style == "openclaw":
-            # OpenClaw trims each key.
-            key = _js_trim(key)
+        source = "\n".join(block[index:])
+        start = source.index(":", match.end(1)) + 1
+        anchors.base = offsets[index]
+        if style == "pyyaml":
+            keys.add(key)
+            if key == "name":
+                # When the key repeats, PyYAML keeps the last.
+                try:
+                    name, value_end = _name(block, index, match, anchors)
+                    name_uncertain = False
+                except _Unsupported:
+                    name, value_end, name_uncertain = None, index + 1, True
+            if read_all:
+                try:
+                    _js_node(source, start, anchors)
+                except (_NotYaml, _Unsupported):
+                    # Anchors in this value stay unknown; an alias of one is
+                    # unsupported.
+                    pass
+            continue
+        # OpenClaw trims each key and rejects a repeated one.
+        key = _js_trim(key)
+        if key in keys:
+            parses = False
         keys.add(key)
+        key_lines[key] = index
+        values.pop(key, None)
+        value_end = index + 1
+        try:
+            value, end = _js_node(source, start, anchors)
+        except _NotYaml:
+            # OpenClaw rejects the block, unless it can recover the field. The
+            # yaml package accepts tabs in places this reader does not.
+            recoverable = key in _FREEFORM_FIELDS or "\t" in text
+            parses = _least(parses, None if recoverable else False)
+            if key == "name":
+                # The text on the line, as for the pyyaml style.
+                name, name_from_yaml = _scalar(match.group(2) or ""), False
+                name_uncertain = False
+            continue
+        except _Unsupported:
+            parses = _least(parses, None)
+            if key == "name":
+                name, name_from_yaml, name_uncertain = None, False, True
+            continue
+        values[key] = value
+        value_end += source.count("\n", 0, end)
         if key == "name":
-            # When the key repeats, YAML loaders such as PyYAML keep the last.
-            if style == "openclaw":
-                name, value_end = _openclaw_name(block, index, match)
-            else:
-                name, value_end = _name(block, index, match)
-    return name, frozenset(keys)
+            name_from_yaml, name_uncertain = True, False
+    fields: dict[str, str] = {}
+    if style == "openclaw":
+        line_fields = _line_fields(block)
+        for key, value in values.items():
+            field_text = _openclaw_text(
+                value, key, block[key_lines[key]], line_fields.get(key)
+            )
+            if field_text is not None:
+                fields[key] = field_text
+        # Keys YAML reads as null, or does not see, take the line fallback.
+        for key, field_text in line_fields.items():
+            fields.setdefault(key, field_text)
+        if name_from_yaml or "name" not in keys:
+            name = _js_trim(fields.get("name", "")) or None
+    elif "<<" in keys and "name" not in keys:
+        # PyYAML merges the keys of the ``<<`` mapping in.
+        name_uncertain = True
+    return FrontMatter(
+        name=name,
+        name_uncertain=name_uncertain or layout_uncertain,
+        keys=frozenset(keys),
+        parses=parses,
+        fields=MappingProxyType(fields),
+    )
+
+
+def _least(current: bool | None, new: bool | None) -> bool | None:
+    """Combine what two parts say about whether the block parses."""
+
+    return current if _PARSE_ORDER[current] <= _PARSE_ORDER[new] else new
+
+
+def _indented_mapping(block: list[str]) -> bool:
+    """Whether the first content line is indented, as when the whole mapping is."""
+
+    for line in block:
+        content = line.lstrip(" \t")
+        if content and not content.startswith("#"):
+            return content != line
+    return False
+
+
+def _unsupported_key(line: str) -> bool:
+    """Whether a top-level line starts a key this module does not read.
+
+    An explicit (``?``) key, a key with an anchor or tag, an alias key, or a
+    flow collection.
+    """
+
+    return line[:1] in ("&", "!", "*", "{", "[") or (
+        line[:1] == "?" and line[1:2] in ("", " ", "\t")
+    )
 
 
 class _NotYaml(Exception):
     """The ``name`` value is not valid YAML."""
 
 
-def _name(block: list[str], index: int, match: re.Match[str]) -> tuple[str | None, int]:
+class _Unsupported(Exception):
+    """A value whose text this module does not derive.
+
+    For example an alias whose anchor is in a value this module does not
+    read, an explicit (``?``) or collection key, or a tag it does not
+    resolve. The name is then uncertain.
+    """
+
+
+# A scalar's text, tag, and whether it is plain, for an anchor of it.
+_Raw = tuple[str, "str | None", bool]
+
+
+class _Anchors:
+    """The anchors read so far in a front matter block, to resolve aliases.
+
+    Each anchor keeps its offset in the block, its value as JavaScript holds
+    it, and for a scalar its text, tag, and whether it is plain, so that each
+    name style resolves the alias by its own rules. An alias resolves only
+    when the last ``&name`` before it in the text is the recorded anchor;
+    otherwise the anchor is in a value this module did not read, or the text
+    only looks like one, and the alias is unsupported.
+    """
+
+    def __init__(self, text: str, style: NameStyle) -> None:
+        self.text = text
+        self.style = style
+        self.base = 0
+        """Offset in the block of the source being read."""
+        self.nodes: dict[str, tuple[int, object, _Raw | None]] = {}
+        self.duplicate = False
+        """Whether an anchor name was defined twice, which PyYAML rejects."""
+
+    def define(
+        self,
+        anchor: tuple[str, int] | None,
+        value: object,
+        raw: _Raw | None,
+    ) -> None:
+        if anchor is None or not anchor[0]:
+            return
+        label, position = anchor
+        if label in self.nodes:
+            self.duplicate = True
+        self.nodes[label] = (self.base + position, value, raw)
+
+    def resolve(self, label: str, position: int) -> tuple[object, _Raw | None]:
+        """Return the value and raw scalar of the alias at ``position``.
+
+        Raises:
+            _NotYaml: If no anchor of that name comes before the alias.
+            _Unsupported: If the anchor before it was not read.
+        """
+
+        position += self.base
+        pattern = re.compile("&" + re.escape(label) + r"(?=[\s,\[\]{}]|\Z)")
+        last = None
+        for match in pattern.finditer(self.text, 0, position):
+            last = match.start()
+        if last is None:
+            raise _NotYaml
+        node = self.nodes.get(label)
+        if node is None or node[0] != last:
+            raise _Unsupported
+        return node[1], node[2]
+
+
+def _name(
+    block: list[str], index: int, match: re.Match[str], anchors: _Anchors
+) -> tuple[str | None, int]:
     """Return the string YAML reads for the ``name`` key on ``block[index]``.
 
     The value is read as PyYAML reads the front matter: a plain, quoted, or
-    block scalar, over several lines where YAML allows it. A value that YAML
-    reads as anything but a non-empty string, such as null, a number, a
-    boolean, a date, a sequence, or a mapping, gives no name. When the value
-    is not valid YAML, the text on the key's line is used instead, as
-    harnesses that recover from front matter errors line by line read it.
+    block scalar, over several lines where YAML allows it, or an alias of
+    one. A value that YAML reads as anything but a non-empty string, such as
+    null, a number, a boolean, a date, a sequence, or a mapping, gives no
+    name. When the value is not valid YAML, the text on the key's line is
+    used instead, as harnesses that recover from front matter errors line by
+    line read it.
 
     Also returns the index of the first line after the value.
+
+    Raises:
+        _Unsupported: If the name cannot be derived reliably.
     """
 
     # The text harnesses pass to YAML: the lines between the fences, without
@@ -879,13 +1173,19 @@ def _name(block: list[str], index: int, match: re.Match[str]) -> tuple[str | Non
     source = "\n".join(block[index:])
     start = source.index(":", match.end(1)) + 1
     try:
-        name, end = _node(source, start)
+        name, end = _node(source, start, anchors)
     except _NotYaml:
         return _scalar(match.group(2) or ""), index + 1
     return name, index + 1 + source.count("\n", 0, end)
 
 
-def _node(source: str, index: int) -> tuple[str | None, int]:
+# PyYAML's anchor and alias names.
+_PYYAML_ANCHOR = re.compile(r"[0-9A-Za-z_-]+")
+
+
+def _node(
+    source: str, index: int, anchors: _Anchors | None = None
+) -> tuple[str | None, int]:
     """Return the string value after ``index``, and the end of a quoted value.
 
     Only a quoted value can run onto lines that start at column 0, so the end
@@ -894,6 +1194,7 @@ def _node(source: str, index: int) -> tuple[str | None, int]:
 
     position = _next_token(source, index)
     tag: str | None = None
+    properties = False
     while position is not None and source[position] in "&!":
         # Node properties: an anchor, or a tag.
         end = position
@@ -901,16 +1202,12 @@ def _node(source: str, index: int) -> tuple[str | None, int]:
             end += 1
         if source[position] == "!":
             tag = source[position:end]
-            if tag not in _STRING_TAGS and tag != "!":
-                # Any other tag makes the value something other than a string.
-                return None, index
+        properties = True
         position = _next_token(source, end)
     if position is None:
-        return None, index
+        return _pyyaml_scalar("", tag, plain=True), index
     char, following = source[position], source[position + 1 : position + 2]
-    # PyYAML resolves the type of an untagged plain scalar, and of any scalar
-    # with the non-specific tag ``!``, from its text.
-    resolve = tag == "!"
+    plain = False
     if char in "|>":
         text, end = _block_scalar(source, position)
     elif char in "'\"":
@@ -918,14 +1215,35 @@ def _node(source: str, index: int) -> tuple[str | None, int]:
         if quoted is None:
             raise _NotYaml
         text, end = quoted
-    elif char in "[{*" or (char in "-?:" and following in _BLANK):
-        # A collection, or an alias of another node.
+    elif char == "*":
+        # An alias, which cannot have properties of its own.
+        end = position + 1
+        while end < len(source) and source[end] not in " \t\n,[]{}":
+            end += 1
+        label = source[position + 1 : end]
+        if (
+            properties
+            or not _PYYAML_ANCHOR.fullmatch(label)
+            or not _only_comments_follow(source, end)
+        ):
+            raise _NotYaml
+        if anchors is None:
+            raise _Unsupported
+        _, raw = anchors.resolve(label, position)
+        if anchors.duplicate:
+            raise _NotYaml
+        if raw is None:
+            # An alias of a collection.
+            return None, index
+        return _pyyaml_scalar(*raw), index
+    elif char in "[{" or (char in "-?:" and following in _BLANK):
+        # A collection.
         return None, index
     elif char in ",]}%@`\t":
         raise _NotYaml
     else:
         text, end = _plain(source, position)
-        resolve = resolve or tag is None
+        plain = True
         if source[end:].lstrip(" ")[:1] == ":" and "\n" in source[:position]:
             # A key on a line below ``name:`` starts a nested mapping.
             return None, index
@@ -933,9 +1251,100 @@ def _node(source: str, index: int) -> tuple[str | None, int]:
         raise _NotYaml
     if char not in "'\"":
         end = index
+    return _pyyaml_scalar(text, tag, plain), end
+
+
+def _pyyaml_scalar(text: str, tag: str | None, plain: bool) -> str | None:
+    """Return the string PyYAML reads for a scalar, or ``None`` for another type.
+
+    Raises:
+        _Unsupported: If the tag is one this module does not resolve, or
+            PyYAML would fail to build the tagged value.
+    """
+
+    if tag is not None and tag not in _STRING_TAGS and tag != "!":
+        _pyyaml_typed(text, tag)
+        return None
+    # PyYAML resolves the type of an untagged plain scalar, and of any scalar
+    # with the non-specific tag ``!``, from its text.
+    resolve = tag == "!" or (plain and tag is None)
     if resolve and _NON_STRING_PLAIN.fullmatch(text):
-        return None, end
-    return text or None, end
+        return None
+    return text or None
+
+
+_PYYAML_TYPES = {
+    "bool": re.compile(r"(?i:yes|no|true|false|on|off)"),
+    "int": re.compile(
+        r"[-+]?0b[0-1_]+|[-+]?0[0-7_]+|[-+]?(?:0|[1-9][0-9_]*)|[-+]?0x[0-9a-fA-F_]+"
+        r"|[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+"
+    ),
+    "float": re.compile(
+        r"""
+        [-+]?[0-9][0-9_]*(?:\.[0-9_]*)?(?:[eE][-+][0-9]+)?
+        |\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?
+        |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*
+        |[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN)
+        """,
+        re.VERBOSE,
+    ),
+}
+_PYYAML_TIMESTAMP = re.compile(
+    r"""
+    ([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})
+    (?:(?:[Tt]|[ \t]+)([0-9]{1,2}):([0-9]{2}):([0-9]{2})(?:\.[0-9]*)?
+     (?:[ \t]*(?:Z|[-+]([0-9]{1,2})(?::[0-9]{2})?))?)?
+    """,
+    re.VERBOSE,
+)
+
+
+def _pyyaml_typed(text: str, tag: str) -> None:
+    """Check that PyYAML builds a value of ``tag`` from ``text``.
+
+    Raises:
+        _Unsupported: If it may not, or the tag is not a YAML 1.1 scalar type.
+    """
+
+    if tag.startswith("!!"):
+        kind = tag[2:]
+    elif tag.startswith(f"!<{_YAML_TAG_PREFIX}") and tag.endswith(">"):
+        kind = tag[len(_YAML_TAG_PREFIX) + 2 : -1]
+    else:
+        raise _Unsupported
+    if kind == "null":
+        return
+    pattern = _PYYAML_TYPES.get(kind)
+    if pattern is not None:
+        if not pattern.fullmatch(text):
+            raise _Unsupported
+        return
+    if kind == "timestamp":
+        match = _PYYAML_TIMESTAMP.fullmatch(text)
+        if match is None:
+            raise _Unsupported
+        year, month, day, hour, minute, second, zone = match.groups()
+        try:
+            datetime.datetime(
+                int(year),
+                int(month),
+                int(day),
+                int(hour or 0),
+                int(minute or 0),
+                int(second or 0),
+            )
+        except ValueError:
+            raise _Unsupported from None
+        if zone is not None and int(zone) >= 24:
+            raise _Unsupported
+        return
+    if kind == "binary":
+        try:
+            base64.decodebytes(text.encode("ascii"))
+        except (UnicodeEncodeError, binascii.Error):
+            raise _Unsupported from None
+        return
+    raise _Unsupported
 
 
 def _next_token(source: str, index: int) -> int | None:
@@ -1024,8 +1433,15 @@ def _plain_spaces(source: str, index: int) -> tuple[int, list[str] | None]:
     return index, breaks or [" "]
 
 
-def _block_scalar(source: str, index: int) -> tuple[str, int]:
-    """Read a literal (``|``) or folded (``>``) block scalar."""
+def _block_scalar(
+    source: str, index: int, parent: int = 0, *, final_break: bool = False
+) -> tuple[str, int]:
+    """Read a literal (``|``) or folded (``>``) block scalar.
+
+    ``parent`` is the column of the key or ``-`` that holds it. With
+    ``final_break``, a last line at the end of ``source`` keeps a line break,
+    as the ``yaml`` package reads it; PyYAML does not add one.
+    """
 
     header = _BLOCK_HEADER.match(source, index)
     if header is None:
@@ -1036,8 +1452,8 @@ def _block_scalar(source: str, index: int) -> tuple[str, int]:
     index = min(header.end() + 1, len(source))
     breaks: list[str] = []
     if increment:
-        # The key is at column 0, so the indicator is the indentation.
-        indent = int(increment)
+        # The indicator counts from the column of what holds the scalar.
+        indent = parent + int(increment)
         breaks, index = _block_breaks(source, index, indent)
     else:
         # The first non-empty line sets the indentation, which is never less
@@ -1048,7 +1464,7 @@ def _block_scalar(source: str, index: int) -> tuple[str, int]:
                 breaks.append("\n")
             index += 1
             widest = max(widest, _column(source, index))
-        indent = max(1, widest)
+        indent = max(parent + 1, widest)
     chunks: list[str] = []
     line_break = ""
     while index < len(source) and _column(source, index) == indent:
@@ -1056,7 +1472,7 @@ def _block_scalar(source: str, index: int) -> tuple[str, int]:
         starts_with_text = source[index] not in " \t"
         end = _line_end(source, index)
         chunks.append(source[index:end])
-        line_break = "\n" if end < len(source) else ""
+        line_break = "\n" if end < len(source) or final_break else ""
         breaks, index = _block_breaks(source, min(end + 1, len(source)), indent)
         if index >= len(source) or _column(source, index) != indent:
             break
@@ -1224,21 +1640,15 @@ def _quoted_breaks(source: str, index: int) -> tuple[list[str] | None, int]:
 # OpenClaw parses front matter with the ``yaml`` npm package and the YAML 1.2
 # core schema, then turns each top-level value into text: a string is
 # trimmed, a number or boolean becomes ``String(value)``, and a sequence or
-# mapping becomes ``JSON.stringify(value)``. A null is dropped, and the text
-# on the key's line takes its place. ``loadSingleSkillDirectory`` trims the
-# name again and uses the trimmed folder name when the result is empty.
-# Values are held here as JavaScript holds them: ``None`` for null, ``bool``,
-# ``float`` for every number, ``str``, ``list``, and ``dict`` with string
-# keys.
-
-
-class _Unsupported(Exception):
-    """A ``name`` value whose OpenClaw text this module does not derive.
-
-    Aliases, explicit (``?``) and collection keys, block scalars inside
-    collections, and the ``!!timestamp``, ``!!binary``, and ``!!merge`` tags.
-    Such a value gives no name.
-    """
+# mapping becomes ``JSON.stringify(value)``. A null is dropped, and the line
+# fallback (``parseLineFrontmatter``) takes its place. Aliases give the
+# anchored value. ``loadSingleSkillDirectory`` trims the name again and uses
+# the trimmed folder name when the result is empty. Values are held here as
+# JavaScript holds them: ``None`` for null, ``bool``, ``float`` for every
+# number, ``str``, ``list``, and ``dict`` with string keys. Explicit (``?``)
+# and collection keys, block scalars with an indentation indicator inside
+# collections, and the ``!!timestamp``, ``!!binary``, and ``!!merge`` tags
+# are not derived; a name that uses them is uncertain.
 
 
 # The characters String.prototype.trim() removes.
@@ -1291,114 +1701,135 @@ _CORE_SCALARS: tuple[tuple[str, re.Pattern[str], Callable[[str], object]], ...] 
 )
 
 
-def _openclaw_name(
-    block: list[str], index: int, match: re.Match[str]
-) -> tuple[str | None, int]:
-    """Return the name OpenClaw reads for the ``name`` key on ``block[index]``.
+def _openclaw_text(
+    value: object, key: str, line: str, fallback: str | None
+) -> str | None:
+    """Return the text OpenClaw keeps for a top-level value, or ``None`` for null.
 
-    Also returns the index of the first line after the value. OpenClaw
-    rejects front matter that is not valid YAML; for such a value the text on
-    the key's line is returned, as for the ``pyyaml`` style.
+    ``line`` is the key's line and ``fallback`` the key's line fallback.
     """
 
-    source = "\n".join(block[index:])
-    start = source.index(":", match.end(1)) + 1
-    try:
-        value, end = _js_node(source, start)
-    except _NotYaml:
-        return _scalar(match.group(2) or ""), index + 1
-    except _Unsupported:
-        return None, index + 1
-    value_end = index + 1 + source.count("\n", 0, end)
     if value is None:
-        text = _line_value(block, index)
-    elif isinstance(value, bool):
-        text = "true" if value else "false"
-    elif isinstance(value, float):
-        text = _js_number(value)
-    elif isinstance(value, str):
-        text = value
-    else:
-        text = _js_json(value)
-        # A collection written on the key's line with a colon in it keeps
-        # that line's text instead.
-        line = _LINE_FIELD.fullmatch(block[index])
-        if line is not None and line.group(1) == "name" and ":" in line.group(2):
-            text = _line_value(block, index) or text
-    return _js_trim(text or "") or None, value_end
+        return None
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float):
+        return _js_number(value)
+    if isinstance(value, str):
+        return _js_trim(value)
+    # A collection written on the key's line with a colon in it keeps the
+    # line fallback instead.
+    match = _LINE_FIELD.fullmatch(line)
+    if (
+        fallback is not None
+        and match is not None
+        and match.group(1) == key
+        and ":" in match.group(2)
+    ):
+        return fallback
+    return _js_json(value)
 
 
-def _line_value(block: list[str], index: int) -> str | None:
-    """Return OpenClaw's line fallback for the ``name`` key on ``block[index]``.
+def _line_fields(block: list[str]) -> dict[str, str]:
+    """Return OpenClaw's line fallback for every key (``parseLineFrontmatter``).
 
-    The rest of an unquoted ``name:`` line without one pair of enclosing
-    quotes or, when it is empty and the next line is indented, the indented
-    lines that follow.
+    Each unquoted ``key:`` line gives the rest of the line without one pair of
+    enclosing quotes or, when it is empty and the next line is indented, the
+    lines up to the next one that is not. A later line wins.
     """
 
-    match = _LINE_FIELD.fullmatch(block[index])
-    if match is None or match.group(1) != "name":
-        return None
-    value = _js_trim(match.group(2))
-    following = block[index + 1] if index + 1 < len(block) else ""
-    if not value and following[:1] in (" ", "\t"):
-        lines: list[str] = []
-        for line in block[index + 1 :]:
-            if line and line[0] not in " \t":
-                break
-            lines.append(line)
-        value = _js_trim("\n".join(lines))
-    elif len(value) >= 2 and value[0] in "'\"" and value[-1] == value[0]:
-        value = value[1:-1]
-    return value or None
+    fields: dict[str, str] = {}
+    index = 0
+    while index < len(block):
+        match = _LINE_FIELD.fullmatch(block[index])
+        if match is not None:
+            value = _js_trim(match.group(2))
+            following = block[index + 1] if index + 1 < len(block) else ""
+            if not value and following[:1] in (" ", "\t"):
+                lines: list[str] = []
+                while index + 1 < len(block):
+                    line = block[index + 1]
+                    if line and line[0] not in " \t":
+                        break
+                    lines.append(line)
+                    index += 1
+                value = _js_trim("\n".join(lines))
+            elif value and value[0] in "'\"" and value[-1] == value[0]:
+                value = value[1:-1]
+            if value:
+                fields[match.group(1)] = value
+        index += 1
+    return fields
 
 
-def _js_node(source: str, index: int) -> tuple[object, int]:
+def _js_node(
+    source: str, index: int, anchors: _Anchors | None = None
+) -> tuple[object, int]:
     """Return the YAML 1.2 value after ``index``, and the end of a quoted value.
 
     Like :func:`_node`, the end is ``index`` for values that are not quoted.
+    Anchors are recorded in ``anchors``, and aliases resolved from it.
     """
 
     position = _next_token(source, index)
     tag: str | None = None
+    anchor: tuple[str, int] | None = None
     after = index
     while position is not None and source[position] in "&!":
         after = _property_end(source, position)
         if source[position] == "!":
             tag = source[position:after]
+        else:
+            anchor = (source[position + 1 : after], position)
         position = _next_token(source, after)
+    raw: _Raw | None = None
     if position is None:
         # A block sequence may start at column 0 below the key.
         following = _js_content(source, after)
         if following is not None and _sequence_entry(source, following):
-            value, end = _js_block_sequence(source, following)
+            value, end = _js_block_sequence(source, following, anchors)
             if not _only_comments_follow(source, end):
                 raise _NotYaml
+            _define(anchors, anchor, value, None)
             return value, index
-        return _js_scalar("", tag, plain=True), index
+        raw = ("", tag, True)
+        value = _js_scalar_node(anchors, raw)
+        _define(anchors, anchor, value, raw)
+        return value, index
     char, following = source[position], source[position + 1 : position + 2]
     below = "\n" in source[index:position]
+    # Properties on the line of an implicit key belong to the key.
+    on_key = anchor is not None and "\n" not in source[anchor[1] : position]
     quoted = False
     if char in "|>":
-        text, end = _block_scalar(source, position)
-        value = _js_scalar(text, tag, plain=False)
+        text, end = _block_scalar(source, position, final_break=_yaml_package(anchors))
+        raw = (text, tag, False)
+        value = _js_scalar_node(anchors, raw)
     elif char in "'\"":
         scalar = _quoted(source, position)
-        if scalar is None:
+        if scalar is None or re.search(r"\n\S", source[position : scalar[1]]):
+            # The yaml package needs every line of a quoted scalar indented.
             raise _NotYaml
         text, end = scalar
         if below and _key_follows(source, end):
-            value, end = _js_block_mapping(source, position)
+            if on_key:
+                raise _Unsupported
+            value, end = _js_block_mapping(source, position, anchors)
         else:
-            value, quoted = _js_scalar(text, tag, plain=False), True
+            raw = (text, tag, False)
+            value, quoted = _js_scalar_node(anchors, raw), True
     elif char == "*":
-        raise _Unsupported
+        if tag is not None or anchor is not None:
+            raise _NotYaml
+        value, end = _js_alias(source, position, anchors)
+        if _key_follows(source, end):
+            raise _Unsupported
     elif char in "[{":
-        value, end = _js_flow(source, position, 0)
+        value, end = _js_flow(source, position, 0, anchors)
     elif char == "-" and following in _BLANK:
         if not below:
             raise _NotYaml
-        value, end = _js_block_sequence(source, position)
+        value, end = _js_block_sequence(source, position, anchors)
     elif char in "?:" and following in _BLANK:
         raise _Unsupported
     elif char in ",]}%@`\t":
@@ -1408,16 +1839,65 @@ def _js_node(source: str, index: int) -> tuple[object, int]:
         if _key_follows(source, end):
             if not below:
                 raise _NotYaml
-            value, end = _js_block_mapping(source, position)
+            if on_key:
+                raise _Unsupported
+            value, end = _js_block_mapping(source, position, anchors)
         else:
-            value = _js_scalar(text, tag, plain=True)
+            raw = (text, tag, True)
+            value = _js_scalar_node(anchors, raw)
     if not _only_comments_follow(source, end):
         raise _NotYaml
+    _define(anchors, anchor, value, raw)
     return value, end if quoted else index
 
 
+def _define(
+    anchors: _Anchors | None,
+    anchor: tuple[str, int] | None,
+    value: object,
+    raw: _Raw | None,
+) -> None:
+    if anchors is not None:
+        anchors.define(anchor, value, raw)
+
+
+def _js_alias(source: str, index: int, anchors: _Anchors | None) -> tuple[object, int]:
+    """Return the value of the alias at ``index``, and its end."""
+
+    end = _property_end(source, index)
+    label = source[index + 1 : end]
+    if not label:
+        raise _NotYaml
+    if anchors is None:
+        raise _Unsupported
+    value, _ = anchors.resolve(label, index)
+    return value, end
+
+
+def _yaml_package(anchors: _Anchors | None) -> bool:
+    """Whether values are read as the ``yaml`` package reads them."""
+
+    return anchors is None or anchors.style == "openclaw"
+
+
+def _js_scalar_node(anchors: _Anchors | None, raw: _Raw) -> object:
+    """Return the value of a scalar node.
+
+    Under the pyyaml style only anchors are needed from this parser, so a
+    scalar it does not resolve is kept as ``None``.
+    """
+
+    text, tag, plain = raw
+    try:
+        return _js_scalar(text, tag, plain=plain)
+    except _Unsupported:
+        if anchors is not None and anchors.style == "pyyaml":
+            return None
+        raise
+
+
 def _property_end(source: str, index: int) -> int:
-    """Return the end of the anchor or tag that starts at ``index``."""
+    """Return the end of the anchor, tag, or alias that starts at ``index``."""
 
     if source.startswith("!<", index):
         # A verbatim tag may hold flow indicators.
@@ -1454,13 +1934,15 @@ def _js_content(source: str, index: int) -> int | None:
     return None
 
 
-def _js_block_sequence(source: str, index: int) -> tuple[list[object], int]:
+def _js_block_sequence(
+    source: str, index: int, anchors: _Anchors | None = None
+) -> tuple[list[object], int]:
     """Read the block sequence whose first ``-`` is at ``index``."""
 
     indent = _column(source, index)
     items: list[object] = []
     while True:
-        value, index = _js_entry(source, index + 1, indent, sequence=True)
+        value, index = _js_entry(source, index + 1, indent, True, anchors)
         items.append(value)
         following = _js_content(source, index)
         if following is None or _column(source, following) < indent:
@@ -1473,7 +1955,9 @@ def _js_block_sequence(source: str, index: int) -> tuple[list[object], int]:
         index = following
 
 
-def _js_block_mapping(source: str, index: int) -> tuple[dict[str, object], int]:
+def _js_block_mapping(
+    source: str, index: int, anchors: _Anchors | None = None
+) -> tuple[dict[str, object], int]:
     """Read the block mapping whose first key starts at ``index``."""
 
     indent = _column(source, index)
@@ -1481,7 +1965,7 @@ def _js_block_mapping(source: str, index: int) -> tuple[dict[str, object], int]:
     seen: set[tuple[str, object]] = set()
     while True:
         key, index = _js_block_key(source, index, indent)
-        value, index = _js_entry(source, index, indent, sequence=False)
+        value, index = _js_entry(source, index, indent, False, anchors)
         _js_add(pairs, seen, key, value)
         following = _js_content(source, index)
         if following is None or _column(source, following) < indent:
@@ -1516,9 +2000,13 @@ def _js_block_key(source: str, index: int, indent: int) -> tuple[object, int]:
 
 
 def _js_entry(
-    source: str, index: int, indent: int, *, sequence: bool
+    source: str,
+    index: int,
+    indent: int,
+    sequence: bool,
+    anchors: _Anchors | None,
 ) -> tuple[object, int]:
-    """Read the value after a block ``-`` or a block key's ``:``.
+    """Read the value after a block ``-`` (``sequence``) or a block key's ``:``.
 
     ``indent`` is the column of the entry's ``-`` or key.
     """
@@ -1526,44 +2014,72 @@ def _js_entry(
     while source[index : index + 1] in (" ", "\t"):
         index += 1
     tag: str | None = None
-    while source[index : index + 1] in ("&", "!"):
+    anchor: tuple[str, int] | None = None
+    while index < len(source) and source[index] in "&!":
         end = _property_end(source, index)
         if source[index] == "!":
             tag = source[index:end]
+        else:
+            anchor = (source[index + 1 : end], index)
         index = end
         while source[index : index + 1] in (" ", "\t"):
             index += 1
+    properties = tag is not None or anchor is not None
     if index < len(source) and source[index] not in "\n#":
         if _sequence_entry(source, index) and not sequence:
             raise _NotYaml
-        return _js_inline(source, index, indent, tag, compact=sequence)
+        value, end, raw = _js_inline(
+            source, index, indent, tag, sequence, anchors, properties=properties
+        )
+        if anchor is not None and isinstance(value, dict) and source[index] != "{":
+            # The anchor belongs to the first key of a compact mapping.
+            raise _Unsupported
+        _define(anchors, anchor, value, raw)
+        return value, end
     following = _js_content(source, index)
     if following is not None:
         column = _column(source, following)
         if column > indent:
-            return _js_inline(source, following, indent, tag, compact=True)
+            value, end, raw = _js_inline(
+                source, following, indent, tag, True, anchors, properties=properties
+            )
+            _define(anchors, anchor, value, raw)
+            return value, end
         if column == indent and not sequence and _sequence_entry(source, following):
             # A mapping value may be a sequence at the key's own indentation.
-            return _js_block_sequence(source, following)
-    return _js_scalar("", tag, plain=True), index
+            value, end = _js_block_sequence(source, following, anchors)
+            _define(anchors, anchor, value, None)
+            return value, end
+    raw = ("", tag, True)
+    value = _js_scalar_node(anchors, raw)
+    _define(anchors, anchor, value, raw)
+    return value, index
 
 
 def _js_inline(
-    source: str, index: int, indent: int, tag: str | None, *, compact: bool
-) -> tuple[object, int]:
+    source: str,
+    index: int,
+    indent: int,
+    tag: str | None,
+    compact: bool,
+    anchors: _Anchors | None,
+    *,
+    properties: bool,
+) -> tuple[object, int, _Raw | None]:
     """Read the node at ``index`` inside a block collection at ``indent``.
 
     With ``compact``, a key at ``index`` starts a block mapping there.
+    Returns the value, its end, and for a scalar its raw parts.
     """
 
     char, following = source[index], source[index + 1 : index + 2]
     if _sequence_entry(source, index):
-        return _js_block_sequence(source, index)
+        return (*_js_block_sequence(source, index, anchors), None)
     if char in "[{":
-        value, end = _js_flow(source, index, indent)
+        value, end = _js_flow(source, index, indent, anchors)
         if _key_follows(source, end):
             raise _Unsupported
-        return value, end
+        return value, end, None
     if char in "'\"":
         scalar = _quoted(source, index)
         if scalar is None:
@@ -1572,9 +2088,23 @@ def _js_inline(
         if _key_follows(source, end):
             if not compact or "\n" in source[index:end]:
                 raise _NotYaml
-            return _js_block_mapping(source, index)
-        return _js_scalar(text, tag, plain=False), end
-    if char in "|>*" or (char in "?:" and following in _BLANK):
+            return (*_js_block_mapping(source, index, anchors), None)
+        raw: _Raw = (text, tag, False)
+        return _js_scalar_node(anchors, raw), end, raw
+    if char == "*":
+        if properties:
+            raise _NotYaml
+        value, end = _js_alias(source, index, anchors)
+        if _key_follows(source, end):
+            raise _Unsupported
+        return value, end, None
+    if char in "|>":
+        text, end = _block_scalar(
+            source, index, indent, final_break=_yaml_package(anchors)
+        )
+        raw = (text, tag, False)
+        return _js_scalar_node(anchors, raw), end, raw
+    if char in "?:" and following in _BLANK:
         raise _Unsupported
     if char in ",]}#%@`":
         raise _NotYaml
@@ -1582,12 +2112,13 @@ def _js_inline(
     if _key_follows(source, end):
         if not compact or "\n" in source[index:end]:
             raise _NotYaml
-        return _js_block_mapping(source, index)
-    return _js_scalar(text, tag, plain=True), end
+        return (*_js_block_mapping(source, index, anchors), None)
+    raw = (text, tag, True)
+    return _js_scalar_node(anchors, raw), end, raw
 
 
 def _js_flow(
-    source: str, index: int, indent: int
+    source: str, index: int, indent: int, anchors: _Anchors | None = None
 ) -> tuple[list[object] | dict[str, object], int]:
     """Read the flow sequence or mapping that opens at ``index``.
 
@@ -1602,7 +2133,7 @@ def _js_flow(
     while source[index] != closing:
         if source[index] == "?" and source[index + 1 : index + 2] in _FLOW_END:
             raise _Unsupported
-        node, index, plain = _js_flow_node(source, index, indent)
+        node, index, plain = _js_flow_node(source, index, indent, anchors)
         index = _js_flow_space(source, index, indent)
         if source[index] == ":" and (
             not plain or source[index + 1 : index + 2] in _FLOW_END
@@ -1610,7 +2141,7 @@ def _js_flow(
             index = _js_flow_space(source, index + 1, indent)
             value: object = None
             if source[index] not in ",]}":
-                value, index, _ = _js_flow_node(source, index, indent)
+                value, index, _ = _js_flow_node(source, index, indent, anchors)
                 index = _js_flow_space(source, index, indent)
             if closing == "}":
                 _js_add(pairs, seen, node, value)
@@ -1650,39 +2181,57 @@ def _js_flow_space(source: str, index: int, indent: int) -> int:
     raise _NotYaml
 
 
-def _js_flow_node(source: str, index: int, indent: int) -> tuple[object, int, bool]:
+def _js_flow_node(
+    source: str, index: int, indent: int, anchors: _Anchors | None = None
+) -> tuple[object, int, bool]:
     """Read one node inside a flow collection.
 
     Returns the value, its end, and whether it is a plain scalar.
     """
 
     tag: str | None = None
+    anchor: tuple[str, int] | None = None
     properties = False
     while source[index] in "&!":
         end = _property_end(source, index)
         if source[index] == "!":
             tag = source[index:end]
+        else:
+            anchor = (source[index + 1 : end], index)
         properties = True
         index = _js_flow_space(source, end, indent)
     char, following = source[index], source[index + 1 : index + 2]
     if char in ",]}" or (char == ":" and following in _FLOW_END):
         if not properties:
             raise _NotYaml
-        return _js_scalar("", tag, plain=True), index, True
+        raw: _Raw = ("", tag, True)
+        value = _js_scalar_node(anchors, raw)
+        _define(anchors, anchor, value, raw)
+        return value, index, True
     if char in "[{":
-        value, end = _js_flow(source, index, indent)
+        value, end = _js_flow(source, index, indent, anchors)
+        _define(anchors, anchor, value, None)
         return value, end, False
     if char in "'\"":
         scalar = _quoted(source, index)
         if scalar is None:
             raise _NotYaml
-        return _js_scalar(scalar[0], tag, plain=False), scalar[1], False
+        raw = (scalar[0], tag, False)
+        value = _js_scalar_node(anchors, raw)
+        _define(anchors, anchor, value, raw)
+        return value, scalar[1], False
     if char == "*":
-        raise _Unsupported
+        if properties:
+            raise _NotYaml
+        value, end = _js_alias(source, index, anchors)
+        return value, end, False
     if char in "#|>%@`" or (char in "-?:" and following in _FLOW_END):
         raise _NotYaml
     text, end = _js_flow_plain(source, index, indent)
-    return _js_scalar(text, tag, plain=True), end, True
+    raw = (text, tag, True)
+    value = _js_scalar_node(anchors, raw)
+    _define(anchors, anchor, value, raw)
+    return value, end, True
 
 
 def _js_flow_plain(source: str, index: int, indent: int) -> tuple[str, int]:

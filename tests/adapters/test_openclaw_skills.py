@@ -987,6 +987,237 @@ def test_status_reports_rejected_and_unavailable_skills(
     ]
 
 
+@pytest.mark.parametrize("policy", [None, "first_wins", "last_wins", "reject"])
+def test_configured_workspace_skill_keeps_its_workspace_rank(
+    tmp_path: Path, workspace: Path, package: Path, policy: str | None
+):
+    """A configured folder that is also a workspace skill outranks a shipped copy."""
+    weather = _skill(workspace / "skills" / "weather", "weather", "Workspace.")
+    skills: dict[str, Any] = {"directories": [{"skill": str(weather)}], "bundled": {}}
+    if policy is not None:
+        skills["duplicates"] = policy
+
+    plan = _plan(tmp_path, workspace, skills, package)
+
+    report = plan.report()
+    assert report is not None
+    assert _loaded(plan) == [("weather", "skills.directories[0]")]
+    assert report["duplicates"] == [
+        {
+            "name": "weather",
+            "outcome": "selected",
+            "selected": str(weather.resolve()),
+            "copies": [
+                {
+                    "origin": "external",
+                    "path": str(weather.resolve()),
+                    "entry": "skills.directories[0]",
+                },
+                {
+                    "origin": "bundled",
+                    "path": str((package / "skills/weather").resolve()),
+                },
+            ],
+        }
+    ]
+
+    # OpenClaw's list agrees, so the configured skill stays the winner.
+    openclaw_skills.apply_status(
+        plan, {"skills": [{"name": "weather", "source": "openclaw-workspace"}]}
+    )
+    refined = plan.report()
+    assert refined is not None
+    assert (refined["loaded"], refined["duplicates"]) == (
+        report["loaded"],
+        report["duplicates"],
+    )
+
+
+def test_configured_workspace_skill_wins_over_another_configured_copy(
+    tmp_path: Path, workspace: Path
+):
+    """A policy's pick cannot outrank a configured copy OpenClaw loads natively."""
+    local = _skill(workspace / "skills" / "review", "review", "Workspace.")
+    team = _skill(tmp_path / "team" / "review", "review", "Team.")
+
+    plan = _plan(
+        tmp_path,
+        workspace,
+        {
+            "directories": [{"skill": str(team)}, {"skill": str(local)}],
+            "duplicates": "first_wins",
+        },
+    )
+
+    report = plan.report()
+    assert report is not None
+    assert _loaded(plan) == [("review", "skills.directories[1]")]
+    assert report["duplicates"][0]["outcome"] == "selected"
+    assert report["duplicates"][0]["selected"] == str(local.resolve())
+    assert plan.extra_dirs == [str(team.resolve())]
+
+
+@pytest.mark.parametrize(
+    "front_matter",
+    [
+        pytest.param(
+            "name: review\ndescription: Workspace.\nmetadata: [unclosed", id="yaml"
+        ),
+        pytest.param("name: review\ndescription: ''", id="empty-description"),
+        pytest.param("name: review\ndescription:", id="null-description"),
+    ],
+)
+@pytest.mark.parametrize("policy", [None, "first_wins"])
+def test_invalid_workspace_skill_does_not_hide_a_configured_one(
+    tmp_path: Path, workspace: Path, front_matter: str, policy: str | None
+):
+    """A workspace copy OpenClaw refuses is not reported as the winner."""
+    team = _skill(tmp_path / "team" / "review", "review", "External.")
+    local = workspace / "skills" / "review"
+    local.mkdir(parents=True)
+    (local / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
+    skills: dict[str, Any] = {"directories": [{"skill": str(team)}]}
+    if policy is not None:
+        skills["duplicates"] = policy
+
+    plan = _plan(tmp_path, workspace, skills)
+
+    report = plan.report()
+    assert report is not None
+    assert report["loaded"][0]["path"] == str(team.resolve())
+    assert "duplicates" not in report
+    openclaw_skills.apply_status(
+        plan, {"skills": [{"name": "review", "source": "openclaw-extra"}]}
+    )
+    assert plan.report() == report
+
+
+def test_status_settles_winners_fabric_could_not_predict(
+    tmp_path: Path, workspace: Path
+):
+    """OpenClaw's listed source decides a clash Fabric's own check got wrong."""
+    team = _skill(tmp_path / "team" / "review", "review", "External.")
+    local = _skill(workspace / "skills" / "review", "review", "Workspace.")
+    project = _skill(workspace / ".agents/skills/review", "review", "Project.")
+    plan = _plan(tmp_path, workspace, {"directories": [{"skill": str(team)}]})
+    report = plan.report()
+    assert report is not None
+    assert report["duplicates"][0]["outcome"] == "shadowed"
+    assert report["duplicates"][0]["selected"] == str(local.resolve())
+
+    # OpenClaw refused both workspace copies, for example for a file limit
+    # Fabric does not check: the configured copy wins.
+    openclaw_skills.apply_status(
+        plan, {"skills": [{"name": "review", "source": "openclaw-extra"}]}
+    )
+
+    report = plan.report()
+    assert report is not None
+    assert report["loaded"] == [
+        {
+            "name": "review",
+            "path": str(team.resolve()),
+            "entry": "skills.directories[0]",
+            "origin": "external",
+        }
+    ]
+    assert "duplicates" not in report
+
+    # The next listing shows the project copy winning instead.
+    openclaw_skills.apply_status(
+        plan, {"skills": [{"name": "review", "source": "agents-skills-project"}]}
+    )
+
+    report = plan.report()
+    assert report is not None
+    assert "loaded" not in report
+    assert report["duplicates"] == [
+        {
+            "name": "review",
+            "outcome": "shadowed",
+            "selected": str(project.resolve()),
+            "copies": [
+                {
+                    "origin": "external",
+                    "path": str(team.resolve()),
+                    "entry": "skills.directories[0]",
+                },
+                {"origin": "local", "path": str(project.resolve())},
+            ],
+        }
+    ]
+
+
+def test_status_restores_a_workspace_copy_fabric_expected_to_be_refused(
+    tmp_path: Path, workspace: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A copy Fabric's check refused still wins when OpenClaw lists its source."""
+    team = _skill(tmp_path / "team" / "review", "review", "External.")
+    local = _skill(workspace / "skills" / "review", "review", "Workspace.")
+    monkeypatch.setattr(openclaw_skills, "_accepted", lambda folder: False)
+    plan = _plan(tmp_path, workspace, {"directories": [{"skill": str(team)}]})
+    report = plan.report()
+    assert report is not None
+    assert "duplicates" not in report
+
+    openclaw_skills.apply_status(
+        plan, {"skills": [{"name": "review", "source": "openclaw-workspace"}]}
+    )
+
+    report = plan.report()
+    assert report is not None
+    assert "loaded" not in report
+    assert report["duplicates"][0]["outcome"] == "shadowed"
+    assert report["duplicates"][0]["selected"] == str(local.resolve())
+
+
+@pytest.mark.parametrize(
+    ("front_matter", "accepted"),
+    [
+        ("name: review\ndescription: Reviews code.", True),
+        ("name: review\ndescription: Reviews.\nmetadata: [unclosed", False),
+        ("name: review\ndescription: '  '", False),
+        ("name: review\ndescription: ~", True),
+        ("name: review", False),
+        ("name: !!timestamp 2026-01-02\ndescription: d", None),
+        ("name: review\ndescription: a: b", None),
+    ],
+)
+def test_accepted_applies_openclaws_loader_rules(
+    tmp_path: Path, front_matter: str, accepted: bool | None
+):
+    (tmp_path / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
+
+    assert openclaw_skills._accepted(tmp_path) is accepted
+
+
+def test_unsupported_front_matter_name_fails_under_a_policy(
+    tmp_path: Path, workspace: Path
+):
+    """A name Fabric cannot read never silently picks a copy under a policy."""
+    team = tmp_path / "team"
+    unsupported = team / "unsupported"
+    unsupported.mkdir(parents=True)
+    (unsupported / "SKILL.md").write_text(
+        "---\n? name\n: review\ndescription: d\n---\n", encoding="utf-8"
+    )
+    _skill(team / "review", "review")
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        _plan(
+            tmp_path,
+            workspace,
+            {"directories": [{"folder": str(team)}], "duplicates": "reject"},
+        )
+
+    assert caught.value.code == "openclaw_skill_invalid"
+    assert caught.value.metadata == {
+        "field": "skills.directories[0]",
+        "reason": "unsupported_frontmatter_name",
+        "path": str(unsupported.resolve()),
+    }
+
+
 def test_warn_writes_skipped_and_unavailable_once(
     tmp_path: Path,
     workspace: Path,
