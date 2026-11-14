@@ -47,7 +47,10 @@ names the way the harness does (`pyyaml`, or `openclaw` for YAML 1.2 with
 OpenClaw's trimming). `read_front_matter()` returns a skill's name, keys,
 and whether its name could be read reliably. Under an explicit duplicate
 policy, a name that can't be read reliably fails with
-`unsupported_frontmatter_name`.
+`unsupported_frontmatter_name`. `DiscoveryRules.frontmatter_must_parse` and
+`nonempty_frontmatter_fields` skip candidates the harness would refuse
+before any duplicate check, and `check_front_matter()` applies the same
+rules to one skill.
 
 `AdapterCheckRequest` and `AdapterCheckResult` define health-probe requests and results. Results preserve required null fields and use fixed reason codes and evidence-source identifiers. The common Python lifecycle host publishes an authenticated health channel for adapters with an asynchronous `check(level)` method returning an `AdapterCheckResult` mapping. The host applies the remaining deadline and invalidates observations during shutdown. A service host uses its service ID in the probe's `runtime_id` field.
 

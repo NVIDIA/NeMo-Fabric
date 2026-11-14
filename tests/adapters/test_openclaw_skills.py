@@ -1218,6 +1218,146 @@ def test_unsupported_front_matter_name_fails_under_a_policy(
     }
 
 
+def _refused_skill(directory: Path, name: str, problem: str) -> Path:
+    """Write a skill OpenClaw refuses: ``malformed`` YAML or an ``empty`` description."""
+    directory.mkdir(parents=True, exist_ok=True)
+    lines = {
+        "malformed": [f"name: {name}", "description: Broken.", "metadata: [unclosed"],
+        "empty": [f"name: {name}", 'description: ""'],
+    }[problem]
+    (directory / "SKILL.md").write_text(
+        "\n".join(["---", *lines, "---", "", "Body.", ""]), encoding="utf-8"
+    )
+    return directory
+
+
+@pytest.mark.parametrize("policy", [None, "reject", "first_wins", "last_wins"])
+def test_copies_openclaw_refuses_never_count_as_duplicates(
+    tmp_path: Path, workspace: Path, policy: str | None
+):
+    """Refused copies are skipped before the policy applies, so start succeeds.
+
+    ``review`` has a valid copy between a malformed and an empty-description
+    copy, one per ``skill`` entry; ``triage`` has the same copies in one
+    ``folder`` entry.
+    """
+    review = [
+        _refused_skill(tmp_path / "broken" / "review", "review", "malformed"),
+        _skill(tmp_path / "valid" / "review", "review"),
+        _refused_skill(tmp_path / "empty" / "review", "review", "empty"),
+    ]
+    team = tmp_path / "team"
+    _refused_skill(team / "a-broken", "triage", "malformed")
+    triage = _skill(team / "b-valid", "triage")
+    _refused_skill(team / "c-empty", "triage", "empty")
+    skills: dict[str, Any] = {
+        "directories": [
+            *({"skill": str(path)} for path in review),
+            {"folder": str(team)},
+        ]
+    }
+    if policy is not None:
+        skills["duplicates"] = policy
+
+    generated, plan = _generated(tmp_path, workspace, skills)
+
+    if policy is None:
+        # OpenClaw gets every entry and refuses the same copies itself.
+        assert generated["skills"]["load"]["extraDirs"] == [
+            *(str(path) for path in review),
+            str(team),
+        ]
+    else:
+        assert generated["skills"]["load"]["extraDirs"] == [
+            str(review[1].resolve()),
+            str(triage.resolve()),
+        ]
+    expected = {
+        "loaded": [
+            {
+                "name": "review",
+                "path": str(review[1].resolve()),
+                "entry": "skills.directories[1]",
+                "origin": "external",
+            },
+            {
+                "name": "triage",
+                "path": str(triage.resolve()),
+                "entry": "skills.directories[3]",
+                "origin": "external",
+            },
+        ],
+        "skipped": [
+            {
+                "path": str(path.resolve()),
+                "entry": entry,
+                "reason": reason,
+            }
+            for path, entry, reason in (
+                (review[0], "skills.directories[0]", "invalid_frontmatter"),
+                (
+                    review[2],
+                    "skills.directories[2]",
+                    "empty_frontmatter_field:description",
+                ),
+                (team / "a-broken", "skills.directories[3]", "invalid_frontmatter"),
+                (
+                    team / "c-empty",
+                    "skills.directories[3]",
+                    "empty_frontmatter_field:description",
+                ),
+            )
+        ],
+    }
+    assert plan.report() == expected
+    # OpenClaw's listing agrees, so nothing is reported as rejected by it.
+    listed = {
+        "skills": [
+            {"name": name, "source": "openclaw-extra"} for name in ("review", "triage")
+        ]
+    }
+    assert openclaw_skills.apply_status(plan, listed, fallback=True) is False
+    assert plan.report() == expected
+
+
+@pytest.mark.parametrize(
+    ("policy", "unchecked_first"),
+    [("reject", False), ("first_wins", True), ("last_wins", False)],
+)
+def test_unchecked_front_matter_that_decides_a_policy_fails(
+    tmp_path: Path, workspace: Path, policy: str, unchecked_first: bool
+):
+    """Fabric cannot tell whether OpenClaw recovers this description, so it does not guess."""
+    unchecked = _skill(tmp_path / "unchecked" / "review", "review", "Reviews: code.")
+    valid = _skill(tmp_path / "valid" / "review", "review")
+    entries = [{"skill": str(unchecked)}, {"skill": str(valid)}]
+    if not unchecked_first:
+        entries.reverse()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        _plan(tmp_path, workspace, {"directories": entries, "duplicates": policy})
+
+    assert caught.value.code == "openclaw_skill_invalid"
+    assert caught.value.metadata == {
+        "field": f"skills.directories[{0 if unchecked_first else 1}]",
+        "reason": "unsupported_frontmatter",
+        "path": str(unchecked.resolve()),
+    }
+
+
+def test_rules_check_configured_skills_but_not_openclaws_own_sources():
+    """Native copies carry _accepted instead, so a refused one is still known."""
+    checked = openclaw_skills._rules(2, frozenset())
+    unchecked = openclaw_skills._rules(2, frozenset(), checked=False)
+
+    assert checked.frontmatter_must_parse is True
+    assert checked.nonempty_frontmatter_fields == ("description",)
+    assert unchecked.frontmatter_must_parse is False
+    assert unchecked.nonempty_frontmatter_fields == ()
+    assert checked.required_frontmatter_fields == ("description",)
+    assert unchecked.required_frontmatter_fields == ("description",)
+
+
 def test_warn_writes_skipped_and_unavailable_once(
     tmp_path: Path,
     workspace: Path,

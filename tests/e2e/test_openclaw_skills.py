@@ -270,7 +270,7 @@ def test_reported_skills_are_the_ones_openclaw_loads(native: _Native):
     assert report is not None
     assert {item["reason"] for item in report["skipped"]} == {
         "missing_frontmatter_field:description",
-        "rejected_by_openclaw",
+        "invalid_frontmatter",
     }
 
 
@@ -712,13 +712,17 @@ def test_overlapping_folder_entries_report_each_entry_with_its_depth(
 def test_refused_winner_falls_back_to_the_next_copy(
     native: _Native, policy: str, refused: str
 ):
-    """When OpenClaw refuses the winning copy, the next copy loads instead."""
+    """When OpenClaw refuses the winning copy, the next copy loads instead.
+
+    The refused copy passes Fabric's front matter checks, but its SKILL.md
+    is larger than OpenClaw reads (256 KB by default).
+    """
     root = native.tmp_path
     for name in ("a", "b"):
         _skill(root / name / "review", "review")
     broken = root / refused / "review" / "SKILL.md"
     broken.write_text(
-        "---\nname: review\ndescription: Broken.\nmetadata: [unclosed\n---\n",
+        "---\nname: review\ndescription: Too large.\n---\n\n" + "x" * 300_000 + "\n",
         encoding="utf-8",
     )
     kept = root / ("b" if refused == "a" else "a") / "review"
@@ -955,3 +959,72 @@ async def test_real_runtime_restart_loads_skills_written_meanwhile(native: _Nati
     assert rows["weather"]["description"] == "Configured weather."
     assert restarted["bundled"]["selected"] == first["bundled"]["selected"]
     assert "weather" not in restarted["bundled"]["selected"]
+
+
+def _refused_skill(directory: Path, name: str, problem: str) -> Path:
+    """Write a skill OpenClaw refuses: ``malformed`` YAML or an ``empty`` description."""
+    directory.mkdir(parents=True, exist_ok=True)
+    lines = {
+        "malformed": [f"name: {name}", "description: Broken.", "metadata: [unclosed"],
+        "empty": [f"name: {name}", 'description: ""'],
+    }[problem]
+    (directory / "SKILL.md").write_text(
+        "\n".join(["---", *lines, "---", "", "Body.", ""]), encoding="utf-8"
+    )
+    return directory
+
+
+@pytest.mark.parametrize("policy", ["reject", "first_wins", "last_wins"])
+async def test_copies_openclaw_refuses_never_count_as_duplicates(
+    native: _Native, policy: str
+):
+    """Start succeeds under every policy and loads the copy OpenClaw accepts.
+
+    ``review`` has a valid copy between a malformed and an empty-description
+    copy, one per ``skill`` entry, so the first and the last copy are both
+    refused. ``triage`` has the same three copies inside one ``folder`` entry.
+    """
+    root = native.tmp_path
+    review = [
+        _refused_skill(root / "broken" / "review", "review", "malformed"),
+        _skill(root / "valid" / "review", "review", "Valid review."),
+        _refused_skill(root / "empty" / "review", "review", "empty"),
+    ]
+    team = root / "team"
+    _refused_skill(team / "a-broken", "triage", "malformed")
+    triage = _skill(team / "b-valid", "triage", "Valid triage.")
+    _refused_skill(team / "c-empty", "triage", "empty")
+    skills = {
+        "directories": [
+            *({"skill": str(path)} for path in review),
+            {"folder": str(team)},
+        ],
+        "duplicates": policy,
+    }
+
+    runtime = await _start_runtime(native, skills)
+    try:
+        assert runtime._process is not None and runtime._process.returncode is None
+        report = runtime._skills_output()["skills"]
+        rows = _running_skills(runtime)
+    finally:
+        await runtime.stop()
+    assert (rows["review"]["source"], rows["review"]["description"]) == (
+        "openclaw-extra",
+        "Valid review.",
+    )
+    assert (rows["triage"]["source"], rows["triage"]["description"]) == (
+        "openclaw-extra",
+        "Valid triage.",
+    )
+    assert [(item["name"], item["path"]) for item in report["loaded"]] == [
+        ("review", str(review[1].resolve())),
+        ("triage", str(triage.resolve())),
+    ]
+    assert "duplicates" not in report
+    assert [(item["entry"], item["reason"]) for item in report["skipped"]] == [
+        ("skills.directories[0]", "invalid_frontmatter"),
+        ("skills.directories[2]", "empty_frontmatter_field:description"),
+        ("skills.directories[3]", "invalid_frontmatter"),
+        ("skills.directories[3]", "empty_frontmatter_field:description"),
+    ]

@@ -25,6 +25,7 @@ from nemo_fabric_adapter_contract.skills import DuplicateRecord
 from nemo_fabric_adapter_contract.skills import FoundSkill
 from nemo_fabric_adapter_contract.skills import SkillLoadError
 from nemo_fabric_adapter_contract.skills import SkippedCandidate
+from nemo_fabric_adapter_contract.skills import check_front_matter
 from nemo_fabric_adapter_contract.skills import load_directories
 from nemo_fabric_adapter_contract.skills import read_front_matter
 from nemo_fabric_adapter_contract.skills import report_block
@@ -1745,6 +1746,17 @@ def test_discovery_rules_reject_invalid_values():
             max_depth=None,
             name_style="yaml",  # type: ignore[arg-type]
         )
+    for option in (
+        {"nonempty_frontmatter_fields": ("description",)},
+        {"frontmatter_must_parse": True},
+    ):
+        with pytest.raises(ValueError, match="openclaw name style"):
+            DiscoveryRules(
+                traversal="recursive",
+                nested_skills="include",
+                max_depth=None,
+                **option,  # type: ignore[arg-type]
+            )
 
 
 # Duplicates
@@ -1898,6 +1910,283 @@ def test_folder_reached_again_moves_to_the_later_entry_only_under_last_wins(
         assert [copy[2] for copy in load.duplicates[0].copies] == sorted(
             ["skills.directories[1]", field]
         )
+
+
+# Front matter the harness refuses, checked before duplicate policies
+
+# OpenClaw's loader: front matter that parses and a non-empty description.
+CHECKED = DiscoveryRules(
+    traversal="immediate_children",
+    nested_skills="stop_at_skill",
+    max_depth=1,
+    required_frontmatter_fields=("description",),
+    name_style="openclaw",
+    nonempty_frontmatter_fields=("description",),
+    frontmatter_must_parse=True,
+)
+_VALID = "---\nname: review\ndescription: Reviews code.\n---\n"
+_REFUSED = {
+    "malformed": (
+        "---\nname: review\ndescription: Broken.\nmetadata: [unclosed\n---\n",
+        "invalid_frontmatter",
+    ),
+    "empty": (
+        '---\nname: review\ndescription: "  "\n---\n',
+        "empty_frontmatter_field:description",
+    ),
+}
+# OpenClaw recovers this description, but Fabric cannot tell.
+_UNCHECKED = "---\nname: review\ndescription: Reviews: code.\n---\n"
+POLICIES = [None, "reject", "first_wins", "last_wins"]
+
+
+def _write_skill(directory: Path, text: str) -> Path:
+    directory.mkdir(parents=True)
+    (directory / "SKILL.md").write_text(text, encoding="utf-8")
+    return directory.resolve()
+
+
+@pytest.mark.parametrize(
+    ("front_matter", "accepted", "reason"),
+    [
+        (_VALID, True, None),
+        (_REFUSED["malformed"][0], False, "invalid_frontmatter"),
+        (_REFUSED["empty"][0], False, "empty_frontmatter_field:description"),
+        # A null with no text on its line leaves the description empty.
+        (
+            "---\nname: review\ndescription:\n---\n",
+            False,
+            "empty_frontmatter_field:description",
+        ),
+        ("---\nname: review\ndescription: ~\n---\n", True, None),
+        ("---\nname: review\n---\n", False, "missing_frontmatter_field:description"),
+        ("No front matter.\n", False, "missing_frontmatter_field:description"),
+        # Malformed front matter is refused before a missing field.
+        ("---\nname: review\nx: [unclosed\n---\n", False, "invalid_frontmatter"),
+        (_UNCHECKED, None, None),
+        ("---\nname: !!timestamp 2026-01-02\ndescription: d\n---\n", None, None),
+    ],
+)
+def test_check_front_matter_applies_the_harness_requirements(
+    tmp_path: Path, front_matter: str, accepted: bool | None, reason: str | None
+):
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text(front_matter, encoding="utf-8")
+    read = read_front_matter(skill_file, name_style="openclaw")
+
+    assert check_front_matter(read, CHECKED) == (accepted, reason)
+    # Rules without requirements accept every skill.
+    assert check_front_matter(read, OPENCLAW) == (True, None)
+
+
+@pytest.mark.parametrize("problem", sorted(_REFUSED))
+@pytest.mark.parametrize("refused_first", [True, False])
+@pytest.mark.parametrize("policy", POLICIES)
+def test_refused_copy_in_another_entry_is_not_a_duplicate(
+    tmp_path: Path, problem: str, refused_first: bool, policy: str | None
+):
+    """The copy the harness loads wins whichever entry holds the refused one."""
+    text, reason = _REFUSED[problem]
+    refused = _write_skill(tmp_path / "refused" / "review", text)
+    valid = _write_skill(tmp_path / "valid" / "review", _VALID)
+    entries = [{"skill": refused}, {"skill": valid}]
+    if not refused_first:
+        entries.reverse()
+    fields = {
+        path: f"skills.directories[{index}]"
+        for index, path in enumerate(entry["skill"] for entry in entries)
+    }
+
+    load = load_directories(entries, rules=CHECKED, duplicates=policy)
+
+    assert load.selected == [FoundSkill("review", valid, fields[valid], "skill")]
+    assert load.skipped == [SkippedCandidate(refused, fields[refused], reason)]
+    assert load.duplicates == []
+
+
+@pytest.mark.parametrize("problem", sorted(_REFUSED))
+@pytest.mark.parametrize("refused_first", [True, False])
+@pytest.mark.parametrize("policy", POLICIES)
+def test_refused_copy_in_the_same_folder_is_not_a_duplicate(
+    tmp_path: Path, problem: str, refused_first: bool, policy: str | None
+):
+    text, reason = _REFUSED[problem]
+    team = tmp_path / "team"
+    refused = _write_skill(team / ("a" if refused_first else "b"), text)
+    valid = _write_skill(team / ("b" if refused_first else "a"), _VALID)
+
+    load = load_directories([{"folder": team}], rules=CHECKED, duplicates=policy)
+
+    assert load.selected == [
+        FoundSkill("review", valid, "skills.directories[0]", "folder")
+    ]
+    assert load.skipped == [SkippedCandidate(refused, "skills.directories[0]", reason)]
+    assert load.duplicates == []
+    assert load.empty_entries == []
+
+
+@pytest.mark.parametrize("policy", POLICIES)
+def test_refused_copy_with_an_unreadable_name_is_skipped(
+    tmp_path: Path, policy: str | None
+):
+    """A refused copy never loads, so a name Fabric cannot read does not matter."""
+    refused = _write_skill(
+        tmp_path / "team" / "a",
+        "---\n? name\n: review\ndescription: d\nmetadata: [unclosed\n---\n",
+    )
+    valid = _write_skill(tmp_path / "team" / "b", _VALID)
+
+    load = load_directories(
+        [{"folder": tmp_path / "team"}], rules=CHECKED, duplicates=policy
+    )
+
+    assert [skill.path for skill in load.selected] == [valid]
+    assert load.skipped == [
+        SkippedCandidate(refused, "skills.directories[0]", "invalid_frontmatter")
+    ]
+
+
+@pytest.mark.parametrize("problem", sorted(_REFUSED))
+def test_rules_without_the_requirements_keep_refused_copies(
+    tmp_path: Path, problem: str
+):
+    """Rules like Hermes's, which loads such copies, still see the clash."""
+    refused = _write_skill(tmp_path / "refused" / "review", _REFUSED[problem][0])
+    valid = _write_skill(tmp_path / "valid" / "review", _VALID)
+    entries = [{"skill": refused}, {"skill": valid}]
+
+    load = load_directories(entries, rules=IMMEDIATE, duplicates=None)
+    assert [skill.path for skill in load.selected] == [refused, valid]
+    assert load.duplicates[0].outcome == "ambiguous"
+    assert not any(skill.validity_uncertain for skill in load.selected)
+    with pytest.raises(SkillLoadError) as caught:
+        load_directories(entries, rules=IMMEDIATE, duplicates="reject")
+    assert caught.value.reason == "duplicate"
+
+
+def test_unchecked_copy_loads_and_is_marked_without_a_policy(tmp_path: Path):
+    unchecked = _write_skill(tmp_path / "unchecked" / "review", _UNCHECKED)
+    valid = _write_skill(tmp_path / "valid" / "review", _VALID)
+
+    load = load_directories(
+        [{"skill": unchecked}, {"skill": valid}], rules=CHECKED, duplicates=None
+    )
+
+    assert load.selected == [
+        FoundSkill(
+            "review",
+            unchecked,
+            "skills.directories[0]",
+            "skill",
+            validity_uncertain=True,
+        ),
+        FoundSkill("review", valid, "skills.directories[1]", "skill"),
+    ]
+    assert load.duplicates[0].outcome == "ambiguous"
+    # The report is unchanged: the harness's own listing settles it.
+    report = report_block(load)
+    assert report is not None
+    assert "validity_uncertain" not in report["loaded"][0]
+
+
+@pytest.mark.parametrize("policy", ["reject", "first_wins", "last_wins"])
+def test_unchecked_copy_without_a_clash_loads_under_a_policy(
+    tmp_path: Path, policy: str
+):
+    unchecked = _write_skill(tmp_path / "unchecked" / "review", _UNCHECKED)
+
+    load = load_directories([{"skill": unchecked}], rules=CHECKED, duplicates=policy)
+
+    assert [(skill.path, skill.validity_uncertain) for skill in load.selected] == [
+        (unchecked, True)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("policy", "unchecked_first"),
+    [
+        ("reject", True),
+        ("reject", False),
+        ("first_wins", True),
+        ("last_wins", False),
+    ],
+)
+def test_unchecked_copy_that_decides_a_policy_fails(
+    tmp_path: Path, policy: str, unchecked_first: bool
+):
+    """Whether the copy loads would change the outcome, so Fabric does not guess."""
+    unchecked = _write_skill(tmp_path / "unchecked" / "review", _UNCHECKED)
+    valid = _write_skill(tmp_path / "valid" / "review", _VALID)
+    entries = [{"skill": unchecked}, {"skill": valid}]
+    if not unchecked_first:
+        entries.reverse()
+    field = f"skills.directories[{0 if unchecked_first else 1}]"
+
+    with pytest.raises(SkillLoadError) as caught:
+        load_directories(entries, rules=CHECKED, duplicates=policy)
+
+    assert caught.value.reason == "unsupported_frontmatter"
+    assert caught.value.field == field
+    assert caught.value.paths == (unchecked,)
+    assert str(unchecked / "SKILL.md") in str(caught.value)
+    assert policy in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("policy", "unchecked_first"), [("first_wins", False), ("last_wins", True)]
+)
+def test_unchecked_copy_that_cannot_win_leaves_the_policy_decided(
+    tmp_path: Path, policy: str, unchecked_first: bool
+):
+    unchecked = _write_skill(tmp_path / "unchecked" / "review", _UNCHECKED)
+    valid = _write_skill(tmp_path / "valid" / "review", _VALID)
+    entries = [{"skill": unchecked}, {"skill": valid}]
+    if not unchecked_first:
+        entries.reverse()
+
+    load = load_directories(entries, rules=CHECKED, duplicates=policy)
+
+    assert [skill.path for skill in load.selected] == [valid]
+    assert load.duplicates[0].outcome == "selected"
+    assert load.duplicates[0].selected == valid
+
+
+def test_checked_clash_fails_as_a_duplicate_before_an_unchecked_copy(tmp_path: Path):
+    unchecked = _write_skill(tmp_path / "unchecked" / "review", _UNCHECKED)
+    first = _write_skill(tmp_path / "first" / "review", _VALID)
+    second = _write_skill(tmp_path / "second" / "review", _VALID)
+
+    with pytest.raises(SkillLoadError) as caught:
+        load_directories(
+            [{"skill": unchecked}, {"skill": first}, {"skill": second}],
+            rules=CHECKED,
+            duplicates="reject",
+        )
+
+    assert caught.value.reason == "duplicate"
+    assert caught.value.paths == (first, second)
+
+
+@pytest.mark.parametrize("policy", ["reject", "first_wins", "last_wins"])
+def test_unchecked_copy_in_the_same_folder_fails_under_a_policy(
+    tmp_path: Path, policy: str
+):
+    team = tmp_path / "team"
+    valid = _write_skill(team / "a", _VALID)
+    unchecked = _write_skill(team / "b", _UNCHECKED)
+
+    with pytest.raises(SkillLoadError) as caught:
+        load_directories([{"folder": team}], rules=CHECKED, duplicates=policy)
+
+    assert caught.value.reason == "unsupported_frontmatter"
+    assert caught.value.field == "skills.directories[0]"
+    assert caught.value.paths == (unchecked,)
+    # Two checked copies in one folder still fail as duplicates.
+    _write_skill(team / "c", _VALID)
+    with pytest.raises(SkillLoadError) as caught:
+        load_directories([{"folder": team}], rules=CHECKED, duplicates=policy)
+    assert caught.value.reason == "duplicate"
+    assert caught.value.paths == (valid, (team / "c").resolve())
 
 
 # Reporting

@@ -15,9 +15,14 @@ are mounted. Each entry names one skill (``skill``) or a folder of skills
    :class:`DiscoveryRules`, which may differ per entry. A candidate is a
    folder holding ``SKILL.md``. Candidates that fail the parsing rules are
    skipped and recorded.
-4. An empty ``folder`` entry is valid and recorded in ``empty_entries``.
-5. The same folder reached through several entries loads once.
-6. Skills that share a name are recorded, or fail or are resolved according
+4. Each candidate's front matter is checked against the harness's
+   requirements in the rules, such as a non-empty ``description`` or front
+   matter that parses (:func:`check_front_matter`), before any duplicate
+   check. A candidate the harness refuses is skipped and recorded, so it
+   never counts as a copy of a name.
+5. An empty ``folder`` entry is valid and recorded in ``empty_entries``.
+6. The same folder reached through several entries loads once.
+7. Skills that share a name are recorded, or fail or are resolved according
    to the configured duplicate policy.
 
 A skill's name is the ``name`` field of its ``SKILL.md`` front matter, read as
@@ -33,6 +38,14 @@ tag it does not resolve. Such a skill is marked ``name_uncertain``. Without a
 duplicate policy it keeps the folder name fallback and is reported; under an
 explicit policy, where a wrong name could pick the wrong copy, the entry fails
 with ``unsupported_frontmatter_name``.
+
+Likewise, when the rules require front matter that parses or non-empty
+fields and this module cannot tell whether the harness accepts a
+candidate's front matter, the candidate is kept, as the harness may load
+it. Under an explicit policy, when the outcome for a name would depend on
+whether that candidate loads, the entry fails with
+``unsupported_frontmatter`` instead of deciding on a guess.
+
 The module reads only front matter and never reports file contents.
 """
 
@@ -67,7 +80,11 @@ from nemo_fabric_adapter_contract.models import SkillDuplicatePolicy
 SKILL_FILE = "SKILL.md"
 
 SkillFailure = Literal[
-    "not_found", "invalid", "duplicate", "unsupported_frontmatter_name"
+    "not_found",
+    "invalid",
+    "duplicate",
+    "unsupported_frontmatter_name",
+    "unsupported_frontmatter",
 ]
 DuplicatePolicy = SkillDuplicatePolicy
 """Alias of :data:`nemo_fabric_adapter_contract.models.SkillDuplicatePolicy`."""
@@ -154,7 +171,8 @@ class DiscoveryRules:
     """Deepest candidate level, or ``None`` for no fixed limit. The configured
     folder is depth 0 and its direct children are depth 1."""
     required_frontmatter_fields: tuple[str, ...] = ()
-    """Top-level front matter keys a candidate must define to load."""
+    """Top-level front matter keys a candidate must define to load. A
+    candidate without one is skipped with ``missing_frontmatter_field:<key>``."""
     name_fallback: bool = True
     """Use the folder name when the front matter has no name. When false, a
     skill without a front-matter name is skipped."""
@@ -181,6 +199,18 @@ class DiscoveryRules:
     name_style: NameStyle = "pyyaml"
     """How the front matter ``name`` value becomes the skill name; see
     :data:`NameStyle`."""
+    nonempty_frontmatter_fields: tuple[str, ...] = ()
+    """Top-level front matter keys a candidate must define with text that is
+    not empty after trimming, as the harness reads it. A candidate without
+    one is skipped with ``missing_frontmatter_field:<key>``, and one whose
+    value is empty with ``empty_frontmatter_field:<key>``. Requires the
+    ``openclaw`` name style, which reads field text."""
+    frontmatter_must_parse: bool = False
+    """Whether the harness refuses a candidate whose front matter its YAML
+    parser rejects. Such a candidate is skipped with ``invalid_frontmatter``.
+    A ``SKILL.md`` without a complete front matter block is left to the
+    field requirements. Requires the ``openclaw`` name style, which tells
+    whether the block parses."""
 
     def __post_init__(self) -> None:
         if self.traversal not in ("immediate_children", "recursive"):
@@ -191,6 +221,13 @@ class DiscoveryRules:
             raise ValueError("max_depth must be None or an integer of at least 1")
         if self.name_style not in get_args(NameStyle):
             raise ValueError(f"unknown skill name style: {self.name_style!r}")
+        if (
+            self.nonempty_frontmatter_fields or self.frontmatter_must_parse
+        ) and self.name_style != "openclaw":
+            raise ValueError(
+                "nonempty_frontmatter_fields and frontmatter_must_parse require "
+                "the openclaw name style"
+            )
         if not isinstance(self.subroot_depths, Mapping):
             raise ValueError("subroot_depths must be a mapping of names to depths")
         for name, depth in self.subroot_depths.items():
@@ -230,6 +267,9 @@ class FoundSkill:
     name_uncertain: bool = False
     """Whether the front matter name could not be derived reliably, so the
     name may differ from the harness's."""
+    validity_uncertain: bool = False
+    """Whether Fabric cannot tell if the harness accepts the skill's front
+    matter (:func:`check_front_matter`), so the harness may refuse it."""
 
 
 @dataclass(frozen=True)
@@ -261,8 +301,9 @@ class SkippedCandidate:
     field: str
     """The entry the candidate was found through."""
     reason: str
-    """Why it was skipped: ``unreadable``, ``no_name``, ``path_escape``, or
-    ``missing_frontmatter_field:<field>``."""
+    """Why it was skipped: ``unreadable``, ``no_name``, ``path_escape``,
+    ``invalid_frontmatter``, ``missing_frontmatter_field:<field>``, or
+    ``empty_frontmatter_field:<field>``."""
 
 
 @dataclass(frozen=True)
@@ -346,11 +387,20 @@ def load_directories(
     is ``None``; under an explicit policy its entry fails with
     ``unsupported_frontmatter_name``.
 
+    Each candidate is checked against the rules' front matter requirements
+    (:func:`check_front_matter`) before any duplicate check, so a candidate
+    the harness refuses is skipped and never counts as a copy. A candidate
+    whose acceptance cannot be told is kept and marked
+    ``validity_uncertain``; under an explicit policy, when the outcome for
+    its name depends on whether it loads, its entry fails with
+    ``unsupported_frontmatter``.
+
     Raises:
         SkillLoadError: If an entry is malformed, missing, not a folder, not
             accessible, or cannot be read, if skills share a name under an
-            explicit ``duplicates`` policy, or if a skill's name cannot be
-            derived reliably under one.
+            explicit ``duplicates`` policy, if a skill's name cannot be
+            derived reliably under one, or if the outcome of one depends on
+            front matter Fabric cannot check.
     """
 
     if duplicates is not None and duplicates not in get_args(SkillDuplicatePolicy):
@@ -393,6 +443,8 @@ def load_directories(
 
         named: list[tuple[str, _Candidate]] = []
         uncertain: set[tuple[int, int] | Path] = set()
+        # Candidates the harness may refuse: Fabric cannot tell.
+        unchecked: set[tuple[int, int] | Path] = set()
         for candidate in candidates:
             if not entry_rules.allow_symlink_escape and not _within(
                 candidate.resolved, root
@@ -401,7 +453,7 @@ def load_directories(
                     SkippedCandidate(candidate.resolved, entry_field, "path_escape")
                 )
                 continue
-            read = _candidate_name(
+            read = _read_candidate(
                 candidate,
                 entry_rules,
                 entry_field,
@@ -411,7 +463,9 @@ def load_directories(
             )
             if read is None:
                 continue
-            name, name_uncertain = read
+            name, name_uncertain, validity_uncertain = read
+            if validity_uncertain:
+                unchecked.add(candidate.identity)
             if name_uncertain:
                 if duplicates is not None:
                     # A wrong name could pick the wrong copy under the policy.
@@ -433,7 +487,7 @@ def load_directories(
         if duplicates is not None:
             # Check the entry's own skills before another entry can take
             # one of them over.
-            _reject_duplicates_in_entry(named, entry_field)
+            _reject_duplicates_in_entry(named, entry_field, unchecked, duplicates)
         for name, candidate in named:
             earlier = loaded.get(candidate.identity)
             if earlier is not None:
@@ -449,6 +503,7 @@ def load_directories(
                     field=entry_field,
                     kind=kind,
                     name_uncertain=candidate.identity in uncertain,
+                    validity_uncertain=candidate.identity in unchecked,
                 )
             )
 
@@ -463,12 +518,21 @@ def load_directories(
 
 
 def _reject_duplicates_in_entry(
-    named: list[tuple[str, _Candidate]], field: str
+    named: list[tuple[str, _Candidate]],
+    field: str,
+    unchecked: set[tuple[int, int] | Path],
+    policy: DuplicatePolicy,
 ) -> None:
-    """Fail when two skills found through one entry share a name."""
+    """Fail when two skills found through one entry share a name.
+
+    A copy in ``unchecked`` may not load, so a name it shares fails with
+    ``unsupported_frontmatter`` unless two other copies already clash.
+    """
 
     seen: dict[str, Path] = {}
     for name, candidate in named:
+        if candidate.identity in unchecked:
+            continue
         earlier = seen.get(name)
         if earlier is not None:
             raise SkillLoadError(
@@ -479,6 +543,30 @@ def _reject_duplicates_in_entry(
                 paths=(earlier, candidate.resolved),
             )
         seen[name] = candidate.resolved
+    counts: dict[str, int] = {}
+    for name, _ in named:
+        counts[name] = counts.get(name, 0) + 1
+    for name, candidate in named:
+        if counts[name] > 1 and candidate.identity in unchecked:
+            raise _unchecked_copy(candidate.resolved, name, policy, field)
+
+
+def _unchecked_copy(
+    path: Path, name: str, policy: DuplicatePolicy, field: str
+) -> SkillLoadError:
+    """Return the failure for a copy whose acceptance would decide a policy."""
+
+    skill_file = path / SKILL_FILE
+    return SkillLoadError(
+        "unsupported_frontmatter",
+        f"NeMo Fabric cannot tell whether the harness accepts the front matter "
+        f"of {skill_file}, a copy of skill {name!r}, so the {policy} duplicate "
+        f"policy in {field} cannot be applied (unsupported_frontmatter); write "
+        f"its front matter as plain key: value lines and quote values that "
+        f"contain ': '",
+        field=field,
+        paths=(path,),
+    )
 
 
 def _entry_rules(
@@ -784,7 +872,7 @@ def _discover(
     return [candidate for _, candidate in candidates]
 
 
-def _candidate_name(
+def _read_candidate(
     candidate: _Candidate,
     rules: DiscoveryRules,
     field: str,
@@ -792,9 +880,9 @@ def _candidate_name(
     *,
     required: bool,
     key_field: str,
-) -> tuple[str, bool] | None:
-    """Return the candidate's name and whether it is uncertain, or ``None``
-    when the candidate is skipped."""
+) -> tuple[str, bool, bool] | None:
+    """Return the candidate's name, whether the name is uncertain, and
+    whether its acceptance is, or ``None`` when the candidate is skipped."""
 
     skill_file = candidate.resolved / SKILL_FILE
     try:
@@ -811,15 +899,11 @@ def _candidate_name(
             ) from None
         skipped.append(SkippedCandidate(candidate.resolved, field, "unreadable"))
         return None
-    keys = front_matter.keys if front_matter is not None else frozenset()
-    for name in rules.required_frontmatter_fields:
-        if name not in keys:
-            skipped.append(
-                SkippedCandidate(
-                    candidate.resolved, field, f"missing_frontmatter_field:{name}"
-                )
-            )
-            return None
+    accepted, reason = check_front_matter(front_matter, rules)
+    if accepted is False:
+        assert reason is not None
+        skipped.append(SkippedCandidate(candidate.resolved, field, reason))
+        return None
     name = front_matter.name if front_matter is not None else None
     uncertain = front_matter is not None and front_matter.name_uncertain
     if not name and rules.name_fallback:
@@ -833,7 +917,50 @@ def _candidate_name(
     if not name:
         skipped.append(SkippedCandidate(candidate.resolved, field, "no_name"))
         return None
-    return name, uncertain
+    return name, uncertain, accepted is None
+
+
+def check_front_matter(
+    front_matter: FrontMatter | None, rules: DiscoveryRules
+) -> tuple[bool | None, str | None]:
+    """Return whether the harness accepts a skill with ``front_matter``.
+
+    Applies the rules' front matter requirements: front matter that parses
+    (``frontmatter_must_parse``), then ``required_frontmatter_fields``, then
+    ``nonempty_frontmatter_fields``. ``front_matter`` is read with the rules'
+    name style (:func:`read_front_matter`), or ``None`` for a ``SKILL.md``
+    without a complete front matter block.
+
+    Returns:
+        ``(True, None)`` when the skill meets the requirements, ``(False,
+        reason)`` with the skip reason when it does not, and ``(None, None)``
+        when Fabric cannot tell, because the rules require front matter that
+        parses or non-empty fields and it cannot tell whether the block parses.
+    """
+
+    if (
+        rules.frontmatter_must_parse
+        and front_matter is not None
+        and front_matter.parses is False
+    ):
+        return False, "invalid_frontmatter"
+    keys = front_matter.keys if front_matter is not None else frozenset()
+    for name in (
+        *rules.required_frontmatter_fields,
+        *rules.nonempty_frontmatter_fields,
+    ):
+        if name not in keys:
+            return False, f"missing_frontmatter_field:{name}"
+    if front_matter is None or not (
+        rules.frontmatter_must_parse or rules.nonempty_frontmatter_fields
+    ):
+        return True, None
+    if front_matter.parses is None:
+        return None, None
+    for name in rules.nonempty_frontmatter_fields:
+        if not front_matter.fields.get(name):
+            return False, f"empty_frontmatter_field:{name}"
+    return True, None
 
 
 def _resolve_duplicates(
@@ -845,6 +972,9 @@ def _resolve_duplicates(
     for skill in found:
         by_name.setdefault(skill.name, []).append(skill)
     shadowed: set[int] = set()
+    # The first copy whose acceptance would decide the outcome of a policy.
+    # A clash between checked copies fails first.
+    deciding: FoundSkill | None = None
     for name, copies in by_name.items():
         if len(copies) < 2:
             continue
@@ -853,7 +983,14 @@ def _resolve_duplicates(
             records.append(DuplicateRecord(name, record_copies, "ambiguous", None))
             continue
         if policy == "reject":
-            first, second = copies[0], copies[1]
+            checked = [skill for skill in copies if not skill.validity_uncertain]
+            if len(checked) < 2:
+                # Whether the name is duplicated depends on an unchecked copy.
+                deciding = deciding or next(
+                    skill for skill in copies if skill.validity_uncertain
+                )
+                continue
+            first, second = checked[0], checked[1]
             raise SkillLoadError(
                 "duplicate",
                 f"NeMo Fabric skill {name!r} is configured twice: "
@@ -862,8 +999,15 @@ def _resolve_duplicates(
                 paths=(first.path, second.path),
             )
         winner = copies[0] if policy == "first_wins" else copies[-1]
+        if winner.validity_uncertain:
+            # If the harness refused it, the next copy would win instead.
+            deciding = deciding or winner
+            continue
         shadowed.update(id(skill) for skill in copies if skill is not winner)
         records.append(DuplicateRecord(name, record_copies, "selected", winner.path))
+    if deciding is not None:
+        assert policy is not None
+        raise _unchecked_copy(deciding.path, deciding.name, policy, deciding.field)
     return [skill for skill in found if id(skill) not in shadowed]
 
 

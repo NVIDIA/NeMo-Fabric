@@ -132,12 +132,20 @@ rules:
   reported with the reason `path_escape`; so is an entry whose `skills`
   subfolder links outside it. The adapter does not set
   `skills.load.allowSymlinkTargets`.
-- A skill needs a non-empty `description`; its name is the front-matter `name`
-  or the folder name. Skills OpenClaw rejects at load, such as front matter
-  YAML cannot parse, are reported with the reason `rejected_by_openclaw`.
-  Under `first_wins` or `last_wins`, a refused winning copy is replaced by the
-  next copy in policy order and the skills are listed again. If the list
-  cannot run, a refused winner goes unnoticed and no copy of its name loads.
+- A skill needs front matter that YAML can parse and a `description` that
+  isn't empty after trimming; its name is the front-matter `name` or the
+  folder name. Other skills are skipped before `duplicates` applies, so they
+  never count as copies, with the reason `invalid_frontmatter`,
+  `missing_frontmatter_field:description`, or
+  `empty_frontmatter_field:description`. Front matter the adapter can't
+  check, such as an unquoted `description` containing `: `, is left to
+  OpenClaw; under a `duplicates` policy whose outcome it would change, start
+  fails with `unsupported_frontmatter`.
+- Other skills OpenClaw rejects at load are reported with the reason
+  `rejected_by_openclaw`. Under `first_wins` or `last_wins`, a refused
+  winning copy is replaced by the next copy in policy order and the skills
+  are listed again. If the list cannot run, a refused winner goes unnoticed
+  and no copy of its name loads.
 - A `name` written as a YAML alias takes the anchored value. A name the
   adapter cannot read reliably, such as an explicit `? name` key, keeps the
   folder name and is marked `name_uncertain` in the results; under a

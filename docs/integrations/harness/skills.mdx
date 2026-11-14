@@ -182,6 +182,7 @@ Start fails when an entry breaks one of these rules:
 | A `folder` entry cannot be listed. | `invalid` |
 | Skills share a name under an explicit `duplicates` policy. Refer to [Skills That Share a Name](#skills-that-share-a-name). | `duplicate` |
 | Under an explicit `duplicates` policy, a skill's front matter uses YAML that the adapter can't read the name from the way the harness does, such as an explicit `?` key. | `unsupported_frontmatter_name` |
+| Under an explicit `duplicates` policy, the adapter can't tell whether the harness accepts a skill's front matter, and the policy's result depends on it. | `unsupported_frontmatter` |
 
 A `not_found` failure uses the adapter's `<adapter>_skill_not_found` error code, such as `hermes_skill_not_found`. Every other failure uses `<adapter>_skill_invalid`. The error metadata gives the failing `field`, such as `skills.directories[1].skill`, the `reason`, and the `path`. An adapter can add checks of its own. Refer to [Harness Differences](#harness-differences).
 
@@ -193,7 +194,8 @@ A candidate is a folder that holds `SKILL.md`. The adapter searches a `folder` e
 
 The following rules apply to every adapter that uses the shared NeMo Fabric loader:
 
-- A candidate that fails the harness's parsing rules is skipped, never silently. The run report gives the reason, such as `unreadable`, `no_name`, or `missing_frontmatter_field:<field>`. An adapter can add reasons of its own.
+- A candidate that fails the harness's parsing rules is skipped, never silently. The run report gives the reason, such as `unreadable`, `no_name`, `invalid_frontmatter`, `missing_frontmatter_field:<field>`, or `empty_frontmatter_field:<field>`. An adapter can add reasons of its own.
+- A skipped candidate is never counted as a duplicate, so a copy the harness would refuse doesn't fail a `duplicates` policy.
 - Discovery does not enter `.git` or `node_modules` folders, or other folders that the harness skips. Subfolders that cannot be read hold no skills.
 - The same folder reached through several entries loads once.
 - A skill's name is the `name` field of its `SKILL.md` front matter. When the front matter has no name, the adapter uses the folder name if its descriptor allows that fallback. Otherwise it skips the skill with the reason `no_name`.

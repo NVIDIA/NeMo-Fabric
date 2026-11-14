@@ -32,10 +32,17 @@ rules are chosen per entry:
   ``path_escape``, with or without a duplicate policy, so passing a selected
   skill's resolved folder never loads a skill OpenClaw refuses. The adapter
   writes no ``skills.load.allowSymlinkTargets``, so no target is trusted.
-- A skill needs a non-empty ``description``; its name is the front-matter
-  ``name`` or the folder name. Front matter that YAML rejects is skipped.
-  ``openclaw skills list`` at start reports the skills OpenClaw refuses; under
-  ``first_wins`` or ``last_wins`` the next copy replaces a refused winner.
+- A skill needs front matter that YAML accepts and a ``description`` that is
+  not empty after trimming (``loadSingleSkillDirectory`` in
+  ``dist/skill-paths-*.mjs``); its name is the front-matter ``name`` or the
+  folder name. Other skills are skipped before any duplicate check, with
+  ``invalid_frontmatter``, ``missing_frontmatter_field:description``, or
+  ``empty_frontmatter_field:description``, so they never count as a copy.
+  When Fabric cannot tell whether OpenClaw accepts the front matter, the
+  skill is kept; under a duplicate policy whose outcome depends on it, start
+  fails with ``unsupported_frontmatter``. ``openclaw skills list`` at start
+  reports any other skill OpenClaw refuses; under ``first_wins`` or
+  ``last_wins`` the next copy replaces a refused winner.
 
 OpenClaw's own ``skills.allowBundled`` filters bundled and Custodian skills
 after names are resolved, so a filtered-out shipped skill would still hide a
@@ -409,7 +416,9 @@ def bundled_inventory(bundled_dir: Path) -> BundledInventory:
         try:
             load = contract_skills.load_directories(
                 [{"folder": folder}],
-                rules=_rules(SKILLS_ROOT_DEPTH, _hidden_dir_names([folder])),
+                rules=_rules(
+                    SKILLS_ROOT_DEPTH, _hidden_dir_names([folder]), checked=False
+                ),
                 duplicates=None,
             )
         except contract_skills.SkillLoadError:
@@ -626,7 +635,19 @@ def skill_error(error: contract_skills.SkillLoadError) -> lifecycle.LifecycleErr
     )
 
 
-def _rules(max_depth: int, hidden: frozenset[str]) -> contract_skills.DiscoveryRules:
+def _rules(
+    max_depth: int, hidden: frozenset[str], *, checked: bool = True
+) -> contract_skills.DiscoveryRules:
+    """Return OpenClaw's discovery rules.
+
+    With ``checked``, a candidate ``loadSingleSkillDirectory`` refuses is
+    skipped before any duplicate check: front matter its YAML parser rejects
+    (``invalid_frontmatter``) or a ``description`` that is missing or empty
+    after trimming. Without it, only a missing ``description`` skips a
+    candidate, for scans of OpenClaw's own sources, whose copies carry
+    :func:`_accepted` instead.
+    """
+
     return contract_skills.DiscoveryRules(
         traversal="recursive",
         nested_skills="stop_at_skill",
@@ -637,7 +658,13 @@ def _rules(max_depth: int, hidden: frozenset[str]) -> contract_skills.DiscoveryR
         allow_symlink_escape=False,
         subroot_depths={"skills": SKILLS_ROOT_DEPTH},
         name_style="openclaw",
+        nonempty_frontmatter_fields=("description",) if checked else (),
+        frontmatter_must_parse=checked,
     )
+
+
+# The front matter checks of _rules, for check_front_matter.
+_LOADER_CHECKS = _rules(SKILLS_ROOT_DEPTH, frozenset())
 
 
 def _select_bundled(
@@ -823,7 +850,9 @@ def _native_copies(
         try:
             local = contract_skills.load_directories(
                 [{"folder": folder}],
-                rules=_rules(SKILLS_ROOT_DEPTH, _hidden_dir_names([folder])),
+                rules=_rules(
+                    SKILLS_ROOT_DEPTH, _hidden_dir_names([folder]), checked=False
+                ),
                 duplicates=None,
             )
         except contract_skills.SkillLoadError:
@@ -839,7 +868,8 @@ def _accepted(folder: Path) -> bool | None:
     """Return whether OpenClaw's loader accepts the skill in ``folder``.
 
     ``loadSingleSkillDirectory`` refuses a skill whose front matter its YAML
-    parser rejects, or that has no non-empty ``description``. ``None`` means
+    parser rejects, or that has no non-empty ``description``, the checks the
+    configured skills pass before duplicate policies apply. ``None`` means
     Fabric cannot tell; ``openclaw skills list`` settles it at start.
     """
 
@@ -849,11 +879,8 @@ def _accepted(folder: Path) -> bool | None:
         )
     except OSError:
         return None
-    if front_matter is None or front_matter.parses is False:
-        return False
-    if not front_matter.fields.get("description"):
-        return False if front_matter.parses else None
-    return front_matter.parses
+    accepted, _ = contract_skills.check_front_matter(front_matter, _LOADER_CHECKS)
+    return accepted
 
 
 def _refused_native(
