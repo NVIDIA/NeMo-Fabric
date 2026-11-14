@@ -365,10 +365,12 @@ def _skill_plan(
     base_dir: Path,
     command: Path | None = None,
     env: dict[str, str] | None = None,
+    timeout: float = openclaw_skills.READER_TIMEOUT_SECONDS,
 ) -> openclaw_skills.SkillPlan:
     """Check ``skills.directories`` and ``skills.bundled`` in the task environment.
 
-    ``paths`` keeps its own checks in :func:`_resolve_skill_paths`.
+    ``paths`` keeps its own checks in :func:`_resolve_skill_paths`. Front
+    matter is read with ``command``'s OpenClaw package within ``timeout``.
     """
 
     skills = config.skills
@@ -377,8 +379,9 @@ def _skill_plan(
     settings = config.harness.settings if config.harness else {}
     if command is None and skills.bundled is not None:
         command = _resolve_command(settings, base_dir)
+    command_env = os.environ if env is None else env
     bundled_dir = (
-        openclaw_skills.bundled_skills_dir(command, os.environ if env is None else env)
+        openclaw_skills.bundled_skills_dir(command, command_env)
         if command is not None
         else None
     )
@@ -394,6 +397,9 @@ def _skill_plan(
         base_dir=base_dir,
         workspace=Path(context.environment.workspace or ".").resolve(),
         bundled_dir=bundled_dir,
+        reader=openclaw_skills.candidate_reader(
+            command, env=command_env, timeout=timeout
+        ),
         custodian=openclaw_skills.owns_custodian_skills(roster["agents"], agent_id),
     )
 
@@ -1407,8 +1413,15 @@ class OpenClawRuntime:
             origin="observed",
             kind="component",
         )
-        skill_plan = _skill_plan(
-            config, context, base_dir=base_dir, command=command, env=child_env
+        # Reading skills may run node, so keep it off the event loop.
+        skill_plan = await asyncio.to_thread(
+            _skill_plan,
+            config,
+            context,
+            base_dir=base_dir,
+            command=command,
+            env=child_env,
+            timeout=min(openclaw_skills.READER_TIMEOUT_SECONDS, startup_remaining()),
         )
 
         if dashboard_port is None:

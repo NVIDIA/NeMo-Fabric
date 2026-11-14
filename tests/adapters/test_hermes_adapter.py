@@ -20,6 +20,10 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
+from _hermes_skills import loaded_skill
+from _hermes_skills import skill_copy
+from _hermes_skills import skipped_skill
+from _hermes_skills import write_skill
 from _utils.utils import POSIX_PERMISSIONS
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
@@ -37,6 +41,7 @@ if importlib.util.find_spec("run_agent") is not None:
 
     from nemo_fabric_adapters.hermes import adapter
     from nemo_fabric_adapters.hermes import configuration
+    from nemo_fabric_adapters.hermes import skills as hermes_skills
     from nemo_fabric_adapters.hermes import telemetry
 
 
@@ -2036,15 +2041,6 @@ def test_main_serves_persistent_runtime(monkeypatch):
     )
 
 
-def _write_skill(folder: Path, name: str | None = None) -> Path:
-    folder.mkdir(parents=True, exist_ok=True)
-    front_matter = f"name: {name}\n" if name else ""
-    (folder / "SKILL.md").write_text(
-        f"---\n{front_matter}description: test skill\n---\nBody\n", encoding="utf-8"
-    )
-    return folder.resolve()
-
-
 @pytest.fixture(name="mock_hermes_agent")
 def mock_hermes_agent_fixture(monkeypatch) -> MagicMock:
     """Replace the embedded agent and session store; Hermes's skill code stays real."""
@@ -2069,7 +2065,30 @@ def mock_hermes_agent_fixture(monkeypatch) -> MagicMock:
     return mock_ai_agent_type
 
 
-def _skill_payload(tmp_path: Path, skills: dict[str, object]) -> dict[str, object]:
+def _skill_payload(
+    tmp_path: Path,
+    skills: dict[str, object],
+    *,
+    runtime_id: str = "runtime-skills",
+    kept: bool = False,
+) -> dict[str, object]:
+    """A start payload with ``skills``. With ``kept``, the runtime keeps the
+    agent's state folder, as ``runtime.keep_state`` does, so the Hermes home
+    outlives the runtime."""
+    context = _runtime_context(
+        runtime_id=runtime_id,
+        workspace=str(tmp_path),
+        artifact_root=str(tmp_path / "artifacts"),
+    ).to_mapping()
+    if kept:
+        context["state_dir"] = str(
+            tmp_path
+            / "artifacts"
+            / ".fabric"
+            / "state"
+            / "nvidia.fabric.hermes"
+            / "agent"
+        )
     return {
         "base_dir": str(tmp_path),
         "config": _agent_config(
@@ -2084,24 +2103,88 @@ def _skill_payload(tmp_path: Path, skills: dict[str, object]) -> dict[str, objec
                 "skills": skills,
             }
         ),
-        "runtime_context": _runtime_context(
-            runtime_id="runtime-skills",
-            workspace=str(tmp_path),
-            artifact_root=str(tmp_path / "artifacts"),
-        ).to_mapping(),
+        "runtime_context": context,
     }
+
+
+def _skills_home(tmp_path: Path) -> Path:
+    """The Hermes home of a runtime started from :func:`_skill_payload`."""
+    return tmp_path / "artifacts" / ".fabric" / "hermes" / "runtimes" / "runtime-skills"
+
+
+async def _start_with_skills(
+    tmp_path: Path, skills: dict[str, object]
+) -> tuple[dict[str, object] | None, Path, dict[str, object]]:
+    """Start a runtime, then return its skill report, home, and native config."""
+    runtime = adapter.HermesRuntime()
+    await runtime.start(_skill_payload(tmp_path, skills))
+    try:
+        assert runtime._hermes_home is not None
+        return (
+            runtime._skills_report,
+            runtime._hermes_home,
+            configuration.summarize_hermes_config(runtime._hermes_config),
+        )
+    finally:
+        await runtime.stop()
+
+
+async def _restarted_skills_report(payload: dict[str, object]) -> dict[str, object]:
+    """Start a new runtime with the same config, invoke it once, and return
+    the result's ``output.skills``. A new runtime ID gives it a new Hermes home."""
+    context = _runtime_context(
+        runtime_id="runtime-restarted",
+        workspace=str(payload["base_dir"]),
+        artifact_root=str(Path(str(payload["base_dir"])) / "artifacts"),
+    )
+    runtime = adapter.HermesRuntime()
+    await runtime.start({**payload, "runtime_context": context.to_mapping()})
+    try:
+        result = await runtime.invoke(AgentRunRequest(input="hello"), context)
+    finally:
+        await runtime.stop()
+    return result.output["skills"]
+
+
+def _first_bundled_name() -> str:
+    inventory = hermes_skills.bundled_inventory()
+    return sorted(set(inventory) - hermes_skills.ESSENTIAL_SKILLS)[0]
+
+
+def _home_skill_names(home: Path) -> set[str]:
+    """Names of the skills in the Hermes home, as Hermes's sync reads them."""
+    return {
+        hermes_skills.read_skill_name(skill_md, skill_md.parent.name)
+        for skill_md in (home / "skills").rglob("SKILL.md")
+    }
+
+
+def _bundled_place(name: str) -> Path:
+    """Where Hermes's sync copies a bundled skill, below the home's skills folder."""
+    source = hermes_skills.bundled_inventory()[name]
+    return source.relative_to(hermes_skills.bundled_dir())
+
+
+def _write_hermes_config(
+    home: Path, external_dirs: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Point the Hermes home ``home`` at ``external_dirs`` and make it current."""
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.yaml").write_text(
+        common_utils.dump_yaml({"skills": {"external_dirs": external_dirs}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HERMES_HOME", str(home))
 
 
 @pytest.mark.usefixtures("mock_hermes_agent")
 async def test_runtime_loads_skill_directories_and_reports_on_every_result(
     tmp_path: Path, capsys
 ):
-    from nemo_fabric_adapters.hermes import skills as hermes_skills
-
     team = tmp_path / "team"
-    _write_skill(team / "debugging")
-    _write_skill(team / "review")
-    opt_review = _write_skill(tmp_path / "opt" / "review")
+    write_skill(team / "debugging")
+    write_skill(team / "review")
+    opt_review = write_skill(tmp_path / "opt" / "review")
     inventory = hermes_skills.bundled_inventory()
     excluded, kept = sorted(set(inventory) - hermes_skills.ESSENTIAL_SKILLS)[:2]
     runtime = adapter.HermesRuntime()
@@ -2117,16 +2200,9 @@ async def test_runtime_loads_skill_directories_and_reports_on_every_result(
     )
     try:
         start_warnings = capsys.readouterr().err
-        request, context = _invocation(
-            {
-                "runtime_context": _runtime_context(
-                    runtime_id="runtime-skills"
-                ).to_mapping(),
-                "request": {"input": "hello"},
-            }
-        )
-        first = await runtime.invoke(request, context)
-        second = await runtime.invoke(request, context)
+        context = _runtime_context(runtime_id="runtime-skills")
+        first = await runtime.invoke(AgentRunRequest(input="hello"), context)
+        second = await runtime.invoke(AgentRunRequest(input="hello"), context)
         home = runtime._hermes_home
         native = (home / "config.yaml").read_text(encoding="utf-8")
     finally:
@@ -2141,16 +2217,8 @@ async def test_runtime_loads_skill_directories_and_reports_on_every_result(
         "name": "review",
         "outcome": "ambiguous",
         "copies": [
-            {
-                "origin": "external",
-                "path": str(team / "review"),
-                "entry": "skills.directories[0]",
-            },
-            {
-                "origin": "external",
-                "path": str(opt_review),
-                "entry": "skills.directories[1]",
-            },
+            skill_copy("external", team / "review", 0),
+            skill_copy("external", opt_review, 1),
         ],
     }
     assert excluded not in report["bundled"]["selected"]
@@ -2181,20 +2249,12 @@ async def test_runtime_reports_a_home_skill_that_shadows_a_directory_skill(
 ):
     """A skill in the Hermes home outranks skills.external_dirs."""
     team = tmp_path / "team"
-    _write_skill(team / "notes")
-    payload = _skill_payload(
-        tmp_path,
-        {"directories": [{"folder": str(team)}], "duplicates": "reject"},
-    )
-    home = tmp_path / "artifacts" / ".fabric" / "hermes" / "runtimes" / "runtime-skills"
-    local = _write_skill(home / "skills" / "notes")
-    runtime = adapter.HermesRuntime()
+    external = write_skill(team / "notes")
+    local = write_skill(_skills_home(tmp_path) / "skills" / "notes")
 
-    await runtime.start(payload)
-    try:
-        report = runtime._skills_report
-    finally:
-        await runtime.stop()
+    report, _home, _native = await _start_with_skills(
+        tmp_path, {"directories": [{"folder": str(team)}], "duplicates": "reject"}
+    )
 
     assert report == {
         "duplicates": [
@@ -2203,12 +2263,8 @@ async def test_runtime_reports_a_home_skill_that_shadows_a_directory_skill(
                 "outcome": "shadowed",
                 "selected": str(local),
                 "copies": [
-                    {"origin": "local", "path": str(local)},
-                    {
-                        "origin": "external",
-                        "path": str(team.resolve() / "notes"),
-                        "entry": "skills.directories[0]",
-                    },
+                    skill_copy("local", local),
+                    skill_copy("external", external, 0),
                 ],
             }
         ]
@@ -2222,18 +2278,12 @@ async def test_runtime_reports_a_bundled_copy_in_the_home_by_its_origin(
     """A home that already holds Hermes's bundled copies, as a kept home or a
     native interface's own copy leaves it, outranks a directory skill. The
     report names the home's copy as bundled even without skills.bundled."""
-    from nemo_fabric_adapters.hermes import skills as hermes_skills
-
     name = _first_bundled_name()
     # A first start copies the bundled skills into the runtime's home.
     await _start_with_skills(tmp_path, {"bundled": {}})
     team = tmp_path / "team"
-    external = _write_skill(team / name)
-    source = hermes_skills.bundled_inventory()[name]
-    home = tmp_path / "artifacts" / ".fabric" / "hermes" / "runtimes" / "runtime-skills"
-    bundled_copy = (
-        home / "skills" / source.relative_to(hermes_skills.bundled_dir())
-    ).resolve()
+    external = write_skill(team / name)
+    bundled_copy = (_skills_home(tmp_path) / "skills" / _bundled_place(name)).resolve()
 
     report, _home, _native = await _start_with_skills(
         tmp_path, {"directories": [{"folder": str(team)}]}
@@ -2242,28 +2292,23 @@ async def test_runtime_reports_a_bundled_copy_in_the_home_by_its_origin(
     assert report is not None
     [record] = [item for item in report["duplicates"] if item["name"] == name]
     assert record["copies"] == [
-        {"origin": "bundled", "path": str(bundled_copy)},
-        {"origin": "external", "path": str(external), "entry": "skills.directories[0]"},
+        skill_copy("bundled", bundled_copy),
+        skill_copy("external", external, 0),
     ]
     assert record["outcome"] == "shadowed"
 
 
 @pytest.mark.usefixtures("mock_hermes_agent")
 async def test_runtime_keeps_skill_paths_without_a_report(tmp_path: Path):
-    skill = _write_skill(tmp_path / "skills" / "review")
+    skill = write_skill(tmp_path / "skills" / "review")
     runtime = adapter.HermesRuntime()
 
     await runtime.start(_skill_payload(tmp_path, {"paths": [str(skill)]}))
     try:
-        request, context = _invocation(
-            {
-                "runtime_context": _runtime_context(
-                    runtime_id="runtime-skills"
-                ).to_mapping(),
-                "request": {"input": "hello"},
-            }
+        result = await runtime.invoke(
+            AgentRunRequest(input="hello"),
+            _runtime_context(runtime_id="runtime-skills"),
         )
-        result = await runtime.invoke(request, context)
         home = runtime._hermes_home
     finally:
         await runtime.stop()
@@ -2303,21 +2348,67 @@ async def test_runtime_start_fails_before_writing_config(
     assert caught.value.code == code
     assert caught.value.metadata["field"] == field
     assert runtime._started is False
-    home = tmp_path / "artifacts" / ".fabric" / "hermes" / "runtimes" / "runtime-skills"
-    assert not (home / "config.yaml").exists()
+    assert not (_skills_home(tmp_path) / "config.yaml").exists()
 
 
 def test_hermes_discovery_rules_match_the_pinned_loader():
     from agent import skill_utils
 
-    from nemo_fabric_adapters.hermes import skills as hermes_skills
-
     assert hermes_skills.HERMES_EXCLUDED_DIRS == skill_utils.EXCLUDED_SKILL_DIRS
+    assert hermes_skills.HERMES_SUPPORT_DIRS == skill_utils.SKILL_SUPPORT_DIRS
     assert hermes_skills.ESSENTIAL_SKILLS == skill_utils.ESSENTIAL_SKILLS
     assert (hermes_skills.TIER_LOCAL, hermes_skills.TIER_EXTERNAL) == (
         skill_utils.TIER_LOCAL,
         skill_utils.TIER_EXTERNAL,
     )
+
+
+def test_reader_reads_skills_as_hermes_catalog_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The reader names, keeps, and refuses each skill as Hermes's own catalog
+    does, for front matter only a YAML parser reads and names Hermes drops."""
+    team = tmp_path.resolve() / "team"
+    folders = {
+        key: write_skill(team / key, text=f"---\n{front_matter}\n---\nBody\n")
+        for key, front_matter in {
+            "folded": "name: >-\n  notes",
+            "alias": "label: &label aliased\nname: *label",
+            "number": "name: 123",
+            "empty": 'name: ""',
+        }.items()
+    }
+    # Hermes drops every skill below a folder such as site-packages.
+    vendored = tmp_path.resolve() / "site-packages"
+    folders["excluded"] = write_skill(vendored / "tool")
+    _write_hermes_config(tmp_path / "home", [str(team), str(vendored)], monkeypatch)
+
+    infos = hermes_skills.hermes_reader()(list(folders.values()))
+    catalog = {
+        Path(row["path"]).parent: row["load_name"]
+        for row in hermes_skills.native_catalog()
+    }
+
+    # The name each skill loads under, or None when Hermes does not load it.
+    read = {
+        key: (infos[folder].name or folder.name) if infos[folder].valid else None
+        for key, folder in folders.items()
+    }
+    assert read == {key: catalog.get(folder) or None for key, folder in folders.items()}
+    assert read == {
+        "folded": "notes",
+        "alias": "aliased",
+        "number": None,
+        "empty": None,
+        "excluded": None,
+    }
+    # Hermes lists an empty name but cannot load it.
+    assert catalog[folders["empty"]] == ""
+    assert {key: infos[folders[key]].reason for key in read if not read[key]} == {
+        "number": "not_loaded_by_hermes",
+        "empty": "no_name",
+        "excluded": "excluded_path",
+    }
 
 
 def test_descriptor_advertises_implemented_skill_support():
@@ -2360,52 +2451,6 @@ def test_descriptor_advertises_implemented_skill_support():
         "last_wins",
     ]
     assert skills["duplicates"]["name_source"] == "frontmatter"
-
-
-async def _start_with_skills(
-    tmp_path: Path, skills: dict[str, object]
-) -> tuple[dict[str, object] | None, Path, dict[str, object]]:
-    """Start a runtime, then return its skill report, home, and native config."""
-    runtime = adapter.HermesRuntime()
-    await runtime.start(_skill_payload(tmp_path, skills))
-    try:
-        assert runtime._hermes_home is not None
-        return (
-            runtime._skills_report,
-            runtime._hermes_home,
-            configuration.summarize_hermes_config(runtime._hermes_config),
-        )
-    finally:
-        await runtime.stop()
-
-
-def _first_bundled_name() -> str:
-    from nemo_fabric_adapters.hermes import skills as hermes_skills
-
-    inventory = hermes_skills.bundled_inventory()
-    return sorted(set(inventory) - hermes_skills.ESSENTIAL_SKILLS)[0]
-
-
-def _home_skill_names(home: Path) -> set[str]:
-    """Names of the skills in the Hermes home, as Hermes's sync reads them."""
-    from nemo_fabric_adapters.hermes import skills as hermes_skills
-
-    return {
-        hermes_skills.read_skill_name(skill_md, skill_md.parent.name)
-        for skill_md in (home / "skills").rglob("SKILL.md")
-    }
-
-
-def _bundled_place(name: str) -> Path:
-    """Where Hermes's sync copies a bundled skill, below the home's skills folder."""
-    from nemo_fabric_adapters.hermes import skills as hermes_skills
-
-    source = hermes_skills.bundled_inventory()[name]
-    return source.relative_to(hermes_skills.bundled_dir())
-
-
-def _skills_home(tmp_path: Path) -> Path:
-    return tmp_path / "artifacts" / ".fabric" / "hermes" / "runtimes" / "runtime-skills"
 
 
 @pytest.mark.usefixtures("mock_hermes_agent")
@@ -2479,7 +2524,7 @@ async def test_runtime_keeps_bundled_names_of_skill_paths_enabled(tmp_path: Path
 
     name = _first_bundled_name()
     mine = tmp_path / "mine"
-    own = _write_skill(mine / name)
+    own = write_skill(mine / name)
     runtime = adapter.HermesRuntime()
 
     await runtime.start(
@@ -2515,7 +2560,7 @@ async def test_runtime_loads_the_agents_own_home_skill_of_an_excluded_name(
     excluded = _first_bundled_name()
     place = _bundled_place(excluded)
     own_place = place if in_place else Path("mine") / excluded
-    own = _write_skill(_skills_home(tmp_path) / "skills" / own_place)
+    own = write_skill(_skills_home(tmp_path) / "skills" / own_place)
     runtime = adapter.HermesRuntime()
 
     await runtime.start(_skill_payload(tmp_path, {"bundled": {"exclude": [excluded]}}))
@@ -2550,8 +2595,6 @@ async def test_runtime_loads_the_agents_own_home_skill_of_an_excluded_name(
 async def test_runtime_stages_only_the_selected_bundled_skills(tmp_path: Path):
     """Hermes's sync, and each interface's, reads a staged bundled folder."""
     from tools import skills_sync
-
-    from nemo_fabric_adapters.hermes import skills as hermes_skills
 
     excluded = _first_bundled_name()
     real_dir = hermes_skills.bundled_dir()
@@ -2691,8 +2734,6 @@ async def test_runtime_keeps_stock_bundled_behavior_without_exclusions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, skills: dict[str, object]
 ):
     """Without a left-out skill, nothing is staged or removed."""
-    from nemo_fabric_adapters.hermes import skills as hermes_skills
-
     name = _first_bundled_name()
     _report, home, _native = await _start_with_skills(tmp_path, {"bundled": {}})
     copy_path = home / "skills" / _bundled_place(name)
@@ -2700,7 +2741,7 @@ async def test_runtime_keeps_stock_bundled_behavior_without_exclusions(
     monkeypatch.setattr(hermes_skills, "stage_bundled", stage)
     if not skills:
         team = tmp_path / "team"
-        _write_skill(team / "notes")
+        write_skill(team / "notes")
         skills = {"directories": [{"folder": str(team)}]}
     runtime = adapter.HermesRuntime()
 
@@ -2728,8 +2769,8 @@ async def test_runtime_passes_overlapping_entries_once(
     tmp_path: Path, entries: list[dict[str, str]], debug_entry: int
 ):
     """A skill Hermes reaches through two roots would be refused as ambiguous."""
-    review = _write_skill(tmp_path / "team" / "review")
-    debug = _write_skill(tmp_path / "team" / "debug")
+    review = write_skill(tmp_path / "team" / "review")
+    debug = write_skill(tmp_path / "team" / "debug")
     skills = {
         "directories": [
             {kind: str(tmp_path / path) for kind, path in entry.items()}
@@ -2740,68 +2781,45 @@ async def test_runtime_passes_overlapping_entries_once(
     report, _home, native = await _start_with_skills(tmp_path, skills)
 
     assert native["skill_dirs"] == [str(tmp_path.resolve() / "team")]
-    assert report == {
-        "loaded": [
-            {
-                "name": "debug",
-                "path": str(debug),
-                "entry": f"skills.directories[{debug_entry}]",
-                "origin": "external",
-            },
-            {
-                "name": "review",
-                "path": str(review),
-                "entry": "skills.directories[0]",
-                "origin": "external",
-            },
-        ][:: 1 if debug_entry == 0 else -1]
-    }
+    loaded = [
+        loaded_skill("debug", debug, debug_entry),
+        loaded_skill("review", review, 0),
+    ]
+    assert report == {"loaded": loaded if debug_entry == 0 else loaded[::-1]}
 
 
 @pytest.mark.usefixtures("mock_hermes_agent")
-async def test_runtime_reports_skills_hermes_reads_differently(tmp_path: Path):
-    """Hermes's own catalog decides the names and what loads."""
+async def test_runtime_reports_skills_hermes_skips_or_refuses(tmp_path: Path):
+    """The checks skip what Hermes drops; Hermes's catalog decides ambiguity."""
     team = tmp_path / "team"
-    alpha = _write_skill(team / "foo", name="alpha")
+    alpha = write_skill(team / "foo", name="alpha")
     # Hermes refuses a name that is also another skill's folder name.
-    clash = _write_skill(team / "bar", name="foo")
-    # Hermes needs a newline after the closing ---.
-    unclosed = team / "unclosed"
-    unclosed.mkdir()
-    (unclosed / "SKILL.md").write_text("---\nname: closed\n---", encoding="utf-8")
-    # Hermes skips a null or non-string name, and cannot load an empty one.
-    for folder, value in (("blank", ""), ("number", "123"), ("quoted", '""')):
-        (team / folder).mkdir()
-        (team / folder / "SKILL.md").write_text(
-            f"---\nname: {value}\n---\nBody\n", encoding="utf-8"
-        )
-    team = team.resolve()
+    clash = write_skill(team / "bar", name="foo")
+    # Hermes drops a non-string name, and cannot load an empty one.
+    number = write_skill(team / "number", text="---\nname: 123\n---\nBody\n")
+    empty = write_skill(team / "quoted", text='---\nname: ""\n---\nBody\n')
 
     report, _home, _native = await _start_with_skills(
         tmp_path, {"directories": [{"folder": str(team)}]}
     )
 
-    assert report is not None
-    assert [(skill["name"], skill["path"]) for skill in report["loaded"]] == [
-        ("alpha", str(alpha)),
-        ("unclosed", str(team / "unclosed")),
-    ]
-    assert [(item["path"], item["reason"]) for item in report["skipped"]] == [
-        (str(clash), "ambiguous"),
-        (str(team / "blank"), "not_loaded_by_hermes"),
-        (str(team / "number"), "not_loaded_by_hermes"),
-        (str(team / "quoted"), "no_name"),
-    ]
-    assert "duplicates" not in report
+    assert report == {
+        "loaded": [loaded_skill("alpha", alpha)],
+        "skipped": [
+            skipped_skill(number, "not_loaded_by_hermes"),
+            skipped_skill(empty, "no_name"),
+            skipped_skill(clash, "ambiguous"),
+        ],
+    }
 
 
 @pytest.mark.usefixtures("mock_hermes_agent")
 async def test_runtime_ignores_skills_in_support_folders(tmp_path: Path):
     """Hermes never scans a skill's scripts folder, so its copy is no duplicate."""
     team = tmp_path / "team"
-    first = _write_skill(team / "a", name="dup")
-    second = _write_skill(team / "b")
-    _write_skill(team / "b" / "scripts" / "x", name="dup")
+    first = write_skill(team / "a", name="dup")
+    second = write_skill(team / "b")
+    write_skill(team / "b" / "scripts" / "x", name="dup")
 
     report, _home, native = await _start_with_skills(
         tmp_path,
@@ -2809,39 +2827,7 @@ async def test_runtime_ignores_skills_in_support_folders(tmp_path: Path):
     )
 
     assert native["skill_dirs"] == [str(first), str(second)]
-    assert report == {
-        "loaded": [
-            {
-                "name": "dup",
-                "path": str(first),
-                "entry": "skills.directories[0]",
-                "origin": "external",
-            },
-            {
-                "name": "b",
-                "path": str(second),
-                "entry": "skills.directories[0]",
-                "origin": "external",
-            },
-        ]
-    }
-
-
-async def _restarted_skills_report(payload: dict[str, object]) -> dict[str, object]:
-    """Start a new runtime with the same config, invoke it once, and return
-    the result's ``output.skills``. A new runtime ID gives it a new Hermes home."""
-    context = _runtime_context(
-        runtime_id="runtime-restarted",
-        workspace=str(payload["base_dir"]),
-        artifact_root=str(Path(str(payload["base_dir"])) / "artifacts"),
-    )
-    runtime = adapter.HermesRuntime()
-    await runtime.start({**payload, "runtime_context": context.to_mapping()})
-    try:
-        result = await runtime.invoke(AgentRunRequest(input="hello"), context)
-    finally:
-        await runtime.stop()
-    return result.output["skills"]
+    assert report == {"loaded": [loaded_skill("dup", first), loaded_skill("b", second)]}
 
 
 @POSIX_PERMISSIONS
@@ -2852,8 +2838,8 @@ async def test_read_only_skills_load_and_cannot_be_changed(
 ):
     """A read-only folder, or read-only chosen skills, load through Hermes as they are."""
     team = tmp_path / "team"
-    debugging = _write_skill(team / "debugging")
-    review = _write_skill(team / "review")
+    debugging = write_skill(team / "debugging")
+    review = write_skill(team / "review")
     make_read_only(team)
     entries = (
         [{"folder": str(team)}]
@@ -2872,7 +2858,7 @@ async def test_read_only_skills_load_and_cannot_be_changed(
     with pytest.raises(PermissionError):
         (review / "SKILL.md").write_text("changed", encoding="utf-8")
     with pytest.raises(PermissionError):
-        _write_skill(team / "new-skill")
+        write_skill(team / "new-skill")
 
 
 @pytest.mark.usefixtures("mock_hermes_agent")
@@ -2888,22 +2874,13 @@ async def test_skill_written_into_a_writable_folder_survives_a_restart(
     try:
         first = runtime._skills_report
         # The agent saves a new skill into its read-write folder.
-        written = _write_skill(agent_skills / "triage")
+        written = write_skill(agent_skills / "triage")
     finally:
         await runtime.stop()
     restarted = await _restarted_skills_report(payload)
 
     assert first == {"empty_entries": ["skills.directories[0]"]}
-    assert restarted == {
-        "loaded": [
-            {
-                "name": "triage",
-                "path": str(written),
-                "entry": "skills.directories[0]",
-                "origin": "external",
-            }
-        ]
-    }
+    assert restarted == {"loaded": [loaded_skill("triage", written)]}
 
 
 @POSIX_PERMISSIONS
@@ -2912,7 +2889,7 @@ async def test_agent_adds_skills_beside_read_only_skills_it_cannot_change(
     tmp_path: Path, make_read_only
 ):
     team = tmp_path / "team"
-    protected = _write_skill(team / "review")
+    protected = write_skill(team / "review")
     original = (protected / "SKILL.md").read_text(encoding="utf-8")
     make_read_only(team)
     agent_skills = tmp_path / "agent-skills"
@@ -2928,8 +2905,8 @@ async def test_agent_adds_skills_beside_read_only_skills_it_cannot_change(
         with pytest.raises(PermissionError):
             (protected / "SKILL.md").write_text("changed", encoding="utf-8")
         with pytest.raises(PermissionError):
-            _write_skill(team / "triage")
-        written = _write_skill(agent_skills / "triage")
+            write_skill(team / "triage")
+        written = write_skill(agent_skills / "triage")
     finally:
         await runtime.stop()
     restarted = await _restarted_skills_report(payload)
@@ -2937,18 +2914,8 @@ async def test_agent_adds_skills_beside_read_only_skills_it_cannot_change(
     assert (protected / "SKILL.md").read_text(encoding="utf-8") == original
     assert restarted == {
         "loaded": [
-            {
-                "name": "review",
-                "path": str(protected),
-                "entry": "skills.directories[0]",
-                "origin": "external",
-            },
-            {
-                "name": "triage",
-                "path": str(written),
-                "entry": "skills.directories[1]",
-                "origin": "external",
-            },
+            loaded_skill("review", protected, 0),
+            loaded_skill("triage", written, 1),
         ]
     }
 
@@ -2957,23 +2924,6 @@ _AGENT_SKILL = (
     "---\nname: {name}\ndescription: Use when triaging a failed build. Read the "
     "logs first.\n---\n\n# Triage\n\nRead the newest log before changing code.\n"
 )
-
-
-def _kept_payload(
-    tmp_path: Path, skills: dict[str, object], runtime_id: str
-) -> dict[str, object]:
-    """A start payload whose runtime keeps the agent's state folder, as
-    ``runtime.keep_state`` does, so the Hermes home outlives the runtime."""
-    payload = _skill_payload(tmp_path, skills)
-    context = _runtime_context(
-        runtime_id=runtime_id,
-        workspace=str(tmp_path),
-        artifact_root=str(tmp_path / "artifacts"),
-    ).to_mapping()
-    context["state_dir"] = str(
-        tmp_path / "artifacts" / ".fabric" / "state" / "nvidia.fabric.hermes" / "agent"
-    )
-    return {**payload, "runtime_context": context}
 
 
 def _skill_manage(**arguments: object) -> dict[str, object]:
@@ -2999,7 +2949,11 @@ async def test_skill_created_by_hermes_survives_a_restart_with_kept_state(
     from tools import skills_tool
 
     first = adapter.HermesRuntime()
-    await first.start(_kept_payload(tmp_path, {"directories": []}, "runtime-first"))
+    await first.start(
+        _skill_payload(
+            tmp_path, {"directories": []}, runtime_id="runtime-first", kept=True
+        )
+    )
     try:
         home = first._hermes_home
         assert home is not None
@@ -3014,11 +2968,14 @@ async def test_skill_created_by_hermes_survives_a_restart_with_kept_state(
 
     # A configured skill of the same name appears before the next start.
     team = tmp_path / "team"
-    configured = _write_skill(team / "triage")
+    configured = write_skill(team / "triage")
     second = adapter.HermesRuntime()
     await second.start(
-        _kept_payload(
-            tmp_path, {"directories": [{"folder": str(team)}]}, "runtime-second"
+        _skill_payload(
+            tmp_path,
+            {"directories": [{"folder": str(team)}]},
+            runtime_id="runtime-second",
+            kept=True,
         )
     )
     try:
@@ -3044,12 +3001,8 @@ async def test_skill_created_by_hermes_survives_a_restart_with_kept_state(
                 "outcome": "shadowed",
                 "selected": str(written),
                 "copies": [
-                    {"origin": "local", "path": str(written)},
-                    {
-                        "origin": "external",
-                        "path": str(configured),
-                        "entry": "skills.directories[0]",
-                    },
+                    skill_copy("local", written),
+                    skill_copy("external", configured, 0),
                 ],
             }
         ]
@@ -3063,9 +3016,12 @@ async def test_hermes_creates_skills_in_its_home_not_in_a_writable_folder(
     """Hermes edits a skill in a writable folder entry in place, but saves a
     new skill in the Hermes home: the adapter never sets skills.create_dir."""
     agent_skills = tmp_path / "agent-skills"
-    review = _write_skill(agent_skills / "review", name="review")
-    payload = _kept_payload(
-        tmp_path, {"directories": [{"folder": str(agent_skills)}]}, "runtime-first"
+    review = write_skill(agent_skills / "review", name="review")
+    payload = _skill_payload(
+        tmp_path,
+        {"directories": [{"folder": str(agent_skills)}]},
+        runtime_id="runtime-first",
+        kept=True,
     )
     runtime = adapter.HermesRuntime()
     await runtime.start(payload)
@@ -3087,16 +3043,7 @@ async def test_hermes_creates_skills_in_its_home_not_in_a_writable_folder(
     assert (home / "skills" / "triage" / "SKILL.md").is_file()
     assert not (agent_skills / "triage").exists()
     restarted = await _restarted_skills_report(payload)
-    assert restarted == {
-        "loaded": [
-            {
-                "name": "review",
-                "path": str(review),
-                "entry": "skills.directories[0]",
-                "origin": "external",
-            }
-        ]
-    }
+    assert restarted == {"loaded": [loaded_skill("review", review)]}
 
 
 @POSIX_PERMISSIONS
@@ -3119,12 +3066,17 @@ async def test_hermes_cannot_change_a_read_only_skill_entry(
 ):
     """Hermes's skill_manage tool fails on a read-only mounted skill and leaves
     it as it was."""
-    review = _write_skill(tmp_path / "mounted" / "review", name="review")
+    review = write_skill(tmp_path / "mounted" / "review", name="review")
     original = (review / "SKILL.md").read_text(encoding="utf-8")
     make_read_only(review)
     runtime = adapter.HermesRuntime()
     await runtime.start(
-        _kept_payload(tmp_path, {"directories": [{"skill": str(review)}]}, "runtime")
+        _skill_payload(
+            tmp_path,
+            {"directories": [{"skill": str(review)}]},
+            runtime_id="runtime",
+            kept=True,
+        )
     )
     try:
         result = _skill_manage(name="review", **arguments)
@@ -3137,36 +3089,23 @@ async def test_hermes_cannot_change_a_read_only_skill_entry(
     assert "Permission denied" in str(result["error"]), result
     assert (review / "SKILL.md").read_text(encoding="utf-8") == original
     assert sorted(path.name for path in review.iterdir()) == ["SKILL.md"]
-    assert report == {
-        "loaded": [
-            {
-                "name": "review",
-                "path": str(review),
-                "entry": "skills.directories[0]",
-                "origin": "external",
-            }
-        ]
-    }
+    assert report == {"loaded": [loaded_skill("review", review)]}
 
 
-def test_external_skill_names_match_hermes_sync_index(tmp_path: Path, monkeypatch):
+def test_external_skill_names_match_hermes_sync_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     from tools import skills_sync
 
-    from nemo_fabric_adapters.hermes import skills as hermes_skills
-
     home = tmp_path / "home"
-    _write_skill(tmp_path / "mine" / "github")
-    _write_skill(tmp_path / "mine" / "renamed", name="'pdf'")
-    _write_skill(tmp_path / "mine" / "github" / "scripts" / "hidden")
-    _write_skill(tmp_path / "mine" / "node_modules" / "vendored")
-    _write_skill(tmp_path / "mine" / "scripts" / "tool")
-    _write_skill(home / "relative" / "nested")
+    write_skill(tmp_path / "mine" / "github")
+    write_skill(tmp_path / "mine" / "renamed", name="'pdf'")
+    write_skill(tmp_path / "mine" / "github" / "scripts" / "hidden")
+    write_skill(tmp_path / "mine" / "node_modules" / "vendored")
+    write_skill(tmp_path / "mine" / "scripts" / "tool")
+    write_skill(home / "relative" / "nested")
     roots = [str(tmp_path / "mine"), "relative", str(tmp_path / "missing")]
-    (home / "config.yaml").write_text(
-        common_utils.dump_yaml({"skills": {"external_dirs": roots}}),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("HERMES_HOME", str(home))
+    _write_hermes_config(home, roots, monkeypatch)
 
     expected = skills_sync._build_external_skill_index()
 

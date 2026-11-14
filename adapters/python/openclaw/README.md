@@ -87,103 +87,6 @@ disappears from later results. Reading the inventory runs one OpenClaw CLI comma
 when MCP servers are configured. Runtimes that connect to a prepared service
 do not report MCP availability.
 
-### Skills
-
-The adapter supports `skills.paths`, `skills.directories`, `skills.bundled`,
-and `skills.duplicates`. Refer to
-[Configure Skills](../../../docs/integrations/harness/skills.mdx)
-for the shared rules and the run report.
-
-`skills.paths` is unchanged: each path must be a folder that holds `SKILL.md`
-and is passed, resolved, to `skills.load.extraDirs`. With
-`skills.directories`, mount each folder read-only or read-write and list it:
-
-```yaml
-skills:
-  directories:
-    - folder: /mnt/team-skills       # a folder of skills, read-only
-    - folder: /mnt/agent-skills      # a folder the agent can change, read-write
-    - skill: /mnt/release-review     # one chosen skill, read-only
-  duplicates: last_wins              # optional
-  bundled:
-    include: [github, weather]       # optional
-```
-
-The mount or file system enforces read-only access, not NeMo Fabric, which
-doesn't change permissions. On a read-only mount, OpenClaw's write fails with
-a permission error. Before you mount one read-write folder into several
-sandboxes, read
-[Sharing a Writable Skills Volume](../../../docs/integrations/harness/skills.mdx#sharing-a-writable-skills-volume).
-
-Without `duplicates`, the adapter passes each entry's folder to
-`skills.load.extraDirs` and OpenClaw keeps the copy from the later entry. With
-a policy, it passes only the folder of each selected skill. OpenClaw-specific
-rules:
-
-- Inside a `folder` entry, OpenClaw searches 2 levels deep, or 6 levels when
-  the folder is named `skills`; a `skills` subfolder directly inside the
-  searched folder is always searched 6 levels deep. When only the entry's
-  `skills` subfolder holds skills, it searches that subfolder. Discovery stops
-  at the first `SKILL.md` and skips folders starting with `.` and
-  `node_modules`. A `folder` entry that holds `SKILL.md` fails start with the
-  reason `folder_is_skill`.
-- A skill whose real folder is outside the searched folder, such as a
-  symbolic link elsewhere, never loads, with or without `duplicates`, and is
-  reported with the reason `path_escape`; so is an entry whose `skills`
-  subfolder links outside it. The adapter does not set
-  `skills.load.allowSymlinkTargets`.
-- A skill needs front matter that YAML can parse and a `description` that
-  isn't empty after trimming; its name is the front-matter `name` or the
-  folder name. Other skills are skipped before `duplicates` applies, so they
-  never count as copies, with the reason `invalid_frontmatter`,
-  `missing_frontmatter_field:description`, or
-  `empty_frontmatter_field:description`. Front matter the adapter can't
-  check, such as an unquoted `description` containing `: `, is left to
-  OpenClaw; under a `duplicates` policy whose outcome it would change, start
-  fails with `unsupported_frontmatter`.
-- Other skills OpenClaw rejects at load are reported with the reason
-  `rejected_by_openclaw`. Under `first_wins` or `last_wins`, a refused
-  winning copy is replaced by the next copy in policy order and the skills
-  are listed again. If the list cannot run, a refused winner goes unnoticed
-  and no copy of its name loads.
-- A `name` written as a YAML alias takes the anchored value. A name the
-  adapter cannot read reliably, such as an explicit `? name` key, keeps the
-  folder name and is marked `name_uncertain` in the results; under a
-  `duplicates` policy it fails start with `unsupported_frontmatter_name`.
-- Workspace (`skills`, `.agents/skills`), state-folder, Skill Workshop, and
-  selected shipped skills outrank configured ones; a `directories` entry
-  inside a workspace folder keeps that folder's rank, and a copy OpenClaw
-  refuses hides nothing. When several sources hold a name, results list
-  every copy found at start under `output.skills.duplicates`, with its origin
-  (`external`, `bundled`, or `local`) and path, and the copy OpenClaw loads,
-  as `openclaw skills list` shows it: `shadowed` when a higher source hides
-  the configured copies, `selected` when a configured copy wins or only
-  shipped and workspace copies clash, and `ambiguous` when the winning folder
-  holds two copies. `duplicates` policies choose only between `directories`
-  entries.
-- `bundled` doesn't use OpenClaw's `skills.allowBundled`, which filters
-  shipped skills only after names are resolved. When the selection leaves out
-  a shipped skill, the adapter copies the selected skills from the package's
-  `skills` and `custodian-skills` folders into the runtime's temporary folder
-  and sets `OPENCLAW_BUNDLED_SKILLS_DIR` for OpenClaw. A left-out shipped
-  skill therefore never loads and never hides a configured or workspace skill
-  with the same name. Without `bundled`, or when it selects every shipped
-  skill, OpenClaw reads its own folder as usual. Results report
-  `output.skills.bundled` as `selected` names of the selected bundled skills
-  that load and `unavailable` entries (`name`, `reason`) for the others, from
-  `openclaw skills list`, which runs at start. Custodian skills load, and hide
-  a configured skill with the same name, only for the agent that owns them:
-  the configured agent when it is the only one.
-- Runtimes that connect to a prepared service report the skills the service
-  loaded at prepare.
-- Skills written into a read-write `directories` folder load at the next
-  start. Agent-installed workspace skills go to `<workspace>/skills`. Skills
-  the agent installs through OpenClaw itself, with Skill Workshop or a shared
-  install, go to the per-runtime state folder, which is removed when the
-  runtime stops. Keeping that folder across restarts is outstanding work
-  ([#578](https://github.com/NVIDIA/NeMo-Fabric/issues/578)); until then
-  those skills are lost at stop.
-
 For custom OpenAI-compatible providers, set `models.<role>.base_url`; the
 adapter generates an OpenClaw custom provider using the
 `openai-completions` API adapter. Set `api_key_env` when that provider requires
@@ -206,6 +109,33 @@ reported counters under
 `scope_unverified` in `gaps`. Missing usage adds `missing_usage`; all-zero
 observations add `zero_unverified`. These observations do not establish
 complete accounting for retries, compaction, child agents, or background work.
+
+### Skills
+
+The adapter supports `skills.paths`, `skills.directories`, `skills.bundled`,
+and `skills.duplicates`. `skills.paths` is unchanged: each path must be a
+folder that holds `SKILL.md`, and is passed, resolved, to
+`skills.load.extraDirs`. For example:
+
+```yaml
+skills:
+  directories:
+    - folder: /mnt/team-skills       # a folder of skills, read-only
+    - skill: /mnt/release-review     # one chosen skill, read-only
+  duplicates: last_wins
+  bundled:
+    include: [github, weather]
+```
+
+At start, the adapter reads each skill's front matter with OpenClaw's own
+parser, through the `node` that runs OpenClaw, and runs
+`openclaw skills list` to confirm what loads.
+[Configure Skills](../../../docs/integrations/harness/skills.mdx) describes
+the fields, the common setups, start checks, the run report, and how OpenClaw
+differs from other harnesses. The
+[OpenClaw guide](../../../docs/integrations/harness/openclaw/openclaw.mdx#skills)
+covers OpenClaw's skip reasons, what happens when the parser can't run,
+precedence, and bundled-skill handling.
 
 ### Harness Settings
 

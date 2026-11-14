@@ -159,12 +159,10 @@ config.skills = SkillConfig(
 
 You can mount one read-write folder into several sandboxes at once. Each sandbox runs its own runtime. Plan for these limits:
 
-- **No locking:** NeMo Fabric does not lock skill files between sandboxes. Hermes Agent's `skill_manage` tool locks a skill while it edits it, but the lock file is in its own home, so it does not stop another sandbox.
-- **Lost changes:** Two agents that write the same skill at the same time can overwrite each other's changes or leave a mix of both.
-- **Checks run at start:** The adapter runs its start checks, applies `duplicates`, and builds the run report once, when the runtime starts. A skill that another sandbox writes later is not checked or reported until the next start.
+- **No locking:** NeMo Fabric does not lock skill files between sandboxes. Hermes Agent's `skill_manage` tool locks a skill while it edits it, but the lock file is in its own home, so it does not stop another sandbox. Two agents that write the same skill at the same time can overwrite each other's changes or leave a mix of both.
+- **Checks run at start:** The adapter runs its start checks, applies `duplicates`, and builds the run report once, when the runtime starts. It does not check or report a skill that another sandbox writes later until the next start. That includes two skills with the same name. At the next start, the rules in [Skills That Share a Name](#skills-that-share-a-name) apply.
 - **Early loading:** The harness can still load a new skill before the next start. Hermes Agent's skill tools search the passed folders again when they change. OpenClaw watches the passed folders and refreshes its skill list on the next agent turn. With a `duplicates` policy, the adapter passes each selected skill's folder instead of the entry's folder, so a new skill written beside them loads only after the next start.
-- **Names checked at start:** When two agents write skills with the same name at the same time, the adapter finds the clash only at the next start. Then the start checks and `duplicates` apply, as described in [Skills That Share a Name](#skills-that-share-a-name).
-- **Kept state is different:** With `runtime.keep_state`, each agent gets its own state folder, and NeMo Fabric locks it. A second runtime of the same agent fails to start while the first one holds the folder. A skills volume has no such lock.
+- **No volume lock:** With `runtime.keep_state`, NeMo Fabric locks each agent's state folder, so a second runtime of the same agent fails to start while the first one holds it. A skills volume has no such lock.
 
 ## How the Adapter Loads `directories`
 
@@ -181,8 +179,8 @@ Start fails when an entry breaks one of these rules:
 | A `skill` entry has no readable `SKILL.md`. | `invalid` |
 | A `folder` entry cannot be listed. | `invalid` |
 | Skills share a name under an explicit `duplicates` policy. Refer to [Skills That Share a Name](#skills-that-share-a-name). | `duplicate` |
-| Under an explicit `duplicates` policy, a skill's front matter uses YAML that the adapter can't read the name from the way the harness does, such as an explicit `?` key. | `unsupported_frontmatter_name` |
-| Under an explicit `duplicates` policy, the adapter can't tell whether the harness accepts a skill's front matter, and the policy's result depends on it. | `unsupported_frontmatter` |
+| Under an explicit `duplicates` policy, the adapter can't tell which name the harness reads for a skill. Refer to [How the Adapter Reads a Skill](#how-the-adapter-reads-a-skill). | `unsupported_frontmatter_name` |
+| Under an explicit `duplicates` policy, the adapter can't tell whether the harness accepts a skill, and the policy's result depends on it. | `unsupported_frontmatter` |
 
 A `not_found` failure uses the adapter's `<adapter>_skill_not_found` error code, such as `hermes_skill_not_found`. Every other failure uses `<adapter>_skill_invalid`. The error metadata gives the failing `field`, such as `skills.directories[1].skill`, the `reason`, and the `path`. An adapter can add checks of its own. Refer to [Harness Differences](#harness-differences).
 
@@ -194,13 +192,22 @@ A candidate is a folder that holds `SKILL.md`. The adapter searches a `folder` e
 
 The following rules apply to every adapter that uses the shared NeMo Fabric loader:
 
-- A candidate that fails the harness's parsing rules is skipped, never silently. The run report gives the reason, such as `unreadable`, `no_name`, `invalid_frontmatter`, `missing_frontmatter_field:<field>`, or `empty_frontmatter_field:<field>`. An adapter can add reasons of its own.
+- A candidate that the harness refuses is skipped, never silently. The run report gives the reason, such as `unreadable`, `no_name`, `invalid_frontmatter`, `missing_frontmatter_field:<field>`, or `empty_frontmatter_field:<field>`. Each adapter guide lists the reasons its adapter uses.
 - A skipped candidate is never counted as a duplicate, so a copy the harness would refuse doesn't fail a `duplicates` policy.
 - Discovery does not enter `.git` or `node_modules` folders, or other folders that the harness skips. Subfolders that cannot be read hold no skills.
 - The same folder reached through several entries loads once.
 - A skill's name is the `name` field of its `SKILL.md` front matter. When the front matter has no name, the adapter uses the folder name if its descriptor allows that fallback. Otherwise it skips the skill with the reason `no_name`.
 
 NeMo Fabric reads only the front matter. It never reports file contents.
+
+### How the Adapter Reads a Skill
+
+After discovery, the adapter reads each candidate's front matter once, at start. It finds the skill's name and whether the harness accepts the skill. Each adapter reads with its harness's own parser, so the names and refusals match what the harness loads. Refer to [Harness Differences](#harness-differences).
+
+When an adapter can't read a skill the way its harness does, for example because the harness's parser can't run, it reads only simple front matter: a single-line `name: value`, plain or quoted. Two problems can follow:
+
+- **Uncertain name:** The adapter can't tell the harness's name for a skill whose `name` is written another way, such as a block scalar, an anchor, an alias, a tag, or an explicit `?` key. Without a `duplicates` policy, the skill keeps the name the adapter read, or its folder name. The run report marks it with `"name_uncertain": true`, and the adapter writes a warning. With a policy, start fails with `unsupported_frontmatter_name`, because a wrong name could pick the wrong copy. Write the name as a plain `name: value` to fix it.
+- **Unknown validity:** The adapter can't tell whether the harness accepts a skill. It keeps the skill, because the harness may load it. With a policy, start fails with `unsupported_frontmatter` when the result for a name depends on whether that skill loads.
 
 ## Bundled Skills
 
@@ -267,13 +274,13 @@ When a run uses `directories` or `bundled`, the adapter adds a `skills` block to
 
 | Key | Contents |
 | --- | --- |
-| `loaded` | Each loaded skill: `name`, `path`, `entry` (the field that supplied it), and `origin` (`external`). `name_uncertain: true` marks a skill whose front-matter name the adapter couldn't read the way the harness does. The adapter then reports the folder name, and the harness may use a different name. |
+| `loaded` | Each loaded skill: `name`, `path`, `entry` (the field that supplied it), and `origin` (`external`). `name_uncertain: true` marks a skill whose name the adapter couldn't read the way the harness does, so the harness may use a different name. Refer to [How the Adapter Reads a Skill](#how-the-adapter-reads-a-skill). |
 | `empty_entries` | The fields of `folder` entries that found no skills. |
 | `skipped` | Each skipped candidate: `path`, `entry`, and `reason`. |
 | `duplicates` | Each clash: `name`, `outcome` (`selected`, `shadowed`, or `ambiguous`), the `selected` path when known, and each copy's `origin` (`external`, `bundled`, or `local`), `path`, and `entry`. |
 | `bundled` | `selected`: the selected bundled skills that load. `unavailable`: each selected bundled skill that does not load, with `name` and `reason`. An adapter guide lists any extra keys, such as Hermes's `essential`. |
 
-The following example shows a report for the mixed setup. In this example, `/mnt/team-skills` also holds a `release-review` skill, its `debugging` skill has no `description` field that the adapter requires, and `/mnt/agent-skills` is empty:
+The following example shows a report for the mixed setup. In this example, `/mnt/team-skills` also holds a `release-review` skill, its `debugging` skill has no `description` field that the harness requires, and `/mnt/agent-skills` is empty:
 
 ```json
 {
@@ -301,7 +308,9 @@ The following example shows a report for the mixed setup. In this example, `/mnt
 }
 ```
 
-The adapter also writes one line to standard error for each skipped candidate, empty entry, and clash when the runtime starts.
+The adapter also writes one line to standard error for each skipped candidate, empty entry, clash, uncertain name, and unavailable bundled skill when the runtime starts.
+
+The report shows what the adapter sees at start. A skill in one of the harness's own folders, including a skill the agent writes, can hide a configured skill with the same name. The report lists these clashes where the adapter can see them at start, so a skill the agent writes later can hide a configured skill in later runtimes.
 
 ## Adapter Support
 
@@ -322,26 +331,25 @@ Refer to [Stage 1: Describe the Adapter](../../adapter-contract/tutorials/adapte
 
 ## Harness Differences
 
-The OpenClaw and Hermes Agent adapters support `directories`, `bundled`, and `duplicates`. Their harnesses still load skills in different ways:
+The OpenClaw and Hermes Agent adapters support `directories`, `bundled`, and `duplicates`. Their harnesses still load skills in different ways. This table is the one place that compares them. Each adapter guide covers the rest of its harness's behavior.
 
 | Behavior | Hermes Agent | OpenClaw |
 | --- | --- | --- |
-| A `paths` entry | Passed to `skills.external_dirs` without checks. | Must be a folder that holds `SKILL.md`. Passed to `skills.load.extraDirs`. |
+| A `paths` entry | Passed to `skills.external_dirs` without checks. Hermes Agent skips a missing path silently. | Must be a folder that holds `SKILL.md`. Passed to `skills.load.extraDirs`. |
 | Where `directories` entries go | `skills.external_dirs`. With a `duplicates` policy, the adapter passes each selected skill's folder instead. A folder that Hermes Agent already searches through another passed folder is not passed again. | `skills.load.extraDirs`. With a `duplicates` policy, the adapter passes each selected skill's folder instead. |
-| Search inside a `folder` entry | Every level below the folder, with no fixed depth limit. | 2 levels deep, or 6 when the folder it searches is named `skills`. A `skills` subfolder directly inside the searched folder is searched 6 levels deep. When only the entry's `skills` subfolder holds skills, OpenClaw searches that subfolder. A skill whose real folder is outside the searched folder does not load and is reported with the reason `path_escape`. |
+| How the adapter reads names and validity | With Hermes Agent's own front-matter parser and skill catalog rules. | With OpenClaw's own front-matter parser, run through `node`. When the parser can't run, the adapter reads simple front matter instead. |
+| Search inside a `folder` entry | Every level below the folder, with no fixed depth limit. | 2 levels deep, or 6 when the folder it searches is named `skills`. A `skills` subfolder directly inside the searched folder is searched 6 levels deep. When only the entry's `skills` subfolder holds skills, OpenClaw searches that subfolder, and a `skills` subfolder that itself holds `SKILL.md` loads as one skill. A skill whose real folder is outside the searched folder does not load and is reported with the reason `path_escape`. |
 | A `folder` entry that holds `SKILL.md` | The folder loads as a skill, along with the skills below it. | Start fails with the reason `folder_is_skill`. Use a `skill` entry instead. |
 | Skills inside a skill's folder | Also load. With a `duplicates` policy, start fails when a copy that should not load sits inside a selected skill's folder. | Do not load. Discovery stops at a skill's folder. |
-| Folders discovery skips | The folders Hermes Agent skips, such as `.git`, `.hub`, `.archive`, `node_modules`, and `__pycache__`, and a skill's `references`, `templates`, `assets`, and `scripts` folders. | Every folder whose name starts with `.`, and `node_modules`. |
-| Required front-matter fields | None | `description` |
+| Folders discovery skips | The folders Hermes Agent skips, such as `.git`, `.hub`, `.archive`, `node_modules`, `venv`, `.venv`, `site-packages`, and `__pycache__`, and a skill's `references`, `templates`, `assets`, and `scripts` folders. | Every folder whose name starts with `.`, and `node_modules`. |
+| Required front-matter fields | None | `description`, not empty after trimming |
 | Name when the front matter has none | The folder name | The folder name |
-| Front matter that does not parse | Simple `key: value` lines are recovered. | The skill is skipped with the reason `rejected_by_openclaw`. Under `first_wins` or `last_wins`, the next copy of its name loads instead. |
+| Front matter that does not parse | Simple `key: value` lines are recovered. | The skill is skipped with the reason `invalid_frontmatter` before `duplicates` applies. Under `first_wins` or `last_wins`, the next copy of its name loads instead. |
 | Two configured skills share a name and `duplicates` is left out | Hermes Agent refuses both as ambiguous. It also refuses a skill whose name is another skill's folder name. | The copy from the later entry loads. Copies inside one entry are reported as `ambiguous`. |
-| The harness's own skill folders, ranked above the configured entries | The Hermes home's `skills` folder, which holds the bundled skills and the skills the agent creates. Hermes Agent saves every new skill there, never in a `directories` entry. | The workspace's `skills` and `.agents/skills` folders, the state folder's `skills` folder, the Skill Workshop folder, and the selected shipped skills. A `directories` entry inside a workspace folder keeps that folder's rank. A copy OpenClaw refuses hides nothing. |
+| The harness's own skill folders, ranked above the configured entries | The Hermes home's `skills` folder, which holds the bundled skills and the skills the agent creates. Hermes Agent saves every new skill there, never in a `directories` entry. | Highest first: the workspace's `skills` and `.agents/skills` folders, then the state folder's `skills` folder and the Skill Workshop folder, then the selected shipped skills. A `directories` entry inside a workspace folder keeps that folder's rank, so it wins over a shipped skill with the same name. A copy OpenClaw refuses hides nothing. |
 | How bundled skills are chosen | When the selection leaves out a bundled skill, Hermes Agent copies the selected bundled skills into its home from a per-runtime copy, read through `HERMES_BUNDLED_SKILLS`. Otherwise it copies from its installation. | When the selection leaves out a shipped skill, OpenClaw reads a per-runtime copy of the selected shipped skills through `OPENCLAW_BUNDLED_SKILLS_DIR`. Otherwise it reads the package folder. |
 | A bundled skill that `bundled` leaves out shares a name with a configured skill | The configured skill, from `paths` or `directories`, loads. The left-out bundled skill never reaches the Hermes home, so it hides nothing, and the agent's own skill with that name in the Hermes home loads too. A changed earlier copy of the left-out skill in a kept home fails start. | The configured skill loads. The left-out bundled skill is not loaded at all, so it hides nothing. |
 | Bundled skills that always load | `hermes-agent`. Every selection must keep it: `include` must name it, `exclude` can't name it, and `enabled: false` isn't supported. Start fails otherwise, so `include: []` fails too. | None |
 | Error codes | `hermes_skill_not_found`, `hermes_skill_invalid` | `openclaw_skill_not_found`, `openclaw_skill_invalid` |
 
-A skill in one of the harness's own folders, including a skill the agent writes, can hide a configured skill with the same name. The run report lists these clashes where the adapter can see them at start.
-
-Refer to the [Hermes Agent guide](./hermes/hermes.mdx) and the [OpenClaw guide](./openclaw/openclaw.mdx) for details.
+Refer to the [Hermes Agent guide](./hermes/hermes.mdx#skills) and the [OpenClaw guide](./openclaw/openclaw.mdx#skills) for details.

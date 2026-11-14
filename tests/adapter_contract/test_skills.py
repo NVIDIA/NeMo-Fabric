@@ -9,25 +9,25 @@ import json
 import os
 from collections.abc import Callable
 from collections.abc import Iterator
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
-import yaml
 from jsonschema import Draft202012Validator
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentSkillConfig
 from nemo_fabric_adapter_contract.models import BundledSkills
 from nemo_fabric_adapter_contract.models import SkillDirectory
+from nemo_fabric_adapter_contract.skills import CandidateInfo
 from nemo_fabric_adapter_contract.skills import DirectoryLoad
 from nemo_fabric_adapter_contract.skills import DiscoveryRules
 from nemo_fabric_adapter_contract.skills import DuplicateRecord
 from nemo_fabric_adapter_contract.skills import FoundSkill
 from nemo_fabric_adapter_contract.skills import SkillLoadError
 from nemo_fabric_adapter_contract.skills import SkippedCandidate
-from nemo_fabric_adapter_contract.skills import check_front_matter
+from nemo_fabric_adapter_contract.skills import front_matter_reader
 from nemo_fabric_adapter_contract.skills import load_directories
-from nemo_fabric_adapter_contract.skills import read_front_matter
 from nemo_fabric_adapter_contract.skills import report_block
 from nemo_fabric_adapter_contract.skills import warn
 
@@ -810,11 +810,15 @@ def test_folder_root_skill_is_skipped_like_other_candidates(tmp_path: Path):
         traversal="recursive",
         nested_skills="include",
         max_depth=None,
-        required_frontmatter_fields=("description",),
         folder_root_is_skill=True,
     )
 
-    load = load_directories([{"folder": team}], rules=rules, duplicates=None)
+    load = load_directories(
+        [{"folder": team}],
+        rules=rules,
+        duplicates=None,
+        reader=front_matter_reader(required_fields=("description",)),
+    )
 
     assert load.skipped == [
         SkippedCandidate(
@@ -954,7 +958,30 @@ def test_discovery_rules_stay_immutable_and_hashable():
     )
 
 
-# Parsing
+# Reading candidates
+
+
+class FakeReader:
+    """A harness reader that looks each candidate folder up in a dict.
+
+    Folders not in the dict have no name, so they take the folder name.
+    """
+
+    def __init__(self, infos: dict[Path, CandidateInfo] | None = None) -> None:
+        self.infos = infos or {}
+        self.calls: list[list[Path]] = []
+
+    def __call__(self, folders: Sequence[Path]) -> dict[Path, CandidateInfo]:
+        self.calls.append(list(folders))
+        infos = {path.resolve(): info for path, info in self.infos.items()}
+        return {folder: infos.get(folder, CandidateInfo(None)) for folder in folders}
+
+
+def _read(tmp_path: Path, text: str, **kwargs) -> CandidateInfo:
+    folder = tmp_path / "folder-name"
+    folder.mkdir()
+    (folder / "SKILL.md").write_text(text, encoding="utf-8")
+    return front_matter_reader(**kwargs)([folder])[folder]
 
 
 @pytest.mark.parametrize(
@@ -966,570 +993,216 @@ def test_discovery_rules_stay_immutable_and_hashable():
         ("---\nname: code#review\n---\n", "code#review"),
         ("--- \nname: code-review\n---\n", "code-review"),
         ("﻿---\nname: code-review\n---\n", "code-review"),
-        ("---\nname:\n---\n", "review"),
         ("---\nname: 'it''s'\n---\n", "it's"),
-        ('---\nname: "say \\"hi\\" \\u0041"\n---\n', 'say "hi" A'),
-        ('---\nname: "a\\\\b"\n---\n', "a\\b"),
         ("---\nname: 'null'\n---\n", "null"),
-        ("---\nname: ''\n---\n", "review"),
-        ("---\nname: ~\n---\n", "review"),
-        ("---\nname: null # unset\n---\n", "review"),
-        ("---\nname: Null\n---\n", "review"),
-        ("---\nname: NULL\n---\n", "review"),
-        ("---\nname: >\n  folded\n---\n", "folded"),
-        ("---\nname: |-\n  literal\n---\n", "literal"),
-        ("---\nname: >2 # indented\n  folded\n---\n", "folded"),
-        ("---\nname: [a, b]\n---\n", "review"),
-        ("---\nname: {first: a}\n---\n", "review"),
+        ("---\nname:\ttabbed\n---\n", "tabbed"),
+        ("---\nname: https://example.com/a\n---\n", "https://example.com/a"),
         ('---\n"name": quoted-key\n---\n', "quoted-key"),
         ("---\n'name' : quoted-spaced\n---\n", "quoted-spaced"),
         ("---\nname : spaced-key\n---\n", "spaced-key"),
-        ("---\nnamespace: other\n---\n", "review"),
-        ("---\nmetadata:\n  name: nested\n---\n", "review"),
-        (
-            "---\ndescription: Front matter without an end.\nname: code-review\n",
-            "review",
-        ),
-        ("# Review\n\nname: code-review\n", "review"),
+        ("---\ndescription: >\n  Folded.\nname: after-block\n---\n", "after-block"),
+        # No name: the folder name fallback applies.
+        ("---\nname:\n---\n", None),
+        ("---\nname: ''\n---\n", None),
+        ("---\nname: ~\n---\n", None),
+        ("---\nname: null # unset\n---\n", None),
+        ("---\nname: # comment\n---\n", None),
+        ("---\nnamespace: other\n---\n", None),
+        ("---\nmetadata:\n  name: nested\n---\n", None),
+        ("---\n# name: commented\n---\n", None),
+        ("---\ndescription: No end.\nname: code-review\n", None),
+        ("# Review\n\nname: code-review\n", None),
     ],
 )
-def test_skill_name_follows_front_matter(tmp_path: Path, text: str, name: str):
-    review = tmp_path / "review"
-    review.mkdir()
+def test_default_reader_reads_simple_names(tmp_path: Path, text: str, name: str | None):
+    assert _read(tmp_path, text) == CandidateInfo(name)
+
+
+@pytest.mark.parametrize(
+    ("text", "name"),
+    [
+        # Values it does not read.
+        ("---\nname: >\n  folded\n---\n", None),
+        ("---\nname: |-\n  literal\n---\n", None),
+        ("---\nname: &anchor review\n---\n", None),
+        ("---\nlabel: &l review\nname: *l\n---\n", None),
+        ("---\nname: !!str review\n---\n", None),
+        ("---\nname: [a, b]\n---\n", None),
+        ("---\nname: {first: a}\n---\n", None),
+        ("---\nname: - a\n---\n", None),
+        ("---\nname: a: b\n---\n", None),
+        ("---\nname: @at\n---\n", None),
+        ('---\nname: "say \\"hi\\""\n---\n', None),
+        ('---\nname: "a\\tb"\n---\n', None),
+        ("---\nname: 'unclosed\n---\n", None),
+        ("---\nname: 'review' trailing\n---\n", None),
+        ("---\nname:\n  - a\n---\n", None),
+        # A continuation line, or a repeated key: the best guess is kept.
+        ("---\nname: first\n  continued\n---\n", "first"),
+        ("---\nname: a\nname: b\n---\n", "b"),
+        # Top-level keys it does not read, which may define the name.
+        ("---\n? name\n: review\n---\n", None),
+        ("---\n&k name: review\n---\n", None),
+        ("---\n!!str name: review\n---\n", None),
+        ("---\n{name: flow}\n---\n", None),
+        ("---\n  name: indented\n---\n", None),
+        ("---\nbase: &b {name: merged}\n<<: *b\n---\n", None),
+    ],
+)
+def test_default_reader_marks_yaml_it_does_not_read_uncertain(
+    tmp_path: Path, text: str, name: str | None
+):
+    assert _read(tmp_path, text) == CandidateInfo(name, name_uncertain=True)
+
+
+@pytest.mark.parametrize(
+    ("text", "loads"),
+    [
+        ("---\nname: review\ndescription: Reviews code.\n---\n", True),
+        ("---\nname: review\ndescription:\n---\n", True),
+        ("---\n'description': Quoted key.\n---\n", True),
+        ("---\nname: review\n---\n", False),
+        ("---\nmetadata:\n  description: Nested.\n---\n", False),
+        ("---\n# description: Commented out.\n---\n", False),
+        ("description: No front matter.\n", False),
+    ],
+)
+def test_required_front_matter_fields_need_a_top_level_key(
+    tmp_path: Path, text: str, loads: bool
+):
+    review = tmp_path / "skills" / "review"
+    review.mkdir(parents=True)
     (review / "SKILL.md").write_text(text, encoding="utf-8")
 
-    load = load_directories([{"skill": review}], rules=IMMEDIATE, duplicates=None)
-
-    assert [skill.name for skill in load.selected] == [name]
-
-
-# Front matter as harnesses pass it to YAML: the text between the fences,
-# without the final line break.
-_YAML_NAMES = [
-    # Plain scalars.
-    "name: review",
-    "name: code review",
-    "name: code  review",
-    "name: code#review",
-    "name: code-review # comment",
-    "name: -review",
-    "name: review:v2",
-    "name: review\ndescription: d",
-    # Quoted scalars and escapes.
-    "name: 'review'",
-    "name: 'it''s'",
-    "name: 'review' # comment",
-    'name: "say \\"hi\\" \\u0041"',
-    'name: "tab\\there"',
-    'name: "\\x41\\U0001F600\\\\"',
-    "name: 'null'",
-    "name: '123'",
-    "name: ''",
-    'name: "multi\n  line"',
-    "name: 'multi\n\n  paragraph'",
-    'name: "joined\\\n  line"',
-    'name: "starts\nat column 0"\ndescription: d',
-    # Block scalars: literal and folded, each chomping indicator.
-    "name: |\n  review",
-    "name: |\n  review\ndescription: d",
-    "name: |-\n  review\ndescription: d",
-    "name: |+\n  review\n\ndescription: d",
-    "name: |+\n  review\n\n",
-    "name: >\n  code\n  review\ndescription: d",
-    "name: >-\n  code\n  review",
-    "name: >+\n  review\n\n\ndescription: d",
-    "name: >-\n  a\n\n  b\n    more\n  c",
-    "name: >-\n  a\n    more\n  b",
-    "name: |-\n  literal\n   more",
-    "name: |-\n\n  leading blank line",
-    "name: |-\n \n  short blank line",
-    "name: |\ndescription: d",
-    "name: > # comment\n  review\n# comment\ndescription: d",
-    # Explicit indentation indicators, before or after chomping.
-    "name: |2-\n    indented\ndescription: d",
-    "name: >-2\n  review",
-    "name: >1\n review",
-    "name: |2\n  review\n   more\ndescription: d",
-    # Values on the lines below the key.
-    "name: code\n  review",
-    "name: code\n  review\n\n  again\ndescription: d",
-    "name: code\n   review\n  again",
-    "name: code # comment\ndescription: d",
-    "name:\n  review",
-    "name: # comment\n  review",
-    "name:\n# comment\n  review",
-    "name:\n  >-\n    review",
-    "name:\n  'review'",
-    # Null tokens.
-    "name:",
-    "name:\ndescription: d",
-    "name: ~",
-    "name: null",
-    "name: Null # comment",
-    "name: NULL",
-    # Other scalars that are not strings.
-    "name: 123",
-    "name: 1.5",
-    "name: 0x1F",
-    "name: 1_000",
-    "name: 1:20",
-    "name: .inf",
-    "name: true",
-    "name: yes",
-    "name: Off",
-    "name: 2024-01-02",
-    "name: 2024-01-02 10:00:00",
-    # Tags and anchors.
-    "name: !!str 123",
-    "name: !!str |-\n  review",
-    "name: &anchor review",
-    "name: ! 12",
-    "name: !!int 3",
-    "name: !!null x",
-    "name: !!bool yes",
-    "name: !!float 1.5",
-    "name: !!timestamp 2024-01-02",
-    "name: !!binary aGk=",
-    # Aliases, resolved to the anchored value by the same rules.
-    "label: &label review\nname: *label",
-    "label: &l  review  \nname: *l",
-    "label: &l 12\nname: *l",
-    "label: &l yes\nname: *l",
-    "label: &l 2024-01-02\nname: *l",
-    "label: &l !!str 12\nname: *l",
-    "label: &l 'quoted'\nname: *l",
-    "label: &l '   '\nname: *l",
-    "label: &l |\n  text\nname: *l",
-    "label: &l ~\nname: *l",
-    "label: &l\nname: *l",
-    "label: &l [a, b]\nname: *l",
-    "label: &l\n  a: 1\nname: *l",
-    "meta:\n  x: &l deep\nname: *l",
-    "x: &a\n  - &b two\nname: *b",
-    "x: &a [1, &b two]\nname: *b",
-    "x: &a v\nname: *a # c",
-    "description: &d hi\nname: *d",
-    "name: &a first\nname: *a",
-    # Collections.
-    "name: [a, b]",
-    "name: {first: a}",
-    "name:\n  - a",
-    "name:\n- a",
-    "name:\n  first: a",
-    "name: &anchor\n  first: a",
-    # Keys.
-    '"name": quoted-key',
-    "'name' : quoted-spaced",
-    "name : spaced-key",
-    "namespace: other",
-    "metadata:\n  name: nested",
-    "name: first\nname: second",
-    "name: first\nname:",
-]
-
-
-@pytest.mark.parametrize("front_matter", _YAML_NAMES)
-def test_skill_name_matches_what_yaml_reads(tmp_path: Path, front_matter: str):
-    folder = tmp_path / "folder-name"
-    folder.mkdir()
-    (folder / "SKILL.md").write_text(
-        f"---\n{front_matter}\n---\n# Skill\n", encoding="utf-8"
+    load = load_directories(
+        [{"folder": tmp_path / "skills"}],
+        rules=IMMEDIATE,
+        duplicates=None,
+        reader=front_matter_reader(required_fields=("description",)),
     )
-    value = yaml.safe_load(front_matter).get("name")
-    # A value that YAML reads as anything but a non-empty string, such as
-    # null, a number, a boolean, a date, a sequence, or a mapping, is no name,
-    # so the folder name is used. Hermes skips such names the same way, so
-    # this deliberately differs from str(value).
-    expected = value if isinstance(value, str) and value else "folder-name"
 
-    load = load_directories([{"skill": folder}], rules=IMMEDIATE, duplicates=None)
+    assert bool(load.selected) is loads
+    assert load.skipped == (
+        []
+        if loads
+        else [
+            SkippedCandidate(
+                review.resolve(),
+                "skills.directories[0]",
+                "missing_frontmatter_field:description",
+            )
+        ]
+    )
 
-    assert [skill.name for skill in load.selected] == [expected]
-    assert not load.selected[0].name_uncertain
 
-
-@pytest.mark.parametrize(
-    "front_matter",
-    [
-        # Tags this module does not resolve, or text PyYAML fails to build.
-        "name: !foo bar",
-        "name: !!int abc",
-        "name: !!timestamp foo",
-        "name: !!binary é",
-        "name: !!seq foo",
-        # An anchor in a value this module did not read, or text that only
-        # looks like one.
-        "x: &x a\n# &x hidden\nname: *x",
-        "y: &x real\nx: '&x hidden'\nname: *x",
-        # Top-level keys it does not read.
-        "? name\n: review",
-        "&k name: review",
-        "!!str name: review",
-        "{name: flow}",
-        "  name: indented",
-        "base: &b {name: merged}\n<<: *b",
-    ],
-)
-def test_pyyaml_style_marks_names_it_cannot_read_uncertain(
-    tmp_path: Path, front_matter: str
+def test_reader_reads_every_candidate_in_one_call(
+    tmp_path: Path, make_skill: Callable[..., Path]
 ):
-    folder = tmp_path / "folder-name"
-    folder.mkdir()
-    (folder / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
+    team = tmp_path / "team"
+    one = make_skill(team / "one")
+    two = make_skill(team / "two")
+    single = make_skill(tmp_path / "single")
+    outside = make_skill(tmp_path / "store" / "outside")
+    (team / "linked").symlink_to(outside, target_is_directory=True)
+    (tmp_path / "empty").mkdir()
+    reader = FakeReader({one: CandidateInfo("first"), two: CandidateInfo("second")})
+    rules = DiscoveryRules(
+        traversal="immediate_children",
+        nested_skills="stop_at_skill",
+        max_depth=1,
+        allow_symlink_escape=False,
+    )
 
-    load = load_directories([{"skill": folder}], rules=IMMEDIATE, duplicates=None)
+    load = load_directories(
+        [
+            {"folder": team},
+            {"folder": tmp_path / "empty"},
+            {"skill": single},
+            {"skill": one},
+        ],
+        rules=rules,
+        duplicates=None,
+        reader=reader,
+    )
 
-    assert [(skill.name, skill.name_uncertain) for skill in load.selected] == [
-        ("folder-name", True)
+    # One call, in discovery order, each folder once, and never a candidate
+    # that escapes its entry.
+    assert reader.calls == [[one.resolve(), two.resolve(), single.resolve()]]
+    assert [skill.name for skill in load.selected] == ["first", "second", "single"]
+    assert load.skipped == [
+        SkippedCandidate(outside.resolve(), "skills.directories[0]", "path_escape")
     ]
+    empty = FakeReader()
+    load_directories(
+        [{"folder": tmp_path / "empty"}], rules=rules, duplicates=None, reader=empty
+    )
+    assert empty.calls == []
+
+
+def test_reader_must_return_info_for_every_candidate(
+    tmp_path: Path, make_skill: Callable[..., Path]
+):
+    review = make_skill(tmp_path / "review")
+
+    for reader in (
+        lambda folders: None,
+        lambda folders: {},
+        lambda folders: {folder: ("review", True) for folder in folders},
+    ):
+        with pytest.raises(TypeError, match="reader"):
+            load_directories(
+                [{"skill": review}], rules=IMMEDIATE, duplicates=None, reader=reader
+            )
+    with pytest.raises(TypeError, match="reader"):
+        load_directories([], rules=IMMEDIATE, duplicates=None, reader="yaml")
 
 
 @pytest.mark.parametrize(
-    ("front_matter", "name"),
+    "values",
     [
-        # An alias PyYAML cannot compose is not YAML; the line's text is used.
-        ("name: *undefined", "*undefined"),
-        ("x: &a v\nname: &b *a", "&b *a"),
-        ("x: &a.b v\nname: *a.b", "*a.b"),
-        ("x: &a v\nname: *a trailing", "*a trailing"),
-        ("label: &l x\nlabel2: &l y\nname: *l", "*l"),
+        {"valid": False},
+        {"valid": False, "reason": ""},
+        {"valid": "yes"},
+        {"name": 42},
     ],
 )
-def test_pyyaml_style_alias_errors_use_the_text_on_the_line(
-    tmp_path: Path, front_matter: str, name: str
-):
-    with pytest.raises(yaml.YAMLError):
-        yaml.safe_load(front_matter)
-    folder = tmp_path / "folder-name"
-    folder.mkdir()
-    (folder / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
-
-    load = load_directories([{"skill": folder}], rules=IMMEDIATE, duplicates=None)
-
-    assert [(skill.name, skill.name_uncertain) for skill in load.selected] == [
-        (name, False)
-    ]
-
-
-@pytest.mark.parametrize(
-    ("front_matter", "name"),
-    [
-        ('name: "unclosed', '"unclosed'),
-        ("name: 'unclosed\n  still open", "'unclosed"),
-        ("name: a: b", "a: b"),
-        ("name:\ttabbed", "tabbed"),
-        ("name: @at # comment", "@at"),
-        ("name: |0\n  review", "folder-name"),
-        ("name: 'review' trailing", "'review' trailing"),
-        ("name: code # comment\n  review", "code"),
-    ],
-)
-def test_invalid_yaml_name_uses_the_text_on_its_line(
-    tmp_path: Path, front_matter: str, name: str
-):
-    with pytest.raises(yaml.YAMLError):
-        yaml.safe_load(front_matter)
-    folder = tmp_path / "folder-name"
-    folder.mkdir()
-    (folder / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
-
-    load = load_directories([{"skill": folder}], rules=IMMEDIATE, duplicates=None)
-
-    assert [skill.name for skill in load.selected] == [name]
-
-
-OPENCLAW = DiscoveryRules(
-    traversal="immediate_children",
-    nested_skills="stop_at_skill",
-    max_depth=1,
-    name_style="openclaw",
-)
-
-# Front matter and the name OpenClaw 2026.9.34 lists for it, checked against
-# its own parser: YAML 1.2 core schema, then trimmed strings, String() of
-# numbers and booleans, JSON of collections, and the line text for a null.
-_OPENCLAW_NAMES = [
-    # The cases the end-to-end test checks against the installed OpenClaw.
-    ("name: >-\n  folded-name", "folded-name"),
-    ("name: |-\n  literal-name", "literal-name"),
-    ('name: "escaped\\tname"', "escaped\tname"),
-    ("name: plain # comment", "plain"),
-    ("name:", "folder-name"),
-    ("name: >\n  folded\n  clipped", "folded clipped"),
-    ("name: '  quoted name '", "quoted name"),
-    ("name: ~", "~"),
-    ("name: 42", "42"),
-    ("name: yes", "yes"),
-    ("name: true", "true"),
-    ("name: 2026-01-02", "2026-01-02"),
-    ("name: [a, b]", '["a","b"]'),
-    # Strings, trimmed as JavaScript trims them.
-    ("name: review", "review"),
-    ("name: review:v2", "review:v2"),
-    ('name: "  padded \\t"', "padded"),
-    ("name: |\n  literal\n", "literal"),
-    ('name: "\\u3000wide\\u00a0"', "wide"),
-    ('name: "\\x85kept"', "\x85kept"),
-    # YAML 1.1 booleans, sexagesimals, binary, and timestamps are strings.
-    ("name: no", "no"),
-    ("name: On", "On"),
-    ("name: y", "y"),
-    ("name: 1_000", "1_000"),
-    ("name: 1:20", "1:20"),
-    ("name: 0b11", "0b11"),
-    ("name: 2026-01-02 10:00:00", "2026-01-02 10:00:00"),
-    # YAML 1.2 booleans and numbers, as String() writes them.
-    ("name: True", "true"),
-    ("name: FALSE", "false"),
-    ("name: 0o17", "15"),
-    ("name: 0x1F", "31"),
-    ("name: 017", "17"),
-    ("name: +5", "5"),
-    ("name: -0", "0"),
-    ("name: 1.50", "1.5"),
-    ("name: 1.", "1"),
-    ("name: .5", "0.5"),
-    ("name: 1e3", "1000"),
-    ("name: 1e21", "1e+21"),
-    ("name: 1e-7", "1e-7"),
-    ("name: 0.000001", "0.000001"),
-    ("name: 12345678901234567890", "12345678901234567000"),
-    ("name: .inf", "Infinity"),
-    ("name: -.Inf", "-Infinity"),
-    ("name: .nan", "NaN"),
-    # Tags and anchors.
-    ("name: !!str 42", "42"),
-    ("name: ! 42", "42"),
-    ("name: !!int 42", "42"),
-    ("name: !!int '0x10'", "16"),
-    ("name: !!int abc", "abc"),
-    ("name: !!float 1.50", "1.5"),
-    ("name: !!bool yes", "yes"),
-    ("name: !foo bar", "bar"),
-    ("name: !<tag:yaml.org,2002:int> 7", "7"),
-    ("name: &anchor review", "review"),
-    ("name: !!str", "folder-name"),
-    # A null takes the text on an unquoted key's line, or the indented lines
-    # below an empty one; an empty string does not.
-    ("name: null # unset", "null # unset"),
-    ("name: !!null", "!!null"),
-    ("name: &anchor ~", "&anchor ~"),
-    ("name:\n  # comment\n\n  below", "below"),
-    ("name: ''", "folder-name"),
-    ("name: '   '", "folder-name"),
-    ('"name": ~', "folder-name"),
-    ("name : ~", "folder-name"),
-    # Collections become JSON, unless the key's line holds a colon.
-    (
-        'name: [1, 2.5, -0, 1e21, .inf, true, ~, "a\\"b\\n"]',
-        '[1,2.5,0,1e+21,null,true,null,"a\\"b\\n"]',
-    ),
-    ("name: [ a\n   b , c]", '["a b","c"]'),
-    ("name: [a,\n]", '["a"]'),
-    ("name: {a}", '{"a":null}'),
-    ("name: {a: b}", "{a: b}"),
-    ('name: [a, "b:c"]', '[a, "b:c"]'),
-    ("name:\n- a\n- b", '["a","b"]'),
-    (
-        "name:\n  - a\n  -\n  - - x\n    - y\n  - k: v\n    k2: [1]",
-        '["a",null,["x","y"],{"k":"v","k2":[1]}]',
-    ),
-    ("name:\n  a:\n    b: c\n  d: e", '{"a":{"b":"c"},"d":"e"}'),
-    ("name:\n  a:\n  - x\n  - y", '{"a":["x","y"]}'),
-    ("name:\n  k: v w\n     x", '{"k":"v w x"}'),
-    # JavaScript lists integer-like keys first; equal property names merge.
-    ("name:\n  b: 1\n  2: x\n  1: y", '{"1":"y","2":"x","b":1}'),
-    ("name:\n  z: 1\n  '0': 2\n  -1: 3", '{"0":2,"z":1,"-1":3}'),
-    ('name:\n  1: a\n  "1": b', '{"1":"b"}'),
-    # JSON escapes control characters and lone surrogates.
-    ('name: ["\\x01\\x1f"]', '["\\u0001\\u001f"]'),
-    ('name: ["\\ud83d\\ude00", "\\ud83d"]', '["\U0001f600","\\ud83d"]'),
-    # Aliases give the anchored value, read by the same rules.
-    ("label: &label review\nname: *label", "review"),
-    ("label: &l  review  \nname: *l", "review"),
-    ("label: &l 0x1F\nname: *l", "31"),
-    ("label: &l yes\nname: *l", "yes"),
-    ("label: &l !!str 12\nname: *l", "12"),
-    ("label: &l 'quoted'\nname: *l", "quoted"),
-    ("label: &l |\n  text\nname: *l", "text"),
-    ("label: &l [a, b]\nname: *l", '["a","b"]'),
-    ("label: &l\n  a: 1\nname: *l", '{"a":1}'),
-    ("label: &l ~\nname: *l", "*l"),
-    ("x: &a ''\nname: *a", "folder-name"),
-    ("meta:\n  x: &l deep\nname: *l", "deep"),
-    ("x: &a\n  - &b two\nname: *b", "two"),
-    ("x: &a [1, &b two]\nname: [*a, *b]", '[[1,"two"],"two"]'),
-    ("x: &a [a: b]\nname: *a", '[{"a":"b"}]'),
-    ("description: &d hi\nname: *d", "hi"),
-    ("label: &l x\nlabel2: &l y\nname: *l", "y"),
-    ("x: &a.b v\nname: *a.b", "v"),
-    ("x: &a v\nname: *a # c", "v"),
-    ("name: [&a x, *a]", '["x","x"]'),
-    # Block scalars inside collections end with a line break.
-    ("name:\n  - |\n    text", '["text\\n"]'),
-    ("name:\n- |\n  x\n  y\n- >-\n  a\n  b", '["x\\ny\\n","a b"]'),
-    ("name:\n  k: |\n    v\n  j: >\n   w", '{"k":"v\\n","j":"w\\n"}'),
-    ("name:\n  - |2\n     x", '[" x\\n"]'),
-    ("name:\n- |+\n  t\n\n- u", '["t\\n\\n","u"]'),
-    ("name:\n- >\n  a\n\n  b\n   c\n  d", '["a\\nb\\n c\\nd\\n"]'),
-    ("name:\n  - k: |\n      v", '[{"k":"v\\n"}]'),
-    # A merge key is an ordinary key in YAML 1.2.
-    ("base: &b {name: merged}\n<<: *b\ndescription: d", "folder-name"),
-]
-
-
-@pytest.mark.parametrize(("front_matter", "name"), _OPENCLAW_NAMES)
-def test_openclaw_style_reads_names_as_openclaw(
-    tmp_path: Path, front_matter: str, name: str
-):
-    folder = tmp_path / "folder-name"
-    folder.mkdir()
-    (folder / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
-
-    load = load_directories([{"skill": folder}], rules=OPENCLAW, duplicates=None)
-
-    assert [skill.name for skill in load.selected] == [name]
-
-
-@pytest.mark.parametrize(
-    ("front_matter", "name", "uncertain"),
-    [
-        # Values whose OpenClaw text the helper does not derive: the folder
-        # name is used and the name is marked uncertain.
-        ("name: !!timestamp 2026-01-02", "folder-name", True),
-        ("name: !!binary aGk=", "folder-name", True),
-        ("name: !!merge x", "folder-name", True),
-        ("name: [? a]", "folder-name", True),
-        ("name:\n  ? a\n  : b", "folder-name", True),
-        ("name:\n  - &a k: v", "folder-name", True),
-        ("name: [&a [*a]]", "folder-name", True),
-        # An anchor this module did not read, or text that only looks like one.
-        ("x: &x a\n# &x hidden\nname: *x", "folder-name", True),
-        # Top-level keys it does not read.
-        ("? name\n: review", "folder-name", True),
-        ("&k name: review", "folder-name", True),
-        ("!!str name: review", "folder-name", True),
-        ("{name: flow}", "folder-name", True),
-        ("  name: indented", "folder-name", True),
-        # OpenClaw rejects front matter that is not valid YAML; the text on
-        # the line is kept, as in the pyyaml style.
-        ("name: a: b", "a: b", False),
-        ("name: 'a' trailing", "'a' trailing", False),
-        ("name:\n  k: v\n  k: w", "folder-name", False),
-        ("name: *undefined", "*undefined", False),
-        ("x: &a v\nname: &b *a", "&b *a", False),
-    ],
-)
-def test_openclaw_style_falls_back_where_it_cannot_match(
-    tmp_path: Path, front_matter: str, name: str, uncertain: bool
-):
-    folder = tmp_path / "folder-name"
-    folder.mkdir()
-    (folder / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
-
-    load = load_directories([{"skill": folder}], rules=OPENCLAW, duplicates=None)
-
-    assert [skill.name for skill in load.selected] == [name]
-    assert [skill.name_uncertain for skill in load.selected] == [uncertain]
-
-
-@pytest.mark.skipif(
-    os.name == "nt", reason="Windows folder names cannot end in a space"
-)
-def test_openclaw_style_trims_the_folder_name_fallback(tmp_path: Path):
-    folder = tmp_path / "padded "
-    folder.mkdir()
-    (folder / "SKILL.md").write_text("---\nname: ''\n---\n", encoding="utf-8")
-
-    pyyaml = load_directories([{"skill": folder}], rules=IMMEDIATE, duplicates=None)
-    openclaw = load_directories([{"skill": folder}], rules=OPENCLAW, duplicates=None)
-
-    assert [skill.name for skill in pyyaml.selected] == ["padded "]
-    assert [skill.name for skill in openclaw.selected] == ["padded"]
-
-
-@pytest.mark.parametrize(
-    ("front_matter", "pyyaml", "openclaw"),
-    [
-        ("name: '  spaced '", "  spaced ", "spaced"),
-        ("name: yes", "folder-name", "yes"),
-        ("name: 42", "folder-name", "42"),
-        ("name: ~", "folder-name", "~"),
-    ],
-)
-def test_name_style_defaults_to_pyyaml(
-    tmp_path: Path, front_matter: str, pyyaml: str, openclaw: str
-):
-    folder = tmp_path / "folder-name"
-    folder.mkdir()
-    (folder / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
-
-    default = load_directories([{"skill": folder}], rules=IMMEDIATE, duplicates=None)
-    chosen = load_directories([{"skill": folder}], rules=OPENCLAW, duplicates=None)
-
-    assert IMMEDIATE.name_style == "pyyaml"
-    assert [skill.name for skill in default.selected] == [pyyaml]
-    assert [skill.name for skill in chosen.selected] == [openclaw]
+def test_candidate_info_rejects_invalid_values(values):
+    with pytest.raises(ValueError, match="CandidateInfo"):
+        CandidateInfo(**{"name": None, **values})
 
 
 @pytest.mark.parametrize(
     ("policy", "selected"), [("first_wins", 0), ("last_wins", 1), ("reject", None)]
 )
-def test_block_scalar_names_take_part_in_duplicate_policies(
-    tmp_path: Path, policy: str, selected: int | None
+def test_reader_names_take_part_in_duplicate_policies(
+    tmp_path: Path,
+    make_skill: Callable[..., Path],
+    policy: str,
+    selected: int | None,
 ):
-    folded = tmp_path / "folded"
-    folded.mkdir()
-    (folded / "SKILL.md").write_text("---\nname: >-\n  review\n---\n", "utf-8")
-    plain = tmp_path / "plain"
-    plain.mkdir()
-    (plain / "SKILL.md").write_text("---\nname: review\n---\n", "utf-8")
-    entries = [{"skill": folded}, {"skill": plain}]
-
-    if selected is None:
-        with pytest.raises(SkillLoadError, match="configured twice"):
-            load_directories(entries, rules=IMMEDIATE, duplicates=policy)
-        return
-    load = load_directories(entries, rules=IMMEDIATE, duplicates=policy)
-
-    assert [(skill.name, skill.path) for skill in load.selected] == [
-        ("review", (folded, plain)[selected].resolve())
-    ]
-
-
-@pytest.mark.parametrize("rules", [IMMEDIATE, OPENCLAW], ids=["pyyaml", "openclaw"])
-@pytest.mark.parametrize(
-    ("policy", "selected"), [("first_wins", 0), ("last_wins", 1), ("reject", None)]
-)
-def test_alias_names_take_part_in_duplicate_policies(
-    tmp_path: Path, rules: DiscoveryRules, policy: str, selected: int | None
-):
-    """A name written as an alias clashes with the same name written plainly."""
-    aliased = tmp_path / "aliased"
-    aliased.mkdir()
-    (aliased / "SKILL.md").write_text(
-        "---\nlabel: &label review\nname: *label\ndescription: d\n---\n", "utf-8"
+    """Names come from the reader, not from the folder or this module."""
+    first = make_skill(tmp_path / "first")
+    second = make_skill(tmp_path / "second")
+    reader = FakeReader(
+        {first: CandidateInfo("review"), second: CandidateInfo("review")}
     )
-    plain = tmp_path / "plain"
-    plain.mkdir()
-    (plain / "SKILL.md").write_text("---\nname: review\ndescription: d\n---\n", "utf-8")
-    entries = [{"skill": aliased}, {"skill": plain}]
+    entries = [{"skill": first}, {"skill": second}]
 
     if selected is None:
         with pytest.raises(SkillLoadError, match="configured twice"):
-            load_directories(entries, rules=rules, duplicates=policy)
+            load_directories(entries, rules=IMMEDIATE, duplicates=policy, reader=reader)
         return
-    load = load_directories(entries, rules=rules, duplicates=policy)
+    load = load_directories(entries, rules=IMMEDIATE, duplicates=policy, reader=reader)
 
     assert [(skill.name, skill.path) for skill in load.selected] == [
-        ("review", (aliased, plain)[selected].resolve())
+        ("review", (first, second)[selected].resolve())
     ]
 
 
-@pytest.mark.parametrize("rules", [IMMEDIATE, OPENCLAW], ids=["pyyaml", "openclaw"])
+@pytest.mark.parametrize("source", ["default", "harness"])
 @pytest.mark.parametrize("policy", ["first_wins", "last_wins", "reject"])
 def test_uncertain_name_fails_under_a_duplicate_policy(
-    tmp_path: Path, rules: DiscoveryRules, policy: str
+    tmp_path: Path, source: str, policy: str
 ):
     """A name that may be wrong never silently picks a copy under a policy."""
     team = tmp_path / "team"
@@ -1541,9 +1214,21 @@ def test_uncertain_name_fails_under_a_duplicate_policy(
     plain = team / "plain"
     plain.mkdir()
     (plain / "SKILL.md").write_text("---\nname: review\ndescription: d\n---\n", "utf-8")
+    reader = (
+        None
+        if source == "default"
+        else FakeReader(
+            {
+                unsupported: CandidateInfo("review", name_uncertain=True),
+                plain: CandidateInfo("review"),
+            }
+        )
+    )
 
     with pytest.raises(SkillLoadError) as raised:
-        load_directories([{"folder": team}], rules=rules, duplicates=policy)
+        load_directories(
+            [{"folder": team}], rules=IMMEDIATE, duplicates=policy, reader=reader
+        )
 
     assert raised.value.reason == "unsupported_frontmatter_name"
     assert raised.value.field == "skills.directories[0]"
@@ -1583,116 +1268,14 @@ def test_uncertain_name_keeps_the_fallback_and_is_reported_without_a_policy(
         }
     ]
     assert "unsupported_frontmatter_name" in capsys.readouterr().err
-
-
-@pytest.mark.parametrize(
-    ("text", "parses", "fields"),
-    [
-        (
-            "---\nname: review\ndescription: Reviews code.\n---\n",
-            True,
-            {"name": "review", "description": "Reviews code."},
-        ),
-        # Front matter the yaml package rejects.
-        (
-            "---\nname: review\ndescription: d\nmetadata: [unclosed\n---\n",
-            False,
-            {"name": "review", "description": "d", "metadata": "[unclosed"},
-        ),
-        ("---\nname: a\nname: b\n---\n", False, {"name": "b"}),
-        # A description OpenClaw may recover, and values it may read
-        # differently, are unknown.
-        ("---\ndescription: a: b\n---\n", None, {"description": "a: b"}),
-        (
-            "---\nname: !!timestamp 2026-01-02\n---\n",
-            None,
-            {"name": "!!timestamp 2026-01-02"},
-        ),
-        ("---\n? name\n: review\n---\n", None, {}),
-        # A null takes the line fallback; an empty string does not.
-        ("---\ndescription: ~\n---\n", True, {"description": "~"}),
-        ("---\ndescription: ''\n---\n", True, {"description": ""}),
-        ("---\ndescription:\n---\n", True, {}),
-        # Aliases resolve.
-        (
-            "---\nx: &d text\ndescription: *d\n---\n",
-            True,
-            {"x": "text", "description": "text"},
-        ),
-    ],
-)
-def test_read_front_matter_reports_what_openclaw_parses(
-    tmp_path: Path, text: str, parses: bool | None, fields: dict[str, str]
-):
-    skill_file = tmp_path / "SKILL.md"
-    skill_file.write_text(text, encoding="utf-8")
-
-    front_matter = read_front_matter(skill_file, name_style="openclaw")
-
-    assert front_matter is not None
-    assert front_matter.parses is parses
-    assert dict(front_matter.fields) == fields
-
-
-def test_read_front_matter_reads_names_in_both_styles(tmp_path: Path):
-    skill_file = tmp_path / "SKILL.md"
-    skill_file.write_text("---\nlabel: &l 42\nname: *l\n---\n", encoding="utf-8")
-    (tmp_path / "plain.md").write_text("No front matter.\n", encoding="utf-8")
-
-    pyyaml = read_front_matter(skill_file)
-    openclaw = read_front_matter(skill_file, name_style="openclaw")
-
-    assert pyyaml is not None and openclaw is not None
-    assert (pyyaml.name, pyyaml.name_uncertain, pyyaml.parses) == (None, False, None)
-    assert dict(pyyaml.fields) == {}
-    assert (openclaw.name, openclaw.name_uncertain) == ("42", False)
-    assert pyyaml.keys == openclaw.keys == frozenset({"label", "name"})
-    assert read_front_matter(tmp_path / "plain.md") is None
-    with pytest.raises(ValueError, match="unknown name style"):
-        read_front_matter(skill_file, name_style="yaml")  # type: ignore[arg-type]
-
-
-@pytest.mark.parametrize(
-    ("text", "loads"),
-    [
-        ("---\nname: review\ndescription: Reviews code.\n---\n", True),
-        ("---\nname: review\ndescription:\n---\n", True),
-        ("---\n'description': Quoted key.\n---\n", True),
-        ("---\nname: review\n---\n", False),
-        ("---\nmetadata:\n  description: Nested.\n---\n", False),
-        ("---\n# description: Commented out.\n---\n", False),
-        ("description: No front matter.\n", False),
-    ],
-)
-def test_required_front_matter_fields_need_a_top_level_key(
-    tmp_path: Path, text: str, loads: bool
-):
-    review = tmp_path / "skills" / "review"
-    review.mkdir(parents=True)
-    (review / "SKILL.md").write_text(text, encoding="utf-8")
-    rules = DiscoveryRules(
-        traversal="immediate_children",
-        nested_skills="stop_at_skill",
-        max_depth=1,
-        required_frontmatter_fields=("description",),
-    )
-
+    # A reader's best guess is kept, and marked the same way.
+    guess = FakeReader({skill: CandidateInfo("review", name_uncertain=True)})
     load = load_directories(
-        [{"folder": tmp_path / "skills"}], rules=rules, duplicates=None
+        [{"skill": skill}], rules=IMMEDIATE, duplicates=None, reader=guess
     )
-
-    assert bool(load.selected) is loads
-    assert load.skipped == (
-        []
-        if loads
-        else [
-            SkippedCandidate(
-                review.resolve(),
-                "skills.directories[0]",
-                "missing_frontmatter_field:description",
-            )
-        ]
-    )
+    assert [(item.name, item.name_uncertain) for item in load.selected] == [
+        ("review", True)
+    ]
 
 
 def test_skills_without_a_name_are_skipped_without_fallback(
@@ -1732,6 +1315,31 @@ def test_unreadable_candidate_is_skipped(
     assert load.empty_entries == ["skills.directories[0]"]
 
 
+def test_skill_entry_the_reader_cannot_read_is_invalid(
+    tmp_path: Path, make_skill: Callable[..., Path]
+):
+    review = make_skill(tmp_path / "review")
+    reader = FakeReader({review: CandidateInfo(None, valid=False, reason="unreadable")})
+
+    with pytest.raises(SkillLoadError, match="cannot be read") as caught:
+        load_directories(
+            [{"skill": review}], rules=IMMEDIATE, duplicates=None, reader=reader
+        )
+
+    assert (caught.value.reason, caught.value.field) == (
+        "invalid",
+        "skills.directories[0].skill",
+    )
+    assert caught.value.paths == (review.resolve() / "SKILL.md",)
+    # Inside a folder entry, the candidate is skipped instead.
+    load = load_directories(
+        [{"folder": tmp_path}], rules=IMMEDIATE, duplicates=None, reader=reader
+    )
+    assert load.skipped == [
+        SkippedCandidate(review.resolve(), "skills.directories[0]", "unreadable")
+    ]
+
+
 def test_discovery_rules_reject_invalid_values():
     with pytest.raises(ValueError, match="max_depth"):
         DiscoveryRules(traversal="recursive", nested_skills="include", max_depth=0)
@@ -1739,24 +1347,6 @@ def test_discovery_rules_reject_invalid_values():
         DiscoveryRules(traversal="deep", nested_skills="include", max_depth=None)
     with pytest.raises(ValueError, match="nested"):
         DiscoveryRules(traversal="recursive", nested_skills="all", max_depth=None)
-    with pytest.raises(ValueError, match="name style"):
-        DiscoveryRules(
-            traversal="recursive",
-            nested_skills="include",
-            max_depth=None,
-            name_style="yaml",  # type: ignore[arg-type]
-        )
-    for option in (
-        {"nonempty_frontmatter_fields": ("description",)},
-        {"frontmatter_must_parse": True},
-    ):
-        with pytest.raises(ValueError, match="openclaw name style"):
-            DiscoveryRules(
-                traversal="recursive",
-                nested_skills="include",
-                max_depth=None,
-                **option,  # type: ignore[arg-type]
-            )
 
 
 # Duplicates
@@ -1912,83 +1502,33 @@ def test_folder_reached_again_moves_to_the_later_entry_only_under_last_wins(
         )
 
 
-# Front matter the harness refuses, checked before duplicate policies
+# Skills the harness refuses, checked before duplicate policies
 
-# OpenClaw's loader: front matter that parses and a non-empty description.
-CHECKED = DiscoveryRules(
-    traversal="immediate_children",
-    nested_skills="stop_at_skill",
-    max_depth=1,
-    required_frontmatter_fields=("description",),
-    name_style="openclaw",
-    nonempty_frontmatter_fields=("description",),
-    frontmatter_must_parse=True,
-)
-_VALID = "---\nname: review\ndescription: Reviews code.\n---\n"
-_REFUSED = {
-    "malformed": (
-        "---\nname: review\ndescription: Broken.\nmetadata: [unclosed\n---\n",
-        "invalid_frontmatter",
-    ),
-    "empty": (
-        '---\nname: review\ndescription: "  "\n---\n',
-        "empty_frontmatter_field:description",
-    ),
-}
-# OpenClaw recovers this description, but Fabric cannot tell.
-_UNCHECKED = "---\nname: review\ndescription: Reviews: code.\n---\n"
+_REASONS = ["invalid_frontmatter", "empty_frontmatter_field:description"]
+_VALID = CandidateInfo("review")
+# The harness may load it or refuse it; the reader cannot tell.
+_UNCHECKED = CandidateInfo("review", valid=None)
 POLICIES = [None, "reject", "first_wins", "last_wins"]
 
 
-def _write_skill(directory: Path, text: str) -> Path:
+def _write_skill(directory: Path, text: str = "---\nname: review\n---\n") -> Path:
     directory.mkdir(parents=True)
     (directory / "SKILL.md").write_text(text, encoding="utf-8")
     return directory.resolve()
 
 
-@pytest.mark.parametrize(
-    ("front_matter", "accepted", "reason"),
-    [
-        (_VALID, True, None),
-        (_REFUSED["malformed"][0], False, "invalid_frontmatter"),
-        (_REFUSED["empty"][0], False, "empty_frontmatter_field:description"),
-        # A null with no text on its line leaves the description empty.
-        (
-            "---\nname: review\ndescription:\n---\n",
-            False,
-            "empty_frontmatter_field:description",
-        ),
-        ("---\nname: review\ndescription: ~\n---\n", True, None),
-        ("---\nname: review\n---\n", False, "missing_frontmatter_field:description"),
-        ("No front matter.\n", False, "missing_frontmatter_field:description"),
-        # Malformed front matter is refused before a missing field.
-        ("---\nname: review\nx: [unclosed\n---\n", False, "invalid_frontmatter"),
-        (_UNCHECKED, None, None),
-        ("---\nname: !!timestamp 2026-01-02\ndescription: d\n---\n", None, None),
-    ],
-)
-def test_check_front_matter_applies_the_harness_requirements(
-    tmp_path: Path, front_matter: str, accepted: bool | None, reason: str | None
-):
-    skill_file = tmp_path / "SKILL.md"
-    skill_file.write_text(front_matter, encoding="utf-8")
-    read = read_front_matter(skill_file, name_style="openclaw")
-
-    assert check_front_matter(read, CHECKED) == (accepted, reason)
-    # Rules without requirements accept every skill.
-    assert check_front_matter(read, OPENCLAW) == (True, None)
-
-
-@pytest.mark.parametrize("problem", sorted(_REFUSED))
+@pytest.mark.parametrize("reason", _REASONS)
 @pytest.mark.parametrize("refused_first", [True, False])
 @pytest.mark.parametrize("policy", POLICIES)
 def test_refused_copy_in_another_entry_is_not_a_duplicate(
-    tmp_path: Path, problem: str, refused_first: bool, policy: str | None
+    tmp_path: Path, reason: str, refused_first: bool, policy: str | None
 ):
     """The copy the harness loads wins whichever entry holds the refused one."""
-    text, reason = _REFUSED[problem]
-    refused = _write_skill(tmp_path / "refused" / "review", text)
-    valid = _write_skill(tmp_path / "valid" / "review", _VALID)
+    refused = _write_skill(tmp_path / "refused" / "review")
+    valid = _write_skill(tmp_path / "valid" / "review")
+    reader = FakeReader(
+        {refused: CandidateInfo("review", valid=False, reason=reason), valid: _VALID}
+    )
     entries = [{"skill": refused}, {"skill": valid}]
     if not refused_first:
         entries.reverse()
@@ -1997,25 +1537,29 @@ def test_refused_copy_in_another_entry_is_not_a_duplicate(
         for index, path in enumerate(entry["skill"] for entry in entries)
     }
 
-    load = load_directories(entries, rules=CHECKED, duplicates=policy)
+    load = load_directories(entries, rules=IMMEDIATE, duplicates=policy, reader=reader)
 
     assert load.selected == [FoundSkill("review", valid, fields[valid], "skill")]
     assert load.skipped == [SkippedCandidate(refused, fields[refused], reason)]
     assert load.duplicates == []
 
 
-@pytest.mark.parametrize("problem", sorted(_REFUSED))
+@pytest.mark.parametrize("reason", _REASONS)
 @pytest.mark.parametrize("refused_first", [True, False])
 @pytest.mark.parametrize("policy", POLICIES)
 def test_refused_copy_in_the_same_folder_is_not_a_duplicate(
-    tmp_path: Path, problem: str, refused_first: bool, policy: str | None
+    tmp_path: Path, reason: str, refused_first: bool, policy: str | None
 ):
-    text, reason = _REFUSED[problem]
     team = tmp_path / "team"
-    refused = _write_skill(team / ("a" if refused_first else "b"), text)
-    valid = _write_skill(team / ("b" if refused_first else "a"), _VALID)
+    refused = _write_skill(team / ("a" if refused_first else "b"))
+    valid = _write_skill(team / ("b" if refused_first else "a"))
+    reader = FakeReader(
+        {refused: CandidateInfo("review", valid=False, reason=reason), valid: _VALID}
+    )
 
-    load = load_directories([{"folder": team}], rules=CHECKED, duplicates=policy)
+    load = load_directories(
+        [{"folder": team}], rules=IMMEDIATE, duplicates=policy, reader=reader
+    )
 
     assert load.selected == [
         FoundSkill("review", valid, "skills.directories[0]", "folder")
@@ -2026,18 +1570,26 @@ def test_refused_copy_in_the_same_folder_is_not_a_duplicate(
 
 
 @pytest.mark.parametrize("policy", POLICIES)
-def test_refused_copy_with_an_unreadable_name_is_skipped(
+def test_refused_copy_with_an_uncertain_name_is_skipped(
     tmp_path: Path, policy: str | None
 ):
     """A refused copy never loads, so a name Fabric cannot read does not matter."""
-    refused = _write_skill(
-        tmp_path / "team" / "a",
-        "---\n? name\n: review\ndescription: d\nmetadata: [unclosed\n---\n",
+    refused = _write_skill(tmp_path / "team" / "a")
+    valid = _write_skill(tmp_path / "team" / "b")
+    reader = FakeReader(
+        {
+            refused: CandidateInfo(
+                None, valid=False, reason="invalid_frontmatter", name_uncertain=True
+            ),
+            valid: _VALID,
+        }
     )
-    valid = _write_skill(tmp_path / "team" / "b", _VALID)
 
     load = load_directories(
-        [{"folder": tmp_path / "team"}], rules=CHECKED, duplicates=policy
+        [{"folder": tmp_path / "team"}],
+        rules=IMMEDIATE,
+        duplicates=policy,
+        reader=reader,
     )
 
     assert [skill.path for skill in load.selected] == [valid]
@@ -2046,13 +1598,20 @@ def test_refused_copy_with_an_unreadable_name_is_skipped(
     ]
 
 
-@pytest.mark.parametrize("problem", sorted(_REFUSED))
-def test_rules_without_the_requirements_keep_refused_copies(
-    tmp_path: Path, problem: str
-):
-    """Rules like Hermes's, which loads such copies, still see the clash."""
-    refused = _write_skill(tmp_path / "refused" / "review", _REFUSED[problem][0])
-    valid = _write_skill(tmp_path / "valid" / "review", _VALID)
+@pytest.mark.parametrize(
+    "text",
+    [
+        "---\nname: review\ndescription: Broken.\nmetadata: [unclosed\n---\n",
+        '---\nname: review\ndescription: "  "\n---\n',
+    ],
+)
+def test_default_reader_keeps_front_matter_it_does_not_check(tmp_path: Path, text: str):
+    """Like Hermes, which loads such copies, the default reader sees the clash."""
+    refused = _write_skill(tmp_path / "refused" / "review", text)
+    valid = _write_skill(
+        tmp_path / "valid" / "review",
+        "---\nname: review\ndescription: Reviews code.\n---\n",
+    )
     entries = [{"skill": refused}, {"skill": valid}]
 
     load = load_directories(entries, rules=IMMEDIATE, duplicates=None)
@@ -2065,11 +1624,15 @@ def test_rules_without_the_requirements_keep_refused_copies(
 
 
 def test_unchecked_copy_loads_and_is_marked_without_a_policy(tmp_path: Path):
-    unchecked = _write_skill(tmp_path / "unchecked" / "review", _UNCHECKED)
-    valid = _write_skill(tmp_path / "valid" / "review", _VALID)
+    unchecked = _write_skill(tmp_path / "unchecked" / "review")
+    valid = _write_skill(tmp_path / "valid" / "review")
+    reader = FakeReader({unchecked: _UNCHECKED, valid: _VALID})
 
     load = load_directories(
-        [{"skill": unchecked}, {"skill": valid}], rules=CHECKED, duplicates=None
+        [{"skill": unchecked}, {"skill": valid}],
+        rules=IMMEDIATE,
+        duplicates=None,
+        reader=reader,
     )
 
     assert load.selected == [
@@ -2093,9 +1656,12 @@ def test_unchecked_copy_loads_and_is_marked_without_a_policy(tmp_path: Path):
 def test_unchecked_copy_without_a_clash_loads_under_a_policy(
     tmp_path: Path, policy: str
 ):
-    unchecked = _write_skill(tmp_path / "unchecked" / "review", _UNCHECKED)
+    unchecked = _write_skill(tmp_path / "unchecked" / "review")
+    reader = FakeReader({unchecked: _UNCHECKED})
 
-    load = load_directories([{"skill": unchecked}], rules=CHECKED, duplicates=policy)
+    load = load_directories(
+        [{"skill": unchecked}], rules=IMMEDIATE, duplicates=policy, reader=reader
+    )
 
     assert [(skill.path, skill.validity_uncertain) for skill in load.selected] == [
         (unchecked, True)
@@ -2115,15 +1681,16 @@ def test_unchecked_copy_that_decides_a_policy_fails(
     tmp_path: Path, policy: str, unchecked_first: bool
 ):
     """Whether the copy loads would change the outcome, so Fabric does not guess."""
-    unchecked = _write_skill(tmp_path / "unchecked" / "review", _UNCHECKED)
-    valid = _write_skill(tmp_path / "valid" / "review", _VALID)
+    unchecked = _write_skill(tmp_path / "unchecked" / "review")
+    valid = _write_skill(tmp_path / "valid" / "review")
+    reader = FakeReader({unchecked: _UNCHECKED, valid: _VALID})
     entries = [{"skill": unchecked}, {"skill": valid}]
     if not unchecked_first:
         entries.reverse()
     field = f"skills.directories[{0 if unchecked_first else 1}]"
 
     with pytest.raises(SkillLoadError) as caught:
-        load_directories(entries, rules=CHECKED, duplicates=policy)
+        load_directories(entries, rules=IMMEDIATE, duplicates=policy, reader=reader)
 
     assert caught.value.reason == "unsupported_frontmatter"
     assert caught.value.field == field
@@ -2138,13 +1705,14 @@ def test_unchecked_copy_that_decides_a_policy_fails(
 def test_unchecked_copy_that_cannot_win_leaves_the_policy_decided(
     tmp_path: Path, policy: str, unchecked_first: bool
 ):
-    unchecked = _write_skill(tmp_path / "unchecked" / "review", _UNCHECKED)
-    valid = _write_skill(tmp_path / "valid" / "review", _VALID)
+    unchecked = _write_skill(tmp_path / "unchecked" / "review")
+    valid = _write_skill(tmp_path / "valid" / "review")
+    reader = FakeReader({unchecked: _UNCHECKED, valid: _VALID})
     entries = [{"skill": unchecked}, {"skill": valid}]
     if not unchecked_first:
         entries.reverse()
 
-    load = load_directories(entries, rules=CHECKED, duplicates=policy)
+    load = load_directories(entries, rules=IMMEDIATE, duplicates=policy, reader=reader)
 
     assert [skill.path for skill in load.selected] == [valid]
     assert load.duplicates[0].outcome == "selected"
@@ -2152,15 +1720,17 @@ def test_unchecked_copy_that_cannot_win_leaves_the_policy_decided(
 
 
 def test_checked_clash_fails_as_a_duplicate_before_an_unchecked_copy(tmp_path: Path):
-    unchecked = _write_skill(tmp_path / "unchecked" / "review", _UNCHECKED)
-    first = _write_skill(tmp_path / "first" / "review", _VALID)
-    second = _write_skill(tmp_path / "second" / "review", _VALID)
+    unchecked = _write_skill(tmp_path / "unchecked" / "review")
+    first = _write_skill(tmp_path / "first" / "review")
+    second = _write_skill(tmp_path / "second" / "review")
+    reader = FakeReader({unchecked: _UNCHECKED, first: _VALID, second: _VALID})
 
     with pytest.raises(SkillLoadError) as caught:
         load_directories(
             [{"skill": unchecked}, {"skill": first}, {"skill": second}],
-            rules=CHECKED,
+            rules=IMMEDIATE,
             duplicates="reject",
+            reader=reader,
         )
 
     assert caught.value.reason == "duplicate"
@@ -2172,21 +1742,27 @@ def test_unchecked_copy_in_the_same_folder_fails_under_a_policy(
     tmp_path: Path, policy: str
 ):
     team = tmp_path / "team"
-    valid = _write_skill(team / "a", _VALID)
-    unchecked = _write_skill(team / "b", _UNCHECKED)
+    valid = _write_skill(team / "a")
+    unchecked = _write_skill(team / "b")
+    reader = FakeReader({valid: _VALID, unchecked: _UNCHECKED})
 
     with pytest.raises(SkillLoadError) as caught:
-        load_directories([{"folder": team}], rules=CHECKED, duplicates=policy)
+        load_directories(
+            [{"folder": team}], rules=IMMEDIATE, duplicates=policy, reader=reader
+        )
 
     assert caught.value.reason == "unsupported_frontmatter"
     assert caught.value.field == "skills.directories[0]"
     assert caught.value.paths == (unchecked,)
     # Two checked copies in one folder still fail as duplicates.
-    _write_skill(team / "c", _VALID)
+    other = _write_skill(team / "c")
+    reader.infos[other] = _VALID
     with pytest.raises(SkillLoadError) as caught:
-        load_directories([{"folder": team}], rules=CHECKED, duplicates=policy)
+        load_directories(
+            [{"folder": team}], rules=IMMEDIATE, duplicates=policy, reader=reader
+        )
     assert caught.value.reason == "duplicate"
-    assert caught.value.paths == (valid, (team / "c").resolve())
+    assert caught.value.paths == (valid, other)
 
 
 # Reporting
@@ -2200,17 +1776,12 @@ def test_report_block_and_warnings_describe_the_load(
     plain = make_skill(team / "plain", description=False).resolve()
     copy = make_skill(tmp_path / "copy", "review").resolve()
     (tmp_path / "empty").mkdir()
-    rules = DiscoveryRules(
-        traversal="immediate_children",
-        nested_skills="stop_at_skill",
-        max_depth=1,
-        required_frontmatter_fields=("description",),
-    )
 
     load = load_directories(
         [{"folder": team}, {"skill": copy}, {"folder": tmp_path / "empty"}],
-        rules=rules,
+        rules=IMMEDIATE,
         duplicates="last_wins",
+        reader=front_matter_reader(required_fields=("description",)),
     )
     bundled = {"selected": ["pdf"], "unavailable": []}
 

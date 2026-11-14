@@ -31,6 +31,7 @@ import stat
 import sys
 from collections.abc import Callable
 from collections.abc import Mapping
+from collections.abc import Sequence
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -41,11 +42,14 @@ from typing import Any
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import BundledSkills
 from nemo_fabric_adapter_contract.skills import SKILL_FILE
+from nemo_fabric_adapter_contract.skills import CandidateInfo
+from nemo_fabric_adapter_contract.skills import CandidateReader
 from nemo_fabric_adapter_contract.skills import DirectoryLoad
 from nemo_fabric_adapter_contract.skills import DiscoveryRules
 from nemo_fabric_adapter_contract.skills import DuplicateRecord
 from nemo_fabric_adapter_contract.skills import SkillLoadError
 from nemo_fabric_adapter_contract.skills import SkippedCandidate
+from nemo_fabric_adapter_contract.skills import front_matter_reader
 from nemo_fabric_adapter_contract.skills import load_directories
 from nemo_fabric_adapter_contract.skills import report_block
 from nemo_fabric_adapter_contract.skills import warn
@@ -53,43 +57,15 @@ from nemo_fabric_adapters.common import lifecycle
 
 ADAPTER = "Hermes"
 
-# agent/skill_utils.py EXCLUDED_SKILL_DIRS: folders Hermes's skill scan never
-# enters. Hermes also drops every skill whose path contains one of them.
-#
-# Supported Hermes releases differ in this list, so read it from the installed
-# Hermes when it can be imported, and fall back to the newest known list.
-_FALLBACK_EXCLUDED_DIRS = frozenset(
-    {
-        ".git",
-        ".github",
-        ".hub",
-        ".archive",
-        ".curator_backups",
-        ".locks",
-        ".hermes-dist",
-        ".venv",
-        "venv",
-        "node_modules",
-        "site-packages",
-        "__pycache__",
-        ".tox",
-        ".nox",
-        ".pytest_cache",
-        ".mypy_cache",
-        ".ruff_cache",
-    }
-)
-
-
-def _installed_excluded_dirs() -> frozenset[str]:
-    try:
-        from agent.skill_utils import EXCLUDED_SKILL_DIRS
-    except Exception:  # Hermes isn't importable here, or has no such constant.
-        return _FALLBACK_EXCLUDED_DIRS
-    return frozenset(EXCLUDED_SKILL_DIRS)
-
-
-HERMES_EXCLUDED_DIRS = _installed_excluded_dirs()
+try:
+    # agent/skill_utils.py EXCLUDED_SKILL_DIRS: folders Hermes's skill scan never
+    # enters, and Hermes drops every skill whose path contains one of them.
+    # Supported Hermes releases differ in this list.
+    from agent.skill_utils import EXCLUDED_SKILL_DIRS as HERMES_EXCLUDED_DIRS
+except ImportError:
+    # The adapter always runs beside Hermes. Without it, as in the
+    # dependency-free unit tests, discovery skips the helper's default folders.
+    HERMES_EXCLUDED_DIRS = DiscoveryRules.excluded_dir_names
 
 # agent/skill_utils.py SKILL_SUPPORT_DIRS: a skill's support folders. Hermes's
 # skill scan never enters one that sits directly in a folder holding SKILL.md.
@@ -97,19 +73,19 @@ HERMES_SUPPORT_DIRS = frozenset({"references", "templates", "assets", "scripts"}
 
 # How Hermes's skill scan (agent/skill_utils.py iter_skill_index_files) walks a
 # skill root: from the root itself, every level, below skill folders too
-# except their support folders, with no depth limit. A missing front-matter
-# name falls back to the folder name and no front-matter field is required
-# (tools/skills_tool.py _skill_catalog).
+# except their support folders, with no depth limit. Names and validity come
+# from hermes_reader.
 HERMES_DISCOVERY = DiscoveryRules(
     traversal="recursive",
     nested_skills="include",
     max_depth=None,
-    required_frontmatter_fields=(),
-    name_fallback=True,
     excluded_dir_names=HERMES_EXCLUDED_DIRS,
     folder_root_is_skill=True,
     support_dir_names=HERMES_SUPPORT_DIRS,
 )
+
+# The skip reason of a skill Hermes's catalog drops.
+NOT_LOADED = "not_loaded_by_hermes"
 
 # tools/skills_sync.py: the file that records the skills Hermes copied into its
 # home from its installation, one ``name:hash`` (or plain ``name``) per line.
@@ -225,6 +201,7 @@ def plan_skills(
                 rules=HERMES_DISCOVERY,
                 duplicates=skills.duplicates,
                 base_dir=base_dir,
+                reader=hermes_reader(),
             )
             plan.external_dirs, plan.root_fields = external_dirs(
                 plan.load, skills.duplicates
@@ -247,6 +224,73 @@ def plan_skills(
         plan.external_names = external_skill_names(roots, home)
         _plan_bundled(plan, skills.bundled)
     return plan
+
+
+def hermes_reader() -> CandidateReader:
+    """Return a reader that names and checks each candidate as Hermes does.
+
+    It runs what tools/skills_tool.py ``_skill_catalog`` runs on each
+    ``SKILL.md``, with Hermes's own functions: Hermes's front-matter parser,
+    which recovers malformed YAML, reads the name, or the reader returns none
+    for the folder name fallback. A skill that ``_skill_catalog`` drops, such
+    as one whose ``name`` or ``description`` is null or a number, or one
+    below a folder Hermes excludes, is refused, and so is one whose name is
+    empty, which Hermes lists but cannot load (``no_name``). A list name
+    loads as its ``str()``, as in Hermes.
+
+    Whether Hermes shows a skill on this platform, and which copy of a name
+    loads, depend on the live catalog; :func:`observe` reports them.
+
+    Without Hermes, which the adapter always runs beside, as in the
+    dependency-free unit tests, this is the helper's
+    :func:`front_matter_reader`.
+    """
+
+    try:
+        with redirect_stdout(StringIO()):
+            from agent import skill_utils
+            from tools import skills_tool
+    except ImportError:
+        return front_matter_reader()
+
+    def read_one(folder: Path) -> CandidateInfo:
+        skill_md = folder / SKILL_FILE
+        if any(part in skill_utils.EXCLUDED_SKILL_DIRS for part in skill_md.parts):
+            return CandidateInfo(None, valid=False, reason="excluded_path")
+        try:
+            text = skills_tool._read_skill_text(skill_md)
+        except OSError:
+            return CandidateInfo(None, valid=False, reason="unreadable")
+        try:
+            # tools/skills_tool.py _skill_catalog: anything raised here drops
+            # the skill.
+            frontmatter, body = skill_utils.parse_frontmatter(text[:4000])
+            name = frontmatter.get("name", skill_md.parent.name)
+            name = name[: skills_tool.MAX_NAME_LENGTH]
+            description = frontmatter.get("description", "")
+            if not description:
+                description = next(
+                    (
+                        line
+                        for line in map(str.strip, body.strip().split("\n"))
+                        if line and not line.startswith("#")
+                    ),
+                    description,
+                )
+            skills_tool._truncate_description(description)
+        except Exception:
+            return CandidateInfo(None, valid=False, reason=NOT_LOADED)
+        if "name" not in frontmatter:
+            return CandidateInfo(None)
+        # Hermes resolves and loads a skill by str() of its name.
+        if not str(name):
+            return CandidateInfo(None, valid=False, reason="no_name")
+        return CandidateInfo(str(name))
+
+    def read(folders: Sequence[Path]) -> Mapping[Path, CandidateInfo]:
+        return {folder: read_one(folder) for folder in folders}
+
+    return read
 
 
 def skill_error(error: SkillLoadError) -> lifecycle.LifecycleError:
@@ -762,12 +806,12 @@ def observe(
 ) -> SkillObservation:
     """Combine the plan with Hermes's resolved catalog.
 
-    Hermes's catalog decides what loads. External skills that Hermes does not
-    resolve as ``unique`` leave the loaded list, and loaded skills carry the
-    name Hermes reads, which can differ from the checked name for unusual
-    front matter. A skill that Hermes sees but does not load for another
-    reason, such as a clash with another skill's folder name, is skipped with
-    Hermes's status as the reason.
+    The plan already carries the names Hermes reads (see
+    :func:`hermes_reader`); the live catalog adds what only it knows. An
+    external skill that Hermes hides on this platform or environment, that a
+    copy in the Hermes home shadows, or that Hermes refuses as ambiguous,
+    such as for a clash with another skill's folder name, leaves the loaded
+    list and is skipped with the reason.
 
     Every name that more than one skill folder in Hermes's catalog provides is
     reported as a duplicate, with each copy's origin (``external``,
@@ -775,9 +819,7 @@ def observe(
     external copy takes part, the outcome is ``selected`` when it loads,
     ``shadowed`` when a copy in the Hermes home wins, and ``ambiguous`` when
     Hermes refuses the name. Otherwise it is ``selected`` when Hermes loads
-    one copy and ``ambiguous`` when it refuses them all. Copies are matched
-    by the name Hermes reads, never by the checks' reading of the front
-    matter.
+    one copy and ``ambiguous`` when it refuses them all.
     """
 
     load = plan.load or DirectoryLoad()
@@ -826,26 +868,23 @@ def observe(
             outcome, selected = "selected", _visible_dir(owner)
         duplicates.append(DuplicateRecord(name, tuple(reported), outcome, selected))
 
-    # Hermes's status, name, and visibility per external skill folder.
-    statuses: dict[Path, tuple[str, str, bool]] = {}
+    # Hermes's status and visibility per external skill folder.
+    statuses: dict[Path, tuple[str, bool]] = {}
     for row in external_rows:
-        if statuses.get(row["dir"], ("", "", True))[0] != "unique":
-            statuses[row["dir"]] = (row["status"], row["name"], row["visible"])
+        if statuses.get(row["dir"], ("", True))[0] != "unique":
+            statuses[row["dir"]] = (row["status"], row["visible"])
 
     # A clash the checks predicted without a policy that Hermes's catalog does
-    # not show did not happen; each copy is reported as loaded under Hermes's
-    # name or skipped. A policy's choice still stands, but its selected copy
-    # is named only when Hermes loads it and shows it, whatever name Hermes
-    # reads for it.
+    # not show did not happen; each copy is reported as loaded or skipped. A
+    # policy's choice still stands, but its selected copy is named only when
+    # Hermes loads it and shows it.
     for record in records.values():
         if record.outcome == "ambiguous":
             continue
-        loaded = (
-            record.selected is not None and statuses.get(record.selected) is not None
+        loaded = record.selected is not None and statuses.get(record.selected) == (
+            "unique",
+            True,
         )
-        if loaded:
-            status, _name, visible = statuses[record.selected]
-            loaded = status == "unique" and visible
         duplicates.append(
             dataclasses.replace(record, selected=record.selected if loaded else None)
         )
@@ -877,13 +916,12 @@ def observe(
     selected = []
     skipped = list(load.skipped)
     for skill in load.selected:
-        status, name, visible = statuses.get(skill.path, (None, skill.name, True))
+        status, visible = statuses.get(skill.path, (None, True))
         if status == "unique" and visible:
-            selected.append(dataclasses.replace(skill, name=name))
+            selected.append(skill)
             continue
         if status is None:
-            excluded = HERMES_EXCLUDED_DIRS.intersection(skill.path.parts)
-            reason = "excluded_path" if excluded else "not_loaded_by_hermes"
+            reason = NOT_LOADED
         elif status == "unique":
             # Hermes resolves it but hides it on this platform or environment.
             reason = "native_conditions"

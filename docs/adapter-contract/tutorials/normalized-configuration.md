@@ -226,6 +226,7 @@ from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.skills import (
     DiscoveryRules,
     SkillLoadError,
+    front_matter_reader,
     load_directories,
     warn,
 )
@@ -235,8 +236,10 @@ RULES = DiscoveryRules(
     traversal="recursive",
     nested_skills="stop_at_skill",
     max_depth=6,
-    required_frontmatter_fields=("description",),
 )
+
+# Replace this with a reader backed by the harness's own front-matter parser.
+READER = front_matter_reader(required_fields=("description",))
 
 def load_skills(config: AgentConfig):
     skills = config.skills
@@ -244,7 +247,10 @@ def load_skills(config: AgentConfig):
         return None
     try:
         load = load_directories(
-            skills.directories, rules=RULES, duplicates=skills.duplicates
+            skills.directories,
+            rules=RULES,
+            duplicates=skills.duplicates,
+            reader=READER,
         )
     except SkillLoadError as error:
         code = "not_found" if error.reason == "not_found" else "invalid"
@@ -281,10 +287,32 @@ def load_skills(config: AgentConfig):
      searches to a different depth than the rest of the entry.
 
    When entries need different rules, pass a function of the entry's index,
-   kind, and resolved path as `rules`.
-3. It records skipped candidates and empty `folder` entries instead of
-   failing.
-4. It applies the `duplicates` policy between entries. With a policy set, two
+   kind, and resolved path as `rules`. `DiscoveryRules` describe only the
+   folders the harness searches, not how it reads `SKILL.md`.
+3. It passes every candidate folder to one call of `reader`, a
+   `CandidateReader`. The reader returns a
+   `CandidateInfo(name, valid, reason, name_uncertain)` for each folder:
+   - `name`: the name the harness reads, or `None` for the folder name
+     fallback.
+   - `valid`: `True` when the harness loads the skill, `False` when it
+     refuses it, or `None` when the reader can't tell. `reason` is required
+     with `False` and becomes the skip reason. Use `unreadable` for a
+     `SKILL.md` that can't be read; a `skill` entry like that fails with
+     `invalid`.
+   - `name_uncertain`: `True` when the reader can't tell the harness's name.
+
+   The helper module stays dependency-free, so it doesn't parse YAML. Pass a
+   reader backed by the harness's own parser, so that names and refusals
+   match what the harness loads. The default `front_matter_reader()` reads
+   only a single-line `name:` value, plain or quoted, and marks other names
+   `name_uncertain`. With `required_fields`, it refuses a skill that lacks a
+   top-level key, with the reason `missing_frontmatter_field:<key>`.
+4. It skips refused candidates before any duplicate check, and records
+   skipped candidates and empty `folder` entries instead of failing. Under an
+   explicit `duplicates` policy, an uncertain name fails with
+   `unsupported_frontmatter_name`, and a skill with `valid=None` fails with
+   `unsupported_frontmatter` when the policy's result depends on it.
+5. It applies the `duplicates` policy between entries. With a policy set, two
    skills with the same name inside one `folder` entry fail with `duplicate`,
    even when another entry also reaches one of them.
    With no policy, it records each clash as `ambiguous`.

@@ -265,6 +265,38 @@ async def test_mcp_stdio_transport(
         assert "America/Los_Angeles" in tool_end["data"]
 
 
+def _skill_config(api_server: str):
+    """The code review agent on Hermes, answered by the mock server's echo model."""
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = with_relay(hermes_config())
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.tools.enabled = None
+    return config
+
+
+def _use_skill(api_server: str, name: str) -> None:
+    """Make the mock model's next turn call Hermes's skill_view for ``name``."""
+    requests.post(
+        f"{api_server}/_scenario",
+        json={"tool_call": {"name": "skill_view", "arguments": {"name": name}}},
+        timeout=5,
+    ).raise_for_status()
+
+
+def _kept_home(agent_dir: Path, config) -> Path:
+    """The agent's state folder, which keep_state makes the Hermes home."""
+    return (
+        agent_dir
+        / "artifacts"
+        / "hermes"
+        / ".fabric"
+        / "state"
+        / "nvidia.fabric.hermes"
+        / config.metadata.name
+    )
+
+
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
 @pytest.mark.parametrize("skill", ["default", "alternate", None])
 async def test_skill_selection(
@@ -274,11 +306,7 @@ async def test_skill_selection(
     default_skill: Path,
     alternate_skill: Path,
 ):
-    os.environ["ADAPTER_PYTHON"] = sys.executable
-    config = with_relay(hermes_config())
-    config.models["default"].model = "fabric-echo"
-    config.models["default"].base_url = f"{api_server}/v1"
-    config.tools.enabled = None
+    config = _skill_config(api_server)
     config.add_skill_path(default_skill)
 
     if skill == "alternate" or skill is None:
@@ -288,17 +316,7 @@ async def test_skill_selection(
         config.add_skill_path(alternate_skill)
 
     if skill is not None:
-        scenario_response = requests.post(
-            f"{api_server}/_scenario",
-            json={
-                "tool_call": {
-                    "name": "skill_view",
-                    "arguments": {"name": skill},
-                }
-            },
-            timeout=5,
-        )
-        scenario_response.raise_for_status()
+        _use_skill(api_server, skill)
 
     result = await Fabric().run(
         config,
@@ -323,11 +341,7 @@ async def test_skill_directories_load_through_hermes(
     """A folder entry and a skill entry reach Hermes's own skill loader."""
     team = tmp_path / "team"
     shutil.copytree(default_skill, team / "default")
-    os.environ["ADAPTER_PYTHON"] = sys.executable
-    config = with_relay(hermes_config())
-    config.models["default"].model = "fabric-echo"
-    config.models["default"].base_url = f"{api_server}/v1"
-    config.tools.enabled = None
+    config = _skill_config(api_server)
     config.skills = SkillConfig(
         directories=[
             SkillDirectory(folder=team),
@@ -335,11 +349,7 @@ async def test_skill_directories_load_through_hermes(
         ],
         duplicates="reject",
     )
-    requests.post(
-        f"{api_server}/_scenario",
-        json={"tool_call": {"name": "skill_view", "arguments": {"name": skill}}},
-        timeout=5,
-    ).raise_for_status()
+    _use_skill(api_server, skill)
 
     result = await Fabric().run(
         config,
@@ -380,21 +390,13 @@ async def test_skill_written_beside_read_only_skills_loads_after_a_restart(
     make_read_only(team)
     agent_skills = tmp_path / "agent-skills"
     agent_skills.mkdir()
-    os.environ["ADAPTER_PYTHON"] = sys.executable
-    config = with_relay(hermes_config())
-    config.models["default"].model = "fabric-echo"
-    config.models["default"].base_url = f"{api_server}/v1"
-    config.tools.enabled = None
+    config = _skill_config(api_server)
     config.skills = SkillConfig(
         directories=[SkillDirectory(folder=team), SkillDirectory(folder=agent_skills)]
     )
 
     async def run_with_skill(skill: str) -> dict:
-        requests.post(
-            f"{api_server}/_scenario",
-            json={"tool_call": {"name": "skill_view", "arguments": {"name": skill}}},
-            timeout=5,
-        ).raise_for_status()
+        _use_skill(api_server, skill)
         result = await Fabric().run(
             config, base_dir=code_review_agent_dir, input=f"Use the {skill} skill."
         )
@@ -461,27 +463,14 @@ async def test_skill_created_by_hermes_loads_in_the_next_runtime_with_kept_state
     protected = mounted / "SKILL.md"
     original = protected.read_text(encoding="utf-8")
     make_read_only(mounted)
-    os.environ["ADAPTER_PYTHON"] = sys.executable
-    config = with_relay(hermes_config())
-    config.models["default"].model = "fabric-echo"
-    config.models["default"].base_url = f"{api_server}/v1"
-    config.tools.enabled = None
+    config = _skill_config(api_server)
     config.runtime.keep_state = True
     config.skills = SkillConfig(directories=[SkillDirectory(skill=mounted)])
 
     async with await Fabric().start_runtime(
         config, base_dir=code_review_agent_dir
     ) as first:
-        # The agent's state folder, which keep_state makes the Hermes home.
-        home = (
-            code_review_agent_dir
-            / "artifacts"
-            / "hermes"
-            / ".fabric"
-            / "state"
-            / "nvidia.fabric.hermes"
-            / config.metadata.name
-        )
+        home = _kept_home(code_review_agent_dir, config)
         assert (home / "config.yaml").is_file(), sorted(home.parent.iterdir())
         created = _hermes_skill_manage(
             home,
@@ -508,11 +497,7 @@ async def test_skill_created_by_hermes_loads_in_the_next_runtime_with_kept_state
     assert "Permission denied" in str(edited["error"]), edited
     assert protected.read_text(encoding="utf-8") == original
 
-    requests.post(
-        f"{api_server}/_scenario",
-        json={"tool_call": {"name": "skill_view", "arguments": {"name": "alternate"}}},
-        timeout=5,
-    ).raise_for_status()
+    _use_skill(api_server, "alternate")
     async with await Fabric().start_runtime(
         config, base_dir=code_review_agent_dir
     ) as second:
@@ -545,22 +530,10 @@ async def test_agent_skill_with_an_excluded_bundled_name_loads_in_the_next_runti
 
     inventory = hermes_skills.bundled_inventory()
     name = sorted(set(inventory) - hermes_skills.ESSENTIAL_SKILLS)[0]
-    os.environ["ADAPTER_PYTHON"] = sys.executable
-    config = with_relay(hermes_config())
-    config.models["default"].model = "fabric-echo"
-    config.models["default"].base_url = f"{api_server}/v1"
-    config.tools.enabled = None
+    config = _skill_config(api_server)
     config.runtime.keep_state = True
     config.skills = SkillConfig(bundled=BundledSkills(exclude=[name]))
-    home = (
-        code_review_agent_dir
-        / "artifacts"
-        / "hermes"
-        / ".fabric"
-        / "state"
-        / "nvidia.fabric.hermes"
-        / config.metadata.name
-    )
+    home = _kept_home(code_review_agent_dir, config)
     bundled_place = (
         home / "skills" / inventory[name].relative_to(hermes_skills.bundled_dir())
     )
@@ -583,11 +556,7 @@ async def test_agent_skill_with_an_excluded_bundled_name_loads_in_the_next_runti
     created_path = Path(created["path"]).resolve()
     assert created_path.parent != bundled_place.resolve().parent
 
-    requests.post(
-        f"{api_server}/_scenario",
-        json={"tool_call": {"name": "skill_view", "arguments": {"name": name}}},
-        timeout=5,
-    ).raise_for_status()
+    _use_skill(api_server, name)
     async with await Fabric().start_runtime(
         config, base_dir=code_review_agent_dir
     ) as second:

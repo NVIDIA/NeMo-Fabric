@@ -32,17 +32,21 @@ rules are chosen per entry:
   ``path_escape``, with or without a duplicate policy, so passing a selected
   skill's resolved folder never loads a skill OpenClaw refuses. The adapter
   writes no ``skills.load.allowSymlinkTargets``, so no target is trusted.
-- A skill needs front matter that YAML accepts and a ``description`` that is
-  not empty after trimming (``loadSingleSkillDirectory`` in
-  ``dist/skill-paths-*.mjs``); its name is the front-matter ``name`` or the
-  folder name. Other skills are skipped before any duplicate check, with
-  ``invalid_frontmatter``, ``missing_frontmatter_field:description``, or
-  ``empty_frontmatter_field:description``, so they never count as a copy.
-  When Fabric cannot tell whether OpenClaw accepts the front matter, the
-  skill is kept; under a duplicate policy whose outcome depends on it, start
-  fails with ``unsupported_frontmatter``. ``openclaw skills list`` at start
-  reports any other skill OpenClaw refuses; under ``first_wins`` or
-  ``last_wins`` the next copy replaces a refused winner.
+- A skill needs front matter that OpenClaw's parser accepts and a
+  ``description`` that is not empty after trimming, in a ``SKILL.md`` of at
+  most 256,000 bytes (``loadSingleSkillDirectory`` in
+  ``dist/skill-paths-*.mjs``); its name is the trimmed front-matter ``name``
+  or the trimmed folder name. :class:`OpenClawReader` runs OpenClaw's own
+  ``parseSkillFrontmatter`` through ``node`` to tell, so names and refusals
+  match OpenClaw's. Refused skills are skipped before any duplicate check,
+  with ``invalid_frontmatter``, ``missing_frontmatter_field:description``,
+  ``empty_frontmatter_field:description``, or ``file_too_large``, so they
+  never count as a copy. When the parser cannot run, Fabric reads simple
+  front matter itself and cannot tell which skills OpenClaw refuses; under a
+  duplicate policy whose outcome depends on one, start fails with
+  ``unsupported_frontmatter``. ``openclaw skills list`` at start reports any
+  other skill OpenClaw refuses, such as a hard-linked ``SKILL.md``; under
+  ``first_wins`` or ``last_wins`` the next copy replaces a refused winner.
 
 OpenClaw's own ``skills.allowBundled`` filters bundled and Custodian skills
 after names are resolved, so a filtered-out shipped skill would still hide a
@@ -62,11 +66,14 @@ Custodian skills load only for the agent that owns them
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import shutil
+import subprocess
 import sys
+import time
 from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -77,10 +84,15 @@ from typing import Any
 
 from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapter_contract import skills as contract_skills
+from nemo_fabric_adapter_contract.skills import CandidateInfo
 from nemo_fabric_adapters.common import lifecycle
 
 
 SKILL_FILE = contract_skills.SKILL_FILE
+# DEFAULT_MAX_SKILL_FILE_BYTES: OpenClaw refuses a larger SKILL.md.
+MAX_SKILL_FILE_BYTES = 256_000
+# The longest one read of every candidate's front matter may take.
+READER_TIMEOUT_SECONDS = 15.0
 # MAX_CONFIGURED_ROOT_GROUPED_SKILL_SCAN_DEPTH and MAX_GROUPED_SKILL_SCAN_DEPTH.
 EXTRA_ROOT_DEPTH = 2
 SKILLS_ROOT_DEPTH = 6
@@ -119,9 +131,6 @@ class NativeCopy:
     path: Path
     rank: float
     """The source's precedence: a higher rank wins a name."""
-    valid: bool | None
-    """Whether OpenClaw's loader accepts the skill, or ``None`` when Fabric
-    cannot tell."""
 
 
 @dataclass(frozen=True)
@@ -171,7 +180,7 @@ class SkillPlan:
     """Copies OpenClaw loads from its own sources, by name, lowest rank first."""
     native_refused: set[Path] | None = None
     """Native copies ``openclaw skills list`` showed it does not load, or
-    ``None`` before it ran, when Fabric's own validity check decides."""
+    ``None`` before it ran."""
     report_directories: bool = False
     """Whether ``skills.directories`` is set, so the report always says what
     it loads."""
@@ -230,10 +239,13 @@ def plan(
     base_dir: Path,
     workspace: Path,
     bundled_dir: Path | None,
+    reader: contract_skills.CandidateReader,
     custodian: bool = True,
 ) -> SkillPlan:
     """Check the structured skill settings and return what OpenClaw should load.
 
+    ``reader`` reads each candidate as OpenClaw does (:func:`candidate_reader`);
+    every candidate the plan meets is passed to it in one call.
     ``custodian`` says whether the configured agent owns the Custodian skills
     (:func:`owns_custodian_skills`).
 
@@ -249,15 +261,24 @@ def plan(
     result.duplicates = skills.duplicates
     if skills.directories is None and skills.bundled is None:
         return result
+    if skills.bundled is not None and bundled_dir is None:
+        raise lifecycle.LifecycleError(
+            "openclaw_skill_invalid",
+            "OpenClaw's shipped skills folder was not found, so skills.bundled "
+            "cannot be applied",
+            metadata={"field": "skills.bundled", "reason": "inventory_unavailable"},
+        )
+    reader = _read_ahead(
+        reader,
+        skills.directories,
+        base_dir=base_dir,
+        bundled_dir=bundled_dir,
+        workspace=workspace,
+    )
+    if bundled_dir is not None:
+        result.inventory = bundled_inventory(bundled_dir, reader)
     if skills.bundled is not None:
-        if bundled_dir is None:
-            raise lifecycle.LifecycleError(
-                "openclaw_skill_invalid",
-                "OpenClaw's shipped skills folder was not found, so skills.bundled "
-                "cannot be applied",
-                metadata={"field": "skills.bundled", "reason": "inventory_unavailable"},
-            )
-        result.inventory = bundled_inventory(bundled_dir)
+        assert result.inventory is not None
         result.stage_bundled, result.bundled_selected = _select_bundled(
             skills.bundled, result.inventory
         )
@@ -272,7 +293,10 @@ def plan(
         load = contract_skills.DirectoryLoad()
     else:
         load = _load_directories(
-            skills.directories, duplicates=skills.duplicates, base_dir=base_dir
+            skills.directories,
+            duplicates=skills.duplicates,
+            base_dir=base_dir,
+            reader=reader,
         )
         if skills.duplicates is None:
             load = _with_native_extra_outcomes(load)
@@ -281,8 +305,6 @@ def plan(
             )
         else:
             result.extra_dirs = _unique(str(skill.path) for skill in load.selected)
-    if result.inventory is None and bundled_dir is not None:
-        result.inventory = bundled_inventory(bundled_dir)
     result.configured = load
     result.native = _native_copies(
         workspace=workspace,
@@ -293,6 +315,7 @@ def plan(
             else None
         ),
         custodian=custodian,
+        reader=reader,
     )
     result.report_directories = skills.directories is not None
     result.merge_native()
@@ -391,6 +414,16 @@ def bundled_skills_dir(command: Path, env: Mapping[str, str]) -> Path | None:
     override = env.get("OPENCLAW_BUNDLED_SKILLS_DIR", "").strip()
     if override:
         return Path(override)
+    package = package_root(command)
+    if package is None:
+        return None
+    candidate = package / "skills"
+    return candidate if _is_dir(candidate) else None
+
+
+def package_root(command: Path) -> Path | None:
+    """Return the installed ``openclaw`` package that holds ``command``."""
+
     try:
         resolved = command.resolve(strict=True)
     except (OSError, RuntimeError):
@@ -402,13 +435,14 @@ def bundled_skills_dir(command: Path, env: Mapping[str, str]) -> Path | None:
         except (OSError, ValueError, AttributeError):
             continue
         if name == "openclaw":
-            candidate = parent / "skills"
-            return candidate if _is_dir(candidate) else None
+            return parent
     return None
 
 
-def bundled_inventory(bundled_dir: Path) -> BundledInventory:
-    """Return the shipped skills by name, read with OpenClaw's parsing rules."""
+def bundled_inventory(
+    bundled_dir: Path, reader: contract_skills.CandidateReader
+) -> BundledInventory:
+    """Return the shipped skills OpenClaw loads, by name, read with ``reader``."""
 
     def names(folder: Path) -> dict[str, Path]:
         if not _is_dir(folder):
@@ -416,10 +450,9 @@ def bundled_inventory(bundled_dir: Path) -> BundledInventory:
         try:
             load = contract_skills.load_directories(
                 [{"folder": folder}],
-                rules=_rules(
-                    SKILLS_ROOT_DEPTH, _hidden_dir_names([folder]), checked=False
-                ),
+                rules=_rules(SKILLS_ROOT_DEPTH, _hidden_dir_names([folder])),
                 duplicates=None,
+                reader=reader,
             )
         except contract_skills.SkillLoadError:
             return {}
@@ -432,12 +465,229 @@ def bundled_inventory(bundled_dir: Path) -> BundledInventory:
     )
 
 
+def candidate_reader(
+    command: Path | None, *, env: Mapping[str, str], timeout: float
+) -> OpenClawReader:
+    """Return a reader backed by the OpenClaw package that holds ``command``."""
+
+    return OpenClawReader(
+        package_root(command) if command is not None else None,
+        env=env,
+        timeout=timeout,
+    )
+
+
+# Reads each SKILL.md named on stdin with OpenClaw's parseSkillFrontmatter and
+# applies the checks loadSingleSkillDirectory makes after it.
+_PARSE_SCRIPT = """
+import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+const [modulePath, exportName] = process.argv.slice(-2);
+const parse = (await import(pathToFileURL(modulePath).href))[exportName];
+if (typeof parse !== "function") throw new Error(`${exportName} is not a function`);
+const rows = JSON.parse(readFileSync(0, "utf8")).map((file) => {
+  let raw;
+  try {
+    raw = readFileSync(file, "utf8");
+  } catch {
+    return { reason: "unreadable" };
+  }
+  let frontmatter;
+  try {
+    frontmatter = parse(raw);
+  } catch {
+    return { reason: "invalid_frontmatter" };
+  }
+  const description = frontmatter.description;
+  if (description === undefined) {
+    return { reason: "missing_frontmatter_field:description" };
+  }
+  if (!String(description).trim()) {
+    return { reason: "empty_frontmatter_field:description" };
+  }
+  return { name: frontmatter.name?.trim() || null };
+});
+process.stdout.write(JSON.stringify(rows));
+"""
+_PARSER_EXPORT = re.compile(r"export\s*\{[^}]*\bparseSkillFrontmatter as ([\w$]+)")
+
+
+class _ParserUnavailable(Exception):
+    """OpenClaw's front matter parser cannot be run."""
+
+
+class OpenClawReader:
+    """A :data:`~nemo_fabric_adapter_contract.skills.CandidateReader` that
+    reads front matter with the installed OpenClaw's own parser.
+
+    One ``node`` process per call imports ``parseSkillFrontmatter`` from the
+    package's ``dist/frontmatter-*.mjs`` (file names are hashed, so the module
+    is found by its export) and reads every candidate's ``SKILL.md``. A
+    ``SKILL.md`` larger than OpenClaw reads is refused without parsing.
+
+    When ``node`` or the module cannot be found, or the call fails or passes
+    the deadline, the reader warns once and reads simple front matter with
+    :func:`~nemo_fabric_adapter_contract.skills.front_matter_reader` instead.
+    Those skills' validity is then unknown (``valid=None``), so an explicit
+    duplicate policy never decides on a guess.
+
+    Without a front matter name, OpenClaw uses the trimmed name of the folder
+    it reached. The reader receives resolved folders, so it leaves the name
+    to the helper's folder name fallback, which uses the spelling discovery
+    reached, as OpenClaw does through a symbolic link. Only a folder name with
+    outer whitespace is trimmed here, from the resolved name.
+    """
+
+    def __init__(
+        self, package: Path | None, *, env: Mapping[str, str], timeout: float
+    ) -> None:
+        self._package = package
+        self._env = dict(env)
+        self._deadline = time.monotonic() + timeout
+        self._unavailable = False
+
+    def __call__(self, folders: Sequence[Path]) -> dict[Path, CandidateInfo]:
+        infos: dict[Path, CandidateInfo] = {}
+        parse: list[Path] = []
+        for folder in folders:
+            try:
+                size = os.stat(folder / SKILL_FILE).st_size
+            except OSError:
+                infos[folder] = CandidateInfo(None, valid=False, reason="unreadable")
+                continue
+            if size > MAX_SKILL_FILE_BYTES:
+                infos[folder] = CandidateInfo(
+                    None, valid=False, reason="file_too_large"
+                )
+            else:
+                parse.append(folder)
+        if parse:
+            infos.update(self._parse(parse))
+        return {folder: infos[folder] for folder in folders}
+
+    def _parse(self, folders: list[Path]) -> dict[Path, CandidateInfo]:
+        if not self._unavailable:
+            try:
+                rows = self._run(folders)
+            except _ParserUnavailable as error:
+                self._unavailable = True
+                print(
+                    f"OpenClaw: NeMo Fabric cannot run OpenClaw's front matter "
+                    f"parser ({error}), so it cannot tell which skills OpenClaw "
+                    f"refuses",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            else:
+                return {
+                    folder: (
+                        CandidateInfo(None, valid=False, reason=row["reason"])
+                        if row.get("reason")
+                        else _named(folder, row.get("name"), valid=True)
+                    )
+                    for folder, row in zip(folders, rows, strict=True)
+                }
+        simple = contract_skills.front_matter_reader(required_fields=("description",))
+        return {
+            folder: (
+                info
+                if info.reason == "unreadable"
+                else _named(
+                    folder,
+                    (info.name or "").strip() or None,
+                    valid=None,
+                    name_uncertain=info.name_uncertain,
+                )
+            )
+            for folder, info in simple(folders).items()
+        }
+
+    def _run(self, folders: list[Path]) -> list[dict[str, Any]]:
+        """Parse each folder's ``SKILL.md`` in one ``node`` process."""
+
+        node = shutil.which("node", path=self._env.get("PATH"))
+        if node is None:
+            raise _ParserUnavailable("node was not found")
+        module = _parser_module(self._package) if self._package else None
+        if module is None:
+            raise _ParserUnavailable("its parseSkillFrontmatter module was not found")
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise _ParserUnavailable("no time is left before the startup deadline")
+        try:
+            completed = subprocess.run(
+                [node, "--input-type=module", "-e", _PARSE_SCRIPT, "--", *module],
+                input=json.dumps([str(folder / SKILL_FILE) for folder in folders]),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=self._env,
+                timeout=remaining,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            raise _ParserUnavailable(
+                f"it did not finish within {remaining:.1f} seconds"
+            ) from None
+        except OSError as error:
+            raise _ParserUnavailable(str(error)) from None
+        if completed.returncode != 0:
+            detail = (completed.stderr.strip().splitlines() or ["no output"])[-1]
+            raise _ParserUnavailable(f"node failed: {detail}")
+        try:
+            rows = json.loads(completed.stdout)
+        except ValueError:
+            rows = None
+        if not (
+            isinstance(rows, list)
+            and len(rows) == len(folders)
+            and all(isinstance(row, dict) for row in rows)
+        ):
+            raise _ParserUnavailable("node returned an unexpected result")
+        return rows
+
+
+def _parser_module(package: Path) -> tuple[str, str] | None:
+    """Return the module that exports ``parseSkillFrontmatter``, and its export name."""
+
+    try:
+        modules = sorted((package / "dist").glob("frontmatter-*.mjs"))
+    except OSError:
+        return None
+    for module in modules:
+        try:
+            match = _PARSER_EXPORT.search(module.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            continue
+        if match:
+            return str(module), match.group(1)
+    return None
+
+
+def _named(
+    folder: Path,
+    name: str | None,
+    *,
+    valid: bool | None,
+    name_uncertain: bool = False,
+) -> CandidateInfo:
+    """Return ``name``, or apply OpenClaw's trimmed folder name fallback."""
+
+    if not name and folder.name.strip() != folder.name:
+        name = folder.name.strip()
+        if not name:
+            # OpenClaw refuses a skill without a name ("name is required").
+            return CandidateInfo(None, valid=False, reason="no_name")
+    return CandidateInfo(name or None, valid=valid, name_uncertain=name_uncertain)
+
+
 def apply_status(plan_: SkillPlan, status: Any, *, fallback: bool = False) -> bool:
     """Refine the report with ``openclaw skills list --json`` for the agent.
 
     Each name's listed source says which copy won it, so workspace and
-    shipped copies OpenClaw refused, for example for front matter YAML cannot
-    parse, or a description it lacks, stop hiding other copies, and the clash
+    shipped copies OpenClaw refused for a reason Fabric does not check, such
+    as a hard-linked ``SKILL.md``, stop hiding other copies, and the clash
     records name OpenClaw's winner. Configured skills OpenClaw does not list
     were rejected by its loader and are reported as skipped with
     ``rejected_by_openclaw``. Selected bundled skills that do not load move
@@ -635,36 +885,18 @@ def skill_error(error: contract_skills.SkillLoadError) -> lifecycle.LifecycleErr
     )
 
 
-def _rules(
-    max_depth: int, hidden: frozenset[str], *, checked: bool = True
-) -> contract_skills.DiscoveryRules:
-    """Return OpenClaw's discovery rules.
-
-    With ``checked``, a candidate ``loadSingleSkillDirectory`` refuses is
-    skipped before any duplicate check: front matter its YAML parser rejects
-    (``invalid_frontmatter``) or a ``description`` that is missing or empty
-    after trimming. Without it, only a missing ``description`` skips a
-    candidate, for scans of OpenClaw's own sources, whose copies carry
-    :func:`_accepted` instead.
-    """
+def _rules(max_depth: int, hidden: frozenset[str]) -> contract_skills.DiscoveryRules:
+    """Return OpenClaw's discovery rules."""
 
     return contract_skills.DiscoveryRules(
         traversal="recursive",
         nested_skills="stop_at_skill",
         max_depth=max_depth,
-        required_frontmatter_fields=("description",),
         name_fallback=True,
         excluded_dir_names=frozenset({"node_modules"}) | hidden,
         allow_symlink_escape=False,
         subroot_depths={"skills": SKILLS_ROOT_DEPTH},
-        name_style="openclaw",
-        nonempty_frontmatter_fields=("description",) if checked else (),
-        frontmatter_must_parse=checked,
     )
-
-
-# The front matter checks of _rules, for check_front_matter.
-_LOADER_CHECKS = _rules(SKILLS_ROOT_DEPTH, frozenset())
 
 
 def _select_bundled(
@@ -699,6 +931,7 @@ def _load_directories(
     *,
     duplicates: contract.SkillDuplicatePolicy | None,
     base_dir: Path,
+    reader: contract_skills.CandidateReader,
 ) -> contract_skills.DirectoryLoad:
     """Discover the configured skills the way OpenClaw scans each root.
 
@@ -763,7 +996,11 @@ def _load_directories(
 
     try:
         load = contract_skills.load_directories(
-            entries, rules=rules, duplicates=duplicates, base_dir=base_dir
+            entries,
+            rules=rules,
+            duplicates=duplicates,
+            base_dir=base_dir,
+            reader=reader,
         )
     except contract_skills.SkillLoadError as error:
         raise skill_error(error) from None
@@ -820,6 +1057,7 @@ def _native_copies(
     inventory: BundledInventory | None,
     bundled: set[str] | None,
     custodian: bool,
+    reader: contract_skills.CandidateReader,
 ) -> dict[str, list[NativeCopy]]:
     """Return the skills OpenClaw loads at start from its own sources, by name.
 
@@ -828,8 +1066,8 @@ def _native_copies(
     when every shipped skill loads; a left-out shipped skill is not staged,
     so it hides nothing. Custodian skills count only when the agent owns
     them. The state folder and Skill Workshop folder are new and empty at
-    start, so they provide nothing yet. Each copy carries Fabric's guess of
-    whether OpenClaw's loader accepts it (:func:`_accepted`).
+    start, so they provide nothing yet. Skills ``reader`` says OpenClaw
+    refuses are left out, so they hide nothing.
     """
 
     native: dict[str, list[NativeCopy]] = {}
@@ -841,8 +1079,19 @@ def _native_copies(
             for name, path in skills.items():
                 if bundled is None or name in bundled:
                     native.setdefault(name, []).append(
-                        NativeCopy("bundled", path, rank, _accepted(path))
+                        NativeCopy("bundled", path, rank)
                     )
+    for rank, skill in _workspace_skills(workspace, reader):
+        native.setdefault(skill.name, []).append(NativeCopy("local", skill.path, rank))
+    return native
+
+
+def _workspace_skills(
+    workspace: Path, reader: contract_skills.CandidateReader
+) -> list[tuple[int, contract_skills.FoundSkill]]:
+    """Return the skills of the workspace's ``.agents/skills/`` and ``skills/``, with their ranks."""
+
+    found: list[tuple[int, contract_skills.FoundSkill]] = []
     for rank, relative in enumerate(_LOCAL_SKILL_FOLDERS, start=2):
         folder = workspace / relative
         if not _is_dir(folder):
@@ -850,37 +1099,59 @@ def _native_copies(
         try:
             local = contract_skills.load_directories(
                 [{"folder": folder}],
-                rules=_rules(
-                    SKILLS_ROOT_DEPTH, _hidden_dir_names([folder]), checked=False
-                ),
+                rules=_rules(SKILLS_ROOT_DEPTH, _hidden_dir_names([folder])),
                 duplicates=None,
+                reader=reader,
             )
         except contract_skills.SkillLoadError:
             continue
-        for skill in local.selected:
-            native.setdefault(skill.name, []).append(
-                NativeCopy("local", skill.path, rank, _accepted(skill.path))
-            )
-    return native
+        found += [(rank, skill) for skill in local.selected]
+    return found
 
 
-def _accepted(folder: Path) -> bool | None:
-    """Return whether OpenClaw's loader accepts the skill in ``folder``.
+def _read_ahead(
+    reader: contract_skills.CandidateReader,
+    directories: Sequence[contract.SkillDirectory] | None,
+    *,
+    base_dir: Path,
+    bundled_dir: Path | None,
+    workspace: Path,
+) -> contract_skills.CandidateReader:
+    """Return ``reader`` with every candidate of the plan's scans already read.
 
-    ``loadSingleSkillDirectory`` refuses a skill whose front matter its YAML
-    parser rejects, or that has no non-empty ``description``, the checks the
-    configured skills pass before duplicate policies apply. ``None`` means
-    Fabric cannot tell; ``openclaw skills list`` settles it at start.
+    The plan scans the configured entries, the shipped skills, and the
+    workspace in separate ``load_directories`` calls. A first pass discovers
+    their candidates with a placeholder reader so that ``reader`` reads them
+    all in one call, such as one ``node`` process. The returned reader
+    answers from that result.
     """
 
-    try:
-        front_matter = contract_skills.read_front_matter(
-            folder / SKILL_FILE, name_style="openclaw"
-        )
-    except OSError:
-        return None
-    accepted, _ = contract_skills.check_front_matter(front_matter, _LOADER_CHECKS)
-    return accepted
+    cache: dict[Path, CandidateInfo] = {}
+
+    def cached(folders: Sequence[Path]) -> dict[Path, CandidateInfo]:
+        missing = [folder for folder in folders if folder not in cache]
+        if missing:
+            cache.update(reader(missing))
+        return {folder: cache[folder] for folder in folders}
+
+    found: list[Path] = []
+
+    def record(folders: Sequence[Path]) -> dict[Path, CandidateInfo]:
+        found.extend(folders)
+        # A distinct name per folder, so that no scan stops at a duplicate.
+        return {folder: CandidateInfo(str(folder)) for folder in folders}
+
+    with contextlib.suppress(lifecycle.LifecycleError):
+        if directories is not None:
+            _load_directories(
+                directories, duplicates=None, base_dir=base_dir, reader=record
+            )
+    if bundled_dir is not None:
+        bundled_inventory(bundled_dir, record)
+    _workspace_skills(workspace, record)
+    if found:
+        cached(list(dict.fromkeys(found)))
+    return cached
 
 
 def _refused_native(
@@ -890,9 +1161,8 @@ def _refused_native(
 
     The source a name is listed with outranks every copy it hides, so a copy
     of a higher source was refused. A name that is not listed lost every
-    copy. Among copies of the winning source, Fabric's guess picks the ones
-    that load, unless it refused them all. Where the listed source is not one
-    Fabric models, the guess stands.
+    copy. Where the listed source is not one Fabric models, no copy is known
+    to be refused.
     """
 
     refused: set[Path] = set()
@@ -902,18 +1172,8 @@ def _refused_native(
             refused.update(copy.path for copy in copies)
             continue
         rank = _SOURCE_RANKS.get(str(rows[0].get("source")))
-        if rank is None:
-            refused.update(copy.path for copy in copies if copy.valid is False)
-            continue
-        winning = [copy for copy in copies if copy.rank == rank]
-        loads = [copy for copy in winning if copy.valid is not False] or winning
-        for copy in copies:
-            if (
-                copy.rank > rank
-                or (copy.rank == rank and copy not in loads)
-                or (copy.rank < rank and copy.valid is False)
-            ):
-                refused.add(copy.path)
+        if rank is not None:
+            refused.update(copy.path for copy in copies if copy.rank > rank)
     return refused
 
 
@@ -928,8 +1188,7 @@ def _with_native_sources(
     the workspace's ``skills/`` over its ``.agents/skills/``, both over the
     shipped skills, and those over ``skills.load.extraDirs``. Between shipped
     skills with one name, the Custodian copy wins. Native copies in
-    ``refused``, or, before OpenClaw listed its skills, the ones Fabric
-    expects it to refuse, hide nothing.
+    ``refused`` hide nothing.
 
     A configured folder that is also a native copy, such as a skill in the
     workspace's ``skills/``, is one copy with the native source's rank, so it
@@ -955,13 +1214,7 @@ def _with_native_sources(
     winners: dict[str, list[tuple[Path, str]]] = {}
     for name in sorted(native):
         copies = [
-            copy
-            for copy in native[name]
-            if (
-                copy.path not in refused
-                if refused is not None
-                else copy.valid is not False
-            )
+            copy for copy in native[name] if refused is None or copy.path not in refused
         ]
         configured = external.get(name, [])
         # A configured folder that is also a native one is the same copy,

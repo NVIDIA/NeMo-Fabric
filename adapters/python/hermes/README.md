@@ -160,91 +160,27 @@ These controls reduce automatic background model calls. They do not stop context
 
 ## Skills
 
-[Configure Skills](../../../docs/integrations/harness/skills.mdx) describes
-the `skills` fields. `skills.paths` is passed to Hermes Agent's
-`skills.external_dirs` as written, without checks. `skills.directories` is
-checked at startup and reported, and can't be combined with `skills.paths`.
-Mount permissions decide whether the agent can change a skill. The mount or
-file system enforces read-only access, not NeMo Fabric, which doesn't change
-permissions. On a read-only mount, Hermes's write fails and Hermes returns the
-error to the agent as the tool's result:
+The adapter supports `skills.paths`, `skills.directories`, `skills.bundled`,
+and `skills.duplicates`, and writes the configured skills to Hermes Agent's
+`skills.external_dirs`. Hermes always loads its `hermes-agent` bundled skill,
+so a bundled selection must keep it. For example:
 
 ```yaml
 skills:
   directories:
     - folder: /sandbox/team-skills          # a folder of skills, read-only mount
-    - folder: /sandbox/project-skills       # a folder the agent edits, read-write mount
     - skill: /opt/skills/release-review     # one chosen skill
-  duplicates: first_wins                    # optional: reject, first_wins, last_wins
+  duplicates: first_wins
   bundled:
-    exclude: [xurl]                         # optional bundled-skill selection
+    exclude: [xurl]
 ```
 
-Before you mount one read-write folder into several sandboxes, read
-[Sharing a Writable Skills Volume](../../../docs/integrations/harness/skills.mdx#sharing-a-writable-skills-volume).
-
-Hermes-specific behavior:
-
-- Hermes loads every `SKILL.md` below an entry at any depth, starting at the
-  entry's own folder and including skills nested inside another skill's
-  folder. It skips folders such as `.git`, `node_modules`, `venv`, and
-  `site-packages`, and a skill's own `references`, `templates`, `assets`,
-  and `scripts` folders.
-- Without `duplicates`, Hermes refuses two different skills with the same
-  name, so neither loads. It also refuses a skill whose name is another
-  skill's folder name; the report lists that skill under `skipped` with
-  reason `ambiguous`. With `first_wins` or `last_wins`, the adapter passes
-  only the selected skill folders; start fails if a dropped copy is nested
-  inside a selected skill.
-- When one entry lies inside another, such as a `skill` entry inside a
-  `folder` entry, the adapter passes only the outer folder, because Hermes
-  refuses a skill it reaches through two folders.
-- A skill in the Hermes home's `skills` folder, bundled or written by the
-  agent, outranks a configured skill with the same name. Hermes's
-  `skill_manage` tool writes every new skill there, never into a
-  `skills.directories` entry, because the adapter doesn't set Hermes's
-  `skills.create_dir`. With `runtime.keep_state` the home is the agent's state
-  folder, so the next runtime for the same agent loads those skills. Hermes
-  edits a configured skill in place when its mount is writable; on a
-  read-only mount the edit fails and the file is unchanged.
-- An SDK-only runtime starts with no bundled skills in a new home: the
-  embedded SDK agent doesn't copy them. Runtimes with the API, dashboard, or
-  terminal interface get Hermes's own copy at start. Whenever `skills.bundled`
-  is set, the adapter copies the selected ones at startup, as Hermes does. The
-  copy always includes `hermes-agent`, which Hermes always loads.
-- Because Hermes always loads `hermes-agent`, NeMo Fabric rejects a bundled
-  selection that leaves it out: `include` must name it (so `include: []`
-  fails), `exclude` can't name it, and `enabled: false` isn't supported (the
-  descriptor sets `supports_disable: false`). Use `include: [hermes-agent]`
-  for the fewest bundled skills. A rejected `include` or `exclude` fails
-  startup with `hermes_skill_invalid` and the reason
-  `essential_bundled_skill`.
-- When `skills.bundled` leaves skills out, the adapter stages the selected
-  bundled skills in a temporary folder, laid out as in the installation, and
-  points `HERMES_BUNDLED_SKILLS` at it until stop. Hermes's sync, the
-  adapter's and each native interface's, copies only those skills, so a
-  left-out bundled skill never reaches the home and hides nothing: a
-  `skills.paths`, `skills.directories`, or agent-written skill with its name
-  loads normally. The adapter doesn't set Hermes's `skills.disabled`.
-- In a kept home, Hermes's earlier copy of a left-out skill is removed, with
-  its `skills/.bundled_manifest` entry, when it still matches the manifest's
-  hash or the installed skill. A changed copy at the place Hermes put it
-  isn't removed, and startup fails with `hermes_skill_invalid` and the reason
-  `excluded_bundled_skill_modified`.
-
-With `skills.directories` or `skills.bundled`, every result carries
-`output.skills` (`loaded`, `empty_entries`, `skipped`, `duplicates`, and
-`bundled`). `duplicates` lists every name that more than one skill folder
-Hermes sees provides, including a bundled copy and the agent's own skill in
-the Hermes home with no configured copy, with each copy's origin and path and
-Hermes's outcome. `bundled.selected` lists the selected bundled skills that load,
-`bundled.unavailable` lists selected skills that don't with a reason, and the
-Hermes-specific `bundled.essential` lists the skills Hermes always loads,
-which `selected` also includes. Failures stop startup with
-`hermes_skill_not_found` or `hermes_skill_invalid`, with `field`, `reason`,
-and `path` or `name` metadata. The
+[Configure Skills](../../../docs/integrations/harness/skills.mdx) describes
+the fields, the common setups, start checks, the run report, and how Hermes
+differs from other harnesses. The
 [Hermes guide](../../../docs/integrations/harness/hermes/hermes.mdx#skills)
-covers each case.
+covers Hermes's skip reasons, agent-written skills, and bundled-skill
+handling.
 
 ## Configuration Mapping and Ownership
 

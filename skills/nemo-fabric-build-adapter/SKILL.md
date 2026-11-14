@@ -130,8 +130,15 @@ adapter boundary:
   `nemo_fabric_adapter_contract.skills` with `DiscoveryRules` that match the
   descriptor and what the harness actually loads (root skills, folders the
   harness skips inside a skill, symlinks that leave the entry, and per-folder
-  depths, and `name_style` for how the harness reads YAML names). Map `SkillLoadError` reasons to stable codes (`not_found` to a
-  `<adapter>_skill_not_found` code, `invalid` and `duplicate` to
+  depths). The helper package is dependency-free and doesn't parse YAML, so
+  also pass a `reader`: a `CandidateReader` backed by the harness's own
+  front-matter parser that returns a `CandidateInfo(name, valid, reason,
+  name_uncertain)` for each candidate folder, so that names and refusals
+  match the harness. The default `front_matter_reader()` reads only a
+  single-line `name:` value and marks other names `name_uncertain`. Map
+  `SkillLoadError` reasons to stable codes (`not_found` to a
+  `<adapter>_skill_not_found` code, and `invalid`, `duplicate`,
+  `unsupported_frontmatter_name`, and `unsupported_frontmatter` to
   `<adapter>_skill_invalid`) with the failing field and path. Return
   `report_block()` as `output.skills` in each result. With an explicit
   `duplicates` policy, pass only the selected skills to the harness. Fail

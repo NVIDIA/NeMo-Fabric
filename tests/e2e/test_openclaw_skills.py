@@ -20,9 +20,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _utils.openclaw_skills import agent_config
+from _utils.openclaw_skills import refused_copies
+from _utils.openclaw_skills import refused_skill
+from _utils.openclaw_skills import runtime_context
+from _utils.openclaw_skills import skipped
+from _utils.openclaw_skills import write_skill
 from _utils.utils import POSIX_PERMISSIONS
-from nemo_fabric_adapter_contract.models import AgentConfig
-from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.openclaw import adapter
 from nemo_fabric_adapters.openclaw import skills as openclaw_skills
 
@@ -71,18 +75,6 @@ def test_relative_command_paths_become_absolute(
     assert _command_path("openclaw") == Path("openclaw")
 
 
-def _skill(directory: Path, name: str | None, description: str | None = None) -> Path:
-    directory.mkdir(parents=True, exist_ok=True)
-    lines = ["---"]
-    if name is not None:
-        lines.append(f"name: {name}")
-    if description is not False:
-        lines.append(f"description: {description or f'Copy at {directory.name}.'}")
-    lines += ["---", "", "Body.", ""]
-    (directory / "SKILL.md").write_text("\n".join(lines), encoding="utf-8")
-    return directory
-
-
 class _Native:
     """Generate the adapter's configuration and list OpenClaw's skills for it."""
 
@@ -97,8 +89,8 @@ class _Native:
         self, skills: dict[str, Any], settings: dict[str, Any] | None = None
     ) -> openclaw_skills.SkillPlan:
         return adapter._skill_plan(
-            self._config(skills, settings),
-            self._context(),
+            agent_config(skills, settings, self.command),
+            runtime_context(self.workspace),
             base_dir=self.tmp_path,
             command=self.command,
             env=dict(os.environ),
@@ -121,8 +113,8 @@ class _Native:
         plan: openclaw_skills.SkillPlan,
     ) -> dict:
         generated = adapter._openclaw_config(
-            self._config(skills, settings),
-            self._context(),
+            agent_config(skills, settings, self.command),
+            runtime_context(self.workspace),
             base_dir=self.tmp_path,
             port=18_789,
             token_env="OPENCLAW_GATEWAY_TOKEN",
@@ -155,40 +147,6 @@ class _Native:
         )
         assert result.returncode == 0, result.stderr[-2000:]
         return json.loads(result.stdout)
-
-    def _config(
-        self, skills: dict[str, Any], settings: dict[str, Any] | None = None
-    ) -> AgentConfig:
-        return AgentConfig.from_mapping(
-            {
-                "harness": {
-                    "settings": {
-                        "openclaw_command": str(self.command),
-                        **(settings or {}),
-                    }
-                },
-                "models": {"default": {"provider": "test", "model": "unused"}},
-                "skills": skills,
-            }
-        )
-
-    def _context(self) -> RuntimeContext:
-        return RuntimeContext.from_mapping(
-            {
-                "runtime_id": "skill-loading",
-                "invocation_id": "skill-loading",
-                "request_id": "skill-loading",
-                "environment": {
-                    "environment_id": "skill-loading",
-                    "provider": "local",
-                    "control_location": "in_env_control",
-                    "workspace": str(self.workspace),
-                    "env": {},
-                    "ownership": "caller_owned",
-                },
-                "artifacts": {},
-            }
-        )
 
 
 @pytest.fixture(name="native")
@@ -228,23 +186,20 @@ def test_reported_skills_are_the_ones_openclaw_loads(native: _Native):
     """Folder, chosen-skill, and mixed entries report what OpenClaw loads."""
     root = native.tmp_path
     team = root / "team-skills"
-    _skill(team / "debugging", "debugging")
-    _skill(team / "group" / "code-review", "code-review")
-    _skill(team / "group" / "deep" / "too-deep", "too-deep")
-    _skill(team / "debugging" / "nested", "nested")
-    _skill(team / ".hidden" / "secret", "secret")
-    _skill(team / "node_modules" / "dependency", "dependency")
-    _skill(team / "undescribed", "undescribed", description=False)
-    _skill(team / "unnamed", None)
-    broken = team / "broken-yaml"
-    broken.mkdir()
-    (broken / "SKILL.md").write_text(
-        "---\nname: broken-yaml\ndescription: Broken.\nmetadata: [unclosed\n---\n",
-        encoding="utf-8",
-    )
+    write_skill(team / "debugging", "debugging")
+    write_skill(team / "group" / "code-review", "code-review")
+    write_skill(team / "group" / "deep" / "too-deep", "too-deep")
+    write_skill(team / "debugging" / "nested", "nested")
+    write_skill(team / ".hidden" / "secret", "secret")
+    write_skill(team / "node_modules" / "dependency", "dependency")
+    write_skill(team / "undescribed", "undescribed", None)
+    write_skill(team / "unnamed")
+    refused_skill(team / "broken-yaml", "broken-yaml", "malformed")
+    # Larger than the 256,000 bytes OpenClaw reads.
+    write_skill(team / "too-large", "too-large", "x" * 256_001)
     named = root / "skills"
-    _skill(named / "a" / "b" / "c" / "deep-under-skills", "deep-under-skills")
-    release = _skill(root / "opt" / "release-review", "release-review")
+    write_skill(named / "a" / "b" / "c" / "deep-under-skills", "deep-under-skills")
+    release = write_skill(root / "opt" / "release-review", "release-review")
     _, baseline_status = native.list({"directories": []})
     baseline = set(_external(baseline_status, set()))
 
@@ -271,57 +226,69 @@ def test_reported_skills_are_the_ones_openclaw_loads(native: _Native):
     assert {item["reason"] for item in report["skipped"]} == {
         "missing_frontmatter_field:description",
         "invalid_frontmatter",
+        "file_too_large",
     }
 
 
 @pytest.mark.parametrize(
-    "name_lines",
+    ("front_matter", "name", "reason"),
     [
-        pytest.param(["name: >-", "  folded-name"], id="folded-strip"),
-        pytest.param(["name: |-", "  literal-name"], id="literal-strip"),
-        pytest.param(['name: "escaped\\tname"'], id="double-quoted"),
-        pytest.param(["name: plain # comment"], id="comment"),
-        pytest.param(["name:"], id="empty"),
-        pytest.param(["name: >", "  folded", "  clipped"], id="folded-clip"),
-        pytest.param(["name: '  quoted name '"], id="single-quoted"),
-        pytest.param(["name: ~"], id="null"),
-        pytest.param(["name: 42"], id="number"),
-        pytest.param(["name: yes"], id="yes"),
-        pytest.param(["name: true"], id="true"),
-        pytest.param(["name: 2026-01-02"], id="date"),
-        pytest.param(["name: [a, b]"], id="sequence"),
-        pytest.param(["label: &label aliased", "name: *label"], id="alias"),
-        pytest.param(["label: &l 0x1F", "name: *l"], id="alias-number"),
-        pytest.param(["label: &l [a, b]", "name: *l"], id="alias-sequence"),
-        pytest.param(["label: &l ~", "name: *l"], id="alias-null"),
-        pytest.param(["meta:", "  x: &l nested", "name: *l"], id="alias-nested"),
-        pytest.param(["name:", "  - |", "    block"], id="block-in-sequence"),
+        pytest.param(["name: >-", "  folded-name"], "folded-name", None, id="block"),
+        pytest.param(
+            ["label: &label aliased", "name: *label"], "aliased", None, id="alias"
+        ),
+        pytest.param(
+            ["name: '  trimmed name '"], "trimmed name", None, id="trimmed-name"
+        ),
+        pytest.param(
+            ["name: named", "metadata: [unclosed"],
+            None,
+            "invalid_frontmatter",
+            id="malformed",
+        ),
+        pytest.param(
+            ["name: named", "description: '  '"],
+            None,
+            "empty_frontmatter_field:description",
+            id="empty-description",
+        ),
     ],
 )
-def test_reported_names_match_openclaw(
-    native: _Native, baseline: set[str], name_lines: list[str]
+def test_reader_matches_openclaw(
+    native: _Native,
+    baseline: set[str],
+    front_matter: list[str],
+    name: str | None,
+    reason: str | None,
 ):
-    """The name Fabric reads from front matter is the one OpenClaw lists."""
+    """The reader names and refuses skills as ``openclaw skills list`` does."""
     skill = native.tmp_path / "team" / "named"
     skill.mkdir(parents=True)
+    if not any(line.startswith("description:") for line in front_matter):
+        front_matter = ["description: Copy at named.", *front_matter]
     (skill / "SKILL.md").write_text(
-        "\n".join(["---", *name_lines, "description: Copy at named.", "---", ""]),
-        encoding="utf-8",
+        "\n".join(["---", *front_matter, "---", ""]), encoding="utf-8"
     )
 
     plan, status = native.list({"directories": [{"folder": str(skill.parent)}]})
 
-    assert _external(status, baseline) == _loaded(plan)
-    assert len(_loaded(plan)) == 1
+    assert (
+        _external(status, baseline)
+        == _loaded(plan)
+        == ({name: "Copy at named."} if name else {})
+    )
+    assert (plan.report() or {}).get("skipped", []) == (
+        [skipped(skill, "skills.directories[0]", reason)] if reason else []
+    )
 
 
 @pytest.mark.parametrize("policy", [None, "first_wins", "last_wins"])
 def test_duplicate_outcomes_match_openclaw(native: _Native, policy: str | None):
     """The reported copy of a duplicated name is the one OpenClaw loads."""
     root = native.tmp_path
-    _skill(root / "team" / "review-team", "review")
-    _skill(root / "team" / "debugging", "debugging")
-    mounted = _skill(root / "opt" / "review-mounted", "review")
+    write_skill(root / "team" / "review-team", "review")
+    write_skill(root / "team" / "debugging", "debugging")
+    mounted = write_skill(root / "opt" / "review-mounted", "review")
     skills: dict[str, Any] = {
         "directories": [{"folder": str(root / "team")}, {"skill": str(mounted)}]
     }
@@ -347,7 +314,7 @@ def test_alias_names_take_part_in_duplicate_policies(native: _Native, policy: st
         "description: Copy at review-aliased.\n---\n",
         encoding="utf-8",
     )
-    plain = _skill(root / "team" / "review-plain", "review")
+    plain = write_skill(root / "team" / "review-plain", "review")
     skills = {
         "directories": [{"skill": str(aliased)}, {"skill": str(plain)}],
         "duplicates": policy,
@@ -368,7 +335,7 @@ def test_alias_names_take_part_in_duplicate_policies(native: _Native, policy: st
 
 def test_configured_workspace_skill_wins_as_reported(native: _Native):
     """A configured workspace skill outranks the shipped copy, as OpenClaw decides."""
-    weather = _skill(native.workspace / "skills" / "weather", "weather", "Mine.")
+    weather = write_skill(native.workspace / "skills" / "weather", "weather", "Mine.")
 
     plan, status = native.list(
         {"directories": [{"skill": str(weather)}], "bundled": {}}
@@ -405,7 +372,7 @@ def test_invalid_workspace_skill_does_not_hide_a_configured_one(
     native: _Native, front_matter: str, policy: str | None
 ):
     """A workspace copy OpenClaw refuses hides nothing, as reported."""
-    team = _skill(native.tmp_path / "team" / "review", "review", "External.")
+    team = write_skill(native.tmp_path / "team" / "review", "review", "External.")
     local = native.workspace / "skills" / "review"
     local.mkdir(parents=True)
     (local / "SKILL.md").write_text(f"---\n{front_matter}\n---\n", encoding="utf-8")
@@ -475,7 +442,7 @@ def test_left_out_shipped_skill_does_not_hide_a_configured_copy(
     native: _Native, bundled: dict[str, Any]
 ):
     """A configured weather loads when bundled leaves out the shipped weather."""
-    _skill(native.tmp_path / "team" / "weather", "weather", "Configured weather.")
+    write_skill(native.tmp_path / "team" / "weather", "weather", "Configured weather.")
 
     plan, status = native.list(
         {"directories": [{"folder": str(native.tmp_path / "team")}], "bundled": bundled}
@@ -495,11 +462,11 @@ def test_higher_sources_hide_configured_skills_as_reported(native: _Native):
     """Workspace and selected shipped skills win over configured copies, as reported."""
     root = native.tmp_path
     team = root / "team"
-    _skill(team / "github", "github")
-    _skill(team / "weather", "weather")
-    _skill(team / "review", "review")
-    _skill(team / "kept", "kept")
-    _skill(native.workspace / "skills" / "review", "review", "Workspace copy.")
+    write_skill(team / "github", "github")
+    write_skill(team / "weather", "weather")
+    write_skill(team / "review", "review")
+    write_skill(team / "kept", "kept")
+    write_skill(native.workspace / "skills" / "review", "review", "Workspace copy.")
 
     plan, status = native.list(
         {"directories": [{"folder": str(team)}], "bundled": {"exclude": ["weather"]}}
@@ -527,9 +494,11 @@ def test_higher_sources_hide_configured_skills_as_reported(native: _Native):
 def test_every_copy_of_a_clash_is_reported_with_openclaws_winner(native: _Native):
     """Configured, shipped, and workspace copies are all listed; OpenClaw's pick is selected."""
     root = native.tmp_path
-    _skill(root / "team" / "github", "github", "Configured github.")
-    _skill(native.workspace / "skills" / "github", "github", "Workspace github.")
-    _skill(native.workspace / ".agents" / "skills" / "tmux", "tmux", "Project tmux.")
+    write_skill(root / "team" / "github", "github", "Configured github.")
+    write_skill(native.workspace / "skills" / "github", "github", "Workspace github.")
+    write_skill(
+        native.workspace / ".agents" / "skills" / "tmux", "tmux", "Project tmux."
+    )
 
     plan, status = native.list(
         {"directories": [{"folder": str(root / "team")}], "bundled": {}}
@@ -596,9 +565,9 @@ def test_skills_linked_outside_their_folder_never_load(
 ):
     """A skill that links outside its folder entry never loads, as in OpenClaw."""
     root = native.tmp_path
-    _skill(root / "outside" / "escaped", "escaped")
-    _skill(root / "outside" / "skills" / "nested-escaped", "nested-escaped")
-    _skill(root / "team" / "inside", "inside")
+    write_skill(root / "outside" / "escaped", "escaped")
+    write_skill(root / "outside" / "skills" / "nested-escaped", "nested-escaped")
+    write_skill(root / "team" / "inside", "inside")
     (root / "team" / "escaped").symlink_to(root / "outside" / "escaped")
     (root / "linked").mkdir()
     (root / "linked" / "skills").symlink_to(root / "outside" / "skills")
@@ -641,9 +610,9 @@ def test_skills_child_of_a_scanned_root_is_searched_six_levels(
 ):
     """A root's skills child keeps 6 levels while the root keeps 2."""
     root = native.tmp_path
-    _skill(root / "team" / "top", "top")
-    _skill(root / "team" / "skills" / "g" / "h" / "deep", "deep")
-    _skill(root / "team" / "a" / "b" / "too-deep", "too-deep")
+    write_skill(root / "team" / "top", "top")
+    write_skill(root / "team" / "skills" / "g" / "h" / "deep", "deep")
+    write_skill(root / "team" / "a" / "b" / "too-deep", "too-deep")
     skills: dict[str, Any] = {"directories": [{"folder": str(root / "team")}]}
     if policy is not None:
         skills["duplicates"] = policy
@@ -660,10 +629,10 @@ def test_promoted_skills_folder_and_deep_hidden_folders_match_openclaw(
 ):
     """A promoted skills/ that is a skill loads alone; deep dot folders never load."""
     root = native.tmp_path
-    _skill(root / "packed" / "skills", "packed")
-    _skill(root / "packed" / "skills" / "nested", "nested")
-    _skill(root / "team" / "top", "top")
-    _skill(root / "team" / "skills" / "a" / "b" / "c" / "d" / "e" / ".hid", "hid")
+    write_skill(root / "packed" / "skills", "packed")
+    write_skill(root / "packed" / "skills" / "nested", "nested")
+    write_skill(root / "team" / "top", "top")
+    write_skill(root / "team" / "skills" / "a" / "b" / "c" / "d" / "e" / ".hid", "hid")
     skills: dict[str, Any] = {
         "directories": [
             {"folder": str(root / "packed")},
@@ -684,8 +653,8 @@ def test_overlapping_folder_entries_report_each_entry_with_its_depth(
 ):
     """A skill reached only through the deeper entry is reported under it."""
     root = native.tmp_path
-    _skill(root / "a" / "top", "top")
-    _skill(root / "a" / "b" / "skills" / "x", "x")
+    write_skill(root / "a" / "top", "top")
+    write_skill(root / "a" / "b" / "skills" / "x", "x")
 
     plan, status = native.list(
         {
@@ -714,17 +683,14 @@ def test_refused_winner_falls_back_to_the_next_copy(
 ):
     """When OpenClaw refuses the winning copy, the next copy loads instead.
 
-    The refused copy passes Fabric's front matter checks, but its SKILL.md
-    is larger than OpenClaw reads (256 KB by default).
+    The refused copy passes Fabric's checks, but its SKILL.md is hard-linked,
+    which OpenClaw refuses outside its own shipped skills.
     """
     root = native.tmp_path
     for name in ("a", "b"):
-        _skill(root / name / "review", "review")
+        write_skill(root / name / "review", "review")
     broken = root / refused / "review" / "SKILL.md"
-    broken.write_text(
-        "---\nname: review\ndescription: Too large.\n---\n\n" + "x" * 300_000 + "\n",
-        encoding="utf-8",
-    )
+    os.link(broken, root / "SKILL.md.link")
     kept = root / ("b" if refused == "a" else "a") / "review"
 
     plan, status = native.list(
@@ -741,11 +707,11 @@ def test_refused_winner_falls_back_to_the_next_copy(
     assert report["loaded"][0]["path"] == str(kept.resolve())
     assert report["duplicates"][0]["selected"] == str(kept.resolve())
     assert report["skipped"] == [
-        {
-            "path": str(broken.parent.resolve()),
-            "entry": f"skills.directories[{0 if refused == 'a' else 1}]",
-            "reason": "rejected_by_openclaw",
-        }
+        skipped(
+            broken.parent,
+            f"skills.directories[{0 if refused == 'a' else 1}]",
+            "rejected_by_openclaw",
+        )
     ]
 
 
@@ -760,7 +726,7 @@ def test_custodian_skills_hide_configured_ones_only_for_their_owner(
     if not custodian_only:
         pytest.skip("The installed OpenClaw ships no Custodian skills")
     name = custodian_only[0]
-    _skill(native.tmp_path / "team" / name, name)
+    write_skill(native.tmp_path / "team" / name, name)
     # OpenClaw requires the owner to be a configured agent.
     settings = (
         {
@@ -797,8 +763,8 @@ def test_read_only_skills_load_and_cannot_be_changed(
 ):
     """A read-only folder, or read-only chosen skills, load through OpenClaw as they are."""
     team = native.tmp_path / "team"
-    debugging = _skill(team / "debugging", "debugging")
-    review = _skill(team / "review", "review")
+    debugging = write_skill(team / "debugging", "debugging")
+    review = write_skill(team / "review", "review")
     make_read_only(team)
     entries = (
         [{"folder": str(team)}]
@@ -813,7 +779,7 @@ def test_read_only_skills_load_and_cannot_be_changed(
     with pytest.raises(PermissionError):
         (review / "SKILL.md").write_text("changed", encoding="utf-8")
     with pytest.raises(PermissionError):
-        _skill(team / "new-skill", "new-skill")
+        write_skill(team / "new-skill", "new-skill")
 
 
 def test_skill_written_into_a_writable_folder_loads_from_a_new_configuration(
@@ -830,7 +796,7 @@ def test_skill_written_into_a_writable_folder_loads_from_a_new_configuration(
 
     first, first_status = native.list(skills)
     # The agent saves a new skill into its read-write folder.
-    _skill(agent_skills / "triage", "triage")
+    write_skill(agent_skills / "triage", "triage")
     restarted, status = native.list(skills)
 
     assert _external(first_status, baseline) == {}
@@ -847,7 +813,7 @@ def test_agent_adds_skills_beside_read_only_skills_it_cannot_change(
     native: _Native, baseline: set[str], make_read_only
 ):
     team = native.tmp_path / "team"
-    protected = _skill(team / "review", "review") / "SKILL.md"
+    protected = write_skill(team / "review", "review") / "SKILL.md"
     original = protected.read_text(encoding="utf-8")
     make_read_only(team)
     agent_skills = native.tmp_path / "agent-skills"
@@ -858,8 +824,8 @@ def test_agent_adds_skills_beside_read_only_skills_it_cannot_change(
     with pytest.raises(PermissionError):
         protected.write_text("changed", encoding="utf-8")
     with pytest.raises(PermissionError):
-        _skill(team / "triage", "triage")
-    _skill(agent_skills / "triage", "triage")
+        write_skill(team / "triage", "triage")
+    write_skill(agent_skills / "triage", "triage")
     restarted, status = native.list(skills)
 
     assert set(_loaded(first)) == {"review"}
@@ -879,13 +845,15 @@ async def _start_runtime(
     """Start a real OpenClaw Gateway for ``skills``; no model is called."""
 
     runtime = adapter.OpenClawRuntime()
-    context = native._context().to_mapping()
+    context = runtime_context(native.workspace).to_mapping()
     home = native.tmp_path / "home"
     home.mkdir(exist_ok=True)
     context["environment"]["env"] = {"HOME": str(home)}
     await runtime.start(
         {
-            "config": native._config(skills, {"startup_timeout_seconds": 120}),
+            "config": agent_config(
+                skills, {"startup_timeout_seconds": 120}, native.command
+            ),
             "runtime_context": context,
             "base_dir": str(native.tmp_path),
         }
@@ -917,7 +885,7 @@ async def test_real_runtime_restart_loads_skills_written_meanwhile(native: _Nati
     """
     agent_skills = native.tmp_path / "agent-skills"
     agent_skills.mkdir()
-    _skill(agent_skills / "weather", "weather", "Configured weather.")
+    write_skill(agent_skills / "weather", "weather", "Configured weather.")
     skills = {
         "directories": [{"folder": str(agent_skills)}],
         "bundled": {"exclude": ["weather"]},
@@ -942,7 +910,7 @@ async def test_real_runtime_restart_loads_skills_written_meanwhile(native: _Nati
         "Configured weather.",
     )
     # The agent saves a new skill into its read-write folder while stopped.
-    _skill(agent_skills / "triage", "triage")
+    write_skill(agent_skills / "triage", "triage")
 
     runtime = await _start_runtime(native, skills)
     try:
@@ -961,46 +929,13 @@ async def test_real_runtime_restart_loads_skills_written_meanwhile(native: _Nati
     assert "weather" not in restarted["bundled"]["selected"]
 
 
-def _refused_skill(directory: Path, name: str, problem: str) -> Path:
-    """Write a skill OpenClaw refuses: ``malformed`` YAML or an ``empty`` description."""
-    directory.mkdir(parents=True, exist_ok=True)
-    lines = {
-        "malformed": [f"name: {name}", "description: Broken.", "metadata: [unclosed"],
-        "empty": [f"name: {name}", 'description: ""'],
-    }[problem]
-    (directory / "SKILL.md").write_text(
-        "\n".join(["---", *lines, "---", "", "Body.", ""]), encoding="utf-8"
-    )
-    return directory
-
-
 @pytest.mark.parametrize("policy", ["reject", "first_wins", "last_wins"])
 async def test_copies_openclaw_refuses_never_count_as_duplicates(
     native: _Native, policy: str
 ):
-    """Start succeeds under every policy and loads the copy OpenClaw accepts.
-
-    ``review`` has a valid copy between a malformed and an empty-description
-    copy, one per ``skill`` entry, so the first and the last copy are both
-    refused. ``triage`` has the same three copies inside one ``folder`` entry.
-    """
-    root = native.tmp_path
-    review = [
-        _refused_skill(root / "broken" / "review", "review", "malformed"),
-        _skill(root / "valid" / "review", "review", "Valid review."),
-        _refused_skill(root / "empty" / "review", "review", "empty"),
-    ]
-    team = root / "team"
-    _refused_skill(team / "a-broken", "triage", "malformed")
-    triage = _skill(team / "b-valid", "triage", "Valid triage.")
-    _refused_skill(team / "c-empty", "triage", "empty")
-    skills = {
-        "directories": [
-            *({"skill": str(path)} for path in review),
-            {"folder": str(team)},
-        ],
-        "duplicates": policy,
-    }
+    """Start succeeds under every policy and loads the copies OpenClaw accepts."""
+    scenario = refused_copies(native.tmp_path)
+    skills = {"directories": scenario.directories, "duplicates": policy}
 
     runtime = await _start_runtime(native, skills)
     try:
@@ -1017,14 +952,4 @@ async def test_copies_openclaw_refuses_never_count_as_duplicates(
         "openclaw-extra",
         "Valid triage.",
     )
-    assert [(item["name"], item["path"]) for item in report["loaded"]] == [
-        ("review", str(review[1].resolve())),
-        ("triage", str(triage.resolve())),
-    ]
-    assert "duplicates" not in report
-    assert [(item["entry"], item["reason"]) for item in report["skipped"]] == [
-        ("skills.directories[0]", "invalid_frontmatter"),
-        ("skills.directories[2]", "empty_frontmatter_field:description"),
-        ("skills.directories[3]", "invalid_frontmatter"),
-        ("skills.directories[3]", "empty_frontmatter_field:description"),
-    ]
+    assert report == scenario.report()
