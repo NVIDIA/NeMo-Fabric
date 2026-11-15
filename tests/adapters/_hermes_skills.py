@@ -42,6 +42,12 @@ def skill_copy(origin: str, path: Path, entry: int | None = None) -> dict[str, s
     return item
 
 
+def other_skill(name: str, origin: str, path: Path) -> dict[str, str]:
+    """An ``output.skills.loaded`` item for a skill Hermes loads from outside
+    ``skills.directories``: ``bundled`` or ``local``."""
+    return {"name": name, "path": str(path), "origin": origin}
+
+
 def skipped_skill(path: Path, reason: str, entry: int = 0) -> dict[str, str]:
     """An ``output.skills.skipped`` item."""
     return {

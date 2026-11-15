@@ -24,6 +24,7 @@ from nemo_fabric_adapter_contract.skills import DirectoryLoad
 from nemo_fabric_adapter_contract.skills import DiscoveryRules
 from nemo_fabric_adapter_contract.skills import DuplicateRecord
 from nemo_fabric_adapter_contract.skills import FoundSkill
+from nemo_fabric_adapter_contract.skills import LoadedSkill
 from nemo_fabric_adapter_contract.skills import SkillLoadError
 from nemo_fabric_adapter_contract.skills import SkippedCandidate
 from nemo_fabric_adapter_contract.skills import front_matter_reader
@@ -1874,3 +1875,61 @@ def test_report_block_lists_copies_from_other_sources(tmp_path: Path):
         "origin": "bundled",
         "path": str(tmp_path / "b"),
     }
+
+
+def test_report_block_lists_skills_from_other_origins_after_configured_ones(
+    tmp_path: Path,
+):
+    configured = FoundSkill(
+        "review", tmp_path / "team" / "review", "skills.directories[0]", "folder"
+    )
+    others = [
+        LoadedSkill("github", "bundled", tmp_path / "shipped" / "github"),
+        LoadedSkill("notes", "local", tmp_path / "workspace" / "skills" / "notes"),
+        LoadedSkill("canvas", "bundled", None),
+    ]
+
+    block = report_block(DirectoryLoad(selected=[configured]), other_loaded=others)
+
+    assert block == {
+        "loaded": [
+            {
+                "name": "review",
+                "path": str(tmp_path / "team" / "review"),
+                "entry": "skills.directories[0]",
+                "origin": "external",
+            },
+            {
+                "name": "github",
+                "path": str(tmp_path / "shipped" / "github"),
+                "origin": "bundled",
+            },
+            {
+                "name": "notes",
+                "path": str(tmp_path / "workspace" / "skills" / "notes"),
+                "origin": "local",
+            },
+            # A skill whose folder the adapter cannot tell has no path.
+            {"name": "canvas", "origin": "bundled"},
+        ]
+    }
+
+
+def test_report_block_lists_loaded_even_when_nothing_loads():
+    """An adapter that reports every loaded skill says so when none loads."""
+    assert report_block(DirectoryLoad(), other_loaded=[]) == {"loaded": []}
+    # Without other_loaded an empty load still has nothing to report.
+    assert report_block(DirectoryLoad()) is None
+
+
+@pytest.mark.parametrize(
+    ("name", "origin"), [("", "local"), ("review", "external"), ("review", "x")]
+)
+def test_loaded_skill_rejects_invalid_values(name: str, origin: str):
+    with pytest.raises(ValueError):
+        LoadedSkill(name, origin, None)  # type: ignore[arg-type]
+
+
+def test_report_block_rejects_other_items():
+    with pytest.raises(TypeError):
+        report_block(DirectoryLoad(), other_loaded=[{"name": "x"}])  # type: ignore[list-item]

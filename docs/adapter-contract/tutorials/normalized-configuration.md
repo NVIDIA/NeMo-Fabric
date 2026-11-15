@@ -322,7 +322,10 @@ Pass the selected skills to the harness's native skill loader.
 pass each selected skill's folder, so that shadowed copies never load.
 Apply `bundled` with the harness's native controls, and fail `start` when an
 `include` or `exclude` name is not a bundled skill. Return
-`report_block(load, bundled=...)` as `output.skills` in each result. Refer to
+`report_block(load, bundled=...)` as `output.skills` in each result. When the
+adapter can tell every skill its harness loads, also pass the bundled and
+local ones as `LoadedSkill` items in `other_loaded`, so that `loaded` lists
+them all. Refer to
 [Configure Skills](../../integrations/harness/skills.mdx) for the full
 behavior.
 

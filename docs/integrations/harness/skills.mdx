@@ -247,7 +247,7 @@ At start, the adapter reads the list of bundled skills from the installed harnes
 
 A bundled skill that `bundled` leaves out does not hide a configured or local skill with the same name.
 
-Some harnesses always load certain bundled skills. An adapter that can't leave them out doesn't advertise `supports_disable`, so planning rejects `enabled: false`, and an `include` list that leaves them out fails start. Refer to [Harness Differences](#harness-differences).
+Some harnesses always load certain bundled skills. An adapter that can't leave them out doesn't advertise `supports_disable` or `supports_include`, so planning rejects `enabled: false` and `include`. Use `exclude` to leave out the other bundled skills. Refer to [Harness Differences](#harness-differences).
 
 ## Skills That Share a Name
 
@@ -270,24 +270,25 @@ The following rules apply:
 
 ## Run Report
 
-When a run uses `directories` or `bundled`, the adapter adds a `skills` block to the result `output`. It leaves out empty parts. The block never includes file contents.
+When a run uses `directories`, even an empty list, or `bundled`, the adapter adds a `skills` block to the result `output`. It leaves out empty parts. The block never includes file contents.
 
 | Key | Contents |
 | --- | --- |
-| `loaded` | Each loaded skill: `name`, `path`, `entry` (the field that supplied it), and `origin` (`external`). `name_uncertain: true` marks a skill whose name the adapter couldn't read the way the harness does, so the harness may use a different name. Refer to [How the Adapter Reads a Skill](#how-the-adapter-reads-a-skill). |
+| `loaded` | Each loaded skill: `name`, `path`, and `origin`. The `origin` is `external` for a `directories` skill, which also has `entry` (the field that supplied it), `bundled` for a skill shipped with the harness, and `local` for a skill in the harness's own folders, such as a workspace skill or one the agent installed. `name_uncertain: true` marks a skill whose name the adapter couldn't read the way the harness does, so the harness may use a different name. Refer to [How the Adapter Reads a Skill](#how-the-adapter-reads-a-skill). An adapter that reports every skill its harness loads lists `bundled` and `local` skills too, and an empty `loaded` list then means no skill loads. Each adapter guide says which skills it lists. |
 | `empty_entries` | The fields of `folder` entries that found no skills. |
 | `skipped` | Each skipped candidate: `path`, `entry`, and `reason`. |
 | `duplicates` | Each clash: `name`, `outcome` (`selected`, `shadowed`, or `ambiguous`), the `selected` path when known, and each copy's `origin` (`external`, `bundled`, or `local`), `path`, and `entry`. |
 | `bundled` | `selected`: the selected bundled skills that load. `unavailable`: each selected bundled skill that does not load, with `name` and `reason`. An adapter guide lists any extra keys, such as Hermes's `essential`. |
 
-The following example shows a report for the mixed setup. In this example, `/mnt/team-skills` also holds a `release-review` skill, its `debugging` skill has no `description` field that the harness requires, and `/mnt/agent-skills` is empty:
+The following example shows a report for the mixed setup. In this example, `/mnt/team-skills` also holds a `release-review` skill, its `debugging` skill has no `description` field that the harness requires, `/mnt/agent-skills` is empty, and the workspace holds a `notes` skill that the harness loads too:
 
 ```json
 {
   "skills": {
     "loaded": [
       {"name": "code-review", "path": "/mnt/team-skills/code-review", "entry": "skills.directories[0]", "origin": "external"},
-      {"name": "release-review", "path": "/mnt/release-review", "entry": "skills.directories[2]", "origin": "external"}
+      {"name": "release-review", "path": "/mnt/release-review", "entry": "skills.directories[2]", "origin": "external"},
+      {"name": "notes", "path": "/workspace/skills/notes", "origin": "local"}
     ],
     "empty_entries": ["skills.directories[1]"],
     "skipped": [
@@ -336,20 +337,20 @@ The OpenClaw and Hermes Agent adapters support `directories`, `bundled`, and `du
 | Behavior | Hermes Agent | OpenClaw |
 | --- | --- | --- |
 | A `paths` entry | Passed to `skills.external_dirs` without checks. Hermes Agent skips a missing path silently. | Must be a folder that holds `SKILL.md`. Passed to `skills.load.extraDirs`. |
-| Where `directories` entries go | `skills.external_dirs`. With a `duplicates` policy, the adapter passes each selected skill's folder instead. A folder that Hermes Agent already searches through another passed folder is not passed again. | `skills.load.extraDirs`. With a `duplicates` policy, the adapter passes each selected skill's folder instead. |
+| Where `directories` entries go | `skills.external_dirs`. With a `duplicates` policy, the adapter passes each selected skill's folder instead. A folder that Hermes Agent already searches through another passed folder is not passed again. | `skills.load.extraDirs`. With a `duplicates` policy, the adapter passes each selected skill's folder instead, through the path it found the skill by, never a symbolic link's target. A `skill` entry whose folder an earlier entry already supplies is not passed again. |
 | How the adapter reads names and validity | With Hermes Agent's own front-matter parser and skill catalog rules. | With OpenClaw's own front-matter parser, run through `node`. When the parser can't run, the adapter reads simple front matter instead. |
 | Search inside a `folder` entry | Every level below the folder, with no fixed depth limit. | 2 levels deep, or 6 when the folder it searches is named `skills`. A `skills` subfolder directly inside the searched folder is searched 6 levels deep. When only the entry's `skills` subfolder holds skills, OpenClaw searches that subfolder, and a `skills` subfolder that itself holds `SKILL.md` loads as one skill. A skill whose real folder is outside the searched folder does not load and is reported with the reason `path_escape`. |
 | A `folder` entry that holds `SKILL.md` | The folder loads as a skill, along with the skills below it. | Start fails with the reason `folder_is_skill`. Use a `skill` entry instead. |
 | Skills inside a skill's folder | Also load. With a `duplicates` policy, start fails when a copy that should not load sits inside a selected skill's folder. | Do not load. Discovery stops at a skill's folder. |
 | Folders discovery skips | The folders Hermes Agent skips, such as `.git`, `.hub`, `.archive`, `node_modules`, `venv`, `.venv`, `site-packages`, and `__pycache__`, and a skill's `references`, `templates`, `assets`, and `scripts` folders. | Every folder whose name starts with `.`, and `node_modules`. |
 | Required front-matter fields | None | `description`, not empty after trimming |
-| Name when the front matter has none | The folder name | The folder name |
-| Front matter that does not parse | Simple `key: value` lines are recovered. | The skill is skipped with the reason `invalid_frontmatter` before `duplicates` applies. Under `first_wins` or `last_wins`, the next copy of its name loads instead. |
+| Name when the front matter has none | The folder name | The name of the folder OpenClaw reaches the skill through, so a symbolic link gives its own name. A `folder` entry that holds a skill and a link to it loads the skill under both names, and the run report lists both. |
+| Front matter that does not parse | Simple `key: value` lines are recovered. | The skill is skipped with the reason `invalid_frontmatter` before `duplicates` applies. Under `first_wins` or `last_wins`, the next copy of its name loads instead. A hard-linked `SKILL.md` is skipped the same way, with the reason `hardlinked_skill_file`. |
 | Two configured skills share a name and `duplicates` is left out | Hermes Agent refuses both as ambiguous. It also refuses a skill whose name is another skill's folder name. | The copy from the later entry loads. Copies inside one entry are reported as `ambiguous`. |
 | The harness's own skill folders, ranked above the configured entries | The Hermes home's `skills` folder, which holds the bundled skills and the skills the agent creates. Hermes Agent saves every new skill there, never in a `directories` entry. | Highest first: the workspace's `skills` and `.agents/skills` folders, then the state folder's `skills` folder and the Skill Workshop folder, then the selected shipped skills. A `directories` entry inside a workspace folder keeps that folder's rank, so it wins over a shipped skill with the same name. A copy OpenClaw refuses hides nothing. |
 | How bundled skills are chosen | When the selection leaves out a bundled skill, Hermes Agent copies the selected bundled skills into its home from a per-runtime copy, read through `HERMES_BUNDLED_SKILLS`. Otherwise it copies from its installation. | When the selection leaves out a shipped skill, OpenClaw reads a per-runtime copy of the selected shipped skills through `OPENCLAW_BUNDLED_SKILLS_DIR`. Otherwise it reads the package folder. |
 | A bundled skill that `bundled` leaves out shares a name with a configured skill | The configured skill, from `paths` or `directories`, loads. The left-out bundled skill never reaches the Hermes home, so it hides nothing, and the agent's own skill with that name in the Hermes home loads too. A changed earlier copy of the left-out skill in a kept home fails start. | The configured skill loads. The left-out bundled skill is not loaded at all, so it hides nothing. |
-| Bundled skills that always load | `hermes-agent`. Every selection must keep it: `include` must name it, `exclude` can't name it, and `enabled: false` isn't supported. Start fails otherwise, so `include: []` fails too. | None |
+| Bundled skills that always load | `hermes-agent`. Use `bundled: {}` or `exclude`, which can't name it. The adapter doesn't support `include`, even `include: []` or `include: [hermes-agent]`, or `enabled: false`, so planning rejects them. | None |
 | Error codes | `hermes_skill_not_found`, `hermes_skill_invalid` | `openclaw_skill_not_found`, `openclaw_skill_invalid` |
 
 Refer to the [Hermes Agent guide](./hermes/hermes.mdx#skills) and the [OpenClaw guide](./openclaw/openclaw.mdx#skills) for details.

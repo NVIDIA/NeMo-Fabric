@@ -505,7 +505,8 @@ async def test_skill_created_by_hermes_loads_in_the_next_runtime_with_kept_state
         result = await second.invoke(input="Use the alternate skill.")
 
     assert result["status"] == "succeeded", result.to_mapping()
-    # Hermes loads the agent-created skill from the kept home.
+    # Hermes loads the agent-created skill from the kept home, and the report
+    # lists it as the agent's own, after the configured skill.
     assert_atof_skill_selection(result["output"], "alternate")
     assert result["output"]["skills"]["loaded"] == [
         {
@@ -513,9 +514,62 @@ async def test_skill_created_by_hermes_loads_in_the_next_runtime_with_kept_state
             "path": str(mounted.resolve()),
             "entry": "skills.directories[0]",
             "origin": "external",
-        }
+        },
+        {
+            "name": "alternate",
+            "path": str(Path(created["skill_md"]).parent.resolve()),
+            "origin": "local",
+        },
     ]
     assert protected.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+async def test_empty_directories_report_the_agents_own_skill_after_a_restart(
+    code_review_agent_dir: Path,
+    api_server: str,
+    alternate_skill: Path,
+):
+    """With skills.directories: [] the report lists every skill Hermes loads:
+    none at first, then the skill the agent created in its kept home."""
+    config = _skill_config(api_server)
+    config.runtime.keep_state = True
+    config.skills = SkillConfig(directories=[])
+    home = _kept_home(code_review_agent_dir, config)
+
+    async with await Fabric().start_runtime(
+        config, base_dir=code_review_agent_dir
+    ) as first:
+        before = await first.invoke(input="Hello.")
+        created = _hermes_skill_manage(
+            home,
+            {
+                "action": "create",
+                "name": "alternate",
+                "content": (alternate_skill / "SKILL.md").read_text(encoding="utf-8"),
+            },
+        )
+    assert created.get("success") is True, created
+
+    _use_skill(api_server, "alternate")
+    async with await Fabric().start_runtime(
+        config, base_dir=code_review_agent_dir
+    ) as second:
+        result = await second.invoke(input="Use the alternate skill.")
+
+    assert before["status"] == "succeeded", before.to_mapping()
+    assert before["output"]["skills"] == {"loaded": []}
+    assert result["status"] == "succeeded", result.to_mapping()
+    assert_atof_skill_selection(result["output"], "alternate")
+    assert result["output"]["skills"] == {
+        "loaded": [
+            {
+                "name": "alternate",
+                "path": str(Path(created["skill_md"]).parent.resolve()),
+                "origin": "local",
+            }
+        ]
+    }
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
@@ -567,6 +621,15 @@ async def test_agent_skill_with_an_excluded_bundled_name_loads_in_the_next_runti
     assert "duplicates" not in skills
     assert name not in skills["bundled"]["selected"]
     assert not bundled_place.exists()
+    # The report lists the agent's skill as local, and the bundled copies
+    # beside it.
+    own = Path(created["skill_md"]).parent.resolve()
+    assert [item for item in skills["loaded"] if item["name"] == name] == [
+        {"name": name, "path": str(own), "origin": "local"}
+    ]
+    assert {
+        item["name"] for item in skills["loaded"] if item["origin"] == "bundled"
+    } == set(skills["bundled"]["selected"])
     # Hermes's skill_view returns the agent's skill, not an ambiguity error.
     assert "agent-owned skill loaded" in json.dumps(atof_records(result["output"]))
 

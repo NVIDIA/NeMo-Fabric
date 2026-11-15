@@ -44,9 +44,28 @@ rules are chosen per entry:
   never count as a copy. When the parser cannot run, Fabric reads simple
   front matter itself and cannot tell which skills OpenClaw refuses; under a
   duplicate policy whose outcome depends on one, start fails with
-  ``unsupported_frontmatter``. ``openclaw skills list`` at start reports any
-  other skill OpenClaw refuses, such as a hard-linked ``SKILL.md``; under
-  ``first_wins`` or ``last_wins`` the next copy replaces a refused winner.
+  ``unsupported_frontmatter``.
+- OpenClaw opens a ``SKILL.md`` outside its shipped skills with hard links
+  refused (``shouldRejectHardlinkedPluginFiles``), unless ``OPENCLAW_NIX_MODE``
+  is ``1`` and the skill is in the Nix store. Such a skill is skipped with
+  ``hardlinked_skill_file`` before any duplicate check too.
+- OpenClaw names a skill without a front matter name after the path it
+  reaches the skill through, and loads a folder once per such path, while
+  Fabric's discovery loads a folder once. So a skill found through a
+  symbolic link is passed through that link, never its target, and a second
+  ``skill`` entry that reaches an already loaded folder is not passed. A
+  ``folder`` entry passed whole loads a linked skill once per name, and each
+  name is reported (:func:`_with_alias_copies`).
+
+At start ``openclaw skills list`` reports any other skill OpenClaw refuses,
+such as one whose ``SKILL.md`` links outside its folder; under ``first_wins``
+or ``last_wins`` the next copy replaces a refused winner. The list names each
+skill's source but not its folder, so ``openclaw skills info`` locates the
+loaded copy of each name the list leaves open (:func:`names_to_locate`): a
+clash between copies of one source, or a name Fabric knows no copy of, such
+as a skill an OpenClaw plugin adds. The report's ``loaded`` lists every skill
+OpenClaw loads: the configured ones, and the shipped, plugin, and workspace
+ones with their folders.
 
 OpenClaw's own ``skills.allowBundled`` filters bundled and Custodian skills
 after names are resolved, so a filtered-out shipped skill would still hide a
@@ -71,6 +90,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -81,6 +101,7 @@ from dataclasses import field as dataclass_field
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+from typing import Literal
 
 from nemo_fabric_adapter_contract import models as contract
 from nemo_fabric_adapter_contract import skills as contract_skills
@@ -102,6 +123,14 @@ HIDDEN_SCAN_DEPTH = SKILLS_ROOT_DEPTH + 1
 BUNDLED_SKILLS_ENV = "OPENCLAW_BUNDLED_SKILLS_DIR"
 CUSTODIAN_SKILLS_DIR = "custodian-skills"
 BUNDLED_SOURCES = frozenset({"openclaw-bundled", "openclaw-custodian"})
+# The skip reason of a skill whose SKILL.md OpenClaw refuses as hard-linked.
+HARDLINKED = "hardlinked_skill_file"
+# NIX_STORE_ROOT of hardlink-policy: hard links are allowed below it in Nix mode.
+NIX_STORE = "/nix/store"
+# The rank of a skill an OpenClaw plugin adds: it is read with the extraDirs
+# roots but after them, so it hides a configured copy and loses to the
+# shipped skills (loadWorkspaceSkillSourceEntries).
+PLUGIN_RANK = -0.5
 # normalizeAgentId: invalid characters become "-", outer dashes are trimmed.
 _AGENT_ID_INVALID = re.compile(r"[^a-z0-9_-]+")
 # Native sources that outrank skills.load.extraDirs, lowest first.
@@ -126,11 +155,21 @@ _SOURCE_RANKS: dict[str, float] = {
 class NativeCopy:
     """A skill OpenClaw loads at start from one of its own sources."""
 
-    origin: contract_skills.SkillOrigin
+    origin: Literal["bundled", "local"]
     """``bundled`` for a shipped skill, ``local`` for a workspace one."""
     path: Path
     rank: float
     """The source's precedence: a higher rank wins a name."""
+
+
+@dataclass(frozen=True)
+class LocatedCopy:
+    """The copy of a name OpenClaw loads, from ``openclaw skills info --json``."""
+
+    source: str
+    """OpenClaw's source label, such as ``openclaw-extra``."""
+    path: Path
+    """The resolved folder that holds the loaded ``SKILL.md`` (``baseDir``)."""
 
 
 @dataclass(frozen=True)
@@ -181,27 +220,69 @@ class SkillPlan:
     native_refused: set[Path] | None = None
     """Native copies ``openclaw skills list`` showed it does not load, or
     ``None`` before it ran."""
-    report_directories: bool = False
-    """Whether ``skills.directories`` is set, so the report always says what
-    it loads."""
+    reached: dict[tuple[str, Path], str] = dataclass_field(default_factory=dict)
+    """The path OpenClaw discovers each configured skill through, by entry
+    field and resolved folder: an alias stays an alias, because OpenClaw
+    names a skill without a front matter name after that path's folder."""
+    located: dict[str, LocatedCopy] = dataclass_field(default_factory=dict)
+    """The copy OpenClaw loads for each name ``openclaw skills info`` located."""
+    package: Path | None = None
+    """The installed OpenClaw package, to tell a plugin's shipped skill."""
 
     def merge_native(self) -> None:
         """Derive ``load`` from ``configured`` and the native copies."""
 
         if self.configured is None:
             return
-        load = _with_native_sources(self.configured, self.native, self.native_refused)
-        self.load = load if self.report_directories or load.duplicates else None
+        self.load = _with_native_sources(
+            self.configured, self.native, self.native_refused, self.located
+        )
 
     @property
     def needs_status(self) -> bool:
         """Return whether OpenClaw's own skill list can refine the report."""
 
-        return self.load is not None or self.bundled_selected is not None
+        return self.configured is not None
+
+    def other_loaded(self) -> list[contract_skills.LoadedSkill]:
+        """Return the skills OpenClaw loads from its own sources, by name.
+
+        A name that a configured skill wins is left out, and so is a name
+        whose winning copy Fabric cannot tell: several copies in the winning
+        folder that ``openclaw skills info`` did not locate.
+        """
+
+        external = {skill.name for skill in self.load.selected} if self.load else set()
+        refused = self.native_refused or set()
+        result: list[contract_skills.LoadedSkill] = []
+        for name in sorted(self.native):
+            copies = [copy for copy in self.native[name] if copy.path not in refused]
+            if name in external or not copies:
+                continue
+            top = max(copy.rank for copy in copies)
+            winners = [copy for copy in copies if copy.rank == top]
+            if len(winners) > 1:
+                where = self.located.get(name)
+                winners = [
+                    copy for copy in winners if where and copy.path == where.path
+                ]
+            if len(winners) == 1:
+                result.append(
+                    contract_skills.LoadedSkill(
+                        name, winners[0].origin, winners[0].path
+                    )
+                )
+        return result
 
     def report(self) -> dict[str, Any] | None:
-        """Return the ``output.skills`` block, or ``None`` when there is nothing to say."""
+        """Return the ``output.skills`` block, or ``None`` without structured skills.
 
+        ``loaded`` lists every skill OpenClaw loads: the configured ones in
+        entry order, then the shipped, plugin, and workspace ones by name.
+        """
+
+        if self.configured is None:
+            return None
         bundled: dict[str, Any] | None = None
         if self.bundled_selected is not None:
             unavailable = {item["name"] for item in self.bundled_unavailable}
@@ -213,7 +294,9 @@ class SkillPlan:
             if self.bundled_unavailable:
                 bundled["unavailable"] = list(self.bundled_unavailable)
         load = self.load if self.load is not None else contract_skills.DirectoryLoad()
-        return contract_skills.report_block(load, bundled=bundled)
+        return contract_skills.report_block(
+            load, bundled=bundled, other_loaded=self.other_loaded()
+        )
 
     def warn(self) -> None:
         """Write one stderr line per skipped, empty, duplicate, or unavailable item."""
@@ -241,13 +324,17 @@ def plan(
     bundled_dir: Path | None,
     reader: contract_skills.CandidateReader,
     custodian: bool = True,
+    nix_mode: bool = False,
+    package: Path | None = None,
 ) -> SkillPlan:
     """Check the structured skill settings and return what OpenClaw should load.
 
     ``reader`` reads each candidate as OpenClaw does (:func:`candidate_reader`);
     every candidate the plan meets is passed to it in one call.
     ``custodian`` says whether the configured agent owns the Custodian skills
-    (:func:`owns_custodian_skills`).
+    (:func:`owns_custodian_skills`). ``nix_mode`` says whether OpenClaw runs
+    with ``OPENCLAW_NIX_MODE=1``, which allows hard-linked skills in the Nix
+    store. ``package`` is the installed OpenClaw package (:func:`package_root`).
 
     Raises:
         lifecycle.LifecycleError: If an entry cannot be loaded, a bundled
@@ -255,7 +342,7 @@ def plan(
     """
 
     skills = config.skills
-    result = SkillPlan(custodian=custodian)
+    result = SkillPlan(custodian=custodian, package=package)
     if skills is None:
         return result
     result.duplicates = skills.duplicates
@@ -289,6 +376,8 @@ def plan(
                 if name in result.inventory.custodian
                 and name not in result.inventory.skills
             ]
+    # OpenClaw refuses a hard-linked SKILL.md outside its shipped skills.
+    unshipped = _refusing_hardlinks(reader, nix_mode=nix_mode)
     if skills.directories is None:
         load = contract_skills.DirectoryLoad()
     else:
@@ -296,15 +385,23 @@ def plan(
             skills.directories,
             duplicates=skills.duplicates,
             base_dir=base_dir,
-            reader=reader,
+            reader=unshipped,
         )
+        discovered = _discovered_paths(skills.directories, base_dir)
+        for field, candidates in discovered:
+            for reached, resolved in candidates:
+                result.reached.setdefault((field, resolved), str(reached))
         if skills.duplicates is None:
+            result.extra_dirs = _passed_entries(load, base_dir, skills.directories)
+            load = _with_alias_copies(load, discovered, unshipped)
             load = _with_native_extra_outcomes(load)
-            result.extra_dirs = _unique(
-                path for _, _, path in _configured(load, base_dir, skills.directories)
-            )
         else:
-            result.extra_dirs = _unique(str(skill.path) for skill in load.selected)
+            # Each selected skill once, through the path it was discovered
+            # by, so OpenClaw names it as Fabric does.
+            result.extra_dirs = _unique(
+                result.reached.get((skill.field, skill.path), str(skill.path))
+                for skill in load.selected
+            )
     result.configured = load
     result.native = _native_copies(
         workspace=workspace,
@@ -315,9 +412,8 @@ def plan(
             else None
         ),
         custodian=custodian,
-        reader=reader,
+        reader=unshipped,
     )
-    result.report_directories = skills.directories is not None
     result.merge_native()
     return result
 
@@ -682,16 +778,81 @@ def _named(
     return CandidateInfo(name or None, valid=valid, name_uncertain=name_uncertain)
 
 
-def apply_status(plan_: SkillPlan, status: Any, *, fallback: bool = False) -> bool:
+def located_copy(info: Any) -> LocatedCopy | None:
+    """Return the copy ``openclaw skills info <name> --json`` says loads."""
+
+    if not isinstance(info, dict):
+        return None
+    source, base_dir = info.get("source"), info.get("baseDir")
+    if not isinstance(source, str) or not isinstance(base_dir, str) or not base_dir:
+        return None
+    return LocatedCopy(source, _resolved(Path(base_dir)))
+
+
+def names_to_locate(plan_: SkillPlan, status: Any) -> list[str]:
+    """Return the listed names whose loaded copy ``openclaw skills list`` leaves open.
+
+    The list gives each name's source but not its folder. That settles a
+    name with one known copy of that source. Locate a name with several
+    copies of the listed source that OpenClaw is given, such as copies from
+    two entries passed without a policy, and a listed name Fabric knows no
+    copy of, such as a skill an OpenClaw plugin adds.
+    """
+
+    listed = _listed(status)
+    if plan_.configured is None or not listed:
+        return []
+    load = plan_.load or contract_skills.DirectoryLoad()
+    known = {skill.name for skill in load.selected} | set(plan_.native)
+    known |= {record.name for record in load.duplicates}
+    passed = _passed_paths(plan_)
+    names: list[str] = []
+    for name, rows in listed.items():
+        if name not in known:
+            names.append(name)
+            continue
+        rank = _SOURCE_RANKS.get(str(rows[0].get("source")))
+        record = next((item for item in load.duplicates if item.name == name), None)
+        if record is None or rank is None:
+            continue
+        native_rank = {copy.path: copy.rank for copy in plan_.native.get(name, [])}
+        same_rank = {
+            path
+            for origin, path, _ in record.copies
+            if native_rank.get(path, -1 if origin == "external" else None) == rank
+            and (
+                origin != "external"
+                or path in native_rank
+                or passed is None
+                or path in passed
+            )
+        }
+        if len(same_rank) != 1:
+            names.append(name)
+    return sorted(names)
+
+
+def apply_status(
+    plan_: SkillPlan,
+    status: Any,
+    *,
+    located: Mapping[str, LocatedCopy] | None = None,
+    fallback: bool = False,
+) -> bool:
     """Refine the report with ``openclaw skills list --json`` for the agent.
 
-    Each name's listed source says which copy won it, so workspace and
-    shipped copies OpenClaw refused for a reason Fabric does not check, such
-    as a hard-linked ``SKILL.md``, stop hiding other copies, and the clash
-    records name OpenClaw's winner. Configured skills OpenClaw does not list
-    were rejected by its loader and are reported as skipped with
-    ``rejected_by_openclaw``. Selected bundled skills that do not load move
-    to ``unavailable`` with OpenClaw's reason.
+    Each name's listed source says which source won it, so workspace and
+    shipped copies OpenClaw refused for a reason Fabric does not check stop
+    hiding other copies, and the clash records name OpenClaw's winner.
+    ``located`` gives the copy ``openclaw skills info`` says loads for the
+    names :func:`names_to_locate` returns, which settles which copy of one
+    source loads. A configured winner OpenClaw does not list, or whose name
+    it loads from another configured copy, was rejected by its loader and is
+    reported as skipped with ``rejected_by_openclaw``; the copy that loads
+    instead is reported as selected. A located copy Fabric does not know,
+    such as a plugin's skill, is added to the copies of its name. Selected
+    bundled skills that do not load move to ``unavailable`` with OpenClaw's
+    reason.
 
     Under ``first_wins`` or ``last_wins`` only the winning copy of a name is
     passed to OpenClaw, so a rejected winner would leave the name without a
@@ -704,31 +865,50 @@ def apply_status(plan_: SkillPlan, status: Any, *, fallback: bool = False) -> bo
         Whether ``extra_dirs`` changed.
     """
 
-    rows = status.get("skills") if isinstance(status, dict) else None
-    if not isinstance(rows, list):
+    listed = _listed(status)
+    if listed is None:
         return False
-    listed: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        if isinstance(row, dict) and isinstance(row.get("name"), str):
-            listed.setdefault(row["name"], []).append(row)
     changed = False
     if plan_.configured is not None:
-        plan_.native_refused = _refused_native(plan_.native, listed)
+        plan_.located.update(located or {})
+        _add_located(plan_)
+        _settle_ambiguous(plan_)
+        plan_.native_refused = _refused_native(plan_, listed)
         plan_.merge_native()
         load = plan_.load or contract_skills.DirectoryLoad()
         shadowed = {
-            path
+            (record.name, path)
             for record in load.duplicates
             if record.outcome == "shadowed"
             for _, path, _ in record.copies
         }
-        rejected = [
-            skill
-            for skill in load.selected
-            if skill.name not in listed and skill.path not in shadowed
-        ]
+        rejected: list[contract_skills.FoundSkill] = []
+        replacements: dict[str, tuple[Path, str]] = {}
+        for skill in load.selected:
+            if (skill.name, skill.path) in shadowed:
+                continue
+            if skill.name not in listed:
+                rejected.append(skill)
+                continue
+            where = plan_.located.get(skill.name)
+            if (
+                where is None
+                or where.source != "openclaw-extra"
+                or where.path == skill.path
+            ):
+                continue
+            other = _configured_copy(plan_.configured, skill.name, where.path)
+            if other is not None:
+                rejected.append(skill)
+                replacements[skill.name] = other
         if rejected:
-            changed = _reject(plan_, plan_.configured, rejected, fallback=fallback)
+            changed = _reject(
+                plan_,
+                plan_.configured,
+                rejected,
+                replacements=replacements,
+                fallback=fallback,
+            )
             plan_.merge_native()
     unavailable: list[dict[str, Any]] = []
     for name in plan_.bundled_selected or []:
@@ -768,17 +948,122 @@ def apply_status(plan_: SkillPlan, status: Any, *, fallback: bool = False) -> bo
     return changed
 
 
+def _listed(status: Any) -> dict[str, list[dict[str, Any]]] | None:
+    """Return the rows of ``openclaw skills list --json`` by name."""
+
+    rows = status.get("skills") if isinstance(status, dict) else None
+    if not isinstance(rows, list):
+        return None
+    listed: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        if isinstance(row, dict) and isinstance(row.get("name"), str):
+            listed.setdefault(row["name"], []).append(row)
+    return listed
+
+
+def _passed_paths(plan_: SkillPlan) -> set[Path] | None:
+    """Return the configured folders passed one by one, or ``None`` for whole entries."""
+
+    if plan_.duplicates is None:
+        return None
+    passed = set(plan_.extra_dirs)
+    return {path for (_, path), reached in plan_.reached.items() if reached in passed}
+
+
+def _configured_copy(
+    load: contract_skills.DirectoryLoad, name: str, path: Path
+) -> tuple[Path, str] | None:
+    """Return the configured copy of ``name`` at ``path``, with its entry."""
+
+    for skill in load.selected:
+        if skill.name == name and skill.path == path:
+            return skill.path, skill.field
+    for record in load.duplicates:
+        if record.name == name:
+            for origin, copy_path, field in record.copies:
+                if origin == "external" and copy_path == path:
+                    return copy_path, field
+    return None
+
+
+def _add_located(plan_: SkillPlan) -> None:
+    """Add each located copy Fabric does not know to the native copies of its name.
+
+    A plugin's skill is read with the ``extraDirs`` roots but is not
+    configured; it is ``bundled`` when it lives in the OpenClaw package.
+    """
+
+    configured = plan_.configured or contract_skills.DirectoryLoad()
+    for name, where in plan_.located.items():
+        copies = plan_.native.setdefault(name, [])
+        if any(copy.path == where.path for copy in copies) or _configured_copy(
+            configured, name, where.path
+        ):
+            continue
+        if where.source == "openclaw-extra":
+            rank: float | None = PLUGIN_RANK
+        else:
+            rank = _SOURCE_RANKS.get(where.source)
+        if rank is None:
+            continue
+        shipped = where.source in BUNDLED_SOURCES or (
+            plan_.package is not None
+            and where.path.is_relative_to(_resolved(plan_.package))
+        )
+        copies.append(NativeCopy("bundled" if shipped else "local", where.path, rank))
+        copies.sort(key=lambda copy: copy.rank)
+    for name in [name for name, copies in plan_.native.items() if not copies]:
+        del plan_.native[name]
+
+
+def _settle_ambiguous(plan_: SkillPlan) -> None:
+    """Pick the located copy of each clash between configured copies of one entry.
+
+    Without a policy, OpenClaw loads one of several copies inside one entry
+    in its own path order, which Fabric reports as ``ambiguous``; the copy
+    ``openclaw skills info`` located is the one that loads.
+    """
+
+    load = plan_.configured
+    if load is None:
+        return
+    records = []
+    losers: set[tuple[str, Path]] = set()
+    for record in load.duplicates:
+        where = plan_.located.get(record.name)
+        paths = [path for origin, path, _ in record.copies if origin == "external"]
+        if record.outcome != "ambiguous" or where is None or where.path not in paths:
+            records.append(record)
+            continue
+        losers.update((record.name, path) for path in paths if path != where.path)
+        records.append(replace(record, outcome="selected", selected=where.path))
+    if losers:
+        plan_.configured = replace(
+            load,
+            selected=[
+                skill
+                for skill in load.selected
+                if (skill.name, skill.path) not in losers
+            ],
+            duplicates=records,
+        )
+
+
 def _reject(
     plan_: SkillPlan,
     load: contract_skills.DirectoryLoad,
     rejected: list[contract_skills.FoundSkill],
     *,
+    replacements: Mapping[str, tuple[Path, str]],
     fallback: bool,
 ) -> bool:
-    """Record skills OpenClaw refused, replacing a refused winner when allowed.
+    """Record skills OpenClaw refused, replacing a refused winner when known or allowed.
 
     ``load`` is the configured load, before native sources; the result
-    replaces ``plan_.configured``.
+    replaces ``plan_.configured``. ``replacements`` holds the configured copy
+    OpenClaw loads instead of a refused winner, by name; it is already
+    passed. Otherwise, with ``fallback``, the next copy in policy order
+    replaces the winner in ``extra_dirs``.
     """
 
     plan_.rejected.update(skill.path for skill in rejected)
@@ -801,28 +1086,33 @@ def _reject(
         if index is None:
             continue
         record = duplicates[index]
-        replacement = (
-            _next_copy(record, skill.path, plan_.duplicates, plan_.rejected)
-            if fallback
-            else None
-        )
+        replacement = replacements.get(skill.name)
+        passed = replacement is not None
+        if replacement is None and fallback:
+            replacement = _next_copy(
+                record, skill.path, plan_.duplicates, plan_.rejected
+            )
         duplicates[index] = replace(
             record, selected=replacement[0] if replacement else None
         )
         if replacement is None:
             continue
         path, field = replacement
-        selected.append(
-            contract_skills.FoundSkill(
-                skill.name,
-                path,
-                field,
-                "skill" if kinds[field] == "skill" else "folder",
+        if not any(item.name == skill.name and item.path == path for item in selected):
+            selected.append(
+                contract_skills.FoundSkill(
+                    skill.name,
+                    path,
+                    field,
+                    "skill" if kinds[field] == "skill" else "folder",
+                )
             )
-        )
+        if passed:
+            continue
+        old = plan_.reached.get((skill.field, skill.path), str(skill.path))
+        new = plan_.reached.get((field, path), str(path))
         plan_.extra_dirs = [
-            str(path) if folder == str(skill.path) else folder
-            for folder in plan_.extra_dirs
+            new if folder == old else folder for folder in plan_.extra_dirs
         ]
         changed = True
     selected.sort(key=lambda skill: order[skill.field])
@@ -1028,7 +1318,8 @@ def _with_native_extra_outcomes(
 
     order = {field: index for index, (field, _, _) in enumerate(load.entries)}
     records = []
-    losers: set[Path] = set()
+    # A folder can load under several names, so losers are kept by name.
+    losers: set[tuple[str, Path]] = set()
     for record in load.duplicates:
         last = max(order.get(field, -1) for _, _, field in record.copies)
         in_last = [copy for copy in record.copies if order.get(copy[2], -1) == last]
@@ -1036,14 +1327,18 @@ def _with_native_extra_outcomes(
             records.append(record)
             continue
         winner = in_last[0][1]
-        losers.update(path for _, path, _ in record.copies if path != winner)
+        losers.update(
+            (record.name, path) for _, path, _ in record.copies if path != winner
+        )
         records.append(
             contract_skills.DuplicateRecord(
                 record.name, record.copies, "selected", winner
             )
         )
     return contract_skills.DirectoryLoad(
-        selected=[skill for skill in load.selected if skill.path not in losers],
+        selected=[
+            skill for skill in load.selected if (skill.name, skill.path) not in losers
+        ],
         entries=load.entries,
         empty_entries=load.empty_entries,
         skipped=load.skipped,
@@ -1154,24 +1449,32 @@ def _read_ahead(
     return cached
 
 
-def _refused_native(
-    native: Mapping[str, Sequence[NativeCopy]], listed: Mapping[str, list[Any]]
-) -> set[Path]:
+def _refused_native(plan_: SkillPlan, listed: Mapping[str, list[Any]]) -> set[Path]:
     """Return the native copies OpenClaw's list shows it does not load.
 
-    The source a name is listed with outranks every copy it hides, so a copy
-    of a higher source was refused. A name that is not listed lost every
-    copy. Where the listed source is not one Fabric models, no copy is known
-    to be refused.
+    The copy that loads a name outranks every copy it hides, so a copy of a
+    higher source was refused. That copy is the located one when ``openclaw
+    skills info`` located it, or else one of the source the name is listed
+    with. A name that is not listed lost every copy. Where the listed source
+    is not one Fabric models, no copy is known to be refused.
     """
 
     refused: set[Path] = set()
-    for name, copies in native.items():
+    for name, copies in plan_.native.items():
         rows = listed.get(name)
         if not rows:
             refused.update(copy.path for copy in copies)
             continue
         rank = _SOURCE_RANKS.get(str(rows[0].get("source")))
+        where = plan_.located.get(name)
+        if where is not None:
+            # A configured copy that is no native copy has the extraDirs rank.
+            rank = next(
+                (copy.rank for copy in copies if copy.path == where.path),
+                _SOURCE_RANKS["openclaw-extra"]
+                if where.source == "openclaw-extra"
+                else rank,
+            )
         if rank is not None:
             refused.update(copy.path for copy in copies if copy.rank > rank)
     return refused
@@ -1181,13 +1484,15 @@ def _with_native_sources(
     load: contract_skills.DirectoryLoad,
     native: Mapping[str, Sequence[NativeCopy]],
     refused: set[Path] | None,
+    located: Mapping[str, LocatedCopy],
 ) -> contract_skills.DirectoryLoad:
     """Record every name that more than one source OpenClaw loads at start provides.
 
     OpenClaw keeps the copy from the highest source (``mergeSkillRecords``):
     the workspace's ``skills/`` over its ``.agents/skills/``, both over the
-    shipped skills, and those over ``skills.load.extraDirs``. Between shipped
-    skills with one name, the Custodian copy wins. Native copies in
+    shipped skills, and those over ``skills.load.extraDirs``. A located
+    plugin skill ranks between the shipped skills and ``extraDirs``. Between
+    shipped skills with one name, the Custodian copy wins. Native copies in
     ``refused`` hide nothing.
 
     A configured folder that is also a native copy, such as a skill in the
@@ -1195,7 +1500,8 @@ def _with_native_sources(
     can win the name. A configured copy that a higher source hides is
     ``shadowed``; when a configured copy wins, the outcome is ``selected``.
     A clash with no configured copy is ``selected`` when one copy wins, or
-    ``ambiguous`` when the winning source holds several copies. Clashes only
+    ``ambiguous`` when the winning source holds several copies, unless
+    ``located`` names the one that loads. Clashes only
     between configured entries outside OpenClaw's own sources keep the
     outcome already recorded.
     """
@@ -1231,10 +1537,15 @@ def _with_native_sources(
             (native_rank.get(path, -1), ("external", path, field))
             for _, path, field in configured
         ] + [(copy.rank, (copy.origin, copy.path, "")) for copy in others]
-        if len(ranked) < 2 or all(rank < 0 for rank, _ in ranked):
+        # A plugin's skill ranks below zero too, but it is no configured copy.
+        if len(ranked) < 2 or (not others and all(rank < 0 for rank, _ in ranked)):
             continue
         top_rank = max(rank for rank, _ in ranked)
         top = [copy for rank, copy in ranked if rank == top_rank]
+        where = located.get(name)
+        if len(top) > 1 and where is not None:
+            # OpenClaw's scan order picked the located copy.
+            top = [copy for copy in top if copy[1] == where.path] or top
         winner = top[0][1] if len(top) == 1 else None
         top_configured = [(path, field) for origin, path, field in top if field]
         outcome: contract_skills.DuplicateOutcome
@@ -1289,17 +1600,205 @@ def _with_native_sources(
     )
 
 
-def _configured(
+def _passed_entries(
     load: contract_skills.DirectoryLoad,
     base_dir: Path,
     directories: Sequence[contract.SkillDirectory],
-) -> list[tuple[str, str, str]]:
-    """Return ``(field, kind, path)`` per entry, with paths as configured."""
+) -> list[str]:
+    """Return the entry paths to pass without a policy, as configured.
 
-    return [
-        (field, kind, os.path.normpath(base_dir / entry.path))
-        for (field, kind, _), entry in zip(load.entries, directories, strict=True)
+    A ``skill`` entry whose folder an earlier entry already supplies is
+    not passed again: OpenClaw names a skill without a front matter name
+    after the path it reaches it through, so a second alias of one folder
+    would load it twice under two names, while the folder loads once.
+    """
+
+    first: dict[Path, str] = {}
+    for skill in load.selected:
+        first.setdefault(skill.path, skill.field)
+    passed: list[str] = []
+    for (field, kind, resolved), entry in zip(load.entries, directories, strict=True):
+        if kind == "skill" and first.get(resolved, field) != field:
+            continue
+        passed.append(os.path.abspath(base_dir / entry.path))
+    return _unique(passed)
+
+
+def _discovered_paths(
+    directories: Sequence[contract.SkillDirectory], base_dir: Path
+) -> list[tuple[str, list[tuple[Path, Path]]]]:
+    """Return each entry's field and the ``(reached, resolved)`` skill folders OpenClaw finds."""
+
+    found: list[tuple[str, list[tuple[Path, Path]]]] = []
+    for index, entry in enumerate(directories):
+        root = Path(os.path.abspath(base_dir / entry.path))
+        if entry.folder is not None:
+            candidates = _openclaw_candidates(root)
+        else:
+            resolved = _real(root)
+            candidates = [(root, resolved)] if resolved is not None else []
+        found.append((f"skills.directories[{index}]", candidates))
+    return found
+
+
+def _openclaw_candidates(root: Path) -> list[tuple[Path, Path]]:
+    """Return the skill folders OpenClaw discovers in one ``extraDirs`` root.
+
+    Each is ``(reached, resolved)``: the path discovery reaches it through,
+    which names a skill without a front matter name, and its real folder.
+    They come in OpenClaw's scan order, breadth first by name
+    (``discoverSkillCandidates``). Unlike Fabric's discovery, a folder
+    reached through several paths, such as through a symbolic link beside
+    its target, is listed once per path, as OpenClaw loads it once per path.
+    """
+
+    root = Path(os.path.abspath(root))
+    root_real = _real(root)
+    base = _scanned_folder(root)
+    base_real = _real(base)
+    if root_real is None or base_real is None or not _inside(base_real, root_real):
+        return []
+    if _has_skill_file(base):
+        return [(base, base_real)]
+    nested = base / "skills"
+    grouped = base == root / "skills" or base.name == "skills"
+    queue = [
+        (base / name, 0 if name == "skills" and not _has_skill_file(base / name) else 1)
+        for name in _child_dirs(base)
     ]
+    found: list[tuple[Path, Path]] = []
+    for path, depth in queue:
+        real = _real(path)
+        if real is None or not _inside(real, base_real):
+            continue
+        if _has_skill_file(path):
+            found.append((path, real))
+            continue
+        deep = grouped or path == nested or path.is_relative_to(nested)
+        if depth < (SKILLS_ROOT_DEPTH if deep else EXTRA_ROOT_DEPTH):
+            queue.extend((path / name, depth + 1) for name in _child_dirs(path))
+    return found
+
+
+def _child_dirs(directory: Path) -> list[str]:
+    """Return the folders OpenClaw searches below ``directory``, by name (``listChildDirectories``)."""
+
+    try:
+        with os.scandir(directory) as listing:
+            children = list(listing)
+    except OSError:
+        return []
+    names: list[str] = []
+    for child in children:
+        if child.name.startswith(".") or child.name == "node_modules":
+            continue
+        try:
+            if child.is_dir():
+                names.append(child.name)
+        except OSError:
+            continue
+    return sorted(names)
+
+
+def _with_alias_copies(
+    load: contract_skills.DirectoryLoad,
+    discovered: Sequence[tuple[str, Sequence[tuple[Path, Path]]]],
+    reader: contract_skills.CandidateReader,
+) -> contract_skills.DirectoryLoad:
+    """Add the copies OpenClaw loads again through another path of a ``folder`` entry.
+
+    Without a policy each ``folder`` entry is passed whole, and OpenClaw
+    loads a skill folder once per path it reaches it through. A skill
+    without a front matter name then loads once per alias name, such as
+    beside a symbolic link to it; Fabric's discovery loads the folder once,
+    so each other name is added as a copy of that folder. Copies with one
+    name are one skill to OpenClaw, which keeps one per name.
+    """
+
+    names = {(skill.path, skill.name) for skill in load.selected}
+    loaded = {path for path, _ in names}
+    kinds = {field: kind for field, kind, _ in load.entries}
+    added: list[contract_skills.FoundSkill] = []
+    for field, candidates in discovered:
+        if kinds.get(field) != "folder":
+            continue
+        reached = [(path, real) for path, real in candidates if real in loaded]
+        if not reached:
+            continue
+        infos = reader(list(dict.fromkeys(real for _, real in reached)))
+        for path, real in reached:
+            info = infos[real]
+            name = info.name or path.name.strip()
+            if info.valid is False or not name or (real, name) in names:
+                continue
+            names.add((real, name))
+            added.append(
+                contract_skills.FoundSkill(
+                    name,
+                    real,
+                    field,
+                    "folder",
+                    name_uncertain=info.name_uncertain,
+                    validity_uncertain=info.valid is None,
+                )
+            )
+    if not added:
+        return load
+    order = {field: index for index, (field, _, _) in enumerate(load.entries)}
+    selected = sorted([*load.selected, *added], key=lambda skill: order[skill.field])
+    by_name: dict[str, list[contract_skills.FoundSkill]] = {}
+    for skill in selected:
+        by_name.setdefault(skill.name, []).append(skill)
+    return contract_skills.DirectoryLoad(
+        selected=selected,
+        entries=load.entries,
+        empty_entries=load.empty_entries,
+        skipped=load.skipped,
+        duplicates=[
+            contract_skills.DuplicateRecord(
+                name,
+                tuple(("external", skill.path, skill.field) for skill in copies),
+                "ambiguous",
+                None,
+            )
+            for name, copies in by_name.items()
+            if len(copies) > 1
+        ],
+    )
+
+
+def _refusing_hardlinks(
+    reader: contract_skills.CandidateReader, *, nix_mode: bool
+) -> contract_skills.CandidateReader:
+    """Return ``reader`` refusing a hard-linked ``SKILL.md``, as OpenClaw does.
+
+    OpenClaw opens every ``SKILL.md`` outside its shipped skills with hard
+    links refused (``shouldRejectHardlinkedPluginFiles``): a regular file with
+    more than one link, after following symbolic links, does not load. In
+    Nix mode (``OPENCLAW_NIX_MODE=1``) a root in the Nix store is exempt;
+    the skill's real folder stands for its root here, which only differs for
+    a root of ``/`` or ``/nix``.
+    """
+
+    def read(folders: Sequence[Path]) -> Mapping[Path, CandidateInfo]:
+        infos = dict(reader(folders))
+        for folder in folders:
+            if infos[folder].valid is False or (
+                nix_mode
+                and (
+                    str(folder) == NIX_STORE or str(folder).startswith(NIX_STORE + "/")
+                )
+            ):
+                continue
+            try:
+                status = os.stat(folder / SKILL_FILE)
+            except OSError:
+                continue
+            if stat.S_ISREG(status.st_mode) and status.st_nlink > 1:
+                infos[folder] = CandidateInfo(None, valid=False, reason=HARDLINKED)
+        return infos
+
+    return read
 
 
 def _scanned_folder(folder: Path) -> Path:
@@ -1362,6 +1861,19 @@ def _resolved(path: Path) -> Path:
         return path.resolve(strict=True)
     except (OSError, RuntimeError):
         return Path(os.path.normpath(path))
+
+
+def _real(path: Path) -> Path | None:
+    """Return the real path of an existing ``path``, or ``None``."""
+
+    try:
+        return path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+
+
+def _inside(path: Path, root: Path) -> bool:
+    return path == root or path.is_relative_to(root)
 
 
 def _contained(path: Path, root: Path) -> bool:

@@ -1128,7 +1128,7 @@
             "supports_disable": false,
             "supports_enable": true,
             "supports_exclude": true,
-            "supports_include": true
+            "supports_include": false
           },
           "directory_loading": {
             "discovery": {
@@ -1176,7 +1176,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.7.0"
       },
-      "sha256": "ea03d6a201e80ab769e9a3613ec35c7f018d1ecd5c5ec1f0473589c9cfe3c282",
+      "sha256": "e4f7fb7039ccc28a3299ebe714bed8deea2c95bd485f4a3586ca6185f1540cdf",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {

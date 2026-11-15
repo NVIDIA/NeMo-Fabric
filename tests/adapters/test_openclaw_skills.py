@@ -130,8 +130,36 @@ def _generated(
 
 
 def _loaded(plan: openclaw_skills.SkillPlan) -> list[tuple[str, str]]:
+    """Return ``(name, entry)`` of each loaded configured skill."""
     report = plan.report() or {}
-    return [(item["name"], item["entry"]) for item in report.get("loaded", [])]
+    return [
+        (item["name"], item["entry"])
+        for item in report.get("loaded", [])
+        if item["origin"] == "external"
+    ]
+
+
+def _others(plan: openclaw_skills.SkillPlan) -> list[tuple[str, str, str]]:
+    """Return ``(name, origin, path)`` of each loaded skill from OpenClaw's own sources."""
+    report = plan.report() or {}
+    return [
+        (item["name"], item["origin"], item["path"])
+        for item in report.get("loaded", [])
+        if item["origin"] != "external"
+    ]
+
+
+def _shipped(package: Path, *names: str) -> list[tuple[str, str, str]]:
+    """Return the ``_others`` items of shipped skills of the test package."""
+    folders = {"diagnose-gateway": "custodian-skills"}
+    return [
+        (
+            name,
+            "bundled",
+            str((package / folders.get(name, "skills") / name).resolve()),
+        )
+        for name in names
+    ]
 
 
 def test_folder_entry_passes_the_folder_and_reports_its_skills(
@@ -280,11 +308,12 @@ def test_empty_folder_and_empty_list(tmp_path: Path, workspace: Path):
         tmp_path, workspace, {"directories": [{"folder": str(empty)}]}
     )
     assert generated["skills"] == {"load": {"extraDirs": [str(empty)]}}
-    assert plan.report() == {"empty_entries": ["skills.directories[0]"]}
+    assert plan.report() == {"loaded": [], "empty_entries": ["skills.directories[0]"]}
 
+    # An empty list still reports that nothing loads.
     generated, plan = _generated(tmp_path, workspace, {"directories": []})
     assert "skills" not in generated
-    assert plan.report() is None
+    assert plan.report() == {"loaded": []}
 
 
 @POSIX_PERMISSIONS
@@ -327,7 +356,10 @@ def test_skill_written_into_a_writable_folder_loads_at_the_next_start(
     # The agent saves a new skill into its read-write folder.
     write_skill(agent_skills / "triage", "triage")
 
-    assert first.report() == {"empty_entries": ["skills.directories[0]"]}
+    assert first.report() == {
+        "loaded": [],
+        "empty_entries": ["skills.directories[0]"],
+    }
     assert _loaded(_plan(tmp_path, workspace, skills)) == [
         ("triage", "skills.directories[0]")
     ]
@@ -561,7 +593,16 @@ def test_paths_behavior_is_unchanged(tmp_path: Path, workspace: Path, package: P
 
     assert generated["skills"] == {"load": {"extraDirs": [str(skill.resolve())]}}
     assert plan.stage_bundled is True
-    assert plan.report() == {"bundled": {"selected": ["weather"]}}
+    assert plan.report() == {
+        "loaded": [
+            {
+                "name": "weather",
+                "path": str((package / "skills/weather").resolve()),
+                "origin": "bundled",
+            }
+        ],
+        "bundled": {"selected": ["weather"]},
+    }
     generated, plan = _generated(tmp_path, workspace, {"paths": ["skills"]})
     assert generated["skills"] == {"load": {"extraDirs": [str(skill.resolve())]}}
     assert plan.report() is None
@@ -612,7 +653,13 @@ def test_bundled_selection_stages_only_the_selected_shipped_skills(
     generated, plan = _generated(tmp_path, workspace, {"bundled": bundled}, package)
 
     assert "allowBundled" not in generated.get("skills", {})
-    assert plan.report() == {"bundled": {"selected": selected}}
+    assert plan.report() == {
+        "loaded": [
+            {"name": name, "path": path, "origin": origin}
+            for name, origin, path in _shipped(package, *selected)
+        ],
+        "bundled": {"selected": selected},
+    }
     folder = openclaw_skills.stage_bundled(plan, tmp_path / "stage")
     if staged is None:
         assert folder is None
@@ -744,9 +791,22 @@ def test_higher_sources_hide_configured_skills(
     report = plan.report()
     assert report is not None
     # The excluded shipped weather is not staged, so the configured copy loads.
-    assert [item["name"] for item in report["loaded"]] == ["kept", "weather"]
+    assert [item["name"] for item in report["loaded"]] == [
+        "kept",
+        "weather",
+        "diagnose-gateway",
+        "github",
+        "review",
+        "tmux",
+    ]
     assert report["loaded"][0]["path"] == str(kept.resolve())
     assert report["loaded"][1]["path"] == str(weather.resolve())
+    # The shipped and workspace copies that win their names load too.
+    assert _others(plan) == [
+        *_shipped(package, "diagnose-gateway", "github"),
+        ("review", "local", str(local.resolve())),
+        *_shipped(package, "tmux"),
+    ]
     duplicates = {item["name"]: item for item in report["duplicates"]}
     assert set(duplicates) == {"github", "review"}
     assert duplicates["review"] == duplicate(
@@ -784,7 +844,14 @@ def test_collisions_list_every_copy_from_every_source(
 
     report = plan.report()
     assert report is not None
-    assert "loaded" not in report
+    assert _loaded(plan) == []
+    # The two twin copies tie, so OpenClaw's scan order decides which loads.
+    assert _others(plan) == [
+        *_shipped(package, "diagnose-gateway"),
+        ("github", "local", str(local.resolve())),
+        ("tmux", "local", str(tmux.resolve())),
+        *_shipped(package, "weather"),
+    ]
     duplicates = {item["name"]: item for item in report["duplicates"]}
     assert duplicates["github"] == duplicate(
         "github",
@@ -859,7 +926,10 @@ def test_explicit_policy_applies_only_between_entries(
     assert generated["skills"]["load"]["extraDirs"] == [str(first.resolve())]
     report = plan.report()
     assert report is not None
-    assert "loaded" not in report
+    assert _loaded(plan) == []
+    assert ("github", "bundled", str((package / "skills/github").resolve())) in (
+        _others(plan)
+    )
     assert report["duplicates"] == [
         duplicate(
             "github",
@@ -914,7 +984,14 @@ def test_status_reports_rejected_and_unavailable_skills(
 
     report = plan.report()
     assert report is not None
-    assert [item["name"] for item in report["loaded"]] == ["kept"]
+    # Listed skills load even when they cannot be used; the bundled block
+    # says why a selected one is unavailable.
+    assert [item["name"] for item in report["loaded"]] == [
+        "kept",
+        "github",
+        "tmux",
+        "weather",
+    ]
     assert report["skipped"] == [
         skipped(rejected, "skills.directories[0]", "rejected_by_openclaw")
     ]
@@ -964,7 +1041,8 @@ def test_configured_workspace_skill_keeps_its_workspace_rank(
     refined = plan.report()
     assert refined is not None
     assert (refined["loaded"], refined["duplicates"]) == (
-        report["loaded"],
+        # The list shows no other skill, so none of the others loads.
+        report["loaded"][:1],
         report["duplicates"],
     )
 
@@ -1040,6 +1118,7 @@ def test_status_settles_winners_fabric_could_not_predict(
     assert report is not None
     assert report["loaded"] == [loaded("review", team, "skills.directories[0]")]
     assert "duplicates" not in report
+    # No copy of the other clash is listed from the workspace either.
 
     # The next listing shows the project copy winning instead.
     openclaw_skills.apply_status(
@@ -1048,7 +1127,9 @@ def test_status_settles_winners_fabric_could_not_predict(
 
     report = plan.report()
     assert report is not None
-    assert "loaded" not in report
+    assert report["loaded"] == [
+        {"name": "review", "path": str(project.resolve()), "origin": "local"}
+    ]
     assert report["duplicates"] == [
         duplicate(
             "review",
@@ -1386,7 +1467,16 @@ async def test_skill_status_uses_openclaw_list_for_the_agent(
         plan, tmp_path / "openclaw", agent_id="default", env={}, timeout=5
     )
     assert plan.bundled_unavailable == []
-    assert plan.report() == {"bundled": {"selected": ["github"]}}
+    assert plan.report() == {
+        "loaded": [
+            {
+                "name": "github",
+                "path": str((package / "skills/github").resolve()),
+                "origin": "bundled",
+            }
+        ],
+        "bundled": {"selected": ["github"]},
+    }
 
 
 def _reporting_runtime(
@@ -1584,7 +1674,15 @@ async def test_start_writes_the_plan_and_reports_it(
     assert not Path(staged).is_relative_to(package)
     assert not Path(staged).exists()
     assert report == {
-        "loaded": [loaded("kept", team / "kept", "skills.directories[0]")],
+        "loaded": [
+            loaded("kept", team / "kept", "skills.directories[0]"),
+            # The shipped folder, not the per-runtime copy stop removes.
+            {
+                "name": "github",
+                "path": str((package / "skills/github").resolve()),
+                "origin": "bundled",
+            },
+        ],
         "bundled": {"selected": ["github"]},
     }
     assert runtime._skills_report is None
@@ -1929,7 +2027,7 @@ def test_refused_winner_without_fallback_loads_no_copy(tmp_path: Path, workspace
 
     report = plan.report()
     assert report is not None
-    assert "loaded" not in report
+    assert report["loaded"] == []
     assert "selected" not in report["duplicates"][0]
     assert report["skipped"][0]["path"] == str(first.resolve())
     assert plan.extra_dirs == [str(first.resolve())]
@@ -2038,7 +2136,14 @@ def test_custodian_skills_hide_configured_ones_only_for_their_owner(
 
     assert plan.custodian is False
     assert plan.report() == {
-        "loaded": [loaded("diagnose-gateway", mine, "skills.directories[0]")],
+        "loaded": [
+            loaded("diagnose-gateway", mine, "skills.directories[0]"),
+            {
+                "name": "github",
+                "path": str((package / "skills/github").resolve()),
+                "origin": "bundled",
+            },
+        ],
         "bundled": {
             "selected": ["github"],
             "unavailable": [
@@ -2083,3 +2188,483 @@ async def test_connected_runtime_reports_the_prepared_skills(
         assert runtime._skills_output() == {"skills": report}
     finally:
         await runtime.stop()
+
+
+# Aliases: OpenClaw names a skill without a front matter name after the path
+# it reaches the skill through.
+
+_SYMLINKS = pytest.mark.skipif(
+    sys.platform == "win32", reason="Requires symbolic links"
+)
+
+
+@_SYMLINKS
+@pytest.mark.parametrize("policy", [None, "first_wins", "last_wins", "reject"])
+def test_two_aliases_of_one_skill_pass_one_path(
+    tmp_path: Path, workspace: Path, policy: str | None
+):
+    """Two configured links to one unnamed skill load it once, under one name.
+
+    OpenClaw would load it once per link, named after each, so only the
+    path the reported skill came through is passed.
+    """
+    target = write_skill(tmp_path / "real" / "target")
+    links = tmp_path / "links"
+    links.mkdir()
+    for name in ("alias-a", "alias-b"):
+        (links / name).symlink_to(target, target_is_directory=True)
+    skills: dict[str, Any] = {
+        "directories": [
+            {"skill": str(links / "alias-a")},
+            {"skill": str(links / "alias-b")},
+        ]
+    }
+    if policy is not None:
+        skills["duplicates"] = policy
+
+    generated, plan = _generated(tmp_path, workspace, skills)
+
+    kept = "alias-b" if policy == "last_wins" else "alias-a"
+    entry = f"skills.directories[{1 if policy == 'last_wins' else 0}]"
+    # The link is passed, not its target, so OpenClaw names the skill after it.
+    assert generated["skills"]["load"]["extraDirs"] == [str(links / kept)]
+    assert plan.report() == {"loaded": [loaded(kept, target, entry)]}
+
+
+@_SYMLINKS
+@pytest.mark.parametrize("policy", ["first_wins", "last_wins", "reject"])
+def test_policy_passes_a_linked_skill_by_its_link(
+    tmp_path: Path, workspace: Path, policy: str
+):
+    """Under a policy a skill is passed through the link it was found by.
+
+    Passing the resolved folder would rename an unnamed skill after its
+    target, and OpenClaw's list would then show it as rejected.
+    """
+    team = tmp_path / "team"
+    target = write_skill(team / "target")
+    # Discovery reaches the target through the link first, by name order.
+    (team / "alias").symlink_to(target, target_is_directory=True)
+    other = write_skill(team / "other", "other")
+    chosen = tmp_path / "chosen"
+    chosen.mkdir()
+    (chosen / "picked").symlink_to(target, target_is_directory=True)
+
+    generated, plan = _generated(
+        tmp_path,
+        workspace,
+        {"directories": [{"folder": str(team)}], "duplicates": policy},
+    )
+
+    assert generated["skills"]["load"]["extraDirs"] == [str(team / "alias"), str(other)]
+    assert _loaded(plan) == [
+        ("alias", "skills.directories[0]"),
+        ("other", "skills.directories[0]"),
+    ]
+    listed = {
+        "skills": [
+            {"name": name, "source": "openclaw-extra"} for name in ("alias", "other")
+        ]
+    }
+    assert openclaw_skills.apply_status(plan, listed, fallback=True) is False
+    report = plan.report()
+    assert report is not None
+    assert "skipped" not in report
+
+    # A chosen skill entry is passed through its link too.
+    generated, plan = _generated(
+        tmp_path,
+        workspace,
+        {"directories": [{"skill": str(chosen / "picked")}], "duplicates": policy},
+    )
+    assert generated["skills"]["load"]["extraDirs"] == [str(chosen / "picked")]
+    assert _loaded(plan) == [("picked", "skills.directories[0]")]
+
+
+@_SYMLINKS
+def test_folder_entry_reports_every_name_openclaw_loads_a_linked_skill_under(
+    tmp_path: Path, workspace: Path
+):
+    """A folder passed whole loads an unnamed skill once per link, so each is reported."""
+    team = tmp_path / "team"
+    real = write_skill(team / "real")
+    (team / "alias").symlink_to(real, target_is_directory=True)
+    named = write_skill(team / "named", "named")
+    (team / "named-link").symlink_to(named, target_is_directory=True)
+
+    generated, plan = _generated(
+        tmp_path, workspace, {"directories": [{"folder": str(team)}]}
+    )
+
+    assert generated["skills"]["load"]["extraDirs"] == [str(team)]
+    report = plan.report()
+    assert report is not None
+    # A named skill keeps its name through every link, so it loads once.
+    assert report["loaded"] == [
+        loaded("alias", real, "skills.directories[0]"),
+        loaded("named", named, "skills.directories[0]"),
+        loaded("real", real, "skills.directories[0]"),
+    ]
+    assert "duplicates" not in report
+
+
+@_SYMLINKS
+def test_folder_link_names_clash_like_other_copies(tmp_path: Path, workspace: Path):
+    """A link named like another skill clashes with it, and the later root wins."""
+    team = tmp_path / "team"
+    real = write_skill(team / "real")
+    (team / "review").symlink_to(real, target_is_directory=True)
+    other = write_skill(tmp_path / "opt" / "review", "review")
+
+    _, plan = _generated(
+        tmp_path,
+        workspace,
+        {"directories": [{"folder": str(team)}, {"skill": str(other)}]},
+    )
+
+    report = plan.report()
+    assert report is not None
+    assert report["loaded"] == [
+        loaded("real", real, "skills.directories[0]"),
+        loaded("review", other, "skills.directories[1]"),
+    ]
+    assert report["duplicates"] == [
+        duplicate(
+            "review",
+            "selected",
+            other,
+            copy("external", real, "skills.directories[0]"),
+            copy("external", other, "skills.directories[1]"),
+        )
+    ]
+
+
+@_SYMLINKS
+def test_skill_entry_reached_by_an_earlier_folder_is_not_passed_again(
+    tmp_path: Path, workspace: Path
+):
+    """A chosen link to a skill a folder entry already supplies would add a second name."""
+    team = tmp_path / "team"
+    real = write_skill(team / "real")
+    links = tmp_path / "links"
+    links.mkdir()
+    (links / "alias").symlink_to(real, target_is_directory=True)
+
+    generated, plan = _generated(
+        tmp_path,
+        workspace,
+        {"directories": [{"folder": str(team)}, {"skill": str(links / "alias")}]},
+    )
+
+    assert generated["skills"]["load"]["extraDirs"] == [str(team)]
+    assert _loaded(plan) == [("real", "skills.directories[0]")]
+
+
+# Hard links: OpenClaw refuses a hard-linked SKILL.md outside its shipped skills.
+
+
+@pytest.mark.parametrize("policy", [None, "reject", "first_wins", "last_wins"])
+def test_hard_linked_copy_is_skipped_before_duplicates(
+    tmp_path: Path, workspace: Path, policy: str | None
+):
+    """A copy whose SKILL.md is hard-linked never counts as a duplicate."""
+    valid = write_skill(tmp_path / "a" / "review", "review")
+    linked = write_skill(tmp_path / "b" / "review", "review")
+    os.link(linked / "SKILL.md", tmp_path / "SKILL.md.link")
+    skills: dict[str, Any] = {
+        "directories": [
+            {"folder": str(tmp_path / "a")},
+            {"folder": str(tmp_path / "b")},
+        ]
+    }
+    if policy is not None:
+        skills["duplicates"] = policy
+
+    generated, plan = _generated(tmp_path, workspace, skills)
+
+    assert plan.report() == {
+        "loaded": [loaded("review", valid, "skills.directories[0]")],
+        "empty_entries": ["skills.directories[1]"],
+        "skipped": [
+            skipped(linked, "skills.directories[1]", openclaw_skills.HARDLINKED)
+        ],
+    }
+    if policy is not None:
+        assert generated["skills"]["load"]["extraDirs"] == [str(valid.resolve())]
+
+
+def test_hard_linked_workspace_skill_hides_nothing(tmp_path: Path, workspace: Path):
+    team = write_skill(tmp_path / "team" / "review", "review")
+    local = write_skill(workspace / "skills" / "review", "review")
+    os.link(local / "SKILL.md", tmp_path / "SKILL.md.link")
+
+    plan = _plan(tmp_path, workspace, {"directories": [{"skill": str(team)}]})
+
+    assert plan.report() == {
+        "loaded": [loaded("review", team, "skills.directories[0]")]
+    }
+
+
+def test_hard_links_in_the_nix_store_load_in_nix_mode(
+    tmp_path: Path, workspace: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """OPENCLAW_NIX_MODE=1 exempts skills in the Nix store, as OpenClaw does."""
+    store = tmp_path / "store"
+    linked = write_skill(store / "review", "review")
+    os.link(linked / "SKILL.md", tmp_path / "SKILL.md.link")
+    monkeypatch.setattr(openclaw_skills, "NIX_STORE", str(store.resolve()))
+    skills = agent_config({"directories": [{"folder": str(store)}]})
+
+    for env, report in (
+        (
+            {"OPENCLAW_NIX_MODE": "1"},
+            {"loaded": [loaded("review", linked, "skills.directories[0]")]},
+        ),
+        (
+            {},
+            {
+                "loaded": [],
+                "empty_entries": ["skills.directories[0]"],
+                "skipped": [
+                    skipped(linked, "skills.directories[0]", openclaw_skills.HARDLINKED)
+                ],
+            },
+        ),
+    ):
+        plan = adapter._skill_plan(
+            skills, runtime_context(workspace), base_dir=tmp_path, env=env
+        )
+        assert plan.report() == report
+
+
+# Locating the copy OpenClaw loads with ``openclaw skills info``.
+
+
+def _located(source: str, path: Path) -> openclaw_skills.LocatedCopy:
+    return openclaw_skills.LocatedCopy(source, path.resolve())
+
+
+def test_located_copy_reads_skills_info():
+    assert openclaw_skills.located_copy(
+        {"name": "x", "source": "openclaw-extra", "baseDir": "/opt/x"}
+    ) == openclaw_skills.LocatedCopy("openclaw-extra", Path("/opt/x").resolve())
+    for info in (None, [], {"source": "openclaw-extra"}, {"baseDir": "/x"}):
+        assert openclaw_skills.located_copy(info) is None
+
+
+def test_names_to_locate_are_the_ones_the_list_leaves_open(
+    tmp_path: Path, workspace: Path
+):
+    """A name with several passed copies of its listed source, or no known copy."""
+    write_skill(tmp_path / "a" / "review", "review")
+    write_skill(tmp_path / "b" / "review", "review")
+    write_skill(tmp_path / "a" / "single", "single")
+    entries = [{"folder": str(tmp_path / "a")}, {"folder": str(tmp_path / "b")}]
+    status = {
+        "skills": [
+            {"name": name, "source": "openclaw-extra"}
+            for name in ("review", "single", "canvas")
+        ]
+    }
+
+    plan = _plan(tmp_path, workspace, {"directories": entries})
+    assert openclaw_skills.names_to_locate(plan, status) == ["canvas", "review"]
+
+    # Under a policy only the winner is passed, so the list settles it.
+    plan = _plan(
+        tmp_path, workspace, {"directories": entries, "duplicates": "first_wins"}
+    )
+    assert openclaw_skills.names_to_locate(plan, status) == ["canvas"]
+
+
+def test_located_copy_settles_which_configured_copy_loads(
+    tmp_path: Path, workspace: Path
+):
+    """OpenClaw loaded the earlier copy, so the later one it refused is reported."""
+    first = write_skill(tmp_path / "a" / "review", "review")
+    second = write_skill(tmp_path / "b" / "review", "review")
+    plan = _plan(
+        tmp_path,
+        workspace,
+        {
+            "directories": [
+                {"folder": str(tmp_path / "a")},
+                {"folder": str(tmp_path / "b")},
+            ]
+        },
+    )
+    assert _loaded(plan) == [("review", "skills.directories[1]")]
+    status = {"skills": [{"name": "review", "source": "openclaw-extra"}]}
+
+    changed = openclaw_skills.apply_status(
+        plan,
+        status,
+        located={"review": _located("openclaw-extra", first)},
+        fallback=True,
+    )
+
+    assert changed is False
+    report = plan.report()
+    assert report is not None
+    assert report["loaded"] == [loaded("review", first, "skills.directories[0]")]
+    assert report["skipped"] == [
+        skipped(second, "skills.directories[1]", "rejected_by_openclaw")
+    ]
+    assert report["duplicates"][0]["selected"] == str(first.resolve())
+
+
+def test_located_copy_settles_an_ambiguous_clash_inside_one_folder(
+    tmp_path: Path, workspace: Path
+):
+    first = write_skill(tmp_path / "team" / "x" / "review", "review")
+    second = write_skill(tmp_path / "team" / "y" / "review", "review")
+    plan = _plan(
+        tmp_path, workspace, {"directories": [{"folder": str(tmp_path / "team")}]}
+    )
+
+    openclaw_skills.apply_status(
+        plan,
+        {"skills": [{"name": "review", "source": "openclaw-extra"}]},
+        located={"review": _located("openclaw-extra", second)},
+    )
+
+    report = plan.report()
+    assert report is not None
+    assert report["loaded"] == [loaded("review", second, "skills.directories[0]")]
+    assert report["duplicates"] == [
+        duplicate(
+            "review",
+            "selected",
+            second,
+            copy("external", first, "skills.directories[0]"),
+            copy("external", second, "skills.directories[0]"),
+        )
+    ]
+    assert "skipped" not in report
+
+
+def test_located_plugin_skill_is_reported_and_hides_a_configured_copy(
+    tmp_path: Path, workspace: Path, package: Path
+):
+    """A skill an OpenClaw plugin adds loads after the extraDirs roots."""
+    mine = write_skill(tmp_path / "team" / "canvas", "canvas")
+    shipped = write_skill(package / "dist/extensions/canvas/skills/canvas", "canvas")
+    installed = write_skill(tmp_path / "state/plugin-skills/browser", "browser")
+    plan = _plan(
+        tmp_path,
+        workspace,
+        {"directories": [{"folder": str(tmp_path / "team")}], "bundled": {}},
+        package,
+    )
+    status = {
+        "skills": [
+            {"name": "canvas", "source": "openclaw-extra"},
+            {"name": "browser", "source": "openclaw-extra"},
+            *(
+                {"name": name, "source": "openclaw-bundled"}
+                for name in ("github", "tmux", "weather")
+            ),
+            {"name": "diagnose-gateway", "source": "openclaw-custodian"},
+        ]
+    }
+    assert openclaw_skills.names_to_locate(plan, status) == ["browser"]
+
+    openclaw_skills.apply_status(
+        plan,
+        status,
+        located={
+            "browser": _located("openclaw-extra", installed),
+            "canvas": _located("openclaw-extra", shipped),
+        },
+    )
+
+    report = plan.report()
+    assert report is not None
+    assert _others(plan) == [
+        ("browser", "local", str(installed.resolve())),
+        ("canvas", "bundled", str(shipped.resolve())),
+        *_shipped(package, "diagnose-gateway", "github", "tmux", "weather"),
+    ]
+    assert _loaded(plan) == []
+    assert report["duplicates"] == [
+        duplicate(
+            "canvas",
+            "shadowed",
+            shipped,
+            copy("external", mine, "skills.directories[0]"),
+            copy("bundled", shipped),
+        )
+    ]
+
+
+async def test_skill_status_locates_the_names_the_list_leaves_open(
+    tmp_path: Path, workspace: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """start runs openclaw skills info for each open name and applies its folder."""
+    first = write_skill(tmp_path / "a" / "review", "review")
+    write_skill(tmp_path / "b" / "review", "review")
+    skills = {
+        "directories": [
+            {"folder": str(tmp_path / "a")},
+            {"folder": str(tmp_path / "b")},
+        ]
+    }
+    listing = json.dumps({"skills": [{"name": "review", "source": "openclaw-extra"}]})
+    calls: list[tuple[str, ...]] = []
+
+    async def output(command: Path, *args: str, **kwargs: Any) -> str:
+        calls.append(args)
+        if args[:2] == ("skills", "list"):
+            return listing
+        return json.dumps({"source": "openclaw-extra", "baseDir": str(first)})
+
+    monkeypatch.setattr(adapter, "_command_output", output)
+    _, plan = _generated(tmp_path, workspace, skills)
+
+    await adapter._apply_skill_status(
+        plan, tmp_path / "openclaw", agent_id="Reviewer", env={}, timeout=5
+    )
+
+    assert calls == [
+        ("skills", "list", "--json", "--agent", "Reviewer"),
+        ("skills", "info", "review", "--json", "--agent", "Reviewer"),
+    ]
+    assert _loaded(plan) == [("review", "skills.directories[0]")]
+
+    # A name that cannot be shown keeps what the list and Fabric's rules say.
+    async def failing(command: Path, *args: str, **kwargs: Any) -> str:
+        if args[:2] == ("skills", "list"):
+            return listing
+        raise adapter.lifecycle.LifecycleError("x", "failed")
+
+    monkeypatch.setattr(adapter, "_command_output", failing)
+    _, plan = _generated(tmp_path, workspace, skills)
+    await adapter._apply_skill_status(
+        plan, tmp_path / "openclaw", agent_id="default", env={}, timeout=5
+    )
+    assert _loaded(plan) == [("review", "skills.directories[1]")]
+
+
+# The report lists every skill OpenClaw loads.
+
+
+def test_empty_directories_report_workspace_skills(tmp_path: Path, workspace: Path):
+    """directories: [] still reports the workspace skills OpenClaw loads."""
+    local = write_skill(workspace / "skills" / "notes", "notes")
+    project = write_skill(workspace / ".agents" / "skills" / "plan", "plan")
+
+    generated, plan = _generated(tmp_path, workspace, {"directories": []})
+
+    assert "skills" not in generated
+    assert plan.report() == {
+        "loaded": [
+            {"name": "notes", "path": str(local.resolve()), "origin": "local"},
+            {"name": "plan", "path": str(project.resolve()), "origin": "local"},
+        ]
+    }
+
+
+def test_no_structured_skills_means_no_report(tmp_path: Path, workspace: Path):
+    write_skill(workspace / "skills" / "notes", "notes")
+
+    assert _plan(tmp_path, workspace, {"paths": []}).report() is None

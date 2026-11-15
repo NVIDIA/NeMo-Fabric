@@ -65,6 +65,8 @@ MCP_STATUS_TIMEOUT_SECONDS = 15.0
 COMMAND_REAP_SECONDS = 2.0
 # Upper bound for OpenClaw's own skill list at start.
 SKILL_STATUS_TIMEOUT_SECONDS = 30.0
+# How many `openclaw skills info` commands may run at once at start.
+SKILL_INFO_CONCURRENCY = 4
 # OpenClaw's tools.effective notice for an MCP server whose last connection or
 # tool listing failed in the session.
 MCP_SERVER_DIAGNOSTIC_PREFIX = "mcp-server-diagnostic:"
@@ -401,6 +403,8 @@ def _skill_plan(
             command, env=command_env, timeout=timeout
         ),
         custodian=openclaw_skills.owns_custodian_skills(roster["agents"], agent_id),
+        nix_mode=command_env.get("OPENCLAW_NIX_MODE") == "1",
+        package=openclaw_skills.package_root(command) if command is not None else None,
     )
 
 
@@ -908,6 +912,9 @@ async def _apply_skill_status(
 
     The list applies OpenClaw's own loading and eligibility rules to the
     generated configuration. Without it, the report keeps what Fabric found.
+    The list names each skill's source but not its folder, so ``openclaw
+    skills info`` locates the loaded copy of each name the list leaves open
+    (:func:`~nemo_fabric_adapters.openclaw.skills.names_to_locate`).
     With ``rewrite``, which writes ``skill_plan.extra_dirs`` to the generated
     configuration, a winning copy OpenClaw refuses under an explicit
     duplicate policy is replaced by the next copy and the list runs again.
@@ -937,12 +944,78 @@ async def _apply_skill_status(
                 exc_info=True,
             )
             return
+        located = await _locate_skills(
+            command,
+            openclaw_skills.names_to_locate(skill_plan, status),
+            agent_id=agent_id,
+            env=env,
+            timeout=deadline - loop.time(),
+        )
         if not openclaw_skills.apply_status(
-            skill_plan, status, fallback=rewrite is not None
+            skill_plan, status, located=located, fallback=rewrite is not None
         ):
             return
         assert rewrite is not None
         rewrite()
+
+
+async def _locate_skills(
+    command: Path,
+    names: list[str],
+    *,
+    agent_id: str,
+    env: dict[str, str],
+    timeout: float,
+) -> dict[str, openclaw_skills.LocatedCopy]:
+    """Return the copy ``openclaw skills info --json`` says loads, for each name.
+
+    A few commands run at once. A name that cannot be located is left out,
+    so the report keeps what the list and Fabric's own rules say about it.
+    So is a name that starts with ``-``, which the command would read as an
+    option.
+    """
+
+    names = [name for name in names if not name.startswith("-")]
+    limit = asyncio.Semaphore(SKILL_INFO_CONCURRENCY)
+
+    async def locate(name: str) -> openclaw_skills.LocatedCopy | None:
+        async with limit:
+            try:
+                return openclaw_skills.located_copy(
+                    json.loads(
+                        await _command_output(
+                            command,
+                            "skills",
+                            "info",
+                            name,
+                            "--json",
+                            "--agent",
+                            agent_id,
+                            env=env,
+                            timeout=timeout,
+                            process_group=True,
+                        )
+                    )
+                )
+            except (lifecycle.LifecycleError, OSError, ValueError):
+                logger.warning(
+                    "OpenClaw could not show skill %r; the skill report may not "
+                    "say which copy of it loads",
+                    name,
+                    exc_info=True,
+                )
+                return None
+
+    if not names or timeout <= 0:
+        return {}
+    try:
+        found = await asyncio.wait_for(
+            asyncio.gather(*(locate(name) for name in names)), timeout=timeout
+        )
+    except TimeoutError:
+        logger.warning("OpenClaw did not show its skills before the deadline")
+        return {}
+    return {name: where for name, where in zip(names, found) if where is not None}
 
 
 async def _kill_and_reap(

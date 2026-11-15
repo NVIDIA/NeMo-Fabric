@@ -343,7 +343,7 @@
       "default": "disabled",
       "supports_enable": true,
       "supports_disable": false,
-      "supports_include": true,
+      "supports_include": false,
       "supports_exclude": true
     },
     "duplicates": {

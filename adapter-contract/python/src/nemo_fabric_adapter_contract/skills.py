@@ -607,8 +607,30 @@ def _entry_rules(
     return entry_rules
 
 
+@dataclass(frozen=True)
+class LoadedSkill:
+    """A skill the harness loads from outside ``skills.directories``."""
+
+    name: str
+    origin: Literal["bundled", "local"]
+    """``bundled`` for a skill shipped with the harness, ``local`` for one in
+    the harness's own folders, such as a workspace or agent-installed skill."""
+    path: Path | None
+    """The folder that holds the skill's ``SKILL.md``, or ``None`` when the
+    adapter cannot tell it."""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name:
+            raise ValueError("LoadedSkill.name must be a non-empty string")
+        if self.origin not in ("bundled", "local"):
+            raise ValueError("LoadedSkill.origin must be 'bundled' or 'local'")
+
+
 def report_block(
-    load: DirectoryLoad, *, bundled: Mapping[str, Any] | None = None
+    load: DirectoryLoad,
+    *,
+    bundled: Mapping[str, Any] | None = None,
+    other_loaded: Sequence[LoadedSkill] | None = None,
 ) -> dict[str, Any] | None:
     """Return the ``output.skills`` report for ``load``, or ``None`` when empty.
 
@@ -616,11 +638,21 @@ def report_block(
     and is copied as given. A loaded skill whose name could not be derived
     reliably carries ``"name_uncertain": true``. The report never includes
     file contents.
+
+    ``loaded`` lists the configured skills of ``load`` in entry order, each
+    with ``name``, ``path``, ``entry``, and ``origin: external``. An adapter
+    that can tell every skill its harness loads passes the others in
+    ``other_loaded``, such as bundled and local skills; they follow in the
+    order given, with ``name``, ``origin``, and ``path`` when known. When
+    ``other_loaded`` is given, even empty, ``loaded`` is always present, so an
+    empty list says the harness loads no skill.
     """
 
     block: dict[str, Any] = {}
-    if load.selected:
-        block["loaded"] = [_loaded_report(skill) for skill in load.selected]
+    if load.selected or other_loaded is not None:
+        block["loaded"] = [_loaded_report(skill) for skill in load.selected] + [
+            _other_loaded_report(skill) for skill in other_loaded or ()
+        ]
     if load.empty_entries:
         block["empty_entries"] = list(load.empty_entries)
     if load.skipped:
@@ -644,6 +676,16 @@ def _loaded_report(skill: FoundSkill) -> dict[str, Any]:
     }
     if skill.name_uncertain:
         item["name_uncertain"] = True
+    return item
+
+
+def _other_loaded_report(skill: LoadedSkill) -> dict[str, Any]:
+    if not isinstance(skill, LoadedSkill):
+        raise TypeError("other_loaded must hold LoadedSkill items")
+    item: dict[str, Any] = {"name": skill.name}
+    if skill.path is not None:
+        item["path"] = str(skill.path)
+    item["origin"] = skill.origin
     return item
 
 

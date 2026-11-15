@@ -163,7 +163,9 @@ These controls reduce automatic background model calls. They do not stop context
 The adapter supports `skills.paths`, `skills.directories`, `skills.bundled`,
 and `skills.duplicates`, and writes the configured skills to Hermes Agent's
 `skills.external_dirs`. Hermes always loads its `hermes-agent` bundled skill,
-so a bundled selection must keep it. For example:
+so `skills.bundled` supports `exclude` (or `{}` for every bundled skill) but
+not `include` or `enabled: false`, and `exclude` cannot name `hermes-agent`.
+For example:
 
 ```yaml
 skills:

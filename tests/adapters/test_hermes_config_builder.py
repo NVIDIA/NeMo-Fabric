@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from _hermes_skills import loaded_skill
+from _hermes_skills import other_skill
 from _hermes_skills import skill_copy
 from _hermes_skills import skipped_skill
 from _hermes_skills import write_skill
@@ -536,18 +537,12 @@ def test_entry_failures_map_to_hermes_codes(
     ("bundled", "excluded", "selected"),
     [
         pytest.param({}, [], ["arxiv", "github", "hermes-agent", "pdf"], id="enable"),
+        # Hermes always loads hermes-agent, so the smallest selection keeps it.
         pytest.param(
-            {"include": ["hermes-agent", "pdf"]},
-            ["arxiv", "github"],
-            ["hermes-agent", "pdf"],
-            id="include",
-        ),
-        # Hermes always loads hermes-agent, so the smallest selection names it.
-        pytest.param(
-            {"include": ["hermes-agent"]},
+            {"exclude": ["arxiv", "github", "pdf"]},
             ["arxiv", "github", "pdf"],
             ["hermes-agent"],
-            id="include-essential",
+            id="exclude-all-but-essential",
         ),
         pytest.param(
             {"exclude": ["arxiv"]},
@@ -592,7 +587,7 @@ def test_bundled_names_provided_by_external_skills_are_known(tmp_path: Path):
     write_skill(tmp_path / "team" / "renamed", name="pdf")
     skills = {
         "directories": [{"folder": str(tmp_path / "team")}],
-        "bundled": {"include": ["hermes-agent"]},
+        "bundled": {"exclude": ["arxiv", "github", "pdf"]},
     }
 
     plan = _plan(tmp_path, skills, home=tmp_path / "home")
@@ -618,7 +613,7 @@ def test_bundled_names_provided_by_skill_paths_are_known(
     write_skill(mine / "github" / "scripts" / "arxiv")
     skills = {
         "paths": ["mine" if relative else str(mine)],
-        "bundled": {"include": ["hermes-agent"]},
+        "bundled": {"exclude": ["arxiv"]},
     }
 
     plan = _plan(tmp_path, skills, home=home)
@@ -683,12 +678,6 @@ def test_remove_copies_refuses_a_folder_outside_the_home(tmp_path: Path):
     ("bundled", "field", "name", "reason"),
     [
         (
-            {"include": ["hermes-agent", "pdf", "unknown"]},
-            "skills.bundled.include",
-            "unknown",
-            "unknown_bundled_skill",
-        ),
-        (
             {"exclude": ["unknown"]},
             "skills.bundled.exclude",
             "unknown",
@@ -700,8 +689,15 @@ def test_remove_copies_refuses_a_folder_outside_the_home(tmp_path: Path):
             "hermes-agent",
             "essential_bundled_skill",
         ),
-        # Hermes always loads hermes-agent, so include must name it, and
-        # nothing can turn every bundled skill off.
+        # Hermes always loads hermes-agent, so nothing can turn every bundled
+        # skill off, and no include list can mean what it says: planning
+        # refuses include for Hermes, and so does the adapter.
+        (
+            {"enabled": False},
+            "skills.bundled.enabled",
+            "hermes-agent",
+            "essential_bundled_skill",
+        ),
         (
             {"include": []},
             "skills.bundled.include",
@@ -709,23 +705,16 @@ def test_remove_copies_refuses_a_folder_outside_the_home(tmp_path: Path):
             "essential_bundled_skill",
         ),
         (
-            {"include": ["pdf"]},
+            {"include": ["hermes-agent"]},
             "skills.bundled.include",
             "hermes-agent",
             "essential_bundled_skill",
         ),
-        (
-            {"enabled": False},
-            "skills.bundled.enabled",
-            "hermes-agent",
-            "essential_bundled_skill",
-        ),
-        # An unknown name is reported before a missing essential skill.
         (
             {"include": ["unknown"]},
             "skills.bundled.include",
-            "unknown",
-            "unknown_bundled_skill",
+            "hermes-agent",
+            "essential_bundled_skill",
         ),
     ],
 )
@@ -739,12 +728,12 @@ def test_bundled_names_are_checked(
     assert caught.value.metadata == {"field": field, "reason": reason, "name": name}
 
 
-def test_bundled_inventory_without_an_essential_skill_allows_any_include(
+def test_bundled_inventory_without_an_essential_skill_allows_any_exclude(
     tmp_path: Path,
 ):
     """Only essential skills the installed Hermes ships are required."""
     inventory = {"pdf": tmp_path / "bundled" / "pdf"}
-    agent_config = _skills_config({"bundled": {"include": []}})
+    agent_config = _skills_config({"bundled": {"exclude": ["pdf"]}})
 
     plan = hermes_skills.plan_skills(
         agent_config, inventory=lambda: inventory, hermes_home=tmp_path / "home"
@@ -752,6 +741,63 @@ def test_bundled_inventory_without_an_essential_skill_allows_any_include(
 
     assert plan.selected_bundled == []
     assert plan.excluded_bundled == ["pdf"]
+
+
+@pytest.mark.parametrize(
+    ("bundled", "field"),
+    [
+        ({"include": ["hermes-agent"]}, "skills.bundled.include"),
+        ({"include": []}, "skills.bundled.include"),
+        ({"enabled": False}, "skills.bundled.enabled"),
+    ],
+    ids=["include-essential", "include-none", "disabled"],
+)
+def test_planning_refuses_bundled_selections_hermes_cannot_honor(
+    tmp_path: Path, bundled: dict[str, object], field: str
+):
+    """Hermes always loads hermes-agent, so its descriptor declares neither
+    include nor disable support, and planning refuses both before start."""
+    from nemo_fabric import Fabric
+    from nemo_fabric import FabricConfig
+    from nemo_fabric import FabricConfigError
+
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "hermes-bundled"},
+            "harness": {
+                "adapter_id": "nvidia.fabric.hermes",
+                "resolution": "preinstalled",
+            },
+            "models": {"default": {"provider": "nvidia", "model": "test-model"}},
+            "environment": {"provider": "local", "workspace": "."},
+            "skills": {"bundled": bundled},
+        }
+    )
+
+    with pytest.raises(FabricConfigError) as caught:
+        Fabric().plan(config, base_dir=tmp_path)
+
+    assert field in str(caught.value)
+
+
+def test_planning_accepts_bundled_exclude(tmp_path: Path):
+    from nemo_fabric import Fabric
+    from nemo_fabric import FabricConfig
+
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "hermes-bundled"},
+            "harness": {
+                "adapter_id": "nvidia.fabric.hermes",
+                "resolution": "preinstalled",
+            },
+            "models": {"default": {"provider": "nvidia", "model": "test-model"}},
+            "environment": {"provider": "local", "workspace": "."},
+            "skills": {"bundled": {"exclude": ["xurl"]}},
+        }
+    )
+
+    Fabric().plan(config, base_dir=tmp_path)
 
 
 def test_folder_entry_that_is_a_skill_loads_its_root(tmp_path: Path):
@@ -945,7 +991,7 @@ def test_observation_reports_hermes_outcomes(skill_tree: Path, tmp_path: Path):
         tmp_path,
         {
             "directories": [{"folder": str(team)}, {"skill": str(opt)}],
-            "bundled": {"include": ["arxiv", "hermes-agent", "pdf"]},
+            "bundled": {"exclude": ["github"]},
         },
     )
     catalog = [
@@ -965,7 +1011,13 @@ def test_observation_reports_hermes_outcomes(skill_tree: Path, tmp_path: Path):
     ).report()
 
     assert report == {
-        "loaded": [loaded_skill("collect-logs", team / "debugging" / "collect-logs")],
+        # The configured skills, then every other skill Hermes loads by name.
+        "loaded": [
+            loaded_skill("collect-logs", team / "debugging" / "collect-logs"),
+            other_skill("debugging", "local", home / "debugging"),
+            other_skill("hermes-agent", "bundled", home / "hermes-agent"),
+            other_skill("pdf", "bundled", home / "pdf"),
+        ],
         "duplicates": [
             {
                 "name": "review",
@@ -1014,6 +1066,8 @@ def test_observation_reports_home_clashes_without_an_external_copy(
     report = hermes_skills.observe(plan, catalog).report()
 
     assert report == {
+        # Hermes refuses both copies, so no skill loads.
+        "loaded": [],
         "duplicates": [
             {
                 "name": "pdf",
@@ -1023,7 +1077,7 @@ def test_observation_reports_home_clashes_without_an_external_copy(
                     skill_copy("bundled", bundled_copy),
                 ],
             }
-        ]
+        ],
     }
 
 
@@ -1042,6 +1096,7 @@ def test_observation_reports_a_project_skill_over_a_home_skill(tmp_path: Path):
     report = hermes_skills.observe(plan, catalog).report()
 
     assert report == {
+        "loaded": [other_skill("notes", "local", winner)],
         "duplicates": [
             {
                 "name": "notes",
@@ -1049,7 +1104,7 @@ def test_observation_reports_a_project_skill_over_a_home_skill(tmp_path: Path):
                 "selected": str(winner),
                 "copies": [skill_copy("local", winner), skill_copy("local", loser)],
             }
-        ]
+        ],
     }
 
 
@@ -1059,9 +1114,7 @@ def test_observation_reports_clashes_of_skill_paths_with_bundled(tmp_path: Path)
     mine = (tmp_path / "mine").resolve()
     own = write_skill(mine / "notes")
     local = write_skill(home / "notes")
-    plan = _plan(
-        tmp_path, {"paths": [str(mine)], "bundled": {"include": ["hermes-agent"]}}
-    )
+    plan = _plan(tmp_path, {"paths": [str(mine)], "bundled": {"exclude": ["pdf"]}})
     catalog = [
         _catalog_row(home, local, tier=1, status="unique"),
         _catalog_row(mine, own, tier=3, status="shadowed"),
@@ -1078,6 +1131,7 @@ def test_observation_reports_clashes_of_skill_paths_with_bundled(tmp_path: Path)
             "copies": [skill_copy("local", local), skill_copy("external", own)],
         }
     ]
+    assert report["loaded"] == [other_skill("notes", "local", local)]
 
 
 def test_observation_matches_copies_by_the_name_hermes_reads(tmp_path: Path):
@@ -1104,6 +1158,7 @@ def test_observation_matches_copies_by_the_name_hermes_reads(tmp_path: Path):
     report = hermes_skills.observe(plan, catalog).report()
 
     assert report == {
+        "loaded": [other_skill("notes", "local", local)],
         "duplicates": [
             {
                 "name": "notes",
@@ -1114,7 +1169,7 @@ def test_observation_matches_copies_by_the_name_hermes_reads(tmp_path: Path):
                     skill_copy("external", folded, 0),
                 ],
             }
-        ]
+        ],
     }
 
 
@@ -1152,7 +1207,10 @@ def test_observation_skips_a_skill_missing_from_hermes_catalog(tmp_path: Path):
 
     report = hermes_skills.observe(plan, []).report()
 
-    assert report == {"skipped": [skipped_skill(team / "tool", "not_loaded_by_hermes")]}
+    assert report == {
+        "loaded": [],
+        "skipped": [skipped_skill(team / "tool", "not_loaded_by_hermes")],
+    }
 
 
 def test_observation_skips_a_skill_hermes_sees_but_does_not_load(tmp_path: Path):
@@ -1194,7 +1252,7 @@ def test_observation_skips_external_skills_hermes_hides(tmp_path: Path):
 
     report = hermes_skills.observe(plan, catalog).report()
 
-    assert "loaded" not in report
+    assert report["loaded"] == []
     assert report["skipped"] == [
         skipped_skill(team / "debugging", "native_conditions"),
         skipped_skill(team / "macos-only", "native_conditions"),
@@ -1262,7 +1320,7 @@ def test_observation_does_not_report_the_agents_own_skill_as_bundled(
     write_skill(skills_dir / "pdf")
     write_skill(skills_dir / "hermes-agent")
     (skills_dir / ".bundled_manifest").write_text("hermes-agent:0\n", encoding="utf-8")
-    plan = _plan(tmp_path, {"bundled": {"include": ["hermes-agent", "pdf"]}}, home=home)
+    plan = _plan(tmp_path, {"bundled": {"exclude": ["arxiv", "github"]}}, home=home)
     catalog = [
         _catalog_row(skills_dir, skills_dir / "pdf", tier=1, status="unique"),
         _catalog_row(skills_dir, skills_dir / "hermes-agent", tier=1, status="unique"),
@@ -1271,12 +1329,71 @@ def test_observation_does_not_report_the_agents_own_skill_as_bundled(
     observation = hermes_skills.observe(plan, catalog)
 
     assert observation.report() == {
+        "loaded": [
+            other_skill("hermes-agent", "bundled", skills_dir / "hermes-agent"),
+            other_skill("pdf", "local", skills_dir / "pdf"),
+        ],
         "bundled": {
             "selected": ["hermes-agent"],
             "unavailable": [{"name": "pdf", "reason": "provided_by_local_skill"}],
             "essential": ["hermes-agent"],
-        }
+        },
     }
     assert observation.bundled_warnings == [
         "bundled skill 'pdf' does not load: provided_by_local_skill"
     ]
+
+
+def test_observation_lists_every_skill_hermes_loads(tmp_path: Path):
+    """Every copy Hermes resolves a name to and shows is loaded: the
+    configured ones, then bundled copies in the home and everything else
+    Hermes reads, such as project skills, the agent's own skills, and
+    skills.paths. Shadowed, refused, and hidden copies are not."""
+    home = (tmp_path / "home" / "skills").resolve()
+    project = (tmp_path / "project" / ".hermes" / "skills").resolve()
+    team = (tmp_path / "team").resolve()
+    mine = (tmp_path / "mine").resolve()
+    configured = write_skill(team / "review")
+    project_skill = write_skill(project / "deploy")
+    own = write_skill(home / "notes")
+    bundled_copy = write_skill(home / "pdf")
+    hidden = write_skill(home / "macos-only")
+    refused = write_skill(home / "twin")
+    path_skill = write_skill(mine / "lint")
+    shadowed = write_skill(mine / "notes")
+    (home / ".bundled_manifest").write_text("pdf:0\n", encoding="utf-8")
+    plan = hermes_skills.plan_skills(
+        _skills_config({"directories": [{"folder": str(team)}]})
+    )
+    plan.inventory = {"pdf": tmp_path / "bundled" / "pdf"}
+    plan.bundled_root = tmp_path / "bundled"
+    catalog = [
+        _catalog_row(project, project_skill, tier=0, status="unique"),
+        _catalog_row(home, own, tier=1, status="unique"),
+        _catalog_row(home, bundled_copy, tier=1, status="unique"),
+        _catalog_row(home, hidden, tier=1, status="unique", visible=False),
+        _catalog_row(home, refused, tier=1, status="ambiguous"),
+        _catalog_row(team, configured, tier=3, status="unique"),
+        _catalog_row(mine, path_skill, tier=3, status="unique"),
+        _catalog_row(mine, shadowed, tier=3, status="shadowed"),
+    ]
+
+    report = hermes_skills.observe(plan, catalog).report()
+
+    assert report is not None
+    assert report["loaded"] == [
+        loaded_skill("review", configured),
+        other_skill("deploy", "local", project_skill),
+        other_skill("lint", "local", path_skill),
+        other_skill("notes", "local", own),
+        other_skill("pdf", "bundled", bundled_copy),
+    ]
+
+
+def test_observation_without_a_catalog_lists_no_other_skill(tmp_path: Path):
+    """When Hermes's catalog cannot be read, the report cannot say what else
+    loads, so it claims nothing."""
+    plan = hermes_skills.plan_skills(_skills_config({"directories": []}))
+    assert plan.load is not None
+
+    assert hermes_skills.SkillObservation(plan.load).report() is None

@@ -25,6 +25,7 @@ observe Hermes's own skill catalog import Hermes lazily.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import os
 import shutil
@@ -48,6 +49,8 @@ from nemo_fabric_adapter_contract.skills import CandidateReader
 from nemo_fabric_adapter_contract.skills import DirectoryLoad
 from nemo_fabric_adapter_contract.skills import DiscoveryRules
 from nemo_fabric_adapter_contract.skills import DuplicateRecord
+from nemo_fabric_adapter_contract.skills import FoundSkill
+from nemo_fabric_adapter_contract.skills import LoadedSkill
 from nemo_fabric_adapter_contract.skills import SkillLoadError
 from nemo_fabric_adapter_contract.skills import SkippedCandidate
 from nemo_fabric_adapter_contract.skills import front_matter_reader
@@ -94,9 +97,14 @@ BUNDLED_MANIFEST = ".bundled_manifest"
 
 # The adapter's record, beside the bundled manifest, of the manifest entries
 # it must still drop once their copies are gone: each bundled name with the
-# folders, relative to the home's skills folder, that held its copy. Hermes
-# finds skills only by their SKILL.md, so a file is never read as a skill.
+# folders, relative to the home's skills folder, that held its copy, and the
+# files each folder held when it was found unchanged. Hermes finds skills only
+# by their SKILL.md, so a file is never read as a skill.
 PENDING_MANIFEST = ".nemo_fabric_pending_manifest"
+
+# The record's layout with each folder's files. A record without a version
+# lists only the folders.
+PENDING_VERSION = 2
 
 # hermes_constants.py get_bundled_skills_dir: the folder Hermes's sync reads its
 # bundled skills from, when set.
@@ -152,9 +160,20 @@ class SkillPlan:
     def selection_field(self) -> str:
         """The ``skills.bundled`` field that leaves skills out."""
 
-        if self.bundled is not None and self.bundled.include is not None:
-            return "skills.bundled.include"
         return "skills.bundled.exclude"
+
+
+@dataclass
+class PendingRecord:
+    """The removals an earlier start recorded, read from ``PENDING_MANIFEST``."""
+
+    skills: dict[str, set[Path]] = dataclass_field(default_factory=dict)
+    """Bundled name to the folders that held its copies."""
+    files: dict[Path, dict[str, dict[str, Any]]] = dataclass_field(default_factory=dict)
+    """Folder to the files it held when it was found unchanged: relative path
+    to ``size`` and ``sha256``. A folder recorded without them has none."""
+    field: str = "skills.bundled"
+    """The ``skills.bundled`` field that left the skills out."""
 
 
 @dataclass
@@ -164,11 +183,20 @@ class SkillObservation:
     load: DirectoryLoad
     bundled: dict[str, Any] | None = None
     bundled_warnings: list[str] = dataclass_field(default_factory=list)
+    other_loaded: list[LoadedSkill] | None = None
+    """Every other skill Hermes's catalog loads, or ``None`` when the catalog
+    was not observed."""
 
     def report(self) -> dict[str, Any] | None:
-        """Return the ``output.skills`` block."""
+        """Return the ``output.skills`` block.
 
-        return report_block(self.load, bundled=self.bundled)
+        ``loaded`` lists the configured skills, then every other skill
+        Hermes loads, whenever Hermes's catalog was observed.
+        """
+
+        return report_block(
+            self.load, bundled=self.bundled, other_loaded=self.other_loaded
+        )
 
     def warn(self) -> None:
         """Write the start warnings to stderr."""
@@ -405,28 +433,26 @@ def _plan_bundled(plan: SkillPlan, bundled: BundledSkills) -> None:
     essential = sorted(ESSENTIAL_SKILLS.intersection(inventory))
     if not bundled.enabled and essential:
         raise _essential_error("skills.bundled.enabled", essential[0])
-    for field_name in ("include", "exclude"):
-        names = getattr(bundled, field_name)
-        for name in names or ():
-            if name not in inventory:
-                raise lifecycle.LifecycleError(
-                    "hermes_skill_invalid",
-                    f"Hermes has no bundled skill named {name!r}",
-                    metadata={
-                        "field": f"skills.bundled.{field_name}",
-                        "reason": "unknown_bundled_skill",
-                        "name": name,
-                    },
-                )
-            if field_name == "exclude" and name in ESSENTIAL_SKILLS:
-                raise _essential_error("skills.bundled.exclude", name)
     if bundled.include is not None:
-        missing = [name for name in essential if name not in bundled.include]
-        if missing:
-            raise _essential_error("skills.bundled.include", missing[0])
-        selected = set(bundled.include)
-    else:
-        selected = set(inventory) - set(bundled.exclude or ())
+        # The descriptor declares no include support, so planning refuses
+        # it; this guards a start that skipped planning. Hermes always loads
+        # its essential skills, so no include list, even an empty one, can
+        # mean what it says.
+        raise _essential_error("skills.bundled.include", min(ESSENTIAL_SKILLS))
+    for name in bundled.exclude or ():
+        if name not in inventory:
+            raise lifecycle.LifecycleError(
+                "hermes_skill_invalid",
+                f"Hermes has no bundled skill named {name!r}",
+                metadata={
+                    "field": "skills.bundled.exclude",
+                    "reason": "unknown_bundled_skill",
+                    "name": name,
+                },
+            )
+        if name in ESSENTIAL_SKILLS:
+            raise _essential_error("skills.bundled.exclude", name)
+    selected = set(inventory) - set(bundled.exclude or ())
     plan.selected_bundled = sorted(selected)
     # Left-out bundled skills never reach Hermes's sync (see stage_bundled),
     # so they are filtered out before Hermes resolves names across its skill
@@ -442,11 +468,17 @@ def _essential_error(field: str, name: str) -> lifecycle.LifecycleError:
     """Refuse a bundled selection that leaves out a skill Hermes always loads."""
 
     if field == "skills.bundled.include":
-        detail = f"{field} must name it"
+        detail = (
+            f"{field} is not supported; use skills.bundled.exclude to name the "
+            "skills to leave out"
+        )
     elif field == "skills.bundled.exclude":
         detail = f"{field} cannot name it"
     else:
-        detail = f"{field} cannot be false; use include to name the skills to keep"
+        detail = (
+            f"{field} cannot be false; use skills.bundled.exclude to name the "
+            "skills to leave out"
+        )
     return lifecycle.LifecycleError(
         "hermes_skill_invalid",
         f"Hermes always loads its bundled skill {name!r}, so {detail}",
@@ -743,9 +775,10 @@ def remove_copies(plan: SkillPlan, home: Path) -> None:
 
     Each copy is checked again before anything is removed, as
     :func:`excluded_copies` checks it, so a copy changed since is kept. The
-    entries to drop are recorded in the home first (see
-    :func:`finish_pending_removals`), and each skill's entries go once its
-    copies are gone, so a failure part way is completed by a later start.
+    entries to drop are recorded in the home first, with the files each
+    folder holds (see :func:`finish_pending_removals`), and each skill's
+    entries go once its copies are gone, so a failure part way is completed by
+    a later start.
 
     Raises:
         lifecycle.LifecycleError: ``excluded_bundled_skill_modified`` for a
@@ -798,10 +831,14 @@ def remove_copies(plan: SkillPlan, home: Path) -> None:
             place == folder or folder in place.parents for folder in removals
         ):
             pending.setdefault(name, set()).add(place)
-    recorded = _read_pending(skills_dir)
+    record = _read_pending(skills_dir)
     for name, folders in pending.items():
-        recorded.setdefault(name, set()).update(folders)
-    _write_pending(skills_dir, recorded)
+        record.skills.setdefault(name, set()).update(folders)
+        for folder in folders:
+            # Each folder is, or is inside, a copy just found unchanged.
+            record.files[folder] = _file_list(folder)
+    record.field = plan.selection_field
+    _write_pending(skills_dir, record)
     for folder in removals:
         if folder.exists():
             # Otherwise inside a copy removed before it.
@@ -815,88 +852,226 @@ def remove_copies(plan: SkillPlan, home: Path) -> None:
             _drop_manifest_entries(skills_dir, gone)
             for name in gone:
                 del pending[name]
-                recorded.pop(name, None)
-    _write_pending(skills_dir, recorded)
+                record.skills.pop(name, None)
+    _write_pending(skills_dir, record)
 
 
 def finish_pending_removals(home: Path) -> None:
     """Complete the removals an earlier start recorded but didn't finish.
 
-    :func:`remove_copies` records the manifest entries it must drop before it
-    removes any copy. When a start fails after a removal, the record keeps the
-    entry of each copy that is gone, which :func:`excluded_copies` no longer
-    finds. Each start completes the record before Hermes's sync runs: it
-    removes what is left of a recorded folder whose ``SKILL.md`` a failed
-    removal took, then drops the entries of the skills whose copies are gone.
-    A skill whose copy is still there stays recorded until its removal
-    succeeds.
+    :func:`remove_copies` records the manifest entries it must drop, and the
+    files each folder to remove holds, before it removes any copy. When a
+    start fails part way, a folder can be gone, partly removed, or whole.
+    Each start completes the record before Hermes's sync runs: it removes
+    what is left of each recorded folder whose every file is one it held
+    then, unchanged, and drops the entries of the skills whose copies are
+    gone. Runtime cache files, such as ``__pycache__``, are skipped as
+    Hermes's ``dir_hash`` skips them.
+
+    A recorded folder with a new or changed file was edited since, and stays.
+    It would still load, and its entry would keep Hermes's sync from copying
+    the skill again, so start fails, and nothing is removed. For a record
+    without files, written before they were recorded, only a folder that lost
+    its ``SKILL.md`` is removed, and a skill whose copy is still there stays
+    recorded.
+
+    Raises:
+        lifecycle.LifecycleError: ``hermes_skill_invalid`` with the reason
+            ``excluded_bundled_skill_modified`` for a folder changed since.
     """
 
     skills_dir = home / "skills"
-    recorded = _read_pending(skills_dir)
-    if not recorded:
+    record = _read_pending(skills_dir)
+    if not record.skills:
         return
     inside = skills_dir.resolve()
-    for folders in recorded.values():
+    removals: list[Path] = []
+    for name, folders in sorted(record.skills.items()):
         for folder in sorted(folders):
             resolved = folder.resolve()
-            if (
-                inside in resolved.parents
-                and resolved.is_dir()
-                and not _is_file(resolved / SKILL_FILE)
-            ):
-                _remove_tree(resolved)
+            if inside not in resolved.parents or not resolved.is_dir():
+                continue
+            files = record.files.get(folder)
+            if files is None:
+                if not _is_file(resolved / SKILL_FILE):
+                    removals.append(resolved)
+            elif _left_unchanged(resolved, files):
+                removals.append(resolved)
+            else:
+                # Another recorded folder can be inside this one.
+                raise _changed_since_error(record.field, name, folder)
+    for folder in removals:
+        if folder.exists():
+            # Otherwise inside a folder removed before it.
+            _remove_tree(folder)
     gone = {
         name
-        for name, folders in recorded.items()
+        for name, folders in record.skills.items()
         if not any(path.exists() for path in folders)
     }
     _drop_manifest_entries(skills_dir, gone)
-    _write_pending(
-        skills_dir,
-        {name: folders for name, folders in recorded.items() if name not in gone},
+    for name in gone:
+        del record.skills[name]
+    _write_pending(skills_dir, record)
+
+
+def _changed_since_error(
+    field: str, name: str, folder: Path
+) -> lifecycle.LifecycleError:
+    return lifecycle.LifecycleError(
+        "hermes_skill_invalid",
+        f"An earlier start began removing Hermes's copy of the bundled skill "
+        f"{name!r} at {folder}, which {field} left out, and the copy has "
+        "changed since. NeMo Fabric doesn't remove a changed copy, and it "
+        "would still load. Move or delete the copy.",
+        metadata={
+            "field": field,
+            "reason": "excluded_bundled_skill_modified",
+            "name": name,
+            "path": str(folder),
+        },
     )
 
 
-def _read_pending(skills_dir: Path) -> dict[str, set[Path]]:
-    """Return the recorded entries to drop: name to the folders of its copies."""
+def _runtime_cache_rule() -> Callable[[Path, Path], bool] | None:
+    """Hermes's test for the runtime cache files ``dir_hash`` skips, or
+    ``None`` when its ``dir_hash`` skips none.
+
+    tools/skills_sync.py ``dir_hash`` leaves out what ``_is_runtime_cache``
+    matches: anything below a ``__pycache__`` or tool cache folder, and a
+    ``.pyc`` or ``.pyo`` file beside its ``.py`` source. Running a skill's
+    scripts writes them, so they never count as a change to a copy. A Hermes
+    release without the test hashes every file.
+    """
+
+    try:
+        with redirect_stdout(StringIO()):
+            from tools import skills_sync
+    except ImportError:
+        return None
+    return getattr(skills_sync, "_is_runtime_cache", None)
+
+
+def _file_list(folder: Path) -> dict[str, dict[str, Any]]:
+    """Every file below ``folder`` that Hermes's ``dir_hash`` hashes, walked
+    as it walks them: relative path to its ``size`` and ``sha256``."""
+
+    is_cache = _runtime_cache_rule()
+    files: dict[str, dict[str, Any]] = {}
+    for path in sorted(folder.rglob("*")):
+        if path.is_file() and not (is_cache is not None and is_cache(path, folder)):
+            files[path.relative_to(folder).as_posix()] = {
+                "size": path.stat().st_size,
+                "sha256": _sha256(path),
+            }
+    return files
+
+
+def _left_unchanged(folder: Path, files: Mapping[str, Mapping[str, Any]]) -> bool:
+    """Whether every file left in ``folder`` is one of ``files``, unchanged.
+
+    The runtime cache files that :func:`_file_list` leaves out are skipped
+    here too. A ``.pyc`` or ``.pyo`` file whose recorded ``.py`` source a
+    removal already took was skipped when the list was made, so it still is.
+    """
+
+    is_cache = _runtime_cache_rule()
+    for path in sorted(folder.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(folder)
+        if is_cache is not None and (
+            is_cache(path, folder)
+            or (
+                path.suffix in {".pyc", ".pyo"}
+                and relative.with_suffix(".py").as_posix() in files
+            )
+        ):
+            continue
+        expected = files.get(relative.as_posix())
+        if (
+            expected is None
+            or expected.get("size") != path.stat().st_size
+            or expected.get("sha256") != _sha256(path)
+        ):
+            return False
+    return True
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _read_pending(skills_dir: Path) -> PendingRecord:
+    """Return the recorded removals, each folder spelled below ``skills_dir``."""
 
     path = skills_dir / PENDING_MANIFEST
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        return {}
+        return PendingRecord()
     try:
         entries = json.loads(text)
     except ValueError:
         entries = None
     if not isinstance(entries, dict):
         # Written whole, by rename, so only another writer leaves this.
-        return {}
-    recorded: dict[str, set[Path]] = {}
+        return PendingRecord()
+    record = PendingRecord()
+    files: Any = None
+    if entries.get("version") == PENDING_VERSION:
+        if isinstance(entries.get("field"), str):
+            record.field = entries["field"]
+        files = entries.get("files")
+        entries = entries.get("skills")
+        if not isinstance(entries, dict):
+            return PendingRecord()
+    # Otherwise the first layout: name to folders.
     for name, folders in entries.items():
         if not isinstance(folders, list):
             continue
         paths = {skills_dir / item for item in folders if isinstance(item, str)}
         paths = {path for path in paths if path.is_relative_to(skills_dir)}
         if paths:
-            recorded[name] = paths
-    return recorded
+            record.skills[name] = paths
+    if isinstance(files, dict):
+        for folder, listed in files.items():
+            if isinstance(listed, dict):
+                record.files[skills_dir / folder] = {
+                    item: value
+                    for item, value in listed.items()
+                    if isinstance(value, dict)
+                }
+    return record
 
 
-def _write_pending(skills_dir: Path, entries: Mapping[str, set[Path]]) -> None:
-    """Replace the record with ``entries`` at once, or remove it when empty.
+def _write_pending(skills_dir: Path, record: PendingRecord) -> None:
+    """Replace the record at once, or remove it when no skill is left in it.
 
     Each folder is below ``skills_dir``, spelled as it is.
     """
 
     path = skills_dir / PENDING_MANIFEST
-    if not entries:
+    if not record.skills:
         path.unlink(missing_ok=True)
         return
+    folders = {folder for paths in record.skills.values() for folder in paths}
     data = {
-        name: sorted(folder.relative_to(skills_dir).as_posix() for folder in folders)
-        for name, folders in sorted(entries.items())
+        "version": PENDING_VERSION,
+        "field": record.field,
+        "skills": {
+            name: sorted(folder.relative_to(skills_dir).as_posix() for folder in paths)
+            for name, paths in sorted(record.skills.items())
+        },
+        "files": {
+            folder.relative_to(skills_dir).as_posix(): listed
+            for folder, listed in sorted(record.files.items())
+            if folder in folders
+        },
     }
     temporary = path.with_name(f"{PENDING_MANIFEST}.fabric-tmp")
     temporary.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -1005,6 +1180,10 @@ def observe(
     ``shadowed`` when a copy in the Hermes home wins, and ``ambiguous`` when
     Hermes refuses the name. Otherwise it is ``selected`` when Hermes loads
     one copy and ``ambiguous`` when it refuses them all.
+
+    ``loaded`` lists every skill Hermes loads: the configured ones, then the
+    bundled copies and the other skills Hermes reads (see
+    :func:`_other_loaded`).
     """
 
     load = plan.load or DirectoryLoad()
@@ -1124,7 +1303,37 @@ def observe(
     warnings: list[str] = []
     if plan.bundled is not None:
         bundled_report, warnings = _bundled_report(plan, rows, sync_result)
-    return SkillObservation(observed, bundled_report, warnings)
+    return SkillObservation(
+        observed, bundled_report, warnings, _other_loaded(rows, selected)
+    )
+
+
+def _other_loaded(
+    rows: list[dict[str, Any]], configured: Sequence[FoundSkill]
+) -> list[LoadedSkill]:
+    """Every skill Hermes loads that ``skills.directories`` did not supply.
+
+    A skill loads when Hermes resolves its name to it (``unique``) and shows
+    it here. Hermes's copy of a bundled skill in the home is ``bundled``; the
+    agent's own skills in the home, project skills, skills of
+    ``skills.paths``, and any other folder Hermes reads are ``local``. They
+    follow in name order, then by folder.
+    """
+
+    seen = {skill.path for skill in configured}
+    loaded: list[LoadedSkill] = []
+    for row in sorted(rows, key=lambda row: (row["name"], str(row["dir"]))):
+        if (
+            not row["name"]
+            or row["status"] != "unique"
+            or not row["visible"]
+            or row["dir"] in seen
+        ):
+            continue
+        seen.add(row["dir"])
+        origin = "bundled" if row["origin"] == "bundled" else "local"
+        loaded.append(LoadedSkill(row["name"], origin, row["dir"]))
+    return loaded
 
 
 def _visible_dir(rows: list[dict[str, Any]]) -> Path | None:
