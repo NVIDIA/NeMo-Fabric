@@ -25,6 +25,7 @@ observe Hermes's own skill catalog import Hermes lazily.
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 import shutil
 import stat
@@ -90,6 +91,12 @@ NOT_LOADED = "not_loaded_by_hermes"
 # tools/skills_sync.py: the file that records the skills Hermes copied into its
 # home from its installation, one ``name:hash`` (or plain ``name``) per line.
 BUNDLED_MANIFEST = ".bundled_manifest"
+
+# The adapter's record, beside the bundled manifest, of the manifest entries
+# it must still drop once their copies are gone: each bundled name with the
+# folders, relative to the home's skills folder, that held its copy. Hermes
+# finds skills only by their SKILL.md, so a file is never read as a skill.
+PENDING_MANIFEST = ".nemo_fabric_pending_manifest"
 
 # hermes_constants.py get_bundled_skills_dir: the folder Hermes's sync reads its
 # bundled skills from, when set.
@@ -730,11 +737,15 @@ def remove_copies(plan: SkillPlan, home: Path) -> None:
     Hermes's sync removes a stale copy that an external skill replaces the
     same way. Without the entry, a later runtime that selects the skill
     copies it again; with it, Hermes's sync would read the missing copy as
-    deleted by the user and never copy it again. Each skill's entry goes once
-    its copies are gone, so a failure part way keeps the rest for a retry.
+    deleted by the user and never copy it again. That holds as well for every
+    other bundled skill whose copy is nested in a removed folder, so its entry
+    goes too, and the sync copies it again if it is selected.
 
-    Each copy is checked again right before it is removed, as
-    :func:`excluded_copies` checks it, so a copy changed since is kept.
+    Each copy is checked again before anything is removed, as
+    :func:`excluded_copies` checks it, so a copy changed since is kept. The
+    entries to drop are recorded in the home first (see
+    :func:`finish_pending_removals`), and each skill's entries go once its
+    copies are gone, so a failure part way is completed by a later start.
 
     Raises:
         lifecycle.LifecycleError: ``excluded_bundled_skill_modified`` for a
@@ -752,19 +763,19 @@ def remove_copies(plan: SkillPlan, home: Path) -> None:
     with redirect_stdout(StringIO()):
         from tools import skills_sync
 
-    manifest = _read_manifest(home / "skills")
+    manifest = _read_manifest(skills_dir)
     by_name: dict[str, list[Path]] = {}
     for name, folder in plan.stale_copies:
         by_name.setdefault(name, []).append(folder)
+    # Resolved folders to remove, and each name's resolved folders of copies.
+    removals: list[Path] = []
+    pending: dict[str, set[Path]] = {}
     for name, folders in by_name.items():
         source = Path(plan.inventory[name])
         place = home / "skills" / source.relative_to(root)
         bundled_hash = skills_sync.dir_hash(source)
         for folder in folders:
-            if not folder.exists():
-                # Inside a copy removed before it.
-                continue
-            if not _removable(
+            if folder.exists() and _removable(
                 skills_sync,
                 plan,
                 name,
@@ -773,12 +784,130 @@ def remove_copies(plan: SkillPlan, home: Path) -> None:
                 manifest.get(name, ""),
                 bundled_hash,
             ):
-                continue
-            if sys.version_info >= (3, 12):
-                shutil.rmtree(folder.resolve(), onexc=_make_writable)
-            else:
-                shutil.rmtree(folder.resolve(), onerror=_make_writable)
-        _drop_manifest_entries(skills_dir, {name})
+                removals.append(folder.resolve())
+                pending.setdefault(name, set()).add(folder.resolve())
+    if not removals:
+        return
+    # A bundled skill whose copy sits in a removed folder loses it too.
+    for name in manifest:
+        source = plan.inventory.get(name)
+        if source is None:
+            continue
+        place = (skills_dir / Path(source).relative_to(root)).resolve()
+        if place.exists() and any(
+            place == folder or folder in place.parents for folder in removals
+        ):
+            pending.setdefault(name, set()).add(place)
+    recorded = _read_pending(skills_dir)
+    for name, folders in pending.items():
+        recorded.setdefault(name, set()).update(folders)
+    _write_pending(skills_dir, recorded)
+    for folder in removals:
+        if folder.exists():
+            # Otherwise inside a copy removed before it.
+            _remove_tree(folder)
+        gone = {
+            name
+            for name, folders in pending.items()
+            if not any(path.exists() for path in folders)
+        }
+        if gone:
+            _drop_manifest_entries(skills_dir, gone)
+            for name in gone:
+                del pending[name]
+                recorded.pop(name, None)
+    _write_pending(skills_dir, recorded)
+
+
+def finish_pending_removals(home: Path) -> None:
+    """Complete the removals an earlier start recorded but didn't finish.
+
+    :func:`remove_copies` records the manifest entries it must drop before it
+    removes any copy. When a start fails after a removal, the record keeps the
+    entry of each copy that is gone, which :func:`excluded_copies` no longer
+    finds. Each start completes the record before Hermes's sync runs: it
+    removes what is left of a recorded folder whose ``SKILL.md`` a failed
+    removal took, then drops the entries of the skills whose copies are gone.
+    A skill whose copy is still there stays recorded until its removal
+    succeeds.
+    """
+
+    skills_dir = home / "skills"
+    recorded = _read_pending(skills_dir)
+    if not recorded:
+        return
+    inside = skills_dir.resolve()
+    for folders in recorded.values():
+        for folder in sorted(folders):
+            resolved = folder.resolve()
+            if (
+                inside in resolved.parents
+                and resolved.is_dir()
+                and not _is_file(resolved / SKILL_FILE)
+            ):
+                _remove_tree(resolved)
+    gone = {
+        name
+        for name, folders in recorded.items()
+        if not any(path.exists() for path in folders)
+    }
+    _drop_manifest_entries(skills_dir, gone)
+    _write_pending(
+        skills_dir,
+        {name: folders for name, folders in recorded.items() if name not in gone},
+    )
+
+
+def _read_pending(skills_dir: Path) -> dict[str, set[Path]]:
+    """Return the recorded entries to drop: name to the folders of its copies."""
+
+    path = skills_dir / PENDING_MANIFEST
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    try:
+        entries = json.loads(text)
+    except ValueError:
+        entries = None
+    if not isinstance(entries, dict):
+        # Written whole, by rename, so only another writer leaves this.
+        return {}
+    recorded: dict[str, set[Path]] = {}
+    for name, folders in entries.items():
+        if not isinstance(folders, list):
+            continue
+        paths = {skills_dir / item for item in folders if isinstance(item, str)}
+        paths = {path for path in paths if path.is_relative_to(skills_dir)}
+        if paths:
+            recorded[name] = paths
+    return recorded
+
+
+def _write_pending(skills_dir: Path, entries: Mapping[str, set[Path]]) -> None:
+    """Replace the record with ``entries`` at once, or remove it when empty.
+
+    Each folder is below ``skills_dir``, spelled as it is.
+    """
+
+    path = skills_dir / PENDING_MANIFEST
+    if not entries:
+        path.unlink(missing_ok=True)
+        return
+    data = {
+        name: sorted(folder.relative_to(skills_dir).as_posix() for folder in folders)
+        for name, folders in sorted(entries.items())
+    }
+    temporary = path.with_name(f"{PENDING_MANIFEST}.fabric-tmp")
+    temporary.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _remove_tree(folder: Path) -> None:
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(folder, onexc=_make_writable)
+    else:
+        shutil.rmtree(folder, onerror=_make_writable)
 
 
 def _make_writable(function: Callable[..., Any], path: str, _error: Any) -> None:

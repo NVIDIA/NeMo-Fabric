@@ -181,6 +181,24 @@ class HermesRuntime:
                 base_dir=common_utils.base_dir(payload),
                 hermes_home=self._hermes_home,
             )
+            # Finish the manifest update of an earlier start that removed a
+            # copy and then failed, before anything reads the manifest.
+            try:
+                await asyncio.to_thread(
+                    skills.finish_pending_removals, self._hermes_home
+                )
+            except OSError as error:
+                record = self._hermes_home / "skills" / skills.PENDING_MANIFEST
+                raise lifecycle.LifecycleError(
+                    "hermes_skill_invalid",
+                    "The Hermes home's bundled manifest could not be updated for "
+                    "a copy removed at an earlier start",
+                    metadata={
+                        "field": "skills.bundled",
+                        "reason": "excluded_bundled_skill_not_removed",
+                        "paths": [str(record)],
+                    },
+                ) from error
             # A kept home can hold Hermes's earlier copy of a left-out bundled
             # skill; a changed one fails start here.
             skill_plan.stale_copies = await asyncio.to_thread(

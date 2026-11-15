@@ -1097,6 +1097,24 @@ def test_required_front_matter_fields_need_a_top_level_key(
     )
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        '---\nname: review\n"descrip\\u0074ion": Escaped key.\n---\n',
+        "---\nname: review\n? description\n: Explicit key.\n---\n",
+        "---\nname: review\nbase: &b {description: merged}\n<<: *b\n---\n",
+        "---\n  description: Indented.\n---\n",
+    ],
+)
+def test_required_field_behind_a_key_it_does_not_read_has_uncertain_validity(
+    tmp_path: Path, text: str
+):
+    info = _read(tmp_path, text, required_fields=("description",))
+
+    assert info.valid is None
+    assert info.reason is None
+
+
 def test_reader_reads_every_candidate_in_one_call(
     tmp_path: Path, make_skill: Callable[..., Path]
 ):

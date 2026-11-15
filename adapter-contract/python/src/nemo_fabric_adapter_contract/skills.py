@@ -993,6 +993,9 @@ def front_matter_reader(*, required_fields: Sequence[str] = ()) -> CandidateRead
     as no name. A candidate without a top-level key in ``required_fields`` is
     refused with ``missing_frontmatter_field:<key>``, and an unreadable
     ``SKILL.md`` with ``unreadable``. It never refuses front matter otherwise.
+    When a required key is not found but the front matter has a key the reader
+    cannot spell out, such as an escaped or explicit key, it returns
+    ``valid=None`` instead, as that key may be the required one.
 
     YAML it does not read, such as a block scalar, anchor, alias, tag, flow
     collection, continuation line, escape sequence, or a ``name`` key it
@@ -1019,6 +1022,8 @@ def _read_simple(skill_file: Path, required: tuple[str, ...]) -> CandidateInfo:
     keys: set[str] = set()
     name: str | None = None
     uncertain = False
+    # Whether a top-level key may be one this reader cannot spell out.
+    keys_uncertain = False
     key: str | None = None
     for line in block:
         if not line.strip() or line.lstrip().startswith("#"):
@@ -1026,16 +1031,21 @@ def _read_simple(skill_file: Path, required: tuple[str, ...]) -> CandidateInfo:
         if line[0] in " \t":
             # A continuation of the name, or an indented mapping that may hold it.
             uncertain = uncertain or key in (None, "name")
+            keys_uncertain = keys_uncertain or key is None
             continue
         match = None if line.startswith(_UNREAD_KEYS) else _KEY.fullmatch(line)
         if match is None:
-            uncertain = uncertain or line.startswith(_UNREAD_KEYS)
+            unread = line.startswith(_UNREAD_KEYS)
+            uncertain = uncertain or unread
+            keys_uncertain = keys_uncertain or unread
             key = ""
             continue
         key = match.group(1)
         if len(key) > 1 and key[0] == key[-1] and key[0] in "'\"":
-            # An escape sequence in a double-quoted key may spell ``name``.
-            uncertain = uncertain or (key[0] == '"' and "\\" in key)
+            # An escape sequence in a double-quoted key may spell any key.
+            escaped = key[0] == '"' and "\\" in key
+            uncertain = uncertain or escaped
+            keys_uncertain = keys_uncertain or escaped
             key = key[1:-1]
         if key == "name":
             # PyYAML keeps a repeated key's last value; other parsers refuse it.
@@ -1044,12 +1054,16 @@ def _read_simple(skill_file: Path, required: tuple[str, ...]) -> CandidateInfo:
             uncertain = uncertain or repeated or value_uncertain
         # PyYAML merges a ``<<`` mapping's keys in.
         uncertain = uncertain or key == "<<"
+        keys_uncertain = keys_uncertain or key == "<<"
         keys.add(key)
-    for field in required:
-        if field not in keys:
-            return CandidateInfo(
-                name, valid=False, reason=f"missing_frontmatter_field:{field}"
-            )
+    missing = [field for field in required if field not in keys]
+    if missing and keys_uncertain:
+        # A key this reader cannot spell out may be the missing one.
+        return CandidateInfo(name, valid=None, name_uncertain=uncertain)
+    if missing:
+        return CandidateInfo(
+            name, valid=False, reason=f"missing_frontmatter_field:{missing[0]}"
+        )
     return CandidateInfo(name, name_uncertain=uncertain)
 
 

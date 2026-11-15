@@ -13,6 +13,7 @@ import os
 import sys
 import threading
 import tomllib
+from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 from types import ModuleType
@@ -2819,6 +2820,145 @@ async def test_runtime_recovers_from_a_failure_after_removing_an_excluded_copy(
     await _start_with_skills(tmp_path, {"bundled": {}})
     assert first_copy.is_dir()
     assert second_copy.is_dir()
+
+
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_runtime_copies_back_a_selected_skill_nested_in_a_removed_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Removing a left-out skill's folder takes a selected skill nested in it.
+    Its manifest entry goes too, so Hermes's sync copies it back at once."""
+    from tools import skills_sync
+
+    bundled = tmp_path / "bundled"
+    write_skill(bundled / "tools" / "parent", "parent")
+    write_skill(bundled / "tools" / "parent" / "child", "child")
+    monkeypatch.setenv("HERMES_BUNDLED_SKILLS", str(bundled))
+    _report, home, _native = await _start_with_skills(tmp_path, {"bundled": {}})
+    parent = home / "skills" / "tools" / "parent"
+    child = parent / "child"
+    manifest = home / "skills" / ".bundled_manifest"
+    assert {"parent", "child"} <= set(hermes_skills.manifest_names(home / "skills"))
+    assert (parent / "SKILL.md").is_file()
+
+    report, home, _native = await _start_with_skills(
+        tmp_path, {"bundled": {"exclude": ["parent"]}}
+    )
+
+    assert report is not None
+    assert not (parent / "SKILL.md").exists()
+    assert (child / "SKILL.md").is_file()
+    assert skills_sync.dir_hash(child) == skills_sync.dir_hash(
+        bundled / "tools/parent/child"
+    )
+    assert _home_skill_names(home) == {"child"}
+    entries = manifest.read_text(encoding="utf-8")
+    assert "child:" in entries
+    assert "parent:" not in entries
+    assert not (home / "skills" / hermes_skills.PENDING_MANIFEST).exists()
+
+
+def _pending_record(home: Path) -> dict[str, list[str]]:
+    record = home / "skills" / hermes_skills.PENDING_MANIFEST
+    return json.loads(record.read_text(encoding="utf-8"))
+
+
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_runtime_completes_a_manifest_update_that_failed_after_a_removal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The removal is recorded first, so the next start drops the entry that
+    a failed start left, and a runtime that selects the skill gets it back."""
+    from tools import skills_sync
+    from tools import skills_tool
+
+    excluded = _first_bundled_name()
+    _report, home, _native = await _start_with_skills(tmp_path, {"bundled": {}})
+    copy_path = home / "skills" / _bundled_place(excluded)
+    manifest = home / "skills" / ".bundled_manifest"
+    record = home / "skills" / hermes_skills.PENDING_MANIFEST
+    real_drop = hermes_skills._drop_manifest_entries
+    failing = [True]
+
+    def fail_drop(skills_dir: Path, names: set[str]) -> None:
+        if failing[0] and names:
+            raise PermissionError(skills_dir / ".bundled_manifest")
+        real_drop(skills_dir, names)
+
+    monkeypatch.setattr(hermes_skills, "_drop_manifest_entries", fail_drop)
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await adapter.HermesRuntime().start(
+            _skill_payload(tmp_path, {"bundled": {"exclude": [excluded]}})
+        )
+    failing[0] = False
+
+    assert caught.value.metadata["reason"] == "excluded_bundled_skill_not_removed"
+    assert not copy_path.exists()
+    assert f"{excluded}:" in manifest.read_text(encoding="utf-8")
+    assert _pending_record(home) == {excluded: [_bundled_place(excluded).as_posix()]}
+    # Hermes doesn't read the record as a skill, or touch it.
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    before = record.read_bytes()
+    assert all(
+        hermes_skills.PENDING_MANIFEST not in str(skill_md)
+        for skill_md in skills_sync._iter_active_skill_mds()
+    )
+    with redirect_stdout(StringIO()):
+        skills_tool.clear_skills_cache()
+        rows = skills_tool._skill_catalog(skip_disabled=True, include_hidden=True)
+        skills_tool.clear_skills_cache()
+    assert all(hermes_skills.PENDING_MANIFEST not in str(row["path"]) for row in rows)
+    assert record.read_bytes() == before
+
+    await _start_with_skills(tmp_path, {"bundled": {}})
+
+    assert copy_path.is_dir()
+    assert f"{excluded}:" in manifest.read_text(encoding="utf-8")
+    assert not record.exists()
+
+
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_runtime_completes_a_removal_that_failed_part_way(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A removal that fails after taking the copy's SKILL.md leaves the rest of
+    the folder; the next start removes it, drops the entry, and copies the
+    skill back when it is selected."""
+    from tools import skills_sync
+
+    excluded = _first_bundled_name()
+    _report, home, _native = await _start_with_skills(tmp_path, {"bundled": {}})
+    copy_path = home / "skills" / _bundled_place(excluded)
+    manifest = home / "skills" / ".bundled_manifest"
+    record = home / "skills" / hermes_skills.PENDING_MANIFEST
+    real_rmtree = hermes_skills.shutil.rmtree
+    failing = [True]
+
+    def fail_part_way(path: str | os.PathLike[str], *args: object, **kwargs: object):
+        if failing[0] and Path(path) == copy_path.resolve():
+            (Path(path) / "SKILL.md").unlink()
+            raise PermissionError(path)
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(hermes_skills.shutil, "rmtree", fail_part_way)
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await adapter.HermesRuntime().start(
+            _skill_payload(tmp_path, {"bundled": {"exclude": [excluded]}})
+        )
+    failing[0] = False
+
+    assert caught.value.metadata["reason"] == "excluded_bundled_skill_not_removed"
+    assert copy_path.is_dir()
+    assert not (copy_path / "SKILL.md").exists()
+    assert f"{excluded}:" in manifest.read_text(encoding="utf-8")
+    assert _pending_record(home) == {excluded: [_bundled_place(excluded).as_posix()]}
+
+    await _start_with_skills(tmp_path, {"bundled": {}})
+
+    source = hermes_skills.bundled_inventory()[excluded]
+    assert skills_sync.dir_hash(copy_path) == skills_sync.dir_hash(source)
+    assert f"{excluded}:" in manifest.read_text(encoding="utf-8")
+    assert not record.exists()
 
 
 @pytest.mark.usefixtures("mock_hermes_agent")
