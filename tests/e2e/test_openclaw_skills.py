@@ -1125,6 +1125,30 @@ def test_folder_passed_whole_reports_each_name_a_linked_skill_loads_under(
     ]
 
 
+@_SYMLINKS
+@pytest.mark.parametrize("policy", [None, "first_wins"])
+def test_dot_dot_after_a_link_loads_the_folder_fabric_reports(
+    native: _Native, baseline: set[str], policy: str | None
+):
+    """``link/../review`` loads the folder the link leads beside, under the name ``review``."""
+    root = native.tmp_path
+    (root / "data" / "sub").mkdir(parents=True)
+    target = write_skill(root / "data" / "review", description="Through the link.")
+    # A lexical normalization would reach this folder instead.
+    write_skill(root / "review", description="Decoy.")
+    (root / "link").symlink_to(root / "data" / "sub", target_is_directory=True)
+    skills: dict[str, Any] = {"directories": [{"skill": "link/../review"}]}
+    if policy is not None:
+        skills["duplicates"] = policy
+
+    plan, status = native.list(skills)
+
+    assert _external(status, baseline) == {"review": "Through the link."}
+    assert _configured(plan.report()) == [
+        loaded("review", target, "skills.directories[0]")
+    ]
+
+
 def test_empty_directories_report_every_skill_openclaw_loads(native: _Native):
     """directories: [] reports workspace, shipped, and plugin skills with their folders."""
     notes = write_skill(native.workspace / "skills" / "notes", "notes", "Notes.")

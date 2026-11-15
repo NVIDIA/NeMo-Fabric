@@ -2360,6 +2360,34 @@ def test_skill_entry_reached_by_an_earlier_folder_is_not_passed_again(
     assert _loaded(plan) == [("real", "skills.directories[0]")]
 
 
+@_SYMLINKS
+@pytest.mark.parametrize("policy", [None, "reject"])
+def test_dot_dot_after_a_link_passes_the_folder_fabric_loads(
+    tmp_path: Path, workspace: Path, policy: str | None
+):
+    """``link/../review`` leads where the file system says, not where ``..`` cancels ``link``.
+
+    OpenClaw normalizes the path it is given lexically, so the parent is
+    passed resolved; the last component stays, as it names the skill.
+    """
+    data = tmp_path / "data"
+    (data / "sub").mkdir(parents=True)
+    target = write_skill(data / "review")
+    # A lexical normalization would reach this folder instead.
+    write_skill(tmp_path / "review", "decoy")
+    (tmp_path / "link").symlink_to(data / "sub", target_is_directory=True)
+    skills: dict[str, Any] = {"directories": [{"skill": "link/../review"}]}
+    if policy is not None:
+        skills["duplicates"] = policy
+
+    generated, plan = _generated(tmp_path, workspace, skills)
+
+    assert generated["skills"]["load"]["extraDirs"] == [str(target.resolve())]
+    assert plan.report() == {
+        "loaded": [loaded("review", target, "skills.directories[0]")]
+    }
+
+
 # Hard links: OpenClaw refuses a hard-linked SKILL.md outside its shipped skills.
 
 
@@ -2405,6 +2433,9 @@ def test_hard_linked_workspace_skill_hides_nothing(tmp_path: Path, workspace: Pa
     }
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Requires POSIX hard links and Nix store paths"
+)
 def test_hard_links_in_the_nix_store_load_in_nix_mode(
     tmp_path: Path, workspace: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -2444,10 +2475,13 @@ def _located(source: str, path: Path) -> openclaw_skills.LocatedCopy:
     return openclaw_skills.LocatedCopy(source, path.resolve())
 
 
-def test_located_copy_reads_skills_info():
-    assert openclaw_skills.located_copy(
-        {"name": "x", "source": "openclaw-extra", "baseDir": "/opt/x"}
-    ) == openclaw_skills.LocatedCopy("openclaw-extra", Path("/opt/x").resolve())
+def test_located_copy_reads_skills_info(tmp_path: Path):
+    """The folder is resolved as Fabric's are, even when it no longer exists."""
+    present = write_skill(tmp_path / "present" / "x", "x")
+    for base_dir in (present, tmp_path / "missing" / "x"):
+        assert openclaw_skills.located_copy(
+            {"name": "x", "source": "openclaw-extra", "baseDir": str(base_dir)}
+        ) == _located("openclaw-extra", base_dir)
     for info in (None, [], {"source": "openclaw-extra"}, {"baseDir": "/x"}):
         assert openclaw_skills.located_copy(info) is None
 

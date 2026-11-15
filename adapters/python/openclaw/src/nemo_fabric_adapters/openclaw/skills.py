@@ -1620,8 +1620,24 @@ def _passed_entries(
     for (field, kind, resolved), entry in zip(load.entries, directories, strict=True):
         if kind == "skill" and first.get(resolved, field) != field:
             continue
-        passed.append(os.path.abspath(base_dir / entry.path))
+        passed.append(str(_passed_path(base_dir, entry)))
     return _unique(passed)
+
+
+def _passed_path(base_dir: Path, entry: contract.SkillDirectory) -> Path:
+    """Return the path to pass OpenClaw for an entry, reaching the folder Fabric loads.
+
+    OpenClaw normalizes ``..`` lexically, while Fabric follows it through the
+    file system, so after a symbolic link the two would reach different
+    folders. The parent is resolved through the file system; the last
+    component is kept, as OpenClaw names a skill without a front matter name
+    after it.
+    """
+
+    path = Path(os.getcwd(), base_dir, entry.path)
+    if path.name in ("", ".."):
+        return Path(os.path.realpath(path))
+    return Path(os.path.realpath(path.parent), path.name)
 
 
 def _discovered_paths(
@@ -1631,7 +1647,7 @@ def _discovered_paths(
 
     found: list[tuple[str, list[tuple[Path, Path]]]] = []
     for index, entry in enumerate(directories):
-        root = Path(os.path.abspath(base_dir / entry.path))
+        root = _passed_path(base_dir, entry)
         if entry.folder is not None:
             candidates = _openclaw_candidates(root)
         else:
@@ -1857,10 +1873,16 @@ def _is_dir(path: Path) -> bool:
 
 
 def _resolved(path: Path) -> Path:
+    """Return ``path`` resolved as far as it exists, as the loader's folders are.
+
+    A missing path still comes back absolute, with its drive on Windows, so it
+    compares equal to the same folder resolved elsewhere.
+    """
+
     try:
-        return path.resolve(strict=True)
-    except (OSError, RuntimeError):
-        return Path(os.path.normpath(path))
+        return Path(os.path.realpath(path))
+    except (OSError, ValueError):
+        return Path(os.path.abspath(path))
 
 
 def _real(path: Path) -> Path | None:
