@@ -669,23 +669,6 @@ def test_stage_bundled_copies_only_the_selected_skills(tmp_path: Path):
     ]
 
 
-def test_remove_copies_drops_only_their_manifest_entries(tmp_path: Path):
-    """A removed copy leaves the manifest, so a later sync copies it again."""
-    home = tmp_path / "home"
-    skills_dir = home / "skills"
-    copy_path = write_skill(skills_dir / "research" / "arxiv")
-    kept = write_skill(skills_dir / "devops" / "github")
-    manifest = skills_dir / ".bundled_manifest"
-    manifest.write_text("arxiv:aaa\ngithub:bbb\nhermes-agent:ccc\n", "utf-8")
-    plan = hermes_skills.SkillPlan(stale_copies=[("arxiv", copy_path)])
-
-    hermes_skills.remove_copies(plan, home)
-
-    assert not copy_path.exists()
-    assert kept.is_dir()
-    assert manifest.read_text("utf-8") == "github:bbb\nhermes-agent:ccc\n"
-
-
 def test_remove_copies_refuses_a_folder_outside_the_home(tmp_path: Path):
     outside = write_skill(tmp_path / "elsewhere" / "arxiv")
     plan = hermes_skills.SkillPlan(stale_copies=[("arxiv", outside)])

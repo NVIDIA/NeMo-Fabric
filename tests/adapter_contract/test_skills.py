@@ -1045,6 +1045,8 @@ def test_default_reader_reads_simple_names(tmp_path: Path, text: str, name: str 
         ("---\n&k name: review\n---\n", None),
         ("---\n!!str name: review\n---\n", None),
         ("---\n{name: flow}\n---\n", None),
+        ('---\n"na\\u006de": escaped\n---\n', None),
+        ('---\n"na\\x6de": escaped\n---\n', None),
         ("---\n  name: indented\n---\n", None),
         ("---\nbase: &b {name: merged}\n<<: *b\n---\n", None),
     ],

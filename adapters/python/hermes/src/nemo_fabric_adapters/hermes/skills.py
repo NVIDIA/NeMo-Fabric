@@ -660,24 +660,47 @@ def excluded_copies(plan: SkillPlan, home: Path) -> list[tuple[str, Path]]:
         origin_hash = manifest[name]
         bundled_hash = skills_sync.dir_hash(source)
         for folder in candidates:
-            if _unchanged(skills_sync, folder, origin_hash, bundled_hash):
+            if _removable(
+                skills_sync, plan, name, folder, place, origin_hash, bundled_hash
+            ):
                 found.append((name, folder))
-            elif folder == place:
-                raise lifecycle.LifecycleError(
-                    "hermes_skill_invalid",
-                    f"The Hermes home holds a changed copy of the bundled skill "
-                    f"{name!r} at {folder}, which {plan.selection_field} leaves "
-                    "out. NeMo Fabric doesn't remove a changed copy, and it "
-                    "would still load. Select the skill, or move or delete the "
-                    "copy.",
-                    metadata={
-                        "field": plan.selection_field,
-                        "reason": "excluded_bundled_skill_modified",
-                        "name": name,
-                        "path": str(folder),
-                    },
-                )
     return found
+
+
+def _removable(
+    skills_sync: Any,
+    plan: SkillPlan,
+    name: str,
+    folder: Path,
+    place: Path,
+    origin_hash: str,
+    bundled_hash: str,
+) -> bool:
+    """Whether ``folder`` is Hermes's unchanged copy of the left-out ``name``.
+
+    Raises:
+        lifecycle.LifecycleError: ``excluded_bundled_skill_modified`` for a
+            changed copy at ``place``, where Hermes's sync put it.
+    """
+
+    if _unchanged(skills_sync, folder, origin_hash, bundled_hash):
+        return True
+    if folder != place:
+        return False
+    raise lifecycle.LifecycleError(
+        "hermes_skill_invalid",
+        f"The Hermes home holds a changed copy of the bundled skill "
+        f"{name!r} at {folder}, which {plan.selection_field} leaves "
+        "out. NeMo Fabric doesn't remove a changed copy, and it "
+        "would still load. Select the skill, or move or delete the "
+        "copy.",
+        metadata={
+            "field": plan.selection_field,
+            "reason": "excluded_bundled_skill_modified",
+            "name": name,
+            "path": str(folder),
+        },
+    )
 
 
 def _unchanged(
@@ -707,22 +730,55 @@ def remove_copies(plan: SkillPlan, home: Path) -> None:
     Hermes's sync removes a stale copy that an external skill replaces the
     same way. Without the entry, a later runtime that selects the skill
     copies it again; with it, Hermes's sync would read the missing copy as
-    deleted by the user and never copy it again.
+    deleted by the user and never copy it again. Each skill's entry goes once
+    its copies are gone, so a failure part way keeps the rest for a retry.
+
+    Each copy is checked again right before it is removed, as
+    :func:`excluded_copies` checks it, so a copy changed since is kept.
+
+    Raises:
+        lifecycle.LifecycleError: ``excluded_bundled_skill_modified`` for a
+            copy changed since, at the place Hermes's sync put it.
     """
 
     skills_dir = (home / "skills").resolve()
     for _name, folder in plan.stale_copies:
-        target = folder.resolve()
-        if skills_dir not in target.parents:
-            raise ValueError(f"refusing to remove {target}: not inside {skills_dir}")
-        if not target.exists():
-            # Inside a copy removed before it.
-            continue
-        if sys.version_info >= (3, 12):
-            shutil.rmtree(target, onexc=_make_writable)
-        else:
-            shutil.rmtree(target, onerror=_make_writable)
-    _drop_manifest_entries(skills_dir, {name for name, _folder in plan.stale_copies})
+        if skills_dir not in folder.resolve().parents:
+            raise ValueError(f"refusing to remove {folder}: not inside {skills_dir}")
+    root = plan.bundled_root
+    if not plan.stale_copies or root is None:
+        # excluded_copies finds copies only for a known bundled folder.
+        return
+    with redirect_stdout(StringIO()):
+        from tools import skills_sync
+
+    manifest = _read_manifest(home / "skills")
+    by_name: dict[str, list[Path]] = {}
+    for name, folder in plan.stale_copies:
+        by_name.setdefault(name, []).append(folder)
+    for name, folders in by_name.items():
+        source = Path(plan.inventory[name])
+        place = home / "skills" / source.relative_to(root)
+        bundled_hash = skills_sync.dir_hash(source)
+        for folder in folders:
+            if not folder.exists():
+                # Inside a copy removed before it.
+                continue
+            if not _removable(
+                skills_sync,
+                plan,
+                name,
+                folder,
+                place,
+                manifest.get(name, ""),
+                bundled_hash,
+            ):
+                continue
+            if sys.version_info >= (3, 12):
+                shutil.rmtree(folder.resolve(), onexc=_make_writable)
+            else:
+                shutil.rmtree(folder.resolve(), onerror=_make_writable)
+        _drop_manifest_entries(skills_dir, {name})
 
 
 def _make_writable(function: Callable[..., Any], path: str, _error: Any) -> None:

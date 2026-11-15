@@ -2726,6 +2726,140 @@ async def test_runtime_refuses_a_changed_copy_of_an_excluded_skill(
     assert "HERMES_BUNDLED_SKILLS" not in os.environ
 
 
+def test_remove_copies_drops_only_their_bundled_manifest_entries(tmp_path: Path):
+    """A removed copy leaves the manifest, so a later sync copies it again."""
+    root = tmp_path / "bundled"
+    source = write_skill(root / "research" / "arxiv")
+    home = tmp_path / "home"
+    skills_dir = home / "skills"
+    copy_path = write_skill(skills_dir / "research" / "arxiv")
+    kept = write_skill(skills_dir / "devops" / "github")
+    manifest = skills_dir / ".bundled_manifest"
+    manifest.write_text("arxiv:aaa\ngithub:bbb\nhermes-agent:ccc\n", "utf-8")
+    plan = hermes_skills.SkillPlan(
+        inventory={"arxiv": source},
+        bundled_root=root,
+        stale_copies=[("arxiv", copy_path)],
+    )
+
+    hermes_skills.remove_copies(plan, home)
+
+    assert not copy_path.exists()
+    assert kept.is_dir()
+    assert manifest.read_text("utf-8") == "github:bbb\nhermes-agent:ccc\n"
+
+
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_runtime_keeps_an_excluded_copy_changed_after_the_first_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A copy changed between the start check and its removal is kept."""
+    excluded = _first_bundled_name()
+    _report, home, _native = await _start_with_skills(tmp_path, {"bundled": {}})
+    copy_path = home / "skills" / _bundled_place(excluded)
+    skill_md = copy_path / "SKILL.md"
+    edited = skill_md.read_text(encoding="utf-8") + "\nAn edit.\n"
+    real_stage = hermes_skills.stage_bundled
+
+    def stage_then_edit(plan: hermes_skills.SkillPlan, folder: Path) -> None:
+        # Runs after excluded_copies and before remove_copies.
+        real_stage(plan, folder)
+        skill_md.write_text(edited, encoding="utf-8")
+
+    monkeypatch.setattr(hermes_skills, "stage_bundled", stage_then_edit)
+    runtime = adapter.HermesRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(
+            _skill_payload(tmp_path, {"bundled": {"exclude": [excluded]}})
+        )
+
+    assert caught.value.metadata["reason"] == "excluded_bundled_skill_modified"
+    assert caught.value.metadata["path"] == str(copy_path)
+    assert skill_md.read_text(encoding="utf-8") == edited
+
+
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_runtime_recovers_from_a_failure_after_removing_an_excluded_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A copy removed before a later removal fails leaves the manifest, so a
+    later runtime that selects it again gets it back."""
+    first, second = sorted(
+        set(hermes_skills.bundled_inventory()) - hermes_skills.ESSENTIAL_SKILLS
+    )[:2]
+    _report, home, _native = await _start_with_skills(tmp_path, {"bundled": {}})
+    first_copy = home / "skills" / _bundled_place(first)
+    second_copy = home / "skills" / _bundled_place(second)
+    manifest = home / "skills" / ".bundled_manifest"
+    real_rmtree = hermes_skills.shutil.rmtree
+    failing = [True]
+
+    def fail_second(path: str | os.PathLike[str], *args: object, **kwargs: object):
+        if failing[0] and Path(path) == second_copy.resolve():
+            raise PermissionError(path)
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(hermes_skills.shutil, "rmtree", fail_second)
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await adapter.HermesRuntime().start(
+            _skill_payload(tmp_path, {"bundled": {"exclude": [first, second]}})
+        )
+    failing[0] = False
+
+    assert caught.value.metadata["reason"] == "excluded_bundled_skill_not_removed"
+    assert not first_copy.exists()
+    assert second_copy.is_dir()
+    entries = manifest.read_text(encoding="utf-8")
+    assert f"{first}:" not in entries
+    assert f"{second}:" in entries
+
+    await _start_with_skills(tmp_path, {"bundled": {"exclude": [first, second]}})
+    assert not second_copy.exists()
+    await _start_with_skills(tmp_path, {"bundled": {}})
+    assert first_copy.is_dir()
+    assert second_copy.is_dir()
+
+
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_cancelled_start_waits_for_the_bundled_staging_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Stop's removal of the staged folder is final: no copy lands after it."""
+    excluded = _first_bundled_name()
+    real_stage = hermes_skills.stage_bundled
+    entered = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    stages: list[Path] = []
+
+    def slow_stage(plan: hermes_skills.SkillPlan, folder: Path) -> None:
+        stages.append(folder)
+        entered.set()
+        release.wait(5)
+        try:
+            real_stage(plan, folder)
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(hermes_skills, "stage_bundled", slow_stage)
+    runtime = adapter.HermesRuntime()
+    start = asyncio.create_task(
+        runtime.start(_skill_payload(tmp_path, {"bundled": {"exclude": [excluded]}}))
+    )
+    assert await asyncio.to_thread(entered.wait, 5)
+
+    start.cancel()
+    asyncio.get_running_loop().call_later(0.2, release.set)
+    with pytest.raises(asyncio.CancelledError):
+        await start
+    assert await asyncio.to_thread(finished.wait, 5)
+
+    assert runtime._started is False
+    assert stages and not stages[0].exists()
+    assert "HERMES_BUNDLED_SKILLS" not in os.environ
+
+
 @pytest.mark.parametrize(
     "skills", [{"bundled": {}}, {"bundled": {"exclude": []}}, {}], ids=str
 )

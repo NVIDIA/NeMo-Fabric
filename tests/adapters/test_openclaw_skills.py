@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import sys
+import threading
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -1587,6 +1588,50 @@ async def test_start_writes_the_plan_and_reports_it(
         "bundled": {"selected": ["github"]},
     }
     assert runtime._skills_report is None
+
+
+async def test_start_fails_when_reading_skills_outlasts_the_startup_timeout(
+    tmp_path: Path, workspace: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Folder scans count against the startup deadline, not only node's read."""
+    release = threading.Event()
+
+    def slow_plan(*args: Any, **kwargs: Any) -> openclaw_skills.SkillPlan:
+        release.wait(5)
+        return openclaw_skills.SkillPlan()
+
+    commands = AsyncMock(return_value=f"OpenClaw {_supported_version()}")
+    monkeypatch.setattr(adapter, "_command_output", commands)
+    monkeypatch.setattr(adapter, "_resolve_command", lambda *_args: tmp_path / "x")
+    monkeypatch.setattr(adapter, "_skill_plan", slow_plan)
+    gateway_config = MagicMock(wraps=adapter._openclaw_config)
+    monkeypatch.setattr(adapter, "_openclaw_config", gateway_config)
+    config = agent_config(
+        {"directories": [{"folder": str(tmp_path)}]}, {"startup_timeout_seconds": 0.2}
+    )
+    runtime = adapter.OpenClawRuntime()
+
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.start(
+                {
+                    "config": config,
+                    "runtime_context": runtime_context(workspace).to_mapping(),
+                    "base_dir": str(tmp_path),
+                }
+            )
+    finally:
+        release.set()
+
+    assert caught.value.code == "openclaw_skills_start_timeout"
+    assert caught.value.retryable is True
+    assert [call.args[1] for call in commands.await_args_list] == ["--version"]
+    gateway_config.assert_not_called()
+    assert runtime._process is None
+
+
+def _supported_version() -> str:
+    return sorted(adapter.SUPPORTED_OPENCLAW_VERSIONS)[0]
 
 
 @pytest.fixture(name="mock_openclaw")

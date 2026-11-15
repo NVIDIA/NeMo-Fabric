@@ -555,8 +555,23 @@ class HermesRuntime:
         self._bundled_env = os.environ.get(skills.BUNDLED_SKILLS_ENV)
         stage = Path(tempfile.mkdtemp(prefix="nemo-fabric-hermes-bundled-"))
         self._bundled_stage = stage
+        worker = asyncio.ensure_future(
+            asyncio.to_thread(skills.stage_bundled, plan, stage)
+        )
         try:
-            await asyncio.to_thread(skills.stage_bundled, plan, stage)
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                # Cancelling start doesn't stop the copy. Wait for it, so
+                # the folder that stop removes stays removed.
+                while not worker.done():
+                    try:
+                        await asyncio.wait({worker})
+                    except asyncio.CancelledError:
+                        pass
+                if not worker.cancelled():
+                    worker.exception()
+                raise
         except OSError as error:
             raise lifecycle.LifecycleError(
                 "hermes_skill_invalid",

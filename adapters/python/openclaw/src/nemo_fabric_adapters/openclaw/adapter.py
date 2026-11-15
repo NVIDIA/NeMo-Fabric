@@ -1413,16 +1413,29 @@ class OpenClawRuntime:
             origin="observed",
             kind="component",
         )
-        # Reading skills may run node, so keep it off the event loop.
-        skill_plan = await asyncio.to_thread(
-            _skill_plan,
-            config,
-            context,
-            base_dir=base_dir,
-            command=command,
-            env=child_env,
-            timeout=min(openclaw_skills.READER_TIMEOUT_SECONDS, startup_remaining()),
-        )
+        # Reading skills may run node, so keep it off the event loop. The
+        # folder scans count against the startup deadline too, not only node.
+        try:
+            skill_plan = await asyncio.wait_for(
+                asyncio.to_thread(
+                    _skill_plan,
+                    config,
+                    context,
+                    base_dir=base_dir,
+                    command=command,
+                    env=child_env,
+                    timeout=min(
+                        openclaw_skills.READER_TIMEOUT_SECONDS, startup_remaining()
+                    ),
+                ),
+                timeout=startup_remaining(),
+            )
+        except TimeoutError as error:
+            raise lifecycle.LifecycleError(
+                "openclaw_skills_start_timeout",
+                "OpenClaw skills were not read before the startup timeout",
+                retryable=True,
+            ) from error
 
         if dashboard_port is None:
             port = _select_port(settings)

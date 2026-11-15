@@ -1034,6 +1034,8 @@ def _read_simple(skill_file: Path, required: tuple[str, ...]) -> CandidateInfo:
             continue
         key = match.group(1)
         if len(key) > 1 and key[0] == key[-1] and key[0] in "'\"":
+            # An escape sequence in a double-quoted key may spell ``name``.
+            uncertain = uncertain or (key[0] == '"' and "\\" in key)
             key = key[1:-1]
         if key == "name":
             # PyYAML keeps a repeated key's last value; other parsers refuse it.
