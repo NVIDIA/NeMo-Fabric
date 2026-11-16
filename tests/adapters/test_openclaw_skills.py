@@ -1959,6 +1959,44 @@ def test_untraversable_folder_is_invalid_on_older_python(
     assert caught.value.metadata["field"] == "skills.directories[0].folder"
 
 
+@POSIX_PERMISSIONS
+@pytest.mark.parametrize(
+    ("entry", "mode"),
+    [("skill", 0), ("folder", 0o300), ("folder", 0)],
+    ids=["unreadable-skill-file", "unlistable-folder", "locked-folder"],
+)
+def test_unreadable_entries_are_invalid(
+    tmp_path: Path, workspace: Path, entry: str, mode: int
+):
+    """An unreadable SKILL.md or an unlistable folder fails as invalid, naming it."""
+    good = write_skill(tmp_path / "good", "good")
+    if entry == "skill":
+        path = write_skill(tmp_path / "entry", "entry")
+        locked = path / "SKILL.md"
+    else:
+        path = tmp_path / "entry"
+        write_skill(path / "debugging", "debugging")
+        locked = path
+    original = locked.stat().st_mode & 0o777
+    locked.chmod(mode)
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            _plan(
+                tmp_path,
+                workspace,
+                {"directories": [{"skill": str(good)}, {entry: str(path)}]},
+            )
+    finally:
+        locked.chmod(original)
+
+    assert caught.value.code == "openclaw_skill_invalid"
+    assert caught.value.metadata == {
+        "field": f"skills.directories[1].{entry}",
+        "reason": "invalid",
+        "path": str(locked),
+    }
+
+
 @pytest.mark.parametrize(
     ("policy", "refused", "kept"), [("first_wins", 0, 1), ("last_wins", 2, 1)]
 )

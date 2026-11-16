@@ -899,6 +899,40 @@ def test_agent_adds_skills_beside_read_only_skills_it_cannot_change(
     ]
 
 
+@POSIX_PERMISSIONS
+@pytest.mark.parametrize(
+    ("entry", "mode"),
+    [("skill", 0), ("folder", 0o300), ("folder", 0)],
+    ids=["unreadable-skill-file", "unlistable-folder", "locked-folder"],
+)
+def test_unreadable_entries_are_invalid_with_openclaws_reader(
+    native: _Native, entry: str, mode: int
+):
+    """With OpenClaw's own parser, an unreadable entry still fails as invalid."""
+    good = write_skill(native.tmp_path / "good", "good")
+    path = native.tmp_path / "entry"
+    if entry == "skill":
+        write_skill(path, "entry")
+        locked = path / "SKILL.md"
+    else:
+        write_skill(path / "debugging", "debugging")
+        locked = path
+    original = locked.stat().st_mode & 0o777
+    locked.chmod(mode)
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            native.plan({"directories": [{"skill": str(good)}, {entry: str(path)}]})
+    finally:
+        locked.chmod(original)
+
+    assert caught.value.code == "openclaw_skill_invalid"
+    assert caught.value.metadata == {
+        "field": f"skills.directories[1].{entry}",
+        "reason": "invalid",
+        "path": str(locked),
+    }
+
+
 async def _start_runtime(
     native: _Native, skills: dict[str, Any]
 ) -> adapter.OpenClawRuntime:

@@ -235,6 +235,12 @@ class HermesRuntime:
                 # environment below, so their own sync reads the same folder.
                 if skill_plan.excluded_bundled:
                     await self._stage_bundled_skills(skill_plan)
+                if interface_ports:
+                    # Each interface process runs Hermes's bundled sync at
+                    # start, after this report. Run the same sync first, so
+                    # the report observes what the interfaces load; their
+                    # sync then finds nothing to copy.
+                    skill_plan.sync = True
                 self._skills_report = await _prepare_skills(
                     skill_plan, self._hermes_home
                 )
@@ -1022,7 +1028,8 @@ async def _prepare_skills(
 
     Hermes's own entry points copy its bundled skills into the home at start;
     the embedded agent does not, so the adapter does whenever
-    ``skills.bundled`` is set. It first removes Hermes's unchanged earlier
+    ``skills.bundled`` is set or a native interface, which runs that copy
+    itself, is enabled. It first removes Hermes's unchanged earlier
     copies of the left-out bundled skills. The copy seeds Hermes's essential
     skills even when no bundled skill is selected, and removes a stale copy
     that an external skill replaces. Returns the ``output.skills`` report and
@@ -1048,11 +1055,18 @@ async def _prepare_skills(
         try:
             sync_result = await asyncio.to_thread(skills.sync_bundled)
         except Exception as error:
-            raise lifecycle.LifecycleError(
-                "hermes_skill_invalid",
-                "Hermes could not copy its bundled skills into its home",
-                metadata={"field": "skills.bundled", "reason": "sync_failed"},
-            ) from error
+            if plan.bundled is None:
+                # Run only for the report, ahead of the interfaces' own copy,
+                # which ignores a failure: keep starting, as they do.
+                LOGGER.warning(
+                    "Hermes bundled skills could not be copied", exc_info=True
+                )
+            else:
+                raise lifecycle.LifecycleError(
+                    "hermes_skill_invalid",
+                    "Hermes could not copy its bundled skills into its home",
+                    metadata={"field": "skills.bundled", "reason": "sync_failed"},
+                ) from error
     try:
         # Tells Hermes's copies of bundled skills from the agent's own skills
         # when only skills.directories is set.

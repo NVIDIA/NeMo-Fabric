@@ -2366,6 +2366,69 @@ async def test_runtime_start_fails_before_writing_config(
     assert not (_skills_home(tmp_path) / "config.yaml").exists()
 
 
+@POSIX_PERMISSIONS
+@pytest.mark.parametrize("kind", ["skill", "folder"])
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_runtime_start_fails_on_an_entry_it_cannot_read(
+    tmp_path: Path, kind: str
+):
+    """A ``skill`` entry whose SKILL.md can't be read, or a ``folder`` entry
+    that can't be listed, fails start as invalid, naming the entry."""
+    team = tmp_path / "team"
+    review = write_skill(team / "review")
+    # Unreadable SKILL.md; a folder Hermes can search but not list.
+    locked, mode = (review / "SKILL.md", 0o000) if kind == "skill" else (team, 0o300)
+    configured = review if kind == "skill" else team
+    runtime = adapter.HermesRuntime()
+    locked.chmod(mode)
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.start(
+                _skill_payload(tmp_path, {"directories": [{kind: str(configured)}]})
+            )
+    finally:
+        locked.chmod(0o644 if kind == "skill" else 0o755)
+
+    assert caught.value.code == "hermes_skill_invalid"
+    assert caught.value.metadata == {
+        "field": f"skills.directories[0].{kind}",
+        "reason": "invalid",
+        "path": str(locked),
+    }
+    assert runtime._started is False
+    assert not (_skills_home(tmp_path) / "config.yaml").exists()
+
+
+@pytest.mark.parametrize("bundled", [False, True])
+async def test_bundled_copy_failure_fails_start_only_with_bundled_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bundled: bool
+):
+    """With an interface on and ``skills.bundled`` omitted, the adapter copies
+    the bundled skills only for the report, so a failure is logged, as the
+    interfaces' own copy logs it."""
+    from nemo_fabric_adapter_contract.models import BundledSkills
+    from nemo_fabric_adapter_contract.skills import DirectoryLoad
+
+    def fail() -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(hermes_skills, "sync_bundled", fail)
+    monkeypatch.setattr(hermes_skills, "load_inventory", lambda plan: None)
+    monkeypatch.setattr(hermes_skills, "native_catalog", lambda: [])
+    plan = hermes_skills.SkillPlan(
+        load=DirectoryLoad(),
+        bundled=BundledSkills.from_mapping({}) if bundled else None,
+        sync=True,
+    )
+
+    if not bundled:
+        assert await adapter._prepare_skills(plan, tmp_path) == {"loaded": []}
+        return
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await adapter._prepare_skills(plan, tmp_path)
+    assert caught.value.metadata == {"field": "skills.bundled", "reason": "sync_failed"}
+
+
 def test_hermes_discovery_rules_match_the_pinned_loader():
     from agent import skill_utils
 

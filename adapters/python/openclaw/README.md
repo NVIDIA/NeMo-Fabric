@@ -115,17 +115,31 @@ complete accounting for retries, compaction, child agents, or background work.
 The adapter supports `skills.paths`, `skills.directories`, `skills.bundled`,
 and `skills.duplicates`. `skills.paths` is unchanged: each path must be a
 folder that holds `SKILL.md`, and is passed, resolved, to
-`skills.load.extraDirs`. For example:
+`skills.load.extraDirs`. The mount, not NeMo Fabric, makes a skill read-only.
+Each comment in this example names one setup; the whole list is the mixed
+setup:
 
 ```yaml
 skills:
   directories:
-    - folder: /mnt/team-skills       # a folder of skills, read-only
-    - skill: /mnt/release-review     # one chosen skill, read-only
+    # A folder, read-only: mount it read-only; every skill in it loads.
+    - folder: /mnt/team-skills
+    # Chosen skills, read-only: mount each skill read-only, one skill entry each.
+    - skill: /mnt/release-review
+    - skill: /mnt/incident-triage
+    # A folder, read-write: skills written into it load at the next start.
+    - folder: /mnt/agent-skills
+  # Mixed: one list holds any of these; last_wins lets a later entry win.
   duplicates: last_wins
   bundled:
     include: [github, weather]
 ```
+
+Skills the agent installs through OpenClaw itself don't go to a `directories`
+folder, and are lost at stop until state is kept across restarts
+([#578](https://github.com/NVIDIA/NeMo-Fabric/issues/578)); the
+[OpenClaw guide](../../../docs/integrations/harness/openclaw/openclaw.mdx#skills)
+says where they go.
 
 At start, the adapter reads each skill's front matter with OpenClaw's own
 parser, through the `node` that runs OpenClaw, and runs

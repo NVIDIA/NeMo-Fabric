@@ -165,13 +165,21 @@ and `skills.duplicates`, and writes the configured skills to Hermes Agent's
 `skills.external_dirs`. Hermes always loads its `hermes-agent` bundled skill,
 so `skills.bundled` supports `exclude` (or `{}` for every bundled skill) but
 not `include` or `enabled: false`, and `exclude` cannot name `hermes-agent`.
-For example:
+The mount, not NeMo Fabric, makes a skill read-only. Each comment in this
+example names one setup; the whole list is the mixed setup:
 
 ```yaml
 skills:
   directories:
-    - folder: /sandbox/team-skills          # a folder of skills, read-only mount
-    - skill: /opt/skills/release-review     # one chosen skill
+    # A folder, read-only: mount it read-only; every skill in it loads.
+    - folder: /sandbox/team-skills
+    # Chosen skills, read-only: mount each skill read-only, one skill entry each.
+    - skill: /sandbox/release-review
+    - skill: /sandbox/incident-triage
+    # A folder, read-write: mount it writable; Hermes edits its skills in place.
+    # New skills go to the Hermes home and persist with runtime.keep_state.
+    - folder: /sandbox/agent-skills
+  # Mixed: one list holds any of these; first_wins lets an earlier entry win.
   duplicates: first_wins
   bundled:
     exclude: [xurl]

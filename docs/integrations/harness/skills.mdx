@@ -182,7 +182,7 @@ Start fails when an entry breaks one of these rules:
 | Under an explicit `duplicates` policy, the adapter can't tell which name the harness reads for a skill. Refer to [How the Adapter Reads a Skill](#how-the-adapter-reads-a-skill). | `unsupported_frontmatter_name` |
 | Under an explicit `duplicates` policy, the adapter can't tell whether the harness accepts a skill, and the policy's result depends on it. | `unsupported_frontmatter` |
 
-A `not_found` failure uses the adapter's `<adapter>_skill_not_found` error code, such as `hermes_skill_not_found`. Every other failure uses `<adapter>_skill_invalid`. The error metadata gives the failing `field`, such as `skills.directories[1].skill`, the `reason`, and the `path`. An adapter can add checks of its own. Refer to [Harness Differences](#harness-differences).
+A `not_found` failure uses the adapter's `<adapter>_skill_not_found` error code, such as `hermes_skill_not_found`. Every other failure uses `<adapter>_skill_invalid`. The adapter's error metadata gives the failing `field`, such as `skills.directories[1].skill`, the `reason`, and the `path`. Through the SDK, the start error's `code` is the adapter's code, and its message includes that metadata. An adapter can add checks of its own. Refer to [Harness Differences](#harness-differences).
 
 An empty `folder` entry is valid. It loads nothing, and the run report lists it.
 
