@@ -1098,6 +1098,8 @@ async def _run_native_lifecycle(
             except Exception as error:
                 stop_error = error
                 cleanup = "failed"
+                if _runtime_error(error, stage="stop").code == "cleanup_unconfirmed":
+                    cleanup_runtime_handle = runtime
                 if invoke_error is None:
                     if result is None:
                         raise
@@ -1145,12 +1147,7 @@ async def _run_native_lifecycle(
                         )
                         _retain_runtime_evidence(failure, observations)
                         raise failure from error
-            if (
-                stop_error is not None
-                and _runtime_error(stop_error, stage="stop").code
-                == "cleanup_unconfirmed"
-            ):
-                cleanup_runtime_handle = runtime
+            if cleanup_runtime_handle is not None:
                 failure = invoke_error or FabricRuntimeError(
                     "Runtime cleanup is unconfirmed; retry cleanup_runtime.stop().",
                     stage="stop",
@@ -1191,7 +1188,9 @@ async def _run_native_lifecycle(
         if cleanup_runtime_handle is not None:
             error._fabric_cleanup_runtime_handle = cleanup_runtime_handle
         raise
-    except FabricError:
+    except FabricError as error:
+        if cleanup_runtime_handle is not None:
+            error._fabric_cleanup_runtime_handle = cleanup_runtime_handle
         raise
     except Exception as error:
         raise _runtime_error(error, stage="run") from error

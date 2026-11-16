@@ -248,6 +248,29 @@ async def test_one_shot_retains_a_cleanup_runtime_without_exposing_its_handle(
     assert mock_native.stop_runtime.call_count == 2
 
 
+@pytest.mark.parametrize("invoke_fails", [False, True])
+async def test_result_storage_failure_preserves_pending_cleanup(
+    native_client, mock_native, invoke_fails
+):
+    if invoke_fails:
+        mock_native.invoke_runtime.side_effect = FabricRuntimeError(
+            "synthetic invoke failure", stage="invoke", code="host_crashed"
+        )
+    mock_native.stop_runtime.side_effect = FabricRuntimeError(
+        "synthetic cleanup failure", stage="stop", code="cleanup_unconfirmed"
+    )
+    method = "_finish_failed_run_result" if invoke_fails else "_save_run_result"
+    getattr(mock_native, method).side_effect = RuntimeError("synthetic storage failure")
+    with pytest.raises(FabricRuntimeError) as caught:
+        await native_client.run(_config(), input="synthetic work")
+    assert caught.value.code == "result_storage_failed"
+    recovery = caught.value.cleanup_runtime
+    assert isinstance(recovery, Runtime)
+    mock_native.stop_runtime.side_effect = None
+    await recovery.stop()
+    assert recovery.status is RuntimeStatus.STOPPED
+
+
 async def test_cancelled_one_shot_retains_a_cleanup_runtime(native_client, mock_native):
     entered, release = threading.Event(), threading.Event()
 

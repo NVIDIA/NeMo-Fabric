@@ -1101,7 +1101,9 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
         Ok(result) => result,
         Err(error) => {
             let events = stop_runtime(plan, &runtime).unwrap_or_default();
-            finish_failed_run_result(plan, &runtime, &original_request, events)?;
+            let error = finish_failed_run_result(plan, &runtime, &original_request, events)
+                .err()
+                .unwrap_or(error);
             if local_runtime_is_retained(&runtime.runtime_id) {
                 return Err(FabricError::RuntimeCleanupPending(Box::new(
                     crate::RuntimeCleanupPending::new(runtime, None, error),
@@ -1112,6 +1114,21 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
     };
     let stopped = match stop_runtime(plan, &runtime) {
         Err(error) if local_runtime_is_retained(&runtime.runtime_id) => {
+            if result.status == RunStatus::Succeeded {
+                result.status = RunStatus::Failed;
+                result.error = Some(ErrorInfo {
+                    stage: ErrorStage::Stop,
+                    code: "cleanup_unconfirmed".into(),
+                    message:
+                        "Runtime cleanup is unconfirmed; retry cleanup with the original runtime."
+                            .into(),
+                    retryable: false,
+                    metadata: BTreeMap::new(),
+                });
+            }
+            let error = save_run_result(plan, &runtime, &result)
+                .err()
+                .unwrap_or(error);
             return Err(FabricError::RuntimeCleanupPending(Box::new(
                 crate::RuntimeCleanupPending::new(runtime, Some(result), error),
             )));
@@ -6213,6 +6230,9 @@ for line in sys.stdin:
             shutil.rmtree(directory)
             with open(directory, "w", encoding="utf-8") as stream:
                 stream.write("cleanup requires a retry")
+            root = os.path.dirname(os.environ["FABRIC_FAKE_HOST_STOP_MARKER"])
+            if os.path.exists(os.path.join(root, "fail-result-storage")):
+                os.chmod(os.path.join(root, "artifacts", ".fabric"), 0o777)
         if MODE == "stop_delay":
             with open(os.environ["FABRIC_FAKE_HOST_STOP_MARKER"], "w", encoding="utf-8") as stream:
                 stream.write("started")
@@ -6528,7 +6548,7 @@ else:
             };
             assert_eq!(pending.runtime(), &runtime);
             assert!(local_hosts().contains_key(&runtime.runtime_id));
-            assert!(local_host_directory(&runtime.runtime_id).exists());
+            assert!(local_host_directory(&runtime.runtime_id).unwrap().exists());
             let denied = invoke_runtime(&plan, &runtime, RunRequest::text("must not invoke"));
             stop_runtime(&plan, pending.runtime()).unwrap();
             #[cfg(unix)]
@@ -6560,7 +6580,7 @@ else:
             matches!(release, Err(FabricError::AdapterLifecycleOperation {code, ..}) if code == "cleanup_unconfirmed")
         );
         assert!(local_hosts().contains_key(&context.runtime().runtime_id));
-        let directory = local_host_directory(&context.runtime().runtime_id);
+        let directory = local_host_directory(&context.runtime().runtime_id).unwrap();
         assert!(directory.is_file());
         fs::remove_file(&directory).unwrap();
         fs::create_dir(&directory).unwrap();
@@ -6740,9 +6760,19 @@ else:
     #[cfg(unix)]
     #[test]
     fn one_shot_cleanup_failures_keep_a_safe_retry_handle() {
-        for mode in ["cleanup_failure", "invoke_failure_cleanup_failure"] {
+        use std::os::unix::fs::PermissionsExt;
+        for (mode, storage_fails) in [
+            ("cleanup_failure", true),
+            ("invoke_failure_cleanup_failure", true),
+            ("cleanup_failure", false),
+            ("invoke_failure_cleanup_failure", false),
+        ] {
             let (root, plan) = local_host_plan(mode);
-            let error = run_plan(&plan, RunRequest::text("TEST_ONLY_PRIVATE_RESULT"))
+            if storage_fails {
+                fs::write(root.join("fail-result-storage"), "").unwrap();
+            }
+            let request = RunRequest::text("TEST_ONLY_PRIVATE_RESULT");
+            let error = run_plan(&plan, request.clone())
                 .expect_err("unconfirmed cleanup must retain a retry handle");
             let debug = format!("{error:?}");
             let FabricError::RuntimeCleanupPending(pending) = error else {
@@ -6750,13 +6780,40 @@ else:
             };
             assert_eq!(pending.result().is_some(), mode == "cleanup_failure");
             let runtime = pending.runtime();
-            let directory = local_host_directory(&runtime.runtime_id);
+            let directory = local_host_directory(&runtime.runtime_id).unwrap();
             fs::remove_file(&directory).unwrap();
             fs::create_dir_all(&directory).unwrap();
             stop_runtime(&plan, runtime).expect("retry cleanup with the original handle");
             assert!(!local_hosts().contains_key(&runtime.runtime_id));
             assert!(!debug.contains("TEST_ONLY_PRIVATE_RESULT"));
             assert!(!debug.contains(&runtime.runtime_binding));
+            if storage_fails {
+                assert!(
+                    matches!(pending.cause(), FabricError::AdapterLifecycleOperation { code, .. } if code == "result_storage_failed")
+                );
+                fs::set_permissions(
+                    root.join("artifacts/.fabric"),
+                    fs::Permissions::from_mode(0o700),
+                )
+                .unwrap();
+            }
+            let saved = invocation_result(
+                &root.join("artifacts"),
+                &plan.agent_name,
+                &runtime.runtime_id,
+                &request.request_id,
+            )
+            .unwrap();
+            assert_eq!(
+                saved.is_some(),
+                !storage_fails,
+                "publish only finalized results"
+            );
+            if !storage_fails && let Some(result) = pending.result() {
+                assert_eq!(saved.as_ref().unwrap(), result);
+                assert_eq!(result.status, RunStatus::Failed);
+                assert_eq!(result.error.as_ref().unwrap().code, "cleanup_unconfirmed");
+            }
             fs::remove_dir_all(root).unwrap();
         }
     }
@@ -7874,7 +7931,8 @@ else:
             let result = pending
                 .result()
                 .expect("completed invocation remains available");
-            assert_eq!(result.status, RunStatus::Succeeded);
+            assert_eq!(result.status, RunStatus::Failed);
+            assert_eq!(result.error.as_ref().unwrap().stage, ErrorStage::Stop);
             assert_eq!(result.runtime_id, pending.runtime().runtime_id);
             assert!(
                 matches!(pending.cause(), FabricError::AdapterLifecycleOperation {operation: "stop", code, ..} if code == "cleanup_unconfirmed")
