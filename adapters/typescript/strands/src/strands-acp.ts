@@ -109,6 +109,7 @@ function childEnvironment(input: AdapterStartInput): NodeJS.ProcessEnv {
 function translateRunnerError(
   error: unknown,
   stage: "start" | "prompt",
+  timeoutMs = 300_000,
 ): LifecycleError {
   if (error instanceof LifecycleError) return error;
   if (
@@ -122,8 +123,16 @@ function translateRunnerError(
   }
   if (error instanceof AcpRunnerError && error.code === "acp_prompt_timeout") {
     return new LifecycleError(
-      "strands_prompt_timeout",
-      "Strands did not finish the invocation before the deadline",
+      "timeout",
+      `Strands adapter invocation timed out after ${timeoutMs / 1000} seconds`,
+      {
+        metadata: {
+          owner: "adapter",
+          timeout_seconds: timeoutMs / 1000,
+          cause_code: "strands_prompt_timeout",
+          native_code: error.code,
+        },
+      },
     );
   }
   // Do not expose target error text: it may contain credentials or prompt content.
@@ -205,7 +214,7 @@ class StrandsAcpSession implements StrandsSessionHandle {
 
   async prompt(
     text: string,
-    timeoutMs?: number,
+    timeoutMs = 300_000,
   ): Promise<StrandsPromptOutcome> {
     try {
       const result = await this.session.prompt(text, timeoutMs);
@@ -216,7 +225,7 @@ class StrandsAcpSession implements StrandsSessionHandle {
         ...(usage === undefined ? {} : { usage }),
       };
     } catch (error) {
-      throw translateRunnerError(error, "prompt");
+      throw translateRunnerError(error, "prompt", timeoutMs);
     }
   }
 

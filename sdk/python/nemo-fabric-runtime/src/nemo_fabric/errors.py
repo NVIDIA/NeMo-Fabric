@@ -83,6 +83,9 @@ def _runtime_error(error: Exception, *, stage: str) -> FabricRuntimeError:
         stage=stage,
         code=code if isinstance(code, str) else None,
         retryable=retryable if isinstance(retryable, bool) else False,
+        details=getattr(error, "details", None)
+        if isinstance(error, TimeoutError)
+        else None,
     )
     cleanup = getattr(error, "_fabric_cleanup_runtime_handle", None)
     if cleanup is not None:

@@ -4,7 +4,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {KiloAdapterRuntime} from "../dist/runtime.js";
+import {KiloAdapterRuntime, KiloPromptError} from "../dist/runtime.js";
+import {LifecycleError} from "nemo-fabric-adapters-common";
 
 const context = {runtime_id: "r", invocation_id: "i", request_id: "q", artifacts: {}, environment: {environment_id: "e", provider: "local", ownership: "caller_owned", control_location: "external_control", env: {}}};
 
@@ -34,5 +35,25 @@ test("invalidates the runtime after transport failure", async () => {
   await runtime.start({agentName: "agent", baseDir: ".", config: {}, runtimeContext: context});
   await assert.rejects(runtime.invoke({input: "one"}, context), (error) => error.code === "kilo_session_failed");
   await assert.rejects(runtime.invoke({input: "two"}, context), (error) => error.code === "kilo_not_started");
+  assert.equal(stopped, 1);
+});
+
+
+test("preserves deadline ownership and usage through normalized failure and cleanup", async () => {
+  const metadata = {owner: "adapter", timeout_seconds: 300, cause_code: "kilo_prompt_timeout"};
+  const usage = {input_tokens: 1, output_tokens: 2};
+  let stopped = 0;
+  const runtime = new KiloAdapterRuntime({create: async () => ({
+    id: "s",
+    prompt: async () => { throw new KiloPromptError(new LifecycleError("timeout", "Kilo deadline after 300 seconds", {metadata}), usage); },
+    stop: async () => { stopped += 1; },
+  })});
+  await runtime.start({agentName: "agent", baseDir: ".", config: {}, runtimeContext: context});
+  const result = await runtime.invoke({input: "test"}, context);
+  assert.equal(result.error.code, "timeout");
+  assert.deepEqual(result.error.extensions, metadata);
+  assert.deepEqual(result.usage, usage);
+  assert.equal(stopped, 1);
+  await runtime.stop();
   assert.equal(stopped, 1);
 });

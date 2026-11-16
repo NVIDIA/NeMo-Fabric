@@ -234,6 +234,8 @@ pub enum FabricError {
         message: String,
         /// Bounded adapter-host diagnostics.
         diagnostics: String,
+        /// Structured adapter or runtime failure evidence.
+        metadata: std::collections::BTreeMap<String, serde_json::Value>,
     },
     /// Owned lifecycle cleanup is unconfirmed; the original runtime remains owned.
     #[error("{0}")]

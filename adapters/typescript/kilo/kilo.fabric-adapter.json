@@ -45,6 +45,28 @@
     "additionalProperties": false
   },
   "extension_schemas": {
+    "run_error": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "owner": {
+          "const": "adapter"
+        },
+        "timeout_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cause_code": {
+          "const": "kilo_prompt_timeout"
+        }
+      },
+      "required": [
+        "owner",
+        "timeout_seconds",
+        "cause_code"
+      ],
+      "additionalProperties": false
+    },
     "usage": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",

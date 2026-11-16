@@ -130,9 +130,14 @@ export class StrandsAdapterRuntime implements AdapterRuntime {
         status: "failed",
         output: null,
         error: {
-          code: "strands_deadline_exceeded",
-          message: "The Strands invocation deadline has already elapsed",
+          code: "timeout",
+          message: `Strands adapter invocation deadline ${context.deadline_millis} (Unix milliseconds) has already elapsed`,
           retryable: false,
+          extensions: {
+            owner: "adapter",
+            deadline_millis: context.deadline_millis,
+            cause_code: "strands_deadline_exceeded",
+          },
         },
       };
     }

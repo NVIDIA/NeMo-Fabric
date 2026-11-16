@@ -113,6 +113,16 @@ def main() -> None:
                 else f"Fabric runner failed ({type(error).__name__})"
             ),
             retryable=error.retryable if isinstance(error, FabricError) else False,
+            # Runtime observations belong in the bounded evidence envelope.
+            details=(
+                {
+                    key: value
+                    for key, value in error.details.items()
+                    if key != "runtime_evidence"
+                }
+                if isinstance(error, FabricError)
+                else {}
+            ),
         )
         try:
             document = FabricRunnerFailure(

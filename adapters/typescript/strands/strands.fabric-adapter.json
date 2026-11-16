@@ -106,6 +106,28 @@
     ]
   },
   "extension_schemas": {
+    "run_error": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "owner": {
+          "const": "adapter"
+        },
+        "deadline_millis": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cause_code": {
+          "const": "strands_deadline_exceeded"
+        }
+      },
+      "required": [
+        "owner",
+        "deadline_millis",
+        "cause_code"
+      ],
+      "additionalProperties": false
+    },
     "run_result": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
