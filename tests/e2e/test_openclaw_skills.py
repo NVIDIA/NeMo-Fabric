@@ -732,45 +732,78 @@ _SYMLINKS = pytest.mark.skipif(os.name == "nt", reason="Requires symbolic links"
 
 
 @_SYMLINKS
-@pytest.mark.parametrize(
-    ("policy", "refused"), [("first_wins", "a"), ("last_wins", "b")]
-)
-def test_refused_winner_falls_back_to_the_next_copy(
-    native: _Native, policy: str, refused: str
+@_SYMLINKS
+@pytest.mark.parametrize("policy", [None, "reject", "first_wins", "last_wins"])
+@pytest.mark.parametrize("layout", ["two_entries", "one_folder"])
+def test_skill_file_linked_outside_its_folder_is_no_duplicate(
+    native: _Native, policy: str | None, layout: str
 ):
-    """When OpenClaw refuses the winning copy, the next copy loads instead.
+    """OpenClaw refuses a SKILL.md that links outside its skill folder
+    (``resolveSkillFilePath``), so that copy never counts as a duplicate.
 
-    The refused copy passes Fabric's checks, but its SKILL.md links to a file
-    outside its folder, which OpenClaw refuses (``resolveSkillFilePath``).
+    Start succeeds under reject, and the copy OpenClaw loads is reported.
     """
     root = native.tmp_path
-    for name in ("a", "b"):
-        write_skill(root / name / "review", "review")
-    broken = root / refused / "review" / "SKILL.md"
-    (root / "outside").mkdir()
-    broken.rename(root / "outside" / "SKILL.md")
-    broken.symlink_to(root / "outside" / "SKILL.md")
-    kept = root / ("b" if refused == "a" else "a") / "review"
+    outside = write_skill(root / "outside" / "review", "review", "Outside.")
+    if layout == "two_entries":
+        good = write_skill(root / "good" / "review", "review", "Valid.")
+        bad = root / "bad" / "review"
+        directories = [{"folder": str(root / "good")}, {"folder": str(root / "bad")}]
+        bad_field = "skills.directories[1]"
+    else:
+        good = write_skill(root / "team" / "good", "review", "Valid.")
+        bad = root / "team" / "bad"
+        directories = [{"folder": str(root / "team")}]
+        bad_field = "skills.directories[0]"
+    bad.mkdir(parents=True)
+    (bad / "SKILL.md").symlink_to(outside / "SKILL.md")
+    skills: dict[str, Any] = {"directories": directories}
+    if policy is not None:
+        skills["duplicates"] = policy
 
-    plan, status = native.list(
-        {
-            "directories": [{"folder": str(root / "a")}, {"folder": str(root / "b")}],
-            "duplicates": policy,
-        }
+    plan, status = native.list(skills)
+
+    rows = {row["name"]: row for row in status["skills"]}
+    assert (rows["review"]["source"], rows["review"]["description"]) == (
+        "openclaw-extra",
+        "Valid.",
     )
-
-    assert "review" in _external(status, set())
-    assert plan.extra_dirs == [str(kept.resolve())]
     report = plan.report()
     assert report is not None
-    assert _configured(report)[0]["path"] == str(kept.resolve())
-    assert report["duplicates"][0]["selected"] == str(kept.resolve())
+    assert _configured(report) == [loaded("review", good, "skills.directories[0]")]
+    assert report["skipped"] == [skipped(bad, bad_field, "path_escape")]
+    assert "duplicates" not in report
+
+
+@pytest.mark.parametrize("policy", [None, "reject", "first_wins", "last_wins"])
+@pytest.mark.parametrize("entry", ["folder", "broken_link"])
+def test_no_skill_below_a_skill_md_entry_loads(
+    native: _Native, policy: str | None, entry: str
+):
+    """OpenClaw stops at any entry named SKILL.md (``hasSkillFileCandidate``),
+    so a skill below a SKILL.md folder or broken link never loads, and Fabric
+    passes and reports none under any policy."""
+    root = native.tmp_path
+    boundary = root / "team" / "boundary"
+    write_skill(boundary / "nested", "nested", "Nested.")
+    if entry == "folder":
+        (boundary / "SKILL.md").mkdir()
+    else:
+        if os.name == "nt":
+            pytest.skip("Requires symbolic links")
+        (boundary / "SKILL.md").symlink_to(root / "missing.md")
+    skills: dict[str, Any] = {"directories": [{"folder": str(root / "team")}]}
+    if policy is not None:
+        skills["duplicates"] = policy
+
+    plan, status = native.list(skills)
+
+    assert "nested" not in {row["name"] for row in status["skills"]}
+    report = plan.report()
+    assert report is not None
+    assert _configured(report) == []
     assert report["skipped"] == [
-        skipped(
-            broken.parent,
-            f"skills.directories[{0 if refused == 'a' else 1}]",
-            "rejected_by_openclaw",
-        )
+        skipped(boundary, "skills.directories[0]", "unreadable")
     ]
 
 

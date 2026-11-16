@@ -2459,6 +2459,77 @@ def test_hard_linked_copy_is_skipped_before_duplicates(
         assert generated["skills"]["load"]["extraDirs"] == [str(valid.resolve())]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Requires symbolic links")
+@pytest.mark.parametrize("policy", [None, "reject", "first_wins", "last_wins"])
+@pytest.mark.parametrize("layout", ["two_entries", "one_folder"])
+def test_skill_file_linked_outside_its_folder_is_skipped_before_duplicates(
+    tmp_path: Path, workspace: Path, policy: str | None, layout: str
+):
+    """OpenClaw refuses a SKILL.md that resolves outside its skill folder, so
+    that copy never counts as a duplicate of the one OpenClaw loads."""
+    outside = write_skill(tmp_path / "outside" / "review", "review")
+    if layout == "two_entries":
+        good = write_skill(tmp_path / "good" / "review", "review")
+        bad = tmp_path / "bad" / "review"
+        directories = [
+            {"folder": str(tmp_path / "good")},
+            {"folder": str(tmp_path / "bad")},
+        ]
+        bad_field = "skills.directories[1]"
+    else:
+        good = write_skill(tmp_path / "team" / "good", "review")
+        bad = tmp_path / "team" / "bad"
+        directories = [{"folder": str(tmp_path / "team")}]
+        bad_field = "skills.directories[0]"
+    bad.mkdir(parents=True)
+    (bad / "SKILL.md").symlink_to(outside / "SKILL.md")
+    skills: dict[str, Any] = {"directories": directories}
+    if policy is not None:
+        skills["duplicates"] = policy
+
+    generated, plan = _generated(tmp_path, workspace, skills)
+
+    expected: dict[str, Any] = {
+        "loaded": [loaded("review", good, "skills.directories[0]")],
+        "skipped": [skipped(bad, bad_field, "path_escape")],
+    }
+    if layout == "two_entries":
+        expected["empty_entries"] = ["skills.directories[1]"]
+    assert plan.report() == expected
+    if policy is not None:
+        assert generated["skills"]["load"]["extraDirs"] == [str(good.resolve())]
+
+
+@pytest.mark.parametrize("policy", [None, "reject", "first_wins", "last_wins"])
+@pytest.mark.parametrize("entry", ["folder", "broken_link"])
+def test_any_skill_md_entry_stops_discovery_as_openclaw_does(
+    tmp_path: Path, workspace: Path, policy: str | None, entry: str
+):
+    """OpenClaw stops at any entry named SKILL.md (hasSkillFileCandidate), so
+    a skill below a SKILL.md folder or broken link is never passed."""
+    boundary = tmp_path / "team" / "boundary"
+    write_skill(boundary / "nested", "nested")
+    if entry == "folder":
+        (boundary / "SKILL.md").mkdir()
+    else:
+        if sys.platform == "win32":
+            pytest.skip("Requires symbolic links")
+        (boundary / "SKILL.md").symlink_to(tmp_path / "missing.md")
+    skills: dict[str, Any] = {"directories": [{"folder": str(tmp_path / "team")}]}
+    if policy is not None:
+        skills["duplicates"] = policy
+
+    generated, plan = _generated(tmp_path, workspace, skills)
+
+    assert plan.report() == {
+        "loaded": [],
+        "empty_entries": ["skills.directories[0]"],
+        "skipped": [skipped(boundary, "skills.directories[0]", "unreadable")],
+    }
+    passed = generated.get("skills", {}).get("load", {}).get("extraDirs", [])
+    assert passed == ([str(tmp_path / "team")] if policy is None else [])
+
+
 def test_hard_linked_workspace_skill_hides_nothing(tmp_path: Path, workspace: Path):
     team = write_skill(tmp_path / "team" / "review", "review")
     local = write_skill(workspace / "skills" / "review", "review")

@@ -153,12 +153,20 @@ class DiscoveryRules:
     """Direct children of a ``folder`` entry's folder, by name, that restart
     depth counting: the child's own children are at depth 1 again, down to
     the mapped maximum depth. ``max_depth`` applies everywhere else."""
+    skill_marker: Literal["file", "any_entry"] = "file"
+    """What marks a folder as a skill. ``"file"``: a ``SKILL.md`` that is a
+    file, after following links. ``"any_entry"``: any entry named
+    ``SKILL.md``, such as a folder or a broken link, as harnesses that test
+    for the name do. Discovery then stops at that folder as at any skill, and
+    the reader decides whether it loads."""
 
     def __post_init__(self) -> None:
         if self.traversal not in ("immediate_children", "recursive"):
             raise ValueError(f"unknown skill traversal: {self.traversal!r}")
         if self.nested_skills not in ("include", "stop_at_skill"):
             raise ValueError(f"unknown nested skill rule: {self.nested_skills!r}")
+        if self.skill_marker not in ("file", "any_entry"):
+            raise ValueError(f"unknown skill marker: {self.skill_marker!r}")
         if not _is_depth(self.max_depth, allow_none=True):
             raise ValueError("max_depth must be None or an integer of at least 1")
         if not isinstance(self.subroot_depths, Mapping):
@@ -869,7 +877,7 @@ def _discover(
     while queue:
         visit = queue.popleft()
         current = visit.folder
-        is_skill = _is_file(current.reached / SKILL_FILE)
+        is_skill = _marks_skill(current.reached / SKILL_FILE, rules.skill_marker)
         if visit.level:
             if is_skill and current.identity not in claimed:
                 claimed.add(current.identity)
@@ -1004,6 +1012,16 @@ def _is_file(path: Path) -> bool:
         return stat.S_ISREG(os.stat(path).st_mode)
     except (OSError, ValueError):
         return False
+
+
+def _marks_skill(skill_file: Path, marker: str) -> bool:
+    if marker == "file":
+        return _is_file(skill_file)
+    try:
+        os.lstat(skill_file)
+    except (OSError, ValueError):
+        return False
+    return True
 
 
 def _identity(directory: Path) -> tuple[int, int] | Path:

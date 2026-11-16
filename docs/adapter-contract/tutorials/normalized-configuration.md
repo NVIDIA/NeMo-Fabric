@@ -285,6 +285,10 @@ def load_skills(config: AgentConfig):
      path is outside the entry. Such a skill is skipped with `path_escape`.
    - `subroot_depths`: a root child, such as `skills`, that the harness
      searches to a different depth than the rest of the entry.
+   - `skill_marker="any_entry"`: the harness treats any entry named
+     `SKILL.md`, even a folder or a broken link, as marking a skill, so
+     discovery stops there. The reader then decides whether it loads. The
+     default, `"file"`, needs a `SKILL.md` file.
 
    When entries need different rules, pass a function of the entry's index,
    kind, and resolved path as `rules`. `DiscoveryRules` describe only the

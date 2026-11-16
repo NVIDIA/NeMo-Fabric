@@ -512,6 +512,52 @@ def test_skill_entry_includes_nested_skills_only_when_rules_do(
     ]
 
 
+@pytest.mark.parametrize("entry", ["folder", "broken_link"])
+@pytest.mark.parametrize(("marker", "found"), [("file", ["nested"]), ("any_entry", [])])
+def test_skill_marker_decides_which_skill_md_entries_stop_discovery(
+    tmp_path: Path,
+    make_skill: Callable[..., Path],
+    entry: str,
+    marker: str,
+    found: list[str],
+):
+    """With ``any_entry``, a SKILL.md that is a folder or a broken link marks a
+    skill, so discovery stops there and the unreadable copy is skipped."""
+    boundary = tmp_path / "team" / "boundary"
+    make_skill(boundary / "nested", "nested")
+    if entry == "folder":
+        (boundary / "SKILL.md").mkdir()
+    else:
+        if os.name == "nt":
+            pytest.skip("Requires symbolic links")
+        (boundary / "SKILL.md").symlink_to(tmp_path / "missing.md")
+    rules = DiscoveryRules(
+        traversal="recursive",
+        nested_skills="stop_at_skill",
+        max_depth=None,
+        skill_marker=marker,  # type: ignore[arg-type]
+    )
+
+    load = load_directories(
+        [{"folder": tmp_path / "team"}], rules=rules, duplicates="reject"
+    )
+
+    assert [skill.name for skill in load.selected] == found
+    assert [(skipped.path, skipped.reason) for skipped in load.skipped] == (
+        [] if found else [(boundary.resolve(), "unreadable")]
+    )
+
+
+def test_skill_marker_must_be_known():
+    with pytest.raises(ValueError, match="skill marker"):
+        DiscoveryRules(
+            traversal="recursive",
+            nested_skills="stop_at_skill",
+            max_depth=None,
+            skill_marker="name",  # type: ignore[arg-type]
+        )
+
+
 def test_symlink_loops_are_not_followed(
     tmp_path: Path, make_skill: Callable[..., Path]
 ):

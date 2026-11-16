@@ -127,8 +127,9 @@ The adapter skips a skill that OpenClaw refuses before it applies `duplicates`, 
 - `no_name`: The skill has no `name`, and its folder name is empty after trimming.
 - `unreadable`: The `SKILL.md` can't be read.
 - `hardlinked_skill_file`: The `SKILL.md` has more than one hard link. OpenClaw refuses it outside its shipped skills. When `OPENCLAW_NIX_MODE` is `1`, OpenClaw accepts it in the Nix store, and so does the adapter.
+- `path_escape`: The `SKILL.md` resolves outside the skill's folder, such as a symbolic link to a file elsewhere.
 
-OpenClaw skips any other skill it cannot load, such as one whose `SKILL.md` is a symbolic link to a file outside the skill's folder. The run report lists those with the reason `rejected_by_openclaw`.
+OpenClaw skips any other skill it cannot load. The run report lists those with the reason `rejected_by_openclaw`.
 
 If `node` or the parser can't be found, or the parser fails or doesn't finish in time, the adapter writes one warning and reads simple front matter instead. Refer to [How the Adapter Reads a Skill](../skills.mdx#how-the-adapter-reads-a-skill). The adapter then can't tell which skills OpenClaw refuses:
 

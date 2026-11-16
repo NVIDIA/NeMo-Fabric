@@ -20,8 +20,10 @@ rules are chosen per entry:
   ``folder`` entry like that fails start with ``folder_is_skill``.
 - Otherwise OpenClaw scans the root, or its ``skills/`` subfolder when only
   that subfolder holds skills (``resolveNestedSkillsRoot``). It stops at the
-  first ``SKILL.md`` on each path and skips folders whose name starts with
-  ``.`` and ``node_modules``.
+  first entry named ``SKILL.md`` on each path, even a folder or a broken link
+  (``hasSkillFileCandidate``), and skips folders whose name starts with
+  ``.`` and ``node_modules``. A ``SKILL.md`` that is not a readable file is
+  skipped with ``unreadable``, and nothing below it is passed.
 - The scanned folder is searched 2 levels deep, or 6 when it is named
   ``skills``. Its own child named ``skills`` restarts the count and is
   searched 6 levels deep, whatever the scanned folder is called
@@ -57,8 +59,12 @@ rules are chosen per entry:
   ``folder`` entry passed whole loads a linked skill once per name, and each
   name is reported (:func:`_with_alias_copies`).
 
-At start ``openclaw skills list`` reports any other skill OpenClaw refuses,
-such as one whose ``SKILL.md`` links outside its folder; under ``first_wins``
+- A ``SKILL.md`` whose real path is outside its skill folder's real path is
+  skipped too (``resolveSkillFilePath``), and reported with ``path_escape``
+  before any duplicate check.
+
+At start ``openclaw skills list`` reports any other skill OpenClaw refuses;
+under ``first_wins``
 or ``last_wins`` the next copy replaces a refused winner. The list names each
 skill's source but not its folder, so ``openclaw skills info`` locates the
 loaded copy of each name the list leaves open (:func:`names_to_locate`): a
@@ -376,8 +382,11 @@ def plan(
                 if name in result.inventory.custodian
                 and name not in result.inventory.skills
             ]
-    # OpenClaw refuses a hard-linked SKILL.md outside its shipped skills.
-    unshipped = _refusing_hardlinks(reader, nix_mode=nix_mode)
+    # OpenClaw refuses a SKILL.md whose real path leaves its folder, then a
+    # hard-linked SKILL.md outside its shipped skills.
+    unshipped = _refusing_hardlinks(
+        _refusing_escaped_skill_files(reader), nix_mode=nix_mode
+    )
     if skills.directories is None:
         load = contract_skills.DirectoryLoad()
     else:
@@ -647,11 +656,15 @@ class OpenClawReader:
         parse: list[Path] = []
         for folder in folders:
             try:
-                size = os.stat(folder / SKILL_FILE).st_size
+                status = os.stat(folder / SKILL_FILE)
             except OSError:
+                status = None
+            # A SKILL.md that is a folder or a broken link marks a skill that
+            # OpenClaw can't read.
+            if status is None or not stat.S_ISREG(status.st_mode):
                 infos[folder] = CandidateInfo(None, valid=False, reason="unreadable")
                 continue
-            if size > MAX_SKILL_FILE_BYTES:
+            if status.st_size > MAX_SKILL_FILE_BYTES:
                 infos[folder] = CandidateInfo(
                     None, valid=False, reason="file_too_large"
                 )
@@ -1186,6 +1199,8 @@ def _rules(max_depth: int, hidden: frozenset[str]) -> contract_skills.DiscoveryR
         excluded_dir_names=frozenset({"node_modules"}) | hidden,
         allow_symlink_escape=False,
         subroot_depths={"skills": SKILLS_ROOT_DEPTH},
+        # OpenClaw stops at any entry named SKILL.md (hasSkillFileCandidate).
+        skill_marker="any_entry",
     )
 
 
@@ -1781,6 +1796,31 @@ def _with_alias_copies(
             if len(copies) > 1
         ],
     )
+
+
+def _refusing_escaped_skill_files(
+    reader: contract_skills.CandidateReader,
+) -> contract_skills.CandidateReader:
+    """Return ``reader`` refusing a ``SKILL.md`` that resolves outside its folder.
+
+    OpenClaw resolves each candidate's ``SKILL.md`` and skips it unless the
+    real path is inside the skill folder's real path
+    (``resolveSkillFilePath``); the adapter trusts no
+    ``skills.load.allowSymlinkTargets``. Such a copy is refused with
+    ``path_escape`` before it is parsed, so it never counts as a copy. A
+    ``SKILL.md`` that can't be resolved is left to ``reader``.
+    """
+
+    def read(folders: Sequence[Path]) -> Mapping[Path, CandidateInfo]:
+        escaped = {
+            folder for folder in folders if not _contained(folder / SKILL_FILE, folder)
+        }
+        infos = dict(reader([folder for folder in folders if folder not in escaped]))
+        for folder in escaped:
+            infos[folder] = CandidateInfo(None, valid=False, reason="path_escape")
+        return infos
+
+    return read
 
 
 def _refusing_hardlinks(
