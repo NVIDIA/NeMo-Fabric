@@ -200,6 +200,67 @@
     "additionalProperties": false
   },
   "requirements": {},
+  "config_schema": {
+    "type": "object",
+    "description": "The local_shell backend requires an explicit tools.enabled allowlist (including an empty list) or execute in tools.blocked.",
+    "if": {
+      "required": ["harness"],
+      "properties": {
+        "harness": {
+          "required": ["settings"],
+          "properties": {
+            "settings": {
+              "required": ["deepagents"],
+              "properties": {
+                "deepagents": {
+                  "required": ["backend"],
+                  "properties": {
+                    "backend": {
+                      "required": ["type"],
+                      "properties": {
+                        "type": {
+                          "const": "local_shell"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "then": {
+      "required": ["tools"],
+      "properties": {
+        "tools": {
+          "type": "object",
+          "anyOf": [
+            {
+              "required": ["enabled"],
+              "properties": {
+                "enabled": {
+                  "type": "array"
+                }
+              }
+            },
+            {
+              "required": ["blocked"],
+              "properties": {
+                "blocked": {
+                  "type": "array",
+                  "contains": {
+                    "const": "execute"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
   "config": {
     "accepts": [
       "models",

@@ -66,6 +66,7 @@ translation:
   and the four `supports_*` flags), and `duplicates` for `skills.duplicates`
   (`supported_policies`). Planning rejects a structured skill field that the
   block does not cover. `skills.paths` needs only `skills` in `config.accepts`.
+- Declare static cross-field requirements in optional `config_schema`, evaluated against serialized northbound `FabricConfig` by both planning and metadata-only admission. Keep unrelated top-level fields open, use flattened northbound extension names, and keep schema references local. This adds constraints; it does not expand `config.accepts`. Use it for required workflow selection or a tool policy conditional on harness settings. Do not mirror installed native model catalogs or claim runtime health from host validation.
 - Publish closed `settings_schema`, `model_schema`, `tool_definition_schema`,
   and `extension_schemas` where applicable. Use
   `model_schema` only for static model/provider compatibility and model settings;

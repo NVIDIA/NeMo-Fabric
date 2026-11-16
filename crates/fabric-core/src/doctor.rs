@@ -695,6 +695,50 @@ mod tests {
     }
 
     #[test]
+    fn diagnoses_invalid_config_schema_and_other_compatibility_issues() {
+        let config: FabricConfig = serde_json::from_value(serde_json::json!({
+            "schema_version": "fabric.agent/v1alpha1",
+            "metadata": {"name": "invalid-schema-agent"},
+            "runtime": {},
+            "harness": {
+                "adapter_id": "nvidia.fabric.codex",
+                "resolution": "preinstalled"
+            }
+        }))
+        .expect("typed config");
+        let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut plan = resolve_run_plan_from_config(config, ResolveContext::new(base_dir))
+            .expect("typed plan");
+        plan.adapter_descriptor
+            .as_mut()
+            .expect("adapter descriptor")
+            .descriptor
+            .config_schema = Some(
+            serde_json::json!({"type": "object", "minimum": "PRIVATE_SCHEMA_VALUE"})
+                .as_object()
+                .expect("schema object")
+                .clone(),
+        );
+        plan.config.runtime.max_turns = Some(3);
+
+        let report = doctor_plan(&plan);
+
+        assert_eq!(report.status, DoctorStatus::Fail);
+        for field in ["config_schema", "runtime.max_turns"] {
+            assert!(report.checks.iter().any(|check| {
+                check.name == "config.unsupported"
+                    && check.status == DoctorStatus::Fail
+                    && check.metadata.get("field") == Some(&Value::String(field.to_string()))
+            }));
+        }
+        assert!(
+            !serde_json::to_string(&report)
+                .expect("doctor JSON")
+                .contains("PRIVATE_SCHEMA_VALUE")
+        );
+    }
+
+    #[test]
     fn diagnoses_unsupported_system_instruction_mode_at_exact_field() {
         let config: FabricConfig = serde_json::from_value(serde_json::json!({
             "schema_version": "fabric.agent/v1alpha1",
