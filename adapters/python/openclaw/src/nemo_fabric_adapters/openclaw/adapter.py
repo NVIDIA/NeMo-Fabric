@@ -2157,7 +2157,6 @@ class OpenClawRuntime:
             raise lifecycle.LifecycleError(
                 "openclaw_stop_failed",
                 "OpenClaw Gateway is still running after process cleanup",
-                retryable=True,
                 metadata={"pid": self._process.pid},
             )
 

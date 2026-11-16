@@ -1693,7 +1693,7 @@ async def test_openclaw_stop_reports_a_surviving_gateway(
         await runtime.stop()
 
     assert caught.value.code == "openclaw_stop_failed"
-    assert caught.value.retryable
+    assert not caught.value.retryable
     assert runtime._process is mock_process
 
     mock_process.returncode = 0
