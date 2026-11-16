@@ -278,3 +278,47 @@ async def test_health_workers_recover_while_provider_descendants_hold_pipes(
         with suppress(Exception):
             await asyncio.wait_for(invoked, 5)
         await owned.stop()
+
+
+async def test_real_sdk_busy_stop_exits_host_and_native_child(
+    blocking_adapter_config, tmp_path, process_is_running
+):
+    (tmp_path / "spawn-harness").touch()
+    host = RuntimeServer(directory=tmp_path)
+    command = {"interface_version": 2, "agent": "blocking"}
+    started = await host.handle(
+        {
+            **command,
+            "operation": "start",
+            "config": blocking_adapter_config.to_mapping(),
+        }
+    )
+    assert started["status"] == "succeeded", started
+    runtime_id = started["result"]["runtime_id"]
+    command["runtime_id"] = runtime_id
+    owned = host.runtimes[runtime_id].runtime
+    task = asyncio.create_task(
+        host.handle({**command, "operation": "invoke", "input": "slow"})
+    )
+    try:
+        async with asyncio.timeout(5):
+            while not (tmp_path / "entered").exists():
+                await asyncio.sleep(0.01)
+        pids = [
+            int((tmp_path / name).read_text())
+            for name in ("adapter.pid", "harness.pid")
+        ]
+        response = await asyncio.wait_for(
+            host.handle({**command, "operation": "stop"}), 5
+        )
+        assert response["status"] == "succeeded", response
+        invoked = await asyncio.wait_for(task, 1)
+        assert invoked["error"]["code"] == "invoke_failed"
+        assert "Cause: interrupted." in invoked["error"]["message"]
+        assert all(not process_is_running(pid) for pid in pids)
+        assert host.runtimes[runtime_id].state == "stopped"
+    finally:
+        (tmp_path / "release").touch()
+        with suppress(Exception):
+            await task
+            await owned.stop()
