@@ -120,7 +120,7 @@ NeMo Fabric maps the following into the harness:
   from `token_url` with the secret read from `client_secret_env`, sends it as a
   bearer token, renews it before it expires, and on a `401` requests a new token
   and retries the request once. The token is kept in memory only. A missing
-  secret variable, a non-`https` `token_url` (plain `http` is accepted only for
+  secret variable, a `stdio` or `websocket` server, a non-`https` `token_url` (plain `http` is accepted only for
   a loopback host), a non-`https` server `url` (same exception), or an
   `Authorization` custom header on the same server fails startup. The server is
   skipped and reported with reason `authentication_required` when the token

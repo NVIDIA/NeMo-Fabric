@@ -580,6 +580,12 @@ def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
             f"MCP server '{name}' requires a url (or command in url)."
         )
     if transport in ("stdio", "command", "process"):
+        if spec.authentication is not None:
+            # A local process has no HTTP requests to carry a token.
+            raise AdapterConfigError(
+                f"MCP server {name!r} does not support {spec.authentication.type} "
+                "authentication with the stdio transport."
+            )
         connection: dict[str, Any] = {
             "transport": "stdio",
             "command": target,

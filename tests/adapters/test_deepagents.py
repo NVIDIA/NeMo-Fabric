@@ -2703,6 +2703,19 @@ def test_service_account_configuration_errors(
     assert SERVICE_ACCOUNT_SECRET not in str(raised.value)
 
 
+def test_service_account_is_rejected_for_stdio_servers():
+    with pytest.raises(
+        adapter.AdapterConfigError,
+        match="service_account authentication with the stdio transport",
+    ):
+        adapter._mcp_connection(
+            "jira",
+            AgentMcpServerConfig(
+                transport="stdio", url="jira-mcp", authentication=_service_account()
+            ),
+        )
+
+
 @pytest.mark.parametrize(
     ("url", "accepted"),
     [("http://mcp.example.test/mcp", False), ("http://127.0.0.1:8000/mcp", True)],
