@@ -1015,6 +1015,10 @@ async def _run_to_completion(func: Callable[..., T], *args: Any) -> T:
     calls stop, which restores the bundled-skill environment and removes the
     staged folder, and a later runtime can then reuse the home. So a thread
     that writes the home or the staged folder must finish first.
+
+    The wait has no timeout of its own. Fabric bounds start from outside: at
+    its start deadline it terminates the adapter host process, thread
+    included. A bound here would let stop run while the thread still writes.
     """
 
     worker = asyncio.ensure_future(asyncio.to_thread(func, *args))
