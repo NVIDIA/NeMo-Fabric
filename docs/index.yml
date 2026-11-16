@@ -8,6 +8,8 @@ navigation:
         path: ./about-nemo-fabric/overview.mdx
       - page: Ecosystem
         path: ./about-nemo-fabric/ecosystem.mdx
+      - page: Supported Harnesses
+        path: ./about-nemo-fabric/supported-harnesses.mdx
       - page: Release Notes
         path: ./about-nemo-fabric/release-notes.mdx
   - section: Getting Started

@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
+import posixpath
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote, urlsplit
@@ -210,6 +211,81 @@ def rewrite_repository_links(pages_dir: Path, source_root: Path) -> None:
             page.write_text(updated, encoding="utf-8")
 
 
+def rewrite_internal_card_links(pages_dir: Path) -> None:
+    """Resolve source-file Card links only in the published copy.
+
+    Fern resolves Markdown links but leaves Card href props literal. Keeping
+    source paths in authored pages preserves repository navigation; resolving
+    them here keeps versioned site navigation relative to the current product.
+    """
+    pages_dir = pages_dir.resolve()
+    slugs: dict[Path, str] = {}
+    card_link = re.compile(r"(<Card\b[^>]*?\bhref=)([\"'])([^\"']+)\2")
+
+    def page_slug(page: Path) -> str:
+        if page not in slugs:
+            text = page.read_text(encoding="utf-8")
+            header = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)", text, re.S)
+            metadata = yaml.safe_load(header[1]) if header else {}
+            value = metadata.get("slug") if isinstance(metadata, dict) else None
+            if not isinstance(value, str) or not value.startswith("/"):
+                raise ValueError(
+                    f"Card source links require an explicit page slug: {page}"
+                )
+            slugs[page] = value
+        return slugs[page]
+
+    for page in pages_dir.rglob("*"):
+        if not page.is_file() or page.suffix not in {".md", ".mdx"}:
+            continue
+
+        def replace(match: re.Match[str]) -> str:
+            target = urlsplit(match[3])
+            if (
+                target.scheme
+                or target.netloc
+                or not target.path.endswith((".md", ".mdx"))
+            ):
+                return match[0]
+            linked = (page.parent / unquote(target.path)).resolve()
+            if not linked.is_relative_to(pages_dir) or not linked.is_file():
+                raise ValueError(
+                    f"Card destination does not exist within docs: {page}: {match[3]}"
+                )
+            route = posixpath.relpath(
+                page_slug(linked), posixpath.dirname(page_slug(page))
+            )
+            if target.query:
+                route += "?" + target.query
+            if target.fragment:
+                route += "#" + target.fragment
+            return match[1] + match[2] + route + match[2]
+
+        original = page.read_text(encoding="utf-8")
+        rewritten: list[str] = []
+        chunk: list[str] = []
+        fence: str | None = None
+        for line in original.splitlines(keepends=True):
+            marker = re.match(r"^\s*(`{3,}|~{3,})", line)
+            if marker:
+                if fence is None:
+                    rewritten.append(card_link.sub(replace, "".join(chunk)))
+                    chunk.clear()
+                    fence = marker[1]
+                elif marker[1][0] == fence[0] and len(marker[1]) >= len(fence):
+                    fence = None
+                rewritten.append(line)
+            else:
+                if fence:
+                    rewritten.append(line)
+                else:
+                    chunk.append(line)
+        rewritten.append(card_link.sub(replace, "".join(chunk)))
+        updated = "".join(rewritten)
+        if updated != original:
+            page.write_text(updated, encoding="utf-8")
+
+
 def sync_dev(source_root: Path, target_root: Path) -> None:
     source_docs = source_root / "docs"
     source_fern = source_root / "fern"
@@ -230,6 +306,7 @@ def sync_dev(source_root: Path, target_root: Path) -> None:
     shutil.copytree(source_docs, pages_dev, ignore=docs_ignore)
     prepare_generated_python_references_for_fern(pages_dev)
     rewrite_repository_links(pages_dev, source_root)
+    rewrite_internal_card_links(pages_dev)
 
     navigation = read_yaml(source_docs / "index.yml")
     write_yaml(
@@ -288,6 +365,7 @@ def release_version(target_root: Path, tag: str, source_root: Path) -> None:
     shutil.copytree(source_docs, pages_version, ignore=docs_ignore)
     prepare_generated_python_references_for_fern(pages_version)
     rewrite_repository_links(pages_version, source_root)
+    rewrite_internal_card_links(pages_version)
     copy_repository_assets(source_root, target_fern)
     update_github_links(pages_version, display_tag, source_root)
     version_navigation = rewrite_doc_references(
