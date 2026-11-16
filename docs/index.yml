@@ -50,59 +50,55 @@ navigation:
     - page: Kiro Adapter
       path: ./getting-started/install-kiro.mdx
       hidden: true
-  - page: Packages and Distribution
-    path: ./getting-started/artifacts.mdx
-  - page: Development Setup and Building from Source
-    path: ./contributing/setup.mdx
-    hidden: true
-- section: Experimentation
-  contents:
-  - page: CLI
-    path: ./experimentation/cli.mdx
-- section: SDK
-  contents:
-  - page: Python SDK
-    path: ./sdk/python.mdx
-  - page: Health Checks
-    path: ./sdk/health-checks.mdx
-  - page: Resource Usage and Stats
-    path: ./sdk/system-stats.mdx
-- section: Adapter Contract
+- section: Consumers
+  collapsed: open-by-default
   contents:
   - page: Overview
-    path: ./adapter-contract/README.md
-  - page: Custom-Agent Integrations
-    path: ./adapter-contract/custom-agents.md
-  - section: Tutorials
-    contents:
-    - page: Describe Adapter
-      path: ./adapter-contract/tutorials/adapter-descriptor.md
-    - page: Map Normalized Configuration
-      path: ./adapter-contract/tutorials/normalized-configuration.md
-    - page: Implement Execution
-      path: ./adapter-contract/tutorials/execution.md
-    - page: Normalize Results and Telemetry
-      path: ./adapter-contract/tutorials/results.md
-    - page: Register and Discover Adapter
-      path: ./adapter-contract/tutorials/registration-and-discovery.md
-    - page: Verify Adapter
-      path: ./adapter-contract/tutorials/conformance.md
-  - page: Optional OpenAI Streaming
-    path: ./adapter-contract/openai-streaming.md
-  - page: Examples and References
-    path: ./adapter-contract/examples.md
-- section: Integrations
-  contents:
+    path: ./integrations/consumers.mdx
+  - page: Python SDK
+    path: ./sdk/python.mdx
   - section: Consumer Integrations
+    path: ./integrations/consumer/overview.mdx
     contents:
-    - page: Overview
-      path: ./integrations/consumer/overview.mdx
-    - page: Harbor
-      path: ./integrations/consumer/harbor.mdx
+    - section: Deployments
+      contents:
+      - page: NVIDIA NemoClaw
+        path: ./integrations/consumer/nemoclaw.mdx
+      - page: NVIDIA NeMo Helix
+        path: ./integrations/consumer/helix.mdx
+    - section: Benchmarking & Evaluation
+      contents:
+      - page: Harbor Framework
+        path: ./integrations/consumer/harbor.mdx
+      - page: NVIDIA NeMo Gym
+        path: ./integrations/consumer/gym.mdx
+      - page: NVIDIA NeMo Polar
+        path: ./integrations/consumer/polar.mdx
+  - section: CLI (Experimental)
+    path: ./experimentation/cli.mdx
+    contents:
+    - page: Install
+      path: ./experimentation/install.mdx
+    - page: Presets
+      path: ./experimentation/presets.mdx
+    - page: Examples
+      path: ./experimentation/examples.mdx
+    - page: Scaffold an Application
+      path: ./experimentation/scaffold.mdx
+  - page: Health Checks
+    path: ./sdk/health-checks.mdx
+    hidden: true
+  - page: Resource Usage and Stats
+    path: ./sdk/system-stats.mdx
+    hidden: true
+- section: Harnesses
+  collapsed: open-by-default
+  contents:
+  - page: Overview
+    path: ./integrations/harnesses.mdx
   - section: Harness Integrations
+    path: ./integrations/harness/overview.mdx
     contents:
-    - page: Overview
-      path: ./integrations/harness/overview.mdx
     - page: Configure Skills
       path: ./integrations/harness/skills.mdx
     - page: Claude Code
@@ -113,16 +109,18 @@ navigation:
       path: ./integrations/harness/cline.mdx
     - page: Factory Droid
       path: ./integrations/harness/droid.mdx
-    - page: Hermes Agent
+    - section: Hermes Agent
+      collapsed: true
       path: ./integrations/harness/hermes/hermes.mdx
-    - page: Hermes SDK
-      path: ./integrations/harness/hermes/hermes-sdk.mdx
-    - page: Hermes API
-      path: ./integrations/harness/hermes/hermes-api.mdx
-    - page: Hermes Dashboard
-      path: ./integrations/harness/hermes/hermes-dashboard.mdx
-    - page: Hermes Terminal TUI
-      path: ./integrations/harness/hermes/hermes-tui.mdx
+      contents:
+      - page: SDK
+        path: ./integrations/harness/hermes/hermes-sdk.mdx
+      - page: HTTP API
+        path: ./integrations/harness/hermes/hermes-api.mdx
+      - page: Dashboard
+        path: ./integrations/harness/hermes/hermes-dashboard.mdx
+      - page: Terminal TUI
+        path: ./integrations/harness/hermes/hermes-tui.mdx
     - page: LangChain Deep Agents
       path: ./integrations/harness/deepagents.mdx
     - page: Kilo Code
@@ -133,16 +131,20 @@ navigation:
       path: ./integrations/harness/strands.mdx
     - page: mini-SWE-agent
       path: ./integrations/harness/mini-swe-agent.mdx
-    - page: OpenClaw
+    - page: NOOA
+      path: ./integrations/harness/nooa.mdx
+    - section: OpenClaw
+      collapsed: true
       path: ./integrations/harness/openclaw/openclaw.mdx
-    - page: OpenClaw SDK
-      path: ./integrations/harness/openclaw/openclaw-sdk.mdx
-    - page: OpenClaw HTTP API
-      path: ./integrations/harness/openclaw/openclaw-api.mdx
-    - page: OpenClaw Dashboard
-      path: ./integrations/harness/openclaw/openclaw-dashboard.mdx
-    - page: OpenClaw Terminal TUI
-      path: ./integrations/harness/openclaw/openclaw-tui.mdx
+      contents:
+      - page: SDK
+        path: ./integrations/harness/openclaw/openclaw-sdk.mdx
+      - page: HTTP API
+        path: ./integrations/harness/openclaw/openclaw-api.mdx
+      - page: Dashboard
+        path: ./integrations/harness/openclaw/openclaw-dashboard.mdx
+      - page: Terminal TUI
+        path: ./integrations/harness/openclaw/openclaw-tui.mdx
     - page: OpenHands
       path: ./integrations/harness/openhands.mdx
     - page: OpenCode
@@ -153,36 +155,81 @@ navigation:
       path: ./integrations/harness/qwen.mdx
     - page: Remote Agent
       path: ./integrations/harness/remote-agent.mdx
-- section: Reference
-  contents:
-  - section: API
+  - section: Adapter Contract
     contents:
-    - section: Python Library Reference
+    - section: Tutorials
       contents:
-      - page: Overview
-        path: ./reference/api/python-library-reference/index.md
-      - page: Client
-        path: ./reference/api/python-library-reference/nemo_fabric.client.md
-      - page: Adapter Capability Inspection
-        path: ./reference/api/python-library-reference/nemo_fabric.capabilities.md
-      - page: Runtime Health
-        path: ./reference/api/python-library-reference/nemo_fabric.check.md
-      - page: Runtime
-        path: ./reference/api/python-library-reference/nemo_fabric.runtime.md
-      - page: Service
-        path: ./reference/api/python-library-reference/nemo_fabric.service.md
-      - page: Relay Streaming
-        path: ./reference/api/python-library-reference/nemo_fabric.streaming.md
-      - page: OpenAI Streaming
-        path: ./reference/api/python-library-reference/nemo_fabric.openai_streaming.md
-      - page: Models
-        path: ./reference/api/python-library-reference/nemo_fabric.models.md
-      - page: Types
-        path: ./reference/api/python-library-reference/nemo_fabric.types.md
-      - page: Errors
-        path: ./reference/api/python-library-reference/nemo_fabric.errors.md
-    - folder: ./reference/api/rust-library-reference
-      title: Rust Library Reference
+      - page: 1. Describe the Adapter
+        path: ./adapter-contract/tutorials/adapter-descriptor.md
+      - page: 2. Map Normalized Configuration
+        path: ./adapter-contract/tutorials/normalized-configuration.md
+      - page: 3. Implement Execution
+        path: ./adapter-contract/tutorials/execution.md
+      - page: 4. Normalize Results and Telemetry
+        path: ./adapter-contract/tutorials/results.md
+      - page: 5. Register and Discover the Adapter
+        path: ./adapter-contract/tutorials/registration-and-discovery.md
+      - page: 6. Verify the Adapter
+        path: ./adapter-contract/tutorials/conformance.md
+    - page: Custom-Agent Integrations
+      path: ./adapter-contract/custom-agents.md
+    - page: Optional Native OpenAI Streaming
+      path: ./adapter-contract/openai-streaming.md
+    - page: Examples and References
+      path: ./adapter-contract/examples.md
+    path: ./adapter-contract/README.md
+- section: Troubleshooting
+  path: ./troubleshooting.mdx
+  contents: []
+- section: Contributing
+  collapsed: true
+  contents:
+  - page: Overview
+    path: ./contributing/overview.mdx
+  - page: Development Setup and Building from Source
+    path: ./contributing/setup.mdx
+  - page: Testing and Validation
+    path: ./contributing/testing.mdx
+  - page: Documentation Contributions
+    path: ./contributing/documentation.mdx
+- section: Reference
+  collapsed: true
+  contents:
+  - section: Python API Reference
+    contents:
+    - page: Client
+      path: ./reference/api/python-library-reference/nemo_fabric.client.md
+    - page: Adapter Capability Inspection
+      path: ./reference/api/python-library-reference/nemo_fabric.capabilities.md
+    - page: Runtime Health
+      path: ./reference/api/python-library-reference/nemo_fabric.check.md
+    - page: Runtime
+      path: ./reference/api/python-library-reference/nemo_fabric.runtime.md
+    - page: Service
+      path: ./reference/api/python-library-reference/nemo_fabric.service.md
+    - page: Relay Streaming
+      path: ./reference/api/python-library-reference/nemo_fabric.streaming.md
+    - page: OpenAI Streaming
+      path: ./reference/api/python-library-reference/nemo_fabric.openai_streaming.md
+    - page: Models
+      path: ./reference/api/python-library-reference/nemo_fabric.models.md
+    - page: Types
+      path: ./reference/api/python-library-reference/nemo_fabric.types.md
+    - page: Errors
+      path: ./reference/api/python-library-reference/nemo_fabric.errors.md
+    path: ./reference/api/python-library-reference/index.md
+    collapsed: true
+  - page: SDK API Inventory
+    path: ./reference/api-inventory.mdx
+  - page: Harness Compatibility
+    path: ./reference/compatibility.mdx
+  - page: Configuration and Schemas
+    path: ./reference/configuration.mdx
+  - page: Packages and Distribution
+    path: ./getting-started/artifacts.mdx
+  - folder: ./reference/api/rust-library-reference
+    title: Rust Library Reference
+    slug: api/rust-library-reference
 - section: Resources
   contents:
   - folder: ./resources/legal
