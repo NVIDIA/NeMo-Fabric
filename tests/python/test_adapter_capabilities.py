@@ -665,3 +665,20 @@ def test_workflow_malformed_metadata_raises_in_both_modes(
         inspect_adapter(
             config, descriptor, target_descriptor=target, diagnostics=diagnostics
         )
+
+
+@pytest.mark.parametrize("failure", ["provider", "atif"])
+def test_telemetry_compatibility_is_reported_in_diagnostic_mode(
+    custom_config, custom_descriptor, failure
+):
+    custom_config.enable_relay(observability={"atif": {"enabled": True}})
+    if failure == "provider":
+        custom_descriptor["telemetry"]["providers"] = {}
+    else:
+        custom_descriptor["telemetry"]["providers"]["relay"]["outputs"] = ["otel"]
+    with pytest.raises(FabricConfigError):
+        inspect_adapter(custom_config, custom_descriptor)
+    report = inspect_adapter(custom_config, custom_descriptor, diagnostics=True)
+    assert report.capability_profile is None
+    assert len(report.issues) == 1
+    assert report.issues[0].field.startswith("telemetry.providers")

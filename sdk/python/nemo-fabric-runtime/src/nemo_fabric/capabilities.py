@@ -212,11 +212,21 @@ def inspect_adapter(
             len(observability) != 1
             or "atif" not in providers.get("relay", {}).get("outputs", [])
         ):
-            raise FabricConfigError(
+            reason = (
                 f"Cannot confirm requested Relay ATIF output for {adapter_id}: "
                 "the provider must declare ATIF and exactly one observability "
                 "component must enable it"
             )
+            if diagnostics:
+                return AdapterInspection(
+                    issues=[
+                        AdapterCompatibilityIssue(
+                            adapter_id, "telemetry.providers.relay", reason
+                        )
+                    ],
+                    capability_profile=None,
+                )
+            raise FabricConfigError(reason)
         if len(observability) == 1:
             relay_atif = enabled_outputs[0]
     profile = AdapterCapabilityProfile(

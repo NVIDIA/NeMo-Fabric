@@ -760,7 +760,7 @@ def admission_fingerprint(
     )
     return inspect_adapter(
         FabricConfig.from_mapping(spec["config"]), descriptor, **options
-    ).descriptor_sha256
+    ).capability_profile.descriptor_sha256
 
 
 def valid_selection(selected: dict, row: dict, target: dict | None = None) -> bool:

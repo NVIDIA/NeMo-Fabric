@@ -2647,8 +2647,19 @@ fn inspect_metadata_compatibility(
             });
         }
     }
-    // Telemetry validation is independent of the model/tool/MCP diagnostics.
-    resolve_telemetry_plan(config, Some(descriptor))?;
+    // Telemetry retains a first-error boundary, but valid incompatible input
+    // still belongs in a diagnostic report rather than an input error.
+    match resolve_telemetry_plan(config, Some(descriptor)) {
+        Ok(_) => {}
+        Err(FabricError::AdapterDescriptorUnsupported { field, .. }) => {
+            issues.push(AdapterCompatibilityIssue {
+                adapter_id: descriptor.adapter_id.clone(),
+                field: field.to_string(),
+                reason: "the adapter does not declare the selected telemetry provider".to_string(),
+            });
+        }
+        Err(error) => return Err(error),
+    }
     issues.sort_by(|a, b| (&a.field, &a.reason).cmp(&(&b.field, &b.reason)));
     issues.dedup();
     Ok(issues)
