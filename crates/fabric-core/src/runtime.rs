@@ -95,8 +95,8 @@ const LOCAL_HOST_START_TIMEOUT: Duration = Duration::from_secs(90);
 // Adapters receive a deadline this much earlier than the host timeout so they
 // can interrupt native work and return a normalized result before it fires.
 const LOCAL_HOST_ADAPTER_RESERVE: Duration = Duration::from_secs(10);
-// Allow the OpenClaw Gateway's 15-second graceful stop plus adapter cleanup.
-const LOCAL_HOST_STOP_TIMEOUT: Duration = Duration::from_secs(30);
+// Default protocol stop budget. A descriptor can allow a longer native shutdown.
+const LOCAL_HOST_STOP_TIMEOUT: Duration = Duration::from_secs(10);
 const LOCAL_HOST_EXIT_GRACE: Duration = Duration::from_secs(2);
 const LOCAL_HOST_DIAGNOSTIC_LIMIT: usize = 16 * 1024;
 #[cfg(test)]
@@ -947,6 +947,7 @@ struct RelayRuntimeConfig {
 }
 
 struct LocalAdapterHost {
+    stop_timeout: Duration,
     cleanup_pending: bool,
     cleanup_scope: LocalCleanupScope,
     #[cfg(unix)]
@@ -2116,12 +2117,9 @@ impl RuntimeAdapter for LocalHostAdapter {
             AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Stop(AdapterLifecycleStop {
                 runtime_id: runtime.runtime_id.clone(),
             }));
-        let result = exchange_lifecycle_message(
-            &mut guard,
-            &runtime.runtime_id,
-            &request,
-            LOCAL_HOST_STOP_TIMEOUT,
-        );
+        let stop_timeout = guard.stop_timeout;
+        let result =
+            exchange_lifecycle_message(&mut guard, &runtime.runtime_id, &request, stop_timeout);
         terminate_local_host(&mut guard).map_err(|_| cleanup_unconfirmed(runtime))?;
         confirm_stopped_descendants(runtime, &guard.pending_stop)?;
         remove_local_host_files(&guard).map_err(|_| cleanup_unconfirmed(runtime))?;
@@ -3396,11 +3394,12 @@ fn stop_service_host(record: &mut LocalServiceRecord) -> Result<()> {
         AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Stop(AdapterLifecycleStop {
             runtime_id: record.runtime.runtime_id.clone(),
         }));
+    let stop_timeout = record.host.stop_timeout;
     let result = exchange_lifecycle_message(
         &mut record.host,
         &record.runtime.runtime_id,
         &request,
-        LOCAL_HOST_STOP_TIMEOUT,
+        stop_timeout,
     );
     let termination = terminate_local_host(&mut record.host);
     let diagnostics = local_host_diagnostics(&record.host);
@@ -3607,6 +3606,7 @@ fn spawn_local_host(
     environment_env: BTreeMap<String, String>,
     service_state_lock: Option<File>,
 ) -> Result<LocalAdapterHost> {
+    let stop_timeout = local_host_stop_timeout(plan)?;
     let state_dir = agent_state_dir(plan, &artifacts)?;
     let scope = cleanup_scope(plan, state_dir.as_deref(), runtime.service_id.as_deref());
     retry_pending_local_cleanup(&scope, AdapterLifecycleOperation::Start)?;
@@ -3766,6 +3766,7 @@ fn spawn_local_host(
         });
     }
     Ok(LocalAdapterHost {
+        stop_timeout,
         cleanup_pending: false,
         cleanup_scope: scope,
         #[cfg(unix)]
@@ -3792,6 +3793,23 @@ fn spawn_local_host(
         environment_env,
         _state_lock: state_lock,
     })
+}
+
+fn local_host_stop_timeout(plan: &RunPlan) -> Result<Duration> {
+    let Some(value) = plan
+        .adapter_descriptor
+        .as_ref()
+        .and_then(|adapter| adapter.descriptor.runner.get("stop_timeout_seconds"))
+    else {
+        return Ok(LOCAL_HOST_STOP_TIMEOUT);
+    };
+    match value.as_u64() {
+        Some(seconds @ 1..=300) => Ok(Duration::from_secs(seconds)),
+        _ => Err(FabricError::InvalidConfig {
+            field: "runner.stop_timeout_seconds".to_string(),
+            reason: "must be an integer between 1 and 300".to_string(),
+        }),
+    }
 }
 
 fn local_host_command(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<(Command, String)> {
@@ -6667,6 +6685,57 @@ else:
         assert!(!local_hosts().contains_key(&runtime.runtime_id));
         assert!(local_host_has_exited(&runtime.runtime_id).is_none());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn local_host_stop_timeout_is_scoped_to_the_descriptor() {
+        let (root, mut plan) = local_host_plan("success");
+        assert_eq!(
+            local_host_stop_timeout(&plan).unwrap(),
+            Duration::from_secs(10)
+        );
+        plan.adapter_descriptor
+            .as_mut()
+            .unwrap()
+            .descriptor
+            .runner
+            .insert("stop_timeout_seconds".to_string(), serde_json::json!(30));
+        assert_eq!(
+            local_host_stop_timeout(&plan).unwrap(),
+            Duration::from_secs(30)
+        );
+        plan.adapter_descriptor
+            .as_mut()
+            .unwrap()
+            .descriptor
+            .runner
+            .remove("stop_timeout_seconds");
+        assert_eq!(
+            local_host_stop_timeout(&plan).unwrap(),
+            Duration::from_secs(10)
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_rejects_invalid_descriptor_stop_timeouts() {
+        let (root, mut plan) = local_host_plan("success");
+        for value in [
+            serde_json::json!(0),
+            serde_json::json!(-1),
+            serde_json::json!(301),
+            serde_json::json!(1.5),
+            serde_json::json!("30"),
+        ] {
+            plan.adapter_descriptor
+                .as_mut()
+                .unwrap()
+                .descriptor
+                .runner
+                .insert("stop_timeout_seconds".to_string(), value);
+            assert!(local_host_stop_timeout(&plan).is_err());
+        }
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

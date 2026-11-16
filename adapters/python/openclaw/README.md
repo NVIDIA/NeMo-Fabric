@@ -164,7 +164,7 @@ The following settings are specific to the OpenClaw adapter:
 | `interfaces.dashboard` | None | Serve the Control UI on a managed runtime, with an exact `port`, optional `enabled`, and `public_origins`; refer to the [dashboard guide](../../../docs/integrations/harness/openclaw/openclaw-dashboard.mdx). |
 | `interfaces.terminal` | None | Attach the native terminal to the existing Gateway, without a separate port. Refer to the [terminal guide](../../../docs/integrations/harness/openclaw/openclaw-tui.mdx). |
 | `startup_timeout_seconds` | `60` | One deadline for all of start, from checking the `openclaw` command to the Gateway becoming ready; at most 75 seconds. |
-| `shutdown_timeout_seconds` | `15` | Graceful Gateway shutdown timeout. NeMo Fabric allows 30 seconds for the complete adapter stop; an override must leave time for cleanup within that limit. Stop reports an error if the Gateway process is still running after cleanup. |
+| `shutdown_timeout_seconds` | `15` | Graceful Gateway shutdown timeout. OpenClaw's descriptor allows 30 seconds for the complete adapter stop. Overrides must leave time for cleanup within that limit. Stop reports an error if the Gateway process is still running after cleanup. |
 | `connect_timeout_seconds` | `10` | Local HTTP connection timeout. |
 | `read_timeout_seconds` | None | Local HTTP response timeout. When unset, the invocation timeout bounds the response. |
 | `agents.defaults.heartbeat.every` | OpenClaw native default | Recurring heartbeat interval with units, such as `30m`; `0m` disables the recurring cadence but not event-driven turns. |
@@ -216,7 +216,13 @@ Omitting `session_ref` creates a fresh conversation, even when storage contains 
 
 The retained home preserves native conversations, indexes, installed skills, caches, credentials, and channel state that OpenClaw stores there. Workspace memory files such as `MEMORY.md` and `memory/` remain in the configured workspace. Retain that workspace and any external native directories when replacing a sandbox. Generated configuration and Gateway authentication are recreated for each managed start. Protect and mount the complete retained storage root when replacing a sandbox. The reference must resolve within that storage. Missing sessions, changed native identity, and active native work fail startup. A native conversation reset can invalidate an older reference.
 
+Retained session checks share one authenticated Gateway WebSocket connection per runtime. Model requests continue through the existing Chat Completions endpoint.
+
+When a newly started managed Gateway finds an interrupted turn still marked as running, the adapter asks the Gateway to confirm that no work is active. The same conversation opens with a recovery warning. Connected service runtimes continue to reject sessions marked as active.
+
 An interrupted turn can have unknown external effects. When native history cannot confirm completion, startup returns `recovery_warnings` and invocation requires `acknowledge_recovery=True` after inspection. Earlier work is never automatically retried.
+
+Gateway HTTP errors, provider failures, and request timeouts also require recovery acknowledgement before the next retained invocation, including within a live runtime. A failed response can follow tool execution or other external effects. Inspect the native session and external state before passing `acknowledge_recovery=True`.
 
 NeMo Fabric retains known unresolved tool calls in its completion record. A gap in the Gateway's recent history window also requires recovery acknowledgment. New work can confirm completion after acknowledgment when its history remains visible.
 

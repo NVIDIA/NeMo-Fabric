@@ -4052,7 +4052,7 @@ async def test_openclaw_stop_allows_gateway_to_release_ownership(
 @pytest.mark.skipif(os.name == "nt", reason="Uses POSIX subprocesses")
 @pytest.mark.parametrize("cancel", [False, True])
 @pytest.mark.parametrize("deny_group_signals", [False, True])
-async def test_session_command_cleanup_is_bounded_with_inherited_pipes(
+async def test_command_cleanup_is_bounded_with_inherited_pipes(
     tmp_path, monkeypatch, cancel, deny_group_signals
 ):
     pids = tmp_path / "owned.pids"
@@ -4065,10 +4065,6 @@ async def test_session_command_cleanup_is_bounded_with_inherited_pipes(
         "time.sleep(60)\n"
     )
     command.chmod(0o755)
-    runtime = adapter.OpenClawRuntime()
-    runtime._command = command
-    runtime._session_environment = dict(os.environ)
-    runtime._session_deadline = asyncio.get_running_loop().time() + 5
     monkeypatch.setattr(adapter, "COMMAND_REAP_SECONDS", 0.05)
     processes = []
     create_subprocess = asyncio.create_subprocess_exec
@@ -4085,7 +4081,9 @@ async def test_session_command_cleanup_is_bounded_with_inherited_pipes(
         mock_os.killpg.side_effect = PermissionError("group signals denied")
         monkeypatch.setattr(adapter, "os", mock_os)
     task = asyncio.create_task(
-        runtime._session_call("sessions.get", {"key": "owned-test-session"})
+        adapter._command_output(
+            command, env=dict(os.environ), timeout=5, process_group=True
+        )
     )
     try:
         until = asyncio.get_running_loop().time() + 5
@@ -4108,8 +4106,7 @@ async def test_session_command_cleanup_is_bounded_with_inherited_pipes(
         else:
             with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
                 await task
-            assert caught.value.code == "session_incompatible"
-            assert caught.value.__cause__.code == "openclaw_command_timeout"
+            assert caught.value.code == "openclaw_command_timeout"
     finally:
         for process in processes:
             if process.returncode is None:

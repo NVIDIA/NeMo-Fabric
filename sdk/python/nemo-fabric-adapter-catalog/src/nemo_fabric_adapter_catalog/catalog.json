@@ -2398,7 +2398,8 @@
         },
         "requirements": {},
         "runner": {
-          "module": "nemo_fabric_adapters.openclaw.adapter"
+          "module": "nemo_fabric_adapters.openclaw.adapter",
+          "stop_timeout_seconds": 30
         },
         "settings_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2708,7 +2709,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.7.0"
       },
-      "sha256": "a489f45fb7580c4a98b02143cc667451aa3edbec92364ac30ad2c9c8d616943a",
+      "sha256": "a94d5ad7b4c8fd61388879dd417215cc242a5ca3d68cebe595e7e2d9d1beb26e",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {

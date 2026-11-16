@@ -14,6 +14,9 @@ from pathlib import Path
 from uuid import uuid4
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from websockets.frames import Opcode
+from websockets.server import ServerProtocol
+
 
 args = sys.argv[1:]
 if args[:1] != ["gateway"] and (delay := os.environ.get("FAKE_OPENCLAW_COMMAND_DELAY")):
@@ -94,6 +97,8 @@ def session_rpc(method, params):
             "sessionId": entry["sessionId"] if entry else None,
             "totalMessages": len(entry["messages"]) if entry else 0,
         }
+    if method == "sessions.abort":
+        return {"ok": True, "status": "no-active-run", "abortedRunId": None}
     if method == "sessions.describe":
         return {"session": entry}
     if method == "sessions.get":
@@ -124,7 +129,67 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *unused):
         pass
 
+    def websocket(self):
+        protocol = ServerProtocol()
+        header = (
+            self.requestline
+            + "\r\n"
+            + "".join(f"{key}: {value}\r\n" for key, value in self.headers.items())
+            + "\r\n"
+        )
+        protocol.receive_data(header.encode())
+        request = protocol.events_received()[0]
+        protocol.send_response(protocol.accept(request))
+        for data in protocol.data_to_send():
+            self.wfile.write(data)
+
+        def send(value):
+            protocol.send_text(json.dumps(value).encode())
+            for data in protocol.data_to_send():
+                self.wfile.write(data)
+
+        send(
+            {
+                "type": "event",
+                "event": "connect.challenge",
+                "payload": {"nonce": "mock-challenge"},
+            }
+        )
+        try:
+            while data := self.rfile.read1(65536):
+                protocol.receive_data(data)
+                for frame in protocol.events_received():
+                    if frame.opcode == Opcode.TEXT:
+                        request = json.loads(frame.data)
+                        if request["method"] == "connect":
+                            authenticated = request["params"].get("auth") == {
+                                "token": token
+                            }
+                            payload = {"type": "hello-ok", "protocol": 4}
+                        else:
+                            assert authenticated
+                            payload = session_rpc(request["method"], request["params"])
+                        send(
+                            {
+                                "type": "res",
+                                "id": request["id"],
+                                "ok": authenticated,
+                                "payload": payload,
+                            }
+                        )
+                    elif frame.opcode == Opcode.CLOSE:
+                        for pending in protocol.data_to_send():
+                            self.wfile.write(pending)
+                        return
+                for pending in protocol.data_to_send():
+                    self.wfile.write(pending)
+        except (ConnectionError, OSError):
+            pass
+
     def do_GET(self):
+        if self.headers.get("Upgrade", "").lower() == "websocket":
+            self.websocket()
+            return
         if self.path == "/v1/chat/completions":
             self.send_response(405)
             self.send_header("Allow", "POST")

@@ -344,7 +344,11 @@ class NativeSession:
 
 
 async def open_session(
-    context: RuntimeContext, agent_id: str, call: SessionCall
+    context: RuntimeContext,
+    agent_id: str,
+    call: SessionCall,
+    *,
+    recover_orphaned: bool = False,
 ) -> NativeSession | None:
     reference = context.session_ref
     if not context.state_dir:
@@ -397,8 +401,30 @@ async def open_session(
             "session_resume_unconfirmed",
             "Gateway did not confirm the selected native session",
         )
-    if entry.get("activeRunIds") or entry.get("status") in {"running", "queued"}:
+    if entry.get("activeRunIds"):
         raise LifecycleError("state_in_use", "Native session still has active work")
+    orphaned = entry.get("status") in {"running", "queued"}
+    if orphaned:
+        if not recover_orphaned:
+            raise LifecycleError("state_in_use", "Native session still has active work")
+        # Only the fresh managed Gateway may reconcile persisted run status.
+        # Native recovery can launch a continuation or replace the session.
+        # Abort must instead confirm there is no live work before we proceed.
+        aborted = await call("sessions.abort", {"key": key, "agentId": agent_id})
+        if aborted.get("ok") is not True or aborted.get("status") != "no-active-run":
+            raise LifecycleError("state_in_use", "Native session still has active work")
+        confirmed = await call("sessions.describe", {"key": key, "agentId": agent_id})
+        current = confirmed.get("session")
+        if (
+            not isinstance(current, dict)
+            or current.get("sessionId") != session_id
+            or current.get("key") != key
+        ):
+            raise LifecycleError(
+                "session_identity_changed", "Native session identity changed"
+            )
+        if current.get("activeRunIds"):
+            raise LifecycleError("state_in_use", "Native session still has active work")
     result = NativeSession(
         session_id,
         key,
@@ -418,7 +444,8 @@ async def open_session(
         result.pending_tool_calls, result.acknowledged_tool_calls
     )
     result.recovery_required = bool(
-        pending_tool_calls
+        orphaned
+        or pending_tool_calls
         or result.history_incomplete
         or (marker.get("state") == "running" and not finished_after_marker)
         or (messages and not _completed(messages))

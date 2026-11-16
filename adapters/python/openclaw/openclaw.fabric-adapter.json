@@ -3,7 +3,8 @@
   "adapter_id": "nvidia.fabric.openclaw",
   "adapter_kind": "python",
   "runner": {
-    "module": "nemo_fabric_adapters.openclaw.adapter"
+    "module": "nemo_fabric_adapters.openclaw.adapter",
+    "stop_timeout_seconds": 30
   },
   "settings_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",

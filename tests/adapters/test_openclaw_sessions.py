@@ -766,3 +766,95 @@ async def test_projection_changes_do_not_confirm_an_unfinished_turn(
     assert await selected.finish_turn() is False
     restored = await sessions.open_session(session_context, "default", session_call)
     assert restored.recovery_required
+
+
+@pytest.mark.parametrize("status", ["running", "queued"])
+async def test_owned_gateway_recovers_an_orphaned_turn_without_replay(
+    session_context, session_call, native_session, status
+):
+    native_session["status"] = status
+    original = session_call.side_effect
+
+    def respond(method, params):
+        if method == "sessions.abort":
+            return {"ok": True, "status": "no-active-run", "abortedRunId": None}
+        return original(method, params)
+
+    session_call.side_effect = respond
+    result = await sessions.open_session(
+        session_context, "default", session_call, recover_orphaned=True
+    )
+    assert result.session_id == NATIVE_ID
+    assert result.recovery_required
+    assert result.warnings[0]["code"] == "session_recovery_required"
+    assert not await result.begin_turn(session_context)
+    assert await result.begin_turn(session_context, acknowledge_recovery=True)
+    assert [c.args[0] for c in session_call.call_args_list].count("sessions.abort") == 1
+    assert not any(
+        c.args[0] in {"sessions.recover", "sessions.reset", "sessions.send", "agent"}
+        for c in session_call.call_args_list
+    )
+
+
+@pytest.mark.parametrize("status", ["running", "queued"])
+async def test_connected_gateway_never_aborts_active_or_stale_work(
+    session_context, session_call, native_session, status
+):
+    native_session["status"] = status
+    with pytest.raises(LifecycleError) as caught:
+        await sessions.open_session(session_context, "default", session_call)
+    assert caught.value.code == "state_in_use"
+    assert all(c.args[0] != "sessions.abort" for c in session_call.call_args_list)
+
+
+async def test_owned_gateway_preserves_genuinely_active_work(
+    session_context, session_call, native_session
+):
+    native_session.update(status="running", activeRunIds=["live-native-run"])
+    with pytest.raises(LifecycleError) as caught:
+        await sessions.open_session(
+            session_context, "default", session_call, recover_orphaned=True
+        )
+    assert caught.value.code == "state_in_use"
+    assert all(c.args[0] != "sessions.abort" for c in session_call.call_args_list)
+
+
+@pytest.mark.parametrize("reply", [{"ok": False}, {"ok": True, "status": "aborted"}])
+async def test_owned_gateway_does_not_accept_unconfirmed_orphan_recovery(
+    session_context, session_call, native_session, reply
+):
+    native_session["status"] = "running"
+    original = session_call.side_effect
+    session_call.side_effect = lambda method, params: (
+        reply if method == "sessions.abort" else original(method, params)
+    )
+    with pytest.raises(LifecycleError) as caught:
+        await sessions.open_session(
+            session_context, "default", session_call, recover_orphaned=True
+        )
+    assert caught.value.code == "state_in_use"
+
+
+@pytest.mark.parametrize(
+    "change", [{"sessionId": "replaced"}, {"activeRunIds": ["new-run"]}]
+)
+async def test_orphan_confirmation_revalidates_native_identity_and_activity(
+    session_context, session_call, native_session, change
+):
+    native_session["status"] = "running"
+    original = session_call.side_effect
+
+    def respond(method, params):
+        if method == "sessions.abort":
+            native_session.update(change)
+            return {"ok": True, "status": "no-active-run", "abortedRunId": None}
+        return original(method, params)
+
+    session_call.side_effect = respond
+    with pytest.raises(LifecycleError) as caught:
+        await sessions.open_session(
+            session_context, "default", session_call, recover_orphaned=True
+        )
+    assert caught.value.code == (
+        "session_identity_changed" if "sessionId" in change else "state_in_use"
+    )
