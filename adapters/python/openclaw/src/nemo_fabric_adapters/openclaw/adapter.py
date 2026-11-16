@@ -2149,8 +2149,17 @@ class OpenClawRuntime:
         self._agent_id = "default"
         self._gateway_failure = None
         self._gateway_failed.clear()
+        if process is not None and process.returncode is None:
+            self._process = process
         if cancellation is not None:
             raise cancellation
+        if self._process is not None:
+            raise lifecycle.LifecycleError(
+                "openclaw_stop_failed",
+                "OpenClaw Gateway is still running after process cleanup",
+                retryable=True,
+                metadata={"pid": self._process.pid},
+            )
 
 
 def main() -> None:
