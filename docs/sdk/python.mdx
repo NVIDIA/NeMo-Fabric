@@ -508,7 +508,7 @@ MCP authentication and custom-header support vary by adapter:
 | --- | --- | --- | --- |
 | Claude | Unsupported | Unsupported | Supported |
 | Codex | Supported | Unsupported | Supported |
-| Deep Agents | Unsupported | Supported | Supported |
+| Deep Agents | Supported | Supported | Supported |
 | Hermes Agent | Supported | Unsupported | Supported |
 
 An adapter returns a configuration error when `authentication` uses a type it
@@ -982,7 +982,7 @@ The operating system releases the lock after all copies of the lock have closed:
 - **Windows:** Adapter hosts do not inherit the lock. Only the NeMo Fabric process holds the lock, so the folder becomes available if that process exits while an adapter host is still running.
 - **Detached processes:** A native process can continue accessing the state folder after all lock descriptors close. A replacement runtime can then acquire the lock while the detached process still writes to the folder.
 
-Planning fails without an artifact directory or for an adapter that doesn't declare `runtime.keep_state`. The Hermes Agent adapter declares `runtime.keep_state`.
+Planning fails without an artifact directory or for an adapter that doesn't declare `runtime.keep_state`. The Hermes Agent and Deep Agents adapters declare `runtime.keep_state`. Deep Agents keeps its checkpoints and MCP sign-in tokens there; each runtime still starts a new LangGraph thread.
 
 Enabling `runtime.keep_state` preserves earlier Hermes sessions in the database. Omitting `session_ref` starts a fresh Hermes SDK conversation.
 

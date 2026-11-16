@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from urllib.parse import parse_qs
 from urllib.parse import unquote
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -48,6 +49,9 @@ def mock_api_server(port: int) -> Iterator[str]:
         app.state.oauth2_expires_in = 3600
         app.state.oauth2_token_requests = []
         app.state.oauth2_valid_tokens = set()
+        app.state.oauth2_authorizations = []
+        app.state.oauth2_codes = set()
+        app.state.oauth2_refresh_tokens = set()
 
     reset_state()
 
@@ -140,14 +144,84 @@ def mock_api_server(port: int) -> Iterator[str]:
 
         return list(app.state.oauth2_token_requests)
 
+    @app.get("/_oauth2_authorizations")
+    def oauth2_authorizations() -> list[dict[str, str]]:
+        """GET this to inspect the query of each browser authorization request."""
+
+        return list(app.state.oauth2_authorizations)
+
+    def request_origin(request: Request) -> str:
+        return str(request.base_url).rstrip("/")
+
+    @app.get("/.well-known/oauth-protected-resource/mcp-protected")
+    def protected_resource_metadata(request: Request) -> dict[str, object]:
+        return {
+            "resource": f"{request_origin(request)}/mcp-protected",
+            "authorization_servers": [request_origin(request)],
+        }
+
+    @app.get("/.well-known/oauth-authorization-server")
+    def authorization_server_metadata(request: Request) -> dict[str, object]:
+        base = request_origin(request)
+        return {
+            "issuer": base,
+            "authorization_endpoint": f"{base}/oauth2/authorize",
+            "token_endpoint": f"{base}/oauth2/token",
+            "registration_endpoint": f"{base}/oauth2/register",
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code", "refresh_token"],
+            "code_challenge_methods_supported": ["S256"],
+        }
+
+    @app.post("/oauth2/register")
+    async def oauth2_register(request: Request):
+        """Dynamic client registration for the authorization-code flow."""
+
+        return JSONResponse(
+            status_code=201, content={**await request.json(), "client_id": "registered-client"}
+        )
+
+    @app.get("/oauth2/authorize")
+    def oauth2_authorize(request: Request):
+        """Approve every authorization request, as a signed-in user would."""
+
+        query = dict(request.query_params)
+        app.state.oauth2_authorizations.append(query)
+        code = f"code-{len(app.state.oauth2_authorizations)}"
+        app.state.oauth2_codes.add(code)
+        location = f"{query['redirect_uri']}?{urlencode({'code': code, 'state': query['state']})}"
+        return Response(status_code=302, headers={"Location": location})
+
+    def user_token() -> dict[str, object]:
+        count = len(app.state.oauth2_token_requests)
+        token, refresh = f"user-token-{count}", f"refresh-token-{count}"
+        app.state.oauth2_valid_tokens.add(token)
+        app.state.oauth2_refresh_tokens.add(refresh)
+        return {
+            "access_token": token,
+            "refresh_token": refresh,
+            "token_type": "Bearer",
+            "expires_in": app.state.oauth2_expires_in,
+        }
+
     @app.post("/oauth2/token")
     async def oauth2_token(request: Request):
-        """Client-credentials token endpoint using client_secret_basic."""
+        """Token endpoint for client credentials, authorization codes and refresh."""
 
         form = {
             key: values[0] for key, values in parse_qs((await request.body()).decode()).items()
         }
         app.state.oauth2_token_requests.append(form)
+        grant_type = form.get("grant_type")
+        if grant_type == "authorization_code":
+            if form.get("code") not in app.state.oauth2_codes or not form.get("code_verifier"):
+                return JSONResponse(status_code=400, content={"error": "invalid_grant"})
+            app.state.oauth2_codes.discard(form["code"])
+            return user_token()
+        if grant_type == "refresh_token":
+            if form.get("refresh_token") not in app.state.oauth2_refresh_tokens:
+                return JSONResponse(status_code=400, content={"error": "invalid_grant"})
+            return user_token()
         authorization = request.headers.get("authorization", "")
         expected = app.state.oauth2_client
         credentials = None
@@ -173,7 +247,11 @@ def mock_api_server(port: int) -> Iterator[str]:
         token = request.headers.get("authorization", "").removeprefix("Bearer ")
         if token not in app.state.oauth2_valid_tokens:
             app.state.mcp_authorization_headers.append(request.headers.get("authorization"))
-            return Response(status_code=401)
+            metadata = f"{request_origin(request)}/.well-known/oauth-protected-resource/mcp-protected"
+            return Response(
+                status_code=401,
+                headers={"WWW-Authenticate": f'Bearer resource_metadata="{metadata}"'},
+            )
         return await mcp(request)
 
     @app.post("/mcp")

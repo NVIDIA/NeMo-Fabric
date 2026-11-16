@@ -270,9 +270,11 @@
       "models.max_tokens",
       "instructions.system",
       "runtime.max_turns",
+      "runtime.keep_state",
       "tools.enabled",
       "tools.blocked",
       "mcp",
+      "mcp.auth.oauth2",
       "mcp.auth.service_account",
       "skills"
     ],

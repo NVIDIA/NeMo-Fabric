@@ -2378,6 +2378,7 @@ dependencies = [
     { name = "langchain-mcp-adapters" },
     { name = "langchain-openai" },
     { name = "langgraph-checkpoint-sqlite" },
+    { name = "mcp" },
     { name = "nemo-fabric-adapter-contract" },
     { name = "nemo-fabric-adapters-common" },
 ]
@@ -2407,6 +2408,7 @@ requires-dist = [
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.0,<4.0" },
     { name = "langgraph-sdk", marker = "extra == 'full'", specifier = ">=0.4.4" },
     { name = "langgraph-sdk", marker = "extra == 'harness'", specifier = ">=0.4.4" },
+    { name = "mcp", specifier = ">=1.26,<2.0" },
     { name = "nemo-fabric-adapter-contract", editable = "adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/python/common" },
     { name = "nemo-relay", marker = "extra == 'full'", specifier = ">=0.11,<0.12" },
