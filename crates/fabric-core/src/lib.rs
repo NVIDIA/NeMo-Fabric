@@ -52,7 +52,7 @@ pub use config::{
     resolve_run_plan_from_config_with_adapter_directories,
 };
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
-pub use error::{FabricError, Result};
+pub use error::{FabricError, Result, RuntimeCleanupPending};
 pub use provenance::{ExecutionEvidence, ProvenanceConfig};
 pub use resource_snapshot::RuntimeResourceSnapshot;
 pub use runtime::{
