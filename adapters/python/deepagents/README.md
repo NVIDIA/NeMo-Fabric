@@ -128,11 +128,25 @@ NeMo Fabric maps the following into the harness:
   answers `401` after the token is renewed; any MCP server that answers `401`
   during discovery, with or without `authentication`, is reported the same way.
   A token endpoint that cannot be reached, answers with another error status
-  such as `5xx`, or returns no access token gives reason `failed`. The secret variable is withheld from the `local_shell`
-  backend's environment. A server that also needs a second token in its own
-  header takes it through `custom_headers` with a `${NAME}` reference; the
-  adapter sends it unchanged and does not renew it. `oauth2` authentication is
-  not supported.
+  such as `5xx`, or returns no access token gives reason `failed`.
+  The secret variable is withheld from the `local_shell` backend's environment.
+  A server that also needs a second token in its own header takes it through
+  `custom_headers` with a `${NAME}` reference; the adapter sends it unchanged
+  and does not renew it.
+- MCP servers on `sse` or `streamable-http` accept `oauth2` authentication
+  (browser sign-in with the authorization code flow and PKCE). A server without
+  usable stored tokens is skipped at start with reason
+  `authentication_required`; the first invocation opens the authorization URL
+  in a browser (and prints it to standard error), waits for the loopback
+  callback, and adds the server's tools. A sign-in that does not complete within
+  `authorization_timeout_seconds` or the invocation deadline fails the
+  invocation with `deepagents_mcp_authentication_failed`, and the next
+  invocation tries again. Tokens are stored in owner-only files under
+  `mcp-tokens/` in the state folder and refreshed when they expire; with
+  `runtime.keep_state`, later runtimes reuse them. The server `url` must be
+  `https` (or `http` on a loopback host), and `redirect_uri` must be an `http`
+  loopback URL with a port. A `client_secret_env` variable is withheld
+  from the `local_shell` backend.
 - `tools.enabled` and `tools.blocked` are enforced by middleware across the full
   tool surface: Deep Agents built-ins (including `task`), MCP tools, and
   **delegated subagents** alike. Use Deep Agents-native tool names.
@@ -308,7 +322,8 @@ the host compiles one Deep Agents graph, opens its async LangGraph checkpointer,
 and creates one thread ID. Every invocation reuses those native objects; later
 turns report `resumed` as `true`. The checkpointer lives under
 the NeMo Fabric artifact root, scoped by runtime ID, and is closed during
-runtime stop. The live host owns the thread identity, and LangGraph owns the
+runtime stop. With `runtime.keep_state`, it lives in the agent's state folder
+instead, beside the MCP sign-in tokens that later runtimes reuse. The live host owns the thread identity, and LangGraph owns the
 transcript.
 
 `Fabric.run(...)` is a convenience over that same lifecycle: it starts the

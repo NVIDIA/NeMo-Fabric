@@ -44,6 +44,7 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import mcp_availability
+from nemo_fabric_adapters.common import mcp_oauth
 from nemo_fabric_adapters.common import mcp_service_account
 import nemo_fabric_adapters.common.utils as common_utils
 from pydantic import ValidationError
@@ -365,16 +366,21 @@ def resolve_backend(
 async def resolve_tools(
     config: AgentConfig,
     unavailable_mcp_servers: list[dict[str, str]] | None = None,
+    oauth_token_dir: Path | None = None,
+    mcp_sign_ins: dict[str, McpSignInServer] | None = None,
 ) -> list[Any] | None:
     """Resolve Fabric MCP servers into Deep Agents tools.
 
     Servers skipped as unavailable are appended to ``unavailable_mcp_servers``
-    when a list is supplied.
+    when a list is supplied, and servers waiting for a browser sign-in are added
+    to ``mcp_sign_ins`` when a dictionary is supplied.
     """
 
-    resolution = await resolve_mcp_tools(config)
+    resolution = await resolve_mcp_tools(config, oauth_token_dir)
     if unavailable_mcp_servers is not None:
         unavailable_mcp_servers.extend(resolution.unavailable)
+    if mcp_sign_ins is not None:
+        mcp_sign_ins.update(resolution.sign_ins)
     return resolution.tools or None
 
 
@@ -442,18 +448,33 @@ def _mcp_tool_coroutine(
 
 
 def _mcp_secret_env_names(config: AgentConfig) -> set[str]:
-    """Return the client-secret variables of ``service_account`` MCP servers."""
+    """Return the client-secret variables of authenticated MCP servers."""
     servers = config.mcp.servers if config.mcp is not None else {}
-    return mcp_service_account.secret_env_names(
-        spec.authentication for spec in servers.values()
-    )
+    return {
+        auth.client_secret_env
+        for spec in servers.values()
+        if (auth := spec.authentication) is not None and auth.client_secret_env
+    }
+
+
+class McpSignInServer(NamedTuple):
+    """An ``oauth2`` MCP server whose tools wait for a browser sign-in."""
+
+    client: Any
+    sign_in: mcp_oauth.BrowserSignIn
+    transport: str
 
 
 class McpToolResolution(NamedTuple):
-    """MCP tools loaded at startup and the servers that could not be reached."""
+    """MCP tools loaded at startup and the servers that could not be reached.
+
+    ``sign_ins`` holds the ``oauth2`` servers skipped because they need a
+    browser sign-in, which the runtime runs on its first invocation.
+    """
 
     tools: list[Any]
     unavailable: list[dict[str, str]]
+    sign_ins: dict[str, McpSignInServer] = {}
 
 
 async def _discover_server_tools(
@@ -479,6 +500,8 @@ def _unavailable_reason(error: BaseException) -> str:
         if isinstance(current, mcp_service_account.ServiceAccountTokenError):
             if current.rejected:
                 return mcp_availability.AUTHENTICATION_REQUIRED
+        elif mcp_oauth.is_sign_in_error(current):
+            return mcp_availability.AUTHENTICATION_REQUIRED
         response = getattr(current, "response", None)
         if getattr(response, "status_code", None) == 401:
             return mcp_availability.AUTHENTICATION_REQUIRED
@@ -526,16 +549,34 @@ async def _load_server_tools(
     return list(tools), None
 
 
-async def resolve_mcp_tools(config: AgentConfig) -> McpToolResolution:
+def _prepare_mcp_tools(tools: list[Any]) -> list[Any]:
+    """Return MCP tool failures to the model as feedback."""
+    for tool in tools:
+        # MCP isError results become ToolException, not graph-fatal failures.
+        # Return them as tool feedback; never replay a call automatically.
+        tool.coroutine = _mcp_tool_coroutine(tool.coroutine)
+        tool.handle_tool_error = True
+        tool.handle_validation_error = _mcp_validation_feedback
+    return tools
+
+
+async def resolve_mcp_tools(
+    config: AgentConfig, oauth_token_dir: Path | None = None
+) -> McpToolResolution:
     """Load tools from every reachable MCP server.
 
     Invalid server configuration still fails startup. A server that cannot be
     reached or does not list its tools in time is skipped and reported, so the
     runtime starts with the tools of the remaining servers. Discovery runs again
-    on every runtime start; a skipped server is not remembered.
+    on every runtime start; a skipped server is not remembered. An ``oauth2``
+    server uses its stored tokens here and never opens a browser; one that
+    needs a sign-in is returned in ``sign_ins``.
     """
     servers = config.mcp.servers if config.mcp is not None else {}
-    connections = {name: _mcp_connection(name, spec) for name, spec in servers.items()}
+    connections = {
+        name: _mcp_connection(name, spec, oauth_token_dir)
+        for name, spec in servers.items()
+    }
     if not connections:
         return McpToolResolution([], [])
     from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -554,22 +595,26 @@ async def resolve_mcp_tools(config: AgentConfig) -> McpToolResolution:
     )
     tools: list[Any] = []
     unavailable: list[dict[str, str]] = []
+    sign_ins: dict[str, McpSignInServer] = {}
     for server_tools, failure in loaded:
         if failure is None:
             tools.extend(server_tools)
-        else:
-            unavailable.append(failure)
+            continue
+        unavailable.append(failure)
+        name = failure["name"]
+        sign_in = getattr(connections[name].get("auth"), "sign_in", None)
+        if (
+            sign_in is not None
+            and failure["reason"] == mcp_availability.AUTHENTICATION_REQUIRED
+        ):
+            sign_ins[name] = McpSignInServer(client, sign_in, failure["transport"])
     mcp_availability.warn("Deep Agents", unavailable)
-    for tool in tools:
-        # MCP isError results become ToolException, not graph-fatal failures.
-        # Return them as tool feedback; never replay a call automatically.
-        tool.coroutine = _mcp_tool_coroutine(tool.coroutine)
-        tool.handle_tool_error = True
-        tool.handle_validation_error = _mcp_validation_feedback
-    return McpToolResolution(tools, unavailable)
+    return McpToolResolution(_prepare_mcp_tools(tools), unavailable, sign_ins)
 
 
-def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
+def _mcp_connection(
+    name: str, spec: AgentMcpServerConfig, oauth_token_dir: Path | None = None
+) -> dict[str, Any]:
     """Translate one Fabric MCP server into a langchain-mcp-adapters connection."""
     # A misconfigured server must fail loudly, not be silently dropped.
     transport = spec.transport.strip().lower().replace("-", "_")
@@ -616,22 +661,25 @@ def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
     auth = spec.authentication
     if auth is None:
         return connection
-    if auth.type != "service_account":
-        raise AdapterConfigError(
-            f"MCP server {name!r} {auth.type!r} authentication is not supported by Deep Agents."
-        )
     if transport == "websocket":
         raise AdapterConfigError(
-            f"MCP server {name!r} does not support service_account authentication "
+            f"MCP server {name!r} does not support {auth.type} authentication "
             "with the websocket transport."
         )
     if any(header.lower() == "authorization" for header in spec.custom_headers):
         raise AdapterConfigError(
-            f"MCP server {name!r} sets both service_account authentication and an "
+            f"MCP server {name!r} sets both {auth.type} authentication and an "
             "Authorization custom header; remove the header."
         )
     try:
+        # Bearer tokens must not cross the network in clear text.
         mcp_service_account.validate_secure_url(name, "url", target)
+    except ValueError as error:
+        raise AdapterConfigError(f"{error}.") from None
+    if auth.type == "oauth2":
+        connection["auth"] = _browser_sign_in_auth(name, target, auth, oauth_token_dir)
+        return connection
+    try:
         token_url = mcp_service_account.validate_token_url(name, auth.token_url)
         client_secret = mcp_service_account.resolve_client_secret(
             name, auth.client_secret_env
@@ -650,10 +698,50 @@ def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
     return connection
 
 
+def _browser_sign_in_auth(
+    name: str, url: str, auth: Any, token_dir: Path | None
+) -> Any:
+    """Build the browser sign-in auth for one ``oauth2`` MCP server."""
+    if token_dir is None:
+        raise AdapterConfigError(
+            f"MCP server {name!r} oauth2 authentication requires a token directory."
+        )
+    try:
+        client_secret = (
+            mcp_service_account.resolve_client_secret(name, auth.client_secret_env)
+            if auth.client_secret_env
+            else None
+        )
+        if auth.redirect_uri:
+            mcp_oauth.validate_redirect_uri(name, auth.redirect_uri)
+    except ValueError as error:
+        raise AdapterConfigError(f"{error}.") from None
+    method = auth.token_endpoint_auth_method
+    return mcp_oauth.browser_sign_in_auth(
+        name,
+        url,
+        token_dir,
+        client_id=auth.client_id,
+        client_secret=client_secret,
+        client_name=auth.client_name,
+        scopes=list(auth.scopes),
+        redirect_uri=auth.redirect_uri,
+        token_endpoint_auth_method=str(method) if method is not None else None,
+        authorization_timeout_seconds=auth.authorization_timeout_seconds,
+    )
+
+
 # --- runtime state ---------------------------------------------------------
 
 
 def state_dir(runtime_context: RuntimeContext, base_dir: str) -> Path:
+    """Return the adapter's state folder.
+
+    With ``runtime.keep_state`` this is the agent's state folder from Fabric,
+    shared by every runtime of the agent.
+    """
+    if runtime_context.state_dir:
+        return Path(str(runtime_context.state_dir))
     base_dir = Path(base_dir).resolve()
     root = runtime_context.artifacts.root
     if root:
@@ -665,6 +753,20 @@ def checkpointer_path(context: RuntimeContext, base_dir: str, runtime_id: str) -
     key = hashlib.sha256(runtime_id.encode("utf-8")).hexdigest()
     base = state_dir(context, base_dir) / "runtimes"
     return base / f"{key}.sqlite"
+
+
+def mcp_token_dir(context: RuntimeContext, base_dir: str, runtime_id: str) -> Path:
+    """Return where ``oauth2`` MCP tokens are stored.
+
+    With ``runtime.keep_state`` later runtimes of the agent reuse them;
+    otherwise each runtime keeps its own.
+    """
+    if context.state_dir:
+        return state_dir(context, base_dir) / mcp_oauth.TOKEN_DIRECTORY_NAME
+    key = hashlib.sha256(runtime_id.encode("utf-8")).hexdigest()
+    return (
+        state_dir(context, base_dir) / "runtimes" / key / mcp_oauth.TOKEN_DIRECTORY_NAME
+    )
 
 
 async def open_checkpointer(state_sqlite: Path) -> Any:
@@ -700,6 +802,8 @@ async def build_agent_kwargs(
     model: Any,
     settings: dict[str, Any],
     unavailable_mcp_servers: list[dict[str, str]] | None = None,
+    oauth_token_dir: Path | None = None,
+    mcp_sign_ins: dict[str, McpSignInServer] | None = None,
 ) -> dict[str, Any]:
     """Build the ``create_deep_agent`` arguments from the normalized config."""
     instruction = common_instructions.system_instruction(
@@ -741,7 +845,9 @@ async def build_agent_kwargs(
                 )
     kwargs: dict[str, Any] = {
         "model": model,
-        "tools": await resolve_tools(config, unavailable_mcp_servers),
+        "tools": await resolve_tools(
+            config, unavailable_mcp_servers, oauth_token_dir, mcp_sign_ins
+        ),
         # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
         "system_prompt": instruction.content if instruction else None,
         "skills": resolve_skills(config),
@@ -884,6 +990,9 @@ class DeepAgentsRuntime:
         self._thread_id: str | None = None
         self._completed_invocations = 0
         self._mcp_unavailable: list[dict[str, str]] = []
+        self._mcp_sign_ins: dict[str, McpSignInServer] = {}
+        self._agent_kwargs: dict[str, Any] | None = None
+        self._max_turns: int | None = None
         self._checkpointer: Any = None
         self._agent: Any = None
         self._observability: Observability | None = None
@@ -943,6 +1052,7 @@ class DeepAgentsRuntime:
             )
 
             mcp_unavailable: list[dict[str, str]] = []
+            mcp_sign_ins: dict[str, McpSignInServer] = {}
             agent_kwargs = await build_agent_kwargs(
                 agent_config,
                 runtime_context,
@@ -950,8 +1060,11 @@ class DeepAgentsRuntime:
                 model,
                 settings,
                 mcp_unavailable,
+                mcp_token_dir(runtime_context, base_dir, runtime_id),
+                mcp_sign_ins,
             )
             self._mcp_unavailable = mcp_unavailable
+            self._mcp_sign_ins = mcp_sign_ins
             self._checkpointer = await open_checkpointer(
                 checkpointer_path(runtime_context, base_dir, runtime_id)
             )
@@ -961,20 +1074,92 @@ class DeepAgentsRuntime:
             if self._observability is not None:
                 agent_kwargs = self._configure_observability(agent_kwargs)
 
-            from deepagents import create_deep_agent
-
-            agent = create_deep_agent(
-                **_supported_kwargs(create_deep_agent, agent_kwargs)
-            )
-            max_turns = _max_turns(agent_config)
-            if max_turns is not None:
-                agent = agent.with_config({"recursion_limit": max_turns})
-            self._agent = agent
+            self._agent_kwargs = agent_kwargs
+            self._max_turns = _max_turns(agent_config)
+            self._agent = self._compile_agent()
             self._start_payload = payload
             self._started = True
         except BaseException:
             await self.stop()
             raise
+
+    def _compile_agent(self) -> Any:
+        from deepagents import create_deep_agent
+
+        assert self._agent_kwargs is not None
+        agent = create_deep_agent(
+            **_supported_kwargs(create_deep_agent, self._agent_kwargs)
+        )
+        if self._max_turns is not None:
+            agent = agent.with_config({"recursion_limit": self._max_turns})
+        return agent
+
+    async def _sign_in_mcp_servers(self, runtime_context: RuntimeContext) -> None:
+        """Sign in to ``oauth2`` MCP servers that need it, then add their tools.
+
+        Runs on the first invocation, not at start, so a runtime starts without
+        waiting for a browser. Each server's sign-in is bounded by its
+        ``authorization_timeout_seconds`` and the invocation deadline. A server
+        whose sign-in does not complete fails the invocation, and the next
+        invocation tries it again.
+        """
+        pending = self._mcp_sign_ins
+        if not pending:
+            return
+        loop = asyncio.get_running_loop()
+        deadline = lifecycle.invocation_deadline(runtime_context)
+        signed_in: dict[str, list[Any]] = {}
+        failed: list[str] = []
+        for name, server in sorted(pending.items()):
+            timeout = min(
+                server.sign_in.timeout + MCP_DISCOVERY_TIMEOUT_SECONDS,
+                max(0.0, deadline - loop.time()),
+            )
+            server.sign_in.interactive = True
+            try:
+                task, timed_out = await mcp_availability.wait_bounded(
+                    server.client.get_tools(server_name=name),
+                    timeout=timeout,
+                    grace=MCP_DISCOVERY_CANCEL_GRACE_SECONDS,
+                )
+            finally:
+                server.sign_in.interactive = False
+            if not timed_out and not task.cancelled() and task.exception() is None:
+                signed_in[name] = _prepare_mcp_tools(list(task.result()))
+                continue
+            error_type = (
+                "TimeoutError"
+                if timed_out
+                else "CancelledError"
+                if task.cancelled()
+                else mcp_availability.exception_type(task.exception())
+            )
+            print(
+                f"NeMo Fabric Deep Agents: sign-in to MCP server {name!r} did not "
+                f"complete ({error_type})",
+                file=sys.stderr,
+            )
+            failed.append(name)
+
+        if signed_in:
+            assert self._agent_kwargs is not None
+            tools = list(self._agent_kwargs.get("tools") or [])
+            for server_tools in signed_in.values():
+                tools.extend(server_tools)
+            self._agent_kwargs["tools"] = tools
+            self._agent = self._compile_agent()
+            self._mcp_unavailable = [
+                entry
+                for entry in self._mcp_unavailable
+                if entry["name"] not in signed_in
+            ]
+        self._mcp_sign_ins = {name: pending[name] for name in failed}
+        if failed:
+            raise lifecycle.LifecycleError(
+                "deepagents_mcp_authentication_failed",
+                "Deep Agents could not sign in to the configured MCP servers",
+                metadata={"servers": failed},
+            )
 
     def _configure_observability(self, agent_kwargs: dict[str, Any]) -> dict[str, Any]:
         import importlib.util
@@ -1032,6 +1217,7 @@ class DeepAgentsRuntime:
             )
 
         user_message = common_utils.normalize_user_input(request.input)
+        await self._sign_in_mcp_servers(runtime_context)
 
         resumed = self._completed_invocations > 0
         inherited_quarantine = self._telemetry_quarantine is not None
@@ -1388,6 +1574,9 @@ class DeepAgentsRuntime:
         self._thread_id = None
         self._completed_invocations = 0
         self._mcp_unavailable = []
+        self._mcp_sign_ins = {}
+        self._agent_kwargs = None
+        self._max_turns = None
         self._checkpointer = None
         self._agent = None
         self._observability = None

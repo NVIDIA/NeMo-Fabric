@@ -16,6 +16,7 @@ import importlib.machinery
 import json
 import os
 import sys
+import time
 import types
 import uuid
 from collections.abc import AsyncIterator
@@ -49,6 +50,8 @@ from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from pydantic import ValidationError
 from pydantic import create_model
+from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import mcp_oauth
 from nemo_fabric_adapters.common import mcp_service_account
 from nemo_fabric_adapters.deepagents import adapter  # noqa: E402
 
@@ -72,7 +75,8 @@ def test_descriptor_declares_supported_normalized_config():
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
     assert "runtime.max_turns" in descriptor["config"]["accepts"]
     assert "mcp.auth.service_account" in descriptor["config"]["accepts"]
-    assert "mcp.auth.oauth2" not in descriptor["config"]["accepts"]
+    assert "mcp.auth.oauth2" in descriptor["config"]["accepts"]
+    assert "runtime.keep_state" in descriptor["config"]["accepts"]
     assert descriptor["settings_schema"]["properties"]["deepagents"]["properties"][
         "backend"
     ] == {
@@ -1590,6 +1594,25 @@ def test_state_dir_uses_runtime_artifact_context(tmp_path, make_payload, monkeyp
     assert adapter.state_dir(context, str(tmp_path)) == (
         tmp_path / "artifacts" / "deepagents" / ".fabric"
     )
+    assert adapter.mcp_token_dir(context, str(tmp_path), "run-1").parent.parent == (
+        tmp_path / "artifacts" / "deepagents" / ".fabric" / "runtimes"
+    )
+
+
+def test_kept_state_holds_checkpoints_and_mcp_tokens(tmp_path, make_payload):
+    payload = make_payload(tmp_path)
+    kept = tmp_path / "artifacts" / ".fabric" / "state" / "deepagents" / "agent"
+    context = RuntimeContext.from_mapping(
+        {**payload["runtime_context"], "state_dir": str(kept)}
+    )
+
+    assert adapter.state_dir(context, str(tmp_path)) == kept
+    assert adapter.checkpointer_path(context, str(tmp_path), "run-1").parent == (
+        kept / "runtimes"
+    )
+    # Every runtime of the agent shares the tokens.
+    assert adapter.mcp_token_dir(context, str(tmp_path), "run-1") == kept / "mcp-tokens"
+    assert adapter.mcp_token_dir(context, str(tmp_path), "run-2") == kept / "mcp-tokens"
 
 
 async def test_invoke_compiled_agent_wires_callbacks_into_run_config(fake_sdks):
@@ -2589,18 +2612,257 @@ async def test_mcp_session_errors_preserve_the_validation_boundary(
     )
 
 
-def test_deepagents_rejects_mcp_oauth2_authentication():
-    with pytest.raises(
-        adapter.AdapterConfigError, match="'oauth2' authentication is not supported"
-    ):
+OAUTH_SECRET = "oauth-secret-do-not-report"
+
+
+@pytest.mark.parametrize("transport", ["streamable-http", "sse"])
+def test_oauth2_connection_attaches_browser_sign_in(tmp_path, transport):
+    os.environ["JIRA_OAUTH_SECRET"] = OAUTH_SECRET
+
+    connection = adapter._mcp_connection(
+        "jira",
+        AgentMcpServerConfig(
+            transport=transport,
+            url="https://mcp.example.test/mcp",
+            authentication=McpOAuth2Config(
+                type="oauth2",
+                client_id="fabric-client",
+                client_secret_env="JIRA_OAUTH_SECRET",
+                scopes=["jira.read"],
+                redirect_uri="http://127.0.0.1:8765/callback",
+                authorization_timeout_seconds=120,
+            ),
+        ),
+        tmp_path,
+    )
+
+    sign_in = connection["auth"].sign_in
+    assert isinstance(sign_in, mcp_oauth.BrowserSignIn)
+    assert sign_in.interactive is False
+    assert sign_in.redirect_uri == "http://127.0.0.1:8765/callback"
+    assert sign_in.timeout == 120
+    client = json.loads((tmp_path / "jira.client.json").read_text())
+    assert client["client_id"] == "fabric-client"
+    assert client["token_endpoint_auth_method"] == "client_secret_post"
+    assert OAUTH_SECRET not in repr(connection)
+
+
+@pytest.mark.parametrize(
+    ("transport", "authentication", "headers", "message"),
+    [
+        (
+            "websocket",
+            McpOAuth2Config(type="oauth2"),
+            {},
+            "oauth2 authentication with the websocket transport",
+        ),
+        (
+            "streamable-http",
+            McpOAuth2Config(type="oauth2"),
+            {"Authorization": "Bearer static"},
+            "Authorization custom header",
+        ),
+        (
+            "streamable-http",
+            McpOAuth2Config(
+                type="oauth2", client_id="c", client_secret_env="JIRA_OAUTH_SECRET"
+            ),
+            {},
+            "'JIRA_OAUTH_SECRET' is not set",
+        ),
+        (
+            "streamable-http",
+            McpOAuth2Config(type="oauth2", redirect_uri="https://proxy.example.test/cb"),
+            {},
+            "redirect_uri must be an http loopback URL",
+        ),
+    ],
+)
+def test_oauth2_configuration_errors(tmp_path, transport, authentication, headers, message):
+    os.environ.pop("JIRA_OAUTH_SECRET", None)
+
+    with pytest.raises(adapter.AdapterConfigError, match=message):
         adapter._mcp_connection(
-            "automation",
+            "jira",
+            AgentMcpServerConfig(
+                transport=transport,
+                url="https://mcp.example.test/mcp",
+                authentication=authentication,
+                custom_headers=headers,
+            ),
+            tmp_path,
+        )
+
+
+def test_oauth2_requires_https_for_a_remote_server(tmp_path):
+    with pytest.raises(adapter.AdapterConfigError, match="'jira' url must use https"):
+        adapter._mcp_connection(
+            "jira",
             AgentMcpServerConfig(
                 transport="streamable-http",
-                url="https://mcp.example.test/mcp",
+                url="http://mcp.example.test/mcp",
                 authentication=McpOAuth2Config(type="oauth2"),
             ),
+            tmp_path,
         )
+
+
+def _oauth_payload(tmp_path, make_payload) -> dict[str, Any]:
+    payload = make_payload(tmp_path)
+    payload["config"]["mcp"] = {
+        "servers": {
+            "docs": {"transport": "sse", "url": "http://localhost:9/sse"},
+            "jira": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {"type": "oauth2", "scopes": ["jira.read"]},
+            },
+        }
+    }
+    return payload
+
+
+def _install_oauth_mcp_client(monkeypatch, sign_in: str) -> MagicMock:
+    """Fake MCP client whose ``jira`` server needs a browser sign-in.
+
+    Listing ``jira`` fails with ``McpSignInRequired`` while sign-in is off. With
+    sign-in on, ``sign_in`` decides: ``"completes"`` returns the server's tools,
+    ``"fails"`` raises ``McpSignInError``, and ``"hangs"`` never returns.
+    """
+
+    mock_client = _install_mcp_client(monkeypatch, {"docs": [_named_tool("search_docs")]})
+    listed = mock_client.get_tools.side_effect
+
+    async def get_tools(*, server_name: str) -> list[Any]:
+        if server_name != "jira":
+            return await listed(server_name=server_name)
+        connections = sys.modules[
+            "langchain_mcp_adapters.client"
+        ].MultiServerMCPClient.call_args.args[0]
+        if not connections["jira"]["auth"].sign_in.interactive:
+            raise mcp_oauth.McpSignInRequired("'jira' needs a browser sign-in")
+        if sign_in == "hangs":
+            await asyncio.Event().wait()
+        if sign_in == "fails":
+            raise mcp_oauth.McpSignInError("sign-in was not completed within 300 seconds")
+        return [_named_tool("get_issue")]
+
+    mock_client.get_tools.side_effect = get_tools
+    return mock_client
+
+
+async def test_oauth2_sign_in_runs_on_the_first_invocation(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
+    mock_client = _install_oauth_mcp_client(monkeypatch, "completes")
+    payload = _oauth_payload(tmp_path, make_payload)
+    runtime = adapter.DeepAgentsRuntime()
+    await runtime.start(lifecycle_start_payload(payload))
+    try:
+        # The runtime starts without waiting for the browser.
+        assert [tool.name for tool in fake_sdks["create_kwargs"]["tools"]] == [
+            "search_docs"
+        ]
+        assert runtime._mcp_unavailable == [
+            {
+                "name": "jira",
+                "transport": "streamable-http",
+                "reason": "authentication_required",
+                "error_type": "McpSignInRequired",
+            }
+        ]
+
+        first = result_view(await runtime.invoke(*lifecycle_invocation(payload)))
+        second = result_view(await runtime.invoke(*lifecycle_invocation(payload)))
+    finally:
+        await runtime.stop()
+
+    assert first["failed"] is False
+    assert "mcp" not in first
+    assert sorted(tool.name for tool in fake_sdks["create_kwargs"]["tools"]) == [
+        "get_issue",
+        "search_docs",
+    ]
+    assert second["failed"] is False
+    listed = [call.kwargs["server_name"] for call in mock_client.get_tools.call_args_list]
+    # One sign-in per runtime: the second invocation does not list jira again.
+    assert sorted(listed) == ["docs", "jira", "jira"]
+
+
+async def test_oauth2_sign_in_failure_fails_the_invocation_and_is_retried(
+    tmp_path, make_payload, monkeypatch, fake_sdks, capsys
+):
+    mock_client = _install_oauth_mcp_client(monkeypatch, "fails")
+    payload = _oauth_payload(tmp_path, make_payload)
+    runtime = adapter.DeepAgentsRuntime()
+    await runtime.start(lifecycle_start_payload(payload))
+    try:
+        for _ in range(2):
+            with pytest.raises(lifecycle.LifecycleError) as raised:
+                await runtime.invoke(*lifecycle_invocation(payload))
+            assert raised.value.code == "deepagents_mcp_authentication_failed"
+            assert raised.value.metadata == {"servers": ["jira"]}
+    finally:
+        await runtime.stop()
+
+    listed = [call.kwargs["server_name"] for call in mock_client.get_tools.call_args_list]
+    assert listed.count("jira") == 3
+    assert "sign-in to MCP server 'jira' did not complete (McpSignInError)" in (
+        capsys.readouterr().err
+    )
+
+
+async def test_oauth2_sign_in_is_bounded_by_the_invocation_deadline(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
+    _install_oauth_mcp_client(monkeypatch, "hangs")
+    payload = _oauth_payload(tmp_path, make_payload)
+    runtime = adapter.DeepAgentsRuntime()
+    await runtime.start(lifecycle_start_payload(payload))
+    sign_in = runtime._mcp_sign_ins["jira"].sign_in
+    request, context = lifecycle_invocation(payload)
+    context = RuntimeContext.from_mapping(
+        {**context.to_mapping(), "deadline_millis": int(time.time() * 1000) + 50}
+    )
+    try:
+        with pytest.raises(lifecycle.LifecycleError) as raised:
+            await runtime.invoke(request, context)
+    finally:
+        await runtime.stop()
+
+    assert raised.value.code == "deepagents_mcp_authentication_failed"
+    assert sign_in.interactive is False
+
+
+def test_oauth2_client_secret_is_withheld_from_the_local_shell():
+    config = AgentConfig.from_mapping(
+        {
+            "models": {"default": {"provider": "nvidia", "model": "m"}},
+            "mcp": {
+                "servers": {
+                    "jira": {
+                        "transport": "streamable-http",
+                        "url": "https://mcp.example.test/mcp",
+                        "authentication": {
+                            "type": "oauth2",
+                            "client_id": "c",
+                            "client_secret_env": "JIRA_OAUTH_SECRET",
+                        },
+                    },
+                    "confluence": {
+                        "transport": "streamable-http",
+                        "url": "https://mcp.example.test/wiki",
+                        "authentication": dict(SERVICE_ACCOUNT_FIELDS),
+                    },
+                }
+            },
+        }
+    )
+
+    assert adapter._mcp_secret_env_names(config) == {
+        "JIRA_OAUTH_SECRET",
+        "JIRA_MCP_CLIENT_SECRET",
+    }
 
 
 SERVICE_ACCOUNT_SECRET = "client-secret-do-not-report"
