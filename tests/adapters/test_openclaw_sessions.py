@@ -807,13 +807,17 @@ async def test_connected_gateway_never_aborts_active_or_stale_work(
     assert all(c.args[0] != "sessions.abort" for c in session_call.call_args_list)
 
 
+@pytest.mark.parametrize("recover_orphaned", [False, True])
+@pytest.mark.parametrize(
+    "active", [{"activeRunIds": ["live-native-run"]}, {"hasActiveRun": True}]
+)
 async def test_owned_gateway_preserves_genuinely_active_work(
-    session_context, session_call, native_session
+    session_context, session_call, native_session, active, recover_orphaned
 ):
-    native_session.update(status="running", activeRunIds=["live-native-run"])
+    native_session.update(status="running", **active)
     with pytest.raises(LifecycleError) as caught:
         await sessions.open_session(
-            session_context, "default", session_call, recover_orphaned=True
+            session_context, "default", session_call, recover_orphaned=recover_orphaned
         )
     assert caught.value.code == "state_in_use"
     assert all(c.args[0] != "sessions.abort" for c in session_call.call_args_list)
@@ -836,7 +840,8 @@ async def test_owned_gateway_does_not_accept_unconfirmed_orphan_recovery(
 
 
 @pytest.mark.parametrize(
-    "change", [{"sessionId": "replaced"}, {"activeRunIds": ["new-run"]}]
+    "change",
+    [{"sessionId": "replaced"}, {"activeRunIds": ["new-run"]}, {"hasActiveRun": True}],
 )
 async def test_orphan_confirmation_revalidates_native_identity_and_activity(
     session_context, session_call, native_session, change

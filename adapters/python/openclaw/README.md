@@ -193,7 +193,7 @@ With native browser or terminal access enabled, runtime activity is `unknown`; h
 Set `runtime.keep_state=true` and configure `runtime.artifacts` to retain the native OpenClaw home. Save `runtime.session_ref` and pass that reference to select the same conversation after stopping the runtime:
 
 ```python
-from nemo_fabric import Fabric
+from nemo_fabric import Fabric, RunRequest
 
 fabric = Fabric()
 async with await fabric.start_runtime(config, base_dir=base_dir) as runtime:
@@ -206,7 +206,9 @@ async with await fabric.start_runtime(
     if resumed.recovery_warnings:
         # Inspect native and external state before acknowledging recovery.
         result = await resumed.invoke(
-            input="Continue after inspection.", acknowledge_recovery=True
+            request=RunRequest(
+                input="Continue after inspection.", acknowledge_recovery=True
+            )
         )
     else:
         result = await resumed.invoke(input="Continue the checklist.")
@@ -220,13 +222,13 @@ Retained session checks share one authenticated Gateway WebSocket connection per
 
 When a newly started managed Gateway finds an interrupted turn still marked as running, the adapter asks the Gateway to confirm that no work is active. The same conversation opens with a recovery warning. Connected service runtimes continue to reject sessions marked as active.
 
-An interrupted turn can have unknown external effects. When native history cannot confirm completion, startup returns `recovery_warnings` and invocation requires `acknowledge_recovery=True` after inspection. Earlier work is never automatically retried.
+An interrupted turn can have unknown external effects. When native history cannot confirm completion, startup returns `recovery_warnings` and invocation requires `acknowledge_recovery=True` after inspection. Earlier work is never automatically retried. An invocation whose native completion cannot be confirmed reports `failed` with `session_recovery_required` and preserves the available response for inspection.
 
-Gateway HTTP errors, provider failures, and request timeouts also require recovery acknowledgement before the next retained invocation, including within a live runtime. A failed response can follow tool execution or other external effects. Inspect the native session and external state before passing `acknowledge_recovery=True`.
+Gateway HTTP errors, provider failures, and request timeouts also require recovery acknowledgment before the next retained invocation, including within a live runtime. A failed response can follow tool execution or other external effects. Inspect the native session and external state before passing `acknowledge_recovery=True`.
 
 NeMo Fabric retains known unresolved tool calls in its completion record. A gap in the Gateway's recent history window also requires recovery acknowledgment. New work can confirm completion after acknowledgment when its history remains visible.
 
-Keep native session resets separate from SDK invocations. The adapter checks the native session UUID around history reads and before dispatch. OpenClaw 2026.9.34 has no expected-UUID condition on Chat Completions requests, so a reset after the final check can still redirect a turn. Eliminating that remaining race requires a Gateway change.
+Keep native session resets separate from SDK invocations. The adapter checks the native session UUID around history reads and before dispatch. OpenClaw 2026.9.34 has no expected-UUID condition on Chat Completions requests, so a reset after the final check can still redirect a turn. The remaining dispatch race is tracked in [#638](https://github.com/NVIDIA/NeMo-Fabric/issues/638).
 
 A prepared service keeps the Gateway and retained-state lock until release. Stopping a connected runtime closes that runtime's client. The service continues serving native chat channels. A retained namespace allows one connected runtime at a time. Failed Gateway cleanup retains ownership and can be retried before a replacement starts. Caller-owned attached services reject retained sessions because the current service reference cannot verify a native storage boundary.
 

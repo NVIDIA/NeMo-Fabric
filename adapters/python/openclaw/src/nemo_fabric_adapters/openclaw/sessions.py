@@ -401,7 +401,7 @@ async def open_session(
             "session_resume_unconfirmed",
             "Gateway did not confirm the selected native session",
         )
-    if entry.get("activeRunIds"):
+    if entry.get("hasActiveRun") or entry.get("activeRunIds"):
         raise LifecycleError("state_in_use", "Native session still has active work")
     orphaned = entry.get("status") in {"running", "queued"}
     if orphaned:
@@ -423,7 +423,7 @@ async def open_session(
             raise LifecycleError(
                 "session_identity_changed", "Native session identity changed"
             )
-        if current.get("activeRunIds"):
+        if current.get("hasActiveRun") or current.get("activeRunIds"):
             raise LifecycleError("state_in_use", "Native session still has active work")
     result = NativeSession(
         session_id,

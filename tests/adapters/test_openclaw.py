@@ -3917,8 +3917,10 @@ async def test_retained_invocation_failure_preserves_identity_and_recovery_gate(
             AgentRunRequest(input="Create a ticket."), context
         )
         assert failed.session_id == started["session_id"]
+        assert failed.status == "failed"
         if failure == "unconfirmed":
-            assert failed.status == "succeeded"
+            assert failed.error.code == "session_recovery_required"
+            assert failed.output["response"] == "A response without durable completion."
         else:
             assert failed.error.code == (
                 "timeout" if failure == "timeout" else "openclaw_http_error"
@@ -4120,3 +4122,53 @@ async def test_command_cleanup_is_bounded_with_inherited_pipes(
         if not task.done():
             task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.parametrize("retained", [False, True])
+@pytest.mark.parametrize("configured_agent", [None, "reviewer", "default", "other"])
+async def test_prepared_service_validates_explicit_agent_before_session_selection(
+    tmp_path, monkeypatch, retained, configured_agent
+):
+    config = _config(Path("unused-openclaw"))
+    if configured_agent is not None:
+        config.harness.settings["agent_id"] = configured_agent
+    context = _context(tmp_path)
+    if retained:
+        context.state_dir = str(tmp_path / "retained")
+    connection = tmp_path / "private/service.json"
+    adapter._write_service_connection(
+        connection,
+        gateway_url="http://127.0.0.1:18789",
+        token="TEST_ONLY_GATEWAY_TOKEN",
+        agent_id="reviewer",
+        state_dir=context.state_dir,
+    )
+    selected = MagicMock(spec=adapter.sessions.NativeSession)
+    selected.key = "agent:reviewer:openai-user:test"
+    selected.start_output.return_value = {"session_id": "selected-session"}
+    open_session = AsyncMock(return_value=selected)
+    monkeypatch.setattr(adapter.sessions, "open_session", open_session)
+    runtime = adapter.OpenClawRuntime()
+    runtime._probe_gateway = AsyncMock(return_value="2026.9.34")
+    payload = {
+        "config": config,
+        "runtime_context": context.to_mapping(),
+        "base_dir": str(tmp_path),
+        "service": {"operation": "connect", "connection_path": str(connection)},
+    }
+    try:
+        if configured_agent in {"default", "other"}:
+            with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+                await runtime.start(payload)
+            assert caught.value.code == "openclaw_invalid_service_reference"
+            open_session.assert_not_awaited()
+            runtime._probe_gateway.assert_not_awaited()
+        else:
+            await runtime.start(payload)
+            assert runtime._agent_id == "reviewer"
+            if retained:
+                assert open_session.await_args.args[1] == "reviewer"
+            else:
+                open_session.assert_not_awaited()
+    finally:
+        await runtime.stop()

@@ -313,12 +313,21 @@ class Handler(BaseHTTPRequestHandler):
         if key := self.headers.get("x-openclaw-session-key"):
             entry = native_sessions[key]
             entry["messages"].append(
-                {"role": "user", "content": request["messages"][-1]["content"]}
+                {
+                    "role": "user",
+                    "content": request["messages"][-1]["content"],
+                    "__openclaw": {"id": str(uuid4())},
+                }
             )
             if os.environ.get("FAKE_OPENCLAW_MEMORY_REPLY"):
                 response_text = json.dumps(entry["messages"])
             entry["messages"].append(
-                {"role": "assistant", "content": response_text, "stopReason": "stop"}
+                {
+                    "role": "assistant",
+                    "content": response_text,
+                    "stopReason": "stop",
+                    "__openclaw": {"id": str(uuid4())},
+                }
             )
             save_sessions()
         chunks = [
