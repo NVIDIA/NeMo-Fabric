@@ -22,7 +22,8 @@ from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
-from typing import Any
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -45,6 +46,7 @@ from nemo_fabric_adapters.hermes import telemetry
 # The actual internal hermes default  as of v0.21 is `sys.maxsize`
 DEFAULT_MAX_ITERATIONS: int = configuration.DEFAULT_MAX_ITERATIONS
 LOGGER = logging.getLogger(__name__)
+T = TypeVar("T")
 hermes_mcp_server_config = configuration.hermes_mcp_server_config
 
 
@@ -184,7 +186,7 @@ class HermesRuntime:
             # Finish the manifest update of an earlier start that removed a
             # copy and then failed, before anything reads the manifest.
             try:
-                await asyncio.to_thread(
+                await _run_to_completion(
                     skills.finish_pending_removals, self._hermes_home
                 )
             except OSError as error:
@@ -579,23 +581,8 @@ class HermesRuntime:
         self._bundled_env = os.environ.get(skills.BUNDLED_SKILLS_ENV)
         stage = Path(tempfile.mkdtemp(prefix="nemo-fabric-hermes-bundled-"))
         self._bundled_stage = stage
-        worker = asyncio.ensure_future(
-            asyncio.to_thread(skills.stage_bundled, plan, stage)
-        )
         try:
-            try:
-                await asyncio.shield(worker)
-            except asyncio.CancelledError:
-                # Cancelling start doesn't stop the copy. Wait for it, so
-                # the folder that stop removes stays removed.
-                while not worker.done():
-                    try:
-                        await asyncio.wait({worker})
-                    except asyncio.CancelledError:
-                        pass
-                if not worker.cancelled():
-                    worker.exception()
-                raise
+            await _run_to_completion(skills.stage_bundled, plan, stage)
         except OSError as error:
             raise lifecycle.LifecycleError(
                 "hermes_skill_invalid",
@@ -1021,6 +1008,35 @@ class HermesRuntime:
             ) from errors[0]
 
 
+async def _run_to_completion(func: Callable[..., T], *args: Any) -> T:
+    """Run ``func`` in a thread and, if cancelled, wait for it before raising.
+
+    Cancelling the awaiting task doesn't stop the thread. Start's failure path
+    calls stop, which restores the bundled-skill environment and removes the
+    staged folder, and a later runtime can then reuse the home. So a thread
+    that writes the home or the staged folder must finish first.
+    """
+
+    worker = asyncio.ensure_future(asyncio.to_thread(func, *args))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        while not worker.done():
+            try:
+                await asyncio.wait({worker})
+            except asyncio.CancelledError:
+                pass
+        if not worker.cancelled():
+            # The cancellation wins; a failure of the thread is only logged.
+            error = worker.exception()
+            if error is not None:
+                LOGGER.warning(
+                    "Hermes skill work failed after start was cancelled",
+                    exc_info=(type(error), error, error.__traceback__),
+                )
+        raise
+
+
 async def _prepare_skills(
     plan: skills.SkillPlan, hermes_home: Path
 ) -> dict[str, Any] | None:
@@ -1038,7 +1054,7 @@ async def _prepare_skills(
 
     if plan.stale_copies:
         try:
-            await asyncio.to_thread(skills.remove_copies, plan, hermes_home)
+            await _run_to_completion(skills.remove_copies, plan, hermes_home)
         except (OSError, ValueError) as error:
             raise lifecycle.LifecycleError(
                 "hermes_skill_invalid",
@@ -1053,7 +1069,7 @@ async def _prepare_skills(
     sync_result = None
     if plan.sync:
         try:
-            sync_result = await asyncio.to_thread(skills.sync_bundled)
+            sync_result = await _run_to_completion(skills.sync_bundled)
         except Exception as error:
             if plan.bundled is None:
                 # Run only for the report, ahead of the interfaces' own copy,

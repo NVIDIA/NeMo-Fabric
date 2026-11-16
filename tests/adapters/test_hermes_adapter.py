@@ -3302,6 +3302,45 @@ async def test_cancelled_start_waits_for_the_bundled_staging_worker(
     assert "HERMES_BUNDLED_SKILLS" not in os.environ
 
 
+@pytest.mark.usefixtures("mock_hermes_agent")
+async def test_cancelled_start_waits_for_the_bundled_sync_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Stop runs only after Hermes's bundled sync has finished, so the sync
+    still reads the staged folder and no copy lands after stop."""
+    excluded = _first_bundled_name()
+    real_sync = hermes_skills.sync_bundled
+    entered = threading.Event()
+    release = threading.Event()
+    seen: dict[str, object] = {}
+
+    def slow_sync() -> object:
+        entered.set()
+        release.wait(5)
+        stage = os.environ.get("HERMES_BUNDLED_SKILLS")
+        seen["stage_kept"] = stage is not None and Path(stage).is_dir()
+        try:
+            return real_sync()
+        finally:
+            seen["stop_began"] = runtime._stopping
+
+    monkeypatch.setattr(hermes_skills, "sync_bundled", slow_sync)
+    runtime = adapter.HermesRuntime()
+    start = asyncio.create_task(
+        runtime.start(_skill_payload(tmp_path, {"bundled": {"exclude": [excluded]}}))
+    )
+    assert await asyncio.to_thread(entered.wait, 5)
+
+    start.cancel()
+    asyncio.get_running_loop().call_later(0.2, release.set)
+    with pytest.raises(asyncio.CancelledError):
+        await start
+
+    assert seen == {"stage_kept": True, "stop_began": False}
+    assert runtime._started is False
+    assert "HERMES_BUNDLED_SKILLS" not in os.environ
+
+
 @pytest.mark.parametrize(
     "skills", [{"bundled": {}}, {"bundled": {"exclude": []}}, {}], ids=str
 )
