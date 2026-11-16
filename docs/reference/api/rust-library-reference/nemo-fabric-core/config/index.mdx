@@ -2,7 +2,7 @@
 title: "Module config"
 sidebar-title: "config"
 description: "NeMo Fabric config models and loading helpers."
-position: 170
+position: 173
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -31,8 +31,10 @@ NeMo Fabric config models and loading helpers.
 
 ## Structs
 
+- [AdapterCompatibilityIssue](struct-adaptercompatibilityissue.mdx): A configuration field unsupported by the selected adapter metadata.
 - [AdapterConfigSupport](struct-adapterconfigsupport.mdx): Adapter config support.
 - [AdapterDescriptor](struct-adapterdescriptor.mdx): Language-neutral adapter descriptor for a harness integration.
+- [AdapterInspection](struct-adapterinspection.mdx): Metadata-only inspection result. This value cannot start a runtime.
 - [AdapterRequirements](struct-adapterrequirements.mdx): Adapter runtime requirements.
 - [AdapterTargetDescriptor](struct-adaptertargetdescriptor.mdx): Independently registered target implemented by an adapter.
 - [AdapterTelemetryProviderSupport](struct-adaptertelemetryprovidersupport.mdx): Telemetry capabilities for one adapter-supported provider.
@@ -108,6 +110,7 @@ NeMo Fabric config models and loading helpers.
 
 ## Functions
 
+- [inspect_adapter_config](fn-inspect-adapter-config.mdx): Inspect canonical descriptor values without discovery, filesystem access, or runtime startup.
 - [load_adapter_descriptor](fn-load-adapter-descriptor.mdx): Load an adapter descriptor from JSON package metadata.
 - [load_adapter_target_descriptor](fn-load-adapter-target-descriptor.mdx): Load an Adapter Target Descriptor from declarative JSON metadata.
 - [resolve_run_plan_from_config](fn-resolve-run-plan-from-config.mdx): Resolve a typed NVIDIA NeMo Fabric config into a runnable plan.

@@ -35,12 +35,17 @@ The following table lists the `Fabric` methods and when to use each:
 the common case; use `request=RunRequest(...)` when the invocation needs a
 caller-owned `request_id`, `context`, or overrides.
 
-The public `inspect_adapter(config, descriptor)` helper returns an immutable
-`AdapterCapabilityProfile` for standalone host admission without harness SDKs.
+The public `inspect_adapter(config, descriptor)` helper returns `AdapterInspection`,
+with an empty `issues` list and an immutable `capability_profile` on success.
+Use `diagnostics=True` for structured `AdapterCompatibilityIssue` values with
+`adapter_id`, `field`, and `reason`; incompatible reports have no profile.
+Default mode raises on incompatibility; malformed inputs raise in both modes.
+The nested `AdapterCapabilityProfile` supports host admission without harness SDKs.
 Both `run()` and `start_runtime()` accept optional
 `expected_descriptor_sha256` to verify the task plan's descriptor before startup.
-The profile is configuration-dependent for telemetry and excludes workflow
-targets and attached services. It is not observed execution provenance.
+The profile is configuration-dependent for telemetry. Registered workflows
+require target metadata and bind both descriptors in the fingerprint; attached
+services require separate admission. The profile is not observed execution provenance.
 
 OpenShell environments use `start_runtime_in` with a prepared or attached
 handle. They support buffered invocation and multiple independent bridge

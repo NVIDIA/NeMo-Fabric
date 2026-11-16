@@ -20,13 +20,14 @@ Metadata-only adapter inspection for host-side admission.
 inspect_adapter(
     config: 'FabricConfig',
     descriptor: 'Mapping[str, Any] | None',
-    target_descriptor: 'Mapping[str, Any] | None' = None
-) → AdapterCapabilityProfile
+    target_descriptor: 'Mapping[str, Any] | None' = None,
+    diagnostics: 'bool' = False
+) → AdapterInspection
 ```
 
 Inspect supplied adapter and optional workflow metadata without loading its SDK.
 
-Uses the existing native planner and validation contract. A temporary metadata copy is used only for inspection; it is never an execution origin. Task-local discovery paths are not accessed on the host. Callers supply official catalog metadata or an external adapter's canonical descriptor.
+Validates canonical descriptor values entirely in memory with shared Rust rules. No descriptor files, executable discovery, or harness SDKs are needed. With diagnostics=True, independent model, tool-routing, and MCP failures are returned in issues; otherwise incompatibilities raise FabricConfigError. Malformed inputs raise in both modes. Settings, tool-definition schemas, and extensions retain first-error boundaries. Success does not imply readiness.
 
 Missing metadata permits basic execution with false optional-feature claims; requested skills, MCP, or telemetry fail rather than being silently dropped. Configured registered workflows require their canonical target metadata as well as adapter metadata. Their fingerprint covers both descriptors.
 
@@ -50,6 +51,53 @@ def __init__(
     skills: bool = False,
     mcp: bool = False,
     atif: bool = False,
+) -> None
+```
+
+
+
+
+
+
+
+
+
+---
+
+
+## <kbd>class</kbd> `AdapterCompatibilityIssue`
+
+A value-free incompatibility at a Fabric configuration field.
+
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(adapter_id: str, field: str, reason: str) -> None
+```
+
+
+
+
+
+
+
+
+
+---
+
+
+## <kbd>class</kbd> `AdapterInspection`
+
+Metadata compatibility report; a profile is available only without issues.
+
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(
+    issues: list[AdapterCompatibilityIssue],
+    capability_profile: AdapterCapabilityProfile | None,
 ) -> None
 ```
 

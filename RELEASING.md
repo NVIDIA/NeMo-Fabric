@@ -578,3 +578,19 @@ After the release is live, verify:
 
 5. The Fern documentation site shows the expected version and release notes.
 6. The GitHub Release page is complete and accurate.
+
+## Pending Inspection API Migration
+
+Include the inspection API changes as breaking changes in the next GitHub Release
+notes, with a link to the migration examples in `docs/sdk/python.mdx`:
+
+- Python `inspect_adapter` returns `AdapterInspection`; read capability flags and
+  the fingerprint through `result.capability_profile`. Default incompatibilities
+  still raise `FabricConfigError`. With `diagnostics=True`, check `result.issues`
+  before deployment; incompatible reports have no profile. Malformed inputs raise
+  in both modes. There is no transitional return type.
+- Rust `inspect_adapter_config` accepts descriptor values and an explicit
+  diagnostics boolean instead of descriptor paths. File callers load and
+  deserialize first. There is no file-based compatibility wrapper.
+
+Notify affected consumers when preparing the release.

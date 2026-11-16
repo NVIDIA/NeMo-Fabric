@@ -572,7 +572,7 @@ else:
                 self._build_config(),
                 self._host_descriptor,
                 target_descriptor=self._host_target_descriptor,
-            )
+            ).capability_profile
             if self.skills_dir is not None and not self._capability_profile.skills:
                 raise FabricConfigError(
                     f"Cannot confirm requested Harbor skills for {self.fabric_adapter_id}: "
@@ -743,7 +743,7 @@ else:
                 config,
                 self._host_descriptor,
                 target_descriptor=self._host_target_descriptor,
-            )
+            ).capability_profile
             # Transport names; values arrive through Harbor's managed exec env.
             for name in self.fabric_environment_env:
                 config.environment.env.pop(name, None)

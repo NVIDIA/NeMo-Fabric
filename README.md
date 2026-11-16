@@ -94,3 +94,9 @@ Planned areas of development include:
 - **Standardize model usage accounting:** Report input, cached, output, and reasoning tokens consistently, distinguish complete, partial, and unknown usage, and attribute delegated work to the correct invocation.
 - **Capture execution provenance:** Record NeMo Fabric and adapter versions, requested models, sanitized MCP configuration, and execution environment, with explicit sources and unknowns.
 
+
+Host-side metadata admission uses `inspect_adapter(config, descriptor)` from
+`nemo-fabric-runtime`. Read capability flags from `result.capability_profile`,
+or pass `diagnostics=True` and check `result.issues` before changing a deployment.
+See the [inspection guide](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host)
+for descriptor sources, compatibility limits, and API migration examples.

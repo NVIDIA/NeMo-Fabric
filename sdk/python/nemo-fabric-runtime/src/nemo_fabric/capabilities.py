@@ -9,8 +9,6 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
 
 from nemo_fabric.errors import FabricConfigError
@@ -34,6 +32,23 @@ class AdapterCapabilityProfile:
     skills: bool = False
     mcp: bool = False
     atif: bool = False
+
+
+@dataclass(frozen=True)
+class AdapterCompatibilityIssue:
+    """A value-free incompatibility at a Fabric configuration field."""
+
+    adapter_id: str
+    field: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class AdapterInspection:
+    """Metadata compatibility report; a profile is available only without issues."""
+
+    issues: list[AdapterCompatibilityIssue]
+    capability_profile: AdapterCapabilityProfile | None
 
 
 def _adapter_descriptor_sha256(plan: RunPlan) -> str:
@@ -93,13 +108,16 @@ def inspect_adapter(
     descriptor: Mapping[str, Any] | None,
     *,
     target_descriptor: Mapping[str, Any] | None = None,
-) -> AdapterCapabilityProfile:
+    diagnostics: bool = False,
+) -> AdapterInspection:
     """Inspect supplied adapter and optional workflow metadata without loading its SDK.
 
-    Uses the existing native planner and validation contract. A temporary metadata
-    copy is used only for inspection; it is never an execution origin. Task-local
-    discovery paths are not accessed on the host. Callers supply official catalog
-    metadata or an external adapter's canonical descriptor.
+    Validates canonical descriptor values entirely in memory with shared Rust
+    rules. No descriptor files, executable discovery, or harness SDKs are needed.
+    With diagnostics=True, independent model, tool-routing, and MCP failures are
+    returned in issues; otherwise incompatibilities raise FabricConfigError.
+    Malformed inputs raise in both modes. Settings, tool-definition schemas, and
+    extensions retain first-error boundaries. Success does not imply readiness.
 
     Missing metadata permits basic execution with false optional-feature claims;
     requested skills, MCP, or telemetry fail rather than being silently dropped.
@@ -138,34 +156,36 @@ def inspect_adapter(
                 f"Cannot confirm requested skills, MCP, or telemetry for {adapter_id}: "
                 "host descriptor metadata is unavailable"
             )
-        return AdapterCapabilityProfile(adapter_id=adapter_id)
+        return AdapterInspection(
+            issues=[],
+            capability_profile=AdapterCapabilityProfile(adapter_id=adapter_id),
+        )
     if (
         not isinstance(descriptor, Mapping)
         or descriptor.get("adapter_id") != adapter_id
     ):
         raise FabricConfigError(f"Host descriptor does not match adapter {adapter_id}")
-    with TemporaryDirectory(prefix="nemo-fabric-inspection-") as directory:
-        path = Path(directory) / "host.fabric-adapter.json"
-        native = Fabric()._require_native_module("inspect_adapter")
-        try:
-            path.write_text(
-                json.dumps(dict(descriptor), allow_nan=False), encoding="utf-8"
+    native = Fabric()._require_native_module("inspect_adapter")
+    try:
+        inspection = json.loads(
+            native.inspect_adapter_metadata(
+                json.dumps(config.to_mapping(), allow_nan=False),
+                json.dumps(dict(descriptor), allow_nan=False),
+                None
+                if target_descriptor is None
+                else json.dumps(dict(target_descriptor), allow_nan=False),
+                diagnostics,
             )
-            arguments = [json.dumps(config.to_mapping()), str(path)]
-            if target_descriptor is not None:
-                target_path = Path(directory) / "host.fabric-target.json"
-                target_path.write_text(
-                    json.dumps(dict(target_descriptor), allow_nan=False),
-                    encoding="utf-8",
-                )
-                arguments.append(str(target_path))
-            inspection = json.loads(native.inspect_adapter_metadata(*arguments))
-        except Exception as error:
-            if config.workflow is not None:
-                raise FabricConfigError(
-                    "Workflow target metadata or configuration is invalid"
-                ) from None
-            raise FabricConfigError(str(error)) from error
+        )
+    except Exception as error:
+        if config.workflow is not None:
+            raise FabricConfigError(
+                "Workflow target metadata or configuration is invalid"
+            ) from None
+        raise FabricConfigError(str(error)) from error
+    issues = [AdapterCompatibilityIssue(**issue) for issue in inspection["issues"]]
+    if issues:
+        return AdapterInspection(issues=issues, capability_profile=None)
     normalized = inspection["descriptor"]
     accepts = normalized["config"].get("accepts", [])
     providers = normalized["telemetry"].get("providers", {})
@@ -199,7 +219,7 @@ def inspect_adapter(
             )
         if len(observability) == 1:
             relay_atif = enabled_outputs[0]
-    return AdapterCapabilityProfile(
+    profile = AdapterCapabilityProfile(
         adapter_id=adapter_id,
         descriptor_sha256=_descriptor_sha256(
             normalized, inspection.get("target_descriptor")
@@ -208,3 +228,5 @@ def inspect_adapter(
         mcp="mcp" in accepts,
         atif=bool(atif or relay_atif),
     )
+
+    return AdapterInspection(issues=[], capability_profile=profile)

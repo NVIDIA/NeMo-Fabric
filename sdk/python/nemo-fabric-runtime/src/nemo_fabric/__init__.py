@@ -6,6 +6,8 @@
 from nemo_fabric.client import Fabric
 from nemo_fabric.check import CheckReport, CheckRequest
 from nemo_fabric.capabilities import AdapterCapabilityProfile
+from nemo_fabric.capabilities import AdapterCompatibilityIssue
+from nemo_fabric.capabilities import AdapterInspection
 from nemo_fabric.capabilities import inspect_adapter
 from nemo_fabric.errors import FabricCapabilityError
 from nemo_fabric.errors import FabricConfigError
@@ -95,6 +97,8 @@ __all__ = [
     "CheckReport",
     "CheckRequest",
     "AdapterCapabilityProfile",
+    "AdapterCompatibilityIssue",
+    "AdapterInspection",
     "AdapterInfo",
     "ArtifactManifest",
     "ArtifactRef",

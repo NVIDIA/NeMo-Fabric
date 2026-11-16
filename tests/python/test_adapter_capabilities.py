@@ -72,7 +72,7 @@ def test_official_profiles_follow_catalog_metadata(adapter_id, skills, mcp):
         metadata=MetadataConfig(name="inspection"),
         harness=HarnessConfig(adapter_id=adapter_id, settings=settings),
     )
-    profile = inspect_adapter(config, descriptor)
+    profile = inspect_adapter(config, descriptor).capability_profile
     assert (profile.skills, profile.mcp, profile.atif) == (skills, mcp, False)
     assert len(profile.descriptor_sha256) == 64
 
@@ -94,7 +94,7 @@ def test_inspection_does_not_load_sdk_or_mutate_task_discovery(
     )
     before = custom_config.to_mapping()
     monkeypatch.setitem(sys.modules, "not_installed", None)
-    profile = inspect_adapter(custom_config, custom_descriptor)
+    profile = inspect_adapter(custom_config, custom_descriptor).capability_profile
     assert profile.skills and profile.mcp
     assert custom_config.to_mapping() == before
     with pytest.raises(FrozenInstanceError):
@@ -109,7 +109,10 @@ def test_atif_requires_selected_provider_and_enabled_output(
 ):
     if enabled is not None:
         custom_config.enable_relay(observability={"atif": {"enabled": enabled}})
-    assert inspect_adapter(custom_config, custom_descriptor).atif is expected
+    assert (
+        inspect_adapter(custom_config, custom_descriptor).capability_profile.atif
+        is expected
+    )
 
 
 def test_atif_does_not_union_unselected_provider_outputs(
@@ -119,7 +122,10 @@ def test_atif_does_not_union_unselected_provider_outputs(
 
     custom_descriptor["telemetry"]["providers"]["native"] = {"outputs": ["otel"]}
     custom_config.telemetry = TelemetryConfig(providers={"native": {}})
-    assert inspect_adapter(custom_config, custom_descriptor).atif is False
+    assert (
+        inspect_adapter(custom_config, custom_descriptor).capability_profile.atif
+        is False
+    )
 
 
 def test_ambiguous_relay_components_do_not_confirm_atif(
@@ -162,9 +168,9 @@ def test_native_atif_requires_selected_declared_provider(
     from nemo_fabric import TelemetryConfig
 
     custom_descriptor["telemetry"]["providers"]["native"] = {"outputs": ["atif"]}
-    assert not inspect_adapter(custom_config, custom_descriptor).atif
+    assert not inspect_adapter(custom_config, custom_descriptor).capability_profile.atif
     custom_config.telemetry = TelemetryConfig(providers={"native": {}})
-    assert inspect_adapter(custom_config, custom_descriptor).atif
+    assert inspect_adapter(custom_config, custom_descriptor).capability_profile.atif
 
 
 def test_inspection_requires_typed_config(custom_descriptor):
@@ -191,7 +197,7 @@ def test_missing_metadata_rejects_unconfirmed_requested_features(
 def test_missing_or_incomplete_metadata_makes_conservative_claims(
     custom_config, custom_descriptor
 ):
-    missing = inspect_adapter(custom_config, None)
+    missing = inspect_adapter(custom_config, None).capability_profile
     assert (missing.skills, missing.mcp, missing.atif, missing.descriptor_sha256) == (
         False,
         False,
@@ -200,7 +206,7 @@ def test_missing_or_incomplete_metadata_makes_conservative_claims(
     )
     del custom_descriptor["config"]
     del custom_descriptor["telemetry"]
-    incomplete = inspect_adapter(custom_config, custom_descriptor)
+    incomplete = inspect_adapter(custom_config, custom_descriptor).capability_profile
     assert (incomplete.skills, incomplete.mcp, incomplete.atif) == (False, False, False)
 
 
@@ -225,7 +231,7 @@ def test_descriptor_fingerprint_ignores_origin_but_detects_contract_drift(
 ):
     from nemo_fabric import DiscoveryConfig
 
-    profile = inspect_adapter(custom_config, custom_descriptor)
+    profile = inspect_adapter(custom_config, custom_descriptor).capability_profile
     path = tmp_path / "custom.fabric-adapter.json"
     path.write_text(json.dumps(custom_descriptor), encoding="utf-8")
     custom_config.discovery = DiscoveryConfig(local_paths=[path])
@@ -370,7 +376,7 @@ async def test_real_harbor_runner_matches_custom_task_descriptor(
     config = hermes_shim_config()
     plan = Fabric().plan(config, base_dir=hermes_shim_agent_dir)
     descriptor = plan.to_mapping()["adapter_descriptor"]["descriptor"]
-    profile = inspect_adapter(config, descriptor)
+    profile = inspect_adapter(config, descriptor).capability_profile
     payload = FabricRunPayload(
         config=config,
         config_base_dir=str(hermes_shim_agent_dir),
@@ -431,12 +437,17 @@ def test_workflow_inspection_uses_supplied_metadata_without_sdk_or_task_discover
         Mock(side_effect=AssertionError("execution discovery must not run")),
     )
     before = config.to_mapping()
-    profile = inspect_adapter(config, descriptor, target_descriptor=target)
+    profile = inspect_adapter(
+        config, descriptor, target_descriptor=target
+    ).capability_profile
     assert profile.skills and profile.mcp
     assert len(profile.descriptor_sha256) == 64
     assert config.to_mapping() == before
     config.harness = None
-    assert inspect_adapter(config, descriptor, target_descriptor=target) == profile
+    assert (
+        inspect_adapter(config, descriptor, target_descriptor=target).capability_profile
+        == profile
+    )
 
 
 @pytest.mark.parametrize("missing", ["adapter", "target"])
@@ -487,7 +498,9 @@ def test_workflow_fingerprint_matches_execution_plan_and_includes_target(
     from nemo_fabric import DiscoveryConfig
 
     config, descriptor, target = workflow_metadata
-    profile = inspect_adapter(config, descriptor, target_descriptor=target)
+    profile = inspect_adapter(
+        config, descriptor, target_descriptor=target
+    ).capability_profile
     adapter_path = tmp_path / "custom.fabric-adapter.json"
     target_path = tmp_path / "custom.fabric-target.json"
     adapter_path.write_text(json.dumps(descriptor))
@@ -538,7 +551,9 @@ async def test_sdk_rejects_target_drift_before_native_start(
     import nemo_fabric.client as client
 
     config, descriptor, target = workflow_metadata
-    profile = inspect_adapter(config, descriptor, target_descriptor=target)
+    profile = inspect_adapter(
+        config, descriptor, target_descriptor=target
+    ).capability_profile
     adapter_path = tmp_path / "custom.fabric-adapter.json"
     target_path = tmp_path / "custom.fabric-target.json"
     adapter_path.write_text(json.dumps(descriptor))
@@ -562,3 +577,91 @@ async def test_sdk_rejects_target_drift_before_native_start(
         )
     start.assert_not_called()
     lifecycle.assert_not_called()
+
+
+def test_diagnostics_collect_independent_failures_without_files(
+    custom_config, custom_descriptor, monkeypatch
+):
+    import tempfile
+
+    custom_descriptor["config"]["accepts"] = ["models"]
+    config = FabricConfig.from_mapping(
+        {
+            **custom_config.to_mapping(),
+            "models": {
+                "default": {
+                    "provider": "openai",
+                    "model": "private-model",
+                    "temperature": 0.5,
+                    "max_tokens": 20,
+                }
+            },
+            "tools": {"enabled": ["private-tool"]},
+            "mcp": {
+                "servers": {
+                    "private-server": {"transport": "stdio", "url": "private-command"}
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(
+        tempfile, "TemporaryDirectory", Mock(side_effect=AssertionError("no files"))
+    )
+    report = inspect_adapter(config, custom_descriptor, diagnostics=True)
+    assert report.capability_profile is None
+    fields = [issue.field for issue in report.issues]
+    assert fields == sorted(fields)
+    assert {
+        "models.default.temperature",
+        "models.default.max_tokens",
+        "tools.enabled",
+    } <= set(fields)
+    assert any(field.startswith("mcp") for field in fields)
+    assert all(
+        issue.adapter_id == custom_descriptor["adapter_id"] for issue in report.issues
+    )
+    assert "private-model" not in repr(report.issues)
+    assert "private-command" not in repr(report.issues)
+    assert "private-tool" not in repr(report.issues)
+    assert inspect_adapter(config, custom_descriptor, diagnostics=True) == report
+    with pytest.raises(FabricConfigError):
+        inspect_adapter(config, custom_descriptor)
+
+
+@pytest.mark.parametrize("diagnostics", [False, True])
+@pytest.mark.parametrize(
+    "schema_field",
+    ["settings_schema", "model_schema", "tool_definition_schema", "config_schema"],
+)
+def test_inspection_rejects_invalid_schema_in_both_modes(
+    custom_config, custom_descriptor, diagnostics, schema_field
+):
+    custom_descriptor[schema_field] = {"type": "invalid-private-value"}
+    with pytest.raises(FabricConfigError, match="invalid adapter descriptor") as error:
+        inspect_adapter(custom_config, custom_descriptor, diagnostics=diagnostics)
+    assert "invalid-private-value" not in str(error.value)
+
+
+def test_diagnostics_success_matches_default(custom_config, custom_descriptor):
+    report = inspect_adapter(custom_config, custom_descriptor, diagnostics=True)
+    assert report.issues == []
+    assert report.capability_profile is not None
+    assert report == inspect_adapter(custom_config, custom_descriptor)
+
+
+@pytest.mark.parametrize("diagnostics", [False, True])
+@pytest.mark.parametrize("invalid", ["target_id", "adapter_id", "schema"])
+def test_workflow_malformed_metadata_raises_in_both_modes(
+    workflow_metadata, diagnostics, invalid
+):
+    config, descriptor, target = workflow_metadata
+    if invalid == "target_id":
+        target["id"] = "other.workflow"
+    elif invalid == "adapter_id":
+        target["adapter_id"] = "other.adapter"
+    else:
+        target["spec"]["settings_schema"] = {"type": "invalid-private-value"}
+    with pytest.raises(FabricConfigError):
+        inspect_adapter(
+            config, descriptor, target_descriptor=target, diagnostics=diagnostics
+        )

@@ -10,9 +10,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use nemo_fabric_core::{
-    EnvironmentHandle, EnvironmentReference, FabricConfig, FabricError, OpenAiStreamTransport,
-    ResolveContext, RunPlan, RunRequest, RuntimeHandle, ServiceHandle, ServiceReference,
-    doctor_plan, inspect_adapter_config,
+    AdapterDescriptor, AdapterTargetDescriptor, EnvironmentHandle, EnvironmentReference,
+    FabricConfig, FabricError, OpenAiStreamTransport, ResolveContext, RunPlan, RunRequest,
+    RuntimeHandle, ServiceHandle, ServiceReference, doctor_plan, inspect_adapter_config,
     resolve_diagnostic_plan_from_config_with_adapter_directories,
     resolve_run_plan_from_config_with_adapter_directories, run_plan,
 };
@@ -70,22 +70,25 @@ fn plan_config(py: Python<'_>, config_json: String, base_dir: Option<String>) ->
 
 /// Inspect supplied host metadata without probing executable adapter locations.
 #[pyfunction]
-#[pyo3(signature = (config_json, descriptor_path, target_descriptor_path=None))]
+#[pyo3(signature = (config_json, descriptor_json, target_descriptor_json=None, diagnostics=false))]
 fn inspect_adapter_metadata(
     py: Python<'_>,
     config_json: String,
-    descriptor_path: String,
-    target_descriptor_path: Option<String>,
+    descriptor_json: String,
+    target_descriptor_json: Option<String>,
+    diagnostics: bool,
 ) -> PyResult<String> {
-    let config = parse_config(config_json)?;
+    // Parse errors must not echo JSON values, which can contain credentials.
+    let config = parse_config(config_json)
+        .map_err(|_| PyRuntimeError::new_err("invalid Fabric configuration"))?;
+    let descriptor: AdapterDescriptor = serde_json::from_str(&descriptor_json)
+        .map_err(|_| PyRuntimeError::new_err("invalid adapter descriptor"))?;
+    let target: Option<AdapterTargetDescriptor> = target_descriptor_json
+        .map(|json| serde_json::from_str(&json))
+        .transpose()
+        .map_err(|_| PyRuntimeError::new_err("invalid target descriptor"))?;
     let inspection = py
-        .detach(|| {
-            inspect_adapter_config(
-                config,
-                Path::new(&descriptor_path),
-                target_descriptor_path.as_deref().map(Path::new),
-            )
-        })
+        .detach(|| inspect_adapter_config(config, &descriptor, target.as_ref(), diagnostics))
         .map_err(to_py_error)?;
     to_json(&inspection)
 }

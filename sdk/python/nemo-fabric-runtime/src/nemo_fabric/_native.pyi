@@ -4,8 +4,9 @@
 def version() -> str: ...
 def inspect_adapter_metadata(
     config_json: str,
-    descriptor_path: str,
-    target_descriptor_path: str | None = None,
+    descriptor_json: str,
+    target_descriptor_json: str | None = None,
+    diagnostics: bool = False,
 ) -> str: ...
 def plan_config(
     config_json: str,
