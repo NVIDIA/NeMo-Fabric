@@ -559,7 +559,12 @@ before it expires. `token_endpoint_auth_method` selects `client_secret_basic`
 (the default) or `client_secret_post`, and `token_cache_buffer_seconds` (300 by
 default) sets how early the token is renewed. Some servers also require a
 second, service-specific token; send it with `custom_headers` and a `${NAME}`
-reference alongside `service_account` authentication.
+reference alongside `service_account` authentication, under its own header
+name. `service_account` applies to `sse` and `streamable-http` servers. Startup
+fails if the variable named by `client_secret_env` is unset, if `token_url` or
+the server `url` is not `https` (plain `http` is accepted only for a loopback
+host), if the transport is `websocket`, or if the same server sets an
+`Authorization` custom header.
 
 Use `custom_headers` to send HTTP headers with an `sse` or `streamable-http`
 server. Header names and values must be valid HTTP header text. To provide a

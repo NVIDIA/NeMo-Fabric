@@ -2703,6 +2703,23 @@ def test_service_account_configuration_errors(
     assert SERVICE_ACCOUNT_SECRET not in str(raised.value)
 
 
+@pytest.mark.parametrize(
+    ("url", "accepted"),
+    [("http://mcp.example.test/mcp", False), ("http://127.0.0.1:8000/mcp", True)],
+)
+def test_service_account_requires_https_for_a_remote_server(url, accepted):
+    os.environ["JIRA_MCP_CLIENT_SECRET"] = SERVICE_ACCOUNT_SECRET
+    spec = AgentMcpServerConfig(
+        transport="sse", url=url, authentication=_service_account()
+    )
+
+    if accepted:
+        assert adapter._mcp_connection("jira", spec)["auth"] is not None
+    else:
+        with pytest.raises(adapter.AdapterConfigError, match="'jira' url must use https"):
+            adapter._mcp_connection("jira", spec)
+
+
 def _service_account_payload(tmp_path, make_payload) -> dict[str, Any]:
     os.environ["JIRA_MCP_CLIENT_SECRET"] = SERVICE_ACCOUNT_SECRET
     payload = make_payload(tmp_path)

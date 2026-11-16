@@ -148,13 +148,31 @@ async def test_stale_token_forces_one_new_token(make_client, token_endpoint):
     assert len(token_endpoint.requests) == 2
 
 
-async def test_concurrent_callers_share_one_token_request(make_client, token_endpoint):
-    client = make_client()
+async def test_concurrent_callers_share_one_token_request(make_client):
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    requests: list[httpx.Request] = []
 
-    tokens = await asyncio.gather(*(client.get_access_token() for _ in range(5)))
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        entered.set()
+        await release.wait()
+        return httpx.Response(200, json={"access_token": "token-1", "expires_in": 3600})
+
+    client = make_client(
+        http_client_factory=lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    )
+
+    first = asyncio.ensure_future(client.get_access_token())
+    await entered.wait()
+    # The first request is still in flight while the other callers arrive.
+    others = [asyncio.ensure_future(client.get_access_token()) for _ in range(4)]
+    await asyncio.sleep(0)
+    release.set()
+    tokens = await asyncio.gather(first, *others)
 
     assert tokens == ["token-1"] * 5
-    assert len(token_endpoint.requests) == 1
+    assert len(requests) == 1
 
 
 @pytest.mark.parametrize(
@@ -314,6 +332,27 @@ async def test_auth_propagates_token_errors(make_client, mcp_server, token_endpo
             await client.post(MCP_URL, json={"id": 1})
 
     assert mcp_server.seen == []
+
+
+@pytest.mark.parametrize(
+    ("url", "sent"),
+    [("http://mcp.example.test/mcp", False), ("http://127.0.0.1:8000/mcp", True)],
+)
+async def test_auth_sends_tokens_over_http_only_to_loopback(
+    make_client, mcp_server, token_endpoint, url, sent
+):
+    auth = mcp_service_account.service_account_auth(make_client())
+
+    async with httpx.AsyncClient(transport=mcp_server.transport, auth=auth) as client:
+        if sent:
+            await client.post(url, json={"id": 1})
+        else:
+            with pytest.raises(
+                mcp_service_account.ServiceAccountTokenError, match="over http"
+            ):
+                await client.post(url, json={"id": 1})
+
+    assert len(mcp_server.seen) == len(token_endpoint.requests) == int(sent)
 
 
 def test_auth_rejects_sync_clients(make_client, mcp_server):

@@ -29,7 +29,8 @@ dependencies = [
   "nemo-fabric-adapters-common == 0.7.0",
   # MCP service_account authentication passes an httpx.Auth to the MCP client.
   "httpx>=0.28,<1.0",
-  "langchain-mcp-adapters>=0.1,<0.3.0",
+  # 0.1.8 is the first release that passes a connection's auth to the MCP client.
+  "langchain-mcp-adapters>=0.1.8,<0.3.0",
   "langchain-openai>=0.3",
   # Requires 3.x: the 2.x line is incompatible with the langgraph core deepagents
   # pulls (AsyncSqliteSaver fails with 'Connection has no attribute is_alive').

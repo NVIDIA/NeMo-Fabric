@@ -121,10 +121,14 @@ NeMo Fabric maps the following into the harness:
   bearer token, renews it before it expires, and on a `401` requests a new token
   and retries the request once. The token is kept in memory only. A missing
   secret variable, a non-`https` `token_url` (plain `http` is accepted only for
-  a loopback host), or an `Authorization` custom header on the same server fails
-  startup. If the token endpoint rejects the client, the server is skipped and
-  reported with reason `authentication_required`; if it cannot be reached, the
-  reason is `failed`. The secret variable is withheld from the `local_shell`
+  a loopback host), a non-`https` server `url` (same exception), or an
+  `Authorization` custom header on the same server fails startup. The server is
+  skipped and reported with reason `authentication_required` when the token
+  endpoint rejects the client (HTTP `400` or `401`) or the MCP server still
+  answers `401` after the token is renewed; any MCP server that answers `401`
+  during discovery, with or without `authentication`, is reported the same way.
+  A token endpoint that cannot be reached, answers with another error status
+  such as `5xx`, or returns no access token gives reason `failed`. The secret variable is withheld from the `local_shell`
   backend's environment. `oauth2` authentication is not supported.
 - `tools.enabled` and `tools.blocked` are enforced by middleware across the full
   tool surface: Deep Agents built-ins (including `task`), MCP tools, and

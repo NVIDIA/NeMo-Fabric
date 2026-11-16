@@ -56,24 +56,37 @@ class ServiceAccountTokenError(RuntimeError):
         self.rejected = rejected
 
 
-def validate_token_url(server_name: str, token_url: str) -> str:
-    """Return ``token_url`` if it is ``https``, or ``http`` on a loopback host.
+def is_secure_url(url: str) -> bool:
+    """Return whether ``url`` is ``https``, or ``http`` on a loopback host."""
 
-    Client credentials must not cross the network in clear text.
-    """
-
-    url = token_url.strip()
-    parts = urlsplit(url)
+    parts = urlsplit(url.strip())
     scheme = parts.scheme.lower()
     host = parts.hostname or ""
     if scheme == "https" and host:
-        return url
-    if scheme == "http" and _is_loopback(host):
-        return url
+        return True
+    return scheme == "http" and _is_loopback(host)
+
+
+def validate_secure_url(server_name: str, field: str, url: str) -> str:
+    """Return ``url`` if it is ``https``, or ``http`` on a loopback host.
+
+    Credentials and bearer tokens must not cross the network in clear text.
+    ``field`` names the setting in the error, such as
+    ``authentication.token_url``.
+    """
+
+    if is_secure_url(url):
+        return url.strip()
     raise ValueError(
-        f"MCP server {server_name!r} authentication.token_url must use https "
+        f"MCP server {server_name!r} {field} must use https "
         "(http is accepted only for a loopback host)"
     )
+
+
+def validate_token_url(server_name: str, token_url: str) -> str:
+    """Return ``token_url`` if it is ``https``, or ``http`` on a loopback host."""
+
+    return validate_secure_url(server_name, "authentication.token_url", token_url)
 
 
 def _is_loopback(host: str) -> bool:
@@ -263,6 +276,12 @@ def service_account_auth(token_client: ServiceAccountTokenClient) -> Any:
             raise RuntimeError("service_account authentication requires an async client")
 
         async def async_auth_flow(self, request: httpx.Request) -> Any:
+            if not is_secure_url(str(request.url)):
+                # Never send the bearer token in clear text over the network.
+                raise ServiceAccountTokenError(
+                    "refusing to send a bearer token over http to a non-loopback host",
+                    rejected=False,
+                )
             token = await self.token_client.get_access_token()
             request.headers["Authorization"] = f"Bearer {token}"
             response = yield request

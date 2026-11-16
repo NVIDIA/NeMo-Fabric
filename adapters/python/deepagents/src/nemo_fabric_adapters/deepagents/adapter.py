@@ -625,6 +625,7 @@ def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
             "Authorization custom header; remove the header."
         )
     try:
+        mcp_service_account.validate_secure_url(name, "url", target)
         token_url = mcp_service_account.validate_token_url(name, auth.token_url)
         client_secret = mcp_service_account.resolve_client_secret(
             name, auth.client_secret_env
