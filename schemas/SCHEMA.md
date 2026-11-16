@@ -53,6 +53,8 @@ Start with the
 for the implementation sequence. Use these generated schemas for exact wire
 shapes; do not reconstruct the contract from examples.
 
+An Adapter Descriptor's optional `config_schema` validates static cross-field constraints against serialized northbound `FabricConfig` during planning and metadata-only admission. The adapter still receives only the projected southbound `AgentConfig`. This schema supplements `settings_schema`, `model_schema`, and extension schemas; it does not replace normalized capability checks or runtime validation of installed dependencies and dynamic state.
+
 The language bindings preserve this boundary:
 
 - Python adapters use `nemo-fabric-adapter-contract` for standard-library

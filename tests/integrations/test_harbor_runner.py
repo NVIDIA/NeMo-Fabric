@@ -1034,3 +1034,77 @@ async def test_registered_workflow_round_trip_and_target_drift(tmp_path, monkeyp
     target_path.write_text(json.dumps(target))
     with pytest.raises(FabricConfigError, match="descriptor mismatch"):
         await runner.run(payload)
+
+
+@pytest.mark.parametrize(
+    ("options", "error_field"),
+    [
+        ({"fabric_adapter_id": "nvidia.fabric.nooa"}, "workflow"),
+        (
+            {
+                "fabric_adapter_id": "nvidia.fabric.langchain.deepagents",
+                "fabric_harness_settings": {
+                    "deepagents": {"backend": {"type": "local_shell"}}
+                },
+            },
+            "tools",
+        ),
+        (
+            {
+                "fabric_adapter_id": "nvidia.fabric.cline",
+                "model_name": "qualification-model",
+                "fabric_model_provider": "openai",
+                "fabric_model_api_key_env": "MODEL_API_KEY",
+            },
+            r"models\.default\.provider",
+        ),
+    ],
+)
+def test_declared_requirements_fail_during_host_agent_construction(
+    tmp_path, options, error_field
+):
+    from nemo_fabric import FabricConfigError
+    from nemo_fabric.integrations.harbor import FabricAgent
+
+    with pytest.raises(FabricConfigError, match=error_field):
+        FabricAgent(logs_dir=tmp_path, **options)
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        {"fabric_enabled_tools": []},
+        {"fabric_enabled_tools": ["execute", "read_file"]},
+        {"fabric_blocked_tools": ["execute"]},
+    ],
+)
+def test_host_agent_preserves_intentional_local_shell_policy(tmp_path, policy):
+    from nemo_fabric.integrations.harbor import FabricAgent
+
+    agent = FabricAgent(
+        logs_dir=tmp_path,
+        fabric_adapter_id="nvidia.fabric.langchain.deepagents",
+        fabric_harness_settings={"deepagents": {"backend": {"type": "local_shell"}}},
+        **policy,
+    )
+    config = agent._build_spec("Inspect the workspace.").config
+    if "fabric_enabled_tools" in policy:
+        assert config.tools.enabled == policy["fabric_enabled_tools"]
+    else:
+        assert config.tools.blocked == policy["fabric_blocked_tools"]
+
+
+def test_host_agent_accepts_cline_nvidia_provider(tmp_path):
+    from nemo_fabric.integrations.harbor import FabricAgent
+
+    agent = FabricAgent(
+        logs_dir=tmp_path,
+        fabric_adapter_id="nvidia.fabric.cline",
+        model_name="qualification-model",
+        fabric_model_provider="nvidia",
+        fabric_model_api_key_env="MODEL_API_KEY",
+        fabric_model_base_url="https://models.example/v1",
+    )
+    assert agent._build_spec("Inspect the workspace.").config.models[
+        "default"
+    ].provider == ("nvidia")
