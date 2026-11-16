@@ -876,7 +876,7 @@ Validate a mapping using this Pydantic model.
 def to_mapping() -> dict[str, Any]
 ```
 
-Return a detached JSON-compatible mapping for Rust/core calls.
+Return the selection mapping without collapsing an explicit empty list.
 
 
 ---

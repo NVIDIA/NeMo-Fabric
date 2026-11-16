@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import json
 import logging
 from collections.abc import Mapping, Sequence
@@ -275,7 +276,16 @@ class Runtime:
                     native_result = json.loads(encoded)
                     return native_result
 
-                result = await _call_blocking(invoke)
+                if (
+                    self._current_stream is not None
+                    and not self._current_stream._finalized
+                ):
+                    result = await _call_blocking(invoke)
+                else:
+                    with ThreadPoolExecutor(
+                        max_workers=1, thread_name_prefix="fabric-invoke"
+                    ) as executor:
+                        result = await _call_blocking(invoke, executor=executor)
                 typed_result = RunResult.from_mapping(result)
             except asyncio.CancelledError:
                 if absorb_result and native_result is not None:
@@ -297,7 +307,10 @@ class Runtime:
                     return result
 
                 try:
-                    await _call_blocking(stop_after_cancel)
+                    with ThreadPoolExecutor(
+                        max_workers=1, thread_name_prefix="fabric-stop"
+                    ) as executor:
+                        await _call_blocking(stop_after_cancel, executor=executor)
                 except asyncio.CancelledError:
                     self._status = (
                         RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
@@ -309,10 +322,12 @@ class Runtime:
                     self._status = RuntimeStatus.STOPPED
                 raise
             except FabricError:
-                self._status = RuntimeStatus.FAILED
+                if self._status is not RuntimeStatus.STOPPED:
+                    self._status = RuntimeStatus.FAILED
                 raise
             except Exception as error:
-                self._status = RuntimeStatus.FAILED
+                if self._status is not RuntimeStatus.STOPPED:
+                    self._status = RuntimeStatus.FAILED
                 raise _runtime_error(error, stage="invoke") from error
             if absorb_result:
                 self._absorb(typed_result)
@@ -794,14 +809,14 @@ class Runtime:
             raise _resource_snapshot_error(native, error) from error
 
     async def stop(self) -> None:
-        """Destroy an idle runtime exactly once.
+        """Stop the runtime, interrupting an active buffered invocation if needed.
 
         Repeated calls after a successful stop are no-ops. A failed runtime may
         still be stopped so its resources are released.
 
         Raises:
             FabricStateError: If the runtime is already stopping or has an
-                invocation in flight.
+                streaming invocation in flight.
             FabricNativeUnavailableError: If the native extension is missing.
             FabricRuntimeError: If native runtime shutdown fails.
         """
@@ -816,8 +831,7 @@ class Runtime:
             )
         if self._current_stream is not None and not self._current_stream._finalized:
             await self._current_stream.aclose()
-        if self._current_task is not None:
-            raise FabricStateError("cannot stop while a turn is in flight")
+        active_task = self._current_task
         if self._closing:
             raise FabricStateError("runtime shutdown is already in progress")
         self._closing = True
@@ -837,7 +851,15 @@ class Runtime:
                 stopped = True
                 return result
 
-            await _call_blocking(stop)
+            with ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="fabric-stop"
+            ) as executor:
+                await _call_blocking(stop, executor=executor)
+            if active_task is not None and active_task is not asyncio.current_task():
+                # Observe the interrupted invocation before publishing STOPPED;
+                # its error path must not overwrite the final lifecycle state.
+                while self._current_task is active_task:
+                    await asyncio.sleep(0.01)
         except asyncio.CancelledError as error:
             self._status = RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
             stop_error = error
@@ -1007,15 +1029,23 @@ async def _run_native_lifecycle(
     request: Mapping[str, Any],
 ) -> dict[str, Any]:
     observations = {"request_id": request.get("request_id")}
+    cleanup_runtime_handle: dict[str, Any] | None = None
 
     def run() -> dict[str, Any]:
+        nonlocal cleanup_runtime_handle
         plan_json = json.dumps(dict(plan))
         try:
             runtime = json.loads(native.start_runtime(plan_json))
         except FabricError as error:
+            cleanup_runtime_handle = getattr(
+                error, "_fabric_cleanup_runtime_handle", None
+            )
             _retain_runtime_evidence(error, observations)
             raise
         except Exception as error:
+            cleanup_runtime_handle = getattr(
+                error, "_fabric_cleanup_runtime_handle", None
+            )
             failure = _runtime_error(error, stage="start")
             _retain_runtime_evidence(failure, observations)
             raise failure from error
@@ -1039,9 +1069,11 @@ async def _run_native_lifecycle(
             return result
         finally:
             cleanup = "completed"
+            stop_error: Exception | None = None
             try:
                 stop_events = json.loads(native.stop_runtime(plan_json, runtime_json))
             except Exception as error:
+                stop_error = error
                 cleanup = "failed"
                 if invoke_error is None:
                     if result is None:
@@ -1064,6 +1096,21 @@ async def _run_native_lifecycle(
             )
             if result is not None:
                 observations["partial_result"] = result
+            if (
+                stop_error is not None
+                and _runtime_error(stop_error, stage="stop").code
+                == "cleanup_unconfirmed"
+            ):
+                cleanup_runtime_handle = runtime
+                failure = invoke_error or FabricRuntimeError(
+                    "Runtime cleanup is unconfirmed; retry cleanup_runtime.stop().",
+                    stage="stop",
+                    code="cleanup_unconfirmed",
+                )
+                failure._fabric_cleanup_runtime_handle = runtime
+                _retain_runtime_evidence(failure, observations)
+                if invoke_error is None:
+                    raise failure from stop_error
             if invoke_error is not None:
                 # Keep obtained identity and cleanup evidence beside the original
                 # exception. A protocol failure is not a normalized invocation.
@@ -1074,6 +1121,8 @@ async def _run_native_lifecycle(
     except asyncio.CancelledError as error:
         # _call_blocking waits for native cleanup before propagating cancellation.
         error._fabric_runtime_evidence = dict(observations)
+        if cleanup_runtime_handle is not None:
+            error._fabric_cleanup_runtime_handle = cleanup_runtime_handle
         raise
     except FabricError:
         raise
@@ -1101,8 +1150,15 @@ def _resource_snapshot_error(native: Any, error: Exception) -> FabricRuntimeErro
     return _runtime_error(error, stage="resource_snapshot")
 
 
-async def _call_blocking(func: Any) -> Any:
-    worker = asyncio.create_task(asyncio.to_thread(func))
+async def _call_blocking(
+    func: Any, *, executor: ThreadPoolExecutor | None = None
+) -> Any:
+    if executor is None:
+        worker = asyncio.create_task(asyncio.to_thread(func))
+    else:
+        worker = asyncio.ensure_future(
+            asyncio.get_running_loop().run_in_executor(executor, func)
+        )
     try:
         return await asyncio.shield(worker)
     except asyncio.CancelledError as cancelled:

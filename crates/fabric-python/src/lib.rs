@@ -464,6 +464,27 @@ fn to_py_error(error: nemo_fabric_core::FabricError) -> PyErr {
                 Err(setattr_error) => setattr_error,
             }
         }
+        FabricError::RuntimeCleanupPending(context) => {
+            let failure = PyRuntimeError::new_err(
+                "Runtime cleanup is unconfirmed; retry cleanup_runtime.stop().",
+            );
+            let encoded = match serde_json::to_string(context.runtime()) {
+                Ok(encoded) => encoded,
+                Err(_) => {
+                    return PyRuntimeError::new_err("Runtime cleanup context is unavailable.");
+                }
+            };
+            match Python::attach(|py| -> PyResult<()> {
+                failure.value(py).setattr("code", "cleanup_unconfirmed")?;
+                let handle = py.import("json")?.call_method1("loads", (encoded,))?;
+                failure
+                    .value(py)
+                    .setattr("_fabric_cleanup_runtime_handle", handle)
+            }) {
+                Ok(()) => failure,
+                Err(error) => error,
+            }
+        }
         _ => PyRuntimeError::new_err(error.to_string()),
     }
 }

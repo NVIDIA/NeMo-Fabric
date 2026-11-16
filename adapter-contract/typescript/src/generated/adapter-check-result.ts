@@ -83,6 +83,8 @@ export type AdapterCheckResult = {
 export type CheckReason =
   | "server_stopping"
   | "capabilities_unverified"
+  | "runtime_busy"
+  | "cleanup_unconfirmed"
   | "runtime_unavailable"
   | "service_unavailable"
   | "agent_exited"
