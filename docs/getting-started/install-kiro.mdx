@@ -1,0 +1,25 @@
+---
+title: "Install the Kiro Adapter"
+description: "Install Kiro CLI and its NeMo Fabric adapter to run coding tasks through ACP."
+slug: "/getting-started/installation/kiro"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Install the ready-made NVIDIA NeMo Fabric adapter for [Kiro CLI](https://kiro.dev/cli/), a command-line coding agent. Kiro is the harness that executes tasks; the adapter connects it to NeMo Fabric through the Agent Client Protocol (ACP). This guide installs Kiro, its adapter, and the runtime, then explains authentication.
+
+The [Kiro adapter](../integrations/harness/kiro.mdx) requires Node.js 22.19.0
+or newer and a caller-installed Kiro CLI with the V3 ACP server. Install and
+authenticate Kiro, then install the adapter:
+
+```bash
+pip install nemo-fabric
+curl -fsSL https://cli.kiro.dev/install | bash
+kiro-cli login
+npm install nemo-fabric-adapters-kiro
+```
+
+For non-interactive environments, provide `KIRO_API_KEY` instead of using
+browser login. NeMo Fabric does not install or update the Kiro CLI at runtime.
+
+Continue with the [Kiro adapter guide](../integrations/harness/kiro.mdx) to configure and run a task.
