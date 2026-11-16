@@ -2811,3 +2811,170 @@ def test_no_structured_skills_means_no_report(tmp_path: Path, workspace: Path):
     write_skill(workspace / "skills" / "notes", "notes")
 
     assert _plan(tmp_path, workspace, {"paths": []}).report() is None
+
+
+# Extension skills: OpenClaw's own extensions ship skills it loads with the
+# extraDirs roots when it activates the extension.
+
+
+def _extension(package: Path, extension: str, *names: str) -> dict[str, Path]:
+    """Ship ``names`` as skills of an OpenClaw extension in the test package."""
+    root = package / "dist" / "extensions" / extension
+    root.mkdir(parents=True)
+    (root / "openclaw.plugin.json").write_text(
+        json.dumps({"id": extension, "skills": ["./skills"]}), encoding="utf-8"
+    )
+    return {name: write_skill(root / "skills" / name, name) for name in names}
+
+
+def _status(*rows: tuple[str, str] | dict[str, Any]) -> dict[str, Any]:
+    return {
+        "skills": [
+            row if isinstance(row, dict) else {"name": row[0], "source": row[1]}
+            for row in rows
+        ]
+    }
+
+
+_SHIPPED_ROWS = (
+    ("github", "openclaw-bundled"),
+    ("tmux", "openclaw-bundled"),
+    ("weather", "openclaw-bundled"),
+    ("diagnose-gateway", "openclaw-custodian"),
+)
+
+
+@pytest.mark.parametrize(
+    ("bundled", "off", "selected"),
+    [
+        ({"enabled": False}, ["browser-automation", "canvas"], []),
+        (
+            {"exclude": ["canvas"]},
+            ["canvas"],
+            ["browser-automation", "diagnose-gateway", "github", "tmux", "weather"],
+        ),
+        (
+            {"include": ["canvas", "github"]},
+            ["browser-automation"],
+            ["canvas", "github"],
+        ),
+    ],
+    ids=["disabled", "exclude", "include"],
+)
+def test_left_out_extension_skills_are_turned_off_by_name(
+    tmp_path: Path,
+    workspace: Path,
+    package: Path,
+    bundled: dict[str, Any],
+    off: list[str],
+    selected: list[str],
+):
+    """OpenClaw loads an active extension's skills after name resolution, so a
+    left-out one is turned off with skills.entries and is not reported."""
+    shipped = {
+        **_extension(package, "browser", "browser-automation"),
+        **_extension(package, "canvas", "canvas"),
+    }
+
+    generated, plan = _generated(tmp_path, workspace, {"bundled": bundled}, package)
+
+    assert generated["skills"]["entries"] == {name: {"enabled": False} for name in off}
+    rows: list[dict[str, Any]] = [
+        {"name": name, "source": "openclaw-extra", "disabled": name in off}
+        for name in shipped
+    ]
+    rows += [
+        {"name": name, "source": source}
+        for name, source in _SHIPPED_ROWS
+        if name in selected
+    ]
+    status = _status(*rows)
+    to_locate = openclaw_skills.names_to_locate(plan, status)
+    assert to_locate == sorted(set(shipped) - set(off))
+    openclaw_skills.apply_status(
+        plan,
+        status,
+        located={name: _located("openclaw-extra", shipped[name]) for name in to_locate},
+    )
+
+    report = plan.report()
+    assert report is not None
+    assert report["bundled"] == {"selected": selected}
+    assert {name for name, _, _ in _others(plan)} == set(selected)
+    assert all(origin == "bundled" for _, origin, _ in _others(plan))
+
+
+@pytest.mark.parametrize("include", [False, True])
+def test_skills_of_an_inactive_extension_are_not_selected(
+    tmp_path: Path, workspace: Path, package: Path, include: bool
+):
+    """An extension OpenClaw does not activate has no copy to select; a name
+    that include lists is reported unavailable."""
+    _extension(package, "crabbox", "crabbox-apps")
+    bundled: dict[str, Any] = (
+        {"include": ["crabbox-apps", "github"]} if include else {"exclude": []}
+    )
+    generated, plan = _generated(tmp_path, workspace, {"bundled": bundled}, package)
+    assert "entries" not in generated.get("skills", {})
+
+    openclaw_skills.apply_status(plan, _status(*_SHIPPED_ROWS))
+
+    report = plan.report()
+    assert report is not None
+    if include:
+        assert report["bundled"] == {
+            "selected": ["github"],
+            "unavailable": [{"name": "crabbox-apps", "reason": "extension_inactive"}],
+        }
+    else:
+        assert report["bundled"] == {
+            "selected": ["diagnose-gateway", "github", "tmux", "weather"]
+        }
+
+
+@pytest.mark.parametrize("active", [True, False])
+def test_configured_skill_sharing_a_left_out_extension_skills_name(
+    tmp_path: Path, workspace: Path, package: Path, active: bool
+):
+    """skills.entries would turn off both copies, so the name is not turned off.
+    When the extension is active its copy loads instead, and start fails."""
+    shipped = _extension(package, "canvas", "canvas")["canvas"]
+    mine = write_skill(tmp_path / "team" / "canvas", "canvas")
+    skills = {
+        "directories": [{"folder": str(tmp_path / "team")}],
+        "bundled": {"enabled": False},
+    }
+    generated, plan = _generated(tmp_path, workspace, skills, package)
+    assert "entries" not in generated["skills"]
+    status = _status(("canvas", "openclaw-extra"))
+    assert openclaw_skills.names_to_locate(plan, status) == ["canvas"]
+    located = {"canvas": _located("openclaw-extra", shipped if active else mine)}
+
+    if not active:
+        openclaw_skills.apply_status(plan, status, located=located)
+        assert _loaded(plan) == [("canvas", "skills.directories[0]")]
+        return
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        openclaw_skills.apply_status(plan, status, located=located)
+
+    assert caught.value.code == "openclaw_skill_invalid"
+    assert caught.value.metadata == {
+        "field": "skills.bundled",
+        "reason": openclaw_skills.EXTENSION_CLASH,
+        "name": "canvas",
+        "paths": [str(shipped.resolve()), str(mine.resolve())],
+    }
+
+
+def test_workspace_copy_of_a_left_out_extension_skill_is_not_turned_off(
+    tmp_path: Path, workspace: Path, package: Path
+):
+    """A workspace copy outranks the extension's, so the name stays on."""
+    _extension(package, "canvas", "canvas")
+    write_skill(workspace / "skills" / "canvas", "canvas")
+
+    generated, _ = _generated(
+        tmp_path, workspace, {"bundled": {"enabled": False}}, package
+    )
+
+    assert "entries" not in generated.get("skills", {})

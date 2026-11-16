@@ -148,12 +148,15 @@ If `node` or the parser can't be found, or the parser fails or doesn't finish in
 
 `skills.bundled` selects from the shipped `skills` and `custodian-skills` folders of the installed OpenClaw package, or of `OPENCLAW_BUNDLED_SKILLS_DIR` when set. The adapter doesn't use OpenClaw's `skills.allowBundled`, which filters shipped skills only after names are resolved, so a filtered-out skill would still hide a configured skill with the same name. Instead, when the selection leaves out a shipped skill, the adapter copies the selected shipped skills into the runtime's temporary folder and points `OPENCLAW_BUNDLED_SKILLS_DIR` at the copy for every OpenClaw process it starts. A left-out shipped skill also hides no workspace skill with its name. Custodian skills load only for OpenClaw's Custodian agent, which is the configured agent when it is the only one, and only for that agent do they hide a configured skill with the same name.
 
+OpenClaw's own extensions in the package, such as `browser` and `canvas`, ship skills too, listed in each extension's `openclaw.plugin.json`. `skills.bundled` selects these extension skills like the shipped ones, so `include` and `exclude` can name them and `enabled: false` leaves them out. An extension skill loads only when OpenClaw activates its extension. OpenClaw loads extension skills with the `skills.load.extraDirs` folders, and no setting drops them before names are resolved. So the adapter turns off each left-out extension skill by name with `skills.entries.<name>.enabled: false`, which keeps the extension itself and its tools. That setting turns off every copy of a name, so the adapter doesn't write it for a name that a workspace skill, a selected shipped skill, or a configured skill also has. A workspace or shipped copy outranks the extension's copy anyway. An active extension's copy outranks a configured copy, though, so when a configured skill shares a left-out extension skill's name and that extension is active, start fails with the reason `excluded_bundled_skill_name_clash`.
+
 At start, the adapter runs `openclaw skills list` for the agent to confirm the configured skills and the eligibility of the selected bundled skills. This adds a few seconds to start when `directories` or `bundled` is set. Each SDK result reports `output.skills.bundled` as `{"selected": [names], "unavailable": [{"name", "reason"}]}`. The `reason` is one of these:
 
 - `missing_requirements`, with a `missing` object of the binaries, environment variables, configuration, or operating systems OpenClaw requires
 - `disabled`
 - `shadowed`, with the `by` source
 - `custodian_agent_only`
+- `extension_inactive`: an extension skill that `include` names, whose extension OpenClaw doesn't activate. Other extension skills of an inactive extension are left out of `selected`.
 - `not_loaded`
 
 If OpenClaw cannot list its skills, the report shows what the adapter configured. Runtimes that connect to a prepared service report the skills the service loaded at prepare.
@@ -163,12 +166,12 @@ If OpenClaw cannot list its skills, the report shows what the adapter configured
 When `directories`, even an empty list, or `bundled` is set, `output.skills.loaded` lists every skill OpenClaw loads for the agent:
 
 - `external`: the `directories` skills, with their `entry`.
-- `bundled`: the shipped skills, at their folder in the installed package, and the skills that OpenClaw's own plugins add, such as `canvas`. `skills.bundled` doesn't choose plugin skills.
+- `bundled`: the shipped skills and the extension skills, such as `canvas`, at their folder in the installed package. `skills.bundled` chooses both. Skills from plugins installed outside the package are `local`.
 - `local`: the skills in the workspace's `skills` and `.agents/skills` folders.
 
 A name OpenClaw lists that the adapter knows no copy of, such as a plugin skill, is located with `openclaw skills info`. This runs a few more OpenClaw commands at start, four at a time. Some limits remain:
 
-- A configured skill named like a plugin skill is hidden by the plugin skill. The adapter doesn't see this clash, so it reports the configured skill as loaded.
+- A configured skill named like a plugin skill is hidden by the plugin skill. The adapter doesn't see this clash, so it reports the configured skill as loaded. When `skills.bundled` leaves out an active extension's skill of that name, start fails instead, as described under Bundled Skills.
 - A name whose winning folder holds two copies is left out of `loaded` when the adapter can't locate the copy that loads.
 - A skill listed as loaded may still be unusable, for example when a binary it requires is missing. `bundled.unavailable` gives that reason for a selected bundled skill.
 

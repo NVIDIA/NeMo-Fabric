@@ -413,12 +413,20 @@ def _skills_section(
     base_dir: Path,
     skill_plan: openclaw_skills.SkillPlan,
 ) -> dict[str, Any]:
-    """Return the generated ``skills`` section."""
+    """Return the generated ``skills`` section.
+
+    Extension skills that ``skills.bundled`` leaves out are turned off by
+    name in ``entries``.
+    """
 
     skills: dict[str, Any] = {}
     skill_paths = _resolve_skill_paths(config, base_dir) + skill_plan.extra_dirs
     if skill_paths:
         skills["load"] = {"extraDirs": skill_paths}
+    if skill_plan.disabled_extensions:
+        skills["entries"] = {
+            name: {"enabled": False} for name in skill_plan.disabled_extensions
+        }
     return skills
 
 

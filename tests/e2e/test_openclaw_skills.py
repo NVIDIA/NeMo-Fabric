@@ -176,14 +176,23 @@ class _Native:
 def _assert_reports_every_loaded_skill(
     plan: openclaw_skills.SkillPlan, status: dict
 ) -> None:
-    """The report's loaded skills are the ones OpenClaw lists, from matching sources."""
+    """The report's loaded skills are the ones OpenClaw lists, from matching sources.
+
+    A skill Fabric turned off with ``skills.entries`` is listed as disabled
+    and does not load.
+    """
     report = plan.report()
     assert report is not None
+    rows = [
+        row
+        for row in status["skills"]
+        if not (row.get("disabled") is True and row["name"] in plan.disabled_extensions)
+    ]
     origins = {item["name"]: item["origin"] for item in report["loaded"]}
     assert sorted(item["name"] for item in report["loaded"]) == sorted(
-        row["name"] for row in status["skills"]
+        row["name"] for row in rows
     )
-    for row in status["skills"]:
+    for row in rows:
         allowed = {
             "openclaw-bundled": {"bundled"},
             "openclaw-custodian": {"bundled"},
@@ -468,10 +477,13 @@ def test_bundled_selection_matches_openclaw(
     report = plan.report()
     assert report is not None
     assert plan.inventory is not None
+    # OpenClaw marks only its skills/ and custodian-skills/ copies bundled;
+    # extension skills are tested on their own.
+    folders = {*plan.inventory.skills, *plan.inventory.custodian}
     expected = (
-        plan.inventory.names
+        folders
         if allowed is None
-        else plan.inventory.names - {"weather"}
+        else folders - {"weather"}
         if allowed == "all-but-weather"
         else allowed
     )
@@ -484,7 +496,76 @@ def test_bundled_selection_matches_openclaw(
     unavailable = {item["name"] for item in report["bundled"].get("unavailable", [])}
     assert unavailable == expected - eligible
     # Selected lists only the selected bundled skills that load.
-    assert set(report["bundled"]["selected"]) == expected & eligible
+    assert set(report["bundled"]["selected"]) - set(plan.inventory.extensions) == (
+        expected & eligible
+    )
+
+
+def _active_extension_skills(plan: openclaw_skills.SkillPlan, status: dict) -> set[str]:
+    """Return the extension skills OpenClaw lists and has not turned off."""
+    assert plan.inventory is not None
+    return {
+        row["name"]
+        for row in status["skills"]
+        if row["name"] in plan.inventory.extensions and row.get("disabled") is not True
+    }
+
+
+def test_extension_skills_follow_the_bundled_selection(native: _Native):
+    """Skills OpenClaw's own extensions ship load only when the selection keeps
+    them: none with bundled disabled, all but an excluded one otherwise."""
+    plan, status = native.list({"bundled": {}})
+    active = _active_extension_skills(plan, status)
+    if not active:
+        pytest.skip("This OpenClaw activates no extension that ships a skill")
+    assert plan.inventory is not None
+    left_out = sorted(active)[0]
+    cases: list[tuple[dict[str, Any], set[str]]] = [
+        ({}, active),
+        ({"enabled": False}, set()),
+        ({"include": []}, set()),
+        ({"exclude": [left_out]}, active - {left_out}),
+        ({"include": [left_out]}, {left_out}),
+    ]
+    for bundled, loads in cases:
+        plan, status = native.list({"bundled": bundled})
+
+        assert _active_extension_skills(plan, status) == loads, bundled
+        report = plan.report()
+        assert report is not None
+        extension_loaded = {
+            item["name"]: item["origin"]
+            for item in report["loaded"]
+            if item["name"] in plan.inventory.extensions
+        }
+        assert extension_loaded == dict.fromkeys(loads, "bundled"), bundled
+        assert set(report["bundled"]["selected"]) & set(plan.inventory.extensions) == (
+            loads
+        ), bundled
+
+
+def test_configured_skill_named_like_a_left_out_extension_skill_fails(
+    native: _Native,
+):
+    """skills.entries would turn off both copies, and the active extension's
+    copy hides the configured one, so start fails."""
+    plan, status = native.list({"bundled": {}})
+    active = sorted(_active_extension_skills(plan, status))
+    if not active:
+        pytest.skip("This OpenClaw activates no extension that ships a skill")
+    name = active[0]
+    write_skill(native.tmp_path / "team" / name, name, "Configured copy.")
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        native.list(
+            {
+                "directories": [{"folder": str(native.tmp_path / "team")}],
+                "bundled": {"enabled": False},
+            }
+        )
+
+    assert caught.value.metadata["reason"] == openclaw_skills.EXTENSION_CLASH
+    assert caught.value.metadata["name"] == name
 
 
 @pytest.mark.parametrize(
