@@ -1140,7 +1140,11 @@ pub struct SkillDuplicatesSupport {
     #[schemars(length(min = 1), extend("uniqueItems" = true))]
     pub supported_policies: Vec<SkillDuplicatePolicy>,
     /// Short description of the harness's own handling when `duplicates` is omitted.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_duplicates_native",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schemars(length(min = 1), regex(pattern = r"\S"))]
     pub native: Option<String>,
     /// Whether skill names are compared by front matter or by folder name.
@@ -1149,6 +1153,21 @@ pub struct SkillDuplicatesSupport {
     /// Additive duplicate-handling fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
+}
+
+fn deserialize_duplicates_native<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let native = Option::<String>::deserialize(deserializer)?;
+    if native.as_deref().is_some_and(|text| text.trim().is_empty()) {
+        return Err(D::Error::custom(
+            "skills.duplicates.native must be a non-empty string",
+        ));
+    }
+    Ok(native)
 }
 
 fn deserialize_supported_duplicate_policies<'de, D>(

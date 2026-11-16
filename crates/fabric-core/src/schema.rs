@@ -899,6 +899,22 @@ mod tests {
         repeated_entries["skills"]["directory_loading"]["supported_entries"] =
             serde_json::json!(["skill", "skill"]);
         assert!(!validator.is_valid(&repeated_entries));
+        // A described native handling is non-blank, in the schema and at load.
+        for (native, valid) in [
+            (serde_json::json!("keeps the first copy"), true),
+            (Value::Null, true),
+            (serde_json::json!(""), false),
+            (serde_json::json!("  "), false),
+        ] {
+            let mut described = descriptor(serde_json::json!({"kind": "no_fixed_limit"}));
+            described["skills"]["duplicates"]["native"] = native.clone();
+            assert_eq!(validator.is_valid(&described), valid, "{native}");
+            assert_eq!(
+                serde_json::from_value::<crate::AdapterDescriptor>(described).is_ok(),
+                valid,
+                "{native}"
+            );
+        }
     }
 
     #[test]
