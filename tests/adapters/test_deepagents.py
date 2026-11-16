@@ -25,6 +25,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import StructuredTool
@@ -48,6 +49,7 @@ from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from pydantic import ValidationError
 from pydantic import create_model
+from nemo_fabric_adapters.common import mcp_service_account
 from nemo_fabric_adapters.deepagents import adapter  # noqa: E402
 
 
@@ -69,6 +71,8 @@ def test_descriptor_declares_supported_normalized_config():
 
     assert descriptor["config"]["system_instruction_modes"] == ["replace"]
     assert "runtime.max_turns" in descriptor["config"]["accepts"]
+    assert "mcp.auth.service_account" in descriptor["config"]["accepts"]
+    assert "mcp.auth.oauth2" not in descriptor["config"]["accepts"]
     assert descriptor["settings_schema"]["properties"]["deepagents"]["properties"][
         "backend"
     ] == {
@@ -1726,6 +1730,54 @@ def test_local_shell_file_tools_accept_physical_workspace_paths(
 
 
 @pytest.mark.usefixtures("use_real_deepagents")
+def test_local_shell_withholds_mcp_client_secrets(tmp_path, make_payload):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["environment"]["workspace"] = str(workspace)
+    payload["runtime_context"]["environment"]["env"] = {
+        "JIRA_MCP_CLIENT_SECRET": SERVICE_ACCOUNT_SECRET,
+        "FABRIC_VISIBLE": "visible",
+    }
+    backend = adapter.resolve_backend(
+        RuntimeContext.from_mapping(payload["runtime_context"]),
+        str(tmp_path),
+        {"type": "local_shell"},
+        withheld_env={"JIRA_MCP_CLIENT_SECRET"},
+    )
+
+    shell = backend.execute(
+        f'"{sys.executable}" -c "import os; '
+        "print(os.environ.get('FABRIC_VISIBLE'), "
+        "'JIRA_MCP_CLIENT_SECRET' in os.environ)\""
+    )
+
+    assert shell.exit_code == 0
+    assert shell.output.strip() == "visible False"
+
+
+async def test_agent_withholds_service_account_secrets_from_the_backend(
+    tmp_path, make_payload, monkeypatch
+):
+    resolve_backend = MagicMock(return_value=None)
+    monkeypatch.setattr(adapter, "resolve_backend", resolve_backend)
+    monkeypatch.setattr(adapter, "resolve_tools", AsyncMock(return_value=[]))
+    os.environ["JIRA_MCP_CLIENT_SECRET"] = SERVICE_ACCOUNT_SECRET
+    payload = _service_account_payload(tmp_path, make_payload)
+    config = AgentConfig.from_mapping(payload["config"])
+
+    await adapter.build_agent_kwargs(
+        config,
+        RuntimeContext.from_mapping(payload["runtime_context"]),
+        str(tmp_path),
+        model=MagicMock(),
+        settings={},
+    )
+
+    assert resolve_backend.call_args.kwargs["withheld_env"] == {"JIRA_MCP_CLIENT_SECRET"}
+
+
+@pytest.mark.usefixtures("use_real_deepagents")
 @pytest.mark.parametrize("operation", ["ls", "glob", "grep"])
 def test_local_shell_listed_paths_round_trip_with_workspace_prefix(
     tmp_path, make_payload, operation
@@ -2537,30 +2589,255 @@ async def test_mcp_session_errors_preserve_the_validation_boundary(
     )
 
 
-@pytest.mark.parametrize(
-    "authentication",
-    [
-        McpOAuth2Config(type="oauth2"),
-        McpServiceAccountConfig(
-            type="service_account",
-            client_id="client",
-            client_secret_env="CLIENT_SECRET",
-            token_url="https://auth.example.test/token",
-        ),
-    ],
-)
-def test_deepagents_rejects_mcp_authentication(authentication):
+def test_deepagents_rejects_mcp_oauth2_authentication():
     with pytest.raises(
-        adapter.AdapterConfigError, match="not supported by Deep Agents"
+        adapter.AdapterConfigError, match="'oauth2' authentication is not supported"
     ):
         adapter._mcp_connection(
             "automation",
             AgentMcpServerConfig(
                 transport="streamable-http",
                 url="https://mcp.example.test/mcp",
-                authentication=authentication,
+                authentication=McpOAuth2Config(type="oauth2"),
             ),
         )
+
+
+SERVICE_ACCOUNT_SECRET = "client-secret-do-not-report"
+
+
+SERVICE_ACCOUNT_FIELDS = {
+    "type": "service_account",
+    "client_id": "fabric-agent",
+    "client_secret_env": "JIRA_MCP_CLIENT_SECRET",
+    "token_url": "https://auth.example.test/oauth2/token",
+    "scopes": ["jira.read"],
+}
+
+
+def _service_account(**overrides: Any) -> McpServiceAccountConfig:
+    return McpServiceAccountConfig(**{**SERVICE_ACCOUNT_FIELDS, **overrides})
+
+
+@pytest.mark.parametrize("transport", ["streamable-http", "sse"])
+def test_service_account_connection_attaches_bearer_auth(transport):
+    os.environ["JIRA_MCP_CLIENT_SECRET"] = SERVICE_ACCOUNT_SECRET
+    os.environ["JIRA_SA_TOKEN"] = "service-token"
+
+    connection = adapter._mcp_connection(
+        "jira",
+        AgentMcpServerConfig(
+            transport=transport,
+            url="https://mcp.example.test/mcp",
+            authentication=_service_account(
+                token_endpoint_auth_method="client_secret_post",
+                token_cache_buffer_seconds=120,
+            ),
+            custom_headers={"NV-Service-Account-Token": "${JIRA_SA_TOKEN}"},
+        ),
+    )
+
+    token_client = connection["auth"].token_client
+    assert isinstance(token_client, mcp_service_account.ServiceAccountTokenClient)
+    assert connection["headers"] == {"NV-Service-Account-Token": "service-token"}
+    assert token_client._client_id == "fabric-agent"
+    assert token_client._client_secret == SERVICE_ACCOUNT_SECRET
+    assert token_client._token_url == "https://auth.example.test/oauth2/token"
+    assert token_client._scope == "jira.read"
+    assert token_client._method == "client_secret_post"
+    assert token_client._buffer == 120
+    assert SERVICE_ACCOUNT_SECRET not in repr(connection)
+
+
+@pytest.mark.parametrize(
+    ("transport", "authentication", "headers", "secret", "message"),
+    [
+        (
+            "websocket",
+            _service_account(),
+            {},
+            SERVICE_ACCOUNT_SECRET,
+            "with the websocket transport",
+        ),
+        (
+            "streamable-http",
+            _service_account(),
+            {"authorization": "Bearer static"},
+            SERVICE_ACCOUNT_SECRET,
+            "Authorization custom header",
+        ),
+        (
+            "streamable-http",
+            _service_account(),
+            {},
+            None,
+            "'JIRA_MCP_CLIENT_SECRET' is not set",
+        ),
+        (
+            "streamable-http",
+            _service_account(token_url="http://auth.example.test/token"),
+            {},
+            SERVICE_ACCOUNT_SECRET,
+            "token_url must use https",
+        ),
+    ],
+)
+def test_service_account_configuration_errors(
+    transport, authentication, headers, secret, message
+):
+    os.environ.pop("JIRA_MCP_CLIENT_SECRET", None)
+    if secret is not None:
+        os.environ["JIRA_MCP_CLIENT_SECRET"] = secret
+
+    with pytest.raises(adapter.AdapterConfigError, match=message) as raised:
+        adapter._mcp_connection(
+            "jira",
+            AgentMcpServerConfig(
+                transport=transport,
+                url="https://mcp.example.test/mcp",
+                authentication=authentication,
+                custom_headers=headers,
+            ),
+        )
+
+    assert SERVICE_ACCOUNT_SECRET not in str(raised.value)
+
+
+def _service_account_payload(tmp_path, make_payload) -> dict[str, Any]:
+    os.environ["JIRA_MCP_CLIENT_SECRET"] = SERVICE_ACCOUNT_SECRET
+    payload = make_payload(tmp_path)
+    payload["config"]["mcp"] = {
+        "servers": {
+            "docs": {"transport": "sse", "url": "http://localhost:9/sse"},
+            "jira": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": dict(SERVICE_ACCOUNT_FIELDS),
+            },
+        }
+    }
+    return payload
+
+
+async def test_service_account_token_is_fetched_before_listing_tools(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
+    events: list[str] = []
+
+    async def get_access_token(self, *, stale=None):
+        events.append("token")
+        return "token-1"
+
+    monkeypatch.setattr(
+        mcp_service_account.ServiceAccountTokenClient,
+        "get_access_token",
+        get_access_token,
+    )
+    mock_client = _install_mcp_client(
+        monkeypatch,
+        {"docs": [_named_tool("search_docs")], "jira": [_named_tool("get_issue")]},
+    )
+    listed = mock_client.get_tools.side_effect
+
+    async def get_tools(*, server_name: str) -> list[Any]:
+        events.append(f"list:{server_name}")
+        return await listed(server_name=server_name)
+
+    mock_client.get_tools.side_effect = get_tools
+
+    output = await invoke_once(_service_account_payload(tmp_path, make_payload))
+
+    assert output["failed"] is False
+    assert "mcp" not in output
+    tool_names = sorted(tool.name for tool in fake_sdks["create_kwargs"]["tools"])
+    assert tool_names == ["get_issue", "search_docs"]
+    assert events.index("token") < events.index("list:jira")
+    connections = sys.modules[
+        "langchain_mcp_adapters.client"
+    ].MultiServerMCPClient.call_args.args[0]
+    assert "auth" not in connections["docs"]
+    assert connections["jira"]["auth"].token_client is not None
+
+
+@pytest.mark.parametrize(
+    ("error", "reason", "error_type"),
+    [
+        (
+            mcp_service_account.ServiceAccountTokenError("rejected", rejected=True),
+            "authentication_required",
+            "ServiceAccountTokenError",
+        ),
+        (
+            mcp_service_account.ServiceAccountTokenError("unreachable", rejected=False),
+            "failed",
+            "ServiceAccountTokenError",
+        ),
+    ],
+)
+async def test_service_account_token_failures_are_reported(
+    tmp_path, make_payload, monkeypatch, fake_sdks, error, reason, error_type
+):
+    monkeypatch.setattr(
+        mcp_service_account.ServiceAccountTokenClient,
+        "get_access_token",
+        AsyncMock(side_effect=error),
+    )
+    mock_client = _install_mcp_client(
+        monkeypatch, {"docs": [_named_tool("search_docs")], "jira": []}
+    )
+
+    output = await invoke_once(_service_account_payload(tmp_path, make_payload))
+
+    assert output["failed"] is False
+    assert [tool.name for tool in fake_sdks["create_kwargs"]["tools"]] == ["search_docs"]
+    assert output["mcp"] == {
+        "unavailable_servers": [
+            {
+                "name": "jira",
+                "transport": "streamable-http",
+                "reason": reason,
+                "error_type": error_type,
+            }
+        ]
+    }
+    listed = [call.kwargs["server_name"] for call in mock_client.get_tools.call_args_list]
+    assert listed == ["docs"]
+    assert SERVICE_ACCOUNT_SECRET not in json.dumps(output)
+
+
+async def test_mcp_server_rejecting_the_token_requires_authentication(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
+    """A 401 that survives the token renewal surfaces from the MCP client."""
+    monkeypatch.setattr(
+        mcp_service_account.ServiceAccountTokenClient,
+        "get_access_token",
+        AsyncMock(return_value="token-1"),
+    )
+    request = httpx.Request("POST", "https://mcp.example.test/mcp")
+    unauthorized = httpx.HTTPStatusError(
+        "401 Unauthorized",
+        request=request,
+        response=httpx.Response(401, request=request),
+    )
+    _install_mcp_client(
+        monkeypatch,
+        {
+            "docs": [_named_tool("search_docs")],
+            "jira": ExceptionGroup("unhandled errors in a TaskGroup", [unauthorized]),
+        },
+    )
+
+    output = await invoke_once(_service_account_payload(tmp_path, make_payload))
+
+    assert output["mcp"]["unavailable_servers"] == [
+        {
+            "name": "jira",
+            "transport": "streamable-http",
+            "reason": "authentication_required",
+            "error_type": "HTTPStatusError",
+        }
+    ]
 
 
 @pytest.mark.usefixtures("use_real_langgraph")

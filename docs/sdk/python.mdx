@@ -504,15 +504,15 @@ NeMo Fabric reads named values at adapter start and checks them before each invo
 
 MCP authentication and custom-header support vary by adapter:
 
-| Adapter | OAuth 2.0 Authentication | HTTP `custom_headers` |
-| --- | --- | --- |
-| Claude | Unsupported | Supported |
-| Codex | Supported | Supported |
-| Deep Agents | Unsupported | Supported |
-| Hermes Agent | Supported | Supported |
+| Adapter | OAuth 2.0 (`oauth2`) | Client credentials (`service_account`) | HTTP `custom_headers` |
+| --- | --- | --- | --- |
+| Claude | Unsupported | Unsupported | Supported |
+| Codex | Supported | Unsupported | Supported |
+| Deep Agents | Unsupported | Supported | Supported |
+| Hermes Agent | Supported | Unsupported | Supported |
 
-Claude and Deep Agents return a configuration error when `authentication` is
-set. The bundled adapters do not support `service_account` MCP authentication.
+An adapter returns a configuration error when `authentication` uses a type it
+does not support.
 
 Configure OAuth 2.0 with `McpAuthenticationConfig`. The adapter and MCP server
 complete the authorization flow before the first agent turn. The flow can
@@ -532,6 +532,34 @@ capability_config.add_mcp_server(
     exposure="harness_native",
 )
 ```
+
+Configure OAuth 2.0 client credentials with `type="service_account"` when the
+agent calls an MCP server as its own service identity, with no user and no
+browser. `client_secret_env` names the environment variable that holds the
+client secret; the configuration contains only the name:
+
+```python
+capability_config.add_mcp_server(
+    "jira",
+    transport="streamable-http",
+    url="https://jira-mcp.example.com/mcp",
+    authentication=McpAuthenticationConfig(
+        type="service_account",
+        client_id="fabric-agent",
+        client_secret_env="JIRA_MCP_CLIENT_SECRET",
+        token_url="https://auth.example.com/oauth2/token",
+        scopes=["jira.read"],
+    ),
+)
+```
+
+The adapter requests a token from `token_url`, sends it as
+`Authorization: Bearer <token>` with every MCP request, and requests a new one
+before it expires. `token_endpoint_auth_method` selects `client_secret_basic`
+(the default) or `client_secret_post`, and `token_cache_buffer_seconds` (300 by
+default) sets how early the token is renewed. Some servers also require a
+second, service-specific token; send it with `custom_headers` and a `${NAME}`
+reference alongside `service_account` authentication.
 
 Use `custom_headers` to send HTTP headers with an `sse` or `streamable-http`
 server. Header names and values must be valid HTTP header text. To provide a
