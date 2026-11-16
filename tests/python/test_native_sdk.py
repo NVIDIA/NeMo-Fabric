@@ -562,12 +562,12 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
 async def test_adapter_deadline_keeps_normalized_code_and_native_cause(
     hermes_shim_agent_dir,
 ):
+    client = Fabric()
+    config = hermes_shim_config()
+    config.runtime.artifacts = str(hermes_shim_agent_dir / "deadline-results")
+    request = RunRequest(input="test", context={"normalized_deadline": True})
     with pytest.raises(FabricRuntimeError) as caught:
-        await Fabric().run(
-            hermes_shim_config(),
-            base_dir=hermes_shim_agent_dir,
-            request=RunRequest(input="test", context={"normalized_deadline": True}),
-        )
+        await client.run(config, base_dir=hermes_shim_agent_dir, request=request)
     assert caught.value.code == "timeout"
     assert caught.value.stage == "invoke"
     assert caught.value.details["owner"] == "adapter"
@@ -575,6 +575,18 @@ async def test_adapter_deadline_keeps_normalized_code_and_native_cause(
     assert caught.value.details["cause_code"] == "strands_prompt_timeout"
     assert caught.value.details["runtime_evidence"]["cleanup"] == "completed"
     assert isinstance(caught.value.__cause__, TimeoutError)
+    saved = await client.invocation_result(
+        agent_name=config.metadata.name,
+        runtime_id=caught.value.details["runtime_evidence"]["runtime_id"],
+        request_id=request.request_id,
+        artifacts=config.runtime.artifacts,
+    )
+    assert saved is not None
+    assert saved.error.code == "timeout"
+    assert saved.error.metadata["owner"] == "adapter"
+    assert saved.error.metadata["timeout_seconds"] == 300
+    assert saved.error.metadata["cause_code"] == "strands_prompt_timeout"
+    assert saved.error.metadata["effects"] == "unknown"
 
 
 @pytest.mark.parametrize(
@@ -900,6 +912,10 @@ async def test_dispatched_failure_result_is_retrievable(
         )
         assert saved.error.retryable is False
         assert saved.error.metadata["effects"] == "unknown"
+        if failure == "timeout":
+            assert saved.error.metadata["owner"] == "fabric_runtime"
+            assert saved.error.metadata["timeout_seconds"] == 0.2
+            assert saved.error.metadata["cause_code"] == "host_timeout"
         assert "synthetic-sensitive-value" not in json.dumps(saved.to_mapping())
         if runtime is not None:
             replayed = json.loads(

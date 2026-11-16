@@ -3100,13 +3100,22 @@ fn run_local_host_invocation_with_timeout(
             FabricError::AdapterLifecycleOperation { code, .. }
                 if matches!(
                     code.as_str(),
-                    "host_crashed" | "host_timeout" | "interrupted" | "invalid_agent_run_result"
+                    "host_crashed"
+                        | "host_timeout"
+                        | "timeout"
+                        | "interrupted"
+                        | "invalid_agent_run_result"
                 ) =>
             {
                 code.as_str()
             }
             _ => "invocation_failed",
         };
+        let mut metadata = match error {
+            FabricError::AdapterLifecycleOperation { metadata, .. } => metadata.clone(),
+            _ => BTreeMap::new(),
+        };
+        metadata.insert("effects".into(), Value::String("unknown".into()));
         let result = RunResult {
             session_ref: None,
             agent_name: plan.agent_name.clone(),
@@ -3123,7 +3132,7 @@ fn run_local_host_invocation_with_timeout(
                 code: code.into(),
                 message: "The dispatched invocation ended without a valid result; effects may be unknown. Do not replay the work.".into(),
                 retryable: false,
-                metadata: BTreeMap::from([("effects".into(), Value::String("unknown".into()))]),
+                metadata,
             }),
             usage: None,
             execution: None,
@@ -7356,6 +7365,12 @@ else:
             assert_eq!(saved.error.as_ref().unwrap().code, expected);
             assert!(!saved.error.as_ref().unwrap().retryable);
             assert_eq!(saved.error.as_ref().unwrap().metadata["effects"], "unknown");
+            if expected == "host_timeout" {
+                let metadata = &saved.error.as_ref().unwrap().metadata;
+                assert_eq!(metadata["owner"], "fabric_runtime");
+                assert_eq!(metadata["timeout_seconds"], 0.1);
+                assert_eq!(metadata["cause_code"], "host_timeout");
+            }
             assert_eq!(invoke_runtime(&plan, &runtime, request).unwrap(), saved);
             fs::remove_dir_all(root).unwrap();
         }
