@@ -26,6 +26,28 @@ from nemo_fabric import RunRequest
 from nemo_fabric import RuntimeStatus
 
 
+async def test_conflicting_request_keeps_runtime_usable(
+    blocking_adapter_config, tmp_path
+):
+    (tmp_path / "release").touch()
+    runtime = await Fabric().start_runtime(blocking_adapter_config, base_dir=tmp_path)
+    try:
+        await runtime.invoke(request=RunRequest(request_id="original", input="first"))
+        with pytest.raises(FabricRuntimeError) as caught:
+            await runtime.invoke(
+                request=RunRequest(request_id="original", input="changed")
+            )
+        assert caught.value.code == "request_conflict"
+        assert runtime.status is RuntimeStatus.ACTIVE
+        fresh = await runtime.invoke(
+            request=RunRequest(request_id="fresh", input="new work")
+        )
+        assert fresh.status == "succeeded"
+        assert fresh.request_id == "fresh"
+    finally:
+        await runtime.stop()
+
+
 @pytest.mark.parametrize("stop_fails", [False, True])
 async def test_one_shot_lookup_matches_cleanup_result(
     hermes_shim_agent_dir, monkeypatch, stop_fails

@@ -118,6 +118,8 @@ NeMo Fabric saves each completed `RunResult` as `<artifact root>/.fabric/<runtim
 
 Use a trusted artifact directory. On Unix, result storage validates ownership, permissions, and symlinks within the private `.fabric` subtree, and requires private record-file permissions. Explicit caller-configured artifact roots can have shared or group-writable ancestors. Serialized results must fit within 4 MiB. Request identifiers must not be blank or contain NUL. Buffered retries can return the saved result; a request ID cannot switch between buffered and streaming invocations. A completed streaming request returns `stream_replay_unsupported` on replay; retrieve its terminal result with `invocation_result()` instead.
 
+The SDK keeps the runtime active after `request_conflict`, `invocation_pending`, and `stream_replay_unsupported`. These request rejections do not dispatch a new turn.
+
 Choose a stable `RunRequest.request_id` before submitting work. After a command timeout, `invocation_timeout` reports unknown effects and returns the runtime and request identifiers. The invocation can continue. Retrieve the completed result with:
 
 ```python

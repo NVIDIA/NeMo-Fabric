@@ -491,8 +491,41 @@ async def test_runtime_reuses_runtime_and_orders_turns(mock_native: MagicMock):
     assert len(runtime.invocations) == 2
 
 
-async def test_native_invoke_failure_marks_runtime_failed(mock_native: MagicMock):
-    mock_native.invoke_runtime.side_effect = RuntimeError("invoke failed")
+@pytest.mark.parametrize(
+    "code", ["request_conflict", "invocation_pending", "stream_replay_unsupported"]
+)
+@pytest.mark.parametrize("structured", [False, True])
+async def test_request_rejection_keeps_runtime_usable(mock_native, code, structured):
+    error = (
+        FabricRuntimeError("request rejected", stage="invoke", code=code)
+        if structured
+        else RuntimeError("request rejected")
+    )
+    error.code = code
+    invoke = mock_native.invoke_runtime.side_effect
+    mock_native.invoke_runtime.side_effect = error
+    runtime = _runtime_wrapper(mock_native)
+    try:
+        with pytest.raises(FabricRuntimeError) as caught:
+            await runtime.invoke(input="rejected")
+        assert caught.value.code == code
+        assert runtime.status is RuntimeStatus.ACTIVE
+        if structured:
+            assert caught.value is error
+        else:
+            assert caught.value.__cause__ is error
+        mock_native.invoke_runtime.side_effect = invoke
+        fresh = await runtime.invoke(input="fresh")
+        assert fresh.status == "succeeded"
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.parametrize("code", [None, "host_crashed", "result_storage_failed"])
+async def test_native_invoke_failure_marks_runtime_failed(mock_native: MagicMock, code):
+    error = RuntimeError("invoke failed")
+    error.code = code
+    mock_native.invoke_runtime.side_effect = error
     runtime = _runtime_wrapper(mock_native)
 
     with pytest.raises(FabricRuntimeError, match="invoke failed"):

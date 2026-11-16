@@ -46,6 +46,12 @@ logger = logging.getLogger(__name__)
 
 _PI_ADAPTER_ID = "nvidia.fabric.pi"
 _PI_STREAM_CORRELATION_MODE = "pi_turn_window"
+# Result-store rejections do not dispatch a new turn to the adapter.
+_INVOCATION_REJECTION_CODES = (
+    "request_conflict",
+    "invocation_pending",
+    "stream_replay_unsupported",
+)
 
 
 class RuntimeStatus(str, Enum):
@@ -321,12 +327,18 @@ class Runtime:
                 else:
                     self._status = RuntimeStatus.STOPPED
                 raise
-            except FabricError:
-                if self._status is not RuntimeStatus.STOPPED:
+            except FabricError as error:
+                if (
+                    self._status is not RuntimeStatus.STOPPED
+                    and error.code not in _INVOCATION_REJECTION_CODES
+                ):
                     self._status = RuntimeStatus.FAILED
                 raise
             except Exception as error:
-                if self._status is not RuntimeStatus.STOPPED:
+                if (
+                    self._status is not RuntimeStatus.STOPPED
+                    and getattr(error, "code", None) not in _INVOCATION_REJECTION_CODES
+                ):
                     self._status = RuntimeStatus.FAILED
                 raise _runtime_error(error, stage="invoke") from error
             if absorb_result:
