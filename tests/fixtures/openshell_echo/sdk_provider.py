@@ -102,6 +102,18 @@ async def main():
                 ):
                     value["execution"] = "malformed optional evidence"
                 fault = os.environ.get("FABRIC_TEST_PROVIDER_FAULT")
+                if (
+                    fault == "unexpected_session_start"
+                    and command["operation"] == "start"
+                ) or (
+                    fault == "unexpected_session_result"
+                    and command["operation"] == "invoke"
+                ):
+                    value["session_ref"] = {
+                        "schema_version": "fabric.session_ref/v1alpha1",
+                        "adapter_id": "different-adapter",
+                        "session_id": "another-session",
+                    }
                 if not fault_injected and (
                     (fault == "start" and command["operation"] == "start")
                     or (fault == "invoke" and command["operation"] == "invoke")

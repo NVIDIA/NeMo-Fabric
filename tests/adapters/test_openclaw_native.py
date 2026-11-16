@@ -608,3 +608,94 @@ async def test_native_selection_preserves_sdk_prompt_guidance(
     (tmp_path / "sdk-prompt-compatibility.json").write_text(
         json.dumps(prompts, indent=2)
     )
+
+
+async def test_native_controls_apply_to_pinned_gateway(
+    tmp_path, api_server, native_config, monkeypatch
+):
+    """The pinned Gateway accepts and applies the native harness controls."""
+
+    mapping = native_config.to_mapping()
+    mapping["harness"]["settings"].update(
+        {
+            "agents": {
+                "defaults": {
+                    "heartbeat": {"every": "0m"},
+                    "compaction": {"memoryFlush": {"enabled": False}},
+                }
+            },
+            "tools": {
+                "exec": {"notifyOnExit": False},
+                "toolSearch": False,
+                "codeMode": False,
+            },
+            "plugins": {
+                "entries": {"memory-core": {"config": {"dreaming": {"enabled": False}}}}
+            },
+        }
+    )
+    config = FabricConfig.from_mapping(mapping)
+    temp_root = tmp_path / "tmp"
+    temp_root.mkdir()
+    monkeypatch.setenv("TMPDIR", str(temp_root))
+
+    fabric = Fabric()
+    async with await fabric.start_runtime(config, base_dir=tmp_path) as runtime:
+        # Startup runs `openclaw config validate` on the generated file first.
+        (config_path,) = temp_root.glob("nemo-fabric-openclaw-*/openclaw.json")
+        generated = json.loads(config_path.read_text())
+        defaults = generated["agents"]["defaults"]
+        assert defaults["heartbeat"] == {"every": "0m"}
+        assert defaults["compaction"]["memoryFlush"] == {"enabled": False}
+        assert generated["tools"]["exec"]["notifyOnExit"] is False
+        assert generated["tools"]["toolSearch"] is False
+        assert generated["tools"]["codeMode"] is False
+        assert set(generated["tools"]["deny"]) >= {"exec", "process"}
+        assert generated["plugins"]["entries"]["memory-core"] == {
+            "config": {"dreaming": {"enabled": False}}
+        }
+
+        process = await asyncio.create_subprocess_exec(
+            native_config.harness.settings["openclaw_command"],
+            "plugins",
+            "list",
+            "--json",
+            env={
+                **os.environ,
+                "OPENCLAW_CONFIG_PATH": str(config_path),
+                "OPENCLAW_STATE_DIR": str(config_path.parent / "state"),
+                "OPENCLAW_CONFIG_READONLY": "1",
+            },
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), 60)
+        except BaseException:
+            # Stop a hung CLI and reap it so its pipes close before the error propagates.
+            if process.returncode is None:
+                process.kill()
+                await process.communicate()
+            raise
+        assert process.returncode == 0, stderr.decode()
+        memory_core = next(
+            plugin
+            for plugin in json.loads(stdout)["plugins"]
+            if plugin["id"] == "memory-core"
+        )
+        # A config-only plugin entry must not disable the bundled plugin.
+        assert memory_core["enabled"] is True, memory_core
+        assert memory_core["status"] == "loaded", memory_core
+
+        async with httpx.AsyncClient(trust_env=False, timeout=60) as client:
+            await client.post(
+                f"{api_server}/_scenario",
+                json={"response_text": "native controls turn complete"},
+            )
+            result = await runtime.invoke(input="List the tools you can call.")
+            assert result.status == "succeeded", result.to_mapping()
+            payloads = (await client.get(f"{api_server}/_requests")).json()
+            tools = {tool["function"]["name"] for tool in payloads[-1].get("tools", [])}
+            # Tool search and Code Mode are off, so the MCP tool is presented directly.
+            assert "fabricprobe__get_authorization_header" in tools, tools
+            assert not tools & {"tool_search", "tool_describe", "tool_call"}, tools

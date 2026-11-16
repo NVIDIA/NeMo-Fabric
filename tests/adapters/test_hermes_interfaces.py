@@ -15,6 +15,7 @@ import sqlite3
 import sys
 import time
 from pathlib import Path
+from unittest.mock import call
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
@@ -395,6 +396,9 @@ async def test_hermes_serves_api_and_dashboard_with_the_configured_model(
     assert not token_path.exists()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Hermes interfaces require a POSIX host"
+)
 async def test_hermes_stop_cuts_off_an_in_flight_api_request(
     tmp_path: Path, api_server: str
 ):
@@ -442,9 +446,11 @@ async def test_hermes_stop_cuts_off_an_in_flight_api_request(
     assert not _token_path(tmp_path).exists()
 
 
+@pytest.mark.parametrize("kept", [False, True])
 async def test_hermes_interfaces_fail_start_on_windows_before_any_child_starts(
-    tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch, kept: bool
 ):
+    """Clear stale credentials and reject native interfaces before setup."""
     monkeypatch.setattr(interfaces, "POSIX", False)
     # start() stops whatever it started when it fails, so check the spawn
     # itself rather than the children left afterwards.
@@ -455,22 +461,31 @@ async def test_hermes_interfaces_fail_start_on_windows_before_any_child_starts(
     write_config = MagicMock(wraps=configuration.write_hermes_config)
     monkeypatch.setattr(configuration, "write_hermes_config", write_config)
     runtime = adapter.HermesRuntime()
+    payload = _payload(
+        tmp_path,
+        {"interfaces": {"api": {"port": _free_port()}}},
+        base_url=f"{api_server}/v1",
+    )
+    token_path = _token_path(tmp_path)
+    if kept:
+        state_dir = tmp_path / "artifacts/.fabric/state/nvidia.fabric.hermes/assistant"
+        payload["runtime_context"]["state_dir"] = str(state_dir)
+        token_path = state_dir / "interfaces/api.token"
+    token_path.parent.mkdir(parents=True)
+    token_path.write_text("token-from-a-crashed-runtime", encoding="utf-8")
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
-        await runtime.start(
-            _payload(
-                tmp_path,
-                {"interfaces": {"api": {"port": _free_port()}}},
-                base_url=f"{api_server}/v1",
-            )
-        )
+        await runtime.start(payload)
 
     assert caught.value.code == "hermes_interfaces_unsupported_platform"
     spawn.assert_not_called()
     write_config.assert_not_called()
-    assert not _token_path(tmp_path).exists()
+    assert not token_path.exists()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Hermes interfaces require a POSIX host"
+)
 async def test_hermes_interface_port_in_use_fails_start(
     tmp_path: Path, api_server: str
 ):
@@ -492,6 +507,110 @@ async def test_hermes_interface_port_in_use_fails_start(
         "port": port,
     }
     assert not _token_path(tmp_path).exists()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Hermes interfaces require a POSIX host"
+)
+async def test_hermes_failed_interface_start_removes_a_token_left_in_kept_state(
+    tmp_path: Path, api_server: str
+):
+    """Remove a retained API token even when an occupied port blocks startup."""
+    state_dir = tmp_path / "artifacts/.fabric/state/nvidia.fabric.hermes/assistant"
+    stale_token = state_dir / "interfaces" / "api.token"
+    stale_token.parent.mkdir(parents=True)
+    stale_token.write_text("token-from-a-crashed-runtime", encoding="utf-8")
+    runtime = adapter.HermesRuntime()
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        payload = _payload(
+            tmp_path,
+            {"interfaces": {"api": {"port": server.getsockname()[1]}}},
+            base_url=f"{api_server}/v1",
+        )
+        payload["runtime_context"]["state_dir"] = str(state_dir)
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.start(payload)
+
+    assert caught.value.code == "hermes_interface_port_unavailable"
+    assert not stale_token.exists()
+
+
+@pytest.mark.parametrize("kept", [False, True])
+async def test_sdk_only_start_removes_stale_interface_files(
+    tmp_path, api_server, monkeypatch, kept
+):
+    """Remove stale native attachment files while preserving unrelated data."""
+    payload = _payload(tmp_path, {}, base_url=f"{api_server}/v1")
+    home = _token_path(tmp_path).parent.parent
+    if kept:
+        home = tmp_path / "kept-state"
+        payload["runtime_context"]["state_dir"] = str(home)
+    interface_dir = home / "interfaces"
+    interface_dir.mkdir(parents=True)
+    stale_files = [
+        interface_dir / name
+        for name in ("api.token", "tui.json", "tui.token", "agent-config.json")
+    ]
+    for path in stale_files:
+        path.write_text("stale interface data", encoding="utf-8")
+    unrelated = interface_dir / "keep.txt"
+    unrelated.write_text("retained data", encoding="utf-8")
+    spawn = AsyncMock()
+    monkeypatch.setattr(interfaces.asyncio, "create_subprocess_exec", spawn)
+
+    runtime = adapter.HermesRuntime()
+    try:
+        await runtime.start(payload)
+        assert all(not path.exists() for path in stale_files)
+        assert unrelated.read_text(encoding="utf-8") == "retained data"
+        spawn.assert_not_called()
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.parametrize(
+    "name", ["api.token", "tui.json", "tui.token", "agent-config.json"]
+)
+@pytest.mark.parametrize("failure", ["directory", "permission"])
+async def test_start_reports_interface_cleanup_failures_before_hermes_setup(
+    tmp_path, api_server, monkeypatch, name, failure
+):
+    """Return a stable error before setup when attachment cleanup fails."""
+    payload = _payload(tmp_path, {}, base_url=f"{api_server}/v1")
+    home = tmp_path / "kept-state"
+    payload["runtime_context"]["state_dir"] = str(home)
+    path = home / "interfaces" / name
+    path.parent.mkdir(parents=True)
+    if failure == "directory":
+        path.mkdir()
+    else:
+        path.write_text("stale interface data", encoding="utf-8")
+        unlink = Path.unlink
+
+        def deny_unlink(candidate, *args, **kwargs):
+            """Simulate a permission failure for the selected attachment."""
+            if candidate == path:
+                raise PermissionError("PRIVATE_UNLINK_DETAIL")
+            return unlink(candidate, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", deny_unlink)
+    write_config = MagicMock(wraps=configuration.write_hermes_config)
+    monkeypatch.setattr(configuration, "write_hermes_config", write_config)
+    spawn = AsyncMock()
+    monkeypatch.setattr(interfaces.asyncio, "create_subprocess_exec", spawn)
+
+    runtime = adapter.HermesRuntime()
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.start(payload)
+    finally:
+        await runtime.stop()
+
+    assert caught.value.code == "hermes_interface_cleanup_failed"
+    assert isinstance(caught.value.__cause__, OSError)
+    assert "PRIVATE_UNLINK_DETAIL" not in str(caught.value)
+    write_config.assert_not_called()
+    spawn.assert_not_called()
 
 
 def test_hermes_disabled_interface_is_not_started():
@@ -604,6 +723,9 @@ async def test_private_file_removal_failure_still_stops_children_and_retries(
     assert children._agent_config_path is None
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Hermes interfaces require a POSIX host"
+)
 async def test_hermes_interface_start_timeout_stops_the_started_child(
     tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch
 ):
@@ -667,6 +789,9 @@ async def test_hermes_cancelled_interface_stop_still_kills_a_child_that_ignores_
             await process.wait()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Hermes interfaces require a POSIX host"
+)
 async def test_hermes_dashboard_without_a_built_frontend_fails_start(
     tmp_path: Path, api_server: str
 ):
@@ -1217,3 +1342,173 @@ async def test_four_paths_keep_conversations_separate_and_restart_cleanly(
         assert (await runtime.check("ready"))["outcome"] == "passed"
     finally:
         await runtime.stop()
+
+
+def _native_controls(tool_search: object = "off") -> dict[str, object]:
+    return {
+        "auxiliary": {
+            "title_generation": {"enabled": False},
+            "background_review": {"enabled": False},
+        },
+        "tools": {"tool_search": {"enabled": tool_search}},
+    }
+
+
+def _hermes_native_controls() -> dict[str, object]:
+    """Read the controls through Hermes's own loaders for the current home."""
+    from hermes_cli.config import load_config
+    from tools.tool_search import load_config as load_tool_search_config
+
+    auxiliary = load_config()["auxiliary"]
+    return {
+        "title_generation": auxiliary["title_generation"]["enabled"],
+        "background_review": auxiliary["background_review"]["enabled"],
+        "tool_search": load_tool_search_config().enabled,
+    }
+
+
+@pytest.mark.parametrize(
+    ("settings", "expected"),
+    [
+        pytest.param(
+            {},
+            {
+                "title_generation": True,
+                "background_review": True,
+                "tool_search": "auto",
+            },
+            id="omitted-keeps-hermes-defaults",
+        ),
+        *[
+            pytest.param(
+                _native_controls(tool_search),
+                {
+                    "title_generation": False,
+                    "background_review": False,
+                    "tool_search": expected,
+                },
+                id=f"tool-search-{tool_search}",
+            )
+            for tool_search, expected in (
+                (True, "on"),
+                (False, "off"),
+                ("on", "on"),
+                ("off", "off"),
+                ("auto", "auto"),
+            )
+        ],
+    ],
+)
+async def test_sdk_agent_reads_native_controls_at_initialization(
+    tmp_path, monkeypatch, settings, expected
+):
+    import hermes_state
+    import run_agent
+
+    observed: dict[str, object] = {}
+
+    def construct(*_args: object, **_kwargs: object) -> MagicMock:
+        observed.update(_hermes_native_controls())
+        return MagicMock()
+
+    monkeypatch.setattr(run_agent, "AIAgent", MagicMock(side_effect=construct))
+    monkeypatch.setattr(hermes_state, "SessionDB", MagicMock())
+    runtime = adapter.HermesRuntime()
+    try:
+        await runtime.start(_payload(tmp_path, settings))
+        assert os.environ["HERMES_HOME"] == str(runtime._hermes_home)
+    finally:
+        await runtime.stop()
+
+    assert observed == expected
+
+
+@pytest.mark.parametrize(
+    ("interface", "command"),
+    [("api", "gateway"), ("dashboard", "dashboard"), ("terminal", "serve")],
+)
+@pytest.mark.usefixtures("web_dist")
+async def test_native_interfaces_read_native_controls_before_startup(
+    tmp_path, monkeypatch, interface, command
+):
+    from nemo_fabric_adapters.hermes import terminal
+
+    spawned: list[tuple[tuple[str, ...], str, dict[str, object]]] = []
+
+    async def spawn(*arguments: str, env: dict[str, str], **_options: object):
+        # A child process reads config.yaml from its HERMES_HOME at startup.
+        os.environ["HERMES_HOME"] = env["HERMES_HOME"]
+        spawned.append((arguments, env["HERMES_HOME"], _hermes_native_controls()))
+        return MagicMock(returncode=0)
+
+    monkeypatch.setattr(interfaces.asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(interfaces, "_wait_healthy", AsyncMock())
+    monkeypatch.setattr(terminal, "tui_ready", AsyncMock(return_value=True))
+    settings = {
+        **_native_controls(False),
+        "sdk": {"enabled": False},
+        **_interface(interface, port=_free_port()),
+    }
+    runtime = adapter.HermesRuntime()
+    try:
+        await runtime.start(_payload(tmp_path, settings))
+        home = str(runtime._hermes_home)
+        if interface == "terminal":
+            # The terminal renderer attaches to the backend that owns this home.
+            connection = runtime._hermes_home / "interfaces" / "tui.json"
+            attachment = await asyncio.to_thread(
+                terminal.attachment_environment, connection
+            )
+            assert attachment["HERMES_HOME"] == home
+    finally:
+        await runtime.stop()
+
+    [(arguments, child_home, observed)] = spawned
+    assert arguments[1:3] == ("-m", "nemo_fabric_adapters.hermes.native")
+    assert arguments[5] == command
+    assert child_home == home
+    assert observed == {
+        "title_generation": False,
+        "background_review": False,
+        "tool_search": "off",
+    }
+
+
+async def test_native_only_resume_is_rejected_before_starting_interfaces(
+    tmp_path, monkeypatch
+):
+    start = AsyncMock()
+    monkeypatch.setattr(interfaces.InterfaceChildren, "start", start)
+    payload = _payload(
+        tmp_path, {"sdk": {"enabled": False}, "interfaces": {"api": {"port": 18642}}}
+    )
+    payload["runtime_context"]["state_dir"] = str(tmp_path / "kept")
+    payload["runtime_context"]["session_ref"] = {
+        "schema_version": "fabric.session_ref/v1alpha1",
+        "adapter_id": "nvidia.fabric.hermes",
+        "session_id": "native-session",
+    }
+    runtime = adapter.HermesRuntime()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(payload)
+    assert caught.value.code == "session_resume_unsupported"
+    start.assert_not_awaited()
+    assert not (tmp_path / "kept").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Uses POSIX process signaling")
+async def test_interface_cleanup_never_signals_a_reaped_leader_pid(monkeypatch):
+    children = interfaces.InterfaceChildren()
+    process = MagicMock(pid=1234, returncode=None)
+
+    async def finish():
+        process.returncode = 0
+        return 0
+
+    process.wait = AsyncMock(side_effect=finish)
+    children._children.append(interfaces._Child("api", 0, process))
+    monkeypatch.setattr(interfaces.os, "killpg", MagicMock(side_effect=PermissionError))
+    signal_pid = MagicMock()
+    monkeypatch.setattr(interfaces.os, "kill", signal_pid)
+    await children.stop()
+    assert signal_pid.call_args_list == [call(1234, signal.SIGTERM)]

@@ -120,7 +120,16 @@ descriptor schema.
 - `sdk/run-plan`: executable plan containing the canonical northbound config, its
   projected southbound `AgentConfig`, the selected adapter, and derived
   execution metadata.
-- `sdk/run-request`: northbound per-invocation request and input, including the optional string `relay_session_root`. Core forwards this field as the optional typed `AgentRunRequest.relay_session_root` field. Context keys do not control Relay propagation. Deep Agents and mini-SWE-agent use a usable UUID as their Relay propagation root; unusable values preserve the per-request fallback.
+- `sdk/session-ref`: normalized `fabric.session_ref/v1alpha1` envelope with an opaque adapter-issued native session identifier. References resolve only within caller-supplied retained storage.
+- `sdk/run-request`: northbound per-invocation request and input, including optional `acknowledge_recovery` for an explicit continuation after a recovery warning, and the optional string `relay_session_root`. Core forwards these as typed `AgentRunRequest` fields. Context keys do not control Relay propagation. Deep Agents and mini-SWE-agent use a usable UUID as their Relay propagation root. Unusable values preserve the per-request fallback.
+
+`RunPlan.session_ref` and `RuntimeContext.session_ref` select the conversation
+to resume. Omission starts fresh. `runtime.keep_state` controls retention.
+`RuntimeCapabilities.session_resume` is opt-in. `RuntimeHandle.session_ref` and
+`RunResult.session_ref` expose confirmed durable identity. Adapter start output
+and `AgentRunResult.session_id` confirm native identity. Startup recovery
+warnings use `RuntimeHandle.recovery_warnings` as structured `ErrorInfo` values.
+These additions require matching core, SDK, and adapter-contract versions.
 
 ### Runtime Lifecycle
 

@@ -129,6 +129,9 @@ The descriptor validates the following `harness.settings` fields:
 | `terminal_timeout` | positive number | `60` | Limits a Hermes terminal tool operation in seconds; it does not enable a TUI. |
 | `interfaces.api`, `interfaces.dashboard`, `interfaces.terminal` | object | None | Serve Hermes's API or shared dashboard/terminal TUI backend, with an exact `port` and optional `enabled`. Dashboard and terminal ports must match when both are enabled; API requires a distinct port; see [Hermes invocation paths](../../../docs/integrations/harness/hermes/hermes.mdx). |
 | `startup_timeout_seconds` | number, greater than 0 and at most 75 | `60` | Time from the start of the runtime for every enabled interface to pass its health check. |
+| `auxiliary.title_generation.enabled` | boolean | Hermes native default; `false` with Relay | Native automatic session-title generation. An explicit value wins over the Relay default. |
+| `auxiliary.background_review.enabled` | boolean | Hermes native default | Native automatic background memory and skill review after turns. Explicit native `/refine` remains available. |
+| `tools.tool_search.enabled` | `auto`, `on`, `off`, or boolean | Hermes native default | Native tool search; `true` and `false` are aliases for `on` and `off`. `off` presents the selected tool schemas directly. |
 
 For example:
 
@@ -147,13 +150,49 @@ harness = HarnessConfig(
 )
 ```
 
+### Native Harness Controls
+
+The `auxiliary` and `tools` settings use Hermes's native `config.yaml` structure. The adapter writes only the fields you set, before any SDK agent or native interface starts, so all four execution paths read them. Omitting a field keeps the current behavior. For title generation, an explicit value always wins; when it is omitted, a Relay-enabled runtime keeps writing `false` and other runtimes keep Hermes's default. `harness.settings.tools` is Hermes's native tools section and is separate from NeMo Fabric's normalized top-level `tools.enabled` and `tools.blocked`.
+
+These controls reduce automatic background model calls. They do not stop context compaction calls and do not correlate concurrent sessions; refer to the [Hermes guide](../../../docs/integrations/harness/hermes/hermes.mdx#native-harness-controls).
+
 ## Configuration Mapping and Ownership
 
 Managed native processes use the adapter's launcher to apply explicit instructions and behavioral settings before constructing agents. Explicit enabled tools, including an empty list, override native selection; a nonempty blocked list overrides native exclusions. Unspecified tool policies can differ between SDK and native paths.
 
-The runtime home is `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. The adapter writes native configuration and optional NeMo Relay plugin configuration there. When native interfaces are enabled, an owner-only `interfaces/agent-config.json` snapshot supplies the constructor mapping and is removed on stop. Model credentials are provided through child environments rather than public attachment metadata.
+The default Hermes home is `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. With `runtime.keep_state`, the adapter uses the agent state folder described in the [Hermes guide](../../../docs/integrations/harness/hermes/hermes.mdx#shared-runtime-home). The adapter writes native configuration and optional NeMo Relay plugin configuration there. When native interfaces are enabled, an owner-only `interfaces/agent-config.json` snapshot supplies the constructor mapping and is removed on stop. Model credentials are provided through child environments rather than public attachment metadata.
 
 The adapter leaves the installed Hermes source unchanged. Independently started processes do not automatically receive its mapping. Refer to [Shared Configuration and Ownership](../../../docs/integrations/harness/hermes/hermes.mdx#shared-configuration-and-ownership) for precedence and managed API gateway scope.
+
+## Cold Resume
+
+`SessionRef` resume requires `sdk.enabled: true`, which is the default. The run plan reports the adapter's declared `session_resume` capability. Native-only runtimes can retain their Hermes home with `runtime.keep_state` and start without issuing a session reference. Hermes rejects explicit SDK session selection in native-only mode with `session_resume_unsupported`.
+
+With `runtime.keep_state`, save `Runtime.session_ref.to_mapping()` in caller-owned
+storage. Pass `session_ref=SessionRef.from_mapping(saved_reference)`
+to `Fabric.start_runtime()` to reopen the exact native conversation. The caller
+must also retain the full artifact state tree, including NeMo Fabric's private
+relative bindings in `.fabric/state/nvidia.fabric.hermes/.sessions`. A corrected
+agent name can select the same reference. A different adapter cannot. A missing or incompatible session returns an explicit error.
+
+The adapter uses Hermes's native resume checks, conversation projection, and
+reopen operation. Hermes owns native identifiers and compression segments.
+NeMo Fabric supplies the current startup configuration and instructions and creates
+a new runtime ID. Hermes can restore its saved system prompt and pinned tools.
+NeMo Fabric does not override those native resume rules. `RunResult.session_ref`
+confirms the selected conversation.
+
+An uncertain earlier turn produces a `session_recovery_required` startup
+warning. NeMo Fabric preserves history, including unfinished requests. The model
+may act on those requests after acknowledgment. Inspect the
+native and external state before issuing a new `RunRequest` with
+`acknowledge_recovery=True`. This gate applies to NeMo Fabric-controlled invocations.
+NeMo Fabric does not change native API or dashboard session selection or behavior.
+
+The state lock remains held while shutdown is unconfirmed. On Unix, native API
+and dashboard processes inherit the lock so a surviving writer still prevents
+replacement after its host exits. Retry cleanup after a caller timeout and confirm that the runtime has stopped. See the [SDK resume guide](../../../docs/sdk/python.mdx#resume-a-hermes-conversation)
+for selection, recovery, and storage details.
 
 ## Execution Model
 

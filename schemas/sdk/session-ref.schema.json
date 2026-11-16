@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Adapter-issued native identity, resolved only within caller-supplied storage.",
+  "properties": {
+    "adapter_id": {
+      "description": "Adapter responsible for interpreting the opaque identifier.",
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "fabric.session_ref/v1alpha1",
+      "description": "Supported envelope version.",
+      "type": "string"
+    },
+    "session_id": {
+      "description": "Opaque adapter-issued identifier interpreted by the adapter.",
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "adapter_id",
+    "session_id"
+  ],
+  "title": "SessionRef",
+  "type": "object"
+}

@@ -14,7 +14,8 @@ SPDX-License-Identifier: Apache-2.0
 | `serve` | Start the foreground runtime server; no agent selection |
 | `check [--timeout-seconds SECONDS]` | Check runtime server responsiveness |
 | `check --agent NAME --runtime-id ID [--live \| --active \| --ready]` | Check the selected runtime through `Fabric.check()` |
-| `start --agent NAME --config FILE` | `Fabric.start_runtime(config, base_dir=...)` |
+| `start --agent NAME --config FILE [--session-ref FILE]` | `Fabric.start_runtime(config, base_dir=..., session_ref=...)` |
+| `start --agent NAME --request FILE` | Start from one object containing `config` and optional `session_ref` |
 | `invoke --agent NAME --runtime-id ID --input FILE` | `Runtime.invoke(input=...)` |
 | `invoke --agent NAME --runtime-id ID --request FILE` | `Runtime.invoke(request=RunRequest(...))` |
 | `stop --agent NAME --runtime-id ID` | `Runtime.stop()` |
@@ -38,7 +39,7 @@ fabric-agent-ctl stop --agent researcher --runtime-id RUNTIME_ID
 
 The response envelope separates command diagnostics from the public SDK payload in `result`: start returns `RuntimeHandle.to_mapping()`, invoke returns `RunResult.to_mapping()` directly, and stop returns JSON `null` for the SDK's `None` return. There is no `fabric_result` wrapper. Replace `RUNTIME_ID` with `result.runtime_id` from start. Multiple invocations retain the same runtime and conversation. Targeted commands require both the returned runtime ID and exact agent name. Repeated successful stop is a no-op. Serve starts a process and is never forwarded over the socket.
 
-Use `--request FILE` to forward a complete public `RunRequest`, including `request_id`, `relay_session_root`, `context`, `overrides`, and supported extensions. For example, a request file can contain `{"input": "Review calculator.py", "request_id": "review-1", "context": {"review_tag": "cedar-4827"}}`. `--input FILE` is a mutually exclusive convenience for any JSON-compatible SDK input: an object, array, string, number, boolean, or null. Null follows the SDK's normalization to an empty input string. Agent input fields named `stream` or `streaming` remain ordinary input data; this command calls `Runtime.invoke()`, never a streaming method.
+Use `invoke --request FILE` to forward a complete public `RunRequest`, including `request_id`, `relay_session_root`, `context`, `overrides`, and supported extensions. For example, a request file can contain `{"input": "Review calculator.py", "request_id": "review-1", "context": {"review_tag": "cedar-4827"}}`. `--input FILE` is a mutually exclusive convenience for any JSON-compatible SDK input: an object, array, string, number, boolean, or null. Null follows the SDK's normalization to an empty input string. Agent input fields named `stream` or `streaming` remain ordinary input data. This command calls `Runtime.invoke()`, never a streaming method.
 
 `status --agent NAME --runtime-id ID` returns the existing SDK ownership record without starting, invoking, stopping, or probing the harness. The result is a `RuntimeStatusReport` mapping with `runtime_id`, `agent_name`, `status` (`active`, `stopped`, or `failed`), `handle`, and the server's recorded `server_state` (`running`, `stopping`, `stopped`, or `unknown`). Recorded active state does not establish current process health. Status reads bypass the invocation lock. A valid read exits 0, including a known stopped or failed runtime; missing or mismatched ownership exits 1. `changed` is always false, and status errors always report `effects: "none"`.
 
@@ -56,9 +57,17 @@ Report timing covers the client call, including connection, response decoding, a
 
 Checks use one three-second deadline across routing, gateway calls, command transport, all requested levels, and response validation. Use `--timeout-seconds SECONDS` to select another positive, finite budget. A timeout returns `unknown/probe_timeout` for the requested scope. `Fabric.check()` maps OpenShell requests to these named commands; runtime checks then call the local SDK inside the sandbox. Stop or replacement invalidates in-flight evidence.
 
+For Hermes cold resume, retain storage and save the returned `session_ref`.
+Pass the saved reference envelope through
+`start --session-ref FILE` alongside `--config FILE`. Retention alone starts fresh.
+The OpenShell provider uses `start --request -` to carry both fields in one
+stdin object. This form is mutually exclusive with `--config` and `--session-ref`.
+Recovery warnings remain in the runtime result. Inspect uncertain state before
+sending a new invoke request with `acknowledge_recovery: true`.
+
 ## Runtime Ownership
 
-Each successful start is recorded by its returned runtime ID. Invoke and stop address that ID and the exact agent name, so several runtimes can be active independently. Stopping one runtime does not affect the others, and a new runtime can start after a previous one stops. A failed stop retains the runtime handle so the caller can inspect failure and shutdown can retry it. An uncertain start or runtime-ID collision blocks further starts because the server cannot establish an unambiguous owner; replace the sandbox in that case.
+Each successful start is recorded by its returned runtime ID. Invoke and stop address that ID and the exact agent name, so several runtimes can be active independently. Stopping one runtime does not affect the others, and a new runtime can start after a previous one stops. A failed stop retains the runtime handle so the caller can inspect failure and shutdown can retry it. Known retained-state and session selection rejections can be corrected and retried without consuming the server lifecycle. An uncertain start or runtime-ID collision blocks further starts because the server cannot establish an unambiguous owner. Replace the sandbox in that case.
 
 ```mermaid
 flowchart TD
@@ -70,7 +79,7 @@ flowchart TD
     Caller --> Bridge --> Socket --> Host --> Runtime
 ```
 
-The outer server is separate from the SDK's adapter process and the selected harness. It serializes starts and serializes invoke/stop operations for each runtime ID, while separate runtimes can progress independently. It waits for an active invocation before ordinary stop. Direct SDK consumers can also use streaming or shared services.
+The outer server is separate from the SDK's adapter process and the selected harness. It serializes starts and serializes invoke/stop operations for each runtime ID, while separate runtimes can progress independently. A busy stop returns `runtime_busy` promptly and retains ownership. Retry stop after the invocation ends. Direct SDK consumers can also use streaming or shared services.
 
 Ordinary SDK stop does not establish that all harness descendants exited. A successful stop response reports completion of the SDK operation. The caller must use the sandbox supervisor to terminate remaining descendants. The server does not interrupt adapters through a new forced-stop SDK API.
 

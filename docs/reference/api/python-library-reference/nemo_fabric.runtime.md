@@ -72,9 +72,21 @@ Return a deep copy of the latest harness-provided message history.
 
 ---
 
+### <kbd>property</kbd> recovery_warnings
+
+Return recovery warnings. Acknowledge them through a new RunRequest.
+
+---
+
 ### <kbd>property</kbd> runtime_id
 
 Return the unique identifier for this started runtime lifecycle.
+
+---
+
+### <kbd>property</kbd> session_ref
+
+Return the confirmed durable native session, or None for legacy sessions.
 
 ---
 

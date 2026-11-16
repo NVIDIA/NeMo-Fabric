@@ -389,7 +389,9 @@ async def test_non_active_returned_runtime_is_owned_for_stop(
     assert next_response["result"]["runtime_id"] == "runtime-2"
 
 
-async def test_invoke_and_stop_are_serialized(host, host_request, mock_runtime):
+async def test_stop_can_be_retried_after_a_busy_invocation(
+    host, host_request, mock_runtime
+):
     await host.handle(host_request("start"))
     entered, release = asyncio.Event(), asyncio.Event()
     native = mock_runtime.invoke.return_value
@@ -405,9 +407,10 @@ async def test_invoke_and_stop_are_serialized(host, host_request, mock_runtime):
     second = asyncio.create_task(host.handle(host_request("stop")))
     await asyncio.sleep(0)
     mock_runtime.stop.assert_not_awaited()
+    assert (await second)["error"]["code"] == "runtime_busy"
     release.set()
     assert (await first)["status"] == "succeeded"
-    assert (await second)["status"] == "succeeded"
+    assert (await host.handle(host_request("stop")))["status"] == "succeeded"
     mock_runtime.stop.assert_awaited_once_with()
 
 

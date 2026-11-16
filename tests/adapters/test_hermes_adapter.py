@@ -217,6 +217,7 @@ def test_descriptor_uses_the_typed_agent_config_contract():
         "models.max_tokens",
         "instructions.system",
         "runtime.max_turns",
+        "runtime.keep_state",
         "tools.enabled",
         "tools.blocked",
         "mcp",
@@ -1485,6 +1486,98 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
         await adapter.HermesRuntime().start(payload)
 
 
+@pytest.mark.parametrize("kept", [False, True])
+def test_hermes_home_is_the_agents_state_folder_when_fabric_keeps_state(
+    tmp_path: Path, kept: bool
+):
+    """Select the shared state folder or the current runtime's home."""
+    state_dir = tmp_path / "artifacts/.fabric/state/nvidia.fabric.hermes/assistant"
+    context = _runtime_context(artifact_root="artifacts").to_mapping()
+    if kept:
+        context["state_dir"] = str(state_dir)
+
+    home = adapter._hermes_home(RuntimeContext.from_mapping(context), str(tmp_path))
+
+    assert home == (
+        state_dir if kept else tmp_path / "artifacts/.fabric/hermes/runtimes/runtime-1"
+    )
+
+
+@pytest.mark.parametrize("kept", [False, True])
+async def test_hermes_sessions_survive_runtime_replacement_only_with_kept_state(
+    tmp_path: Path, api_server: str, kept: bool
+):
+    """Preserve native session records when runtimes share a state folder."""
+    os.environ["TEST_API_KEY"] = "fabric-test-model-key"
+    config = _agent_config(
+        {
+            "models": {
+                "default": {
+                    "provider": "openai",
+                    "model": "fabric-echo",
+                    "base_url": f"{api_server}/v1",
+                    "api_key_env": "TEST_API_KEY",
+                }
+            },
+            "tools": {"enabled": []},
+        }
+    )
+    contexts = []
+    for runtime_id in ("runtime-first", "runtime-second"):
+        context = _runtime_context(
+            runtime_id=runtime_id,
+            workspace=str(tmp_path),
+            artifact_root=str(tmp_path / "artifacts"),
+        ).to_mapping()
+        if kept:
+            context["state_dir"] = str(tmp_path / "kept-state")
+        contexts.append(RuntimeContext.from_mapping(context))
+    first = adapter.HermesRuntime()
+    try:
+        await first.start(
+            {
+                "config": config,
+                "runtime_context": contexts[0].to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+        result = await first.invoke(
+            AgentRunRequest.from_mapping({"input": "retained session marker"}),
+            contexts[0],
+        )
+        assert result.status is AgentRunStatus.SUCCEEDED
+        session_id = first._agent.session_id
+        assert first._session_db.get_session(session_id) is not None
+        saved_messages = first._session_db.get_messages(session_id)
+        assert any(
+            message["content"] == "retained session marker"
+            for message in saved_messages
+        )
+    finally:
+        await first.stop()
+
+    second = adapter.HermesRuntime()
+    try:
+        await second.start(
+            {
+                "config": config,
+                "runtime_context": contexts[1].to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+        if kept:
+            assert second._session_db.get_session(session_id) is not None
+            assert second._session_db.get_messages(session_id) == saved_messages
+        else:
+            assert second._session_db.get_session(session_id) is None
+        assert second._agent.session_id != session_id
+        if not kept:
+            assert second._agent.session_id == "runtime-second"
+        assert second._conversation_history is None
+    finally:
+        await second.stop()
+
+
 def test_artifact_root_resolves_relative_to_base_dir(tmp_path: Path):
     assert (
         adapter._artifact_root(
@@ -1939,3 +2032,82 @@ def test_main_serves_persistent_runtime(monkeypatch):
         adapter.HermesRuntime,
         config_loader=AgentConfig.from_mapping,
     )
+
+
+@pytest.fixture(name="retained_hermes_runtime")
+def retained_hermes_runtime_fixture(started_hermes_runtime, tmp_path):
+    from nemo_fabric_adapters.hermes.sessions import NativeSession
+
+    runtime, turn = started_hermes_runtime
+    database = MagicMock()
+    database.get_messages.return_value = [{"id": 1, "role": "assistant"}]
+    native = NativeSession("original", "original", database, tmp_path / "turn.json")
+    runtime._native_session = native
+    runtime._agent.session_id = "original"
+    return runtime, turn, native
+
+
+@pytest.mark.parametrize("failure", ["partial", "unfinished", "exception"])
+async def test_retained_runtime_requires_recovery_after_an_uncertain_turn(
+    retained_hermes_runtime, failure
+):
+    runtime, turn, native = retained_hermes_runtime
+    context = _runtime_context(runtime_id=runtime._runtime_id)
+    turn.return_value = (
+        {"final_response": "unfinished", "partial": failure == "partial"},
+        "",
+    )
+    if failure == "unfinished":
+        native.database.get_messages.return_value = [{"id": 1, "role": "user"}]
+    if failure == "exception":
+        turn.side_effect = RuntimeError("native turn failed")
+        with pytest.raises(RuntimeError):
+            await runtime.invoke(AgentRunRequest(input="Create a ticket."), context)
+    else:
+        await runtime.invoke(AgentRunRequest(input="Create a ticket."), context)
+    assert native.recovery_required
+    marker = native.marker.read_bytes()
+    turn.reset_mock()
+    blocked = await runtime.invoke(AgentRunRequest(input="Do more work."), context)
+    assert blocked.error.code == "session_recovery_required"
+    turn.assert_not_called()
+    assert native.marker.read_bytes() == marker
+
+    turn.side_effect = None
+    turn.return_value = ({"final_response": "completed"}, "")
+    native.database.get_messages.return_value = [{"id": 2, "role": "assistant"}]
+    result = await runtime.invoke(
+        AgentRunRequest(input="I inspected the state.", acknowledge_recovery=True),
+        context,
+    )
+    assert result.status == AgentRunStatus.SUCCEEDED
+    assert not native.recovery_required
+
+
+async def test_cancelled_turn_requires_recovery_only_after_worker_finishes(
+    retained_hermes_runtime,
+):
+    runtime, turn, native = retained_hermes_runtime
+    entered, release = threading.Event(), threading.Event()
+
+    def partial_turn(**kwargs):
+        entered.set()
+        assert release.wait(5)
+        return {"final_response": "unfinished", "partial": True}, ""
+
+    turn.side_effect = partial_turn
+    context = _runtime_context(runtime_id=runtime._runtime_id)
+    invocation = asyncio.create_task(
+        runtime.invoke(AgentRunRequest(input="Create a ticket."), context)
+    )
+    try:
+        assert await asyncio.to_thread(entered.wait, 2)
+        worker = runtime._active_invoke_task
+        invocation.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await invocation
+        assert not native.recovery_required
+    finally:
+        release.set()
+    await asyncio.wait_for(asyncio.shield(worker), 2)
+    assert native.recovery_required

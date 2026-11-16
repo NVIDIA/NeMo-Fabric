@@ -163,6 +163,45 @@ _config = partial(
             },
             id="openclaw",
         ),
+        *[
+            pytest.param(
+                "nvidia.fabric.hermes",
+                {
+                    "auxiliary": {
+                        "title_generation": {"enabled": False},
+                        "background_review": {"enabled": True},
+                    },
+                    "tools": {"tool_search": {"enabled": value}},
+                },
+                id=f"hermes-native-controls-{value}",
+            )
+            for value in (True, False, "auto", "on", "off")
+        ],
+        *[
+            pytest.param(
+                "nvidia.fabric.openclaw",
+                {
+                    "agents": {
+                        "defaults": {
+                            "heartbeat": {"every": every},
+                            "compaction": {"memoryFlush": {"enabled": False}},
+                        }
+                    },
+                    "tools": {
+                        "exec": {"notifyOnExit": False},
+                        "toolSearch": False,
+                        "codeMode": True,
+                    },
+                    "plugins": {
+                        "entries": {
+                            "memory-core": {"config": {"dreaming": {"enabled": False}}}
+                        }
+                    },
+                },
+                id=f"openclaw-native-controls-{every}",
+            )
+            for every in ("0m", "30m", "1h30m", "500ms", "1.5h")
+        ],
         pytest.param(
             "nvidia.fabric.openhands",
             {"condenser": "none"},
@@ -538,6 +577,156 @@ def test_openclaw_rejects_relay(tmp_path: Path):
             {"terminal_timeout": False},
             "harness.settings.terminal_timeout",
             id="hermes-terminal-timeout",
+        ),
+        pytest.param(
+            "nvidia.fabric.hermes",
+            {"tools": {"tool_search": {"enabled": "maybe"}}},
+            "harness.settings.tools.tool_search.enabled",
+            id="hermes-tool-search-value",
+        ),
+        pytest.param(
+            "nvidia.fabric.hermes",
+            {"tools": {"tool_search": {"enabled": 1}}},
+            "harness.settings.tools.tool_search.enabled",
+            id="hermes-tool-search-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.hermes",
+            {"tools": {"tool_search": {"enabled": "On"}}},
+            "harness.settings.tools.tool_search.enabled",
+            id="hermes-tool-search-case",
+        ),
+        pytest.param(
+            "nvidia.fabric.hermes",
+            {"tools": {"tool_search": {"threshold_pct": 5}}},
+            "harness.settings.tools.tool_search.threshold_pct",
+            id="hermes-tool-search-unknown",
+        ),
+        pytest.param(
+            "nvidia.fabric.hermes",
+            {"tools": {"enabled": ["file"]}},
+            "harness.settings.tools.enabled",
+            id="hermes-native-tools-not-normalized",
+        ),
+        pytest.param(
+            "nvidia.fabric.hermes",
+            {"auxiliary": {"title_generation": {"enabled": "false"}}},
+            "harness.settings.auxiliary.title_generation.enabled",
+            id="hermes-title-generation-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.hermes",
+            {"auxiliary": {"background_review": {"enabled": 0}}},
+            "harness.settings.auxiliary.background_review.enabled",
+            id="hermes-background-review-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.hermes",
+            {"auxiliary": {"title_generation": {"model": "fast"}}},
+            "harness.settings.auxiliary.title_generation.model",
+            id="hermes-title-generation-unknown",
+        ),
+        pytest.param(
+            "nvidia.fabric.hermes",
+            {"auxiliary": {"compression": {"enabled": False}}},
+            "harness.settings.auxiliary.compression",
+            id="hermes-auxiliary-unknown-task",
+        ),
+        pytest.param(
+            "nvidia.fabric.hermes",
+            {"memory": {"memory_enabled": False}},
+            "harness.settings.memory",
+            id="hermes-memory-deferred",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {"agents": {"defaults": {"heartbeat": {"every": "30 minutes"}}}},
+            "harness.settings.agents.defaults.heartbeat.every",
+            id="openclaw-heartbeat-typo",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {"agents": {"defaults": {"heartbeat": {"every": "30"}}}},
+            "harness.settings.agents.defaults.heartbeat.every",
+            id="openclaw-heartbeat-unitless",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {"agents": {"defaults": {"heartbeat": {"every": 30}}}},
+            "harness.settings.agents.defaults.heartbeat.every",
+            id="openclaw-heartbeat-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {"agents": {"defaults": {"heartbeat": {"target": "last"}}}},
+            "harness.settings.agents.defaults.heartbeat.target",
+            id="openclaw-heartbeat-unknown",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {"agents": {"defaults": {"workspace": "/tmp"}}},
+            "harness.settings.agents.defaults.workspace",
+            id="openclaw-generated-agent-default",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {"agents": {"list": []}},
+            "harness.settings.agents.list",
+            id="openclaw-agents-unknown",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {"agents": {"defaults": {"compaction": {"memoryFlush": {"enabled": 1}}}}},
+            "harness.settings.agents.defaults.compaction.memoryFlush.enabled",
+            id="openclaw-memory-flush-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {"tools": {"exec": {"notifyOnExit": "false"}}},
+            "harness.settings.tools.exec.notifyOnExit",
+            id="openclaw-notify-on-exit-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {"tools": {"toolSearch": {"enabled": False}}},
+            "harness.settings.tools.toolSearch",
+            id="openclaw-tool-search-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {"tools": {"codeMode": "auto"}},
+            "harness.settings.tools.codeMode",
+            id="openclaw-code-mode-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {"tools": {"allow": ["exec"]}},
+            "harness.settings.tools.allow",
+            id="openclaw-native-tools-not-normalized",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {"plugins": {"entries": {"memory-core": {"enabled": False}}}},
+            "harness.settings.plugins.entries.memory-core.enabled",
+            id="openclaw-memory-core-unknown",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {"plugins": {"entries": {"other": {"enabled": True}}}},
+            "harness.settings.plugins.entries.other",
+            id="openclaw-plugin-unknown",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {
+                "plugins": {
+                    "entries": {
+                        "memory-core": {"config": {"dreaming": {"enabled": "no"}}}
+                    }
+                }
+            },
+            "harness.settings.plugins.entries.memory-core.config.dreaming.enabled",
+            id="openclaw-dreaming-type",
         ),
         pytest.param(
             "nvidia.fabric.openhands",

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
+from nemo_fabric.errors import FabricRuntimeError
 from nemo_fabric import (
     Fabric,
     FabricConfig,
@@ -22,6 +23,7 @@ from nemo_fabric import (
     RunRequest,
     Runtime,
     RuntimeStatus,
+    SessionRef,
 )
 from nemo_fabric.runtime_server.protocol import (
     OPERATIONS,
@@ -36,6 +38,17 @@ from nemo_fabric.runtime_server.health import (
 )
 
 MAX_STOPPED_RUNTIME_RECORDS = 128
+START_REJECTIONS = frozenset(
+    {
+        "state_in_use",
+        "session_not_found",
+        "session_incompatible",
+        "session_adapter_mismatch",
+        "session_ref_invalid",
+        "session_storage_required",
+        "session_resume_unsupported",
+    }
+)
 
 
 @dataclass
@@ -145,6 +158,11 @@ class RuntimeServer:
                         raise ProtocolError("start_uncertain", "start")
                     stage = "validation"
                     config = FabricConfig.model_validate(request["config"])
+                    session_arguments = (
+                        {"session_ref": SessionRef.from_mapping(request["session_ref"])}
+                        if "session_ref" in request
+                        else {}
+                    )
                     previously_used = self.has_used_runtime
                     # Keep the sandbox marker if this request is cancelled while
                     # native start is running. A known validation rejection has
@@ -154,7 +172,7 @@ class RuntimeServer:
                     changed, effects, stage = None, "unknown", "start"
                     try:
                         runtime = await self.fabric.start_runtime(
-                            config, base_dir=self.directory
+                            config, base_dir=self.directory, **session_arguments
                         )
                     except FabricStateError as error:
                         if error.code != "runtime_limit_reached":
@@ -167,6 +185,13 @@ class RuntimeServer:
                         self.has_used_runtime = previously_used
                         self.start_uncertain = False
                         changed, effects = False, "none"
+                        raise
+                    except FabricRuntimeError as error:
+                        if error.code in START_REJECTIONS:
+                            self.has_used_runtime = previously_used
+                            self.start_uncertain = False
+                            changed, effects = False, "none"
+                            raise ProtocolError(error.code, "start") from error
                         raise
 
                     if runtime.runtime_id in self.runtimes:
@@ -190,6 +215,8 @@ class RuntimeServer:
 
             owned = self._owned(request)
             if operation == "stop" and owned.state != "stopped":
+                if owned.lock.locked():
+                    raise ProtocolError("runtime_busy", "stop")
                 owned.generation += 1
                 owned.state = "stopping"
             async with owned.lock:

@@ -125,3 +125,111 @@ def test_write_hermes_config_round_trips_without_pyyaml(
     )
 
     assert json.loads(config_path.read_text(encoding="utf-8")) == config
+
+
+def _native_controls_config(settings: dict[str, object]) -> AgentConfig:
+    return AgentConfig.from_mapping(
+        {
+            "harness": {"settings": settings},
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+            "tools": {"enabled": ["file"], "blocked": ["terminal"]},
+        }
+    )
+
+
+@pytest.mark.parametrize("relay_enabled", [False, True])
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {},
+        {"auxiliary": {}, "tools": {}},
+        {"auxiliary": {"title_generation": {}, "background_review": {}}},
+        {"tools": {"tool_search": {}}},
+    ],
+    ids=["absent", "empty-sections", "empty-tasks", "empty-tool-search"],
+)
+def test_omitted_native_controls_keep_the_existing_config(
+    settings: dict[str, object], relay_enabled: bool
+):
+    config = configuration.build_hermes_config(
+        _native_controls_config(settings),
+        workspace=".",
+        relay_enabled=relay_enabled,
+    )
+
+    # The configuration NeMo Fabric wrote before native controls existed.
+    expected = {
+        "model": {"provider": "nvidia", "default": "nvidia/test-model"},
+        "agent": {"disabled_toolsets": ["terminal"]},
+        "terminal": {"backend": "local", "cwd": ".", "timeout": 60},
+        "platform_toolsets": {"cli": ["file"]},
+    }
+    if relay_enabled:
+        expected["auxiliary"] = {"title_generation": {"enabled": False}}
+    assert config == expected
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_authored_auxiliary_controls_reach_native_config(enabled: bool):
+    config = configuration.build_hermes_config(
+        _native_controls_config(
+            {
+                "auxiliary": {
+                    "title_generation": {"enabled": enabled},
+                    "background_review": {"enabled": enabled},
+                }
+            }
+        ),
+        workspace=".",
+    )
+
+    assert config["auxiliary"] == {
+        "title_generation": {"enabled": enabled},
+        "background_review": {"enabled": enabled},
+    }
+    assert "tools" not in config
+
+
+@pytest.mark.parametrize("value", [True, False, "auto", "on", "off"])
+def test_tool_search_value_passes_through_as_authored(value: object):
+    config = configuration.build_hermes_config(
+        _native_controls_config({"tools": {"tool_search": {"enabled": value}}}),
+        workspace=".",
+    )
+
+    assert config["tools"] == {"tool_search": {"enabled": value}}
+    # Normalized tool selection stays in its own native sections.
+    assert config["platform_toolsets"] == {"cli": ["file"]}
+    assert config["agent"]["disabled_toolsets"] == ["terminal"]
+    assert "auxiliary" not in config
+
+
+@pytest.mark.parametrize(
+    ("title_generation", "relay_enabled", "expected"),
+    [
+        pytest.param(True, True, {"enabled": True}, id="explicit-true-relay"),
+        pytest.param(False, True, {"enabled": False}, id="explicit-false-relay"),
+        pytest.param(True, False, {"enabled": True}, id="explicit-true-no-relay"),
+        pytest.param(False, False, {"enabled": False}, id="explicit-false-no-relay"),
+        pytest.param(None, True, {"enabled": False}, id="omitted-relay"),
+        pytest.param(None, False, None, id="omitted-no-relay"),
+    ],
+)
+def test_title_generation_precedence_over_relay(
+    title_generation: bool | None,
+    relay_enabled: bool,
+    expected: dict[str, bool] | None,
+):
+    auxiliary: dict[str, object] = {"background_review": {"enabled": False}}
+    if title_generation is not None:
+        auxiliary["title_generation"] = {"enabled": title_generation}
+
+    config = configuration.build_hermes_config(
+        _native_controls_config({"auxiliary": auxiliary}),
+        workspace=".",
+        relay_enabled=relay_enabled,
+    )
+
+    # The Relay default must not replace other authored auxiliary controls.
+    assert config["auxiliary"]["background_review"] == {"enabled": False}
+    assert config["auxiliary"].get("title_generation") == expected

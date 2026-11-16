@@ -4,6 +4,10 @@
       "additionalProperties": false,
       "description": "Southbound invocation request passed to an adapter target.",
       "properties": {
+        "acknowledge_recovery": {
+          "description": "Acknowledge uncertain earlier completion before starting this new request.",
+          "type": "boolean"
+        },
         "context": {
           "additionalProperties": true,
           "description": "Caller-provided task, rollout, workflow, or application context.",
@@ -300,6 +304,17 @@
           "description": "Runtime handle id.",
           "type": "string"
         },
+        "session_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Explicit durable session selection, supplied only to opted-in adapters."
+        },
         "state_dir": {
           "description": "Absolute folder for the adapter's native state, present when\n`runtime.keep_state` is set. Every runtime of the agent gets the same\nfolder, and Fabric lets only one running runtime use it at a time.",
           "type": [
@@ -358,6 +373,35 @@
       },
       "required": [
         "relay_enabled"
+      ],
+      "type": "object"
+    },
+    "SessionRef": {
+      "additionalProperties": false,
+      "description": "Adapter-issued native identity, resolved only within caller-supplied storage.",
+      "properties": {
+        "adapter_id": {
+          "description": "Adapter responsible for interpreting the opaque identifier.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "fabric.session_ref/v1alpha1",
+          "description": "Supported envelope version.",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Opaque adapter-issued identifier interpreted by the adapter.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "adapter_id",
+        "session_id"
       ],
       "type": "object"
     }

@@ -2769,6 +2769,7 @@ The model defines the following fields:
 
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
+| `acknowledge_recovery` | `bool` | No | `False` | `Strict(strict=True)` | Explicit acknowledgment before a new invocation on a restored session with uncertain earlier work. |
 | `input` | `Any` | No | `''` | — | — |
 | `relay_session_root` | `str \| None` | No | `None` | — | UUID propagation root shared across conversation turns; unusable values fall back to the request ID. |
 | `request_id` | `str` | No | `<generated>` | `MinLen(min_length=1)` | — |

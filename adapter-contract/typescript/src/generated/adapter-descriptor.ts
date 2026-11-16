@@ -123,6 +123,10 @@ export type RuntimeCapabilities = {
    */
   service?: boolean;
   /**
+   * Whether the adapter implements durable native session creation and resume.
+   */
+  session_resume?: boolean;
+  /**
    * Whether invocations can emit progressive output.
    */
   streaming?: boolean;

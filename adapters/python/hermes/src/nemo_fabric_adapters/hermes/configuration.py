@@ -125,6 +125,25 @@ def _interface_model(model_config: AgentModelConfig) -> dict[str, Any]:
     )
 
 
+def _native_auxiliary(
+    settings: dict[str, Any], *, relay_enabled: bool
+) -> dict[str, Any]:
+    """Return the authored auxiliary-task switches for native config.yaml.
+
+    An explicit title-generation value wins. When it is omitted, Relay-enabled
+    runtimes keep title generation off because Hermes makes an extra model call
+    for titles, which skews Relay telemetry.
+    """
+    authored = settings.get("auxiliary", {})
+    auxiliary: dict[str, Any] = {}
+    for task in ("title_generation", "background_review"):
+        if "enabled" in authored.get(task, {}):
+            auxiliary[task] = {"enabled": authored[task]["enabled"]}
+    if relay_enabled and "title_generation" not in auxiliary:
+        auxiliary["title_generation"] = {"enabled": False}
+    return auxiliary
+
+
 def build_hermes_config(
     agent_config: AgentConfig,
     *,
@@ -168,9 +187,13 @@ def build_hermes_config(
         config["agent"]["cron_drain_timeout"] = GATEWAY_DRAIN_TIMEOUT_SECONDS
         config["agent"]["restart_drain_timeout"] = 0
 
-    if relay_enabled:
-        # Hermes makes an extra model call for titles, which skews Relay telemetry.
-        config["auxiliary"] = {"title_generation": {"enabled": False}}
+    auxiliary = _native_auxiliary(settings, relay_enabled=relay_enabled)
+    if auxiliary:
+        config["auxiliary"] = auxiliary
+    tool_search = settings.get("tools", {}).get("tool_search", {})
+    if "enabled" in tool_search:
+        # Hermes reads booleans as aliases for on/off, so pass values through.
+        config["tools"] = {"tool_search": {"enabled": tool_search["enabled"]}}
 
     skill_dirs = (
         [str(path) for path in agent_config.skills.paths]

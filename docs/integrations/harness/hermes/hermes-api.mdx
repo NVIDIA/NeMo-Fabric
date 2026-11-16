@@ -45,8 +45,10 @@ This disables embedded SDK execution explicitly. Omit `sdk` to also start the em
 The API server binds to `127.0.0.1` at its configured port. After every enabled interface passes readiness, the adapter writes a per-start bearer token with mode `0600` to:
 
 ```text
-<artifact root>/.fabric/hermes/runtimes/<runtime-id>/interfaces/api.token
+<Hermes home>/interfaces/api.token
 ```
+
+Before starting Hermes, the adapter removes any API token left by an earlier runtime.
 
 Clients calling the native API must read the generated token file and include `Authorization: Bearer <token>` in each HTTP request. Only the API gateway child receives it in its environment. Processes running as the runtime's user, including agent tools, can read the token file.
 

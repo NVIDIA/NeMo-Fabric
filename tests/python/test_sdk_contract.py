@@ -75,6 +75,7 @@ def test_public_contract_has_no_unreleased_aliases():
     assert not hasattr(Fabric, "__aexit__")
     assert not hasattr(RunRequest, "from_text")
     assert not hasattr(nemo_fabric, "RunRequestModel")
+    assert not hasattr(nemo_fabric, "SessionStart")
     for name in ("plan_config", "run_config", "doctor_config", "start", "start_config"):
         assert not hasattr(Fabric, name)
 
@@ -1579,6 +1580,8 @@ def test_runtime_handle_distinguishes_contract_and_extension_fields():
     )
 
     assert handle.extra_fields == {"future_handle_field": "value"}
+    assert handle.session_ref is None
+    assert handle.recovery_warnings == ()
 
 
 @pytest.mark.parametrize(
@@ -2130,6 +2133,7 @@ def test_run_result_preserves_non_object_output():
 
     assert result.output == "hello"
     assert result.to_mapping()["output"] == "hello"
+    assert result.session_ref is None
 
 
 def test_run_result_normalizes_core_telemetry_reference():

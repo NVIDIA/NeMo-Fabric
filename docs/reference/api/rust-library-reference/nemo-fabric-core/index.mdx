@@ -164,6 +164,8 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use schema::generate_schema;`
 - `pub use schema::generate_schema_json;`
 - `pub use schema::write_schema_snapshots;`
+- `pub use session::SESSION_REF_SCHEMA_VERSION;`
+- `pub use session::SessionRef;`
 - `pub use system_stats::CgroupObservation;`
 - `pub use system_stats::CgroupSnapshot;`
 - `pub use system_stats::CgroupStats;`
@@ -189,6 +191,7 @@ Core config and runtime contract for NeMo Fabric.
 - [resource_snapshot](resource-snapshot/index.mdx): Resource snapshots of a runtime's local adapter host and its descendants.
 - [runtime](runtime/index.mdx): Runtime invocation helpers.
 - [schema](schema/index.mdx): JSON Schema generation for the public NeMo Fabric contract.
+- [session](session/index.mdx): Explicit selection of durable harness-native sessions.
 - [system_stats](system-stats/index.mdx): Invocation measurements collected by NeMo Fabric in the executing runtime.
 
 ## Functions
