@@ -15,11 +15,13 @@ import inspect
 import logging
 import os
 import sys
-from contextlib import redirect_stdout
+from collections.abc import Callable
+from contextlib import AbstractContextManager, redirect_stdout
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -56,7 +58,29 @@ MCP_RECONNECT_WAIT_SECONDS = 60.0
 MCP_RECONNECT_POLL_SECONDS = 0.25
 
 
-def _hermes_mcp_oauth_api() -> Any:
+class _ProbeMcpServer(Protocol):
+    def __call__(
+        self, name: str, config: dict[str, Any], *, connect_timeout: float
+    ) -> list[tuple[str, str]]: ...
+
+
+class _RefreshAgentMcpTools(Protocol):
+    def __call__(self, agent: Any, *, quiet_mode: bool) -> set[str]: ...
+
+
+@dataclass(frozen=True)
+class _HermesMcpOAuthApi:
+    server_ready: Callable[[str], bool] | None
+    discover_mcp_tools: Callable[[], list[str]]
+    force_interactive_oauth: Callable[[], AbstractContextManager[None]]
+    get_mcp_status: Callable[[], list[dict[str, Any]]]
+    login_connect_timeout: Callable[[dict[str, Any]], float] | None
+    probe_server: _ProbeMcpServer | None
+    reconnect_server: Callable[[str], bool] | None
+    refresh_agent_mcp_tools: _RefreshAgentMcpTools
+
+
+def _hermes_mcp_oauth_api() -> _HermesMcpOAuthApi:
     """Resolve the Hermes MCP functions used for interactive OAuth sign-in.
 
     Hermes moved these out of ``tools.mcp_tool`` into separate modules; the
@@ -64,8 +88,6 @@ def _hermes_mcp_oauth_api() -> Any:
     versions without the interactive login probe, which then fall back to an
     interactive discovery pass.
     """
-
-    from types import SimpleNamespace
 
     from tools.mcp_oauth import force_interactive_oauth
 
@@ -90,7 +112,7 @@ def _hermes_mcp_oauth_api() -> Any:
         from tools.mcp_tool_loop import reconnect_mcp_server as reconnect_server
     except ImportError:
         probe_server = login_connect_timeout = reconnect_server = None
-    return SimpleNamespace(
+    return _HermesMcpOAuthApi(
         server_ready=_hermes_server_ready_check(),
         discover_mcp_tools=discover_mcp_tools,
         force_interactive_oauth=force_interactive_oauth,
@@ -102,7 +124,7 @@ def _hermes_mcp_oauth_api() -> Any:
     )
 
 
-def _hermes_server_ready_check() -> Any:
+def _hermes_server_ready_check() -> Callable[[str], bool] | None:
     """Return a check for whether Hermes finished connecting a server and listing its tools.
 
     Hermes reports a server as connected before it lists the server's tools, and
@@ -689,6 +711,8 @@ class HermesRuntime:
                         if api.probe_server is None:
                             api.discover_mcp_tools()
                             return
+                        assert api.login_connect_timeout is not None
+                        assert api.reconnect_server is not None
                         # Same steps as Hermes's own ``hermes mcp login``: an
                         # interactive probe stores the tokens, then the parked
                         # server reconnects with them.
@@ -732,7 +756,9 @@ class HermesRuntime:
 
         self._mcp_authentication_checked = True
 
-    async def _wait_for_mcp_servers(self, api: Any, names: set[str]) -> set[str]:
+    async def _wait_for_mcp_servers(
+        self, api: _HermesMcpOAuthApi, names: set[str]
+    ) -> set[str]:
         """Return the servers not ready after a bounded wait.
 
         A reconnect after sign-in runs on Hermes's MCP loop, and Hermes reports a
