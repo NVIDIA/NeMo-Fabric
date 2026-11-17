@@ -437,7 +437,9 @@ def secure_http_client_factory(server_name: str) -> Callable[..., Any]:
     The OAuth flow sends refresh tokens and client credentials to endpoints the
     server advertises, and the MCP client follows redirects. The returned
     client checks every request, redirects included, and refuses one that is
-    not ``https`` unless it targets a loopback host.
+    not ``https`` unless it targets a loopback host. It also refuses any
+    redirect from ``https`` to ``http``, loopback included, because a ``307``
+    or ``308`` redirect resends the request body.
     """
 
     from mcp.shared._httpx_utils import create_mcp_http_client
@@ -452,6 +454,17 @@ def secure_http_client_factory(server_name: str) -> Callable[..., Any]:
                 "use https (http is accepted only for a loopback host)"
             )
 
+    async def refuse_downgrade(response: Any) -> None:
+        if not response.has_redirect_location:
+            return
+        source = response.request.url
+        target = source.join(response.headers["Location"])
+        if source.scheme == "https" and target.scheme != "https":
+            raise McpInsecureRequestError(
+                f"MCP server {server_name!r} refused a redirect from https to "
+                f"{target.scheme}://{target.host}"
+            )
+
     def factory(
         headers: dict[str, str] | None = None,
         timeout: Any = None,
@@ -461,7 +474,7 @@ def secure_http_client_factory(server_name: str) -> Callable[..., Any]:
         hooks = client.event_hooks
         client.event_hooks = {
             "request": [*hooks.get("request", []), refuse_plaintext],
-            "response": list(hooks.get("response", [])),
+            "response": [*hooks.get("response", []), refuse_downgrade],
         }
         return client
 

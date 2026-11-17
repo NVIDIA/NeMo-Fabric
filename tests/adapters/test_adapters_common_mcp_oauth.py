@@ -207,21 +207,40 @@ async def test_secure_client_refuses_plaintext_requests_and_redirects():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/downgrade":
             return httpx.Response(307, headers={"Location": "http://auth.example.test/token"})
+        if request.url.path == "/to-loopback":
+            return httpx.Response(307, headers={"Location": "http://127.0.0.1:8765/token"})
+        if request.url.path == "/stay-secure":
+            return httpx.Response(307, headers={"Location": "/token"})
+        received.append(str(request.url))
         return httpx.Response(200)
 
     # Keep any environment proxy from replacing the mock transport.
     os.environ["NO_PROXY"] = os.environ["no_proxy"] = "*"
+    received: list[str] = []
     client = mcp_oauth.secure_http_client_factory("jira")()
     client._transport = httpx.MockTransport(handler)
     async with client:
         assert (await client.post("https://auth.example.test/token")).status_code == 200
         assert (await client.post("http://127.0.0.1:8765/token")).status_code == 200
-        for url in ("http://auth.example.test/token", "https://auth.example.test/downgrade"):
+        assert (await client.post("https://auth.example.test/stay-secure")).status_code == 200
+        with pytest.raises(
+            mcp_oauth.McpInsecureRequestError,
+            match=r"'jira' refused a request to http://auth\.example\.test",
+        ):
+            await client.post("http://auth.example.test/token", data={"refresh_token": "rt-1"})
+        # A 307 resends the body, so no https-to-http redirect is followed,
+        # not even to a loopback host.
+        for path, host in (("/downgrade", "auth.example.test"), ("/to-loopback", "127.0.0.1")):
             with pytest.raises(
                 mcp_oauth.McpInsecureRequestError,
-                match=r"'jira' refused a request to http://auth\.example\.test",
+                match=f"'jira' refused a redirect from https to http://{host}",
             ):
-                await client.post(url, data={"refresh_token": "rt-1"})
+                await client.post(f"https://auth.example.test{path}", data={"refresh_token": "rt-1"})
+    assert received == [
+        "https://auth.example.test/token",
+        "http://127.0.0.1:8765/token",
+        "https://auth.example.test/token",
+    ]
 
 
 def test_is_sign_in_error():
