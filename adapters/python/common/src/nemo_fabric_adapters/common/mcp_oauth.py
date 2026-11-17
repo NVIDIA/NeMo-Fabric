@@ -22,7 +22,8 @@ Files in the token directory, in one folder per server:
 - ``<server>-<digest>/metadata.json``: the authorization server metadata, so
   refresh uses its token endpoint.
 
-``<digest>`` is a hash of the full server name, so no two servers share a folder.
+``<digest>`` is a hash of the server name and URL, so no two servers share a
+folder and a server whose URL changes signs in again.
 
 Every HTTP request the auth's MCP client sends, including discovered OAuth
 endpoints and redirects, must use ``https`` (``http`` only on a loopback host);
@@ -89,15 +90,17 @@ def is_sign_in_error(error: BaseException) -> bool:
     }
 
 
-def storage_name(server_name: str) -> str:
-    """Return a folder name for ``server_name`` that cannot leave the directory.
+def storage_name(server_name: str, server_url: str = "") -> str:
+    """Return a folder name for one MCP server that cannot leave the directory.
 
-    The readable part keeps only safe characters; the digest of the full name
-    keeps two different server names from sharing a folder.
+    The readable part keeps only safe characters. The digest covers the full
+    server name and URL, so two servers never share a folder, and a server
+    whose URL changes starts with no stored credentials.
     """
 
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", server_name).lstrip(".")
-    digest = hashlib.sha256(server_name.encode()).hexdigest()[:16]
+    identity = f"{server_name}\0{server_url}".encode()
+    digest = hashlib.sha256(identity).hexdigest()[:16]
     return f"{safe}-{digest}" if safe else digest
 
 
@@ -137,12 +140,13 @@ class FileTokenStorage:
         self,
         directory: Path,
         server_name: str,
+        server_url: str = "",
         *,
         clock: Callable[[], float] = time.time,
     ) -> None:
-        # One folder per server, so no server name can collide with another
-        # server's files.
-        server_directory = Path(directory) / storage_name(server_name)
+        # One folder per server name and URL: no server can read another
+        # server's files, and a changed URL never reuses the old tokens.
+        server_directory = Path(directory) / storage_name(server_name, server_url)
         self._tokens_path = server_directory / "tokens.json"
         self._client_path = server_directory / "client.json"
         self._metadata_path = server_directory / "metadata.json"
@@ -380,6 +384,7 @@ class BrowserSignIn:
         self.interactive = False
         self._open_browser = open_browser
         self._callback: LoopbackCallback | None = None
+        self._deadline: float | None = None
 
     async def redirect(self, authorization_url: str) -> None:
         if not self.interactive:
@@ -387,6 +392,9 @@ class BrowserSignIn:
                 f"MCP server {self.server_name!r} needs a browser sign-in"
             )
         await self._close_callback()
+        # One deadline covers launching the browser and waiting for the
+        # redirect, so a slow launcher cannot extend the sign-in.
+        self._deadline = asyncio.get_running_loop().time() + self.timeout
         callback = LoopbackCallback(self.redirect_uri)
         try:
             await callback.start()
@@ -404,7 +412,11 @@ class BrowserSignIn:
             flush=True,
         )
         try:
-            await self._open_browser(authorization_url)
+            async with asyncio.timeout_at(self._deadline):
+                await self._open_browser(authorization_url)
+        except TimeoutError:
+            await self._close_callback()
+            raise self._timed_out() from None
         except BaseException:
             # The SDK only waits for the callback, and closes it, after this
             # returns; stop listening before the failure propagates.
@@ -416,14 +428,17 @@ class BrowserSignIn:
         if callback is None:
             raise McpSignInError("sign-in was not started")
         try:
-            async with asyncio.timeout(self.timeout):
+            async with asyncio.timeout_at(self._deadline):
                 return await callback.wait()
         except TimeoutError:
-            raise McpSignInError(
-                f"sign-in was not completed within {self.timeout:g} seconds"
-            ) from None
+            raise self._timed_out() from None
         finally:
             await self._close_callback()
+
+    def _timed_out(self) -> McpSignInError:
+        return McpSignInError(
+            f"sign-in was not completed within {self.timeout:g} seconds"
+        )
 
     async def _close_callback(self) -> None:
         callback, self._callback = self._callback, None
@@ -505,7 +520,7 @@ def browser_sign_in_auth(
     from mcp.shared.auth import OAuthClientInformationFull
     from mcp.shared.auth import OAuthClientMetadata
 
-    storage = FileTokenStorage(token_directory, server_name)
+    storage = FileTokenStorage(token_directory, server_name, server_url)
     redirect = (
         validate_redirect_uri(server_name, redirect_uri)
         if redirect_uri
@@ -516,7 +531,19 @@ def browser_sign_in_auth(
     method = token_endpoint_auth_method or (
         "client_secret_post" if client_secret else "none"
     )
-    metadata = OAuthClientMetadata(
+    class _ConfiguredScopeMetadata(OAuthClientMetadata):
+        """Client metadata whose configured scope the SDK cannot replace.
+
+        The SDK sets the scope to the server's advertised scopes before it
+        registers the client and before it authorizes; configured scopes must
+        win at both steps.
+        """
+
+        def __setattr__(self, name: str, value: Any) -> None:
+            if name != "scope":
+                super().__setattr__(name, value)
+
+    metadata = (_ConfiguredScopeMetadata if scope else OAuthClientMetadata)(
         client_name=client_name or DEFAULT_CLIENT_NAME,
         redirect_uris=[redirect],
         grant_types=["authorization_code", "refresh_token"],
@@ -558,13 +585,6 @@ def browser_sign_in_auth(
             if self.context.oauth_metadata is None:
                 self.context.oauth_metadata = storage.get_metadata()
             self._initialized = True
-
-        async def _perform_authorization_code_grant(self) -> tuple[str, str]:
-            if scope:
-                # The SDK replaces the requested scope with the server's
-                # advertised scopes; configured scopes take precedence.
-                self.context.client_metadata.scope = scope
-            return await super()._perform_authorization_code_grant()
 
         async def _handle_token_response(self, response: Any) -> None:
             await super()._handle_token_response(response)

@@ -565,7 +565,7 @@ async def test_mcp_oauth2_browser_sign_in(api_server, tmp_path):
         "tokens.json",
     ]
     assert {path.parent.name for path in token_files} == {
-        mcp_oauth.storage_name("protected")
+        mcp_oauth.storage_name("protected", f"{api_server}/mcp-protected")
     }
     if os.name == "posix":
         assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in token_files)

@@ -91,6 +91,16 @@ async def test_unreadable_tokens_are_ignored(tmp_path, content):
     assert not storage.has_tokens()
 
 
+async def test_a_changed_server_url_does_not_reuse_stored_tokens(tmp_path):
+    before = mcp_oauth.FileTokenStorage(tmp_path, "jira", "https://old.example.test/mcp")
+    await before.set_tokens(OAuthToken(access_token="old-server-token"))
+
+    after = mcp_oauth.FileTokenStorage(tmp_path, "jira", "https://new.example.test/mcp")
+
+    assert await after.get_tokens() is None
+    assert (await before.get_tokens()).access_token == "old-server-token"
+
+
 async def test_servers_do_not_share_storage_files(tmp_path):
     jira = mcp_oauth.FileTokenStorage(tmp_path, "jira")
     other = mcp_oauth.FileTokenStorage(tmp_path, "jira.client")
@@ -186,6 +196,26 @@ async def test_sign_in_that_is_not_completed_times_out(redirect_uri, capsys):
     assert "https://auth.example.test/authorize?state=s" in capsys.readouterr().err
     # The listener is closed, so the port is free again.
     await mcp_oauth.LoopbackCallback(redirect_uri).start()
+
+
+async def test_sign_in_deadline_includes_launching_the_browser(redirect_uri):
+    async def slow_launcher(url: str) -> bool:
+        await asyncio.sleep(5)
+        return True
+
+    sign_in = mcp_oauth.BrowserSignIn(
+        "jira", redirect_uri, timeout=0.2, open_browser=slow_launcher
+    )
+    sign_in.interactive = True
+
+    started = time.monotonic()
+    with pytest.raises(mcp_oauth.McpSignInError, match="not completed within 0.2 seconds"):
+        await sign_in.redirect("https://auth.example.test/authorize?state=s")
+
+    assert time.monotonic() - started < 2
+    listener = mcp_oauth.LoopbackCallback(redirect_uri)
+    await listener.start()
+    await listener.close()
 
 
 @pytest.mark.parametrize("failure", [RuntimeError("no browser"), asyncio.CancelledError()])
@@ -371,10 +401,12 @@ async def test_browser_sign_in_registers_and_stores_tokens(tmp_path, servers, br
     assert authorization["redirect_uri"] == auth.sign_in.redirect_uri
     (registration,) = servers.registrations
     assert registration["client_name"] == "NeMo Fabric"
+    # Registration asks only for the configured scopes, not every advertised one.
+    assert registration["scope"] == "jira.read"
     assert registration["token_endpoint_auth_method"] == "none"
     for name in ("tokens.json", "client.json", "metadata.json"):
-        _assert_owner_only(tmp_path / mcp_oauth.storage_name("jira") / name)
-    assert json.loads((tmp_path / mcp_oauth.storage_name("jira") / "metadata.json").read_text())["token_endpoint"] == (
+        _assert_owner_only(tmp_path / mcp_oauth.storage_name("jira", MCP_URL) / name)
+    assert json.loads((tmp_path / mcp_oauth.storage_name("jira", MCP_URL) / "metadata.json").read_text())["token_endpoint"] == (
         f"{AUTH_URL}/oauth/token"
     )
 
@@ -400,7 +432,7 @@ async def test_expired_tokens_are_refreshed_at_the_stored_token_endpoint(
     first = mcp_oauth.browser_sign_in_auth("jira", MCP_URL, tmp_path, open_browser=browser.open)
     first.sign_in.interactive = True
     await _call_mcp(first, servers)
-    tokens_path = tmp_path / mcp_oauth.storage_name("jira") / "tokens.json"
+    tokens_path = tmp_path / mcp_oauth.storage_name("jira", MCP_URL) / "tokens.json"
     stored = json.loads(tokens_path.read_text())
     tokens_path.write_text(json.dumps({**stored, "expires_at": time.time() - 1}))
 
@@ -446,4 +478,4 @@ async def test_configured_client_signs_in_with_its_secret(tmp_path, servers, bro
     assert authorization.startswith("Basic ")
     assert "client_secret" not in form
     assert SECRET not in repr(auth)
-    _assert_owner_only(tmp_path / mcp_oauth.storage_name("jira") / "client.json")
+    _assert_owner_only(tmp_path / mcp_oauth.storage_name("jira", MCP_URL) / "client.json")
