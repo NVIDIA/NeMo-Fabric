@@ -61,6 +61,7 @@ navigation:
     path: ./integrations/consumer/overview.mdx
     contents:
     - section: Deployments
+      path: ./integrations/consumer/deployments.mdx
       contents:
       - page: NVIDIA NemoClaw
         path: ./integrations/consumer/nemoclaw.mdx
@@ -68,6 +69,7 @@ navigation:
         path: ./integrations/consumer/helix.mdx
       collapsed: open-by-default
     - section: Benchmarking & Evaluation
+      path: ./integrations/consumer/benchmarking-and-evaluation.mdx
       contents:
       - page: Harbor Framework
         path: ./integrations/consumer/harbor.mdx

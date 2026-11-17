@@ -47,7 +47,7 @@ All three phases target 0.7. Source baseline: upstream main `4678ba4606d91e842c0
 ## Minimal New Routing Entries
 
 - Consumers Overview and Harnesses Overview route readers to existing guides.
-- Deployments and Benchmarking & Evaluation are navigation groups, not additional pages.
+- Deployments and Benchmarking & Evaluation use their own section landing pages with brief selection guidance and links to the existing integration entries. They add no setup procedures.
 - NemoClaw, Helix, Gym, and Polar entries link to upstream instructions and Ecosystem; they introduce no new local workflow procedures.
 - NOOA links to its existing adapter README and Harbor example.
 - Testing, Documentation Contributions, and Troubleshooting are brief indexes to existing guidance, with no newly authored commands or diagnostic examples.
