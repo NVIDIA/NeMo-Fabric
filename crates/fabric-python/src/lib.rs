@@ -70,24 +70,35 @@ fn plan_config(py: Python<'_>, config_json: String, base_dir: Option<String>) ->
 
 /// Inspect supplied host metadata without probing executable adapter locations.
 #[pyfunction]
-#[pyo3(signature = (config_json, descriptor_json, target_descriptor_json=None))]
+#[pyo3(signature = (config_json, descriptor_json=None, target_descriptor_json=None, diagnostics=true))]
 fn inspect_adapter_metadata(
     py: Python<'_>,
     config_json: String,
-    descriptor_json: String,
+    descriptor_json: Option<String>,
     target_descriptor_json: Option<String>,
+    diagnostics: bool,
 ) -> PyResult<String> {
     // Parse errors must not echo JSON values, which can contain credentials.
     let config = parse_config(config_json)
         .map_err(|_| PyRuntimeError::new_err("invalid Fabric configuration"))?;
+    let Some(descriptor_json) = descriptor_json else {
+        if target_descriptor_json.is_some() {
+            return Err(PyRuntimeError::new_err(
+                "target metadata requires adapter metadata",
+            ));
+        }
+        py.detach(|| nemo_fabric_core::config::validate_inspection_config(&config))
+            .map_err(to_py_error)?;
+        return to_json(&());
+    };
     let descriptor: AdapterDescriptor = serde_json::from_str(&descriptor_json)
-        .map_err(|_| PyRuntimeError::new_err("invalid adapter descriptor"))?;
+        .map_err(|error| PyRuntimeError::new_err(format!("invalid adapter descriptor: {error}")))?;
     let target: Option<AdapterTargetDescriptor> = target_descriptor_json
         .map(|json| serde_json::from_str(&json))
         .transpose()
-        .map_err(|_| PyRuntimeError::new_err("invalid target descriptor"))?;
+        .map_err(|error| PyRuntimeError::new_err(format!("invalid target descriptor: {error}")))?;
     let inspection = py
-        .detach(|| inspect_adapter_config(config, &descriptor, target.as_ref()))
+        .detach(|| inspect_adapter_config(config, &descriptor, target.as_ref(), diagnostics))
         .map_err(to_py_error)?;
     to_json(&inspection)
 }

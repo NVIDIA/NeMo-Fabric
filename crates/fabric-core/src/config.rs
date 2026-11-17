@@ -3278,6 +3278,7 @@ pub fn resolve_run_plan_from_config_with_adapter_directories(
 
 /// Metadata-only inspection result. This value cannot start a runtime.
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct AdapterInspection {
     /// Core-normalized supplied descriptor, also used for fingerprinting.
     pub descriptor: AdapterDescriptor,
@@ -3292,7 +3293,8 @@ pub struct AdapterInspection {
 
 /// Inspect canonical descriptor values without discovery, filesystem access, or runtime startup.
 ///
-/// Compatibility failures are always returned in `issues`.
+/// Pass `diagnostics = true` to return compatibility failures in `issues`;
+/// `false` retains exception-based rejection during migration.
 /// Malformed configurations, descriptors, schemas, and selector mismatches are errors.
 /// Settings, tool-definition schemas, and extensions retain their first-error boundary; independent model, tool-routing, and MCP checks aggregate.
 /// Compatibility is conditional on the supplied metadata, not runtime readiness.
@@ -3300,6 +3302,7 @@ pub fn inspect_adapter_config(
     mut config: FabricConfig,
     descriptor: &AdapterDescriptor,
     target_descriptor: Option<&AdapterTargetDescriptor>,
+    diagnostics: bool,
 ) -> Result<AdapterInspection> {
     if config.workflow.is_some() != target_descriptor.is_some() {
         return invalid_config(
@@ -3309,34 +3312,9 @@ pub fn inspect_adapter_config(
     }
     // Discovery belongs to the task and is never consulted for host inspection.
     config.discovery = None;
-    validate_config(&config).map_err(|_| FabricError::InvalidConfig {
-        field: "config".to_string(),
-        reason: "invalid Fabric configuration".to_string(),
-    })?;
-    validate_runtime_artifacts(&config)?;
+    validate_inspection_config(&config)?;
     // These paths are diagnostic labels only, never filesystem origins.
-    validate_adapter_descriptor_shape(descriptor, Path::new("<supplied adapter>")).map_err(
-        |error| {
-            let field = match &error {
-                FabricError::InvalidAdapterDescriptor { message, .. } => [
-                    "config_schema",
-                    "settings_schema",
-                    "model_schema",
-                    "tool_definition_schema",
-                    "extension_schemas",
-                ]
-                .into_iter()
-                .find(|field| message.starts_with(field)),
-                _ => None,
-            };
-            FabricError::InvalidConfig {
-                field: field
-                    .map(|field| format!("descriptor.{field}"))
-                    .unwrap_or_else(|| "descriptor".to_string()),
-                reason: "invalid adapter descriptor or embedded schema".to_string(),
-            }
-        },
-    )?;
+    validate_adapter_descriptor_shape(descriptor, Path::new("<supplied adapter>"))?;
     if config
         .harness
         .as_ref()
@@ -3348,12 +3326,7 @@ pub fn inspect_adapter_config(
         );
     }
     if let Some(target) = target_descriptor {
-        validate_adapter_target_descriptor_shape(target, Path::new("<supplied target>")).map_err(
-            |_| FabricError::InvalidConfig {
-                field: "target_descriptor".to_string(),
-                reason: "invalid target descriptor or embedded schema".to_string(),
-            },
-        )?;
+        validate_adapter_target_descriptor_shape(target, Path::new("<supplied target>"))?;
         if target.id
             != config
                 .workflow
@@ -3372,26 +3345,78 @@ pub fn inspect_adapter_config(
                 "target adapter does not match supplied host adapter",
             );
         }
-        if !descriptor.target_types.contains(&target.target_type()) {
-            return Err(FabricError::AdapterDescriptorUnsupported {
-                adapter_id: descriptor.adapter_id.clone(),
-                field: "target_types",
-                value: target.target_type().as_str().to_string(),
-            });
-        }
     }
-    let issues = inspect_metadata_compatibility(&config, descriptor, target_descriptor)?;
-    let telemetry_plan = if issues.is_empty() {
-        resolve_telemetry_plan(&config, Some(descriptor))?
-    } else {
-        None
-    };
+    let (issues, telemetry_plan) =
+        inspect_metadata_compatibility(&config, descriptor, target_descriptor)?;
+    if !diagnostics && let Some(issue) = issues.first() {
+        return Err(FabricError::AdapterCompatibility {
+            adapter_id: issue.adapter_id.clone(),
+            field: issue.field.clone(),
+            reason: issue.reason.clone(),
+        });
+    }
     Ok(AdapterInspection {
         descriptor: descriptor.clone(),
         target_descriptor: target_descriptor.cloned(),
         telemetry_plan,
         issues,
     })
+}
+
+/// Validate metadata-independent inspection inputs without filesystem discovery.
+#[doc(hidden)]
+pub fn validate_inspection_config(config: &FabricConfig) -> Result<()> {
+    validate_config(config)?;
+    validate_runtime_artifacts(config)?;
+    relay_atif_state(config)?;
+    Ok(())
+}
+
+#[derive(Debug)]
+enum MetadataValidationError {
+    Compatibility(AdapterCompatibilityIssue),
+    ExtensionSchema(AdapterCompatibilityIssue),
+    AdapterSchema(String),
+    TargetSchema(String),
+    Other(FabricError),
+}
+
+type MetadataResult<T> = std::result::Result<T, MetadataValidationError>;
+
+impl From<FabricError> for MetadataValidationError {
+    fn from(error: FabricError) -> Self {
+        Self::Other(error)
+    }
+}
+
+fn metadata_error(
+    error: MetadataValidationError,
+    adapter: Option<&ResolvedAdapterDescriptor>,
+    target: Option<&ResolvedAdapterTargetDescriptor>,
+) -> FabricError {
+    match error {
+        MetadataValidationError::Compatibility(issue)
+        | MetadataValidationError::ExtensionSchema(issue) => FabricError::AdapterCompatibility {
+            adapter_id: issue.adapter_id,
+            field: issue.field,
+            reason: issue.reason,
+        },
+        MetadataValidationError::AdapterSchema(message) => FabricError::InvalidAdapterDescriptor {
+            path: adapter
+                .map(|a| a.primary().path.clone())
+                .unwrap_or_else(|| PathBuf::from("<supplied adapter>")),
+            message,
+        },
+        MetadataValidationError::TargetSchema(message) => {
+            FabricError::InvalidAdapterTargetDescriptor {
+                path: target
+                    .map(|t| t.primary().path.clone())
+                    .unwrap_or_else(|| PathBuf::from("<supplied target>")),
+                message,
+            }
+        }
+        MetadataValidationError::Other(error) => error,
+    }
 }
 
 // Check this static configuration requirement without resolving execution paths.
@@ -3411,14 +3436,81 @@ fn validate_runtime_artifacts(config: &FabricConfig) -> Result<()> {
     Ok(())
 }
 
+#[derive(Default)]
+struct RelayAtifState {
+    components: usize,
+    requested: bool,
+}
+
+fn relay_atif_state(config: &FabricConfig) -> Result<RelayAtifState> {
+    let mut state = RelayAtifState::default();
+    if !config
+        .telemetry
+        .as_ref()
+        .is_some_and(|t| t.providers.contains_key(&TelemetryProvider::Relay))
+    {
+        return Ok(state);
+    }
+    let Some(relay) = config.relay.as_ref() else {
+        return Ok(state);
+    };
+    if let Some(observability) = relay.observability.as_ref() {
+        state.components += 1;
+        state.requested |= observability.atif.as_ref().is_some_and(|atif| atif.enabled);
+    }
+    for (index, component) in relay.components.iter().enumerate() {
+        if component.kind != "observability" {
+            continue;
+        }
+        state.components += 1;
+        if !component.enabled {
+            continue;
+        }
+        let Some(atif) = component.config.get("atif") else {
+            continue;
+        };
+        if atif.is_null() {
+            continue;
+        }
+        let Some(atif) = atif.as_object() else {
+            return invalid_config(
+                format!("relay.components.{index}.config.atif"),
+                "Relay ATIF admission requires an object with a boolean enabled field",
+            );
+        };
+        match atif.get("enabled") {
+            None => {}
+            Some(Value::Bool(enabled)) => state.requested |= *enabled,
+            Some(_) => {
+                return invalid_config(
+                    format!("relay.components.{index}.config.atif.enabled"),
+                    "Relay ATIF admission requires an object with a boolean enabled field",
+                );
+            }
+        }
+    }
+    Ok(state)
+}
+
 // Execution's provenance-aware wrappers use the same metadata validators.
 // Inspection never constructs resolved descriptors or a RunPlan.
 fn inspect_metadata_compatibility(
     config: &FabricConfig,
     descriptor: &AdapterDescriptor,
     target: Option<&AdapterTargetDescriptor>,
-) -> Result<Vec<AdapterCompatibilityIssue>> {
+) -> Result<(Vec<AdapterCompatibilityIssue>, Option<TelemetryPlan>)> {
     let mut issues = adapter_config_compatibility_issues(config, Some(descriptor));
+    if let Some(target) = target
+        && !descriptor.target_types.contains(&target.target_type())
+    {
+        issues.push(AdapterCompatibilityIssue {
+            adapter_id: descriptor.adapter_id.clone(),
+            field: "workflow.target_id".to_string(),
+            reason: "the selected adapter does not declare support for the supplied target type"
+                .to_string(),
+        });
+    }
+
     for result in [
         validate_harness_settings_metadata(config, Some(descriptor)),
         validate_workflow_metadata(config, target),
@@ -3427,18 +3519,11 @@ fn inspect_metadata_compatibility(
     ] {
         match result {
             Ok(()) => {}
-            Err(FabricError::AdapterCompatibility {
-                adapter_id,
-                field,
-                reason,
-            }) => {
-                issues.push(AdapterCompatibilityIssue {
-                    adapter_id,
-                    field,
-                    reason,
-                });
-            }
-            Err(error) => return Err(error),
+            Err(
+                MetadataValidationError::Compatibility(issue)
+                | MetadataValidationError::ExtensionSchema(issue),
+            ) => issues.push(issue),
+            Err(error) => return Err(metadata_error(error, None, None)),
         }
     }
     // Capability routing is pure: paths here are only lexically joined and are
@@ -3455,32 +3540,53 @@ fn inspect_metadata_compatibility(
     }
     // Telemetry retains a first-error boundary, but valid incompatible input
     // still belongs in a diagnostic report rather than an input error.
-    match resolve_telemetry_plan(config, Some(descriptor)) {
-        Ok(_) => {}
+    let telemetry_plan = match resolve_telemetry_plan(config, Some(descriptor)) {
+        Ok(plan) => plan,
         Err(FabricError::AdapterDescriptorUnsupported { field, .. }) => {
             issues.push(AdapterCompatibilityIssue {
                 adapter_id: descriptor.adapter_id.clone(),
                 field: field.to_string(),
                 reason: "the adapter does not declare the selected telemetry provider".to_string(),
             });
+            None
         }
         Err(error) => return Err(error),
+    };
+    let atif = relay_atif_state(config)?;
+    let supports_atif = descriptor
+        .telemetry
+        .providers
+        .get(&TelemetryProvider::Relay)
+        .is_some_and(|provider| provider.outputs.iter().any(|output| output == "atif"));
+    if atif.requested && (atif.components != 1 || !supports_atif) {
+        issues.push(AdapterCompatibilityIssue {
+            adapter_id: descriptor.adapter_id.clone(),
+            field: "telemetry.providers.relay".to_string(),
+            reason: "Cannot confirm requested Relay ATIF output: the provider must declare ATIF and exactly one observability component must enable it".to_string(),
+        });
     }
     issues.sort_by(|a, b| (&a.field, &a.reason).cmp(&(&b.field, &b.reason)));
     issues.dedup();
-    Ok(issues)
+    let telemetry_plan = if issues.is_empty() {
+        telemetry_plan
+    } else {
+        None
+    };
+    Ok((issues, telemetry_plan))
 }
 
 fn incompatible<T>(
     descriptor: &AdapterDescriptor,
     field: String,
     reason: impl Into<String>,
-) -> Result<T> {
-    Err(FabricError::AdapterCompatibility {
-        adapter_id: descriptor.adapter_id.clone(),
-        field,
-        reason: reason.into(),
-    })
+) -> MetadataResult<T> {
+    Err(MetadataValidationError::Compatibility(
+        AdapterCompatibilityIssue {
+            adapter_id: descriptor.adapter_id.clone(),
+            field,
+            reason: reason.into(),
+        },
+    ))
 }
 
 /// Resolve a typed Fabric config while retaining adapter incompatibilities for diagnostics.
@@ -3649,6 +3755,7 @@ pub(crate) fn validate_adapter_config_compatibility(
 
 /// A configuration field unsupported by the selected adapter metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
 pub struct AdapterCompatibilityIssue {
     /// Selected adapter identifier.
     pub adapter_id: String,
@@ -3785,8 +3892,7 @@ pub(crate) fn adapter_config_compatibility_issues(
             issues.push(incompatible(
                 "instructions.system.mode".to_string(),
                 format!(
-                    "mode `{}` is not supported; supported modes: {supported}",
-                    system.mode.as_str()
+                    "requested instruction mode is not supported; supported modes: {supported}"
                 ),
             ));
         }
@@ -4196,7 +4302,7 @@ pub(crate) fn validate_harness_settings(
     resolved: Option<&ResolvedAdapterDescriptor>,
 ) -> Result<()> {
     validate_harness_settings_metadata(config, resolved.map(|r| &r.descriptor)).map_err(|error| {
-        match (error, resolved) {
+        match (metadata_error(error, resolved, None), resolved) {
             (FabricError::AdapterCompatibility { field, reason, .. }, Some(resolved)) => {
                 FabricError::InvalidHarnessSettings {
                     adapter_id: resolved.descriptor.adapter_id.clone(),
@@ -4214,7 +4320,7 @@ pub(crate) fn validate_harness_settings(
 fn validate_harness_settings_metadata(
     config: &FabricConfig,
     resolved: Option<&AdapterDescriptor>,
-) -> Result<()> {
+) -> MetadataResult<()> {
     let Some(resolved) = resolved else {
         return Ok(());
     };
@@ -4240,10 +4346,9 @@ fn validate_harness_settings_metadata(
     let schema = Value::Object(schema.clone());
     let settings = Value::Object(harness.settings.clone());
     let validator = jsonschema::validator_for(&schema).map_err(|error| {
-        FabricError::InvalidAdapterDescriptor {
-            path: PathBuf::from("<supplied metadata>"),
-            message: format!("settings_schema could not be compiled: {error}"),
-        }
+        MetadataValidationError::AdapterSchema(format!(
+            "settings_schema could not be compiled: {error}"
+        ))
     })?;
     if let Some(error) = validator.iter_errors(&settings).next() {
         let settings_path = schema_error_path(&error, "harness.settings");
@@ -4258,7 +4363,7 @@ pub(crate) fn validate_workflow(
     resolved: Option<&ResolvedAdapterTargetDescriptor>,
 ) -> Result<()> {
     validate_workflow_metadata(config, resolved.map(|r| &r.descriptor)).map_err(|error| {
-        match (error, resolved) {
+        match (metadata_error(error, None, resolved), resolved) {
             (FabricError::AdapterCompatibility { field, reason, .. }, Some(resolved)) => {
                 FabricError::InvalidWorkflow {
                     adapter_id: resolved.descriptor.adapter_id.clone(),
@@ -4276,7 +4381,7 @@ pub(crate) fn validate_workflow(
 fn validate_workflow_metadata(
     config: &FabricConfig,
     resolved: Option<&AdapterTargetDescriptor>,
-) -> Result<()> {
+) -> MetadataResult<()> {
     let (Some(workflow), Some(resolved)) = (&config.workflow, resolved) else {
         return Ok(());
     };
@@ -4300,10 +4405,9 @@ fn validate_workflow_metadata(
     let schema = Value::Object(schema.clone());
     let settings = Value::Object(workflow.settings.clone());
     let validator = jsonschema::validator_for(&schema).map_err(|error| {
-        FabricError::InvalidAdapterTargetDescriptor {
-            path: PathBuf::from("<supplied metadata>"),
-            message: format!("spec.settings_schema could not be compiled: {error}"),
-        }
+        MetadataValidationError::TargetSchema(format!(
+            "spec.settings_schema could not be compiled: {error}"
+        ))
     })?;
     if let Some(error) = validator.iter_errors(&settings).next() {
         let workflow_path = schema_error_path(&error, "workflow.settings");
@@ -4318,7 +4422,7 @@ pub(crate) fn validate_tool_definitions(
     resolved: Option<&ResolvedAdapterDescriptor>,
 ) -> Result<()> {
     validate_tool_definitions_metadata(config, resolved.map(|r| &r.descriptor)).map_err(|error| {
-        match (error, resolved) {
+        match (metadata_error(error, resolved, None), resolved) {
             (FabricError::AdapterCompatibility { field, reason, .. }, Some(resolved)) => {
                 FabricError::InvalidToolDefinition {
                     adapter_id: resolved.descriptor.adapter_id.clone(),
@@ -4336,7 +4440,7 @@ pub(crate) fn validate_tool_definitions(
 fn validate_tool_definitions_metadata(
     config: &FabricConfig,
     resolved: Option<&AdapterDescriptor>,
-) -> Result<()> {
+) -> MetadataResult<()> {
     let Some(definitions) = config
         .tools
         .as_ref()
@@ -4362,10 +4466,9 @@ fn validate_tool_definitions_metadata(
 
     let schema = Value::Object(schema.clone());
     let validator = jsonschema::validator_for(&schema).map_err(|error| {
-        FabricError::InvalidAdapterDescriptor {
-            path: PathBuf::from("<supplied metadata>"),
-            message: format!("tool_definition_schema could not be compiled: {error}"),
-        }
+        MetadataValidationError::AdapterSchema(format!(
+            "tool_definition_schema could not be compiled: {error}"
+        ))
     })?;
     for (name, definition) in definitions {
         let mut value = serde_json::to_value(definition).map_err(FabricError::SerializeJson)?;
@@ -4398,22 +4501,20 @@ pub(crate) fn validate_agent_config_extensions(
 }
 
 fn extension_execution_error(
-    error: FabricError,
+    error: MetadataValidationError,
     resolved: Option<&ResolvedAdapterDescriptor>,
 ) -> FabricError {
     match (error, resolved) {
-        (FabricError::AdapterCompatibility { field, reason, .. }, Some(resolved))
-            if reason.contains("adapter extension schema") =>
-        {
+        (MetadataValidationError::ExtensionSchema(issue), Some(resolved)) => {
             FabricError::InvalidAdapterExtension {
-                adapter_id: resolved.descriptor.adapter_id.clone(),
+                adapter_id: issue.adapter_id,
                 descriptor_source: resolved.primary().source,
                 descriptor_path: resolved.primary().path.clone(),
-                extension_path: field,
-                reason,
+                extension_path: issue.field,
+                reason: issue.reason,
             }
         }
-        (error, _) => error,
+        (error, _) => metadata_error(error, resolved, None),
     }
 }
 
@@ -4421,7 +4522,7 @@ fn validate_agent_config_extensions_metadata(
     config: &FabricConfig,
     resolved: Option<&AdapterDescriptor>,
     target: Option<&AdapterTargetDescriptor>,
-) -> Result<()> {
+) -> MetadataResult<()> {
     let Some(resolved) = resolved else {
         return Ok(());
     };
@@ -4650,7 +4751,7 @@ fn validate_extension_block_metadata(
     path: &str,
     extensions: &BTreeMap<String, Value>,
     validators: &mut BTreeMap<AdapterExtensionPoint, jsonschema::Validator>,
-) -> Result<()> {
+) -> MetadataResult<()> {
     if extensions.is_empty() {
         return Ok(());
     }
@@ -4658,35 +4759,36 @@ fn validate_extension_block_metadata(
         Entry::Occupied(entry) => entry.into_mut(),
         Entry::Vacant(entry) => {
             let Some(schema) = resolved.extension_schemas.get(&point) else {
-                return Err(FabricError::AdapterCompatibility {
-                    adapter_id: resolved.adapter_id.clone(),
-                    field: path.to_string(),
-                    reason: format!(
-                        "the adapter descriptor does not declare an extension schema for {}",
-                        point.as_str()
-                    ),
-                });
+                return Err(MetadataValidationError::Compatibility(
+                    AdapterCompatibilityIssue {
+                        adapter_id: resolved.adapter_id.clone(),
+                        field: path.to_string(),
+                        reason: format!(
+                            "the adapter descriptor does not declare an extension schema for {}",
+                            point.as_str()
+                        ),
+                    },
+                ));
             };
             let schema = Value::Object(schema.clone());
             let validator = jsonschema::validator_for(&schema).map_err(|error| {
-                FabricError::InvalidAdapterDescriptor {
-                    path: PathBuf::from("<supplied metadata>"),
-                    message: format!(
-                        "extension_schemas.{} could not be compiled: {error}",
-                        point.as_str()
-                    ),
-                }
+                MetadataValidationError::AdapterSchema(format!(
+                    "extension_schemas.{} could not be compiled: {error}",
+                    point.as_str()
+                ))
             })?;
             entry.insert(validator)
         }
     };
     let value = serde_json::to_value(extensions).map_err(FabricError::SerializeJson)?;
     if let Some(error) = validator.iter_errors(&value).next() {
-        return Err(FabricError::AdapterCompatibility {
-            adapter_id: resolved.adapter_id.clone(),
-            field: schema_error_path(&error, path),
-            reason: schema_error_reason(&error, "adapter extension schema"),
-        });
+        return Err(MetadataValidationError::ExtensionSchema(
+            AdapterCompatibilityIssue {
+                adapter_id: resolved.adapter_id.clone(),
+                field: schema_error_path(&error, path),
+                reason: schema_error_reason(&error, "adapter extension schema"),
+            },
+        ));
     }
     Ok(())
 }
@@ -4695,12 +4797,14 @@ fn invalid_workflow_metadata<T>(
     target: &AdapterTargetDescriptor,
     field: String,
     reason: impl Into<String>,
-) -> Result<T> {
-    Err(FabricError::AdapterCompatibility {
-        adapter_id: target.adapter_id.clone(),
-        field,
-        reason: reason.into(),
-    })
+) -> MetadataResult<T> {
+    Err(MetadataValidationError::Compatibility(
+        AdapterCompatibilityIssue {
+            adapter_id: target.adapter_id.clone(),
+            field,
+            reason: reason.into(),
+        },
+    ))
 }
 
 fn schema_error_path(error: &jsonschema::ValidationError<'_>, prefix: &str) -> String {
@@ -5610,6 +5714,7 @@ mod tests {
             config.clone(),
             &load_adapter_descriptor(&path).expect("descriptor"),
             None,
+            true,
         )
         .expect("host inspection");
         assert_eq!(
@@ -5630,7 +5735,8 @@ mod tests {
             inspect_adapter_config(
                 config,
                 &load_adapter_descriptor(&path).expect("descriptor"),
-                None
+                None,
+                true
             )
             .expect("valid incompatible settings")
             .issues
@@ -5642,7 +5748,8 @@ mod tests {
             inspect_adapter_config(
                 mismatch,
                 &load_adapter_descriptor(&path).expect("descriptor"),
-                None
+                None,
+                true
             )
             .is_err()
         );
@@ -5668,6 +5775,7 @@ mod tests {
             config.clone(),
             &load_adapter_descriptor(&adapter_path).expect("descriptor"),
             Some(&load_adapter_target_descriptor(&target_path).expect("target")),
+            true,
         )
         .expect("supplied metadata validates without discovery");
         assert_eq!(inspection.target_descriptor, Some(target));
@@ -5679,6 +5787,7 @@ mod tests {
             config,
             &load_adapter_descriptor(&adapter_path).expect("descriptor"),
             Some(&load_adapter_target_descriptor(&target_path).expect("target")),
+            true,
         )
         .expect("workflow alone selects the supplied adapter");
     }
@@ -5693,7 +5802,8 @@ mod tests {
             inspect_adapter_config(
                 config.clone(),
                 &load_adapter_descriptor(&adapter_path).expect("descriptor"),
-                Some(&load_adapter_target_descriptor(&target_path).expect("target"))
+                Some(&load_adapter_target_descriptor(&target_path).expect("target")),
+                true
             )
             .is_err()
         );
@@ -5706,7 +5816,8 @@ mod tests {
             inspect_adapter_config(
                 config.clone(),
                 &load_adapter_descriptor(&adapter_path).expect("descriptor"),
-                None
+                None,
+                true
             )
             .is_err()
         );
@@ -5716,7 +5827,8 @@ mod tests {
             inspect_adapter_config(
                 wrong_target,
                 &load_adapter_descriptor(&adapter_path).expect("descriptor"),
-                Some(&load_adapter_target_descriptor(&target_path).expect("target"))
+                Some(&load_adapter_target_descriptor(&target_path).expect("target")),
+                true
             )
             .is_err()
         );
@@ -5730,7 +5842,8 @@ mod tests {
             inspect_adapter_config(
                 config,
                 &load_adapter_descriptor(&adapter_path).expect("descriptor"),
-                Some(&load_adapter_target_descriptor(&target_path).expect("target"))
+                Some(&load_adapter_target_descriptor(&target_path).expect("target")),
+                true
             )
             .expect("valid incompatible settings")
             .issues
@@ -5748,7 +5861,8 @@ mod tests {
             inspect_adapter_config(
                 wrong_adapter,
                 &load_adapter_descriptor(&hermes_path).expect("descriptor"),
-                Some(&load_adapter_target_descriptor(&target_path).expect("target"))
+                Some(&load_adapter_target_descriptor(&target_path).expect("target")),
+                true
             )
             .is_err()
         );
@@ -5771,14 +5885,16 @@ mod tests {
             config,
             &descriptor,
             Some(&load_adapter_target_descriptor(&target_path).expect("target")),
+            true,
         );
-        assert!(matches!(
-            result,
-            Err(FabricError::AdapterDescriptorUnsupported {
-                field: "target_types",
-                ..
-            })
-        ));
+        let report = result.expect("unsupported target type is a compatibility issue");
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|issue| issue.field == "workflow.target_id")
+        );
+        assert!(report.telemetry_plan.is_none());
     }
 
     #[test]
@@ -5802,7 +5918,7 @@ mod tests {
         }))
         .expect("descriptor");
         let report =
-            inspect_adapter_config(config.clone(), &descriptor, None).expect("diagnostics");
+            inspect_adapter_config(config.clone(), &descriptor, None, true).expect("diagnostics");
         let fields: Vec<_> = report
             .issues
             .iter()
@@ -5822,7 +5938,7 @@ mod tests {
             }))
             .expect("schema map"),
         );
-        assert!(inspect_adapter_config(config.clone(), &descriptor, None).is_err());
+        assert!(inspect_adapter_config(config.clone(), &descriptor, None, true).is_err());
     }
 
     #[test]
@@ -5833,7 +5949,7 @@ mod tests {
         .expect("descriptor");
         let config = typed_config("nvidia.fabric.hermes");
         assert!(
-            inspect_adapter_config(config.clone(), &original, None)
+            inspect_adapter_config(config.clone(), &original, None, true)
                 .expect("valid metadata")
                 .issues
                 .is_empty()
@@ -5877,10 +5993,152 @@ mod tests {
                 "{invalid}"
             );
             assert!(
-                inspect_adapter_config(config.clone(), &descriptor, None).is_err(),
+                inspect_adapter_config(config.clone(), &descriptor, None, true).is_err(),
                 "{invalid}"
             );
         }
+    }
+
+    #[test]
+    fn rust_inspection_reports_relay_atif_and_rejects_malformed_input() {
+        let mut descriptor = load_adapter_descriptor(
+            repository_adapter_dir().join("python/hermes/hermes.fabric-adapter.json"),
+        )
+        .expect("descriptor");
+        descriptor
+            .telemetry
+            .providers
+            .get_mut(&TelemetryProvider::Relay)
+            .expect("Relay")
+            .outputs
+            .clear();
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.telemetry = Some(
+            serde_json::from_value(serde_json::json!({"providers": {"relay": {}}}))
+                .expect("telemetry"),
+        );
+        config.relay = Some(
+            serde_json::from_value(
+                serde_json::json!({"observability": {"atif": {"enabled": true}}}),
+            )
+            .expect("Relay"),
+        );
+        let report =
+            inspect_adapter_config(config.clone(), &descriptor, None, true).expect("diagnostics");
+        assert!(report.issues.iter().any(
+            |issue| issue.field == "telemetry.providers.relay" && issue.reason.contains("ATIF")
+        ));
+        assert!(report.telemetry_plan.is_none());
+        assert!(
+            matches!(inspect_adapter_config(config.clone(), &descriptor, None, false), Err(FabricError::AdapterCompatibility { field, .. }) if field == "telemetry.providers.relay")
+        );
+        config.relay = Some(serde_json::from_value(serde_json::json!({"components": [{"kind": "observability", "config": {"atif": {"enabled": "private-invalid-value"}}}]})).expect("generic Relay"));
+        config.tools = Some(
+            serde_json::from_value(serde_json::json!({"enabled": ["private-tool"]}))
+                .expect("tools"),
+        );
+        descriptor
+            .config
+            .accepts
+            .retain(|field| *field != AdapterConfigField::EnabledTools);
+        for diagnostics in [false, true] {
+            let error = inspect_adapter_config(config.clone(), &descriptor, None, diagnostics)
+                .expect_err("malformed ATIF");
+            assert!(
+                matches!(&error, FabricError::InvalidConfig { field, .. } if field == "relay.components.0.config.atif.enabled")
+            );
+            assert!(!error.to_string().contains("private-invalid-value"));
+        }
+    }
+
+    #[test]
+    fn startup_metadata_schema_errors_keep_real_descriptor_paths() {
+        let descriptor = load_adapter_descriptor(
+            repository_adapter_dir().join("python/hermes/hermes.fabric-adapter.json"),
+        )
+        .expect("descriptor");
+        let adapter_path = PathBuf::from("/host/adapters/hermes.fabric-adapter.json");
+        let provenance = vec![DescriptorProvenance {
+            source: DescriptorSource::ExplicitLocal,
+            path: adapter_path.clone(),
+            root: PathBuf::from("/host/adapters"),
+        }];
+        let invalid_schema = serde_json::json!({"type": "invalid"})
+            .as_object()
+            .expect("schema")
+            .clone();
+        for category in ["settings", "tools", "extensions"] {
+            let mut resolved = ResolvedAdapterDescriptor {
+                descriptor: descriptor.clone(),
+                provenance: provenance.clone(),
+            };
+            let mut config = typed_config("nvidia.fabric.hermes");
+            let result = match category {
+                "settings" => {
+                    resolved.descriptor.settings_schema = Some(invalid_schema.clone());
+                    validate_harness_settings(&config, Some(&resolved))
+                }
+                "tools" => {
+                    resolved.descriptor.tool_definition_schema = Some(invalid_schema.clone());
+                    config.tools = Some(serde_json::from_value(serde_json::json!({"definitions": {"a": {"kind": "function", "ref": "a"}}})).expect("tools"));
+                    validate_tool_definitions(&config, Some(&resolved))
+                }
+                _ => {
+                    resolved
+                        .descriptor
+                        .extension_schemas
+                        .insert(AdapterExtensionPoint::AgentConfig, invalid_schema.clone());
+                    config.extensions.insert("a".to_string(), Value::Bool(true));
+                    validate_agent_config_extensions(&config, Some(&resolved), None)
+                }
+            };
+            assert!(
+                matches!(result, Err(FabricError::InvalidAdapterDescriptor { path, .. }) if path == adapter_path),
+                "{category}"
+            );
+        }
+        let mut target = load_adapter_target_descriptor(
+            repository_adapter_dir().join("python/nooa/targets/coding-agent.fabric-target.json"),
+        )
+        .expect("target");
+        let AdapterTarget::Workflow(spec) = &mut target.target;
+        spec.settings_schema = Some(invalid_schema);
+        let target_path = PathBuf::from("/host/targets/coding-agent.fabric-target.json");
+        let resolved = ResolvedAdapterTargetDescriptor {
+            descriptor: target,
+            provenance: vec![DescriptorProvenance {
+                source: DescriptorSource::ExplicitLocal,
+                path: target_path.clone(),
+                root: PathBuf::from("/host/targets"),
+            }],
+        };
+        let mut config = typed_config("nvidia.fabric.nooa");
+        config.workflow = Some(
+            serde_json::from_value(serde_json::json!({"target_id": "nvidia.nooa.coding-agent"}))
+                .expect("workflow"),
+        );
+        assert!(
+            matches!(validate_workflow(&config, Some(&resolved)), Err(FabricError::InvalidAdapterTargetDescriptor { path, .. }) if path == target_path)
+        );
+    }
+
+    #[test]
+    fn instruction_mode_diagnostics_do_not_echo_the_requested_mode() {
+        let mut descriptor = load_adapter_descriptor(
+            repository_adapter_dir().join("python/hermes/hermes.fabric-adapter.json"),
+        )
+        .expect("descriptor");
+        descriptor.config.system_instruction_modes = Some(vec![InstructionMode::Replace]);
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.instructions = Some(serde_json::from_value(serde_json::json!({"system": {"content": "private instructions", "mode": "append"}})).expect("instructions"));
+        let report = inspect_adapter_config(config, &descriptor, None, true).expect("report");
+        let issue = report
+            .issues
+            .iter()
+            .find(|issue| issue.field == "instructions.system.mode")
+            .expect("mode issue");
+        assert!(!issue.reason.contains("append"));
+        assert!(issue.reason.contains("replace"));
     }
 
     fn typed_config(adapter_id: &str) -> FabricConfig {

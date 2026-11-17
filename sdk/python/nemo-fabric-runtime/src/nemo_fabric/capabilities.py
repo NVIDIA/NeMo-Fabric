@@ -88,33 +88,20 @@ def _verify_adapter_descriptor(plan: RunPlan, expected_sha256: str) -> None:
         )
 
 
-def _relay_atif_enabled(component: Mapping[str, Any]) -> bool:
-    if not component.get("enabled", True):
-        return False
-    atif = component.get("config", {}).get("atif")
-    if atif is None:
-        return False
-    if not isinstance(atif, Mapping) or not isinstance(
-        atif.get("enabled", False), bool
-    ):
-        raise FabricConfigError(
-            "Relay ATIF admission requires an object with a boolean enabled field"
-        )
-    return atif.get("enabled", False)
-
-
 def inspect_adapter(
     config: FabricConfig,
     descriptor: Mapping[str, Any] | None,
     *,
     target_descriptor: Mapping[str, Any] | None = None,
+    diagnostics: bool = True,
 ) -> AdapterInspection:
     """Inspect supplied adapter and optional workflow metadata without loading its SDK.
 
     Validates canonical descriptor values entirely in memory with shared Rust
     rules. No descriptor files, executable discovery, or harness SDKs are needed.
-    Independent model, tool-routing, and MCP failures are always returned in
-    issues. Callers must check issues before proceeding with deployment.
+    By default, independent model, tool-routing, and MCP failures are returned
+    in issues. Check issues before deployment. Temporarily pass diagnostics=False
+    to retain exception-based rejection during migration.
     Malformed inputs raise FabricConfigError. Settings, tool-definition schemas, and
     extensions retain first-error boundaries. Success does not imply readiness.
 
@@ -127,6 +114,18 @@ def inspect_adapter(
 
     if not isinstance(config, FabricConfig):
         raise FabricConfigError("Adapter inspection requires a typed FabricConfig")
+
+    if descriptor is None:
+        native = Fabric()._require_native_module("inspect_adapter")
+        try:
+            native.inspect_adapter_metadata(
+                json.dumps(config.to_mapping(), allow_nan=False),
+                None,
+                None,
+                diagnostics,
+            )
+        except Exception as error:
+            raise FabricConfigError(str(error)) from error
 
     if config.workflow is None and target_descriptor is not None:
         raise FabricConfigError("Target metadata requires a configured workflow")
@@ -146,19 +145,6 @@ def inspect_adapter(
     if not isinstance(adapter_id, str) or not adapter_id:
         raise FabricConfigError("Adapter inspection requires a selected adapter")
     selected = config.telemetry.providers if config.telemetry is not None else {}
-    relay = config.relay.to_mapping() if config.relay is not None else {}
-    observability = (
-        [
-            component
-            for component in relay.get("components", [])
-            if component.get("kind") == "observability"
-        ]
-        if "relay" in selected
-        else []
-    )
-    if "relay" in selected and relay.get("observability") is not None:
-        observability.insert(0, {"config": relay["observability"]})
-    enabled_outputs = [_relay_atif_enabled(component) for component in observability]
     if descriptor is None:
         if (
             (
@@ -174,6 +160,10 @@ def inspect_adapter(
             or (config.mcp is not None and config.mcp.servers)
             or (config.telemetry is not None and config.telemetry.providers)
         ):
+            if not diagnostics:
+                raise FabricConfigError(
+                    "Cannot confirm requested skills, MCP, or telemetry: host descriptor metadata is unavailable"
+                )
             return AdapterInspection(
                 issues=[
                     AdapterCompatibilityIssue(
@@ -202,13 +192,10 @@ def inspect_adapter(
                 None
                 if target_descriptor is None
                 else json.dumps(dict(target_descriptor), allow_nan=False),
+                diagnostics,
             )
         )
     except Exception as error:
-        if config.workflow is not None:
-            raise FabricConfigError(
-                "Workflow target metadata or configuration is invalid"
-            ) from None
         raise FabricConfigError(str(error)) from error
     issues = [AdapterCompatibilityIssue(**issue) for issue in inspection["issues"]]
     normalized = inspection["descriptor"]
@@ -218,26 +205,14 @@ def inspect_adapter(
         "atif" in providers.get("native", {}).get("outputs", [])
         and "native" in selected
     )
-    relay_atif = False
-    if "relay" in selected:
-        # A claim requires one explicitly enabled, unambiguous output.
-        requested_atif = any(enabled_outputs)
-        if requested_atif and (
-            len(observability) != 1
-            or "atif" not in providers.get("relay", {}).get("outputs", [])
-        ):
-            reason = (
-                f"Cannot confirm requested Relay ATIF output for {adapter_id}: "
-                "the provider must declare ATIF and exactly one observability "
-                "component must enable it"
-            )
-            issues.append(
-                AdapterCompatibilityIssue(
-                    adapter_id, "telemetry.providers.relay", reason
-                )
-            )
-        if len(observability) == 1:
-            relay_atif = enabled_outputs[0]
+    relay = (inspection.get("telemetry_plan") or {}).get("relay_config") or {}
+    relay_atif = any(
+        component.get("enabled", True)
+        and component.get("config", {}).get("atif", {}).get("enabled", False)
+        for component in relay.get("components", [])
+        if component.get("kind") == "observability"
+        and component.get("config", {}).get("atif") is not None
+    )
     if issues:
         return AdapterInspection(
             issues=sorted(issues, key=lambda issue: (issue.field, issue.reason)),

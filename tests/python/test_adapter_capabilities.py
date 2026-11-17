@@ -522,18 +522,18 @@ def test_workflow_inspection_fails_closed_and_sanitizes_invalid_metadata(
         descriptor["target_types"] = []
     else:
         config.workflow.settings["mode"] = secret
-    if invalid == "settings":
+    if invalid in {"settings", "target_support"}:
         report = inspect_adapter(config, descriptor, target_descriptor=target)
         assert report.issues and report.capability_profile is None
         assert secret not in repr(report.issues)
     else:
-        with pytest.raises(
-            FabricConfigError,
-            match="Workflow target metadata or configuration is invalid",
-        ) as caught:
+        with pytest.raises(FabricConfigError) as caught:
             inspect_adapter(config, descriptor, target_descriptor=target)
         assert secret not in str(caught.value)
-        assert caught.value.__cause__ is None
+        assert any(
+            field in str(caught.value)
+            for field in ["workflow.target_id", "target_types", "target descriptor"]
+        )
 
 
 def test_workflow_fingerprint_matches_execution_plan_and_includes_target(
@@ -623,8 +623,8 @@ async def test_sdk_rejects_target_drift_before_native_start(
     lifecycle.assert_not_called()
 
 
-def test_diagnostics_collect_independent_failures_without_files(
-    custom_config, custom_descriptor, monkeypatch
+def test_inspection_collects_independent_failures_without_files(
+    custom_config, custom_descriptor, monkeypatch, tmp_path
 ):
     import tempfile
 
@@ -651,7 +651,16 @@ def test_diagnostics_collect_independent_failures_without_files(
     monkeypatch.setattr(
         tempfile, "TemporaryDirectory", Mock(side_effect=AssertionError("no files"))
     )
-    report = inspect_adapter(config, custom_descriptor)
+    import builtins
+    import os
+
+    os.environ["TMPDIR"] = str(tmp_path)
+    before = set(tmp_path.iterdir())
+    with monkeypatch.context() as no_files:
+        no_files.setattr(builtins, "open", Mock(side_effect=AssertionError("no files")))
+        no_files.setattr(os, "open", Mock(side_effect=AssertionError("no files")))
+        report = inspect_adapter(config, custom_descriptor)
+    assert set(tmp_path.iterdir()) == before
     assert report.capability_profile is None
     fields = [issue.field for issue in report.issues]
     assert fields == sorted(fields)
@@ -680,7 +689,8 @@ def test_inspection_rejects_invalid_schema(
     custom_descriptor[schema_field] = {"type": "invalid-private-value"}
     with pytest.raises(FabricConfigError, match="invalid adapter descriptor") as error:
         inspect_adapter(custom_config, custom_descriptor)
-    assert "invalid-private-value" not in str(error.value)
+    assert schema_field in str(error.value)
+    assert "invalid-private-value" in str(error.value)
 
 
 def test_inspection_success_returns_profile(custom_config, custom_descriptor):
@@ -704,7 +714,7 @@ def test_workflow_malformed_metadata_raises(workflow_metadata, invalid):
 
 
 @pytest.mark.parametrize("failure", ["provider", "atif"])
-def test_telemetry_compatibility_is_reported_in_diagnostic_mode(
+def test_telemetry_compatibility_returns_issues(
     custom_config, custom_descriptor, failure
 ):
     custom_config.enable_relay(observability={"atif": {"enabled": True}})
@@ -761,10 +771,16 @@ def test_malformed_relay_atif_is_not_hidden_by_compatibility_issues(
         inspect_adapter(custom_config, custom_descriptor)
 
 
-def test_inspection_does_not_accept_a_diagnostic_switch(
+def test_inspection_defaults_to_reports_with_a_rejection_escape_hatch(
     custom_config, custom_descriptor
 ):
-    with pytest.raises(TypeError, match="diagnostics"):
+    from nemo_fabric import ToolsConfig
+
+    custom_config.tools = ToolsConfig(enabled=["private-tool"])
+    report = inspect_adapter(custom_config, custom_descriptor)
+    assert report.issues and report.capability_profile is None
+    assert report == inspect_adapter(custom_config, custom_descriptor, diagnostics=True)
+    with pytest.raises(FabricConfigError, match="tools.enabled"):
         inspect_adapter(custom_config, custom_descriptor, diagnostics=False)
 
 
@@ -793,3 +809,153 @@ def test_skill_directory_inspection_matches_planning(
         assert any(issue.field.startswith("skills") for issue in report.issues)
         with pytest.raises(FabricConfigError, match="skills"):
             Fabric().plan(custom_config, base_dir=tmp_path)
+
+
+@pytest.mark.parametrize("diagnostics", [True, False])
+def test_missing_descriptor_runs_keep_state_validation(
+    custom_config, tmp_path, diagnostics
+):
+    from nemo_fabric import DiscoveryConfig
+
+    descriptor = get_adapter_descriptor("nvidia.fabric.hermes")
+    custom_config.harness.adapter_id = descriptor["adapter_id"]
+    custom_config.runtime.keep_state = True
+    path = tmp_path / "hermes.fabric-adapter.json"
+    path.write_text(json.dumps(descriptor))
+    custom_config.discovery = DiscoveryConfig(local_paths=[path])
+    with pytest.raises(FabricConfigError) as inspected:
+        inspect_adapter(custom_config, None, diagnostics=diagnostics)
+    with pytest.raises(FabricConfigError) as planned:
+        Fabric().plan(custom_config, base_dir=tmp_path)
+    assert str(inspected.value) == str(planned.value)
+    assert "runtime.keep_state" in str(inspected.value)
+
+
+@pytest.mark.parametrize("descriptor_present", [False, True])
+@pytest.mark.parametrize("diagnostics", [False, True])
+def test_inspection_preserves_configuration_error_fields(
+    custom_config, custom_descriptor, descriptor_present, diagnostics
+):
+    # Bypass authoring-time validation to exercise the native validator.
+    custom_config.runtime = custom_config.runtime.model_copy(
+        update={"timeout_seconds": 0}
+    )
+    with pytest.raises(FabricConfigError, match="runtime.timeout_seconds"):
+        inspect_adapter(
+            custom_config,
+            custom_descriptor if descriptor_present else None,
+            diagnostics=diagnostics,
+        )
+
+
+@pytest.mark.parametrize("diagnostics", [False, True])
+def test_inspection_preserves_descriptor_contract_errors(
+    custom_config, custom_descriptor, diagnostics
+):
+    custom_descriptor["contract_version"] = "fabric.adapter/unsupported"
+    with pytest.raises(FabricConfigError) as error:
+        inspect_adapter(custom_config, custom_descriptor, diagnostics=diagnostics)
+    assert "contract_version" in str(error.value)
+    assert "fabric.adapter/unsupported" in str(error.value)
+    assert "invalid adapter descriptor or embedded schema" not in str(error.value)
+
+
+def test_missing_metadata_returns_one_combined_issue(custom_config):
+    custom_config.add_skill_path("/task/skills/example")
+    custom_config.add_mcp_server("tools", transport="stdio", url="tool-server")
+    custom_config.enable_relay()
+    report = inspect_adapter(custom_config, None)
+    assert report.capability_profile is None
+    assert len(report.issues) == 1
+    assert report.issues[0].field == "descriptor"
+    with pytest.raises(
+        FabricConfigError, match="host descriptor metadata is unavailable"
+    ):
+        inspect_adapter(custom_config, None, diagnostics=False)
+
+
+def test_catalog_and_file_metadata_return_the_same_issues(tmp_path):
+    from nemo_fabric import DiscoveryConfig, ModelConfig
+
+    descriptor = get_adapter_descriptor("nvidia.fabric.claude")
+    config = FabricConfig(
+        metadata=MetadataConfig(name="parity"),
+        harness=HarnessConfig(adapter_id=descriptor["adapter_id"]),
+        models={
+            "default": ModelConfig(
+                provider="openai",
+                model="private-model",
+                temperature=0.5,
+                max_tokens=100,
+            )
+        },
+    )
+    path = tmp_path / "claude.fabric-adapter.json"
+    path.write_text(json.dumps(descriptor))
+    from_file = json.loads(path.read_text())
+    catalog_report = inspect_adapter(config, descriptor)
+    file_report = inspect_adapter(config, from_file)
+    assert catalog_report.issues and catalog_report == file_report
+    assert {"models.default.temperature", "models.default.max_tokens"} <= {
+        issue.field for issue in file_report.issues
+    }
+    config.discovery = DiscoveryConfig(local_paths=[path])
+    with pytest.raises(FabricConfigError):
+        Fabric().plan(config, base_dir=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "category,field",
+    [
+        ("settings", "harness.settings.a"),
+        ("definitions", "tools.definitions.a.description"),
+        ("extensions", "extensions.a"),
+    ],
+)
+def test_inspection_retains_first_error_boundaries(
+    custom_config, custom_descriptor, category, field
+):
+    from nemo_fabric import ToolDefinitionConfig, ToolsConfig
+
+    if category == "settings":
+        custom_descriptor["settings_schema"] = {
+            "type": "object",
+            "properties": {name: {"type": "string"} for name in ["a", "z"]},
+        }
+        custom_config.harness.settings = {"z": True, "a": True}
+    elif category == "definitions":
+        custom_descriptor["config"]["accepts"].append("tools.definitions")
+        custom_descriptor["tool_definition_schema"] = {
+            "type": "object",
+            "required": ["description"],
+        }
+        custom_config.tools = ToolsConfig(
+            definitions={
+                name: ToolDefinitionConfig(kind="function", ref=name)
+                for name in ["z", "a"]
+            }
+        )
+    else:
+        custom_descriptor["extension_schemas"] = {
+            "agent_config": {
+                "type": "object",
+                "properties": {name: {"type": "string"} for name in ["a", "z"]},
+            }
+        }
+        for name in ["z", "a"]:
+            setattr(custom_config, name, True)
+    report = inspect_adapter(custom_config, custom_descriptor)
+    assert report.capability_profile is None
+    assert [issue.field for issue in report.issues] == [field]
+    with pytest.raises(FabricConfigError, match=field):
+        inspect_adapter(custom_config, custom_descriptor, diagnostics=False)
+
+
+def test_unsupported_target_type_is_reported_by_default(workflow_metadata):
+    config, descriptor, target = workflow_metadata
+    descriptor["target_types"] = []
+    report = inspect_adapter(config, descriptor, target_descriptor=target)
+    assert report.capability_profile is None
+    assert [issue.field for issue in report.issues] == ["workflow.target_id"]
+    with pytest.raises(FabricConfigError, match="workflow.target_id"):
+        inspect_adapter(config, descriptor, target_descriptor=target, diagnostics=False)

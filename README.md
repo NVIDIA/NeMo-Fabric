@@ -68,6 +68,11 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 - **Shared Python contracts:** The SDK and adapter contract consume the standard-library [shared contract package](sdk/python/nemo-fabric-evidence/README.md) for software evidence and validation.
 - **Add an execution target:** Adapters translate the NeMo Fabric contract into the native behavior of a harness, framework, custom agent, or remote service. Start with the [adapter contract](docs/adapter-contract/README.md) and [adapter examples](docs/adapter-contract/examples.md).
 
+Host-side metadata admission uses `inspect_adapter(config, descriptor)` from
+`nemo-fabric-runtime`. Diagnostic reports are the default; check `result.issues` before changing a deployment. During migration, `diagnostics=False` retains exception-based rejection. A compatible report provides capability flags in `result.capability_profile`; incompatible reports contain issues and no profile.
+See the [inspection guide](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host)
+for descriptor sources, compatibility limits, and API migration examples.
+
 ## Documentation
 
 - [Quickstart](docs/getting-started/quickstart.mdx): Run a first agent through the Python SDK.
@@ -93,9 +98,3 @@ Planned areas of development include:
 - **Expose task progress and recoverable results:** Provide task state, step progress, plans, pending requests, sandbox task listings, and paginated events, with final results retrievable after invocation ends or the caller disconnects.
 - **Standardize model usage accounting:** Report input, cached, output, and reasoning tokens consistently, distinguish complete, partial, and unknown usage, and attribute delegated work to the correct invocation.
 - **Capture execution provenance:** Record NeMo Fabric and adapter versions, requested models, sanitized MCP configuration, and execution environment, with explicit sources and unknowns.
-
-
-Host-side metadata admission uses `inspect_adapter(config, descriptor)` from
-`nemo-fabric-runtime`. Always check `result.issues` before changing a deployment. A compatible report provides capability flags in `result.capability_profile`; incompatible reports contain issues and no profile.
-See the [inspection guide](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host)
-for descriptor sources, compatibility limits, and API migration examples.

@@ -67,7 +67,8 @@ def _inspect_adapter_profile(
         raise FabricConfigError(
             "; ".join(f"{issue.field}: {issue.reason}" for issue in inspection.issues)
         )
-    assert inspection.capability_profile is not None
+    if inspection.capability_profile is None:
+        raise FabricConfigError("Adapter inspection returned no capability profile")
     return inspection.capability_profile
 
 
@@ -990,8 +991,8 @@ def _inspect_configured_model(options: FabricAgentOptions) -> None:
         raise ValueError(
             "fabric_model_config requires a readable host adapter descriptor"
         ) from None
+    target_descriptor = None
     try:
-        target_descriptor = None
         if options.fabric_workflow_target_id is not None:
             if options.fabric_target_descriptor is not None:
                 target_descriptor = json.loads(
@@ -1003,6 +1004,11 @@ def _inspect_configured_model(options: FabricAgentOptions) -> None:
                 target_descriptor = get_target_descriptor(
                     options.fabric_workflow_target_id
                 )
+    except (ImportError, KeyError, OSError, UnicodeError, ValueError):
+        raise ValueError(
+            "fabric_workflow_target_id requires a readable host target descriptor"
+        ) from None
+    try:
         config = FabricConfig(
             metadata=MetadataConfig(name="harbor-model-preflight"),
             harness=HarnessConfig(
@@ -1020,20 +1026,22 @@ def _inspect_configured_model(options: FabricAgentOptions) -> None:
             ),
             models={"default": model},
         )
-        _inspect_adapter_profile(
+        inspection = inspect_adapter(
             config, descriptor, target_descriptor=target_descriptor
         )
-    except (
-        ImportError,
-        KeyError,
-        OSError,
-        UnicodeError,
-        ValueError,
-        FabricConfigError,
-    ):
+    except FabricConfigError as error:
+        raise ValueError(
+            f"fabric_model_config could not be inspected: {error}"
+        ) from None
+    except ValueError:
         raise ValueError(
             "fabric_model_config is invalid for the selected adapter descriptor"
         ) from None
+    if inspection.issues:
+        fields = ", ".join(sorted({issue.field for issue in inspection.issues}))
+        raise ValueError(
+            f"fabric_model_config is invalid for the selected adapter descriptor at: {fields}"
+        )
 
 
 def build_harbor_config(

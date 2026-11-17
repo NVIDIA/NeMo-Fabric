@@ -367,3 +367,35 @@ def test_nooa_model_preflight_rejects_invalid_workflow_settings(implementation):
                 "fabric_workflow_settings": {"reflect_every": 0},
             }
         )
+
+
+def test_model_preflight_reports_issue_fields(implementation):
+    with pytest.raises(ValueError, match="models.default.max_tokens") as error:
+        implementation.FabricAgent.preflight(
+            kwargs={
+                "fabric_adapter_id": "nvidia.fabric.claude",
+                "fabric_model_config": {
+                    "provider": "openai",
+                    "model": "private-model",
+                    "max_tokens": 100,
+                },
+            }
+        )
+    assert "private-model" not in str(error.value)
+
+
+@pytest.mark.parametrize("target_path", [None, "missing.json"])
+def test_model_preflight_identifies_target_lookup_failures(
+    implementation, tmp_path, target_path
+):
+    options = {
+        "fabric_adapter_id": "nvidia.fabric.nooa",
+        "fabric_model_config": {"provider": "openai", "model": "test-model"},
+        "fabric_workflow_target_id": "example.unknown.workflow",
+    }
+    if target_path is not None:
+        options["fabric_target_descriptor"] = tmp_path / target_path
+    with pytest.raises(
+        ValueError, match="fabric_workflow_target_id.*host target descriptor"
+    ):
+        implementation.FabricAgent.preflight(kwargs=options)

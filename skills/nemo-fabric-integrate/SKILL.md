@@ -352,8 +352,9 @@ print(plan.adapter.adapter_id, report.status)
 - For a separate admission host, call public `inspect_adapter(config, descriptor)`
   with matching catalog or canonical external metadata. The returned
   `AdapterInspection` contains `issues` and `capability_profile`. Compatibility
-  failures always return issues and no profile; there is no mode switch.
-  Check issues before deployment. Malformed inputs raise. Read flags from
+  failures return issues and no profile by default (`diagnostics=True`).
+  Temporarily pass `diagnostics=False` for exception-based rejection during migration.
+  Check issues before deployment. Malformed inputs raise in both modes. Read flags from
   `inspection.capability_profile`. The immutable
   `AdapterCapabilityProfile` has `adapter_id`, `descriptor_sha256`, `skills`,
   `mcp`, and `atif` fields. It does not import harness SDKs or read task-local
