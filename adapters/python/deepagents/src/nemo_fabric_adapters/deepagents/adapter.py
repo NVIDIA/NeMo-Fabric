@@ -146,8 +146,20 @@ class ToolGateMiddleware(AgentMiddleware):  # type: ignore[misc]
         self._is_blocked = is_blocked
         self._message = message
 
-    def _blocked(self, request: Any) -> ToolMessage:
-        name = request.tool_call.get("name")
+    def _blocked_name(self, request: Any) -> str | None:
+        """Return the blocked name, checking both the call and the tool it runs.
+
+        Middleware can swap ``request.tool`` while keeping the call name, so the
+        tool that will actually execute is checked too.
+        """
+
+        names = [request.tool_call.get("name")]
+        tool = getattr(request, "tool", None)
+        if tool is not None:
+            names.append(getattr(tool, "name", None))
+        return next((name for name in names if self._is_blocked(name)), None)
+
+    def _blocked(self, request: Any, name: str) -> ToolMessage:
         return ToolMessage(
             content=self._message(name),
             tool_call_id=request.tool_call.get("id", ""),
@@ -155,13 +167,13 @@ class ToolGateMiddleware(AgentMiddleware):  # type: ignore[misc]
         )
 
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
-        if self._is_blocked(request.tool_call.get("name")):
-            return self._blocked(request)
+        if (name := self._blocked_name(request)) is not None:
+            return self._blocked(request, name)
         return await handler(request)
 
     def wrap_tool_call(self, request: Any, handler: Any) -> Any:
-        if self._is_blocked(request.tool_call.get("name")):
-            return self._blocked(request)
+        if (name := self._blocked_name(request)) is not None:
+            return self._blocked(request, name)
         return handler(request)
 
 
@@ -660,7 +672,12 @@ def _check_middleware_tool_names(
     for index, item in enumerate(middleware):
         field = f"harness.settings.deepagents.middleware[{index}]"
         for tool in getattr(item, "tools", None) or []:
-            name = getattr(tool, "name", None)
+            if not isinstance(tool, BaseTool):
+                raise AdapterConfigError(
+                    f"{field}: exports {_describe(tool)} in its tools list; "
+                    "middleware tools must be LangChain BaseTool instances."
+                )
+            name = tool.name
             if name in DEEPAGENTS_BUILTIN_TOOL_NAMES:
                 clash = "a Deep Agents built-in tool"
             elif name in custom_names:

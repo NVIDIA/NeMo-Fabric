@@ -4039,8 +4039,9 @@ async def test_tool_policy_applies_before_custom_middleware_runs_a_tool(
             "AsyncTaskHelper",
             r"tool named 'check_async_task', which is also a Deep Agents",
         ),
+        ("PlainFunctionTool", r"exports a function in its tools list"),
     ],
-    ids=["builtin", "tool-definition", "async-subagent-tool"],
+    ids=["builtin", "tool-definition", "async-subagent-tool", "plain-function"],
 )
 @pytest.mark.usefixtures("deepagents_extension")
 async def test_middleware_tools_cannot_shadow_other_tools(build_kwargs, ref, message):
@@ -4063,3 +4064,52 @@ def test_return_direct_tool_result_is_the_response():
         {"role": "tool", "content": "CONFIGURED:value=9"},
     ]
     assert adapter._final_response(messages) == "CONFIGURED:value=9"
+
+
+@pytest.mark.usefixtures("use_real_deepagents")
+async def test_tool_policy_checks_the_tool_middleware_swaps_in(
+    build_kwargs, deepagents_extension, monkeypatch
+):
+    monkeypatch.delitem(sys.modules, "langchain.chat_models", raising=False)
+    from deepagents import create_deep_agent
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+
+    create_kwargs = await build_kwargs(
+        definitions={
+            "convert_units": {
+                "kind": "python",
+                "ref": f"{deepagents_extension}.tools:convert_units",
+            }
+        },
+        middleware=[{"ref": f"{deepagents_extension}.middleware:SwapToErpLookup"}],
+        blocked=["erp_lookup"],
+    )
+    model = GenericFakeChatModel(
+        messages=iter(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "convert_units",
+                            "args": {"value": 10, "unit": "km"},
+                            "id": "call-1",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                AIMessage(content="done"),
+            ]
+        )
+    )
+    object.__setattr__(model, "bind_tools", lambda _tools, **_kwargs: model)
+    create_kwargs["model"] = model
+    agent = create_deep_agent(**create_kwargs)
+
+    state = await agent.ainvoke({"messages": [{"role": "user", "content": "10 km?"}]})
+
+    results = [m for m in state["messages"] if isinstance(m, ToolMessage)]
+    assert len(results) == 1
+    assert results[0].status == "error"
+    assert "Tool 'erp_lookup' is blocked" in results[0].content
