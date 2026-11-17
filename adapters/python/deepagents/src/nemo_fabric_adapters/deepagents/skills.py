@@ -487,6 +487,21 @@ def _listing_backend(names: Sequence[str], inner: Any = None, offset: str = "") 
     return ListingBackend()
 
 
+def _offset_in(root: Path, route: str, source: str) -> str | None:
+    """Return ``source``'s path inside the skill folder ``root`` routed at ``route``.
+
+    The skill's backend reports resolved paths, so the offset is taken
+    between resolved folders. ``None`` when the source resolves outside it.
+    """
+
+    try:
+        inside = (root / source[len(route) :]).resolve()
+        relative = inside.relative_to(Path(root).resolve())
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return "/" + relative.as_posix() if relative.parts else ""
+
+
 def mounted_backend(default: Any, mounts: SkillMounts) -> Any:
     """Route each source and each of its skills; ``default`` serves the rest.
 
@@ -503,11 +518,13 @@ def mounted_backend(default: Any, mounts: SkillMounts) -> Any:
     from deepagents.backends import StateBackend
 
     skill_routes: dict[str, Any] = {}
+    skill_folders: dict[str, Path] = {}
     for source, skills in mounts.routes.items():
         for name, folder in skills.items():
             skill_routes[f"{source}{name}/"] = FilesystemBackend(
                 root_dir=str(folder), virtual_mode=True
             )
+            skill_folders[f"{source}{name}/"] = folder
     routes = dict(skill_routes)
     for source, skills in mounts.routes.items():
         if source in routes:
@@ -519,13 +536,16 @@ def mounted_backend(default: Any, mounts: SkillMounts) -> Any:
             key=len,
             default=None,
         )
-        if containing is None:
+        offset = (
+            None
+            if containing is None
+            else _offset_in(skill_folders[containing], containing, source)
+        )
+        if containing is None or offset is None:
             routes[source] = _listing_backend(list(skills))
         else:
             routes[source] = _listing_backend(
-                list(skills),
-                skill_routes[containing],
-                "/" + source[len(containing) :].rstrip("/"),
+                list(skills), skill_routes[containing], offset
             )
     return CompositeBackend(
         default=default if default is not None else StateBackend(),

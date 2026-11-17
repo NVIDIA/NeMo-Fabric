@@ -539,3 +539,23 @@ def test_a_skill_inside_a_skills_support_folder_keeps_its_files_reachable(tmp_pa
     read = backend.read(f"{outer}/references/example.md")
     assert read.error is None
     assert backend.ls(f"{outer}/references/").error is None
+
+
+def test_a_nested_source_reached_through_a_link_maps_search_results(tmp_path):
+    outer = write_skill(tmp_path / "skills" / "outer", "outer")
+    (outer / "alias").symlink_to(outer / "references")
+    write_skill(outer / "references" / "inner", "inner")
+
+    sources, backend, _ = resolve(
+        tmp_path,
+        directories(("skill", outer), ("skill", outer / "alias" / "inner")),
+        workspace=tmp_path / "ws",
+    )
+
+    assert sorted(loaded(sources, backend)) == ["inner", "outer"]
+    result = backend.glob("*.md", path=f"{outer}/alias/")
+    matches = result.matches if hasattr(result, "matches") else result
+    paths = [match["path"] for match in matches]
+    assert f"{outer}/alias/example.md" in paths
+    for path in paths:
+        assert backend.read(path).error is None, path
