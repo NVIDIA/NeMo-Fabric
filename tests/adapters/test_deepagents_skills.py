@@ -522,3 +522,20 @@ def test_a_symlink_loop_beside_a_skill_is_ignored(tmp_path):
     )
 
     assert list(loaded(sources, backend)) == ["review"]
+
+
+def test_a_skill_inside_a_skills_support_folder_keeps_its_files_reachable(tmp_path):
+    outer = write_skill(tmp_path / "skills" / "outer", "outer")
+    inner = write_skill(outer / "references" / "inner", "inner")
+
+    sources, backend, _ = resolve(
+        tmp_path,
+        directories(("skill", outer), ("skill", inner)),
+        workspace=tmp_path / "ws",
+    )
+
+    assert sorted(loaded(sources, backend)) == ["inner", "outer"]
+    # The outer skill's companion file sits beside the nested skill's source.
+    read = backend.read(f"{outer}/references/example.md")
+    assert read.error is None
+    assert backend.ls(f"{outer}/references/").error is None

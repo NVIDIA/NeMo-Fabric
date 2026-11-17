@@ -183,7 +183,7 @@ def _plan_sources(
         configured = Path(os.path.abspath(directory.path))
         parent = configured.parent if directory.kind == "skill" else configured
         names = _reached_names(directory.kind, configured, found)
-        source = _mount_point(parent, index)
+        source = mount_point(parent, index)
         if any(
             mounts.routes.get(source, {}).get(name, path) != path
             for name, path in names.items()
@@ -230,7 +230,7 @@ def _reached_names(
     return names
 
 
-def _mount_point(parent: Path, index: int) -> str:
+def mount_point(parent: Path, index: int) -> str:
     """Return the backend path for a folder: its own path when it can be one."""
 
     if os.name == "nt" or parent.anchor != "/" or parent == Path("/"):
@@ -376,15 +376,41 @@ def skill_error(error: SkillLoadError) -> lifecycle.LifecycleError:
     return lifecycle.LifecycleError(code, str(error), metadata=metadata)
 
 
-def _listing_backend(names: Sequence[str]) -> Any:
-    """A source folder: it lists its routed skills and holds nothing else."""
+def _with_paths(result: Any, field: str, offset: str) -> Any:
+    """Drop ``offset`` from the paths in a listing or search result."""
+
+    def strip(item: Any) -> Any:
+        path = item.get("path") if isinstance(item, dict) else None
+        if isinstance(path, str) and path.startswith(offset):
+            return {**item, "path": path[len(offset) :] or "/"}
+        return item
+
+    if isinstance(result, list):
+        return [strip(item) for item in result]
+    items = getattr(result, field, None)
+    if items is None:
+        return result
+    return dataclasses.replace(result, **{field: [strip(item) for item in items]})
+
+
+def _listing_backend(names: Sequence[str], inner: Any = None, offset: str = "") -> Any:
+    """A source folder: it lists only its routed skills.
+
+    When the folder lies inside another routed skill, ``inner`` is that
+    skill's backend and ``offset`` the folder's path in it. Every other
+    operation then goes to ``inner``, so the containing skill's own files stay
+    reachable; otherwise the folder holds nothing else.
+    """
 
     from deepagents.backends.protocol import BackendProtocol
+    from deepagents.backends.protocol import EditResult
     from deepagents.backends.protocol import FileDownloadResponse
+    from deepagents.backends.protocol import FileUploadResponse
     from deepagents.backends.protocol import GlobResult
     from deepagents.backends.protocol import GrepResult
     from deepagents.backends.protocol import LsResult
     from deepagents.backends.protocol import ReadResult
+    from deepagents.backends.protocol import WriteResult
 
     entries = [
         {"path": f"/{name}/", "is_dir": True, "size": 0, "modified_at": ""}
@@ -395,22 +421,68 @@ def _listing_backend(names: Sequence[str]) -> Any:
         def ls(self, path: str) -> Any:
             if path.rstrip("/") == "":
                 return LsResult(entries=[dict(entry) for entry in entries])
-            return LsResult(error=f"Directory '{path}' not found")
+            if inner is None:
+                return LsResult(error=f"Directory '{path}' not found")
+            return _with_paths(inner.ls(offset + path), "entries", offset)
 
         def read(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
-            return ReadResult(error=f"File '{file_path}' not found")
+            if inner is None:
+                return ReadResult(error=f"File '{file_path}' not found")
+            return inner.read(offset + file_path, *args, **kwargs)
+
+        def write(self, file_path: str, content: str) -> Any:
+            if inner is None:
+                return WriteResult(error=f"Cannot write '{file_path}'")
+            return inner.write(offset + file_path, content)
+
+        def edit(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
+            if inner is None:
+                return EditResult(error=f"File '{file_path}' not found")
+            return inner.edit(offset + file_path, *args, **kwargs)
 
         def download_files(self, paths: list[str]) -> list[Any]:
+            if inner is None:
+                return [
+                    FileDownloadResponse(path=path, error="file_not_found")
+                    for path in paths
+                ]
+            responses = inner.download_files([offset + path for path in paths])
             return [
-                FileDownloadResponse(path=path, error="file_not_found")
-                for path in paths
+                dataclasses.replace(response, path=path)
+                for path, response in zip(paths, responses, strict=True)
             ]
 
-        def grep(self, pattern: str, *args: Any, **kwargs: Any) -> Any:
-            return GrepResult(matches=[])
+        def upload_files(self, files: list[tuple[str, bytes]]) -> list[Any]:
+            if inner is None:
+                return [
+                    FileUploadResponse(path=path, error="permission_denied")
+                    for path, _ in files
+                ]
+            responses = inner.upload_files(
+                [(offset + path, content) for path, content in files]
+            )
+            return [
+                dataclasses.replace(response, path=path)
+                for (path, _), response in zip(files, responses, strict=True)
+            ]
 
-        def glob(self, pattern: str, *args: Any, **kwargs: Any) -> Any:
-            return GlobResult(matches=[])
+        def grep(
+            self,
+            pattern: str,
+            path: str | None = None,
+            glob: str | None = None,
+            **kwargs: Any,
+        ) -> Any:
+            if inner is None:
+                return GrepResult(matches=[])
+            result = inner.grep(pattern, offset + (path or "/"), glob, **kwargs)
+            return _with_paths(result, "matches", offset)
+
+        def glob(self, pattern: str, path: str | None = None) -> Any:
+            if inner is None:
+                return GlobResult(matches=[])
+            result = inner.glob(pattern, offset + (path or "/"))
+            return _with_paths(result, "matches", offset)
 
     return ListingBackend()
 
@@ -430,16 +502,31 @@ def mounted_backend(default: Any, mounts: SkillMounts) -> Any:
     from deepagents.backends import FilesystemBackend
     from deepagents.backends import StateBackend
 
-    routes: dict[str, Any] = {}
+    skill_routes: dict[str, Any] = {}
     for source, skills in mounts.routes.items():
         for name, folder in skills.items():
-            routes[f"{source}{name}/"] = FilesystemBackend(
+            skill_routes[f"{source}{name}/"] = FilesystemBackend(
                 root_dir=str(folder), virtual_mode=True
             )
+    routes = dict(skill_routes)
     for source, skills in mounts.routes.items():
-        # A source that is itself a routed skill's folder is listed by that
-        # skill's own backend.
-        routes.setdefault(source, _listing_backend(list(skills)))
+        if source in routes:
+            # The source is a routed skill's own folder, which that skill's
+            # backend lists.
+            continue
+        containing = max(
+            (route for route in skill_routes if source.startswith(route)),
+            key=len,
+            default=None,
+        )
+        if containing is None:
+            routes[source] = _listing_backend(list(skills))
+        else:
+            routes[source] = _listing_backend(
+                list(skills),
+                skill_routes[containing],
+                "/" + source[len(containing) :].rstrip("/"),
+            )
     return CompositeBackend(
         default=default if default is not None else StateBackend(),
         routes=routes,

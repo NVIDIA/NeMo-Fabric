@@ -2694,10 +2694,12 @@ async def test_skill_paths_are_mounted_for_deep_agents(
     output = await invoke_once(payload)
 
     skills_root = tmp_path / "skills"
-    assert fake_sdks["create_kwargs"]["skills"] == [f"{skills_root}/"]
-    assert mounted == [
-        {f"{skills_root}/": {"a": skills_root / "a", "b": skills_root / "b"}}
-    ]
+    routes: dict = {}
+    for index, name in enumerate(("a", "b")):
+        source = adapter.skill_mounts.mount_point(skills_root, index)
+        routes.setdefault(source, {})[name] = (skills_root / name).resolve()
+    assert fake_sdks["create_kwargs"]["skills"] == list(routes)
+    assert mounted == [routes]
     assert [skill["name"] for skill in output["skills"]["loaded"]] == ["a", "b"]
 
 

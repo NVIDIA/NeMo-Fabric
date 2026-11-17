@@ -483,13 +483,18 @@ async def test_skill_selection(
         config.add_skill_path(alternate_skill)
 
     if skill is not None:
+        from nemo_fabric_adapters.deepagents.skills import mount_point
+
         selected_skill = default_skill if skill == "default" else alternate_skill
         scenario_response = requests.post(
             f"{api_server}/_scenario",
             json={
                 "tool_call": {
                     "name": "read_file",
-                    "arguments": {"file_path": f"{selected_skill}/SKILL.md"},
+                    "arguments": {
+                        "file_path": mount_point(selected_skill.parent, 0)
+                        + f"{selected_skill.name}/SKILL.md"
+                    },
                 }
             },
             timeout=5,
