@@ -321,6 +321,40 @@
     ],
     "system_instruction_modes": ["replace"]
   },
+  "skills": {
+    "directory_loading": {
+      "supported_entries": [
+        "skill",
+        "folder"
+      ],
+      "skill_file": "SKILL.md",
+      "discovery": {
+        "traversal": "immediate_children",
+        "nested_skills": "stop_at_skill",
+        "depth_limit": {
+          "kind": "fixed",
+          "levels": 1
+        }
+      },
+      "parsing": {
+        "required_frontmatter_fields": [
+          "name",
+          "description"
+        ],
+        "name_fallback": "none",
+        "frontmatter_errors": "reject"
+      }
+    },
+    "duplicates": {
+      "supported_policies": [
+        "reject",
+        "first_wins",
+        "last_wins"
+      ],
+      "native": "Each entry is a Deep Agents skills source and the later source wins, so the copy from the later entry loads.",
+      "name_source": "frontmatter"
+    }
+  },
   "telemetry": {
     "providers": {
       "relay": {

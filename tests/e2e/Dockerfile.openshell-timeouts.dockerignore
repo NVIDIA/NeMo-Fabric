@@ -1,0 +1,10 @@
+# Include only the controlled fixture and its public adapter descriptor.
+**
+!tests/
+!tests/fixtures/
+!tests/fixtures/openshell_echo/
+!tests/fixtures/openshell_echo/agent.py
+!examples/
+!examples/openshell_echo/
+!examples/openshell_echo/adapter/
+!examples/openshell_echo/adapter/echo.fabric-adapter.json

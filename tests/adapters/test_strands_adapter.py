@@ -99,7 +99,7 @@ def test_strands_rejects_unsupported_settings(strands_config, settings):
 
 def test_strands_rejects_replacement_and_unsupported_model_fields(strands_config):
     strands_config.instructions.system.mode = "replace"
-    with pytest.raises(FabricConfigError, match="replace"):
+    with pytest.raises(FabricConfigError, match="instructions.system.mode"):
         Fabric().plan(strands_config, base_dir=ROOT)
     strands_config.instructions.system.mode = "append"
     strands_config.models["default"].temperature = 0.3

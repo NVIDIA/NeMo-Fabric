@@ -102,7 +102,28 @@ NeMo Fabric maps the following into the harness:
   (`FilesystemBackend(root_dir=..., virtual_mode=True)`). `virtual_mode`
   confines filesystem tools to the workspace: absolute paths and `..` cannot
   escape `root_dir`.
-- Routed `skills` (`native.skill_paths`) become the Deep Agents `skills` sources.
+- `skills.paths` and `skills.directories` are checked in the task environment
+  with the adapter contract's shared skills helper, using Deep Agents' own
+  front-matter parser (`name` and `description` are required). Each entry is
+  one Deep Agents `skills` source, in list order, and only its immediate child
+  folders are skills. The adapter routes each entry's skills into the Deep
+  Agents backend at the path of the folder that holds them, so skills outside
+  the workspace, or with no workspace at all, load, and `local_shell` commands
+  reach the same files at the same paths. Nothing is copied, and the mount
+  decides whether the agent can change a skill. A `paths` entry that holds
+  `SKILL.md` is one skill; any other folder is a folder of skills. An absolute
+  `paths` entry that exists only under the workspace (for example
+  `/.agents/skills` for skills already staged there) names that workspace
+  folder and is loaded like any other entry. `skills.duplicates` (`reject`, `first_wins`, `last_wins`)
+  resolves skills that share a name; when it is left out, the later entry
+  wins, as in Deep Agents. A missing or invalid entry, or a duplicate under
+  `reject`, fails start with `deepagents_skill_not_found` or
+  `deepagents_skill_invalid`, naming the field. Every result reports
+  `output.skills` (loaded skills, skipped candidates, empty entries, and
+  duplicates). Deep Agents ships no bundled skills, so `skills.bundled` is
+  rejected at planning. Declarative subagent `skills` in
+  `harness.settings.deepagents.subagents` are passed to Deep Agents unchanged
+  and are read as workspace paths.
 - Configured MCP servers are loaded as Deep Agents tools via
   `langchain-mcp-adapters`. A misconfigured server (non-mapping, empty target,
   unsupported transport) is a normalized configuration failure, not a silent drop.

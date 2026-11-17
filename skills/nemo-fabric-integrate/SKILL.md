@@ -353,7 +353,12 @@ print(plan.adapter.adapter_id, report.status)
   resolved descriptor without a settings schema accepts only an empty settings
   map.
 - For a separate admission host, call public `inspect_adapter(config, descriptor)`
-  with matching catalog or canonical external metadata. The immutable
+  with matching catalog or canonical external metadata. The returned
+  `AdapterInspection` contains `issues` and `capability_profile`. Compatibility
+  failures return issues and no profile by default (`diagnostics=True`).
+  Pass `diagnostics=False` for exception-based rejection.
+  Check issues before deployment. Malformed inputs raise in both modes. Read flags from
+  `inspection.capability_profile`. The immutable
   `AdapterCapabilityProfile` has `adapter_id`, `descriptor_sha256`, `skills`,
   `mcp`, and `atif` fields. It does not import harness SDKs or read task-local
   discovery paths. Missing metadata makes conservative claims and rejects

@@ -214,10 +214,10 @@ class StrandsAcpSession implements StrandsSessionHandle {
 
   async prompt(
     text: string,
-    timeoutMs = 300_000,
+    timeoutMs?: number,
   ): Promise<StrandsPromptOutcome> {
     try {
-      const result = await this.session.prompt(text, timeoutMs);
+      const result = await this.session.prompt(text, timeoutMs ?? null);
       const usage = normalizeUsage(result.usage);
       return {
         text: result.text,

@@ -1,0 +1,50 @@
+---
+title: "Struct Adapter Inspection"
+sidebar-title: "AdapterInspection"
+description: "Metadata-only inspection result. This value cannot start a runtime."
+position: 33
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "#[non_exhaustive]pub struct AdapterInspection &#123;\n    pub descriptor: <a href=\"struct-adapterdescriptor.mdx\">AdapterDescriptor</a>,\n    pub target_descriptor: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-adaptertargetdescriptor.mdx\">AdapterTargetDescriptor</a>&gt;,\n    pub telemetry_plan: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-telemetryplan.mdx\">TelemetryPlan</a>&gt;,\n    pub issues: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-adaptercompatibilityissue.mdx\">AdapterCompatibilityIssue</a>&gt;,\n&#125;"}} /></pre>
+
+Metadata-only inspection result. This value cannot start a runtime.
+
+## Fields (Non-exhaustive)
+
+### `descriptor: AdapterDescriptor`
+
+Core-normalized supplied descriptor, also used for fingerprinting.
+
+### `target_descriptor: Option<AdapterTargetDescriptor>`
+
+Core-normalized workflow target, when selected.
+
+### `telemetry_plan: Option<TelemetryPlan>`
+
+Requested providers and their resolved configuration, only on success.
+
+### `issues: Vec<AdapterCompatibilityIssue>`
+
+Compatibility failures in deterministic field/reason order.
+
+## Trait Implementations
+
+### `impl Debug for AdapterInspection`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/trait.Debug.html\">Debug</a> for <a href=\"struct-adapterinspection.mdx\">AdapterInspection</a>"}} /></pre>
+
+#### `fmt`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/trait.Debug.html#tymethod.fmt\">fmt</a>(&amp;self, f: &amp;mut <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/struct.Formatter.html\">Formatter</a>&lt;'_&gt;) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/type.Result.html\">Result</a>"}} /></pre>
+
+### `impl Serialize for AdapterInspection`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\">Serialize</a> for <a href=\"struct-adapterinspection.mdx\">AdapterInspection</a>"}} /></pre>
+
+#### `serialize`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html#tymethod.serialize\">serialize</a>&lt;__S&gt;(&amp;self, __serializer: __S) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/core/result/enum.Result.html\">Result</a>&lt;__S::<a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html#associatedtype.Ok\">Ok</a>, __S::<a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html#associatedtype.Error\">Error</a>&gt;where\n    __S: <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html\">Serializer</a>,"}} /></pre>

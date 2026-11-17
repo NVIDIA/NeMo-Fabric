@@ -57,6 +57,8 @@ pub(crate) struct TaskDiagnostic {
     pub(crate) code: String,
     pub(crate) stage: String,
     pub(crate) effects: String,
+    #[serde(default)]
+    pub(crate) details: std::collections::BTreeMap<String, Value>,
 }
 
 #[cfg(test)]

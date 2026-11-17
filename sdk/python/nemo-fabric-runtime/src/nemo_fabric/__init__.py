@@ -6,6 +6,8 @@
 from nemo_fabric.client import Fabric
 from nemo_fabric.check import CheckReport, CheckRequest
 from nemo_fabric.capabilities import AdapterCapabilityProfile
+from nemo_fabric.capabilities import AdapterCompatibilityIssue
+from nemo_fabric.capabilities import AdapterInspection
 from nemo_fabric.capabilities import inspect_adapter
 from nemo_fabric.errors import FabricCapabilityError
 from nemo_fabric.errors import FabricConfigError
@@ -43,6 +45,7 @@ from nemo_fabric.models import RelayS3StorageConfig
 from nemo_fabric.models import RunRequest
 from nemo_fabric.models import SystemStatsConfig
 from nemo_fabric.models import SystemStatsSamplingConfig
+from nemo_fabric.models import ResponseLimits
 from nemo_fabric.models import RuntimeConfig
 from nemo_fabric.models import BundledSkills
 from nemo_fabric.models import SkillConfig
@@ -97,6 +100,8 @@ __all__ = [
     "CheckReport",
     "CheckRequest",
     "AdapterCapabilityProfile",
+    "AdapterCompatibilityIssue",
+    "AdapterInspection",
     "AdapterInfo",
     "ArtifactManifest",
     "ArtifactRef",
@@ -166,6 +171,7 @@ __all__ = [
     "SystemStatsConfig",
     "SystemStatsSamplingConfig",
     "RuntimeConfig",
+    "ResponseLimits",
     "Runtime",
     "RuntimeStatus",
     "Service",

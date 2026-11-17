@@ -20,6 +20,32 @@ from nemo_fabric.runtime_server import cli, protocol
 
 
 @pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        [],
+        {"private": "SECRET"},
+        {
+            "owner": "SECRET",
+            "cause_code": "x" * 65,
+            "native_code": "SECRET!",
+            "timeout_seconds": float("inf"),
+            "deadline_millis": -1,
+        },
+    ],
+)
+def test_timeout_details_discard_unbounded_or_private_values(value):
+    response = protocol.envelope(
+        "invoke", error=protocol.ProtocolError("timeout", "invoke", details=value)
+    )
+    # Treat guest responses as untrusted even if they bypassed ProtocolError.
+    response["error"]["details"] = value
+    protocol.validate_response(response, "invoke")
+    assert "details" not in response["error"]
+    assert "SECRET" not in str(response)
+
+
+@pytest.mark.parametrize(
     "flags", [["--live"], ["--active"], ["--ready"], ["--operational"]]
 )
 def test_server_check_rejects_agent_levels_before_transport(monkeypatch, capsys, flags):

@@ -54,6 +54,8 @@ When present, `InstructionConfig.mode` defaults to `replace`; set it to
 `append` only when the selected adapter descriptor advertises that mode.
 Planning rejects unsupported modes before adapter startup.
 
+`RuntimeConfig.response_limits` opts local invocations into SDK response and artifact budgets. Omit it or use `None` to preserve unbudgeted local results; OpenShell retains default transfer budgets when omitted. A limit failure clears output, artifact references, adapter metadata and events while preserving usage, software execution evidence, telemetry references, system stats and resource snapshots.
+
 ## Build And Shape
 
 Construct the nested config directly, then adjust capabilities with helper

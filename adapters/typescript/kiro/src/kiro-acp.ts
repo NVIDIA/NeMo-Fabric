@@ -194,10 +194,10 @@ class KiroAcpSession implements KiroSessionHandle {
         };
   }
 
-  async prompt(text: string, timeoutMs = 300_000): Promise<KiroPromptOutcome> {
+  async prompt(text: string, timeoutMs?: number): Promise<KiroPromptOutcome> {
     let result: AcpPromptResult;
     try {
-      result = await this.session.prompt(text, timeoutMs);
+      result = await this.session.prompt(text, timeoutMs ?? null);
     } catch (error) {
       if (error instanceof AcpRunnerError) throw translateRunnerError(error, "prompt", timeoutMs);
       throw new LifecycleError("kiro_session_failed", "Kiro ACP session communication failed");
