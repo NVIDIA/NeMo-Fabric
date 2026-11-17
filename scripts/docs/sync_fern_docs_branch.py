@@ -266,7 +266,7 @@ def rewrite_internal_card_links(pages_dir: Path) -> None:
         chunk: list[str] = []
         fence: str | None = None
         for line in original.splitlines(keepends=True):
-            marker = re.match(r"^\s*(`{3,}|~{3,})", line)
+            marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
             if marker:
                 if fence is None:
                     rewritten.append(card_link.sub(replace, "".join(chunk)))

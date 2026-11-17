@@ -149,6 +149,8 @@ def test_card_source_links_resolve_only_in_published_pages(tmp_path: Path):
         ("````mdx", "```", "````"),
         ("~~~mdx", "```", "~~~~ \t"),
         ("```mdx", "~~~", "```` \t"),
+        ("~~~mdx", "    ~~~", "   ~~~"),
+        ("```mdx", "    ```", "   ```"),
     ],
 )
 def test_card_source_links_preserve_fenced_examples(

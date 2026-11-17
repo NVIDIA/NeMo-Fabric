@@ -6,13 +6,13 @@ slug: "/about-nemo-fabric/overview"
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-NVIDIA NeMo Fabric gives applications a common interface for running agents across supported agent harnesses. Teams can switch harnesses, compare them on the same tasks, and share custom agents without building a separate application integration for each one. Fabric provides a Python SDK backed by a Rust core.
+NVIDIA NeMo Fabric gives applications a common interface for running agents across supported agent harnesses. Teams can switch harnesses, compare them on the same tasks, and share custom agents without building a separate application integration for each one. NeMo Fabric provides a Python SDK backed by a Rust core.
 
 ![Diagram showing NeMo Fabric connecting applications, evaluation systems, and reinforcement learning rollouts to agent harnesses, with results, artifacts, and telemetry as outputs.](../../assets/fabric-hero.svg)
 
 {/* The docs sync resolves repository-relative Card source paths for the published site. */}
 <CardGroup cols={2}>
-  <Card title="Who Should Use NeMo Fabric" icon="fa-solid fa-users" href="#what-you-can-do-with-fabric">
+  <Card title="Who Should Use NeMo Fabric" icon="fa-solid fa-users" href="#what-you-can-do-with-nemo-fabric">
     Find out how NeMo Fabric can help your team build applications, compare harnesses, and share agents.
   </Card>
   <Card title="Start Here: Run Your First Agent" icon="fa-solid fa-rocket" href="../getting-started/quickstart.mdx">
@@ -26,7 +26,9 @@ NVIDIA NeMo Fabric gives applications a common interface for running agents acro
   </Card>
 </CardGroup>
 
-## What You Can Do with Fabric
+<a id="what-you-can-do-with-fabric"></a>
+
+## What You Can Do with NeMo Fabric
 
 ### Use Multiple Harnesses in Your Product
 
@@ -44,11 +46,11 @@ Available evidence depends on the selected adapter and environment; use the retu
 
 ### Optimize Execution with System Stats
 
-Use NeMo Fabric’s system stats to understand CPU and memory usage during agent execution. Fabric tracks resource usage across the harness process and its child processes, giving you a clearer picture of the run’s memory footprint. Use these insights to compare harnesses and configurations, guide resource sizing, and tune execution efficiency.
+Use NeMo Fabric’s system stats to understand CPU and memory usage during agent execution. NeMo Fabric tracks resource usage across the harness process and its child processes, giving you a clearer picture of the run’s memory footprint. Use these insights to compare harnesses and configurations, guide resource sizing, and tune execution efficiency.
 
 ### Make Your Agent Available to Other Teams
 
-Make your custom agent or custom harness Fabric-ready by implementing the NeMo Fabric adapter contract. Other teams can then run it in their applications and evaluation systems through the same interface they use for supported harnesses, without building a separate integration.
+Make your custom agent or custom harness available through NeMo Fabric by implementing the adapter contract. Other teams can then run it in their applications and evaluation systems through the same interface they use for supported harnesses, without building a separate integration.
 
 ## How NeMo Fabric Works
 

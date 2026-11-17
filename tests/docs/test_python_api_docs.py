@@ -386,7 +386,7 @@ def test_landing_page_routes_new_users_through_the_product():
         assert destination.resolve() in pages
 
     for heading in (
-        "## What You Can Do with Fabric",
+        "## What You Can Do with NeMo Fabric",
         "## How NeMo Fabric Works",
         "## Next Steps",
     ):
