@@ -448,12 +448,36 @@ def _listing_backend(
     ]
 
     class ListingBackend(BackendProtocol):
+        def _listing(self) -> list[dict[str, Any]]:
+            """The folder's own entries without other skills, plus the configured
+            skills, or only the configured skills when the folder can't be listed."""
+
+            listed: list[Any] = []
+            if inner is not None:
+                try:
+                    result = _with_paths(inner.ls(offset or "/"), "entries", offset)
+                except Exception:  # noqa: BLE001 - a missing folder lists its skills
+                    result = None
+                result = _without_other_skills(result, names, folder)
+                if isinstance(result, list):
+                    listed = list(result)
+                elif result is not None and not getattr(result, "error", None):
+                    listed = list(getattr(result, "entries", None) or [])
+            shown = {
+                PurePosixPath(str(item.get("path", "")).rstrip("/")).name
+                for item in listed
+                if isinstance(item, dict)
+            }
+            listed += [
+                dict(entry)
+                for entry in entries
+                if entry["path"].strip("/") not in shown
+            ]
+            return listed
+
         def ls(self, path: str) -> Any:
-            if path.rstrip("/") == "" and inner is not None:
-                result = _with_paths(inner.ls(offset or "/"), "entries", offset)
-                return _without_other_skills(result, names, folder)
             if path.rstrip("/") == "":
-                return LsResult(entries=[dict(entry) for entry in entries])
+                return LsResult(entries=self._listing())
             if inner is None:
                 return LsResult(error=f"Directory '{path}' not found")
             return _with_paths(inner.ls(offset + path), "entries", offset)
@@ -558,10 +582,13 @@ def mounted_backend(default: Any, mounts: SkillMounts) -> Any:
                 root_dir=str(folder), virtual_mode=True
             )
             skill_folders[f"{source}{name}/"] = folder
+    base = default if default is not None else StateBackend()
     routes = dict(skill_routes)
     for source, skills in mounts.routes.items():
         # A source that is, or lies inside, a routed skill's folder is listed
-        # from that folder, without its other skills.
+        # from that folder, without its other skills. Any other source keeps
+        # serving the default backend's files at that path, such as the rest
+        # of a workspace that holds a configured skill.
         containing = max(
             (route for route in skill_routes if source.startswith(route)),
             key=len,
@@ -573,7 +600,13 @@ def mounted_backend(default: Any, mounts: SkillMounts) -> Any:
             else _offset_in(skill_folders[containing], containing, source)
         )
         if containing is None or offset is None:
-            routes[source] = _listing_backend(list(skills))
+            on_disk = not source.startswith(_FALLBACK_MOUNT.split("{", 1)[0])
+            routes[source] = _listing_backend(
+                list(skills),
+                base,
+                source.rstrip("/"),
+                Path(source) if on_disk else None,
+            )
         else:
             routes[source] = _listing_backend(
                 list(skills),
@@ -581,7 +614,4 @@ def mounted_backend(default: Any, mounts: SkillMounts) -> Any:
                 offset,
                 Path(skill_folders[containing]).resolve() / offset.lstrip("/"),
             )
-    return CompositeBackend(
-        default=default if default is not None else StateBackend(),
-        routes=routes,
-    )
+    return CompositeBackend(default=base, routes=routes)

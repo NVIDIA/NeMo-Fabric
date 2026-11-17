@@ -585,3 +585,26 @@ def test_a_source_inside_a_skill_lists_only_configured_skills(tmp_path):
     assert f"{outer}/SKILL.md" in listed
     assert f"{outer}/extra/" not in listed
     assert backend.read(f"{outer}/references/example.md").error is None
+
+
+@pytest.mark.parametrize("local_shell", [False, True])
+def test_workspace_files_beside_a_skill_stay_reachable(tmp_path, local_shell):
+    workspace = tmp_path / "task"
+    review = write_skill(workspace / "review", "review")
+    write_skill(workspace / "unused", "unused")
+    (workspace / "main.py").write_text("print('hi')\n")
+
+    sources, backend, _ = resolve(
+        tmp_path, paths(review), workspace=workspace, local_shell=local_shell
+    )
+
+    assert list(loaded(sources, backend)) == ["review"]
+    if local_shell:
+        # The shell backend serves the workspace at its own path, which is
+        # also the skill's source.
+        assert backend.read(f"{workspace}/main.py").error is None
+        listed = [entry["path"] for entry in backend.ls(f"{workspace}/").entries]
+        assert f"{workspace}/main.py" in listed
+        assert f"{workspace}/unused/" not in listed
+    else:
+        assert backend.read("/main.py").error is None
