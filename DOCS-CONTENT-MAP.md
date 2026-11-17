@@ -25,7 +25,7 @@ All three phases target 0.7. Source baseline: upstream main `4678ba4606d91e842c0
 | `docs/sdk/health-checks.mdx` | Existing SDK route, linked from the SDK and Troubleshooting | Body unchanged. |
 | `docs/sdk/system-stats.mdx` | Existing SDK route, linked from the SDK and Troubleshooting | Body unchanged. |
 | Existing consumer Harbor guide | Consumers > Consumer Integrations > Benchmarking & Evaluation > Harbor Framework | Body unchanged, including latest main's Execution Deadlines section. |
-| Existing harness guides | Harnesses > Harness Integrations | Bodies unchanged; discovery table adds the NOOA documentation link. |
+| Existing harness guides | Harnesses > Harness Integrations | Individual guide bodies unchanged; the landing page adds the NOOA documentation link and the relocated metadata-inspection subsection. |
 | Hermes and OpenClaw overview/interface pages | Existing paths, grouped under each harness | No content migration or rewrite. |
 | Adapter Contract and its six tutorials | Harnesses > Adapter Contract | Bodies unchanged, including latest main's `config_schema` validation guidance. Numbered tutorial navigation; no additional overview child. |
 | CLI: Install the CLI | Consumers > CLI (Experimental) > Install | Exact section extraction. |
@@ -37,7 +37,7 @@ All three phases target 0.7. Source baseline: upstream main `4678ba4606d91e842c0
 | SDK compatibility matrix | Existing SDK section, linked from Reference > Harness Compatibility | No extraction or rewritten support claims. |
 | SDK contract-boundary/schema explanation | Existing SDK section, linked from Reference > Configuration and Schemas | No extraction or rewritten contracts. |
 | Artifacts page | Reference > Packages and Distribution | Body and existing route retained. |
-| Installation: Inspect Adapter Metadata Without Harness SDKs | Harnesses Overview subsection | Existing subsection moved intact; old installation anchor links to the destination. No standalone catalog page. |
+| Installation: Inspect Adapter Metadata Without Harness SDKs | Harness Integrations > Inspect Adapter Metadata | Existing subsection body moved intact; installation links point directly to it, and the former Harnesses Overview anchor remains as a compatibility link. No standalone catalog page. |
 | Installation: Isolated Task Environment | Install a Harness Adapter | Existing deployment explanation and commands retained. |
 | Installation: source-build steps | Contributing > Development Setup and Building from Source | Setup migration needed by notebook/OpenShell routes; explicit current Node.js prerequisite. |
 | Root `CONTRIBUTING.md` | Contributing Overview | Existing content published on the site; only source-link rebasing and MDX comment formatting. Root file unchanged. |
