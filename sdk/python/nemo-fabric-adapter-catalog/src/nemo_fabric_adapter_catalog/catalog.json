@@ -2310,6 +2310,7 @@
             ]
           },
           "service": true,
+          "session_resume": true,
           "streaming": false,
           "updates": false
         },
@@ -2321,6 +2322,7 @@
             "models.top_p",
             "models.max_tokens",
             "instructions.system",
+            "runtime.keep_state",
             "tools.enabled",
             "tools.blocked",
             "mcp",
@@ -2432,7 +2434,8 @@
         },
         "requirements": {},
         "runner": {
-          "module": "nemo_fabric_adapters.openclaw.adapter"
+          "module": "nemo_fabric_adapters.openclaw.adapter",
+          "stop_timeout_seconds": 30
         },
         "settings_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2547,7 +2550,7 @@
               "properties": {
                 "dashboard": {
                   "additionalProperties": false,
-                  "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token.",
+                  "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <state_dir>/interfaces/dashboard.token with runtime.keep_state, or <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token for ephemeral state.",
                   "properties": {
                     "enabled": {
                       "default": true,
@@ -2658,7 +2661,7 @@
             },
             "shutdown_timeout_seconds": {
               "default": 15,
-              "description": "Maximum graceful Gateway shutdown time before forced termination. Fabric allows 30 seconds for the complete adapter stop; leave time for cleanup within that limit.",
+              "description": "Maximum graceful Gateway shutdown time before forced termination. NeMo Fabric allows 30 seconds for the complete adapter stop. Leave time for cleanup within that limit.",
               "exclusiveMinimum": 0,
               "type": "number"
             },
@@ -2742,7 +2745,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.7.0"
       },
-      "sha256": "9c971306d6d20496ab3890fddad722afccb32c8a2fc224690267b673063f9181",
+      "sha256": "a94d5ad7b4c8fd61388879dd417215cc242a5ca3d68cebe595e7e2d9d1beb26e",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {

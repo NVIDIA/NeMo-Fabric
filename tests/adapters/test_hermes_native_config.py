@@ -5,12 +5,62 @@
 
 import os
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import pytest
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapters.hermes import configuration
 from nemo_fabric_adapters.hermes import native
 from nemo_fabric_adapters.hermes.native import configured_kwargs
+
+
+@pytest.mark.usefixtures("requires_hermes_agent")
+@pytest.mark.parametrize("interface", ["api", "dashboard", "terminal"])
+@pytest.mark.parametrize("ambient_key", [None, "unrelated-router-key"])
+@pytest.mark.parametrize("openai_key", ["openshell", "unrelated-openai-key"])
+def test_native_custom_route_resolves_its_declared_placeholder_key(
+    tmp_path, interface, ambient_key, openai_key
+):
+    from hermes_cli.config import load_config
+    from hermes_cli.runtime_provider import frozen_runtime_config
+    from hermes_cli.runtime_provider import resolve_runtime_provider
+
+    endpoint = "https://openrouter.ai/api/v1"
+    config = AgentConfig.from_mapping(
+        {
+            "models": {
+                "default": {
+                    "provider": "openai",
+                    "model": "configured-model",
+                    "base_url": endpoint,
+                    "api_key_env": "FABRIC_ROUTE_KEY",
+                }
+            }
+        }
+    )
+    configuration.write_hermes_config(
+        config, tmp_path / "hermes", workspace=str(tmp_path), interfaces=[interface]
+    )
+    environment = {
+        "HOME": str(tmp_path),
+        "HERMES_HOME": str(tmp_path / "hermes"),
+        "FABRIC_ROUTE_KEY": "openshell",
+        "OPENAI_API_KEY": openai_key,
+    }
+    if ambient_key is not None:
+        environment["OPENROUTER_API_KEY"] = ambient_key
+
+    with patch.dict(os.environ, environment, clear=True):
+        native_config = load_config()
+        with frozen_runtime_config(native_config):
+            route = resolve_runtime_provider(
+                requested=native_config["model"]["provider"],
+                target_model="configured-model",
+            )
+
+    assert route["base_url"] == endpoint
+    assert route["api_key"] == "openshell"
+    assert route["api_mode"] == "chat_completions"
 
 
 @pytest.mark.parametrize(

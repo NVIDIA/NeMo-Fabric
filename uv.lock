@@ -2483,6 +2483,7 @@ dependencies = [
     { name = "httpx", extra = ["http2"] },
     { name = "nemo-fabric-adapter-contract" },
     { name = "nemo-fabric-adapters-common" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -2490,6 +2491,7 @@ requires-dist = [
     { name = "httpx", extras = ["http2"], specifier = "~=0.28" },
     { name = "nemo-fabric-adapter-contract", editable = "adapter-contract/python" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/python/common" },
+    { name = "websockets", specifier = "~=15.0" },
 ]
 
 [[package]]

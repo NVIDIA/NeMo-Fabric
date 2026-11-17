@@ -699,3 +699,132 @@ async def test_native_controls_apply_to_pinned_gateway(
             # Tool search and Code Mode are off, so the MCP tool is presented directly.
             assert "fabricprobe__get_authorization_header" in tools, tools
             assert not tools & {"tool_search", "tool_describe", "tool_call"}, tools
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Uses POSIX Gateway signals")
+@pytest.mark.parametrize("interruption", ["stop", "crash"])
+async def test_native_interrupted_session_resumes_after_acknowledgement(
+    tmp_path, api_server, interruption
+):
+    import signal
+    from unittest.mock import AsyncMock
+    from uuid import uuid4
+
+    from nemo_fabric_adapter_contract.models import (
+        AgentConfig,
+        AgentRunRequest,
+        RuntimeContext,
+        SessionRef,
+    )
+    from nemo_fabric_adapters.openclaw.adapter import OpenClawRuntime
+
+    context = RuntimeContext.from_mapping(
+        {
+            "runtime_id": "native-interruption",
+            "invocation_id": "native-turn",
+            "request_id": "native-request",
+            "state_dir": str(tmp_path / "state"),
+            "environment": {
+                "environment_id": "native-test",
+                "provider": "local",
+                "control_location": "in_env_control",
+                "ownership": "caller_owned",
+                "workspace": str(tmp_path),
+                "env": {"FABRIC_NATIVE_KEY": "synthetic-local-test-key"},
+            },
+            "artifacts": {},
+        }
+    )
+    config = AgentConfig.from_mapping(
+        {
+            "harness": {
+                "settings": {
+                    "openclaw_command": os.environ["FABRIC_OPENCLAW_TEST_COMMAND"]
+                }
+            },
+            "models": {
+                "default": {
+                    "provider": "openai",
+                    "model": "fabric-echo",
+                    "base_url": api_server + "/v1",
+                    "api_key_env": "FABRIC_NATIVE_KEY",
+                }
+            },
+            "tools": {"enabled": []},
+        }
+    )
+    payload = {
+        "config": config,
+        "runtime_context": context.to_mapping(),
+        "base_dir": str(tmp_path),
+    }
+    runtime = OpenClawRuntime()
+    task = None
+    nonce = "native-retained-" + uuid4().hex
+    async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
+        try:
+            started = await runtime.start(payload)
+            result = await runtime.invoke(
+                AgentRunRequest(input="Remember " + nonce), context
+            )
+            assert result.status.value == "succeeded"
+            await client.post(api_server + "/_reset")
+            await client.post(api_server + "/_scenario", json={"delay_seconds": 120})
+            task = asyncio.create_task(
+                runtime.invoke(AgentRunRequest(input="Interrupt this turn"), context)
+            )
+            async with asyncio.timeout(30):
+                while not (await client.get(api_server + "/_requests")).json():
+                    if task.done():
+                        await task
+                        pytest.fail("Native turn ended before reaching the model")
+                    await asyncio.sleep(0.05)
+            if interruption == "crash":
+                runtime._forward_gateway_signal(signal.SIGKILL)
+            else:
+                await runtime.stop()
+            await asyncio.wait_for(asyncio.gather(task, return_exceptions=True), 15)
+        finally:
+            if task is not None and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            await runtime.stop()
+
+        await client.post(api_server + "/_reset")
+        context.runtime_id = "native-replacement"
+        context.session_ref = SessionRef(
+            schema_version="fabric.session_ref/v1alpha1",
+            adapter_id="nvidia.fabric.openclaw",
+            session_id=started["session_id"],
+        )
+        replacement = OpenClawRuntime()
+        replacement._session_call = AsyncMock(wraps=replacement._session_call)
+        payload["runtime_context"] = context.to_mapping()
+        try:
+            reopened = await replacement.start(payload)
+            assert reopened["session_id"] == started["session_id"]
+            assert (
+                reopened["recovery_warnings"][0]["code"] == "session_recovery_required"
+            )
+            if interruption == "crash":
+                assert any(
+                    c.args[0] == "sessions.abort"
+                    for c in replacement._session_call.call_args_list
+                )
+            blocked = await replacement.invoke(
+                AgentRunRequest(input="Wait for inspection"), context
+            )
+            assert blocked.error.code == "session_recovery_required"
+            assert (await client.get(api_server + "/_requests")).json() == []
+            result = await replacement.invoke(
+                AgentRunRequest(
+                    input="Continue after inspection", acknowledge_recovery=True
+                ),
+                context,
+            )
+            assert result.status.value == "succeeded"
+            assert nonce in json.dumps(
+                (await client.get(api_server + "/_requests")).json()
+            )
+        finally:
+            await replacement.stop()

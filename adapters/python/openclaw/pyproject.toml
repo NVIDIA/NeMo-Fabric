@@ -28,6 +28,7 @@ dependencies = [
   "nemo-fabric-adapter-contract == 0.7.0",
   "nemo-fabric-adapters-common == 0.7.0",
   "httpx[http2]~=0.28",
+  "websockets~=15.0",
 ]
 
 [project.urls]
