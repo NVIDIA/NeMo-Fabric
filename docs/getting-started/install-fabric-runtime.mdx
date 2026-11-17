@@ -27,4 +27,20 @@ pip install "nemo-fabric[streaming]"
 Applications that set `launch_collector=False` and use an externally managed
 collector do not need this extra.
 
+## Verify the Installation
+
+Confirm that the SDK imports in the Python environment where you installed the package:
+
+```bash
+python -c "from nemo_fabric import Fabric; print('NeMo Fabric SDK import succeeded')"
+```
+
+The command should print:
+
+```text
+NeMo Fabric SDK import succeeded
+```
+
+This check requires no model credentials or harness adapter.
+
 Choose an adapter and harness from the [Installation Overview](install.mdx), or follow the [Quickstart](quickstart.mdx) for a complete Deep Agents task.
