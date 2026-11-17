@@ -140,6 +140,37 @@ def test_card_source_links_resolve_only_in_published_pages(tmp_path: Path):
     assert 'href="../sdk/client?view=full#request"' in released.read_text()
 
 
+@pytest.mark.parametrize(
+    ("opening", "inside", "closing"),
+    [
+        ("~~~mdx", "~~~not-a-closing-fence", "~~~"),
+        ("```mdx", "```not-a-closing-fence", "```"),
+        ("~~~~mdx", "~~~", "~~~~"),
+        ("````mdx", "```", "````"),
+        ("~~~mdx", "```", "~~~~ \t"),
+        ("```mdx", "~~~", "```` \t"),
+    ],
+)
+def test_card_source_links_preserve_fenced_examples(
+    tmp_path: Path, opening: str, inside: str, closing: str
+):
+    page = tmp_path / "page.mdx"
+    literal = '<Card href="./example-only.mdx">Literal example</Card>'
+    original = (
+        "---\nslug: /guides/overview\n---\n"
+        f"{opening}\n{inside}\n{literal}\n{closing}\n"
+        '<Card href="./destination.mdx">Real link</Card>\n'
+    )
+    page.write_text(original)
+    (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
+
+    sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+
+    assert page.read_text() == original.replace(
+        'href="./destination.mdx"', 'href="../sdk/client"'
+    )
+
+
 def test_card_source_links_reject_missing_targets(tmp_path: Path):
     page = tmp_path / "page.mdx"
     page.write_text('---\nslug: /page\n---\n<Card href="missing.mdx">Missing</Card>\n')

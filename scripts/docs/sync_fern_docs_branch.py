@@ -12,9 +12,9 @@ under ``fern/pages-*``.
 from __future__ import annotations
 
 import argparse
+import posixpath
 import re
 import shutil
-import posixpath
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote, urlsplit
@@ -272,7 +272,12 @@ def rewrite_internal_card_links(pages_dir: Path) -> None:
                     rewritten.append(card_link.sub(replace, "".join(chunk)))
                     chunk.clear()
                     fence = marker[1]
-                elif marker[1][0] == fence[0] and len(marker[1]) >= len(fence):
+                # Inside a fence, a marker with trailing text is literal code.
+                elif (
+                    marker[1][0] == fence[0]
+                    and len(marker[1]) >= len(fence)
+                    and not line[marker.end() :].strip()
+                ):
                     fence = None
                 rewritten.append(line)
             else:
