@@ -46,6 +46,8 @@ configured extensions are trusted code. The adapter raises the compaction
 reserve toward the selected model's maximum output while retaining at least
 half of the context window for input.
 
+Planning validates supplied model metadata against the descriptor, including supported API names, input modalities, and complete cost-rate objects. Whether a provider/model exists in Pi's installed catalog is checked at startup. Native catalog entries can supply omitted metadata; unknown models require an explicit `base_url`, `api`, `context_window`, `max_tokens`, `input`, and all four `cost` rates. Supply adapter metadata as model extensions; planning success does not prove catalog membership or runtime health.
+
 ## Invocation Usage
 
 Each invocation reads only new entries from Pi's raw session ledger, including

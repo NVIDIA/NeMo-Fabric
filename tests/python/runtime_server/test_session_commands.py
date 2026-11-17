@@ -118,7 +118,7 @@ async def test_known_start_rejection_can_be_corrected(
     assert (await host.handle(host_request("start")))["status"] == "succeeded"
 
 
-async def test_busy_stop_returns_promptly_and_retains_ownership(
+async def test_busy_stop_failure_returns_promptly_and_retains_ownership(
     host, host_request, mock_runtime
 ):
     await host.handle(host_request("start"))
@@ -130,16 +130,25 @@ async def test_busy_stop_returns_promptly_and_retains_ownership(
         return mock_runtime.invoke.return_value
 
     mock_runtime.invoke.side_effect = invoke
+    mock_runtime.stop.side_effect = FabricRuntimeError(
+        "PRIVATE cleanup detail", code="cleanup_unconfirmed"
+    )
     task = asyncio.create_task(host.handle(host_request("invoke", input={})))
     await entered.wait()
     try:
         response = await asyncio.wait_for(host.handle(host_request("stop")), 0.5)
-        assert response["error"]["code"] == "runtime_busy"
+        assert response["error"]["code"] == "stop_failed"
+        assert response["error"]["effects"] == "unknown"
+        assert "PRIVATE" not in str(response)
+        assert (await host.handle(host_request("start")))["error"][
+            "code"
+        ] == "cleanup_unconfirmed"
         assert host.runtimes["runtime-1"].runtime is mock_runtime
-        mock_runtime.stop.assert_not_awaited()
+        mock_runtime.stop.assert_awaited_once()
     finally:
         release.set()
         await task
+    mock_runtime.stop.side_effect = None
     assert (await host.handle(host_request("stop")))["status"] == "succeeded"
 
 

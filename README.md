@@ -23,6 +23,10 @@ NeMo Fabric gives applications, evaluation systems, and rollout platforms a cons
 - **Switch harnesses:** Reuse the consumer integration while adapters handle harness-specific behavior.
 - **Compare outcomes:** Collect normalized results, errors, artifacts, lifecycle events, and telemetry references.
 
+Invocation response and artifact budgets are configured under
+[`runtime.response_limits`](docs/sdk/python.mdx#response-and-artifact-limits),
+with the same policy for host and OpenShell execution.
+
 ## Supported Agent Harnesses
 
 NeMo Fabric includes adapters for the following harnesses and execution targets. Select a harness name for its adapter documentation:
@@ -77,7 +81,7 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 - [Hermes cold resume](docs/sdk/python.mdx#resume-a-hermes-conversation): Retain native state and explicitly reopen a conversation with `SessionRef`.
 - [Installation](docs/getting-started/install.mdx): Install the runtime, adapters, harness dependencies, and telemetry components, and choose a deployment scenario.
 - [Adapter catalog](sdk/python/nemo-fabric-adapter-catalog/README.md): Inspect bundled adapter metadata on a host without installing harness SDKs.
-- [Host admission](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host): Validate requested capabilities and reject host/task descriptor drift before execution.
+- [Host admission](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host): Validate requested capabilities and descriptor-declared conditional requirements, then reject host/task descriptor drift before execution. Installed dependencies, native model catalogs, credentials, and endpoint health remain runtime checks.
 - [NeMo Fabric runtime server](sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md): Manage runtimes, rediscover their recorded status and safe handles, and check server responsiveness inside one sandbox through `fabric-agent-ctl` and one private local socket. Each SDK client keeps at most 128 runtime records, evicting stopped records first and rejecting new starts when active, failed, and pending runtimes fill the limit. Unconfirmed cleanup retains sandbox ownership and blocks replacement servers.
 - [Health checks](docs/sdk/health-checks.mdx): Use `Fabric.check()` for OpenShell runtime-server checks, agent runtime checks, and prepared or attached OpenClaw Gateway service checks. Refer to the [adapter support table](docs/sdk/health-checks.mdx#native-evidence-by-adapter) for supported levels and native evidence. OpenShell server and runtime requests map to `fabric-agent-ctl check`; service checks use the local SDK.
 - [Documentation overview](docs/about-nemo-fabric/overview.mdx): Understand the execution model and choose an interface.
@@ -89,7 +93,6 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 Planned areas of development include:
 
 - **Refine runtime resource measurements:** Improve CPU, memory, elapsed-time, and available GPU measurements through broader benchmark validation.
-- **Support long-running, artifact-heavy workloads:** Make OpenShell timeouts and response/artifact limits configurable, including unlimited task duration, with clear limit errors and guidance for retrieving large screenshots.
 - **Expose task progress and recoverable results:** Provide task state, step progress, plans, pending requests, sandbox task listings, and paginated events, with final results retrievable after invocation ends or the caller disconnects.
 - **Standardize model usage accounting:** Report input, cached, output, and reasoning tokens consistently, distinguish complete, partial, and unknown usage, and attribute delegated work to the correct invocation.
 - **Capture execution provenance:** Record NeMo Fabric and adapter versions, requested models, sanitized MCP configuration, and execution environment, with explicit sources and unknowns.

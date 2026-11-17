@@ -212,7 +212,7 @@ the NeMo Fabric extra:
 
 ```bash
 pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0" \
-  "litellm==1.100.1" "mcp==1.28.1"
+  "litellm==1.100.4" "mcp==1.28.1"
 pip install "nemo-fabric[openhands]"
 ```
 
@@ -477,3 +477,11 @@ address (for example, `10.0.0.10/32`). A local inference URL that uses an IP
 literal cannot be used directly through this OpenShell policy path.
 
 The [custom LangGraph example](../langgraph_custom_agent/README.md#run-the-custom-agent-in-openshell) uses the same SDK and launcher with an application-owned agent and dedicated adapter.
+
+### Response and artifact budgets
+
+The example's `config.runtime.response_limits` accepts the normalized
+[`ResponseLimits` configuration](../../docs/sdk/python.mdx#response-and-artifact-limits)
+for every harness, on the host or inside OpenShell. Increase the per-file and
+aggregate artifact byte budgets together when returning large screenshots.
+Check `result.status` and `result.error` before consuming output or artifact paths.

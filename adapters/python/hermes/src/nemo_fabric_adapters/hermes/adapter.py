@@ -11,17 +11,20 @@ surface and invokes the installed Hermes runtime.
 from __future__ import annotations
 
 import asyncio
+import copy
 import inspect
 import logging
 import os
+import shutil
 import sys
+import tempfile
 from collections.abc import Callable
 from contextlib import AbstractContextManager, redirect_stdout
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -37,12 +40,14 @@ from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import mcp_availability
 from nemo_fabric_adapters.hermes import configuration
 from nemo_fabric_adapters.hermes import interfaces
+from nemo_fabric_adapters.hermes import skills
 from nemo_fabric_adapters.hermes import telemetry
 
 # Default agent loop budget when FabricConfig.runtime.max_turns is unset.
 # The actual internal hermes default  as of v0.21 is `sys.maxsize`
 DEFAULT_MAX_ITERATIONS: int = configuration.DEFAULT_MAX_ITERATIONS
 LOGGER = logging.getLogger(__name__)
+T = TypeVar("T")
 hermes_mcp_server_config = configuration.hermes_mcp_server_config
 
 
@@ -176,6 +181,11 @@ class HermesRuntime:
         self._enabled_toolsets: list[str] | None = None
         self._mcp_authentication_checked = False
         self._mcp_unavailable: list[dict[str, str]] = []
+        self._skills_report: dict[str, Any] | None = None
+        # The staged bundled-skill folder, and HERMES_BUNDLED_SKILLS before
+        # this runtime set it (None when unset); see _stage_bundled_skills.
+        self._bundled_stage: Path | None = None
+        self._bundled_env: str | None = None
         self._conversation_history: list[dict[str, Any]] | None = None
         self._native_session: sessions.NativeSession | None = None
         self._session_db: Any = None
@@ -270,6 +280,37 @@ class HermesRuntime:
                 str(self._settings.get("terminal_timeout", 60)),
             )
 
+            # Check skills.directories and the bundled-skill names where the
+            # task's folders are mounted, before anything starts.
+            skill_plan = skills.plan_skills(
+                agent_config,
+                base_dir=common_utils.base_dir(payload),
+                hermes_home=self._hermes_home,
+            )
+            # Finish the manifest update of an earlier start that removed a
+            # copy and then failed, before anything reads the manifest.
+            try:
+                await _run_to_completion(
+                    skills.finish_pending_removals, self._hermes_home
+                )
+            except OSError as error:
+                record = self._hermes_home / "skills" / skills.PENDING_MANIFEST
+                raise lifecycle.LifecycleError(
+                    "hermes_skill_invalid",
+                    "The Hermes home's bundled manifest could not be updated for "
+                    "a copy removed at an earlier start",
+                    metadata={
+                        "field": "skills.bundled",
+                        "reason": "excluded_bundled_skill_not_removed",
+                        "paths": [str(record)],
+                    },
+                ) from error
+            # A kept home can hold Hermes's earlier copy of a left-out bundled
+            # skill; a changed one fails start here.
+            skill_plan.stale_copies = await asyncio.to_thread(
+                skills.excluded_copies, skill_plan, self._hermes_home
+            )
+
             if relay_enabled:
                 relay_payload = {**payload, "config": agent_config.to_mapping()}
                 (
@@ -292,7 +333,23 @@ class HermesRuntime:
                 workspace=str(runtime_context.environment.workspace or "."),
                 relay_enabled=relay_enabled,
                 interfaces=interface_ports,
+                skill_plan=skill_plan,
             )
+            if skill_plan.structured:
+                # Before the agent or any interface reads its skills. The
+                # interfaces inherit HERMES_BUNDLED_SKILLS through the
+                # environment below, so their own sync reads the same folder.
+                if skill_plan.excluded_bundled:
+                    await self._stage_bundled_skills(skill_plan)
+                if interface_ports:
+                    # Each interface process runs Hermes's bundled sync at
+                    # start, after this report. Run the same sync first, so
+                    # the report observes what the interfaces load; their
+                    # sync then finds nothing to copy.
+                    skill_plan.sync = True
+                self._skills_report = await _prepare_skills(
+                    skill_plan, self._hermes_home
+                )
             api_key_env = configuration._api_key_env(model_config)
             api_key = os.environ.get(api_key_env)
             if not api_key:
@@ -431,7 +488,7 @@ class HermesRuntime:
         if self._started and not self._sdk_enabled:
             return AgentRunResult(
                 status=AgentRunStatus.FAILED,
-                output={},
+                output=self._skills_output(),
                 error=AgentRunError(
                     code="hermes_sdk_disabled",
                     message="Embedded Hermes SDK execution is disabled; use an enabled native interface",
@@ -583,6 +640,7 @@ class HermesRuntime:
         # Absent when every configured server is usable, so clean runs keep their shape.
         if mcp := mcp_availability.output_block(unavailable_mcp_servers):
             output["mcp"] = mcp
+        output.update(self._skills_output())
         error = None
         if failed:
             if isinstance(reported_error, dict):
@@ -614,6 +672,62 @@ class HermesRuntime:
             output=output,
             error=error,
         )
+
+    async def _stage_bundled_skills(self, plan: skills.SkillPlan) -> None:
+        """Point Hermes's sync at a folder holding only the selected bundled skills.
+
+        Hermes's sync, the adapter's and each native interface's, copies the
+        skills in ``HERMES_BUNDLED_SKILLS`` into the home, so a left-out
+        bundled skill never reaches it. The folder lasts until stop, which
+        removes it and restores the variable.
+        """
+
+        self._bundled_env = os.environ.get(skills.BUNDLED_SKILLS_ENV)
+        stage = Path(tempfile.mkdtemp(prefix="nemo-fabric-hermes-bundled-"))
+        self._bundled_stage = stage
+        try:
+            await _run_to_completion(skills.stage_bundled, plan, stage)
+        except OSError as error:
+            raise lifecycle.LifecycleError(
+                "hermes_skill_invalid",
+                "Hermes's selected bundled skills could not be staged",
+                metadata={"field": plan.selection_field, "reason": "stage_failed"},
+            ) from error
+        os.environ[skills.BUNDLED_SKILLS_ENV] = str(stage)
+        if skills.bundled_dir().resolve() != stage.resolve():
+            # This Hermes doesn't read the variable, so its sync would copy
+            # the left-out skills; refuse rather than load them.
+            raise lifecycle.LifecycleError(
+                "hermes_skill_invalid",
+                "This Hermes release can't leave out bundled skills: its sync "
+                f"ignores {skills.BUNDLED_SKILLS_ENV}",
+                metadata={
+                    "field": plan.selection_field,
+                    "reason": "bundled_selection_unsupported",
+                },
+            )
+
+    def _restore_bundled_skills(self) -> None:
+        stage, self._bundled_stage = self._bundled_stage, None
+        if stage is None:
+            return
+        if self._bundled_env is None:
+            os.environ.pop(skills.BUNDLED_SKILLS_ENV, None)
+        else:
+            os.environ[skills.BUNDLED_SKILLS_ENV] = self._bundled_env
+        self._bundled_env = None
+        shutil.rmtree(stage, ignore_errors=True)
+
+    def _skills_output(self) -> dict[str, Any]:
+        """Return ``{"skills": report}`` for a run result, or nothing.
+
+        Present only with skills.directories or skills.bundled. Each result
+        gets its own copy of the report.
+        """
+
+        if not self._skills_report:
+            return {}
+        return {"skills": copy.deepcopy(self._skills_report)}
 
     async def _refresh_unavailable_mcp_servers(self) -> list[dict[str, str]]:
         """Read Hermes's current status of the configured MCP servers.
@@ -998,11 +1112,14 @@ class HermesRuntime:
         self._enabled_toolsets = None
         self._mcp_authentication_checked = False
         self._mcp_unavailable = []
+        self._skills_report = None
         self._conversation_history = None
         self._native_session = None
         self._relay_plugin_config = None
         self._relay_plugin_config_path = None
         self._started = False
+        # The native interfaces have stopped, so nothing reads the folder.
+        self._restore_bundled_skills()
 
         if had_relay_plugin:
             for name in telemetry.HERMES_RELAY_ENV_NAMES:
@@ -1044,6 +1161,103 @@ class HermesRuntime:
                 "hermes_runtime_stop_failed",
                 "Hermes runtime failed to stop cleanly",
             ) from errors[0]
+
+
+async def _run_to_completion(func: Callable[..., T], *args: Any) -> T:
+    """Run ``func`` in a thread and, if cancelled, wait for it before raising.
+
+    Cancelling the awaiting task doesn't stop the thread. Start's failure path
+    calls stop, which restores the bundled-skill environment and removes the
+    staged folder, and a later runtime can then reuse the home. So a thread
+    that writes the home or the staged folder must finish first.
+
+    The wait has no timeout of its own. Fabric bounds start from outside: at
+    its start deadline it terminates the adapter host process, thread
+    included. A bound here would let stop run while the thread still writes.
+    """
+
+    worker = asyncio.ensure_future(asyncio.to_thread(func, *args))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        while not worker.done():
+            try:
+                await asyncio.wait({worker})
+            except asyncio.CancelledError:
+                pass
+        if not worker.cancelled():
+            # The cancellation wins; a failure of the thread is only logged.
+            error = worker.exception()
+            if error is not None:
+                LOGGER.warning(
+                    "Hermes skill work failed after start was cancelled",
+                    exc_info=(type(error), error, error.__traceback__),
+                )
+        raise
+
+
+async def _prepare_skills(
+    plan: skills.SkillPlan, hermes_home: Path
+) -> dict[str, Any] | None:
+    """Copy the selected bundled skills into the home and observe what loads.
+
+    Hermes's own entry points copy its bundled skills into the home at start;
+    the embedded agent does not, so the adapter does whenever
+    ``skills.bundled`` is set or a native interface, which runs that copy
+    itself, is enabled. It first removes Hermes's unchanged earlier
+    copies of the left-out bundled skills. The copy seeds Hermes's essential
+    skills even when no bundled skill is selected, and removes a stale copy
+    that an external skill replaces. Returns the ``output.skills`` report and
+    warns once.
+    """
+
+    if plan.stale_copies:
+        try:
+            await _run_to_completion(skills.remove_copies, plan, hermes_home)
+        except (OSError, ValueError) as error:
+            raise lifecycle.LifecycleError(
+                "hermes_skill_invalid",
+                "Hermes's copy of a left-out bundled skill could not be removed "
+                "from its home",
+                metadata={
+                    "field": plan.selection_field,
+                    "reason": "excluded_bundled_skill_not_removed",
+                    "paths": [str(folder) for _name, folder in plan.stale_copies],
+                },
+            ) from error
+    sync_result = None
+    if plan.sync:
+        try:
+            sync_result = await _run_to_completion(skills.sync_bundled)
+        except Exception as error:
+            if plan.bundled is None:
+                # Run only for the report, ahead of the interfaces' own copy,
+                # which ignores a failure: keep starting, as they do.
+                LOGGER.warning(
+                    "Hermes bundled skills could not be copied", exc_info=True
+                )
+            else:
+                raise lifecycle.LifecycleError(
+                    "hermes_skill_invalid",
+                    "Hermes could not copy its bundled skills into its home",
+                    metadata={"field": "skills.bundled", "reason": "sync_failed"},
+                ) from error
+    try:
+        # Tells Hermes's copies of bundled skills from the agent's own skills
+        # when only skills.directories is set.
+        await asyncio.to_thread(skills.load_inventory, plan)
+    except Exception:
+        LOGGER.warning("Hermes bundled skills could not be listed", exc_info=True)
+    try:
+        catalog = await asyncio.to_thread(skills.native_catalog)
+    except Exception:
+        # The report is diagnostic: keep the checked plan rather than fail start.
+        LOGGER.warning("Hermes skill catalog could not be observed", exc_info=True)
+        observation = skills.SkillObservation(plan.load or skills.DirectoryLoad())
+    else:
+        observation = skills.observe(plan, catalog, sync_result=sync_result)
+    observation.warn()
+    return observation.report()
 
 
 def _hermes_home(runtime_context: RuntimeContext, base_dir: str) -> Path:

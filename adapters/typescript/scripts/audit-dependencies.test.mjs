@@ -118,3 +118,200 @@ for (const path of [zodPath, "node_modules/@factory/droid-sdk"]) {
     assert.throws(() => checkAudit(exceptionReport(), changed));
   });
 }
+
+const picomatchAdvisory = {
+  name: "picomatch",
+  severity: "high",
+  url: "https://github.com/advisories/GHSA-fc5q-39xc-vjpf",
+  range: "<=4.0.7",
+};
+
+function picomatchFixture(scope) {
+  const packages =
+    scope === "contract"
+      ? {
+          picomatch: ["node_modules/picomatch", "4.0.5", [picomatchAdvisory]],
+          fdir: ["node_modules/fdir", "6.5.0", ["picomatch"]],
+          tinyglobby: [
+            "node_modules/tinyglobby",
+            "0.2.17",
+            ["fdir", "picomatch"],
+          ],
+          "json-schema-to-typescript": [
+            "node_modules/json-schema-to-typescript",
+            "15.0.4",
+            ["tinyglobby"],
+          ],
+        }
+      : {
+          picomatch: ["node_modules/picomatch", "4.0.7", [picomatchAdvisory]],
+          fdir: [
+            "node_modules/tinyglobby/node_modules/fdir",
+            "6.5.0",
+            ["picomatch"],
+          ],
+          tinyglobby: [
+            "node_modules/tinyglobby",
+            "0.2.17",
+            ["fdir", "picomatch"],
+          ],
+          "@parcel/watcher": [
+            "node_modules/@parcel/watcher",
+            "2.6.0",
+            ["picomatch"],
+          ],
+          "node-gyp": ["node_modules/node-gyp", "12.4.0", ["tinyglobby"]],
+          "@npmcli/run-script": [
+            "node_modules/@npmcli/run-script",
+            "10.0.4",
+            ["node-gyp"],
+          ],
+        };
+  const audit = structuredClone(report);
+  const lock = { packages: {} };
+  for (const [name, [path, version, via]] of Object.entries(packages)) {
+    audit.vulnerabilities[name] = structuredClone({
+      name,
+      severity: "high",
+      nodes: [path],
+      via,
+    });
+    lock.packages[path] = { version };
+    audit.metadata.vulnerabilities.high++;
+  }
+  return { audit, lock };
+}
+
+for (const scope of ["contract", "adapters"]) {
+  test(`${scope}: allows the exact picomatch advisory and known parent findings`, () => {
+    const { audit, lock } = picomatchFixture(scope);
+    assert.equal(
+      checkAudit(audit, lock, scope).high,
+      scope === "contract" ? 4 : 6,
+    );
+  });
+
+  for (const [description, mutate] of [
+    [
+      "a second high advisory",
+      (r) =>
+        r.vulnerabilities.picomatch.via.push({
+          ...picomatchAdvisory,
+          url: "https://github.com/advisories/OTHER",
+        }),
+    ],
+    [
+      "a changed advisory range",
+      (r) => {
+        r.vulnerabilities.picomatch.via[0].range = "*";
+      },
+    ],
+    [
+      "a changed advisory package",
+      (r) => {
+        r.vulnerabilities.picomatch.via[0].name = "other";
+      },
+    ],
+    [
+      "a new high advisory on a parent",
+      (r) => r.vulnerabilities.tinyglobby.via.push({ ...picomatchAdvisory }),
+    ],
+    [
+      "an additional picomatch path",
+      (r) =>
+        r.vulnerabilities.picomatch.nodes.push(
+          "node_modules/other/node_modules/picomatch",
+        ),
+    ],
+    [
+      "an additional parent path",
+      (r) =>
+        r.vulnerabilities.tinyglobby.nodes.push(
+          "node_modules/other/node_modules/tinyglobby",
+        ),
+    ],
+    [
+      "a critical finding",
+      (r) => {
+        r.vulnerabilities.picomatch.severity = "critical";
+        r.metadata.vulnerabilities.high--;
+        r.metadata.vulnerabilities.critical++;
+      },
+    ],
+    [
+      "an unrelated high package",
+      (r) => {
+        r.vulnerabilities.other = {
+          name: "other",
+          severity: "high",
+          nodes: ["node_modules/other"],
+          via: ["picomatch"],
+        };
+        r.metadata.vulnerabilities.high++;
+      },
+    ],
+    [
+      "a parent cycle without the advisory",
+      (r) => {
+        r.vulnerabilities.fdir.via = ["tinyglobby"];
+        r.vulnerabilities.tinyglobby.via = ["fdir"];
+      },
+    ],
+    [
+      "a missing root finding",
+      (r) => {
+        delete r.vulnerabilities.picomatch;
+        r.metadata.vulnerabilities.high--;
+      },
+    ],
+    [
+      "an audit service error",
+      (r) => {
+        r.error = { code: "E503" };
+      },
+    ],
+    [
+      "an inconsistent high count",
+      (r) => {
+        r.metadata.vulnerabilities.high--;
+      },
+    ],
+  ]) {
+    test(`${scope}: rejects ${description}`, () => {
+      const { audit, lock } = picomatchFixture(scope);
+      mutate(audit);
+      assert.throws(() => checkAudit(audit, lock, scope));
+    });
+  }
+
+  test(`${scope}: rejects changed or missing locked versions for every excepted package`, () => {
+    const { audit, lock } = picomatchFixture(scope);
+    for (const path of Object.keys(lock.packages)) {
+      const changed = structuredClone(lock);
+      changed.packages[path].version = "99.0.0";
+      assert.throws(() => checkAudit(audit, changed, scope), path);
+      delete changed.packages[path];
+      assert.throws(() => checkAudit(audit, changed, scope), path);
+    }
+  });
+}
+
+test("allows both existing Zod and picomatch exceptions in the adapter scope", () => {
+  const { audit, lock } = picomatchFixture("adapters");
+  const zod = exceptionReport();
+  Object.assign(audit.vulnerabilities, zod.vulnerabilities);
+  Object.assign(lock.packages, exceptionLock.packages);
+  audit.metadata.vulnerabilities.high += zod.metadata.vulnerabilities.high;
+  assert.equal(checkAudit(audit, lock).high, 10);
+});
+
+test("keeps the Zod exception out of the contract scope", () => {
+  assert.throws(() => checkAudit(exceptionReport(), exceptionLock, "contract"));
+});
+
+test("rejects a lockfile from the other TypeScript scope", () => {
+  const contract = picomatchFixture("contract");
+  const adapters = picomatchFixture("adapters");
+  assert.throws(() => checkAudit(contract.audit, adapters.lock, "contract"));
+  assert.throws(() => checkAudit(adapters.audit, contract.lock, "adapters"));
+});

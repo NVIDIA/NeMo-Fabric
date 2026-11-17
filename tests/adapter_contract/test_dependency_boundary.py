@@ -27,9 +27,11 @@ class BlockPydantic:
 sys.meta_path.insert(0, BlockPydantic())
 
 from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapter_contract.skills import load_directories
 
 value = {"harness": {"settings": {"profile": "dependency-free"}}}
 assert AgentConfig.from_mapping(value).to_mapping() == value
+assert callable(load_directories)
 assert "pydantic" not in sys.modules
 """
     env = os.environ.copy()

@@ -90,7 +90,9 @@ The adapter receives a normalized payload from NeMo Fabric and materializes a na
 - replacement `instructions.system` and `runtime.max_turns`;
 - workspace and explicit environment variables through `environment`;
 - invocation timeout through `runtime.timeout_seconds`;
-- NeMo Fabric skills as external skill directories for Hermes Agent;
+- `skills.paths` and `skills.directories` as Hermes Agent's
+  `skills.external_dirs`, and `skills.bundled` as a staged
+  `HERMES_BUNDLED_SKILLS` folder (see [Skills](#skills));
 - NeMo Fabric MCP servers as Hermes Agent MCP server config;
 - `tools.enabled` and `tools.blocked` as Hermes-native toolset selection and
   blocking policy;
@@ -162,6 +164,40 @@ harness = HarnessConfig(
 The `auxiliary` and `tools` settings use Hermes's native `config.yaml` structure. The adapter writes only the fields you set, before any SDK agent or native interface starts, so all four execution paths read them. Omitting a field keeps the current behavior. For title generation, an explicit value always wins; when it is omitted, a Relay-enabled runtime keeps writing `false` and other runtimes keep Hermes's default. `harness.settings.tools` is Hermes's native tools section and is separate from NeMo Fabric's normalized top-level `tools.enabled` and `tools.blocked`.
 
 These controls reduce automatic background model calls. They do not stop context compaction calls and do not correlate concurrent sessions; refer to the [Hermes guide](../../../docs/integrations/harness/hermes/hermes.mdx#native-harness-controls).
+
+## Skills
+
+The adapter supports `skills.paths`, `skills.directories`, `skills.bundled`,
+and `skills.duplicates`, and writes the configured skills to Hermes Agent's
+`skills.external_dirs`. Hermes always loads its `hermes-agent` bundled skill,
+so `skills.bundled` supports `exclude` (or `{}` for every bundled skill) but
+not `include` or `enabled: false`, and `exclude` cannot name `hermes-agent`.
+The mount, not NeMo Fabric, makes a skill read-only. Each comment in this
+example names one setup; the whole list is the mixed setup:
+
+```yaml
+skills:
+  directories:
+    # A folder, read-only: mount it read-only; every skill in it loads.
+    - folder: /sandbox/team-skills
+    # Chosen skills, read-only: mount each skill read-only, one skill entry each.
+    - skill: /sandbox/release-review
+    - skill: /sandbox/incident-triage
+    # A folder, read-write: mount it writable; Hermes edits its skills in place.
+    # New skills go to the Hermes home and persist with runtime.keep_state.
+    - folder: /sandbox/agent-skills
+  # Mixed: one list holds any of these; first_wins lets an earlier entry win.
+  duplicates: first_wins
+  bundled:
+    exclude: [xurl]
+```
+
+[Configure Skills](../../../docs/integrations/harness/skills.mdx) describes
+the fields, the common setups, start checks, the run report, and how Hermes
+differs from other harnesses. The
+[Hermes guide](../../../docs/integrations/harness/hermes/hermes.mdx#skills)
+covers Hermes's skip reasons, agent-written skills, and bundled-skill
+handling.
 
 ## Configuration Mapping and Ownership
 

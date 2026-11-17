@@ -397,7 +397,11 @@
               "type": "string"
             },
             "provider": {
+              "description": "Cline SDK 0.0.83 uses openai-native for OpenAI. Use nvidia for the documented NVIDIA OpenAI-compatible endpoint.",
               "minLength": 1,
+              "not": {
+                "const": "openai"
+              },
               "type": "string"
             }
           },
@@ -428,7 +432,7 @@
         "name": "nemo-fabric-adapters-cline",
         "version": "0.7.0"
       },
-      "sha256": "66ff12840fc8a005278a94b88f3ca54760d8f18ea7f04e7bc939e5a3f838605a",
+      "sha256": "d536a86c564fef01d6be9e9cf3c671c4b2e1acba9b9e02acd2105520703711d4",
       "source": "adapters/typescript/cline/cline.fabric-adapter.json"
     },
     "nvidia.fabric.codex": {
@@ -1122,6 +1126,43 @@
           "required": [],
           "type": "object"
         },
+        "skills": {
+          "bundled": {
+            "default": "disabled",
+            "supports_disable": false,
+            "supports_enable": true,
+            "supports_exclude": true,
+            "supports_include": false
+          },
+          "directory_loading": {
+            "discovery": {
+              "depth_limit": {
+                "kind": "no_fixed_limit"
+              },
+              "nested_skills": "include",
+              "traversal": "recursive"
+            },
+            "parsing": {
+              "frontmatter_errors": "recover_key_value",
+              "name_fallback": "directory_name",
+              "required_frontmatter_fields": []
+            },
+            "skill_file": "SKILL.md",
+            "supported_entries": [
+              "skill",
+              "folder"
+            ]
+          },
+          "duplicates": {
+            "name_source": "frontmatter",
+            "native": "Two different skills with the same name in skills.external_dirs are refused as ambiguous; a skill in the Hermes home, bundled or agent-created, outranks external_dirs.",
+            "supported_policies": [
+              "reject",
+              "first_wins",
+              "last_wins"
+            ]
+          }
+        },
         "telemetry": {
           "providers": {
             "relay": {
@@ -1139,7 +1180,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.7.0"
       },
-      "sha256": "367b304dc7361c5b883fbb41e76da76f979ea6b11a29276e1bb22c403a7cca61",
+      "sha256": "e4f7fb7039ccc28a3299ebe714bed8deea2c95bd485f4a3586ca6185f1540cdf",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {
@@ -1178,6 +1219,28 @@
         },
         "contract_version": "fabric.adapter/v1alpha2",
         "extension_schemas": {
+          "run_error": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "cause_code": {
+                "const": "kilo_prompt_timeout"
+              },
+              "owner": {
+                "const": "adapter"
+              },
+              "timeout_seconds": {
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "required": [
+              "owner",
+              "timeout_seconds",
+              "cause_code"
+            ],
+            "type": "object"
+          },
           "usage": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
@@ -1350,7 +1413,7 @@
         "name": "nemo-fabric-adapters-kilo",
         "version": "0.7.0"
       },
-      "sha256": "6bf1bf8c3df7c62c7942c23c5b1639df54764773e2f4d945c19daf04c701a7a1",
+      "sha256": "bb236376f76d986c5b087952dd815e9c100dfa9ccd235964e25e8bc9f610cedd",
       "source": "adapters/typescript/kilo/kilo.fabric-adapter.json"
     },
     "nvidia.fabric.kiro": {
@@ -1376,6 +1439,28 @@
         },
         "contract_version": "fabric.adapter/v1alpha2",
         "extension_schemas": {
+          "run_error": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "cause_code": {
+                "const": "kiro_deadline_exceeded"
+              },
+              "deadline_millis": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "owner": {
+                "const": "adapter"
+              }
+            },
+            "required": [
+              "owner",
+              "deadline_millis",
+              "cause_code"
+            ],
+            "type": "object"
+          },
           "run_result": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
@@ -1465,7 +1550,7 @@
         "name": "nemo-fabric-adapters-kiro",
         "version": "0.7.0"
       },
-      "sha256": "e7393a07550505f23a3396128a29f5b078492ce7f1580f6f3b79d5872e4587a2",
+      "sha256": "7273f357f8f8f3d429f4127d06f29653c015d20fb4d82d3c8c0f4dee9f84ff2c",
       "source": "adapters/typescript/kiro/kiro.fabric-adapter.json"
     },
     "nvidia.fabric.langchain.deepagents": {
@@ -1493,11 +1578,89 @@
             "tools.enabled",
             "tools.blocked",
             "mcp",
+            "mcp.auth.service_account",
             "skills"
           ],
           "system_instruction_modes": [
             "replace"
           ]
+        },
+        "config_schema": {
+          "description": "The local_shell backend requires an explicit tools.enabled allowlist (including an empty list) or execute in tools.blocked.",
+          "if": {
+            "properties": {
+              "harness": {
+                "properties": {
+                  "settings": {
+                    "properties": {
+                      "deepagents": {
+                        "properties": {
+                          "backend": {
+                            "properties": {
+                              "type": {
+                                "const": "local_shell"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "backend"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "deepagents"
+                    ]
+                  }
+                },
+                "required": [
+                  "settings"
+                ]
+              }
+            },
+            "required": [
+              "harness"
+            ]
+          },
+          "then": {
+            "properties": {
+              "tools": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "enabled": {
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "enabled"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "blocked": {
+                        "contains": {
+                          "const": "execute"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "blocked"
+                    ]
+                  }
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "tools"
+            ]
+          },
+          "type": "object"
         },
         "contract_version": "fabric.adapter/v1alpha2",
         "model_schema": {
@@ -1769,7 +1932,7 @@
         "name": "nemo-fabric-adapters-deepagents",
         "version": "0.7.0"
       },
-      "sha256": "d4394a8dd328bd1b1f89386a75f176cfc83755e0c6714c3c9839468510deb181",
+      "sha256": "b098e690aafe76f4ef06395165171840ef9b6f785d6c76374927c0110a6784f7",
       "source": "adapters/python/deepagents/deepagents.fabric-adapter.json"
     },
     "nvidia.fabric.mini-swe-agent": {
@@ -1908,6 +2071,21 @@
             "mcp"
           ]
         },
+        "config_schema": {
+          "description": "The shared NOOA adapter requires a registered workflow target.",
+          "properties": {
+            "workflow": {
+              "required": [
+                "target_id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "workflow"
+          ],
+          "type": "object"
+        },
         "contract_version": "fabric.adapter/v1alpha2",
         "model_schema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1982,7 +2160,7 @@
         "name": "nemo-fabric-adapters-nooa",
         "version": "0.7.0"
       },
-      "sha256": "80f632e09ea3279e7283a58790e53516d693162bc7742f2e932b8e7453373042",
+      "sha256": "6ec836b371326efaf0cf217256dae76848f2e7e0067420c602307c30aab1df17",
       "source": "adapters/python/nooa/nooa.fabric-adapter.json"
     },
     "nvidia.fabric.nooa.bench-agent": {
@@ -2443,8 +2621,8 @@
               "type": "number"
             },
             "shutdown_timeout_seconds": {
-              "default": 5,
-              "description": "Maximum graceful Gateway shutdown time before forced termination.",
+              "default": 15,
+              "description": "Maximum graceful Gateway shutdown time before forced termination. Fabric allows 30 seconds for the complete adapter stop; leave time for cleanup within that limit.",
               "exclusiveMinimum": 0,
               "type": "number"
             },
@@ -2482,6 +2660,45 @@
             }
           },
           "type": "object"
+        },
+        "skills": {
+          "bundled": {
+            "default": "enabled",
+            "supports_disable": true,
+            "supports_enable": true,
+            "supports_exclude": true,
+            "supports_include": true
+          },
+          "directory_loading": {
+            "discovery": {
+              "depth_limit": {
+                "kind": "adapter_defined"
+              },
+              "nested_skills": "stop_at_skill",
+              "traversal": "recursive"
+            },
+            "parsing": {
+              "frontmatter_errors": "reject",
+              "name_fallback": "directory_name",
+              "required_frontmatter_fields": [
+                "description"
+              ]
+            },
+            "skill_file": "SKILL.md",
+            "supported_entries": [
+              "skill",
+              "folder"
+            ]
+          },
+          "duplicates": {
+            "name_source": "frontmatter",
+            "native": "A higher OpenClaw source wins: workspace skills, then state-folder skills, then shipped skills, then skills.directories. Between skills.directories entries the later entry wins.",
+            "supported_policies": [
+              "reject",
+              "first_wins",
+              "last_wins"
+            ]
+          }
         }
       },
       "ecosystem": "python",
@@ -2489,7 +2706,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.7.0"
       },
-      "sha256": "ec8b5ab61b51a542e571084ebed6e428ce5c1b67d5bcc5080357032ccafaabab",
+      "sha256": "9c971306d6d20496ab3890fddad722afccb32c8a2fc224690267b673063f9181",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {
@@ -3422,6 +3639,28 @@
         },
         "contract_version": "fabric.adapter/v1alpha2",
         "extension_schemas": {
+          "run_error": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "cause_code": {
+                "const": "strands_deadline_exceeded"
+              },
+              "deadline_millis": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "owner": {
+                "const": "adapter"
+              }
+            },
+            "required": [
+              "owner",
+              "deadline_millis",
+              "cause_code"
+            ],
+            "type": "object"
+          },
           "run_result": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
@@ -3585,7 +3824,7 @@
         "name": "nemo-fabric-adapters-strands",
         "version": "0.7.0"
       },
-      "sha256": "37982ca315b241b03fce3edb1d49d2f1663e3224ebcf89824d3a976055ccd949",
+      "sha256": "3b6e7f1dec2fc416c30c00e24225b21a161160252b6aba3846028319478ca3c9",
       "source": "adapters/typescript/strands/strands.fabric-adapter.json"
     }
   },

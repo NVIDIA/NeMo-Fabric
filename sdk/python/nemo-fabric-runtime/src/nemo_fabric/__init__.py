@@ -43,8 +43,11 @@ from nemo_fabric.models import RelayS3StorageConfig
 from nemo_fabric.models import RunRequest
 from nemo_fabric.models import SystemStatsConfig
 from nemo_fabric.models import SystemStatsSamplingConfig
+from nemo_fabric.models import ResponseLimits
 from nemo_fabric.models import RuntimeConfig
+from nemo_fabric.models import BundledSkills
 from nemo_fabric.models import SkillConfig
+from nemo_fabric.models import SkillDirectory
 from nemo_fabric.models import TelemetryConfig
 from nemo_fabric.models import TelemetryProviderConfig
 from nemo_fabric.models import ToolsConfig
@@ -164,6 +167,7 @@ __all__ = [
     "SystemStatsConfig",
     "SystemStatsSamplingConfig",
     "RuntimeConfig",
+    "ResponseLimits",
     "Runtime",
     "RuntimeStatus",
     "Service",
@@ -171,6 +175,8 @@ __all__ = [
     "ServiceReference",
     "ServiceStatus",
     "SkillConfig",
+    "SkillDirectory",
+    "BundledSkills",
     "TelemetryConfig",
     "TelemetryProviderConfig",
     "TelemetryRef",

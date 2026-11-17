@@ -152,3 +152,10 @@ Strands supports `live` through `Fabric.check()`. `live` reads the owned ACP chi
 Checks remain independent of an invocation. A busy invocation is healthy. Checks use the caller deadline and never cancel an invocation, stop the runtime, or repair a failure. Health does not establish valid model credentials, provider access, MCP connectivity, or successful model output. Reports contain only the generic health contract fields.
 
 Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+
+
+## Invocation deadlines
+
+Strands prompt deadlines and already-expired invocation deadlines use canonical error code `timeout`. Error metadata retains `owner: "adapter"` and the native cause (`strands_prompt_timeout` or `strands_deadline_exceeded`), plus the enforced timeout in seconds or the absolute `deadline_millis`. Prompt expiration invalidates the session and attempts process cleanup. Startup and transport failures keep their existing error classifications.
+
+When `runtime.timeout_seconds` is omitted or null, NeMo Fabric does not impose a total prompt deadline. An explicit invocation deadline is forwarded to the ACP session; startup and shutdown remain separately bounded.

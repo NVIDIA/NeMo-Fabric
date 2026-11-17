@@ -4,6 +4,7 @@
 """Versioned local requests and safe command responses."""
 
 import json
+import math
 import re
 import sys
 from typing import Any
@@ -14,6 +15,13 @@ from nemo_fabric.runtime_server.health import validate_check_response
 INTERFACE_VERSION = 2
 REQUEST_LIMIT = 512 * 1024
 RESPONSE_LIMIT = 4 * 1024 * 1024
+
+
+def response_transport_limit(max_response_bytes: int = RESPONSE_LIMIT) -> int:
+    """Match the native core allowance; provider calls forward that computed value."""
+    return min(max_response_bytes * 6 + 1024 * 1024, sys.maxsize * 2 + 1)
+
+
 CALL_SECONDS = 320.0
 READ_SECONDS = 10.0
 SHUTDOWN_SECONDS = 4.0
@@ -47,6 +55,7 @@ MESSAGES = {
     "runtime_limit_reached": "The client runtime limit has been reached; stop an owned runtime before starting another.",
     "status_failed": "Fabric could not read the recorded runtime status.",
     "stop_failed": "Fabric could not complete the stop operation.",
+    "timeout": "The invocation exceeded its deadline.",
     "invoke_failed": "Fabric did not report a successful invocation.",
     "host_stopping": "The Fabric host is shutting down.",
     "runtime_unavailable": "No active Fabric runtime is available.",
@@ -74,6 +83,32 @@ MESSAGES = {
 }
 
 
+def timeout_details(value: Any) -> dict[str, Any]:
+    """Keep bounded deadline identity, excluding arbitrary guest diagnostics."""
+    if not isinstance(value, dict):
+        return {}
+    details = {}
+    for key, item in value.items():
+        if key == "owner" and item in ("adapter", "fabric_runtime"):
+            details[key] = item
+        elif (
+            key in ("cause_code", "native_code")
+            and isinstance(item, str)
+            and CAUSE.fullmatch(item)
+        ):
+            details[key] = item
+        elif (
+            key == "timeout_seconds"
+            and type(item) in (int, float)
+            and 0 <= item <= sys.float_info.max
+            and math.isfinite(item)
+        ):
+            details[key] = item
+        elif key == "deadline_millis" and type(item) is int and 0 <= item <= 2**64 - 1:
+            details[key] = item
+    return details
+
+
 class ProtocolError(ValueError):
     """A fixed diagnostic that never includes request values or raw exceptions."""
 
@@ -84,10 +119,14 @@ class ProtocolError(ValueError):
         *,
         unsupported: bool = False,
         cause: str | None = None,
+        details: Any = None,
     ):
         self.code = code
         self.stage = stage
         self.unsupported = unsupported
+        self.details = (
+            timeout_details(details) if code == "timeout" and stage == "invoke" else {}
+        )
         message = MESSAGES[code]
         if isinstance(cause, str) and CAUSE.fullmatch(cause):
             message = f"{message} Cause: {cause}."
@@ -116,6 +155,7 @@ def envelope(
             "stage": error.stage,
             "message": str(error),
             "effects": effects,
+            **({"details": error.details} if error.details else {}),
         }
         if error
         else None,
@@ -234,10 +274,10 @@ def encode_request(request: dict[str, Any]) -> bytes:
     return encoded
 
 
-def encode_response(response: dict[str, Any]) -> bytes:
+def encode_response(response: dict[str, Any], *, limit: int = RESPONSE_LIMIT) -> bytes:
     try:
         encoded = _encode(response)
-        if len(encoded) <= RESPONSE_LIMIT:
+        if len(encoded) <= limit:
             return encoded
     except (ValueError, TypeError, RecursionError):
         pass
@@ -269,7 +309,9 @@ def validate_response(response: dict[str, Any], operation: str) -> None:
     if error is not None:
         if (
             not isinstance(error, dict)
-            or set(error) != {"code", "stage", "message", "effects"}
+            or not {"code", "stage", "message", "effects"}
+            <= set(error)
+            <= {"code", "stage", "message", "effects", "details"}
             or not isinstance(error["code"], str)
             or error["code"] not in MESSAGES
             or error["stage"]
@@ -286,6 +328,15 @@ def validate_response(response: dict[str, Any], operation: str) -> None:
             or error["effects"] not in ("none", "applied", "unknown")
         ):
             raise invalid
+        details = (
+            timeout_details(error.get("details"))
+            if error["code"] == "timeout" and error["stage"] == "invoke"
+            else {}
+        )
+        if details:
+            error["details"] = details
+        else:
+            error.pop("details", None)
         # Replace server text with the fixed message, keeping only its cause code.
         cause = (
             CAUSE_SUFFIX.search(error["message"])

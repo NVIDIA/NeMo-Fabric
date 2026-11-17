@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from nemo_fabric import Fabric, FabricConfigError, RunResult
+from nemo_fabric import SkillConfig, SkillDirectory
 from nemo_fabric.integrations.harbor import runner
 from nemo_fabric.integrations.harbor.fabric_agent import FabricAgent
 from nemo_fabric.integrations.harbor.models import FabricRunPayload
@@ -205,6 +206,53 @@ async def test_relative_explicit_skill_overlapping_collection_is_not_added_twice
         str(skill_collection / "alternate"),
     ]
     assert skill_payload.config.to_mapping() == original
+
+
+@pytest.mark.parametrize("names", [[], ["default"], ["alternate", "default"]])
+async def test_structured_skills_receive_one_skill_entry_per_task_skill(
+    skill_payload,
+    skill_collection: Path,
+    mock_fabric,
+    default_skill: Path,
+    names: list[str],
+):
+    for child in skill_collection.iterdir():
+        if child.name not in names:
+            shutil.rmtree(child)
+    skill_payload.config.skills = SkillConfig(
+        directories=[SkillDirectory(folder=str(default_skill.parent))],
+        duplicates="reject",
+    )
+    original = skill_payload.config.to_mapping()
+    transported = FabricRunPayload.model_validate_json(skill_payload.model_dump_json())
+
+    await runner.run(transported)
+
+    skills = mock_fabric.run.call_args.args[0].skills
+    assert skills.paths == []
+    assert skills.duplicates == "reject"
+    assert skills.directories == [
+        SkillDirectory(folder=str(default_skill.parent)),
+        *(SkillDirectory(skill=str(skill_collection / name)) for name in names),
+    ]
+    assert transported.config.to_mapping() == original
+
+
+async def test_structured_skill_entries_are_not_added_twice(
+    skill_payload, skill_collection: Path, mock_fabric
+):
+    relative_skill = Path(skill_collection.name) / "default"
+    skill_payload.config.skills = SkillConfig(
+        directories=[SkillDirectory(skill=str(relative_skill))]
+    )
+    skill_payload.skills_dir = Path(skill_collection.name)
+
+    await runner.run(skill_payload)
+
+    assert mock_fabric.run.call_args.args[0].skills.directories == [
+        SkillDirectory(skill=str(relative_skill)),
+        SkillDirectory(skill=str(skill_collection / "alternate")),
+    ]
 
 
 def test_cli_preserves_malformed_skill_path_diagnostic(

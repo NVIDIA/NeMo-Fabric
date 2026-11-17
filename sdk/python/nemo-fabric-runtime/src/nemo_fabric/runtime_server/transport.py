@@ -28,6 +28,7 @@ from nemo_fabric.runtime_server.protocol import (
     SHUTDOWN_SECONDS,
     SOCKET_PATH,
     ProtocolError,
+    response_transport_limit,
     decode_object,
     encode_request,
     encode_response,
@@ -88,7 +89,8 @@ async def client(
     request: dict[str, Any],
     *,
     socket_path: Path = Path(SOCKET_PATH),
-    timeout: float = CALL_SECONDS,
+    timeout: float | None = None,
+    response_limit: int = response_transport_limit(),
 ) -> dict[str, Any]:
     started = time.monotonic()
     operation = request["operation"]
@@ -102,14 +104,21 @@ async def client(
     try:
         encoded = encode_request(request)
         if operation == "check":
-            timeout = min(timeout, request.get("timeout_seconds", CHECK_SECONDS))
-        deadline = started + timeout
+            timeout = min(
+                timeout if timeout is not None else CALL_SECONDS,
+                request.get("timeout_seconds", CHECK_SECONDS),
+            )
+        elif operation != "invoke" and timeout is None:
+            timeout = CALL_SECONDS
+        deadline = started + timeout if timeout is not None else None
         # One deadline covers connection, write, and the complete response.
         async with asyncio.timeout_at(
             asyncio.get_running_loop().time() + max(0, deadline - time.monotonic())
+            if deadline is not None
+            else None
         ):
             reader, writer = await asyncio.open_unix_connection(
-                socket_path, limit=RESPONSE_LIMIT
+                socket_path, limit=response_limit
             )
             if operation == "check":
                 remaining = deadline - time.monotonic()
@@ -119,7 +128,7 @@ async def client(
             writer.write(encoded)
             sent = True
             await writer.drain()
-            response = await read_message(reader, RESPONSE_LIMIT)
+            response = await read_message(reader, response_limit)
             validate_response(response, operation)
             if operation == "status" and response["status"] == "succeeded":
                 result = response["result"]
@@ -249,10 +258,12 @@ async def serve(
                 async with asyncio.timeout(READ_SECONDS):
                     request = await read_message(reader, REQUEST_LIMIT)
                 response = await host.handle(request)
+                response_limit = host.response_limit_bytes(request)
             except (ValueError, TimeoutError):
                 response = envelope("unknown", error=ProtocolError())
+                response_limit = RESPONSE_LIMIT
             # A disconnected bridge does not cancel or replay runtime work.
-            writer.write(encode_response(response))
+            writer.write(encode_response(response, limit=response_limit))
             await asyncio.wait_for(writer.drain(), READ_SECONDS)
         except (OSError, TimeoutError):
             pass

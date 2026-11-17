@@ -76,7 +76,7 @@ authentication and per-server tool filters are unsupported.
 The adapter accepts plain-text input and returns the terminal assistant text in
 `output.response`. Ordered invocations reuse one warm Kilo Code session and its
 conversation history. A prompt has a 30-minute deadline; on timeout the adapter
-asks Kilo Code to abort the prompt and reports `kilo_prompt_timeout`.
+asks Kilo Code to abort the prompt and reports `timeout`, retaining `kilo_prompt_timeout` as the cause.
 
 The adapter disables project Kilo Code configuration and uses temporary Kilo
 and XDG directories. The child process receives required operating-system
@@ -155,3 +155,8 @@ credentials, or MCP connectivity. Checks never send prompts or abort a turn.
 At most one native health request remains outstanding after a caller timeout.
 
 Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) for shared behavior and a comparison of native evidence across adapters.
+
+
+## Invocation deadlines
+
+Kilo invocation deadlines use canonical error code `timeout`. Error metadata retains `owner: "adapter"`, the native cause, and the enforced timeout in seconds or absolute `deadline_millis`. Setup and transport failures retain their existing classifications.

@@ -53,6 +53,8 @@ Start with the
 for the implementation sequence. Use these generated schemas for exact wire
 shapes; do not reconstruct the contract from examples.
 
+An Adapter Descriptor's optional `config_schema` validates static cross-field constraints against serialized northbound `FabricConfig` during planning and metadata-only admission. The adapter still receives only the projected southbound `AgentConfig`. This schema supplements `settings_schema`, `model_schema`, and extension schemas; it does not replace normalized capability checks or runtime validation of installed dependencies and dynamic state.
+
 The language bindings preserve this boundary:
 
 - Python adapters use `nemo-fabric-adapter-contract` for standard-library
@@ -206,3 +208,13 @@ unchanged.
 `sdk/run-result.execution` is optional. `sdk/agent.provenance` controls collection and carries explicit caller reports through existing dispatch. Optional evidence is decoded defensively; invalid reports become coverage gaps. The strict `AgentConfig`, `AgentRunRequest`, `AgentRunResult` and `RuntimeContext` shapes and adapter wire version are unchanged.
 
 Evidence receivers additionally enforce report byte/aggregate entry budgets, unique context keys and infrastructure references to existing contexts. These cross-field limits supplement the JSON Schema's closed shapes, non-blank identities, observation and coverage constraints.
+
+### Response budgets
+
+The SDK configuration and run-plan schemas include `RuntimeConfig.response_limits`
+and the `ResponseLimits` definition. The four positive integer fields are
+`max_response_bytes`, `max_artifact_bytes`, `max_artifact_files`, and
+`max_artifact_file_bytes`; omitted fields use their declared defaults. These are
+SDK-owned budgets, so they do not change `AgentRuntimeConfig` or the southbound
+adapter contract. See the [SDK guide](../docs/sdk/python.mdx#response-and-artifact-limits)
+for counting rules, defaults, and failure behavior.

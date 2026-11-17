@@ -10,7 +10,7 @@ adapters in Harbor tasks. Harbor options select the model, harness, skills, MCP
 servers, tool policy, and telemetry; `FabricAgent` translates them into one
 typed `FabricConfig` for the task run.
 
-Harbor's `skills_dir` is a task-side collection containing `<skill_name>/SKILL.md` directories. The task runner expands its immediate entries into individual NeMo Fabric skill paths in name order, preserving explicit `config.skills.paths` and avoiding duplicate paths. An empty collection adds no skills. Missing collections and entries without a regular `SKILL.md` file fail before harness execution; skill contents are still validated by the selected adapter. Collection paths are resolved inside the task environment, relative to `fabric_config_base_dir` when not absolute, never through the host filesystem. Use matching NeMo Fabric versions on the host and in the task environment for this transport contract.
+Harbor's `skills_dir` is a task-side collection containing `<skill_name>/SKILL.md` directories. The task runner expands its immediate entries into individual NeMo Fabric skills in name order and keeps the configured skills mode: when `config.skills.directories` is set, it appends one `SkillDirectory(skill=...)` entry per task skill; otherwise it appends to `config.skills.paths`. Explicit entries are preserved and paths that resolve to an existing skill entry or path aren't added twice. An empty collection adds no skills. Missing collections and entries without a regular `SKILL.md` file fail before harness execution; skill contents are still validated by the selected adapter. Collection paths are resolved inside the task environment, relative to `fabric_config_base_dir` when not absolute, never through the host filesystem. Use matching NeMo Fabric versions on the host and in the task environment for this transport contract.
 
 Refer to the [Harbor example](../../../../../../../examples/harbor/README.md)
 for runnable SWE-Bench commands, configuration variations, reward checks, and
@@ -77,17 +77,13 @@ Deploy matching bridge and runner versions: a runner predating name-only transpo
 
 The task runner writes normalized evidence before exiting nonzero for failed or cancelled runs. The bridge downloads that evidence before reporting a Harbor execution failure or cancellation, including when the runner exits nonzero. A completed answer can still receive verifier reward zero; verifier scoring is not an execution failure. A missing or malformed result does not hide an available process failure.
 
-Lifecycle failures before a normalized result is available produce a separate
-`runner_error` record. Core host-operation deadlines (`host_timeout`) use code
-`timeout`. The bridge classifies only this canonical code as a deadline, whether
-it appears in a runner error or normalized result, and raises `TimeoutError`,
-which Harbor translates into `AgentTimeoutError`. Cancellation takes precedence.
-An invocation with status `cancelled` becomes a trial execution error and retains
-its normalized status; it does not interrupt the Harbor job. Actual orchestration
-cancellation still propagates as `asyncio.CancelledError`.
-The bridge does not
-inspect harness IDs, native error-code lists, or diagnostic text. Other
-adapter-specific timeout codes are not automatically reclassified.
+Lifecycle failures before a normalized result is available produce a separate `runner_error` record. Core host-operation deadlines (`host_timeout`) and adapter lifecycle deadlines reported with canonical code `timeout` retain the lifecycle stage and structured `details`. Runtime deadlines include `owner: "fabric_runtime"`, `timeout_seconds`, and `cause_code: "host_timeout"`. Adapters normalize native execution deadlines at their boundary, with their own owner, limit, and native cause; the bridge does not inspect harness IDs, native error-code lists, or diagnostic text.
+
+Only canonical `timeout` failures at stage `invoke` raise Harbor's `AgentTimeoutError` and remain eligible for verification. Startup and shutdown deadlines, ordinary runtime failures, and configuration errors raise `RuntimeError` and skip verification. Equivalent runtime and adapter invocation deadlines use the same policy. The verifier still owns the reward.
+
+Harbor versions with [phase timeout ownership](https://github.com/harbor-framework/harbor/pull/3376) preserve the inner exception and its actual deadline. Older Harbor versions catch all nested `TimeoutError` subclasses and can still overwrite the trial exception message with their outer budget, even when that budget did not expire. The downloaded NeMo Fabric evidence retains the original deadline and cause in either case; this NeMo Fabric change alone does not fix Harbor's phase ownership.
+
+Cancellation takes precedence. An invocation with status `cancelled` becomes a trial execution error and retains its normalized status; it does not interrupt the Harbor job. Actual orchestration cancellation still propagates as `asyncio.CancelledError`.
 
 Raised lifecycle failures retain an optional versioned `evidence` object beside `runner_error`. It records only obtained identities, cleanup events, selected software evidence, validated persisted stats and artifact references. Each dimension has explicit coverage; missing usage and cost remain unknown, and absent samples are not reconstructed. A result obtained before a later publication failure is retained as `partial_result`, without changing the failure into a successful run. Partial usage remains evidence and does not populate Harbor's final accounting totals.
 
@@ -125,7 +121,7 @@ descriptor metadata, not executable adapters. The host does not need to install
 each harness SDK to derive the agent's instance capabilities.
 
 `FabricAgent` uses the shared `inspect_adapter()` API and the existing native
-planner to validate the requested configuration. Skills and MCP support come
+planner to validate the requested configuration, including descriptor `config_schema` constraints such as NOOA's required workflow and Deep Agents' explicit local-shell tool policy. These checks run before scheduling or installation. Installed dependencies, Pi native catalog membership, credentials, and endpoint health remain runtime checks. Skills and MCP support come
 from the descriptor's accepted configuration sections. ATIF requires a selected
 provider that declares ATIF output; Relay also requires an explicitly enabled,
 unambiguous observability component. These are admission claims, not proof that

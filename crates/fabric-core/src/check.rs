@@ -94,6 +94,10 @@ pub enum CheckReason {
     ServerStopping,
     /// Advertised capability evidence is unavailable.
     CapabilitiesUnverified,
+    /// Runtime cleanup is in progress.
+    RuntimeBusy,
+    /// Owned runtime cleanup could not be confirmed.
+    CleanupUnconfirmed,
     /// No matching runtime binding exists.
     RuntimeUnavailable,
     /// No matching active service binding exists.
@@ -683,7 +687,7 @@ fn probe_remote(
     let response = crate::environment::command_runtime(
         environment,
         &command,
-        remaining.ceil().clamp(1.0, 320.0) as u64,
+        Some(remaining.ceil().clamp(1.0, 320.0) as u64),
     );
     let mut report = match response {
         Ok(crate::task_command::TaskCommandResponse::Returned { value }) => {

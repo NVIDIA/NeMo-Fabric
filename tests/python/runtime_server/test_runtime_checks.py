@@ -263,3 +263,43 @@ async def test_stop_invalidates_runtime_health_in_flight(
     finally:
         release.set()
         await checking
+
+
+async def test_runtime_check_reports_pending_and_unconfirmed_cleanup(
+    host, host_request, mock_fabric, mock_runtime
+):
+    from nemo_fabric import FabricRuntimeError
+
+    await host.handle(host_request("start"))
+    entered, release = asyncio.Event(), asyncio.Event()
+    mock_fabric.check = AsyncMock()
+
+    async def stop():
+        entered.set()
+        await release.wait()
+        raise FabricRuntimeError(
+            "test cleanup failure", stage="stop", code="cleanup_unconfirmed"
+        )
+
+    mock_runtime.stop.side_effect = stop
+    stopping = asyncio.create_task(host.handle(host_request("stop")))
+    try:
+        async with asyncio.timeout(1):
+            await entered.wait()
+        pending = await host.handle(host_request("check", runtime_id="runtime-1"))
+        assert pending["result"]["reason_code"] == "runtime_busy"
+        assert pending["result"]["runtime"] == {
+            "state": "unknown",
+            "activity": "stopping",
+        }
+        protocol.validate_response(pending, "check")
+        release.set()
+        assert (await stopping)["status"] == "failed"
+        failed = await host.handle(host_request("check", runtime_id="runtime-1"))
+        assert failed["result"]["reason_code"] == "cleanup_unconfirmed"
+        assert failed["result"]["runtime"] == {"state": "failed", "activity": "unknown"}
+        protocol.validate_response(failed, "check")
+        mock_fabric.check.assert_not_awaited()
+    finally:
+        release.set()
+        await asyncio.gather(stopping, return_exceptions=True)
