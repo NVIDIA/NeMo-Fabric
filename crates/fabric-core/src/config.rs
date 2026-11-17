@@ -4048,6 +4048,20 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
             );
         }
     }
+    if let Some(skills) = &descriptor.skills {
+        // Public Rust structs can bypass custom deserializers. Reapply the
+        // canonical skill contract, including directory-loading invariants.
+        let value = serde_json::to_value(skills).map_err(FabricError::SerializeJson)?;
+        let validated: AdapterSkillsSupport =
+            serde_json::from_value(value).map_err(|_| FabricError::InvalidAdapterDescriptor {
+                path: path.to_path_buf(),
+                message: "skills metadata violates the adapter contract".to_string(),
+            })?;
+        // Flattened extension keys must not mask invalid typed field values.
+        if &validated != skills {
+            return invalid_adapter_descriptor(path, "skills metadata is not canonical");
+        }
+    }
     // A duplicate policy applies only between `skills.directories` entries,
     // which reach only adapters that load them.
     if let Some(skills) = &descriptor.skills
@@ -5809,6 +5823,64 @@ mod tests {
             .expect("schema map"),
         );
         assert!(inspect_adapter_config(config.clone(), &descriptor, None).is_err());
+    }
+
+    #[test]
+    fn supplied_skill_metadata_uses_the_deserialization_contract() {
+        let original = load_adapter_descriptor(
+            repository_adapter_dir().join("python/hermes/hermes.fabric-adapter.json"),
+        )
+        .expect("descriptor");
+        let config = typed_config("nvidia.fabric.hermes");
+        assert!(
+            inspect_adapter_config(config.clone(), &original, None)
+                .expect("valid metadata")
+                .issues
+                .is_empty()
+        );
+        for invalid in [
+            "skill_file",
+            "empty_entries",
+            "duplicate_entries",
+            "zero_depth",
+            "required_fields",
+            "empty_policies",
+            "native_policy",
+        ] {
+            let mut descriptor = original.clone();
+            let skills = descriptor.skills.as_mut().expect("skills");
+            let loading = skills.directory_loading.as_mut().expect("loading");
+            match invalid {
+                "skill_file" => loading.skill_file = "OTHER.md".to_string(),
+                "empty_entries" => loading.supported_entries.clear(),
+                "duplicate_entries" => loading.supported_entries.push(loading.supported_entries[0]),
+                "zero_depth" => {
+                    loading.discovery.depth_limit = SkillDepthLimit::Fixed { levels: 0 }
+                }
+                "required_fields" => {
+                    loading.parsing.required_frontmatter_fields = vec![" ".to_string()]
+                }
+                "empty_policies" => skills
+                    .duplicates
+                    .as_mut()
+                    .expect("duplicates")
+                    .supported_policies
+                    .clear(),
+                "native_policy" => {
+                    skills.duplicates.as_mut().expect("duplicates").native = Some(" ".to_string())
+                }
+                _ => unreachable!(),
+            }
+            let wire = serde_json::to_value(&descriptor).expect("metadata JSON");
+            assert!(
+                serde_json::from_value::<AdapterDescriptor>(wire).is_err(),
+                "{invalid}"
+            );
+            assert!(
+                inspect_adapter_config(config.clone(), &descriptor, None).is_err(),
+                "{invalid}"
+            );
+        }
     }
 
     fn typed_config(adapter_id: &str) -> FabricConfig {

@@ -317,3 +317,53 @@ def test_nested_sequence_credentials_fail_preflight(
             }
         )
     assert "sentinel-secret" not in str(exc.value)
+
+
+@pytest.mark.parametrize("workflow", [False, True])
+@pytest.mark.parametrize("metadata_source", ["catalog", "files"])
+def test_nooa_model_preflight_keeps_selected_workflow_context(
+    implementation, tmp_path, workflow, metadata_source
+):
+    from nemo_fabric_adapter_catalog import (
+        get_adapter_descriptor,
+        get_target_descriptor,
+    )
+
+    options = {
+        "fabric_adapter_id": "nvidia.fabric.nooa",
+        "fabric_model_config": {"provider": "openai", "model": "test-model"},
+    }
+    if workflow:
+        options["fabric_workflow_target_id"] = "nvidia.nooa.coding-agent"
+    if metadata_source == "files":
+        adapter = tmp_path / "adapter.json"
+        adapter.write_text(json.dumps(get_adapter_descriptor("nvidia.fabric.nooa")))
+        options["fabric_adapter_descriptor"] = adapter
+        if workflow:
+            target = tmp_path / "target.json"
+            target.write_text(
+                json.dumps(get_target_descriptor("nvidia.nooa.coding-agent"))
+            )
+            options["fabric_target_descriptor"] = target
+    if not workflow:
+        with pytest.raises(ValueError, match="fabric_model_config is invalid"):
+            implementation.FabricAgent.preflight(kwargs=options)
+    else:
+        implementation.FabricAgent.preflight(kwargs=options)
+        agent = implementation.FabricAgent(logs_dir=tmp_path, **options)
+        assert (
+            agent._build_spec("test").config.workflow.target_id
+            == "nvidia.nooa.coding-agent"
+        )
+
+
+def test_nooa_model_preflight_rejects_invalid_workflow_settings(implementation):
+    with pytest.raises(ValueError, match="fabric_model_config is invalid"):
+        implementation.FabricAgent.preflight(
+            kwargs={
+                "fabric_adapter_id": "nvidia.fabric.nooa",
+                "fabric_model_config": {"provider": "openai", "model": "test-model"},
+                "fabric_workflow_target_id": "nvidia.nooa.arc-solver",
+                "fabric_workflow_settings": {"reflect_every": 0},
+            }
+        )

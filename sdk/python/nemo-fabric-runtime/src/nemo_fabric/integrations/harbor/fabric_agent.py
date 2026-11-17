@@ -991,19 +991,46 @@ def _inspect_configured_model(options: FabricAgentOptions) -> None:
             "fabric_model_config requires a readable host adapter descriptor"
         ) from None
     try:
-        _inspect_adapter_profile(
-            FabricConfig(
-                metadata=MetadataConfig(name="harbor-model-preflight"),
-                harness=HarnessConfig(
-                    adapter_id=options.fabric_adapter_id,
-                    resolution="preinstalled",
-                    settings=dict(options.fabric_harness_settings or {}),
-                ),
-                models={"default": model},
+        target_descriptor = None
+        if options.fabric_workflow_target_id is not None:
+            if options.fabric_target_descriptor is not None:
+                target_descriptor = json.loads(
+                    options.fabric_target_descriptor.read_text(encoding="utf-8")
+                )
+            else:
+                from nemo_fabric_adapter_catalog import get_target_descriptor
+
+                target_descriptor = get_target_descriptor(
+                    options.fabric_workflow_target_id
+                )
+        config = FabricConfig(
+            metadata=MetadataConfig(name="harbor-model-preflight"),
+            harness=HarnessConfig(
+                adapter_id=options.fabric_adapter_id,
+                resolution="preinstalled",
+                settings=dict(options.fabric_harness_settings or {}),
             ),
-            descriptor,
+            workflow=(
+                WorkflowConfig(
+                    target_id=options.fabric_workflow_target_id,
+                    settings=dict(options.fabric_workflow_settings or {}),
+                )
+                if options.fabric_workflow_target_id is not None
+                else None
+            ),
+            models={"default": model},
         )
-    except (ValueError, FabricConfigError):
+        _inspect_adapter_profile(
+            config, descriptor, target_descriptor=target_descriptor
+        )
+    except (
+        ImportError,
+        KeyError,
+        OSError,
+        UnicodeError,
+        ValueError,
+        FabricConfigError,
+    ):
         raise ValueError(
             "fabric_model_config is invalid for the selected adapter descriptor"
         ) from None
