@@ -2,11 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
+import base64
 import json
 import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from urllib.parse import parse_qs
+from urllib.parse import unquote
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -41,6 +44,10 @@ def mock_api_server(port: int) -> Iterator[str]:
         app.state.tool_calls = []
         app.state.tool_call_index = 0
         app.state.mcp_authorization_headers = []
+        app.state.oauth2_client = None
+        app.state.oauth2_expires_in = 3600
+        app.state.oauth2_token_requests = []
+        app.state.oauth2_valid_tokens = set()
 
     reset_state()
 
@@ -111,6 +118,63 @@ def mock_api_server(port: int) -> Iterator[str]:
     @app.get("/_mcp_authorization_headers")
     def mcp_authorization_headers() -> list[str | None]:
         return list(app.state.mcp_authorization_headers)
+
+    @app.post("/_oauth2")
+    async def oauth2(request: Request) -> dict[str, object]:
+        """Configure the client credentials the token endpoint accepts.
+
+        ``revoke`` invalidates every issued token, as if each had expired.
+        """
+
+        payload = await request.json()
+        if "client_id" in payload:
+            app.state.oauth2_client = (payload["client_id"], payload["client_secret"])
+        app.state.oauth2_expires_in = payload.get("expires_in", app.state.oauth2_expires_in)
+        if payload.get("revoke"):
+            app.state.oauth2_valid_tokens.clear()
+        return {"status": "ok"}
+
+    @app.get("/_oauth2_token_requests")
+    def oauth2_token_requests() -> list[dict[str, str]]:
+        """GET this to inspect the form fields of each token request."""
+
+        return list(app.state.oauth2_token_requests)
+
+    @app.post("/oauth2/token")
+    async def oauth2_token(request: Request):
+        """Client-credentials token endpoint using client_secret_basic."""
+
+        form = {
+            key: values[0] for key, values in parse_qs((await request.body()).decode()).items()
+        }
+        app.state.oauth2_token_requests.append(form)
+        authorization = request.headers.get("authorization", "")
+        expected = app.state.oauth2_client
+        credentials = None
+        if authorization.startswith("Basic "):
+            client_id, _, secret = (
+                base64.b64decode(authorization.removeprefix("Basic ")).decode().partition(":")
+            )
+            credentials = (unquote(client_id), unquote(secret))
+        if form.get("grant_type") != "client_credentials" or credentials != expected:
+            return JSONResponse(status_code=401, content={"error": "invalid_client"})
+        token = f"sa-token-{len(app.state.oauth2_token_requests)}"
+        app.state.oauth2_valid_tokens.add(token)
+        return {
+            "access_token": token,
+            "token_type": "Bearer",
+            "expires_in": app.state.oauth2_expires_in,
+        }
+
+    @app.post("/mcp-protected")
+    async def mcp_protected(request: Request):
+        """The /mcp server, answering 401 unless it gets a valid issued token."""
+
+        token = request.headers.get("authorization", "").removeprefix("Bearer ")
+        if token not in app.state.oauth2_valid_tokens:
+            app.state.mcp_authorization_headers.append(request.headers.get("authorization"))
+            return Response(status_code=401)
+        return await mcp(request)
 
     @app.post("/mcp")
     async def mcp(request: Request):

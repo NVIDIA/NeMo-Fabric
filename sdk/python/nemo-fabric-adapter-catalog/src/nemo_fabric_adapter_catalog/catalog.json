@@ -1578,6 +1578,7 @@
             "tools.enabled",
             "tools.blocked",
             "mcp",
+            "mcp.auth.service_account",
             "skills"
           ],
           "system_instruction_modes": [
@@ -1931,7 +1932,7 @@
         "name": "nemo-fabric-adapters-deepagents",
         "version": "0.7.0"
       },
-      "sha256": "dd6a21d5af9df1072aa476a064280d9012f683adbbfc6cb6a92b33562416e340",
+      "sha256": "b098e690aafe76f4ef06395165171840ef9b6f785d6c76374927c0110a6784f7",
       "source": "adapters/python/deepagents/deepagents.fabric-adapter.json"
     },
     "nvidia.fabric.mini-swe-agent": {

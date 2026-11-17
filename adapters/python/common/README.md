@@ -239,3 +239,35 @@ share that span's trace. Refer to "Event Metadata Promotion" in the
 for prefix syntax and collision rules.
 
 The lifecycle host carries optional typed software evidence beside its outcome, leaving `AgentRunResult` unchanged. It collects selected metadata after successful startup and reuses that snapshot across invocations. The start payload's `provenance.enabled=false` skips collectors and passive version capture. Missing reports from older hosts remain explicit gaps at the core receiver. Metadata helpers adapt selected code from NVIDIA/NeMo-Fabric#458 at `2bfd53321fa8d541d42abc195be5e9dd9db4350f`; the current report model, bounds and timestamps are independent of that PR's versioned extension envelope.
+
+## MCP Client Credentials
+
+Adapters whose MCP client accepts an `httpx.Auth` can implement
+`service_account` MCP authentication with
+`nemo_fabric_adapters.common.mcp_service_account`. Build a
+`ServiceAccountTokenClient` from the server's authentication settings, using
+`validate_token_url()` and `resolve_client_secret()` to check `token_url` and
+read the secret named by `client_secret_env`, and pass
+`service_account_auth(client)` to the MCP client:
+
+```python
+from nemo_fabric_adapters.common import mcp_service_account
+
+auth = server.authentication
+token_client = mcp_service_account.ServiceAccountTokenClient(
+    client_id=auth.client_id,
+    client_secret=mcp_service_account.resolve_client_secret(name, auth.client_secret_env),
+    token_url=mcp_service_account.validate_token_url(name, auth.token_url),
+    scopes=auth.scopes,
+    token_endpoint_auth_method=auth.token_endpoint_auth_method,
+    token_cache_buffer_seconds=auth.token_cache_buffer_seconds,
+)
+http_auth = mcp_service_account.service_account_auth(token_client)
+```
+
+The token is cached in memory and renewed before it expires. On a `401` from the
+MCP server the auth requests a new token and retries the request once. A
+`ServiceAccountTokenError` with `rejected=True` means the token endpoint refused
+the client credentials. The module imports `httpx` when it needs it, so an
+adapter that uses it must depend on `httpx`. Use `secret_env_names()` to find the
+secret variables an adapter must keep out of agent-run commands.

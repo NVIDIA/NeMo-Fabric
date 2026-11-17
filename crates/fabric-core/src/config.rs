@@ -6541,7 +6541,7 @@ mod tests {
 
     #[test]
     fn mcp_service_account_authentication_requires_adapter_support() {
-        let mut config = typed_config("nvidia.fabric.langchain.deepagents");
+        let mut config = typed_config("nvidia.fabric.codex");
         config.skills = None;
         config.mcp = Some(McpConfig {
             servers: BTreeMap::from([(
@@ -6566,7 +6566,7 @@ mod tests {
         });
 
         let error = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
-            .expect_err("Deep Agents does not support service-account MCP authentication");
+            .expect_err("Codex does not support service-account MCP authentication");
 
         assert!(matches!(
             error,
@@ -6574,7 +6574,7 @@ mod tests {
                 adapter_id,
                 field,
                 ..
-            } if adapter_id == "nvidia.fabric.langchain.deepagents"
+            } if adapter_id == "nvidia.fabric.codex"
                 && field == "mcp.servers.automation.authentication"
         ));
     }
