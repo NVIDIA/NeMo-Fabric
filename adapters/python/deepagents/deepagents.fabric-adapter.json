@@ -188,6 +188,27 @@
             },
             "default": [],
             "description": "Caller-defined declarative or asynchronous subagents; the built-in general-purpose subagent remains available by default."
+          },
+          "middleware": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$",
+                  "description": "Import path of an installed LangChain AgentMiddleware subclass, as package.module:Class."
+                },
+                "settings": {
+                  "type": "object",
+                  "description": "Keyword arguments passed to the middleware class constructor."
+                }
+              },
+              "required": ["ref"],
+              "additionalProperties": false
+            },
+            "default": [],
+            "description": "Custom LangChain middleware for the main agent, applied in list order before NeMo Fabric's tool policy and telemetry middleware."
           }
         },
         "required": [],
@@ -197,6 +218,27 @@
       }
     },
     "required": [],
+    "additionalProperties": false
+  },
+  "tool_definition_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "kind": {
+        "const": "python",
+        "description": "A tool implemented in an installed Python package."
+      },
+      "ref": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$",
+        "description": "Import path of a LangChain BaseTool instance or BaseTool subclass, as package.module:attribute."
+      },
+      "settings": {
+        "type": "object",
+        "description": "Keyword arguments passed to a BaseTool subclass constructor; must be empty for a BaseTool instance."
+      }
+    },
+    "required": ["kind", "ref"],
     "additionalProperties": false
   },
   "requirements": {},
@@ -271,6 +313,7 @@
       "instructions.system",
       "runtime.max_turns",
       "runtime.keep_state",
+      "tools.definitions",
       "tools.enabled",
       "tools.blocked",
       "mcp",

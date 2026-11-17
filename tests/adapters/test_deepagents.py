@@ -3929,3 +3929,487 @@ def test_main_serves_persistent_runtime(monkeypatch):
     serve.assert_called_once_with(
         adapter.DeepAgentsRuntime, config_loader=AgentConfig.from_mapping
     )
+
+
+# --- custom Python tools and middleware ----------------------------------------
+
+
+@pytest.fixture(name="build_kwargs")
+def build_kwargs_fixture(tmp_path, make_payload):
+    """Return a coroutine that builds create_deep_agent kwargs for config overrides."""
+
+    async def build(
+        *,
+        definitions: dict[str, Any] | None = None,
+        middleware: list[Any] | None = None,
+        blocked: list[str] | None = None,
+    ) -> dict[str, Any]:
+        payload = make_payload(tmp_path)
+        tools: dict[str, Any] = {}
+        if definitions is not None:
+            tools["definitions"] = definitions
+        if blocked is not None:
+            tools["blocked"] = blocked
+        if tools:
+            payload["config"]["tools"] = tools
+        if middleware is not None:
+            payload["config"]["harness"]["settings"]["deepagents"] = {
+                "middleware": middleware
+            }
+        agent_config = AgentConfig.from_mapping(payload["config"])
+        return await adapter.build_agent_kwargs(
+            agent_config,
+            RuntimeContext.from_mapping(payload["runtime_context"]),
+            payload["base_dir"],
+            MagicMock(),
+            agent_config.harness.settings,
+        )
+
+    return build
+
+
+def test_descriptor_declares_custom_tools_and_middleware():
+    descriptor = json.loads(
+        (ROOT / "adapters/python/deepagents/deepagents.fabric-adapter.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert "tools.definitions" in descriptor["config"]["accepts"]
+    tool_schema = descriptor["tool_definition_schema"]
+    assert tool_schema["properties"]["kind"]["const"] == "python"
+    assert tool_schema["required"] == ["kind", "ref"]
+    middleware_schema = descriptor["settings_schema"]["properties"]["deepagents"][
+        "properties"
+    ]["middleware"]
+    assert middleware_schema["items"]["required"] == ["ref"]
+    assert (
+        middleware_schema["items"]["properties"]["ref"]["pattern"]
+        == tool_schema["properties"]["ref"]["pattern"]
+        == adapter.PYTHON_REF_PATTERN.pattern
+    )
+
+
+@pytest.mark.usefixtures("use_real_langgraph")
+async def test_custom_tools_and_middleware_run_before_the_tool_policy(
+    build_kwargs, deepagents_extension
+):
+    from langchain_core.messages import ToolMessage
+
+    create_kwargs = await build_kwargs(
+        definitions={
+            "convert_units": {
+                "kind": "python",
+                "ref": f"{deepagents_extension}.tools:convert_units",
+            },
+            "erp_lookup": {
+                "kind": "python",
+                "ref": f"{deepagents_extension}.tools:ErpLookup",
+                "settings": {"endpoint": "https://erp.example.test"},
+            },
+        },
+        middleware=[
+            {
+                "ref": f"{deepagents_extension}.middleware:SystemMarker",
+                "settings": {"marker": "first"},
+            },
+            {"ref": f"{deepagents_extension}.middleware:SecondMarker"},
+        ],
+        blocked=["convert_units"],
+    )
+
+    tools = create_kwargs["tools"]
+    assert [tool.name for tool in tools] == ["convert_units", "erp_lookup"]
+    assert tools[1].endpoint == "https://erp.example.test"
+    middleware = create_kwargs["middleware"]
+    assert [type(item).__name__ for item in middleware] == [
+        "ToolEntryGateMiddleware",
+        "SystemMarker",
+        "SecondMarker",
+        "ToolGateMiddleware",
+    ]
+    assert middleware[1].marker == "first"
+
+    request = types.SimpleNamespace(
+        tool_call={"name": "convert_units", "id": "call-1", "args": {}}
+    )
+    handler = AsyncMock(return_value="executed")
+    blocked = await middleware[-1].awrap_tool_call(request, handler)
+    assert isinstance(blocked, ToolMessage)
+    assert blocked.status == "error"
+    handler.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("definition", "message"),
+    [
+        (
+            {"kind": "python", "ref": "fabric_test_extension.tools"},
+            r"tools\.definitions\.tool\.ref must have the form 'package\.module:attribute'",
+        ),
+        (
+            {"kind": "module", "ref": "fabric_test_extension.tools:convert_units"},
+            r"tools\.definitions\.tool\.kind must be 'python'",
+        ),
+        (
+            {"kind": "python", "ref": "fabric_test_missing.tools:convert_units"},
+            r"cannot import module 'fabric_test_missing\.tools'",
+        ),
+        (
+            {"kind": "python", "ref": "fabric_test_extension.tools:missing"},
+            r"module 'fabric_test_extension\.tools' has no attribute 'missing'",
+        ),
+        (
+            {"kind": "python", "ref": "fabric_test_extension.tools:not_a_tool"},
+            r"is a function, not a LangChain BaseTool instance or subclass; it was not called",
+        ),
+        (
+            {"kind": "python", "ref": "os:system"},
+            r"not a LangChain BaseTool instance or subclass; it was not called",
+        ),
+        (
+            {
+                "kind": "python",
+                "ref": "fabric_test_extension.tools:convert_units",
+                "settings": {"unit": "km"},
+            },
+            r"is a ready-made tool and takes no settings",
+        ),
+        (
+            {"kind": "python", "ref": "fabric_test_extension.tools:ErpLookup"},
+            r"invalid settings for fabric_test_extension\.tools:ErpLookup: endpoint: Field required",
+        ),
+        (
+            {"kind": "python", "ref": "fabric_test_extension.tools:convert_units"},
+            r"builds a tool named 'convert_units'; the definition key must match it",
+        ),
+    ],
+    ids=[
+        "malformed-ref",
+        "wrong-kind",
+        "missing-module",
+        "missing-attribute",
+        "plain-function",
+        "builtin-function",
+        "instance-with-settings",
+        "missing-required-setting",
+        "name-differs-from-key",
+    ],
+)
+@pytest.mark.usefixtures("deepagents_extension")
+async def test_invalid_custom_tools_fail_runtime_start(
+    build_kwargs, definition, message
+):
+    with pytest.raises(adapter.AdapterConfigError, match=message):
+        await build_kwargs(definitions={"tool": definition})
+
+
+@pytest.mark.usefixtures("deepagents_extension")
+async def test_custom_tool_cannot_reuse_a_builtin_tool_name(build_kwargs):
+    with pytest.raises(
+        adapter.AdapterConfigError, match="'read_file' is a Deep Agents built-in tool"
+    ):
+        await build_kwargs(
+            definitions={
+                "read_file": {
+                    "kind": "python",
+                    "ref": "fabric_test_extension.tools:shadow_read_file",
+                }
+            }
+        )
+
+
+@pytest.mark.usefixtures("deepagents_extension")
+async def test_custom_tool_cannot_reuse_an_mcp_tool_name(build_kwargs, monkeypatch):
+    mcp_tool = MagicMock()
+    mcp_tool.name = "convert_units"
+    monkeypatch.setattr(adapter, "resolve_tools", AsyncMock(return_value=[mcp_tool]))
+
+    with pytest.raises(
+        adapter.AdapterConfigError, match="also provided by an MCP server"
+    ):
+        await build_kwargs(
+            definitions={
+                "convert_units": {
+                    "kind": "python",
+                    "ref": "fabric_test_extension.tools:convert_units",
+                }
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("middleware", "message"),
+    [
+        (
+            {"ref": "fabric_test_extension.middleware:not_middleware"},
+            r"is a function, not a LangChain AgentMiddleware subclass; it was not called",
+        ),
+        (
+            {"ref": "fabric_test_extension.tools:convert_units"},
+            r"not a LangChain AgentMiddleware subclass",
+        ),
+        (
+            {"ref": "fabric_test_extension.middleware:StatefulMiddleware"},
+            r"declares a custom state_schema",
+        ),
+        (
+            {"ref": "fabric_test_extension.middleware:StatefulInInitMiddleware"},
+            r"declares a custom state_schema",
+        ),
+        (
+            {
+                "ref": "fabric_test_extension.middleware:SystemMarker",
+                "settings": {"unknown": True},
+            },
+            r"invalid settings for fabric_test_extension\.middleware:SystemMarker",
+        ),
+        (
+            {"ref": "fabric_test_extension.middleware:Missing"},
+            r"has no attribute 'Missing'",
+        ),
+        (
+            {"ref": "fabric_test_extension.middleware:SystemMarker", "name": "x"},
+            r"unsupported field\(s\) \['name'\]",
+        ),
+        ({"settings": {}}, r"must be a mapping with a 'ref'"),
+    ],
+    ids=[
+        "plain-function",
+        "tool-instead-of-middleware",
+        "custom-state",
+        "custom-state-in-init",
+        "bad-settings",
+        "missing-attribute",
+        "unknown-field",
+        "missing-ref",
+    ],
+)
+@pytest.mark.usefixtures("deepagents_extension")
+async def test_invalid_custom_middleware_fails_runtime_start(
+    build_kwargs, middleware, message
+):
+    with pytest.raises(adapter.AdapterConfigError, match=message):
+        await build_kwargs(middleware=[middleware])
+
+
+@pytest.mark.usefixtures("deepagents_extension")
+async def test_custom_middleware_names_must_be_unique(build_kwargs):
+    entry = {"ref": "fabric_test_extension.middleware:SystemMarker"}
+
+    with pytest.raises(adapter.AdapterConfigError, match="used more than once"):
+        await build_kwargs(middleware=[entry, entry])
+
+
+async def test_custom_middleware_setting_must_be_a_list(build_kwargs):
+    with pytest.raises(adapter.AdapterConfigError, match="must be a list"):
+        await build_kwargs(middleware={"ref": "fabric_test_extension.middleware:X"})
+
+
+@pytest.mark.usefixtures("use_real_deepagents", "deepagents_extension")
+async def test_custom_middleware_cannot_replace_deepagents_middleware(build_kwargs):
+    with pytest.raises(
+        adapter.AdapterConfigError,
+        match="name 'FilesystemMiddleware' clashes with a LangChain, Deep Agents",
+    ):
+        await build_kwargs(
+            middleware=[
+                {"ref": "fabric_test_extension.middleware:FilesystemMiddleware"}
+            ]
+        )
+
+
+@pytest.mark.usefixtures("use_real_langgraph", "use_real_deepagents")
+async def test_custom_tools_and_middleware_run_in_a_real_deep_agent(
+    build_kwargs, deepagents_extension, monkeypatch
+):
+    # Real Deep Agents needs the real LangChain chat-model module the suite stubs.
+    monkeypatch.delitem(sys.modules, "langchain.chat_models", raising=False)
+    from deepagents import create_deep_agent
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+
+    create_kwargs = await build_kwargs(
+        definitions={
+            "convert_units": {
+                "kind": "python",
+                "ref": f"{deepagents_extension}.tools:convert_units",
+            }
+        },
+        middleware=[
+            {
+                "ref": f"{deepagents_extension}.middleware:SystemMarker",
+                "settings": {"marker": "injected-by-custom-middleware"},
+            }
+        ],
+    )
+    model = GenericFakeChatModel(
+        messages=iter(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "convert_units",
+                            "args": {"value": 10, "unit": "km"},
+                            "id": "call-1",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                AIMessage(content="10 km is 6.214 mi."),
+            ]
+        )
+    )
+    seen_prompts: list[str] = []
+    original_agenerate = model._agenerate
+
+    async def recording_agenerate(messages, *args, **kwargs):
+        seen_prompts.append(str(messages[0].content))
+        return await original_agenerate(messages, *args, **kwargs)
+
+    object.__setattr__(model, "bind_tools", lambda _tools, **_kwargs: model)
+    object.__setattr__(model, "_agenerate", recording_agenerate)
+    create_kwargs["model"] = model
+    agent = create_deep_agent(**create_kwargs)
+
+    state = await agent.ainvoke({"messages": [{"role": "user", "content": "10 km?"}]})
+
+    tool_results = [m.content for m in state["messages"] if isinstance(m, ToolMessage)]
+    assert tool_results == ["6.214 mi"]
+    assert len(seen_prompts) == 2
+    assert all("injected-by-custom-middleware" in prompt for prompt in seen_prompts)
+
+
+@pytest.mark.usefixtures("use_real_deepagents")
+async def test_tool_policy_applies_before_custom_middleware_runs_a_tool(
+    build_kwargs, deepagents_extension, monkeypatch
+):
+    monkeypatch.delitem(sys.modules, "langchain.chat_models", raising=False)
+    from deepagents import create_deep_agent
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+
+    create_kwargs = await build_kwargs(
+        definitions={
+            "convert_units": {
+                "kind": "python",
+                "ref": f"{deepagents_extension}.tools:convert_units",
+            }
+        },
+        middleware=[{"ref": f"{deepagents_extension}.middleware:SelfExecutingTools"}],
+        blocked=["convert_units"],
+    )
+    model = GenericFakeChatModel(
+        messages=iter(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "convert_units",
+                            "args": {"value": 10, "unit": "km"},
+                            "id": "call-1",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                AIMessage(content="done"),
+            ]
+        )
+    )
+    object.__setattr__(model, "bind_tools", lambda _tools, **_kwargs: model)
+    create_kwargs["model"] = model
+    agent = create_deep_agent(**create_kwargs)
+
+    state = await agent.ainvoke({"messages": [{"role": "user", "content": "10 km?"}]})
+
+    results = [m for m in state["messages"] if isinstance(m, ToolMessage)]
+    assert len(results) == 1
+    assert results[0].status == "error"
+    assert "blocked by the configured tools policy" in results[0].content
+
+
+@pytest.mark.parametrize(
+    ("ref", "message"),
+    [
+        ("ReadFileHelper", r"tool named 'read_file', which is also a Deep Agents"),
+        ("ConvertUnitsHelper", r"tool named 'convert_units', which is also a tools"),
+        (
+            "AsyncTaskHelper",
+            r"tool named 'check_async_task', which is also a Deep Agents",
+        ),
+        ("PlainFunctionTool", r"exports a function in its tools list"),
+    ],
+    ids=["builtin", "tool-definition", "async-subagent-tool", "plain-function"],
+)
+@pytest.mark.usefixtures("deepagents_extension")
+async def test_middleware_tools_cannot_shadow_other_tools(build_kwargs, ref, message):
+    with pytest.raises(adapter.AdapterConfigError, match=message):
+        await build_kwargs(
+            definitions={
+                "convert_units": {
+                    "kind": "python",
+                    "ref": "fabric_test_extension.tools:convert_units",
+                }
+            },
+            middleware=[{"ref": f"fabric_test_extension.middleware:{ref}"}],
+        )
+
+
+def test_return_direct_tool_result_is_the_response():
+    messages = [
+        {"role": "user", "content": "configure"},
+        {"role": "ai", "content": ""},
+        {"role": "tool", "content": "CONFIGURED:value=9"},
+    ]
+    assert adapter._final_response(messages) == "CONFIGURED:value=9"
+
+
+@pytest.mark.usefixtures("use_real_deepagents")
+async def test_tool_policy_checks_the_tool_middleware_swaps_in(
+    build_kwargs, deepagents_extension, monkeypatch
+):
+    monkeypatch.delitem(sys.modules, "langchain.chat_models", raising=False)
+    from deepagents import create_deep_agent
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+
+    create_kwargs = await build_kwargs(
+        definitions={
+            "convert_units": {
+                "kind": "python",
+                "ref": f"{deepagents_extension}.tools:convert_units",
+            }
+        },
+        middleware=[{"ref": f"{deepagents_extension}.middleware:SwapToErpLookup"}],
+        blocked=["erp_lookup"],
+    )
+    model = GenericFakeChatModel(
+        messages=iter(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "convert_units",
+                            "args": {"value": 10, "unit": "km"},
+                            "id": "call-1",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                AIMessage(content="done"),
+            ]
+        )
+    )
+    object.__setattr__(model, "bind_tools", lambda _tools, **_kwargs: model)
+    create_kwargs["model"] = model
+    agent = create_deep_agent(**create_kwargs)
+
+    state = await agent.ainvoke({"messages": [{"role": "user", "content": "10 km?"}]})
+
+    results = [m for m in state["messages"] if isinstance(m, ToolMessage)]
+    assert len(results) == 1
+    assert results[0].status == "error"
+    assert "Tool 'erp_lookup' is blocked" in results[0].content

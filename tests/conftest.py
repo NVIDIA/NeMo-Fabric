@@ -45,6 +45,22 @@ def requires_hermes_agent_fixture():
         pytest.skip("Hermes Agent is not installed")
 
 
+@pytest.fixture(name="deepagents_extension")
+def deepagents_extension_fixture(monkeypatch) -> str:
+    """Make the custom tool and middleware fixture package importable.
+
+    The package is added to ``sys.path`` for in-process adapter tests and to
+    ``PYTHONPATH`` for adapters started in a separate host process. Returns the
+    package name.
+    """
+    source = CUR_DIR / "fixtures" / "deepagents_extension" / "src"
+    monkeypatch.syspath_prepend(str(source))
+    os.environ["PYTHONPATH"] = os.pathsep.join(
+        filter(None, [str(source), os.environ.get("PYTHONPATH")])
+    )
+    return "fabric_test_extension"
+
+
 @pytest.fixture(name="restore_environ", autouse=True)
 def restore_environ_fixture():
     """

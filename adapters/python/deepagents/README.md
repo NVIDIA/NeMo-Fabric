@@ -171,9 +171,13 @@ NeMo Fabric maps the following into the harness:
 - `tools.enabled` and `tools.blocked` are enforced by middleware across the full
   tool surface: Deep Agents built-ins (including `task`), MCP tools, and
   **delegated subagents** alike. Use Deep Agents-native tool names.
-- `harness.settings.deepagents` accepts the adapter-owned `backend` selector and
-  the JSON-serializable Deep Agents `interrupt_on` and `subagents` options. The
-  descriptor schema rejects unknown settings and fields before runtime start.
+- `tools.definitions` adds custom LangChain tools from installed Python
+  packages with `kind: "python"`. Refer to
+  [Add Custom Python Tools and Middleware](#add-custom-python-tools-and-middleware).
+- `harness.settings.deepagents` accepts the adapter-owned `backend` selector,
+  custom `middleware`, and the JSON-serializable Deep Agents `interrupt_on` and
+  `subagents` options. The descriptor schema rejects unknown settings and fields
+  before runtime start.
 
 ### Harness Settings
 
@@ -231,6 +235,9 @@ The `deepagents` object is closed and supports the following properties:
   and a JSON `response_format`. An asynchronous subagent requires `name`,
   `description`, and `graph_id`; it can also contain `url` and string-valued
   `headers`.
+- `middleware` lists custom LangChain middleware classes by import path, each
+  with optional constructor `settings`. Refer to
+  [Add Custom Python Tools and Middleware](#add-custom-python-tools-and-middleware).
 
 ### Enable Local Shell Execution for a Supervised Demo
 
@@ -301,8 +308,88 @@ File-tool traversal and symlink-escape checks remain enabled. Paths outside the
 workspace retain the existing virtual-root interpretation; they do not grant
 access to host files.
 
-Python middleware, `FilesystemPermission` objects, Python tool objects, and
-precompiled `runnable` subagents are not exposed through `harness.settings`.
+### Add Custom Python Tools and Middleware
+
+A NeMo Fabric configuration is JSON, so it cannot carry Python objects. Instead,
+it names code that is already installed in the adapter environment, as
+`package.module:attribute`. The adapter imports that code when the runtime
+starts. NeMo Fabric never fetches or installs it: install the package in the
+same environment, or container image, as the adapter.
+
+```python
+from nemo_fabric import HarnessConfig, ToolDefinitionConfig, ToolsConfig
+
+tools = ToolsConfig(
+    definitions={
+        # A ready-made tool, such as a @tool function. Takes no settings.
+        "convert_units": ToolDefinitionConfig(
+            kind="python", ref="acme_agent_ext.tools:convert_units"
+        ),
+        # A BaseTool subclass, constructed with settings as keyword arguments.
+        "erp_lookup": ToolDefinitionConfig(
+            kind="python",
+            ref="acme_agent_ext.tools:ErpLookup",
+            settings={"endpoint": "https://erp.example.com/api"},
+        ),
+    },
+    blocked=["execute"],
+)
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.langchain.deepagents",
+    settings={
+        "deepagents": {
+            "middleware": [
+                {
+                    "ref": "acme_agent_ext.middleware:DateContext",
+                    "settings": {"timezone": "Europe/Berlin"},
+                }
+            ]
+        }
+    },
+)
+```
+
+| Entry | `ref` must name | The adapter |
+|---|---|---|
+| Tool | A LangChain `BaseTool` instance, such as a `@tool` function | Uses it as is. `settings` must be empty. |
+| Tool | A LangChain `BaseTool` subclass | Constructs it with `settings` |
+| Middleware | A LangChain `AgentMiddleware` subclass | Constructs it with `settings` |
+
+The adapter rejects any other object without calling it. It also applies the
+following rules when the runtime starts, and reports a failure that names the
+entry:
+
+- A tool's name must equal its `tools.definitions` key, so `tools.enabled` and
+  `tools.blocked` refer to it. Custom tools cannot reuse a Deep Agents built-in
+  tool name or the name of a tool provided by an MCP server.
+  Tools that custom middleware exports through `AgentMiddleware.tools` follow
+  the same rule and cannot reuse a `tools.definitions` name either.
+- Custom middleware runs on the main agent in list order, before NeMo Relay.
+  NeMo Fabric checks the tool policy both before and after it, so it cannot
+  bypass `tools.enabled` or `tools.blocked` by running or rewriting a tool call,
+  and Relay records what actually runs.
+- Middleware names must be unique and cannot reuse the name of a LangChain,
+  Deep Agents, or NeMo Fabric middleware class. Deep Agents would otherwise
+  replace its own middleware, such as filesystem confinement.
+- Middleware cannot declare a custom `state_schema`.
+- Settings are validated by the class itself, for example by its Pydantic
+  fields or `__init__` signature.
+
+NeMo Fabric runs Deep Agents asynchronously. Middleware that wraps model or
+tool calls must implement the async hooks, such as `awrap_model_call` and
+`awrap_tool_call`, in addition to the sync hooks.
+
+Planning checks only the shape of these entries: the `kind`, the
+`package.module:attribute` form of `ref`, and that `settings` is an object.
+A missing package or attribute fails when the runtime starts. Keep secrets out
+of the configuration; custom code reads them from its own environment variables.
+
+Custom middleware applies to the main agent only. Declarative subagents use
+their own Deep Agents middleware stack, which still includes the NeMo Fabric
+tool policy.
+
+`FilesystemPermission` objects and precompiled `runnable` subagents are not
+exposed through `harness.settings`.
 When `tools.enabled` or `tools.blocked` is configured, NeMo Fabric applies the
 policy to declarative subagents and rejects asynchronous subagents because
 their remote tools cannot be gated locally.

@@ -895,3 +895,141 @@ async def test_deepagents_doctor():
     # The adapter declares no static env requirement (auth is provider-specific and
     # validated by the runtime preflight), so doctor resolves without failures.
     assert report.status == "pass", report
+
+
+def _custom_code_config(api_server: str, tmp_path: Path, extension: str):
+    from examples.code_review_agent import deepagents_config
+    from nemo_fabric import (
+        EnvironmentConfig,
+        RuntimeConfig,
+        ToolDefinitionConfig,
+        ToolsConfig,
+    )
+
+    config = deepagents_config()
+    config.models["default"].base_url = f"{api_server}/v1"
+    # The example's skills resolve against its own directory; this test needs none.
+    config.skills = None
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=tmp_path,
+        artifacts=tmp_path / "artifacts",
+    )
+    config.runtime = RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        artifacts=tmp_path / "artifacts",
+    )
+    config.tools = ToolsConfig(
+        definitions={
+            "convert_units": ToolDefinitionConfig(
+                kind="python", ref=f"{extension}.tools:convert_units"
+            ),
+            "erp_lookup": ToolDefinitionConfig(
+                kind="python",
+                ref=f"{extension}.tools:ErpLookup",
+                settings={"endpoint": "https://erp.example.test"},
+            ),
+        }
+    )
+    config.harness.settings["deepagents"] = {
+        "middleware": [
+            {
+                "ref": f"{extension}.middleware:SystemMarker",
+                "settings": {"marker": "custom-middleware-marker"},
+            }
+        ]
+    }
+    return config
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key")
+@pytest.mark.parametrize(
+    ("relay", "blocked"),
+    [(False, False), (True, False), (False, True)],
+    ids=["native", "relay", "blocked"],
+)
+async def test_custom_tools_and_middleware(
+    api_server, tmp_path, deepagents_extension, relay, blocked, request
+):
+    """Run installed custom tools and middleware through the full Fabric lifecycle."""
+    pytest.importorskip("deepagents")
+    if relay:
+        request.getfixturevalue("nemo_relay")
+    from examples.code_review_agent import with_relay
+    from nemo_fabric import Fabric
+
+    scenario_response = requests.post(
+        f"{api_server}/_scenario",
+        json={
+            "tool_call": {
+                "name": "convert_units",
+                "arguments": {"value": 10, "unit": "km"},
+            }
+        },
+        timeout=5,
+    )
+    scenario_response.raise_for_status()
+    config = _custom_code_config(api_server, tmp_path, deepagents_extension)
+    if blocked:
+        config.tools.blocked = ["convert_units"]
+    if relay:
+        config = with_relay(config)
+
+    result = await Fabric().run(
+        config, base_dir=tmp_path, input="Convert 10 km to miles."
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    tool_results = [
+        str(message["content"])
+        for message in result["output"]["messages"]
+        if message["role"] == "tool"
+    ]
+    if blocked:
+        assert tool_results == [
+            "Tool 'convert_units' is blocked by the configured tools policy."
+        ]
+    else:
+        assert tool_results == ["6.214 mi"]
+    captured = requests.get(f"{api_server}/_requests", timeout=5)
+    captured.raise_for_status()
+    model_requests = captured.json()
+    assert model_requests
+    for model_request in model_requests:
+        offered = {tool["function"]["name"] for tool in model_request["tools"]}
+        assert {"convert_units", "erp_lookup"} <= offered
+        system = json.dumps(model_request["messages"][0])
+        assert "custom-middleware-marker" in system
+    if relay:
+        atif = next(
+            artifact
+            for artifact in result["output"]["relay_artifacts"]
+            if artifact["kind"] == "atif"
+        )
+        assert "convert_units" in Path(atif["path"]).read_text()
+
+
+@pytest.mark.parametrize(
+    ("location", "value", "message"),
+    [
+        ("tool", {"kind": "python", "ref": "no_attribute"}, "tools.definitions"),
+        ("tool", {"kind": "module", "ref": "pkg.module:attr"}, "tools.definitions"),
+        ("middleware", {"ref": "pkg.module:Class", "name": "x"}, "harness settings"),
+    ],
+    ids=["malformed-ref", "wrong-kind", "unknown-middleware-field"],
+)
+def test_custom_code_shape_errors_fail_planning(tmp_path, location, value, message):
+    from examples.code_review_agent import deepagents_config
+    from nemo_fabric import Fabric, FabricConfigError, ToolDefinitionConfig, ToolsConfig
+
+    config = deepagents_config()
+    if location == "tool":
+        config.tools = ToolsConfig(
+            definitions={"custom": ToolDefinitionConfig.model_validate(value)}
+        )
+    else:
+        config.harness.settings["deepagents"] = {"middleware": [value]}
+
+    with pytest.raises(FabricConfigError, match=message):
+        Fabric().plan(config, base_dir=tmp_path)
