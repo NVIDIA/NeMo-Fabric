@@ -633,6 +633,33 @@ def resolve_custom_middleware(entries: list[dict[str, Any]]) -> list[AgentMiddle
     return middleware
 
 
+def _check_middleware_tool_names(
+    middleware: list[AgentMiddleware], custom_names: set[str], mcp_names: set[str]
+) -> None:
+    """Reject tools exported by custom middleware that would shadow another tool."""
+
+    seen: set[str] = set()
+    for index, item in enumerate(middleware):
+        field = f"harness.settings.deepagents.middleware[{index}]"
+        for tool in getattr(item, "tools", None) or []:
+            name = getattr(tool, "name", None)
+            if name in DEEPAGENTS_BUILTIN_TOOL_NAMES:
+                clash = "a Deep Agents built-in tool"
+            elif name in custom_names:
+                clash = "a tools.definitions entry"
+            elif name in mcp_names:
+                clash = "a tool provided by an MCP server"
+            elif name in seen:
+                clash = "a tool exported by other custom middleware"
+            else:
+                seen.add(name)
+                continue
+            raise AdapterConfigError(
+                f"{field}: exports a tool named '{name}', which is also {clash}; "
+                "give the middleware tool a different name."
+            )
+
+
 def _mcp_validation_feedback(error: ValidationError) -> str:
     """Report field paths and validation reasons, not argument payloads."""
     details = []
@@ -883,12 +910,14 @@ async def build_agent_kwargs(
     custom_middleware = resolve_custom_middleware(extra.get("middleware") or [])
     mcp_tools = await resolve_tools(config, unavailable_mcp_servers) or []
     custom_names = {tool.name for tool in custom_tools}
-    clashes = sorted(custom_names.intersection(tool.name for tool in mcp_tools))
+    mcp_names = {tool.name for tool in mcp_tools}
+    clashes = sorted(custom_names & mcp_names)
     if clashes:
         raise AdapterConfigError(
             f"tools.definitions.{clashes[0]}: the name is also provided by an MCP "
             "server; give the custom tool a different name."
         )
+    _check_middleware_tool_names(custom_middleware, custom_names, mcp_names)
     kwargs: dict[str, Any] = {
         "model": model,
         "tools": [*custom_tools, *mcp_tools] or None,
@@ -1880,6 +1909,9 @@ def _message_to_dict(message: Any) -> dict[str, Any]:
 
 
 def _final_response(messages: list[dict[str, Any]]) -> Any:
+    # A tool with return_direct=True ends the turn with its own result.
+    if messages and str(messages[-1].get("role", "")) == "tool":
+        return messages[-1].get("content")
     for message in reversed(messages):
         role = str(message.get("role", ""))
         if role in ("ai", "assistant"):

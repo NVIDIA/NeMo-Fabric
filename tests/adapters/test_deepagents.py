@@ -3721,3 +3721,34 @@ async def test_tool_policy_applies_before_custom_middleware_runs_a_tool(
     assert len(results) == 1
     assert results[0].status == "error"
     assert "blocked by the configured tools policy" in results[0].content
+
+
+@pytest.mark.parametrize(
+    ("ref", "message"),
+    [
+        ("ReadFileHelper", r"tool named 'read_file', which is also a Deep Agents"),
+        ("ConvertUnitsHelper", r"tool named 'convert_units', which is also a tools"),
+    ],
+    ids=["builtin", "tool-definition"],
+)
+@pytest.mark.usefixtures("deepagents_extension")
+async def test_middleware_tools_cannot_shadow_other_tools(build_kwargs, ref, message):
+    with pytest.raises(adapter.AdapterConfigError, match=message):
+        await build_kwargs(
+            definitions={
+                "convert_units": {
+                    "kind": "python",
+                    "ref": "fabric_test_extension.tools:convert_units",
+                }
+            },
+            middleware=[{"ref": f"fabric_test_extension.middleware:{ref}"}],
+        )
+
+
+def test_return_direct_tool_result_is_the_response():
+    messages = [
+        {"role": "user", "content": "configure"},
+        {"role": "ai", "content": ""},
+        {"role": "tool", "content": "CONFIGURED:value=9"},
+    ]
+    assert adapter._final_response(messages) == "CONFIGURED:value=9"

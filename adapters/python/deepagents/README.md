@@ -309,6 +309,8 @@ entry:
 - A tool's name must equal its `tools.definitions` key, so `tools.enabled` and
   `tools.blocked` refer to it. Custom tools cannot reuse a Deep Agents built-in
   tool name or the name of a tool provided by an MCP server.
+  Tools that custom middleware exports through `AgentMiddleware.tools` follow
+  the same rule and cannot reuse a `tools.definitions` name either.
 - Custom middleware runs on the main agent in list order, before NeMo Relay.
   NeMo Fabric checks the tool policy both before and after it, so it cannot
   bypass `tools.enabled` or `tools.blocked` by running or rewriting a tool call,

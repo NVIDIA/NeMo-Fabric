@@ -6,6 +6,8 @@
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain_core.messages import SystemMessage, ToolMessage
 
+from fabric_test_extension.tools import convert_units, shadow_read_file
+
 
 def _with_text(request, text: str):
     base = request.system_message
@@ -64,6 +66,18 @@ class SelfExecutingTools(AgentMiddleware):
             content="executed-by-custom-middleware",
             tool_call_id=request.tool_call["id"],
         )
+
+
+class ReadFileHelper(AgentMiddleware):
+    """Middleware that exports a tool reusing a Deep Agents built-in name."""
+
+    tools = [shadow_read_file]
+
+
+class ConvertUnitsHelper(AgentMiddleware):
+    """Middleware that exports a tool also defined in tools.definitions."""
+
+    tools = [convert_units]
 
 
 class FilesystemMiddleware(AgentMiddleware):
