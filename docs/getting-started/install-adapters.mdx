@@ -182,7 +182,7 @@ Harbor uses this model. Install its integration in the host environment:
 pip install "nemo-fabric[harbor]"
 ```
 
-Install NeMo Fabric, the selected adapter, and the harness in the task environment. For a Hermes Agent task, install Hermes Agent according to its installation guide, then add `nemo-fabric`, `nemo-fabric-adapters-hermes`, and optionally `nemo-fabric[relay]`.
+Install NeMo Fabric, the selected adapter, and the harness in the task environment. For a Hermes Agent task, install Hermes Agent according to its installation guide, then add `nemo-fabric` and `nemo-fabric-adapters-hermes`. For Relay support, install `nemo-fabric-adapters-hermes[relay]` so the adapter's Relay dependencies are included.
 
 Relay-enabled Claude, Codex, or Pi tasks also require the adapter-compatible NeMo Relay CLI in the task environment. Pi additionally requires its matching Relay extension. Refer to the [Harbor integration guide](../integrations/consumer/harbor.mdx) for details.
 

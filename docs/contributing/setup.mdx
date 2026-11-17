@@ -29,7 +29,6 @@ cd NeMo-Fabric
 ```bash
 uv venv -p 3.13 --seed .venv
 source .venv/bin/activate
-just install-hermes-agent
 ```
 
 2. Build the Rust core, Python libraries, and TypeScript packages.
@@ -47,9 +46,20 @@ uv sync --all-groups --all-extras
 
 Then run the build command with the `no_uv=true` flag to avoid re-installing the dependencies:
 
+This path installs every local Python package, including NOOA, which requires Python 3.12 or 3.13. Use one of those versions for the all-packages build.
+
 ```bash
 just no_uv=true build-all
 ```
 
+### Optional Hermes Agent Development
+
+If you are developing or testing the Hermes adapter, install Hermes Agent separately:
+
+```bash
+just install-hermes-agent
+```
+
+This step is not required for the general build. Refer to [Install the Hermes Agent adapter](../integrations/harness/hermes/hermes.mdx#install-the-adapter) for its additional requirements.
 
 Follow the full [contribution guide](../../CONTRIBUTING.md) for current repository setup and toolchain requirements.
