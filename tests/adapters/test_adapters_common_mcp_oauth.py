@@ -205,6 +205,8 @@ async def test_secure_client_refuses_plaintext_requests_and_redirects():
             return httpx.Response(307, headers={"Location": "http://auth.example.test/token"})
         return httpx.Response(200)
 
+    # Keep any environment proxy from replacing the mock transport.
+    os.environ["NO_PROXY"] = os.environ["no_proxy"] = "*"
     client = mcp_oauth.secure_http_client_factory("jira")()
     client._transport = httpx.MockTransport(handler)
     async with client:
