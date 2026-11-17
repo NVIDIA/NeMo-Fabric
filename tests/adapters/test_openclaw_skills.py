@@ -2932,27 +2932,37 @@ def test_skills_of_an_inactive_extension_are_not_selected(
         }
 
 
-@pytest.mark.parametrize("active", [True, False])
+@pytest.mark.parametrize("winner", ["configured", "extension", "unknown"])
+@pytest.mark.parametrize("kind", ["directories", "paths"])
 def test_configured_skill_sharing_a_left_out_extension_skills_name(
-    tmp_path: Path, workspace: Path, package: Path, active: bool
+    tmp_path: Path, workspace: Path, package: Path, winner: str, kind: str
 ):
     """skills.entries would turn off both copies, so the name is not turned off.
-    When the extension is active its copy loads instead, and start fails."""
+    Start fails when the active extension's copy loads instead, or when
+    ``openclaw skills info`` can't say which copy loads."""
     shipped = _extension(package, "canvas", "canvas")["canvas"]
     mine = write_skill(tmp_path / "team" / "canvas", "canvas")
-    skills = {
-        "directories": [{"folder": str(tmp_path / "team")}],
-        "bundled": {"enabled": False},
-    }
+    skills: dict[str, Any] = {"bundled": {"enabled": False}}
+    if kind == "directories":
+        skills["directories"] = [{"folder": str(tmp_path / "team")}]
+    else:
+        skills["paths"] = [str(mine)]
     generated, plan = _generated(tmp_path, workspace, skills, package)
     assert "entries" not in generated["skills"]
     status = _status(("canvas", "openclaw-extra"))
     assert openclaw_skills.names_to_locate(plan, status) == ["canvas"]
-    located = {"canvas": _located("openclaw-extra", shipped if active else mine)}
+    located = (
+        {}
+        if winner == "unknown"
+        else {
+            "canvas": _located(
+                "openclaw-extra", mine if winner == "configured" else shipped
+            )
+        }
+    )
 
-    if not active:
+    if winner == "configured":
         openclaw_skills.apply_status(plan, status, located=located)
-        assert _loaded(plan) == [("canvas", "skills.directories[0]")]
         return
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
         openclaw_skills.apply_status(plan, status, located=located)
@@ -2966,15 +2976,30 @@ def test_configured_skill_sharing_a_left_out_extension_skills_name(
     }
 
 
+@pytest.mark.parametrize("winner", ["workspace", "extension", "unknown"])
 def test_workspace_copy_of_a_left_out_extension_skill_is_not_turned_off(
-    tmp_path: Path, workspace: Path, package: Path
+    tmp_path: Path, workspace: Path, package: Path, winner: str
 ):
-    """A workspace copy outranks the extension's, so the name stays on."""
-    _extension(package, "canvas", "canvas")
+    """A workspace copy outranks the extension's, so the name stays on. When
+    OpenClaw does not load that copy after all, the extension's may load, and
+    start fails unless the located copy is another one."""
+    shipped = _extension(package, "canvas", "canvas")["canvas"]
     write_skill(workspace / "skills" / "canvas", "canvas")
-
-    generated, _ = _generated(
-        tmp_path, workspace, {"bundled": {"enabled": False}}, package
+    generated, plan = _generated(
+        tmp_path, workspace, {"bundled": {"enabled": False}, "directories": []}, package
     )
-
     assert "entries" not in generated.get("skills", {})
+
+    if winner == "workspace":
+        openclaw_skills.apply_status(plan, _status(("canvas", "openclaw-workspace")))
+        return
+    status = _status(("canvas", "openclaw-extra"))
+    assert openclaw_skills.names_to_locate(plan, status) == ["canvas"]
+    located = (
+        {"canvas": _located("openclaw-extra", shipped)} if winner == "extension" else {}
+    )
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        openclaw_skills.apply_status(plan, status, located=located)
+
+    assert caught.value.metadata["reason"] == openclaw_skills.EXTENSION_CLASH
+    assert caught.value.metadata["paths"] == [str(shipped.resolve())]

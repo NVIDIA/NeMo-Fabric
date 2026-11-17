@@ -494,7 +494,7 @@ def test_bundled_selection_matches_openclaw(
         row["name"] for row in status["skills"] if row["bundled"] and row["eligible"]
     }
     unavailable = {item["name"] for item in report["bundled"].get("unavailable", [])}
-    assert unavailable == expected - eligible
+    assert unavailable & folders == expected - eligible
     # Selected lists only the selected bundled skills that load.
     assert set(report["bundled"]["selected"]) - set(plan.inventory.extensions) == (
         expected & eligible

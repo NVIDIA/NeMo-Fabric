@@ -93,9 +93,9 @@ with the ``extraDirs`` roots when OpenClaw activates the extension. They are
 bundled skills, so ``skills.bundled`` selects them. No setting drops them
 before names are resolved, so a left-out one is turned off by name with
 ``skills.entries.<name>.enabled: false`` unless another copy Fabric knows has
-that name (:func:`_leave_out_extensions`). When a configured skill shares the
-name and the extension is active, start fails with
-``excluded_bundled_skill_name_clash``.
+that name (:func:`_leave_out_extensions`). For such a name, start fails with
+``excluded_bundled_skill_name_clash`` when the extension's copy loads after
+all, or when OpenClaw can't say which copy loads.
 """
 
 from __future__ import annotations
@@ -259,12 +259,14 @@ class SkillPlan:
     """The installed OpenClaw package, to tell a plugin's shipped skill."""
     bundled_included: frozenset[str] = frozenset()
     """The names ``skills.bundled.include`` lists."""
+    left_out_extensions: set[str] = dataclass_field(default_factory=set)
+    """Extension skills ``skills.bundled`` leaves out."""
     disabled_extensions: list[str] = dataclass_field(default_factory=list)
     """Left-out extension skills turned off with ``skills.entries`` (no other
-    copy Fabric knows has their names)."""
-    extension_clashes: set[str] = dataclass_field(default_factory=set)
-    """Left-out extension skills that share a name with a configured skill, so
-    ``skills.entries`` can't turn off one without the other."""
+    copy Fabric knows has their names). Any other left-out one is checked
+    against ``openclaw skills list`` (:func:`apply_status`)."""
+    legacy: dict[str, list[Path]] = dataclass_field(default_factory=dict)
+    """The ``skills.paths`` skills, by name, with their resolved folders."""
 
     def merge_native(self) -> None:
         """Derive ``load`` from ``configured`` and the native copies."""
@@ -392,8 +394,10 @@ def plan(
             "cannot be applied",
             metadata={"field": "skills.bundled", "reason": "inventory_unavailable"},
         )
-    # The extensions' skills matter only to a bundled selection.
+    # The extensions' skills, and the skills.paths names they can clash with,
+    # matter only to a bundled selection.
     extensions = package if skills.bundled is not None else None
+    legacy_paths = _legacy_folders(skills.paths, base_dir) if extensions else []
     reader = _read_ahead(
         reader,
         skills.directories,
@@ -401,6 +405,7 @@ def plan(
         bundled_dir=bundled_dir,
         workspace=workspace,
         package=extensions,
+        legacy=legacy_paths,
     )
     if bundled_dir is not None:
         result.inventory = bundled_inventory(bundled_dir, reader, package=extensions)
@@ -458,32 +463,56 @@ def plan(
         custodian=custodian,
         reader=unshipped,
     )
+    for folder in legacy_paths:
+        for name, path in _root_skills(folder, unshipped, may_be_skill=True).items():
+            result.legacy.setdefault(name, []).append(path)
     if result.bundled_selected is not None and result.inventory is not None:
-        _leave_out_extensions(result, load)
+        _leave_out_extensions(result)
     result.merge_native()
     return result
 
 
-def _leave_out_extensions(
-    plan_: SkillPlan, configured: contract_skills.DirectoryLoad
-) -> None:
+def _legacy_folders(paths: Sequence[str] | None, base_dir: Path) -> list[Path]:
+    """Return the ``skills.paths`` folders that resolve, as the adapter passes them."""
+
+    folders: list[Path] = []
+    for path in paths or ():
+        try:
+            folders.append((base_dir / path).resolve(strict=True))
+        except (OSError, RuntimeError):
+            continue
+    return folders
+
+
+def _configured_copies(plan_: SkillPlan) -> dict[str, list[Path]]:
+    """Return the configured skills OpenClaw is given, by name: the
+    ``skills.directories`` ones and the ``skills.paths`` ones."""
+
+    copies = {name: list(paths) for name, paths in plan_.legacy.items()}
+    for skill in (plan_.configured or contract_skills.DirectoryLoad()).selected:
+        copies.setdefault(skill.name, []).append(skill.path)
+    return copies
+
+
+def _leave_out_extensions(plan_: SkillPlan) -> None:
     """Turn off the extension skills the bundled selection leaves out.
 
     OpenClaw loads an active extension's skills with the ``extraDirs``
     roots, after them, and no setting drops them before names are resolved.
     ``skills.entries.<name>.enabled: false`` turns off every copy of a name,
-    so it is written only for a name no other copy Fabric knows has. A
-    workspace or selected shipped copy outranks the extension's copy anyway.
-    A configured copy does not, so a configured skill with a left-out
-    extension skill's name is a clash: if the extension is active, start
-    fails (:func:`apply_status`).
+    so it is written only for a name no other copy Fabric knows has: a
+    configured skill, from ``directories`` or ``paths``, a workspace skill,
+    or a selected shipped skill. For those names :func:`apply_status` checks
+    which copy loads, and start fails if it is the extension's.
     """
 
     assert plan_.inventory is not None and plan_.bundled_selected is not None
-    left_out = set(plan_.inventory.extensions) - set(plan_.bundled_selected)
-    configured_names = {skill.name for skill in configured.selected}
-    plan_.disabled_extensions = sorted(left_out - configured_names - set(plan_.native))
-    plan_.extension_clashes = (left_out & configured_names) - set(plan_.native)
+    plan_.left_out_extensions = set(plan_.inventory.extensions) - set(
+        plan_.bundled_selected
+    )
+    plan_.disabled_extensions = sorted(
+        plan_.left_out_extensions - set(_configured_copies(plan_)) - set(plan_.native)
+    )
 
 
 def stage_bundled(plan_: SkillPlan, root: Path) -> Path | None:
@@ -931,7 +960,8 @@ def names_to_locate(plan_: SkillPlan, status: Any) -> list[str]:
     copies of the listed source that OpenClaw is given, such as copies from
     two entries passed without a policy, a listed name Fabric knows no copy
     of, such as a skill an OpenClaw plugin adds, and an extension skill's
-    name that a configured skill shares, listed with the ``extraDirs`` source.
+    name listed with the ``extraDirs`` source that a configured skill shares
+    or that the bundled selection leaves out without turning it off.
     """
 
     listed = _loaded_listing(plan_, status)
@@ -940,12 +970,14 @@ def names_to_locate(plan_: SkillPlan, status: Any) -> list[str]:
     load = plan_.load or contract_skills.DirectoryLoad()
     known = {skill.name for skill in load.selected} | set(plan_.native)
     known |= {record.name for record in load.duplicates}
-    configured = {skill.name for skill in plan_.configured.selected}
+    open_extensions = set(_configured_copies(plan_)) | (
+        plan_.left_out_extensions - set(plan_.disabled_extensions)
+    )
     passed = _passed_paths(plan_)
     names: list[str] = []
     for name, rows in listed.items():
         if name not in known or (
-            name in configured
+            name in open_extensions
             and _extension_path(plan_, name) is not None
             and rows[0].get("source") == "openclaw-extra"
         ):
@@ -1109,26 +1141,39 @@ def apply_status(
 def _refuse_extension_clashes(
     plan_: SkillPlan, listed: Mapping[str, Sequence[Mapping[str, Any]]]
 ) -> None:
-    """Fail when a left-out extension skill loads in place of a configured one.
+    """Fail when a left-out extension skill may load.
 
-    An active extension's copy outranks a configured copy of its name, and
-    ``skills.entries`` would turn off both, so the selection can't be met.
+    A left-out extension skill whose name another copy has is not turned off
+    (:func:`_leave_out_extensions`). When OpenClaw lists that name with the
+    ``extraDirs`` source, an active extension's copy may be the one that
+    loads, since it outranks a configured copy, and a workspace copy Fabric
+    counted on may be gone or refused. :func:`names_to_locate` asks for those
+    names. Start fails when the located copy is the extension's, or when
+    ``openclaw skills info`` could not locate it.
 
     Raises:
-        lifecycle.LifecycleError: If such a copy loads.
+        lifecycle.LifecycleError: If the selection can't be confirmed.
     """
 
-    configured = plan_.configured or contract_skills.DirectoryLoad()
-    for name in sorted(plan_.extension_clashes):
+    turned_off = set(plan_.disabled_extensions)
+    for name in sorted(plan_.left_out_extensions - turned_off):
         path = _extension_path(plan_, name)
-        if path is None or _extension_loads(plan_, name, listed.get(name, [])) is None:
+        rows = listed.get(name, [])
+        if path is None or not rows or rows[0].get("source") != "openclaw-extra":
             continue
-        copies = [skill.path for skill in configured.selected if skill.name == name]
+        where = plan_.located.get(name)
+        if where is not None and _resolved(where.path) != path:
+            continue
+        copies = _configured_copies(plan_).get(name, [])
+        detail = (
+            "loads in place of the other copy of that name"
+            if where is not None
+            else "may load: OpenClaw could not say which copy of that name loads"
+        )
         raise lifecycle.LifecycleError(
             "openclaw_skill_invalid",
             f"OpenClaw's extension skill {name!r}, which skills.bundled leaves "
-            f"out, loads in place of the configured skill of that name; OpenClaw "
-            f"can't turn off one without the other",
+            f"out, {detail}; OpenClaw can't turn off one copy without the other",
             metadata={
                 "field": "skills.bundled",
                 "reason": EXTENSION_CLASH,
@@ -1193,8 +1238,7 @@ def _extension_loads(
     row = next((row for row in rows if row.get("source") == "openclaw-extra"), None)
     if path is None or row is None:
         return None
-    configured = plan_.configured or contract_skills.DirectoryLoad()
-    if name not in {skill.name for skill in configured.selected}:
+    if name not in _configured_copies(plan_):
         return row
     where = plan_.located.get(name)
     return row if where is not None and _resolved(where.path) == path else None
@@ -1656,6 +1700,7 @@ def _read_ahead(
     bundled_dir: Path | None,
     workspace: Path,
     package: Path | None = None,
+    legacy: Sequence[Path] = (),
 ) -> contract_skills.CandidateReader:
     """Return ``reader`` with every candidate of the plan's scans already read.
 
@@ -1689,6 +1734,8 @@ def _read_ahead(
             )
     if bundled_dir is not None:
         bundled_inventory(bundled_dir, record, package=package)
+    for folder in legacy:
+        _root_skills(folder, record, may_be_skill=True)
     _workspace_skills(workspace, record)
     if found:
         cached(list(dict.fromkeys(found)))
