@@ -15,12 +15,16 @@ off, a server that needs a new sign-in fails with :class:`McpSignInRequired`
 instead of opening a browser. Stored tokens are used, and refreshed when they
 expire, either way.
 
-Files in the token directory, per server:
+Files in the token directory, in one folder per server:
 
-- ``<server>.json``: tokens, with an absolute ``expires_at``.
-- ``<server>.client.json``: the registered or configured OAuth client.
-- ``<server>.meta.json``: the authorization server metadata, so refresh uses
-  its token endpoint.
+- ``<server>/tokens.json``: tokens, with an absolute ``expires_at``.
+- ``<server>/client.json``: the registered or configured OAuth client.
+- ``<server>/metadata.json``: the authorization server metadata, so refresh
+  uses its token endpoint.
+
+Every HTTP request the auth's MCP client sends, including discovered OAuth
+endpoints and redirects, must use ``https`` (``http`` only on a loopback host);
+pass :func:`secure_http_client_factory` as the client factory.
 
 This module needs ``mcp`` and ``httpx``, which it imports only when an auth is
 built. Adapters that use it must depend on both.
@@ -66,6 +70,10 @@ class McpSignInError(RuntimeError):
     """A browser sign-in was started but did not complete."""
 
 
+class McpInsecureRequestError(RuntimeError):
+    """An OAuth MCP client refused to send a request over plain HTTP."""
+
+
 def is_sign_in_error(error: BaseException) -> bool:
     """Return whether ``error`` means the server needs a (new) sign-in."""
 
@@ -102,8 +110,10 @@ def _write_private_json(path: Path, data: dict[str, Any]) -> None:
 
     directory = path.parent
     directory.mkdir(parents=True, exist_ok=True)
-    with contextlib.suppress(OSError):
-        os.chmod(directory, 0o700)
+    # The token directory and the server's folder inside it.
+    for folder in (directory.parent, directory):
+        with contextlib.suppress(OSError):
+            os.chmod(folder, 0o700)
     temporary = directory / f".{path.name}.{os.getpid()}.tmp"
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
@@ -126,10 +136,12 @@ class FileTokenStorage:
         *,
         clock: Callable[[], float] = time.time,
     ) -> None:
-        name = storage_name(server_name)
-        self._tokens_path = Path(directory) / f"{name}.json"
-        self._client_path = Path(directory) / f"{name}.client.json"
-        self._metadata_path = Path(directory) / f"{name}.meta.json"
+        # One folder per server, so no server name can collide with another
+        # server's files.
+        server_directory = Path(directory) / storage_name(server_name)
+        self._tokens_path = server_directory / "tokens.json"
+        self._client_path = server_directory / "client.json"
+        self._metadata_path = server_directory / "metadata.json"
         self._clock = clock
 
     def __repr__(self) -> str:
@@ -387,7 +399,13 @@ class BrowserSignIn:
             file=sys.stderr,
             flush=True,
         )
-        await self._open_browser(authorization_url)
+        try:
+            await self._open_browser(authorization_url)
+        except BaseException:
+            # The SDK only waits for the callback, and closes it, after this
+            # returns; stop listening before the failure propagates.
+            await self._close_callback()
+            raise
 
     async def callback(self) -> tuple[str, str | None]:
         callback = self._callback
@@ -407,6 +425,43 @@ class BrowserSignIn:
         callback, self._callback = self._callback, None
         if callback is not None:
             await callback.close()
+
+
+def secure_http_client_factory(server_name: str) -> Callable[..., Any]:
+    """Return an MCP ``httpx_client_factory`` that refuses plaintext requests.
+
+    The OAuth flow sends refresh tokens and client credentials to endpoints the
+    server advertises, and the MCP client follows redirects. The returned
+    client checks every request, redirects included, and refuses one that is
+    not ``https`` unless it targets a loopback host.
+    """
+
+    from mcp.shared._httpx_utils import create_mcp_http_client
+
+    from nemo_fabric_adapters.common.mcp_service_account import is_secure_url
+
+    async def refuse_plaintext(request: Any) -> None:
+        if not is_secure_url(str(request.url)):
+            raise McpInsecureRequestError(
+                f"MCP server {server_name!r} refused a request to "
+                f"{request.url.scheme}://{request.url.host}: OAuth requests must "
+                "use https (http is accepted only for a loopback host)"
+            )
+
+    def factory(
+        headers: dict[str, str] | None = None,
+        timeout: Any = None,
+        auth: Any = None,
+    ) -> Any:
+        client = create_mcp_http_client(headers=headers, timeout=timeout, auth=auth)
+        hooks = client.event_hooks
+        client.event_hooks = {
+            "request": [*hooks.get("request", []), refuse_plaintext],
+            "response": list(hooks.get("response", [])),
+        }
+        return client
+
+    return factory
 
 
 def browser_sign_in_auth(

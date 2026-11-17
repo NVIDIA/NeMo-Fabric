@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
 import stat
 import sys
 import uuid
@@ -496,7 +497,7 @@ async def test_mcp_oauth2_browser_sign_in(api_server, tmp_path):
         "import sys, urllib.request\n"
         "urllib.request.urlopen(sys.argv[1], timeout=10).read()\n"
     )
-    os.environ["BROWSER"] = f"{sys.executable} {browser} %s"
+    os.environ["BROWSER"] = shlex.join([sys.executable, str(browser), "%s"])
 
     def call_mcp_tool_once() -> None:
         requests.post(
@@ -554,11 +555,13 @@ async def test_mcp_oauth2_browser_sign_in(api_server, tmp_path):
     assert authorization["code_challenge_method"] == "S256"
     assert authorization["client_id"] == "registered-client"
     assert first_header == second_header == "Bearer user-token-1"
-    token_files = sorted((tmp_path / "artifacts" / ".fabric" / "state").rglob("mcp-tokens/*"))
-    assert [path.name for path in token_files] == [
-        "protected.client.json",
-        "protected.json",
-        "protected.meta.json",
+    token_files = sorted(
+        (tmp_path / "artifacts" / ".fabric" / "state").rglob("mcp-tokens/*/*")
+    )
+    assert [path.relative_to(path.parents[1]).as_posix() for path in token_files] == [
+        "protected/client.json",
+        "protected/metadata.json",
+        "protected/tokens.json",
     ]
     if os.name == "posix":
         assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in token_files)

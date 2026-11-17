@@ -678,6 +678,7 @@ def _mcp_connection(
         raise AdapterConfigError(f"{error}.") from None
     if auth.type == "oauth2":
         connection["auth"] = _browser_sign_in_auth(name, target, auth, oauth_token_dir)
+        connection["httpx_client_factory"] = mcp_oauth.secure_http_client_factory(name)
         return connection
     try:
         token_url = mcp_service_account.validate_token_url(name, auth.token_url)
@@ -1094,18 +1095,18 @@ class DeepAgentsRuntime:
             agent = agent.with_config({"recursion_limit": self._max_turns})
         return agent
 
-    async def _sign_in_mcp_servers(self, runtime_context: RuntimeContext) -> None:
+    async def _sign_in_mcp_servers(self, runtime_context: RuntimeContext) -> list[str]:
         """Sign in to ``oauth2`` MCP servers that need it, then add their tools.
 
         Runs on the first invocation, not at start, so a runtime starts without
         waiting for a browser. Each server's sign-in is bounded by its
-        ``authorization_timeout_seconds`` and the invocation deadline. A server
-        whose sign-in does not complete fails the invocation, and the next
-        invocation tries it again.
+        ``authorization_timeout_seconds`` and the invocation deadline. Returns
+        the servers whose sign-in did not complete; the caller fails the
+        invocation, and the next invocation tries them again.
         """
         pending = self._mcp_sign_ins
         if not pending:
-            return
+            return []
         loop = asyncio.get_running_loop()
         deadline = lifecycle.invocation_deadline(runtime_context)
         signed_in: dict[str, list[Any]] = {}
@@ -1154,12 +1155,42 @@ class DeepAgentsRuntime:
                 if entry["name"] not in signed_in
             ]
         self._mcp_sign_ins = {name: pending[name] for name in failed}
-        if failed:
-            raise lifecycle.LifecycleError(
-                "deepagents_mcp_authentication_failed",
-                "Deep Agents could not sign in to the configured MCP servers",
-                metadata={"servers": failed},
-            )
+        return failed
+
+    def _sign_in_failed_result(self, servers: list[str]) -> AgentRunResult:
+        """Return a failed result for an incomplete sign-in.
+
+        A result, not an exception: an adapter exception ends the lifecycle
+        runtime, and the next invocation must be able to sign in again.
+        """
+        message = (
+            "Deep Agents could not sign in to MCP servers: " + ", ".join(servers)
+        )
+        output = normalize_output(
+            model_name=self._model_name,
+            base_url=self._base_url,
+            runtime_id=self._runtime_id,
+            thread_id=self._thread_id,
+            resumed=self._completed_invocations > 0,
+            result_state=None,
+            events=[],
+            turn_messages=[],
+            error=message,
+            telemetry_runtime=None,
+            relay_artifacts=None,
+            unavailable_mcp_servers=self._mcp_unavailable,
+        )
+        output.pop("failed", None)
+        output.pop("error", None)
+        return AgentRunResult(
+            status=AgentRunStatus.FAILED,
+            output=output,
+            error=AgentRunError(
+                code="deepagents_mcp_authentication_failed",
+                message=message,
+                retryable=True,
+            ),
+        )
 
     def _configure_observability(self, agent_kwargs: dict[str, Any]) -> dict[str, Any]:
         import importlib.util
@@ -1217,7 +1248,8 @@ class DeepAgentsRuntime:
             )
 
         user_message = common_utils.normalize_user_input(request.input)
-        await self._sign_in_mcp_servers(runtime_context)
+        if failed_sign_ins := await self._sign_in_mcp_servers(runtime_context):
+            return self._sign_in_failed_result(failed_sign_ins)
 
         resumed = self._completed_invocations > 0
         inherited_quarantine = self._telemetry_quarantine is not None

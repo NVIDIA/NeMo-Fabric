@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 
 import httpx
 import pytest
+from mcp.shared.auth import OAuthClientInformationFull
 from mcp.shared.auth import OAuthToken
 from nemo_fabric_adapters.common import mcp_oauth
 
@@ -59,8 +60,9 @@ async def test_tokens_are_stored_owner_only_with_absolute_expiry(tmp_path):
         OAuthToken(access_token="at-1", refresh_token="rt-1", expires_in=600)
     )
 
-    path = directory / "jira.json"
+    path = directory / "jira" / "tokens.json"
     _assert_owner_only(directory, 0o700)
+    _assert_owner_only(directory / "jira", 0o700)
     _assert_owner_only(path)
     assert json.loads(path.read_text())["expires_at"] == 1600.0
     assert storage.has_tokens()
@@ -77,11 +79,29 @@ async def test_tokens_are_stored_owner_only_with_absolute_expiry(tmp_path):
 
 @pytest.mark.parametrize("content", ["not json", "[]", '{"token_type": "Bearer"}'])
 async def test_unreadable_tokens_are_ignored(tmp_path, content):
-    (tmp_path / "jira.json").write_text(content)
+    (tmp_path / "jira").mkdir()
+    (tmp_path / "jira" / "tokens.json").write_text(content)
     storage = mcp_oauth.FileTokenStorage(tmp_path, "jira")
 
     assert await storage.get_tokens() is None
     assert not storage.has_tokens()
+
+
+async def test_servers_do_not_share_storage_files(tmp_path):
+    jira = mcp_oauth.FileTokenStorage(tmp_path, "jira")
+    other = mcp_oauth.FileTokenStorage(tmp_path, "jira.client")
+
+    await other.set_tokens(OAuthToken(access_token="other-token"))
+    await jira.set_client_info(
+        OAuthClientInformationFull(
+            client_id="jira-client", redirect_uris=["http://127.0.0.1:8765/callback"]
+        )
+    )
+
+    assert (await other.get_tokens()).access_token == "other-token"
+    assert (await jira.get_client_info()).client_id == "jira-client"
+    assert await other.get_client_info() is None
+    assert await jira.get_tokens() is None
 
 
 @pytest.mark.parametrize(
@@ -162,6 +182,40 @@ async def test_sign_in_that_is_not_completed_times_out(redirect_uri, capsys):
     assert "https://auth.example.test/authorize?state=s" in capsys.readouterr().err
     # The listener is closed, so the port is free again.
     await mcp_oauth.LoopbackCallback(redirect_uri).start()
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("no browser"), asyncio.CancelledError()])
+async def test_sign_in_stops_listening_when_the_browser_cannot_open(redirect_uri, failure):
+    sign_in = mcp_oauth.BrowserSignIn(
+        "jira", redirect_uri, open_browser=AsyncMock(side_effect=failure)
+    )
+    sign_in.interactive = True
+
+    with pytest.raises(type(failure)):
+        await sign_in.redirect("https://auth.example.test/authorize?state=s")
+
+    listener = mcp_oauth.LoopbackCallback(redirect_uri)
+    await listener.start()
+    await listener.close()
+
+
+async def test_secure_client_refuses_plaintext_requests_and_redirects():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/downgrade":
+            return httpx.Response(307, headers={"Location": "http://auth.example.test/token"})
+        return httpx.Response(200)
+
+    client = mcp_oauth.secure_http_client_factory("jira")()
+    client._transport = httpx.MockTransport(handler)
+    async with client:
+        assert (await client.post("https://auth.example.test/token")).status_code == 200
+        assert (await client.post("http://127.0.0.1:8765/token")).status_code == 200
+        for url in ("http://auth.example.test/token", "https://auth.example.test/downgrade"):
+            with pytest.raises(
+                mcp_oauth.McpInsecureRequestError,
+                match=r"'jira' refused a request to http://auth\.example\.test",
+            ):
+                await client.post(url, data={"refresh_token": "rt-1"})
 
 
 def test_is_sign_in_error():
@@ -293,9 +347,9 @@ async def test_browser_sign_in_registers_and_stores_tokens(tmp_path, servers, br
     (registration,) = servers.registrations
     assert registration["client_name"] == "NeMo Fabric"
     assert registration["token_endpoint_auth_method"] == "none"
-    for name in ("jira.json", "jira.client.json", "jira.meta.json"):
-        _assert_owner_only(tmp_path / name)
-    assert json.loads((tmp_path / "jira.meta.json").read_text())["token_endpoint"] == (
+    for name in ("tokens.json", "client.json", "metadata.json"):
+        _assert_owner_only(tmp_path / "jira" / name)
+    assert json.loads((tmp_path / "jira" / "metadata.json").read_text())["token_endpoint"] == (
         f"{AUTH_URL}/oauth/token"
     )
 
@@ -321,7 +375,7 @@ async def test_expired_tokens_are_refreshed_at_the_stored_token_endpoint(
     first = mcp_oauth.browser_sign_in_auth("jira", MCP_URL, tmp_path, open_browser=browser.open)
     first.sign_in.interactive = True
     await _call_mcp(first, servers)
-    tokens_path = tmp_path / "jira.json"
+    tokens_path = tmp_path / "jira" / "tokens.json"
     stored = json.loads(tokens_path.read_text())
     tokens_path.write_text(json.dumps({**stored, "expires_at": time.time() - 1}))
 
@@ -367,4 +421,4 @@ async def test_configured_client_signs_in_with_its_secret(tmp_path, servers, bro
     assert authorization.startswith("Basic ")
     assert "client_secret" not in form
     assert SECRET not in repr(auth)
-    _assert_owner_only(tmp_path / "jira.client.json")
+    _assert_owner_only(tmp_path / "jira" / "client.json")

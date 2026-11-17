@@ -43,6 +43,7 @@ from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
 from nemo_fabric_adapter_contract.models import AgentRunRequest
+from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import AgentRunResult
 from nemo_fabric_adapter_contract.models import AgentRunStatus
 from nemo_fabric_adapter_contract.models import McpOAuth2Config
@@ -2637,11 +2638,12 @@ def test_oauth2_connection_attaches_browser_sign_in(tmp_path, transport):
     )
 
     sign_in = connection["auth"].sign_in
+    assert callable(connection["httpx_client_factory"])
     assert isinstance(sign_in, mcp_oauth.BrowserSignIn)
     assert sign_in.interactive is False
     assert sign_in.redirect_uri == "http://127.0.0.1:8765/callback"
     assert sign_in.timeout == 120
-    client = json.loads((tmp_path / "jira.client.json").read_text())
+    client = json.loads((tmp_path / "jira" / "client.json").read_text())
     assert client["client_id"] == "fabric-client"
     assert client["token_endpoint_auth_method"] == "client_secret_post"
     assert OAUTH_SECRET not in repr(connection)
@@ -2798,10 +2800,14 @@ async def test_oauth2_sign_in_failure_fails_the_invocation_and_is_retried(
     await runtime.start(lifecycle_start_payload(payload))
     try:
         for _ in range(2):
-            with pytest.raises(lifecycle.LifecycleError) as raised:
-                await runtime.invoke(*lifecycle_invocation(payload))
-            assert raised.value.code == "deepagents_mcp_authentication_failed"
-            assert raised.value.metadata == {"servers": ["jira"]}
+            # A failed result, not an exception: an adapter exception would end
+            # the lifecycle runtime before the next invocation could retry.
+            result = await runtime.invoke(*lifecycle_invocation(payload))
+            assert result.status == AgentRunStatus.FAILED
+            assert result.error.code == "deepagents_mcp_authentication_failed"
+            assert result.error.message.endswith(": jira")
+            assert result.error.retryable is True
+            assert result.output["mcp"]["unavailable_servers"][0]["name"] == "jira"
     finally:
         await runtime.stop()
 
@@ -2825,12 +2831,11 @@ async def test_oauth2_sign_in_is_bounded_by_the_invocation_deadline(
         {**context.to_mapping(), "deadline_millis": int(time.time() * 1000) + 50}
     )
     try:
-        with pytest.raises(lifecycle.LifecycleError) as raised:
-            await runtime.invoke(request, context)
+        result = await runtime.invoke(request, context)
     finally:
         await runtime.stop()
 
-    assert raised.value.code == "deepagents_mcp_authentication_failed"
+    assert result.error.code == "deepagents_mcp_authentication_failed"
     assert sign_in.interactive is False
 
 
