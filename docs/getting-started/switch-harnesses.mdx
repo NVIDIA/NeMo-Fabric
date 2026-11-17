@@ -12,7 +12,7 @@ This second quickstart demonstrates the central reason to use NVIDIA NeMo Fabric
 
 <Step title="Install the Second Harness" id="install-the-second-harness">
 
-This example compares Deep Agents with [Hermes Agent](https://github.com/NousResearch/hermes-agent), using its ready-made NeMo Fabric adapter. The supported Hermes v0.22.5 stack requires Python 3.14; NeMo Fabric itself supports Python 3.11–3.14. Keep Hermes in a separate environment to isolate its dependencies. Both variants use the NVIDIA model and credential from the first quickstart.
+This example compares Deep Agents with [Hermes Agent](https://github.com/NousResearch/hermes-agent), using its ready-made NeMo Fabric adapter. The supported Hermes v0.22.7 stack requires Python 3.14; NeMo Fabric itself supports Python 3.11–3.14. Keep Hermes in a separate environment to isolate its dependencies. Both variants use the NVIDIA model and credential from the first quickstart.
 
 With the first quickstart's `.venv` still active, install [uv](https://docs.astral.sh/uv/getting-started/installation/) and Git, then run the following in your application directory using a POSIX shell. The commands check out the supported Hermes release, use its frozen dependency lockfile, and install the Hermes adapter version matching your application:
 
@@ -20,7 +20,7 @@ With the first quickstart's `.venv` still active, install [uv](https://docs.astr
 uv python install 3.14
 uv venv --python 3.14 .venv-hermes
 git clone --filter=blob:none --no-checkout https://github.com/NousResearch/hermes-agent.git hermes-agent
-git -C hermes-agent fetch --depth 1 origin bf0203a794a07aac3ff764972ab9087baa4e4f4e
+git -C hermes-agent fetch --depth 1 origin b200f5bc60e31588ba2cb60e288029c4a54ba5fa
 git -C hermes-agent checkout --detach FETCH_HEAD
 UV_PROJECT_ENVIRONMENT="$PWD/.venv-hermes" uv sync \
   --project ./hermes-agent --frozen --no-default-groups --extra mcp \
