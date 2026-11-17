@@ -191,6 +191,15 @@ def build_hermes_config(
 
     if interfaces:
         config["model"] = _interface_model(model_config)
+        if model_config.base_url and config["model"].get("provider") == "custom":
+            # Resolve this route's declared key before Hermes's host-specific
+            # environment fallbacks, which can reject gateway placeholders.
+            config["providers"] = {
+                "custom": {
+                    "base_url": model_config.base_url,
+                    "key_env": _api_key_env(model_config),
+                }
+            }
     if "api" in interfaces:
         config["agent"]["cron_drain_timeout"] = GATEWAY_DRAIN_TIMEOUT_SECONDS
         config["agent"]["restart_drain_timeout"] = 0
