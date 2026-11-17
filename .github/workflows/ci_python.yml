@@ -118,9 +118,6 @@ jobs:
           npm run build --prefix adapters/typescript --workspace nemo-fabric-adapters-kiro
 
       - name: Run pytest
-        env:
-          PYTHONUNBUFFERED: ${{ matrix.platform == 'macos-arm64' && '1' || '' }}
-          PYTEST_ADDOPTS: ${{ matrix.platform == 'macos-arm64' && '-vv --durations=30 -o faulthandler_timeout=60' || '' }}
         run: |
           set -euo pipefail
           just --set no_uv true test-python

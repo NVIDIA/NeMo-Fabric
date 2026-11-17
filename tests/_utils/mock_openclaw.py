@@ -11,6 +11,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+from socketserver import TCPServer
 from uuid import uuid4
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -362,6 +363,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+class GatewayServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # Avoid reverse DNS delays for this loopback-only test server.
+        TCPServer.server_bind(self)
+        self.server_name = "localhost"
+        self.server_port = self.server_address[1]
+
+
+server = GatewayServer(("127.0.0.1", port), Handler)
 signal.signal(signal.SIGTERM, stop_gateway)
 server.serve_forever()
