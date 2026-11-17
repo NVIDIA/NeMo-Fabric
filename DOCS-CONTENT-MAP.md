@@ -89,6 +89,14 @@ The parent Python SDK opens its existing landing page. Its ten children are flat
 - No live model calls or all-harness execution are required for this text-preserving extraction. These examples retain the same prerequisites and behavioral limits as main.
 - Keep these notes for the later PR body, using the repository PR template when a PR is actually requested. Nothing is pushed or published during local preview.
 
+## Review Follow-up for the Later PR
+
+- Narrow the Overview provenance claim to selected software versions and available infrastructure software versions; keep the availability/coverage caveat.
+- Replace obsolete landing-page/template assertions with checks of reader destinations, configured navigation, and published Card targets. The test works at each phase of the stack.
+- Require whitespace-only suffixes on closing code fences in the Card-link publication helper. Six regression cases cover backticks, tildes, marker-like content, shorter/mismatched markers, and valid longer closers.
+- Add descriptions to all 20 new pages identified by the review. Their existing guide and routing bodies remain unchanged.
+- Shared fixes are committed in phase one and inherited by the later phases. Metadata additions stay in phase three, where those pages are introduced. The focused documentation/publication suite passes all 36 checks on each of the three phases. The final `just no_uv=true docs` build passes with zero errors and the same 12 existing warnings; the refreshed combined preview passes configuration and strict broken-link checks (only the FDR HTTP 403 redirect-comparison warning remains). The SDK preservation audit, all 98 authored Python snippets, 107 fragment links, and 406 repository links into docs pass. Generated-reference churn is discarded.
+
 ## Validation
 
 Each phase runs `just no_uv=true docs` with the existing local documentation environment. The publication helper has focused tests. Additional checks compare protected guide bodies against the baseline, compare all four migrated CLI sections exactly, parse authored Python snippets, and reject nested Overview children. Compiler-dependent generated-reference churn is discarded after validation.
