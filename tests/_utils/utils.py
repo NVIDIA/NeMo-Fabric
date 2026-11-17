@@ -2,9 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import os
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+
+import pytest
+
+# chmod makes a path read-only only where POSIX permissions apply to the user.
+POSIX_PERMISSIONS = pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="needs POSIX permissions enforced for a non-root user",
+)
 
 
 def atof_records(output: Mapping[str, Any]) -> list[dict[str, Any]]:

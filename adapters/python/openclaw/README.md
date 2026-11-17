@@ -110,6 +110,47 @@ reported counters under
 observations add `zero_unverified`. These observations do not establish
 complete accounting for retries, compaction, child agents, or background work.
 
+### Skills
+
+The adapter supports `skills.paths`, `skills.directories`, `skills.bundled`,
+and `skills.duplicates`. `skills.paths` is unchanged: each path must be a
+folder that holds `SKILL.md`, and is passed, resolved, to
+`skills.load.extraDirs`. The mount, not NeMo Fabric, makes a skill read-only.
+Each comment in this example names one setup; the whole list is the mixed
+setup:
+
+```yaml
+skills:
+  directories:
+    # A folder, read-only: mount it read-only; every skill in it loads.
+    - folder: /mnt/team-skills
+    # Chosen skills, read-only: mount each skill read-only, one skill entry each.
+    - skill: /mnt/release-review
+    - skill: /mnt/incident-triage
+    # A folder, read-write: skills written into it load at the next start.
+    - folder: /mnt/agent-skills
+  # Mixed: one list holds any of these; last_wins lets a later entry win.
+  duplicates: last_wins
+  bundled:
+    include: [github, weather]
+```
+
+Skills the agent installs through OpenClaw itself don't go to a `directories`
+folder, and are lost at stop until state is kept across restarts
+([#578](https://github.com/NVIDIA/NeMo-Fabric/issues/578)); the
+[OpenClaw guide](../../../docs/integrations/harness/openclaw/openclaw.mdx#skills)
+says where they go.
+
+At start, the adapter reads each skill's front matter with OpenClaw's own
+parser, through the `node` that runs OpenClaw, and runs
+`openclaw skills list` to confirm what loads.
+[Configure Skills](../../../docs/integrations/harness/skills.mdx) describes
+the fields, the common setups, start checks, the run report, and how OpenClaw
+differs from other harnesses. The
+[OpenClaw guide](../../../docs/integrations/harness/openclaw/openclaw.mdx#skills)
+covers OpenClaw's skip reasons, what happens when the parser can't run,
+precedence, and bundled-skill handling.
+
 ### Harness Settings
 
 Only OpenClaw's default `openclaw` agent runtime is supported.
@@ -124,7 +165,7 @@ The following settings are specific to the OpenClaw adapter:
 | `interfaces.dashboard` | None | Serve the Control UI on a managed runtime, with an exact `port`, optional `enabled`, and `public_origins`; refer to the [dashboard guide](../../../docs/integrations/harness/openclaw/openclaw-dashboard.mdx). |
 | `interfaces.terminal` | None | Attach the native terminal to the existing Gateway, without a separate port. Refer to the [terminal guide](../../../docs/integrations/harness/openclaw/openclaw-tui.mdx). |
 | `startup_timeout_seconds` | `60` | One deadline for all of start, from checking the `openclaw` command to the Gateway becoming ready; at most 75 seconds. |
-| `shutdown_timeout_seconds` | `5` | Graceful shutdown timeout. |
+| `shutdown_timeout_seconds` | `15` | Graceful Gateway shutdown timeout. NeMo Fabric allows 30 seconds for the complete adapter stop; an override must leave time for cleanup within that limit. Stop reports an error if the Gateway process is still running after cleanup. |
 | `connect_timeout_seconds` | `10` | Local HTTP connection timeout. |
 | `read_timeout_seconds` | None | Local HTTP response timeout. When unset, the invocation timeout bounds the response. |
 | `agents.defaults.heartbeat.every` | OpenClaw native default | Recurring heartbeat interval with units, such as `30m`; `0m` disables the recurring cadence but not event-driven turns. |

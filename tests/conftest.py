@@ -10,6 +10,7 @@ import tempfile
 import time
 import types
 import typing
+from collections.abc import Callable
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -89,6 +90,28 @@ def default_skill_fixture() -> Path:
 @pytest.fixture(name="alternate_skill")
 def alternate_skill_fixture() -> Path:
     return CUR_DIR / "fixtures" / "alternate"
+
+
+@pytest.fixture(name="make_read_only")
+def make_read_only_fixture() -> Iterator[Callable[[Path], Path]]:
+    """Remove write permission from a folder and everything in it, as a read-only
+    mount does, and restore it after the test so the folder can be cleaned up.
+
+    Use with ``_utils.utils.POSIX_PERMISSIONS``: Windows and root ignore it.
+    """
+    changed: list[Path] = []
+
+    def make_read_only(root: Path) -> Path:
+        for path in [root, *root.rglob("*")]:
+            path.chmod(path.stat().st_mode & ~0o222)
+            changed.append(path)
+        return root
+
+    try:
+        yield make_read_only
+    finally:
+        for path in changed:
+            path.chmod(path.stat().st_mode | 0o200)
 
 
 @pytest.fixture(name="hermes_shim_agent_dir_src", scope="session")

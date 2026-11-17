@@ -163,6 +163,13 @@ def to_fabric_config(job) -> FabricConfig:
   type.
 - Create deployment or evaluation variants with `model_copy(deep=True)` and
   ordinary Python functions; each copy plans and runs independently.
+- To give a skill path the same meaning on every adapter, set
+  `SkillConfig.directories` to `SkillDirectory(skill=...)` and
+  `SkillDirectory(folder=...)` entries instead of using `paths`, with optional
+  `bundled=BundledSkills(...)` and
+  `duplicates`. These need adapter support, and `add_skill_path` raises
+  `ValueError` once `directories` is set. Refer to
+  [Configure Skills](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/skills.mdx).
 - Pass `base_dir=...` to any `Fabric` call when the config uses relative paths,
   so skills, workspaces, and artifacts anchor to the consumer's own layout.
 

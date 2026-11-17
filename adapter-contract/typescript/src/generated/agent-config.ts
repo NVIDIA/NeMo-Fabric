@@ -76,6 +76,24 @@ export type McpAuthenticationConfig =
  * OAuth client authentication method used at the token endpoint.
  */
 export type OAuthTokenEndpointAuthMethod = "none" | "client_secret_post" | "client_secret_basic";
+/**
+ * One structured external-skill entry: exactly one of `{"skill": path}` or
+ * `{"folder": path}`. The other key may be present only as `null`, which
+ * reads as absent.
+ */
+export type SkillDirectory =
+  | {
+      folder?: null;
+      skill: string;
+    }
+  | {
+      folder: string;
+      skill?: null;
+    };
+/**
+ * How two `skills.directories` entries that provide the same skill name resolve.
+ */
+export type SkillDuplicatePolicy = "reject" | "last_wins" | "first_wins";
 
 /**
  * Configuration projected southbound to one adapter target.
@@ -278,9 +296,28 @@ export interface AgentRuntimeConfig {
   max_turns?: number | null;
 }
 /**
- * Skill paths made available to an adapter target.
+ * Skills made available to an adapter target.
+ *
+ * A non-null `directories` requires an empty `paths`, and a non-null
+ * `duplicates` requires a non-null `directories`; `null` reads as omitted.
  */
 export interface AgentSkillConfig {
+  /**
+   * Bundled-skill selection. Sent only to adapters that declare the
+   * requested `skills.bundled` operation.
+   */
+  bundled?: BundledSkills | null;
+  /**
+   * Structured skill entries with paths resolved by NeMo Fabric. Sent only
+   * to adapters that declare `skills.directory_loading`; an empty list
+   * loads no external skills.
+   */
+  directories?: SkillDirectory[] | null;
+  /**
+   * Duplicate-name policy between `directories` entries. Sent only to
+   * adapters that declare the policy in `skills.duplicates`.
+   */
+  duplicates?: SkillDuplicatePolicy | null;
   /**
    * Adapter-owned skill fields.
    */
@@ -289,6 +326,27 @@ export interface AgentSkillConfig {
    * Skill paths resolved for the task environment.
    */
   paths?: string[];
+}
+/**
+ * Bundled-skill selection.
+ *
+ * `include` and `exclude` are mutually exclusive, and neither may be combined
+ * with `enabled: false`; a `null` list reads as omitted. An empty `include`
+ * selects no bundled skills; an empty `exclude` selects all of them.
+ */
+export interface BundledSkills {
+  /**
+   * Whether bundled skills load at all.
+   */
+  enabled?: boolean;
+  /**
+   * Load every bundled skill except these. `None` and `[]` differ.
+   */
+  exclude?: string[] | null;
+  /**
+   * Load only these bundled skills. `None` and `[]` differ.
+   */
+  include?: string[] | null;
 }
 /**
  * Named tool definitions and effective adapter-target tool policy.

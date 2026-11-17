@@ -184,12 +184,34 @@ def test_inspection_requires_typed_config(custom_descriptor):
         inspect_adapter({}, custom_descriptor)
 
 
-@pytest.mark.parametrize("feature", ["skills", "mcp", "telemetry"])
+@pytest.mark.parametrize(
+    "feature",
+    [
+        "skills",
+        "skill_directories",
+        "skill_duplicates",
+        "bundled_skills",
+        "mcp",
+        "telemetry",
+    ],
+)
 def test_missing_metadata_rejects_unconfirmed_requested_features(
     custom_config, feature
 ):
+    from nemo_fabric import BundledSkills
+    from nemo_fabric import SkillConfig
+    from nemo_fabric import SkillDirectory
+
     if feature == "skills":
         custom_config.add_skill_path("/task/skills/example")
+    elif feature == "skill_directories":
+        custom_config.skills = SkillConfig(
+            directories=[SkillDirectory(folder="/task/skills")]
+        )
+    elif feature == "skill_duplicates":
+        custom_config.skills = SkillConfig(directories=[], duplicates="reject")
+    elif feature == "bundled_skills":
+        custom_config.skills = SkillConfig(bundled=BundledSkills(enabled=False))
     elif feature == "mcp":
         custom_config.add_mcp_server("tools", transport="stdio", url="tool-server")
     else:
@@ -197,6 +219,17 @@ def test_missing_metadata_rejects_unconfirmed_requested_features(
     report = inspect_adapter(custom_config, None)
     assert report.capability_profile is None
     assert "host descriptor metadata is unavailable" in report.issues[0].reason
+
+
+def test_missing_metadata_accepts_empty_skill_directories(custom_config):
+    from nemo_fabric import SkillConfig
+
+    # An empty list asks for no external skills, so core needs no descriptor.
+    custom_config.skills = SkillConfig(directories=[])
+
+    profile = inspect_adapter(custom_config, None).capability_profile
+
+    assert (profile.adapter_id, profile.skills) == ("example.fabric.custom", False)
 
 
 def test_missing_or_incomplete_metadata_makes_conservative_claims(
@@ -733,3 +766,30 @@ def test_inspection_does_not_accept_a_diagnostic_switch(
 ):
     with pytest.raises(TypeError, match="diagnostics"):
         inspect_adapter(custom_config, custom_descriptor, diagnostics=False)
+
+
+@pytest.mark.parametrize("structured_support", [False, True])
+def test_skill_directory_inspection_matches_planning(
+    custom_config, custom_descriptor, tmp_path, structured_support
+):
+    from nemo_fabric import DiscoveryConfig, SkillConfig, SkillDirectory
+
+    custom_config.skills = SkillConfig(
+        directories=[SkillDirectory(folder="/task-only/skills")]
+    )
+    if structured_support:
+        custom_descriptor["skills"] = get_adapter_descriptor("nvidia.fabric.hermes")[
+            "skills"
+        ]
+    path = tmp_path / "custom.fabric-adapter.json"
+    path.write_text(json.dumps(custom_descriptor))
+    custom_config.discovery = DiscoveryConfig(local_paths=[path])
+    report = inspect_adapter(custom_config, custom_descriptor)
+    if structured_support:
+        assert report.issues == []
+        Fabric().plan(custom_config, base_dir=tmp_path)
+    else:
+        assert report.capability_profile is None
+        assert any(issue.field.startswith("skills") for issue in report.issues)
+        with pytest.raises(FabricConfigError, match="skills"):
+            Fabric().plan(custom_config, base_dir=tmp_path)

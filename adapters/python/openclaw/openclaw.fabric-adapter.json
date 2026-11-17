@@ -124,8 +124,8 @@
       "shutdown_timeout_seconds": {
         "type": "number",
         "exclusiveMinimum": 0,
-        "default": 5,
-        "description": "Maximum graceful Gateway shutdown time before forced termination."
+        "default": 15,
+        "description": "Maximum graceful Gateway shutdown time before forced termination. Fabric allows 30 seconds for the complete adapter stop; leave time for cleanup within that limit."
       },
       "connect_timeout_seconds": {
         "type": "number",
@@ -314,6 +314,34 @@
       "skills"
     ],
     "system_instruction_modes": ["replace"]
+  },
+  "skills": {
+    "directory_loading": {
+      "supported_entries": ["skill", "folder"],
+      "skill_file": "SKILL.md",
+      "discovery": {
+        "traversal": "recursive",
+        "nested_skills": "stop_at_skill",
+        "depth_limit": {"kind": "adapter_defined"}
+      },
+      "parsing": {
+        "required_frontmatter_fields": ["description"],
+        "name_fallback": "directory_name",
+        "frontmatter_errors": "reject"
+      }
+    },
+    "bundled": {
+      "default": "enabled",
+      "supports_enable": true,
+      "supports_disable": true,
+      "supports_include": true,
+      "supports_exclude": true
+    },
+    "duplicates": {
+      "supported_policies": ["reject", "first_wins", "last_wins"],
+      "native": "A higher OpenClaw source wins: workspace skills, then state-folder skills, then shipped skills, then skills.directories. Between skills.directories entries the later entry wins.",
+      "name_source": "frontmatter"
+    }
   },
   "capabilities": {
     "service": true,

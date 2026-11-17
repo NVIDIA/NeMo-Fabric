@@ -253,6 +253,69 @@ async def test_managed_api_does_not_enable_inherited_messaging_platforms(
         await runtime.stop()
 
 
+def _skills_tree(home: Path) -> dict[str, object]:
+    """Each file in the Hermes home's ``skills`` folder, with its change time.
+
+    Hermes's sync rewrites its manifest every time, so the manifest is
+    compared by content.
+    """
+    skills_dir = home / "skills"
+    return {
+        str(path.relative_to(skills_dir)): path.read_bytes()
+        if path.name == ".bundled_manifest"
+        else path.stat().st_mtime_ns
+        for path in skills_dir.rglob("*")
+        if path.is_file()
+    }
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Hermes interfaces require a POSIX host"
+)
+async def test_report_lists_bundled_skills_an_interface_copies_into_a_fresh_home(
+    tmp_path: Path, api_server: str, monkeypatch: pytest.MonkeyPatch
+):
+    """The API interface copies Hermes's bundled skills at its start, so the
+    report, built before it starts, observes the same copy."""
+    from nemo_fabric_adapters.hermes import skills as hermes_skills
+
+    port = _free_port()
+    payload = _payload(
+        tmp_path, _interface("api", port=port), base_url=f"{api_server}/v1"
+    )
+    config = payload["config"].to_mapping()
+    config["skills"] = {"directories": []}
+    payload["config"] = AgentConfig.from_mapping(config)
+    prepared: dict[str, object] = {}
+    prepare_skills = adapter._prepare_skills
+
+    async def record_prepared(plan, hermes_home):
+        report = await prepare_skills(plan, hermes_home)
+        prepared.update(_skills_tree(hermes_home))
+        return report
+
+    monkeypatch.setattr(adapter, "_prepare_skills", record_prepared)
+    runtime = adapter.HermesRuntime()
+    try:
+        await runtime.start(payload)
+        report = runtime._skills_output()["skills"]
+        # Hermes's sync has run in the API process, which is now healthy.
+        after_interface = _skills_tree(runtime._hermes_home)
+        catalog = hermes_skills.native_catalog()
+    finally:
+        await runtime.stop()
+
+    loads = {
+        row["name"] for row in catalog if row["status"] == "unique" and row["visible"]
+    }
+    assert "hermes-agent" in loads
+    assert {item["origin"] for item in report["loaded"]} == {"bundled"}
+    assert {item["name"] for item in report["loaded"]} == loads
+    # The adapter's copy left the interface's own sync nothing to do.
+    assert ".bundled_manifest" in prepared
+    assert after_interface == prepared
+
+
 async def test_api_turns_export_atif_without_resetting_native_conversation(
     tmp_path: Path, api_server: str
 ):

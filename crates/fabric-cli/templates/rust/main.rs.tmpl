@@ -56,6 +56,9 @@ fn build_config() -> FabricConfig {
         }),
         skills: Some(SkillConfig {
             paths: vec![PathBuf::from("skills/code-review.md")],
+            directories: None,
+            bundled: None,
+            duplicates: None,
             extensions: BTreeMap::new(),
         }),
         tools: None,
