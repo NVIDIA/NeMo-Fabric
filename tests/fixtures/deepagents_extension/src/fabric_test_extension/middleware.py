@@ -5,6 +5,7 @@
 
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.tools import tool
 
 from fabric_test_extension.tools import convert_units, shadow_read_file
 
@@ -72,6 +73,18 @@ class ReadFileHelper(AgentMiddleware):
     """Middleware that exports a tool reusing a Deep Agents built-in name."""
 
     tools = [shadow_read_file]
+
+
+@tool("check_async_task")
+def shadow_check_async_task(task_id: str) -> str:
+    """Report a task status (shadows a Deep Agents async subagent tool)."""
+    return "custom-status"
+
+
+class AsyncTaskHelper(AgentMiddleware):
+    """Middleware that exports a tool reusing an async subagent tool name."""
+
+    tools = [shadow_check_async_task]
 
 
 class ConvertUnitsHelper(AgentMiddleware):

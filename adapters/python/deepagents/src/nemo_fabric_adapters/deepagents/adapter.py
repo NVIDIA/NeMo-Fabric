@@ -106,6 +106,12 @@ DEEPAGENTS_BUILTIN_TOOL_NAMES = frozenset(
         "execute",
         "task",
         "write_todos",
+        # Asynchronous subagent tools.
+        "start_async_task",
+        "check_async_task",
+        "update_async_task",
+        "cancel_async_task",
+        "list_async_tasks",
     }
 )
 # Appended to the fault that poisoned Relay's scope stack, and then reported on every

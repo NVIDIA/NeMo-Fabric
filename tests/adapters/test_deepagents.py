@@ -3728,8 +3728,12 @@ async def test_tool_policy_applies_before_custom_middleware_runs_a_tool(
     [
         ("ReadFileHelper", r"tool named 'read_file', which is also a Deep Agents"),
         ("ConvertUnitsHelper", r"tool named 'convert_units', which is also a tools"),
+        (
+            "AsyncTaskHelper",
+            r"tool named 'check_async_task', which is also a Deep Agents",
+        ),
     ],
-    ids=["builtin", "tool-definition"],
+    ids=["builtin", "tool-definition", "async-subagent-tool"],
 )
 @pytest.mark.usefixtures("deepagents_extension")
 async def test_middleware_tools_cannot_shadow_other_tools(build_kwargs, ref, message):
