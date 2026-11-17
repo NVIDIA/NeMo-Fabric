@@ -1728,11 +1728,11 @@ async def test_openclaw_stop_reports_a_surviving_gateway(
     monkeypatch.setattr(adapter.common_utils, "signal_process_group", signal_group)
 
     with pytest.raises(
-        adapter.lifecycle.LifecycleError, match="still running"
+        adapter.lifecycle.LifecycleError, match="cleanup could not be confirmed"
     ) as caught:
         await runtime.stop()
 
-    assert caught.value.code == "openclaw_stop_failed"
+    assert caught.value.code == "cleanup_unconfirmed"
     assert not caught.value.retryable
     assert runtime._process is mock_process
 
