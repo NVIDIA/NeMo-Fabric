@@ -137,15 +137,21 @@ def test_ambiguous_relay_components_do_not_confirm_atif(
     custom_config.relay.components.append(
         RelayComponentConfig(kind="observability", config={"atif": {"enabled": False}})
     )
-    with pytest.raises(FabricConfigError, match="Cannot confirm requested Relay ATIF"):
-        inspect_adapter(custom_config, custom_descriptor)
+    report = inspect_adapter(custom_config, custom_descriptor)
+    assert report.capability_profile is None
+    assert any(
+        "Cannot confirm requested Relay ATIF" in issue.reason for issue in report.issues
+    )
 
 
 def test_relay_atif_request_requires_declared_output(custom_descriptor, custom_config):
     custom_descriptor["telemetry"]["providers"]["relay"]["outputs"] = ["otel"]
     custom_config.enable_relay(observability={"atif": {"enabled": True}})
-    with pytest.raises(FabricConfigError, match="Cannot confirm requested Relay ATIF"):
-        inspect_adapter(custom_config, custom_descriptor)
+    report = inspect_adapter(custom_config, custom_descriptor)
+    assert report.capability_profile is None
+    assert any(
+        "Cannot confirm requested Relay ATIF" in issue.reason for issue in report.issues
+    )
 
 
 @pytest.mark.parametrize("atif", [[], {"enabled": "true"}, {"enabled": 1}])
@@ -188,10 +194,9 @@ def test_missing_metadata_rejects_unconfirmed_requested_features(
         custom_config.add_mcp_server("tools", transport="stdio", url="tool-server")
     else:
         custom_config.enable_relay()
-    with pytest.raises(
-        FabricConfigError, match="host descriptor metadata is unavailable"
-    ):
-        inspect_adapter(custom_config, None)
+    report = inspect_adapter(custom_config, None)
+    assert report.capability_profile is None
+    assert "host descriptor metadata is unavailable" in report.issues[0].reason
 
 
 def test_missing_or_incomplete_metadata_makes_conservative_claims(
@@ -222,8 +227,8 @@ def test_known_unsupported_features_fail_during_inspection(
         custom_config.add_mcp_server("tools", transport="stdio", url="tool-server")
     else:
         custom_config.enable_relay()
-    with pytest.raises(FabricConfigError):
-        inspect_adapter(custom_config, custom_descriptor)
+    report = inspect_adapter(custom_config, custom_descriptor)
+    assert report.issues and report.capability_profile is None
 
 
 def test_descriptor_fingerprint_ignores_origin_but_detects_contract_drift(
@@ -484,12 +489,18 @@ def test_workflow_inspection_fails_closed_and_sanitizes_invalid_metadata(
         descriptor["target_types"] = []
     else:
         config.workflow.settings["mode"] = secret
-    with pytest.raises(
-        FabricConfigError, match="Workflow target metadata or configuration is invalid"
-    ) as caught:
-        inspect_adapter(config, descriptor, target_descriptor=target)
-    assert secret not in str(caught.value)
-    assert caught.value.__cause__ is None
+    if invalid == "settings":
+        report = inspect_adapter(config, descriptor, target_descriptor=target)
+        assert report.issues and report.capability_profile is None
+        assert secret not in repr(report.issues)
+    else:
+        with pytest.raises(
+            FabricConfigError,
+            match="Workflow target metadata or configuration is invalid",
+        ) as caught:
+            inspect_adapter(config, descriptor, target_descriptor=target)
+        assert secret not in str(caught.value)
+        assert caught.value.__cause__ is None
 
 
 def test_workflow_fingerprint_matches_execution_plan_and_includes_target(
@@ -607,7 +618,7 @@ def test_diagnostics_collect_independent_failures_without_files(
     monkeypatch.setattr(
         tempfile, "TemporaryDirectory", Mock(side_effect=AssertionError("no files"))
     )
-    report = inspect_adapter(config, custom_descriptor, diagnostics=True)
+    report = inspect_adapter(config, custom_descriptor)
     assert report.capability_profile is None
     fields = [issue.field for issue in report.issues]
     assert fields == sorted(fields)
@@ -623,37 +634,31 @@ def test_diagnostics_collect_independent_failures_without_files(
     assert "private-model" not in repr(report.issues)
     assert "private-command" not in repr(report.issues)
     assert "private-tool" not in repr(report.issues)
-    assert inspect_adapter(config, custom_descriptor, diagnostics=True) == report
-    with pytest.raises(FabricConfigError):
-        inspect_adapter(config, custom_descriptor)
+    assert inspect_adapter(config, custom_descriptor) == report
 
 
-@pytest.mark.parametrize("diagnostics", [False, True])
 @pytest.mark.parametrize(
     "schema_field",
     ["settings_schema", "model_schema", "tool_definition_schema", "config_schema"],
 )
-def test_inspection_rejects_invalid_schema_in_both_modes(
-    custom_config, custom_descriptor, diagnostics, schema_field
+def test_inspection_rejects_invalid_schema(
+    custom_config, custom_descriptor, schema_field
 ):
     custom_descriptor[schema_field] = {"type": "invalid-private-value"}
     with pytest.raises(FabricConfigError, match="invalid adapter descriptor") as error:
-        inspect_adapter(custom_config, custom_descriptor, diagnostics=diagnostics)
+        inspect_adapter(custom_config, custom_descriptor)
     assert "invalid-private-value" not in str(error.value)
 
 
-def test_diagnostics_success_matches_default(custom_config, custom_descriptor):
-    report = inspect_adapter(custom_config, custom_descriptor, diagnostics=True)
+def test_inspection_success_returns_profile(custom_config, custom_descriptor):
+    report = inspect_adapter(custom_config, custom_descriptor)
     assert report.issues == []
     assert report.capability_profile is not None
     assert report == inspect_adapter(custom_config, custom_descriptor)
 
 
-@pytest.mark.parametrize("diagnostics", [False, True])
 @pytest.mark.parametrize("invalid", ["target_id", "adapter_id", "schema"])
-def test_workflow_malformed_metadata_raises_in_both_modes(
-    workflow_metadata, diagnostics, invalid
-):
+def test_workflow_malformed_metadata_raises(workflow_metadata, invalid):
     config, descriptor, target = workflow_metadata
     if invalid == "target_id":
         target["id"] = "other.workflow"
@@ -662,9 +667,7 @@ def test_workflow_malformed_metadata_raises_in_both_modes(
     else:
         target["spec"]["settings_schema"] = {"type": "invalid-private-value"}
     with pytest.raises(FabricConfigError):
-        inspect_adapter(
-            config, descriptor, target_descriptor=target, diagnostics=diagnostics
-        )
+        inspect_adapter(config, descriptor, target_descriptor=target)
 
 
 @pytest.mark.parametrize("failure", ["provider", "atif"])
@@ -676,9 +679,57 @@ def test_telemetry_compatibility_is_reported_in_diagnostic_mode(
         custom_descriptor["telemetry"]["providers"] = {}
     else:
         custom_descriptor["telemetry"]["providers"]["relay"]["outputs"] = ["otel"]
-    with pytest.raises(FabricConfigError):
-        inspect_adapter(custom_config, custom_descriptor)
-    report = inspect_adapter(custom_config, custom_descriptor, diagnostics=True)
+    report = inspect_adapter(custom_config, custom_descriptor)
     assert report.capability_profile is None
-    assert len(report.issues) == 1
-    assert report.issues[0].field.startswith("telemetry.providers")
+    assert report.issues
+    assert all(issue.field.startswith("telemetry.providers") for issue in report.issues)
+
+
+@pytest.mark.parametrize("artifact_source", [None, "runtime", "environment"])
+def test_keep_state_artifact_requirement_matches_planning(
+    custom_config, custom_descriptor, tmp_path, artifact_source
+):
+    from nemo_fabric import DiscoveryConfig, EnvironmentConfig
+
+    custom_config.runtime.keep_state = True
+    custom_config.environment = EnvironmentConfig(provider="local", workspace=tmp_path)
+    custom_descriptor["config"]["accepts"].append("runtime.keep_state")
+    path = tmp_path / "custom.fabric-adapter.json"
+    path.write_text(json.dumps(custom_descriptor))
+    custom_config.discovery = DiscoveryConfig(local_paths=[path])
+    if artifact_source is not None:
+        getattr(custom_config, artifact_source).artifacts = tmp_path / "artifacts"
+        assert inspect_adapter(custom_config, custom_descriptor).issues == []
+        Fabric().plan(custom_config, base_dir=tmp_path)
+    else:
+        with pytest.raises(FabricConfigError) as inspection_error:
+            inspect_adapter(custom_config, custom_descriptor)
+        with pytest.raises(FabricConfigError) as planning_error:
+            Fabric().plan(custom_config, base_dir=tmp_path)
+        assert str(inspection_error.value) == str(planning_error.value)
+        assert "runtime.keep_state" in str(inspection_error.value)
+        assert "requires an artifact directory" in str(inspection_error.value)
+
+
+@pytest.mark.parametrize("unsupported_tools", [False, True])
+@pytest.mark.parametrize("atif", [[], {"enabled": "invalid"}, {"enabled": 1}])
+def test_malformed_relay_atif_is_not_hidden_by_compatibility_issues(
+    custom_config, custom_descriptor, unsupported_tools, atif
+):
+    from nemo_fabric import RelayComponentConfig, ToolsConfig
+
+    custom_config.enable_relay()
+    custom_config.relay.components.append(
+        RelayComponentConfig(kind="observability", config={"atif": atif})
+    )
+    if unsupported_tools:
+        custom_config.tools = ToolsConfig(enabled=["private-tool"])
+    with pytest.raises(FabricConfigError, match="Relay ATIF admission requires"):
+        inspect_adapter(custom_config, custom_descriptor)
+
+
+def test_inspection_does_not_accept_a_diagnostic_switch(
+    custom_config, custom_descriptor
+):
+    with pytest.raises(TypeError, match="diagnostics"):
+        inspect_adapter(custom_config, custom_descriptor, diagnostics=False)

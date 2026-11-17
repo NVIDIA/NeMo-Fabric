@@ -20,14 +20,13 @@ Metadata-only adapter inspection for host-side admission.
 inspect_adapter(
     config: 'FabricConfig',
     descriptor: 'Mapping[str, Any] | None',
-    target_descriptor: 'Mapping[str, Any] | None' = None,
-    diagnostics: 'bool' = False
+    target_descriptor: 'Mapping[str, Any] | None' = None
 ) → AdapterInspection
 ```
 
 Inspect supplied adapter and optional workflow metadata without loading its SDK.
 
-Validates canonical descriptor values entirely in memory with shared Rust rules. No descriptor files, executable discovery, or harness SDKs are needed. With diagnostics=True, independent model, tool-routing, and MCP failures are returned in issues; otherwise incompatibilities raise FabricConfigError. Malformed inputs raise in both modes. Settings, tool-definition schemas, and extensions retain first-error boundaries. Success does not imply readiness.
+Validates canonical descriptor values entirely in memory with shared Rust rules. No descriptor files, executable discovery, or harness SDKs are needed. Independent model, tool-routing, and MCP failures are always returned in issues. Callers must check issues before proceeding with deployment. Malformed inputs raise FabricConfigError. Settings, tool-definition schemas, and extensions retain first-error boundaries. Success does not imply readiness.
 
 Missing metadata permits basic execution with false optional-feature claims; requested skills, MCP, or telemetry fail rather than being silently dropped. Configured registered workflows require their canonical target metadata as well as adapter metadata. Their fingerprint covers both descriptors.
 
@@ -67,7 +66,7 @@ def __init__(
 
 ## <kbd>class</kbd> `AdapterCompatibilityIssue`
 
-A value-free incompatibility at a Fabric configuration field.
+A value-free incompatibility at a NeMo Fabric configuration field.
 
 
 ### <kbd>method</kbd> `__init__`

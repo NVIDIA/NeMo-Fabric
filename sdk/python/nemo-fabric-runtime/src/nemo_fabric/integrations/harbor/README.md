@@ -120,10 +120,7 @@ The `nemo-fabric[harbor]` extra installs a matching
 descriptor metadata, not executable adapters. The host does not need to install
 each harness SDK to derive the agent's instance capabilities.
 
-`FabricAgent` uses the shared `inspect_adapter()` API to validate supplied
-descriptor values in memory and consumes `result.capability_profile`, including descriptor `config_schema` constraints such as NOOA's required workflow and Deep Agents' explicit local-shell tool policy. The default inspection mode raises on incompatibility. Standalone callers can
-use `diagnostics=True` and check `result.issues` before deployment. These checks
-run before scheduling or installation. Installed dependencies, Pi native catalog membership, credentials, and endpoint health remain runtime checks. Skills and MCP support come
+`FabricAgent` uses the shared `inspect_adapter()` API to validate supplied descriptor values in memory, including descriptor `config_schema` constraints such as NOOA's required workflow and Deep Agents' explicit local-shell tool policy. It checks `result.issues` and rejects incompatibilities before consuming `result.capability_profile`. Standalone callers must also check issues, and must invoke inspection before scheduling or installation when they need pre-deployment admission. Installed dependencies, Pi native catalog membership, credentials, and endpoint health remain runtime checks. Skills and MCP support come
 from the descriptor's accepted configuration sections. ATIF requires a selected
 provider that declares ATIF output; Relay also requires an explicitly enabled,
 unambiguous observability component. These are admission claims, not proof that

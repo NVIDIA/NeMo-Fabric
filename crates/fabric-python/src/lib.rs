@@ -70,13 +70,12 @@ fn plan_config(py: Python<'_>, config_json: String, base_dir: Option<String>) ->
 
 /// Inspect supplied host metadata without probing executable adapter locations.
 #[pyfunction]
-#[pyo3(signature = (config_json, descriptor_json, target_descriptor_json=None, diagnostics=false))]
+#[pyo3(signature = (config_json, descriptor_json, target_descriptor_json=None))]
 fn inspect_adapter_metadata(
     py: Python<'_>,
     config_json: String,
     descriptor_json: String,
     target_descriptor_json: Option<String>,
-    diagnostics: bool,
 ) -> PyResult<String> {
     // Parse errors must not echo JSON values, which can contain credentials.
     let config = parse_config(config_json)
@@ -88,7 +87,7 @@ fn inspect_adapter_metadata(
         .transpose()
         .map_err(|_| PyRuntimeError::new_err("invalid target descriptor"))?;
     let inspection = py
-        .detach(|| inspect_adapter_config(config, &descriptor, target.as_ref(), diagnostics))
+        .detach(|| inspect_adapter_config(config, &descriptor, target.as_ref()))
         .map_err(to_py_error)?;
     to_json(&inspection)
 }

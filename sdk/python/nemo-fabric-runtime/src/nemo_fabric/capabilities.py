@@ -36,7 +36,7 @@ class AdapterCapabilityProfile:
 
 @dataclass(frozen=True)
 class AdapterCompatibilityIssue:
-    """A value-free incompatibility at a Fabric configuration field."""
+    """A value-free incompatibility at a NeMo Fabric configuration field."""
 
     adapter_id: str
     field: str
@@ -108,15 +108,14 @@ def inspect_adapter(
     descriptor: Mapping[str, Any] | None,
     *,
     target_descriptor: Mapping[str, Any] | None = None,
-    diagnostics: bool = False,
 ) -> AdapterInspection:
     """Inspect supplied adapter and optional workflow metadata without loading its SDK.
 
     Validates canonical descriptor values entirely in memory with shared Rust
     rules. No descriptor files, executable discovery, or harness SDKs are needed.
-    With diagnostics=True, independent model, tool-routing, and MCP failures are
-    returned in issues; otherwise incompatibilities raise FabricConfigError.
-    Malformed inputs raise in both modes. Settings, tool-definition schemas, and
+    Independent model, tool-routing, and MCP failures are always returned in
+    issues. Callers must check issues before proceeding with deployment.
+    Malformed inputs raise FabricConfigError. Settings, tool-definition schemas, and
     extensions retain first-error boundaries. Success does not imply readiness.
 
     Missing metadata permits basic execution with false optional-feature claims;
@@ -146,15 +145,35 @@ def inspect_adapter(
     )
     if not isinstance(adapter_id, str) or not adapter_id:
         raise FabricConfigError("Adapter inspection requires a selected adapter")
+    selected = config.telemetry.providers if config.telemetry is not None else {}
+    relay = config.relay.to_mapping() if config.relay is not None else {}
+    observability = (
+        [
+            component
+            for component in relay.get("components", [])
+            if component.get("kind") == "observability"
+        ]
+        if "relay" in selected
+        else []
+    )
+    if "relay" in selected and relay.get("observability") is not None:
+        observability.insert(0, {"config": relay["observability"]})
+    enabled_outputs = [_relay_atif_enabled(component) for component in observability]
     if descriptor is None:
         if (
             (config.skills is not None and config.skills.paths)
             or (config.mcp is not None and config.mcp.servers)
             or (config.telemetry is not None and config.telemetry.providers)
         ):
-            raise FabricConfigError(
-                f"Cannot confirm requested skills, MCP, or telemetry for {adapter_id}: "
-                "host descriptor metadata is unavailable"
+            return AdapterInspection(
+                issues=[
+                    AdapterCompatibilityIssue(
+                        adapter_id,
+                        "descriptor",
+                        "Cannot confirm requested skills, MCP, or telemetry: host descriptor metadata is unavailable",
+                    )
+                ],
+                capability_profile=None,
             )
         return AdapterInspection(
             issues=[],
@@ -174,7 +193,6 @@ def inspect_adapter(
                 None
                 if target_descriptor is None
                 else json.dumps(dict(target_descriptor), allow_nan=False),
-                diagnostics,
             )
         )
     except Exception as error:
@@ -184,29 +202,16 @@ def inspect_adapter(
             ) from None
         raise FabricConfigError(str(error)) from error
     issues = [AdapterCompatibilityIssue(**issue) for issue in inspection["issues"]]
-    if issues:
-        return AdapterInspection(issues=issues, capability_profile=None)
     normalized = inspection["descriptor"]
     accepts = normalized["config"].get("accepts", [])
     providers = normalized["telemetry"].get("providers", {})
-    selected = config.telemetry.providers if config.telemetry is not None else {}
     atif = (
         "atif" in providers.get("native", {}).get("outputs", [])
         and "native" in selected
     )
     relay_atif = False
     if "relay" in selected:
-        relay = (inspection.get("telemetry_plan") or {}).get("relay_config") or {}
-        observability = [
-            component
-            for component in relay.get("components", [])
-            if component.get("kind") == "observability"
-        ]
-        # Do not infer ambient configuration or ambiguous duplicate-component
-        # precedence. A single explicitly enabled output confirms the claim.
-        enabled_outputs = [
-            _relay_atif_enabled(component) for component in observability
-        ]
+        # A claim requires one explicitly enabled, unambiguous output.
         requested_atif = any(enabled_outputs)
         if requested_atif and (
             len(observability) != 1
@@ -217,18 +222,18 @@ def inspect_adapter(
                 "the provider must declare ATIF and exactly one observability "
                 "component must enable it"
             )
-            if diagnostics:
-                return AdapterInspection(
-                    issues=[
-                        AdapterCompatibilityIssue(
-                            adapter_id, "telemetry.providers.relay", reason
-                        )
-                    ],
-                    capability_profile=None,
+            issues.append(
+                AdapterCompatibilityIssue(
+                    adapter_id, "telemetry.providers.relay", reason
                 )
-            raise FabricConfigError(reason)
+            )
         if len(observability) == 1:
             relay_atif = enabled_outputs[0]
+    if issues:
+        return AdapterInspection(
+            issues=sorted(issues, key=lambda issue: (issue.field, issue.reason)),
+            capability_profile=None,
+        )
     profile = AdapterCapabilityProfile(
         adapter_id=adapter_id,
         descriptor_sha256=_descriptor_sha256(

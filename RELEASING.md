@@ -584,13 +584,7 @@ After the release is live, verify:
 Include the inspection API changes as breaking changes in the next GitHub Release
 notes, with a link to the migration examples in `docs/sdk/python.mdx`:
 
-- Python `inspect_adapter` returns `AdapterInspection`; read capability flags and
-  the fingerprint through `result.capability_profile`. Default incompatibilities
-  still raise `FabricConfigError`. With `diagnostics=True`, check `result.issues`
-  before deployment; incompatible reports have no profile. Malformed inputs raise
-  in both modes. There is no transitional return type.
-- Rust `inspect_adapter_config` accepts descriptor values and an explicit
-  diagnostics boolean instead of descriptor paths. File callers load and
-  deserialize first. There is no file-based compatibility wrapper.
+- Python `inspect_adapter` returns `AdapterInspection`; check `result.issues` before deployment, then read capability flags and the fingerprint through `result.capability_profile`. Compatibility failures always return issues and no profile; malformed inputs still raise `FabricConfigError`. There is no diagnostic-mode switch or transitional return type.
+- Rust `inspect_adapter_config` accepts descriptor values instead of descriptor paths and always returns structured compatibility issues. File callers load and deserialize first. There is no diagnostic-mode option or file-based compatibility wrapper.
 
 Notify affected consumers when preparing the release.

@@ -25,7 +25,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 - [`client.Fabric`](./nemo_fabric.client.md#class-fabric): Primary Python entrypoint for NeMo Fabric.
 - [`capabilities.AdapterCapabilityProfile`](./nemo_fabric.capabilities.md#class-adaptercapabilityprofile): Declared runtime support, not observed execution provenance.
-- [`capabilities.AdapterCompatibilityIssue`](./nemo_fabric.capabilities.md#class-adaptercompatibilityissue): A value-free incompatibility at a Fabric configuration field.
+- [`capabilities.AdapterCompatibilityIssue`](./nemo_fabric.capabilities.md#class-adaptercompatibilityissue): A value-free incompatibility at a NeMo Fabric configuration field.
 - [`capabilities.AdapterInspection`](./nemo_fabric.capabilities.md#class-adapterinspection): Metadata compatibility report; a profile is available only without issues.
 - [`check.CheckReport`](./nemo_fabric.check.md#class-checkreport): Immutable health check report.
 - [`check.CheckRequest`](./nemo_fabric.check.md#class-checkrequest): Select server, runtime, or registered service health.

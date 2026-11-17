@@ -29,7 +29,8 @@ runtime or bindings.
 - Hermes cold resume takes an optional `session_ref` directly at runtime start. Omission starts a fresh conversation. `runtime.keep_state` controls retention. Keep SDK, managed commands, and adapter contexts aligned. Native-only Hermes configurations retain state, advertise `session_resume: false`, and reject explicit SDK session selection.
 - Metadata inspection takes canonical descriptors in memory. Python
   `inspect_adapter` returns `AdapterInspection`; consume the nested
-  `capability_profile`, and check `issues` when using `diagnostics=True`.
+  `capability_profile` only after checking `issues`. Compatibility failures
+  always return issues; there is no diagnostic-mode switch.
   Keep startup validation rules shared and preserve malformed-input errors.
 - Update docs and examples in the same branch
 

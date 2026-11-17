@@ -96,7 +96,6 @@ Planned areas of development include:
 
 
 Host-side metadata admission uses `inspect_adapter(config, descriptor)` from
-`nemo-fabric-runtime`. Read capability flags from `result.capability_profile`,
-or pass `diagnostics=True` and check `result.issues` before changing a deployment.
+`nemo-fabric-runtime`. Always check `result.issues` before changing a deployment. A compatible report provides capability flags in `result.capability_profile`; incompatible reports contain issues and no profile.
 See the [inspection guide](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host)
 for descriptor sources, compatibility limits, and API migration examples.

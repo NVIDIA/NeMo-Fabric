@@ -37,9 +37,9 @@ caller-owned `request_id`, `context`, or overrides.
 
 The public `inspect_adapter(config, descriptor)` helper returns `AdapterInspection`,
 with an empty `issues` list and an immutable `capability_profile` on success.
-Use `diagnostics=True` for structured `AdapterCompatibilityIssue` values with
+Compatibility failures always return structured `AdapterCompatibilityIssue` values with
 `adapter_id`, `field`, and `reason`; incompatible reports have no profile.
-Default mode raises on incompatibility; malformed inputs raise in both modes.
+Check issues before deployment. There is no mode switch; malformed inputs raise.
 The nested `AdapterCapabilityProfile` supports host admission without harness SDKs.
 Both `run()` and `start_runtime()` accept optional
 `expected_descriptor_sha256` to verify the task plan's descriptor before startup.

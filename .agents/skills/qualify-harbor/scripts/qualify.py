@@ -751,16 +751,21 @@ def normalized_accounting(path: Path) -> dict:
 def admission_fingerprint(
     spec: dict, descriptor: dict, target_descriptor: dict | None = None
 ) -> str | None:
-    from nemo_fabric import FabricConfig, inspect_adapter
+    from nemo_fabric import FabricConfig, FabricConfigError, inspect_adapter
 
     options = (
         {"target_descriptor": target_descriptor}
         if target_descriptor is not None
         else {}
     )
-    return inspect_adapter(
+    inspection = inspect_adapter(
         FabricConfig.from_mapping(spec["config"]), descriptor, **options
-    ).capability_profile.descriptor_sha256
+    )
+    if inspection.issues:
+        raise FabricConfigError(
+            "; ".join(f"{issue.field}: {issue.reason}" for issue in inspection.issues)
+        )
+    return inspection.capability_profile.descriptor_sha256
 
 
 def valid_selection(selected: dict, row: dict, target: dict | None = None) -> bool:

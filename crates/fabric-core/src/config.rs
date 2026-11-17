@@ -2499,16 +2499,14 @@ pub struct AdapterInspection {
 
 /// Inspect canonical descriptor values without discovery, filesystem access, or runtime startup.
 ///
-/// `diagnostics = false` rejects incompatibilities; `true` returns them in `issues`.
-/// Invalid configurations, descriptors, schemas, and selector mismatches are errors
-/// in both modes. Settings, tool-definition schemas, and extensions retain their
-/// first-error boundary; independent model, tool-routing, and MCP checks aggregate.
+/// Compatibility failures are always returned in `issues`.
+/// Malformed configurations, descriptors, schemas, and selector mismatches are errors.
+/// Settings, tool-definition schemas, and extensions retain their first-error boundary; independent model, tool-routing, and MCP checks aggregate.
 /// Compatibility is conditional on the supplied metadata, not runtime readiness.
 pub fn inspect_adapter_config(
     mut config: FabricConfig,
     descriptor: &AdapterDescriptor,
     target_descriptor: Option<&AdapterTargetDescriptor>,
-    diagnostics: bool,
 ) -> Result<AdapterInspection> {
     if config.workflow.is_some() != target_descriptor.is_some() {
         return invalid_config(
@@ -2522,6 +2520,7 @@ pub fn inspect_adapter_config(
         field: "config".to_string(),
         reason: "invalid Fabric configuration".to_string(),
     })?;
+    validate_runtime_artifacts(&config)?;
     // These paths are diagnostic labels only, never filesystem origins.
     validate_adapter_descriptor_shape(descriptor, Path::new("<supplied adapter>")).map_err(
         |error| {
@@ -2589,9 +2588,6 @@ pub fn inspect_adapter_config(
         }
     }
     let issues = inspect_metadata_compatibility(&config, descriptor, target_descriptor)?;
-    if !diagnostics && let Some(issue) = issues.first() {
-        return incompatible(descriptor, issue.field.clone(), issue.reason.clone());
-    }
     let telemetry_plan = if issues.is_empty() {
         resolve_telemetry_plan(&config, Some(descriptor))?
     } else {
@@ -2605,8 +2601,25 @@ pub fn inspect_adapter_config(
     })
 }
 
-// The same metadata validators below are used by execution's provenance-aware
-// wrappers. Inspection never constructs resolved descriptors or a RunPlan.
+// Check this static configuration requirement without resolving execution paths.
+fn validate_runtime_artifacts(config: &FabricConfig) -> Result<()> {
+    if config.runtime.keep_state
+        && config.runtime.artifacts.is_none()
+        && config
+            .environment
+            .as_ref()
+            .is_none_or(|environment| environment.artifacts.is_none())
+    {
+        return invalid_config(
+            "runtime.keep_state",
+            "requires an artifact directory, from runtime.artifacts or environment.artifacts",
+        );
+    }
+    Ok(())
+}
+
+// Execution's provenance-aware wrappers use the same metadata validators.
+// Inspection never constructs resolved descriptors or a RunPlan.
 fn inspect_metadata_compatibility(
     config: &FabricConfig,
     descriptor: &AdapterDescriptor,
@@ -2774,17 +2787,7 @@ fn resolve_selected_descriptors(
     )?;
     let resolution = resolve_resolution(&config, descriptor)?;
     let environment_plan = resolve_environment_plan(&config, &base_dir);
-    if config.runtime.keep_state
-        && config.runtime.artifacts.is_none()
-        && environment_plan
-            .as_ref()
-            .is_none_or(|environment| environment.artifacts.is_none())
-    {
-        return invalid_config(
-            "runtime.keep_state",
-            "requires an artifact directory, from runtime.artifacts or environment.artifacts",
-        );
-    }
+    validate_runtime_artifacts(&config)?;
     validate_control_location(descriptor, environment_plan.as_ref())?;
     let capability_plan = resolve_capability_plan(&config, &base_dir, adapter_descriptor.as_ref());
     if enforce_compatibility {
@@ -2856,7 +2859,7 @@ pub(crate) fn validate_adapter_config_compatibility(
 pub struct AdapterCompatibilityIssue {
     /// Selected adapter identifier.
     pub adapter_id: String,
-    /// Fabric configuration path.
+    /// NeMo Fabric configuration path.
     pub field: String,
     /// Value-free explanation of the incompatibility.
     pub reason: String,
@@ -4676,7 +4679,6 @@ mod tests {
             config.clone(),
             &load_adapter_descriptor(&path).expect("descriptor"),
             None,
-            false,
         )
         .expect("host inspection");
         assert_eq!(
@@ -4697,18 +4699,19 @@ mod tests {
             inspect_adapter_config(
                 config,
                 &load_adapter_descriptor(&path).expect("descriptor"),
-                None,
-                false
+                None
             )
-            .is_err()
+            .expect("valid incompatible settings")
+            .issues
+            .iter()
+            .any(|issue| issue.field.starts_with("harness.settings"))
         );
         let mismatch = typed_config("nvidia.fabric.codex");
         assert!(
             inspect_adapter_config(
                 mismatch,
                 &load_adapter_descriptor(&path).expect("descriptor"),
-                None,
-                false
+                None
             )
             .is_err()
         );
@@ -4734,7 +4737,6 @@ mod tests {
             config.clone(),
             &load_adapter_descriptor(&adapter_path).expect("descriptor"),
             Some(&load_adapter_target_descriptor(&target_path).expect("target")),
-            false,
         )
         .expect("supplied metadata validates without discovery");
         assert_eq!(inspection.target_descriptor, Some(target));
@@ -4746,7 +4748,6 @@ mod tests {
             config,
             &load_adapter_descriptor(&adapter_path).expect("descriptor"),
             Some(&load_adapter_target_descriptor(&target_path).expect("target")),
-            false,
         )
         .expect("workflow alone selects the supplied adapter");
     }
@@ -4761,8 +4762,7 @@ mod tests {
             inspect_adapter_config(
                 config.clone(),
                 &load_adapter_descriptor(&adapter_path).expect("descriptor"),
-                Some(&load_adapter_target_descriptor(&target_path).expect("target")),
-                false
+                Some(&load_adapter_target_descriptor(&target_path).expect("target"))
             )
             .is_err()
         );
@@ -4775,8 +4775,7 @@ mod tests {
             inspect_adapter_config(
                 config.clone(),
                 &load_adapter_descriptor(&adapter_path).expect("descriptor"),
-                None,
-                false
+                None
             )
             .is_err()
         );
@@ -4786,8 +4785,7 @@ mod tests {
             inspect_adapter_config(
                 wrong_target,
                 &load_adapter_descriptor(&adapter_path).expect("descriptor"),
-                Some(&load_adapter_target_descriptor(&target_path).expect("target")),
-                false
+                Some(&load_adapter_target_descriptor(&target_path).expect("target"))
             )
             .is_err()
         );
@@ -4801,10 +4799,12 @@ mod tests {
             inspect_adapter_config(
                 config,
                 &load_adapter_descriptor(&adapter_path).expect("descriptor"),
-                Some(&load_adapter_target_descriptor(&target_path).expect("target")),
-                false
+                Some(&load_adapter_target_descriptor(&target_path).expect("target"))
             )
-            .is_err()
+            .expect("valid incompatible settings")
+            .issues
+            .iter()
+            .any(|issue| issue.field.starts_with("workflow.settings"))
         );
         let mut wrong_adapter = typed_config("nvidia.fabric.hermes");
         wrong_adapter.workflow = Some(WorkflowConfig {
@@ -4817,8 +4817,7 @@ mod tests {
             inspect_adapter_config(
                 wrong_adapter,
                 &load_adapter_descriptor(&hermes_path).expect("descriptor"),
-                Some(&load_adapter_target_descriptor(&target_path).expect("target")),
-                false
+                Some(&load_adapter_target_descriptor(&target_path).expect("target"))
             )
             .is_err()
         );
@@ -4841,7 +4840,6 @@ mod tests {
             config,
             &descriptor,
             Some(&load_adapter_target_descriptor(&target_path).expect("target")),
-            false,
         );
         assert!(matches!(
             result,
@@ -4873,7 +4871,7 @@ mod tests {
         }))
         .expect("descriptor");
         let report =
-            inspect_adapter_config(config.clone(), &descriptor, None, true).expect("diagnostics");
+            inspect_adapter_config(config.clone(), &descriptor, None).expect("diagnostics");
         let fields: Vec<_> = report
             .issues
             .iter()
@@ -4887,18 +4885,13 @@ mod tests {
         for private in ["private-model", "private-tool", "private-command"] {
             assert!(!serialized.contains(private));
         }
-        assert!(inspect_adapter_config(config.clone(), &descriptor, None, false).is_err());
         descriptor.model_schema = Some(
             serde_json::from_value(serde_json::json!({
                 "type": "invalid"
             }))
             .expect("schema map"),
         );
-        for diagnostics in [false, true] {
-            assert!(
-                inspect_adapter_config(config.clone(), &descriptor, None, diagnostics).is_err()
-            );
-        }
+        assert!(inspect_adapter_config(config.clone(), &descriptor, None).is_err());
     }
 
     fn typed_config(adapter_id: &str) -> FabricConfig {

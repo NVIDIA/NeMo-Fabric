@@ -101,6 +101,8 @@ from nemo_fabric import inspect_adapter
 from nemo_fabric_adapter_catalog import get_adapter_descriptor
 
 inspection = inspect_adapter(config, get_adapter_descriptor(config.harness.adapter_id))
+if inspection.issues:
+    raise ValueError("; ".join(f"{issue.field}: {issue.reason}" for issue in inspection.issues))
 profile = inspection.capability_profile
 print(profile.skills, profile.mcp, profile.atif)
 
@@ -118,10 +120,9 @@ and ATIF availability for the selected telemetry configuration. Inspection
 validates descriptor values in memory with the same rules as startup,
 without temporary descriptor files, executable adapter discovery, or harness SDK
 imports. Host inspection requires `nemo-fabric-runtime`; the dependency-free
-`nemo-fabric-adapter-catalog` is an optional metadata source. Unsupported
-requested configuration raises `FabricConfigError` by default.
-Passing `None` as the descriptor permits basic execution with false capability
-claims, but rejects requested skills, MCP, or telemetry.
+`nemo-fabric-adapter-catalog` is an optional metadata source. Unsupported configuration is always returned in `inspection.issues`; check this list before accessing `capability_profile` or changing a deployment. There is no diagnostic-mode switch. Malformed input raises `FabricConfigError`.
+
+Passing `None` as the descriptor permits basic execution with false capability claims. Requested skills, MCP, or telemetry without metadata produce issues and no capability profile.
 
 The optional `expected_descriptor_sha256` argument on `run()` and
 `start_runtime()` verifies the normalized descriptor in the actual execution
@@ -142,11 +143,10 @@ Attached services require separate route-specific admission.
 
 #### Structured Diagnostics
 
-Use `diagnostics=True` to collect independent model, tool, and MCP
-incompatibilities before changing a deployment:
+Inspection always collects independent model, tool, and MCP incompatibilities. Call it before scheduling, installing dependencies, or changing a deployment when those actions require admission:
 
 ```python
-inspection = inspect_adapter(config, descriptor, diagnostics=True)
+inspection = inspect_adapter(config, descriptor)
 if inspection.issues:
     for issue in inspection.issues:
         print(issue.adapter_id, issue.field, issue.reason)
@@ -155,13 +155,12 @@ else:
     # Continue admission using the capability flags and descriptor fingerprint.
 ```
 
-Each immutable `AdapterCompatibilityIssue` contains `adapter_id`, a Fabric
-configuration `field` such as `models.default.temperature` or `tools.enabled`,
+Each immutable `AdapterCompatibilityIssue` contains `adapter_id`, a NeMo Fabric configuration `field` such as `models.default.temperature` or `tools.enabled`,
 and a reason that excludes configured values and credentials. Issues have a
 deterministic order. A report with issues has `capability_profile=None`;
 a successful report has an empty issue list and a populated profile.
 Malformed configurations, descriptors, embedded schemas, and selector mismatches
-raise in both modes. Harness and workflow settings, tool-definition schemas,
+raise `FabricConfigError`. The static `runtime.keep_state` artifact-directory requirement is shared with planning and raises the same field and reason. Harness and workflow settings, tool-definition schemas,
 extensions, and telemetry retain first-error boundaries. Inspection never
 substitutes another descriptor. Select catalog metadata matching the intended
 deployment release, then verify normalized descriptors in the task environment.
@@ -172,24 +171,19 @@ image contents, credentials, network access, installed models, or runtime readin
 
 The Python return type changed from `AdapterCapabilityProfile` to
 `AdapterInspection`. Change `inspect_adapter(config, descriptor).mcp` to
-`inspect_adapter(config, descriptor).capability_profile.mcp`. Default rejection
-still raises `FabricConfigError`. Diagnostic callers must check `issues` before
-proceeding. No transitional return type is provided.
+`inspect_adapter(config, descriptor).capability_profile.mcp` after checking `result.issues`. Compatibility failures now return structured issues instead of raising; malformed inputs still raise `FabricConfigError`. All callers must check `issues` and stop admission when it is nonempty. No transitional return type or diagnostic-mode flag is provided.
 
-Rust inspection now takes descriptor values and an explicit diagnostic flag
-instead of descriptor paths. File callers deserialize before inspection:
+Rust inspection now takes descriptor values instead of descriptor paths. File callers deserialize before inspection:
 
 ```rust
 use nemo_fabric_core::{AdapterDescriptor, AdapterTargetDescriptor, inspect_adapter_config};
 
 let descriptor: AdapterDescriptor = serde_json::from_str(&std::fs::read_to_string(adapter_path)?)?;
 let target: Option<AdapterTargetDescriptor> = None;
-let inspection = inspect_adapter_config(config, &descriptor, target.as_ref(), false)?;
+let inspection = inspect_adapter_config(config, &descriptor, target.as_ref())?;
 ```
 
-Pass `true` to return compatibility issues in `inspection.issues`. Both modes
-use `AdapterInspection` and reject malformed inputs. No file-based inspection
-wrapper is provided. `doctor` continues to diagnose resolved deployment plans.
+Rust inspection always returns compatibility failures in `inspection.issues` and rejects malformed inputs. No file-based inspection wrapper or diagnostic-mode option is provided. `doctor` continues to diagnose resolved deployment plans.
 
 ## Execution Model
 

@@ -27,6 +27,7 @@ from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
 
+from nemo_fabric import AdapterCapabilityProfile
 from nemo_fabric import EnvironmentConfig
 from nemo_fabric import DiscoveryConfig
 from nemo_fabric import FabricConfig
@@ -51,6 +52,24 @@ from nemo_fabric import WorkflowConfig
 from nemo_fabric.integrations.harbor.models import FabricRunPayload
 from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
 from nemo_fabric.integrations.harbor.models import HarborMcpServer
+
+
+def _inspect_adapter_profile(
+    config: FabricConfig,
+    descriptor: Mapping[str, Any] | None,
+    *,
+    target_descriptor: Mapping[str, Any] | None = None,
+) -> AdapterCapabilityProfile:
+    inspection = inspect_adapter(
+        config, descriptor, target_descriptor=target_descriptor
+    )
+    if inspection.issues:
+        raise FabricConfigError(
+            "; ".join(f"{issue.field}: {issue.reason}" for issue in inspection.issues)
+        )
+    assert inspection.capability_profile is not None
+    return inspection.capability_profile
+
 
 INSTALL_ENV_NAMES = {
     "HTTP_PROXY",
@@ -568,11 +587,11 @@ else:
                 raise FabricConfigError(
                     "Registered workflow admission requires host target descriptor metadata"
                 )
-            self._capability_profile = inspect_adapter(
+            self._capability_profile = _inspect_adapter_profile(
                 self._build_config(),
                 self._host_descriptor,
                 target_descriptor=self._host_target_descriptor,
-            ).capability_profile
+            )
             if self.skills_dir is not None and not self._capability_profile.skills:
                 raise FabricConfigError(
                     f"Cannot confirm requested Harbor skills for {self.fabric_adapter_id}: "
@@ -739,11 +758,11 @@ else:
 
         def _build_spec(self, instruction: str) -> FabricRunPayload:
             config = self._build_config()
-            profile = inspect_adapter(
+            profile = _inspect_adapter_profile(
                 config,
                 self._host_descriptor,
                 target_descriptor=self._host_target_descriptor,
-            ).capability_profile
+            )
             # Transport names; values arrive through Harbor's managed exec env.
             for name in self.fabric_environment_env:
                 config.environment.env.pop(name, None)
@@ -972,7 +991,7 @@ def _inspect_configured_model(options: FabricAgentOptions) -> None:
             "fabric_model_config requires a readable host adapter descriptor"
         ) from None
     try:
-        inspect_adapter(
+        _inspect_adapter_profile(
             FabricConfig(
                 metadata=MetadataConfig(name="harbor-model-preflight"),
                 harness=HarnessConfig(
