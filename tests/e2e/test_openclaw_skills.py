@@ -539,9 +539,19 @@ def test_extension_skills_follow_the_bundled_selection(native: _Native):
             if item["name"] in plan.inventory.extensions
         }
         assert extension_loaded == dict.fromkeys(loads, "bundled"), bundled
-        assert set(report["bundled"]["selected"]) & set(plan.inventory.extensions) == (
-            loads
-        ), bundled
+        # A loaded extension skill OpenClaw finds ineligible, such as one
+        # missing a binary, is unavailable rather than selected.
+        eligible = {
+            row["name"]
+            for row in status["skills"]
+            if row["name"] in loads and row.get("eligible") is not False
+        }
+        extensions = set(plan.inventory.extensions)
+        unavailable = {
+            item["name"] for item in report["bundled"].get("unavailable", [])
+        }
+        assert set(report["bundled"]["selected"]) & extensions == eligible, bundled
+        assert unavailable & extensions == loads - eligible, bundled
 
 
 def test_configured_skill_named_like_a_left_out_extension_skill_fails(
