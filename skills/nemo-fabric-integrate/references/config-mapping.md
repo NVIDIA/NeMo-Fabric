@@ -72,6 +72,16 @@ argument as a separate `args` element.
 Use `add_tool_definition(...)` only when the selected adapter accepts
 `tools.definitions` and publishes a `tool_definition_schema`.
 
+The LangChain Deep Agents adapter accepts `kind="python"` tool definitions whose
+`ref` is `package.module:attribute`, naming a LangChain `BaseTool` instance
+(used as is, no settings) or `BaseTool` subclass (constructed with `settings`)
+installed in the adapter environment. The tool's name must equal the definition
+key. Custom LangChain `AgentMiddleware` subclasses go in
+`harness.settings.deepagents.middleware` as `{"ref": ..., "settings": {...}}`
+entries; they run before the tool policy and NeMo Relay and must implement the
+async hooks they wrap. Planning checks only the shape; a missing package fails
+at runtime start.
+
 `SkillConfig.paths` keeps each adapter's own meaning. For the same meaning on
 every adapter, set `SkillConfig.directories` instead, with one
 `SkillDirectory(skill=...)` per skill folder or `SkillDirectory(folder=...)`

@@ -13,10 +13,13 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib
 import inspect
 import json
 import math
 import os
+import pkgutil
+import re
 import sys
 import uuid
 from collections.abc import Awaitable
@@ -29,6 +32,7 @@ from typing import NamedTuple
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import ToolMessage
+from langchain_core.tools import BaseTool
 from langgraph.errors import GraphRecursionError
 from langgraph.types import StateSnapshot
 from nemo_fabric_adapter_contract.models import AgentConfig
@@ -79,7 +83,31 @@ FABRIC_OWNED_AGENT_KEYS = frozenset(
 # through harness.settings.deepagents. Executable objects (AgentMiddleware, BaseTool,
 # Python callables) cannot cross the SDK->JSON->payload boundary and are excluded.
 DEEPAGENTS_PASSTHROUGH_KEYS = frozenset({"subagents", "interrupt_on"})
-DEEPAGENTS_ADAPTER_SETTING_KEYS = frozenset({"backend"})
+# Adapter-owned settings: validated here and never forwarded verbatim. ``middleware``
+# names installed AgentMiddleware classes that the adapter imports and orders itself.
+DEEPAGENTS_ADAPTER_SETTING_KEYS = frozenset({"backend", "middleware"})
+# The only tools.definitions kind this adapter resolves.
+PYTHON_TOOL_KIND = "python"
+# ``package.module:attribute``: an importable module path and one attribute name.
+PYTHON_REF_PATTERN = re.compile(
+    r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$"
+)
+# Deep Agents built-in tool names. A custom tool may not reuse one: tools.enabled and
+# tools.blocked match by name, so a duplicate would make the policy ambiguous.
+DEEPAGENTS_BUILTIN_TOOL_NAMES = frozenset(
+    {
+        "ls",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "delete",
+        "glob",
+        "grep",
+        "execute",
+        "task",
+        "write_todos",
+    }
+)
 # Appended to the fault that poisoned Relay's scope stack, and then reported on every
 # later turn of the same runtime so none of them can look telemetry-clean. Deliberately
 # does not claim later turns are untraced: the Relay middleware is attached to the
@@ -401,6 +429,194 @@ def resolve_skills(config: AgentConfig) -> list[str] | None:
     return skills or None
 
 
+# --- custom Python tools and middleware --------------------------------------
+
+
+def _import_ref(ref: Any, field: str) -> Any:
+    """Return the object a ``package.module:attribute`` ref names, without calling it.
+
+    Only code already installed in the adapter environment is importable; NeMo Fabric
+    never fetches or installs it.
+    """
+
+    if not isinstance(ref, str) or not PYTHON_REF_PATTERN.fullmatch(ref):
+        raise AdapterConfigError(
+            f"{field}.ref must have the form 'package.module:attribute', not {ref!r}."
+        )
+    module_name, attribute = ref.split(":")
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as error:
+        raise AdapterConfigError(
+            f"{field}: cannot import module '{module_name}' ({error}); install the "
+            "package that provides it in the adapter environment."
+        ) from error
+    except Exception as error:
+        raise AdapterConfigError(
+            f"{field}: importing module '{module_name}' failed: {_error_text(error)}"
+        ) from error
+    try:
+        return getattr(module, attribute)
+    except AttributeError as error:
+        raise AdapterConfigError(
+            f"{field}: module '{module_name}' has no attribute '{attribute}'."
+        ) from error
+
+
+def _construct(cls: type, settings: Any, field: str, ref: str) -> Any:
+    if not isinstance(settings, dict):
+        raise AdapterConfigError(
+            f"{field}.settings must be a mapping of constructor arguments."
+        )
+    try:
+        return cls(**settings)
+    except ValidationError as error:
+        details = "; ".join(
+            f"{'.'.join(str(part) for part in item['loc']) or 'settings'}: {item['msg']}"
+            for item in error.errors()
+        )
+        raise AdapterConfigError(
+            f"{field}: invalid settings for {ref}: {details}"
+        ) from error
+    except (TypeError, ValueError) as error:
+        raise AdapterConfigError(
+            f"{field}: invalid settings for {ref}: {_error_text(error)}"
+        ) from error
+
+
+def _describe(value: Any) -> str:
+    if isinstance(value, type):
+        return f"the class {value.__module__}.{value.__qualname__}"
+    return f"a {type(value).__name__}"
+
+
+def resolve_custom_tools(config: AgentConfig) -> list[BaseTool]:
+    """Resolve ``tools.definitions`` into LangChain tools.
+
+    A ref names either a ``BaseTool`` instance, used as is, or a ``BaseTool``
+    subclass, constructed with the definition's ``settings``. Any other object is
+    rejected without being called. Each tool's name must equal its definition key so
+    ``tools.enabled`` and ``tools.blocked`` refer to it unambiguously.
+    """
+
+    definitions = config.tools.definitions if config.tools is not None else {}
+    tools: list[BaseTool] = []
+    for name, definition in definitions.items():
+        field = f"tools.definitions.{name}"
+        if definition.kind != PYTHON_TOOL_KIND:
+            raise AdapterConfigError(
+                f"{field}.kind must be '{PYTHON_TOOL_KIND}', not {definition.kind!r}."
+            )
+        target = _import_ref(definition.ref, field)
+        if isinstance(target, BaseTool):
+            if definition.settings:
+                raise AdapterConfigError(
+                    f"{field}: {definition.ref} is a ready-made tool and takes no "
+                    "settings; remove settings or reference a BaseTool subclass."
+                )
+            tool = target
+        elif isinstance(target, type) and issubclass(target, BaseTool):
+            tool = _construct(target, definition.settings, field, definition.ref)
+        else:
+            raise AdapterConfigError(
+                f"{field}: {definition.ref} is {_describe(target)}, not a LangChain "
+                "BaseTool instance or subclass; it was not called."
+            )
+        if tool.name != name:
+            raise AdapterConfigError(
+                f"{field}: {definition.ref} builds a tool named '{tool.name}'; the "
+                f"definition key must match it ('{tool.name}')."
+            )
+        if name in DEEPAGENTS_BUILTIN_TOOL_NAMES:
+            raise AdapterConfigError(
+                f"{field}: '{name}' is a Deep Agents built-in tool name; give the "
+                "custom tool a different name."
+            )
+        tools.append(tool)
+    return tools
+
+
+def _reserved_middleware_names() -> set[str]:
+    """Return names custom middleware may not use.
+
+    Deep Agents replaces a built-in middleware in place when a custom one has the
+    same ``name``, which would silently remove behavior such as filesystem
+    confinement. The names of every middleware class shipped by LangChain and Deep
+    Agents are reserved, together with NeMo Fabric's own tool-policy middleware.
+    """
+
+    import langchain.agents.middleware as langchain_middleware
+
+    names = {ToolGateMiddleware.__name__}
+    modules: list[Any] = [langchain_middleware]
+    try:
+        deepagents_middleware = importlib.import_module("deepagents.middleware")
+    except ImportError:
+        deepagents_middleware = None
+    if deepagents_middleware is not None:
+        modules.append(deepagents_middleware)
+        for info in pkgutil.iter_modules(getattr(deepagents_middleware, "__path__", [])):
+            try:
+                modules.append(
+                    importlib.import_module(f"deepagents.middleware.{info.name}")
+                )
+            except Exception:
+                # An optional Deep Agents module whose own dependencies are absent
+                # cannot be in the agent's stack, so its names need no reservation.
+                continue
+    for module in modules:
+        for value in vars(module).values():
+            if (
+                isinstance(value, type)
+                and issubclass(value, AgentMiddleware)
+                and value is not AgentMiddleware
+            ):
+                names.add(value.__name__)
+    return names
+
+
+def resolve_custom_middleware(entries: list[dict[str, Any]]) -> list[AgentMiddleware]:
+    """Construct ``harness.settings.deepagents.middleware`` entries in list order.
+
+    Each ref must name an ``AgentMiddleware`` subclass; it is constructed with the
+    entry's ``settings``. Custom agent state is not supported because it would be
+    persisted by the checkpointer and change resume behavior.
+    """
+
+    if not entries:
+        return []
+    reserved = _reserved_middleware_names()
+    middleware: list[AgentMiddleware] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(entries):
+        field = f"harness.settings.deepagents.middleware[{index}]"
+        target = _import_ref(entry["ref"], field)
+        if not (isinstance(target, type) and issubclass(target, AgentMiddleware)):
+            raise AdapterConfigError(
+                f"{field}: {entry['ref']} is {_describe(target)}, not a LangChain "
+                "AgentMiddleware subclass; it was not called."
+            )
+        if target.state_schema is not AgentMiddleware.state_schema:
+            raise AdapterConfigError(
+                f"{field}: {entry['ref']} declares a custom state_schema, which the "
+                "Deep Agents adapter does not support."
+            )
+        instance = _construct(target, entry.get("settings", {}), field, entry["ref"])
+        name = instance.name
+        if name in reserved:
+            raise AdapterConfigError(
+                f"{field}: middleware name '{name}' clashes with a LangChain, Deep "
+                "Agents, or NeMo Fabric middleware; set a different name."
+            )
+        if name in seen:
+            raise AdapterConfigError(
+                f"{field}: middleware name '{name}' is used more than once."
+            )
+        seen.add(name)
+        middleware.append(instance)
+    return middleware
+
+
 def _mcp_validation_feedback(error: ValidationError) -> str:
     """Report field paths and validation reasons, not argument payloads."""
     details = []
@@ -646,9 +862,20 @@ async def build_agent_kwargs(
                     "local_shell backend because NeMo Fabric cannot resume the "
                     "LangGraph interrupt; use tools.enabled or tools.blocked instead."
                 )
+    # Custom code is resolved before MCP discovery so a bad ref fails fast.
+    custom_tools = resolve_custom_tools(config)
+    custom_middleware = resolve_custom_middleware(extra.get("middleware") or [])
+    mcp_tools = await resolve_tools(config, unavailable_mcp_servers) or []
+    custom_names = {tool.name for tool in custom_tools}
+    clashes = sorted(custom_names.intersection(tool.name for tool in mcp_tools))
+    if clashes:
+        raise AdapterConfigError(
+            f"tools.definitions.{clashes[0]}: the name is also provided by an MCP "
+            "server; give the custom tool a different name."
+        )
     kwargs: dict[str, Any] = {
         "model": model,
-        "tools": await resolve_tools(config, unavailable_mcp_servers),
+        "tools": [*custom_tools, *mcp_tools] or None,
         # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
         "system_prompt": instruction.content if instruction else None,
         "skills": resolve_skills(config),
@@ -659,6 +886,11 @@ async def build_agent_kwargs(
     kwargs.update(
         {key: extra[key] for key in DEEPAGENTS_PASSTHROUGH_KEYS if key in extra}
     )
+    # Custom middleware runs before the tool policy (and before Relay, which is
+    # appended later), so it cannot route a call around the policy and telemetry
+    # records what actually executes.
+    if custom_middleware:
+        kwargs["middleware"] = list(custom_middleware)
     if enabled is not None or blocked:
         middleware = list(kwargs.get("middleware") or [])
         middleware.append(tool_policy_middleware(enabled, blocked))
@@ -717,6 +949,24 @@ def _validated_deepagents_settings(extra: Any) -> dict[str, Any]:
             raise AdapterConfigError(
                 "harness.settings.deepagents.backend.type must be 'local_shell'."
             )
+
+    middleware_config = extra.get("middleware")
+    if middleware_config is not None:
+        if not isinstance(middleware_config, list):
+            raise AdapterConfigError(
+                "harness.settings.deepagents.middleware must be a list of "
+                "{ref, settings} entries."
+            )
+        for index, entry in enumerate(middleware_config):
+            field = f"harness.settings.deepagents.middleware[{index}]"
+            if not isinstance(entry, dict) or "ref" not in entry:
+                raise AdapterConfigError(f"{field} must be a mapping with a 'ref'.")
+            unknown_entry = sorted(set(entry) - {"ref", "settings"})
+            if unknown_entry:
+                raise AdapterConfigError(
+                    f"{field} has unsupported field(s) {unknown_entry}; supported "
+                    "fields are ['ref', 'settings']."
+                )
     return dict(extra)
 
 

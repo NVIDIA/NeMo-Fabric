@@ -150,7 +150,10 @@ def to_fabric_config(job) -> FabricConfig:
   `remove_skill_path`,
   `add_mcp_server`, `remove_mcp_server`, and `enable_relay`.
 - Use `add_tool_definition` only when the selected adapter accepts
-  `tools.definitions` and publishes a `tool_definition_schema`.
+  `tools.definitions` and publishes a `tool_definition_schema`. The LangChain
+  Deep Agents adapter accepts `kind="python"` with `ref="package.module:attribute"`
+  naming an installed LangChain `BaseTool` instance or subclass, and accepts
+  custom `AgentMiddleware` classes in `harness.settings.deepagents.middleware`.
 - Use a restricted `allowed_tools` list or non-empty `blocked_tools` on
   `add_mcp_server` only when the selected adapter declares both `mcp` and
   `mcp.tool_filters`. An unfiltered server requires only `mcp`.

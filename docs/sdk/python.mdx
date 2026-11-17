@@ -406,7 +406,7 @@ Relay subfields:
 | `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core |
 | `environment.workspace`, `.artifacts`, `.env`, `.env_names` | Core | Core | Core | Core | Core |
 | `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
-| `tools.definitions` | No | No | No | No | No |
+| `tools.definitions` | No | No | Yes; `kind: python` LangChain tools | No | No |
 | `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names | No |
 | `skills.paths` | Yes | Yes | Yes | Yes | No |
 | `skills.directories`, `.bundled`, `.duplicates` | No | No | No | Yes; refer to [Configure Skills](../integrations/harness/skills.mdx) | No |
