@@ -600,3 +600,34 @@ async def test_startup_preserves_caller_file_at_socket_path(host, socket_path):
     with pytest.raises(OSError):
         await transport.serve(host, socket_path=socket_path, stop_event=asyncio.Event())
     assert socket_path.read_text() == "keep"
+
+
+async def test_invoke_has_no_implicit_transport_deadline(
+    host, host_request, mock_runtime, socket_path, monkeypatch
+):
+    await host.handle(host_request("start"))
+    deadlines = []
+    real_timeout_at = asyncio.timeout_at
+
+    def record_timeout_at(deadline):
+        deadlines.append(deadline)
+        return real_timeout_at(deadline)
+
+    monkeypatch.setattr(asyncio, "timeout_at", record_timeout_at)
+    stop, ready = asyncio.Event(), asyncio.Event()
+    task = asyncio.create_task(
+        transport.serve(
+            host, socket_path=socket_path, stop_event=stop, ready_event=ready
+        )
+    )
+    try:
+        await asyncio.wait_for(ready.wait(), 1)
+        response = await transport.client(
+            host_request("invoke", input="hello"), socket_path=socket_path
+        )
+        assert response["status"] == "succeeded"
+        assert None in deadlines
+        mock_runtime.invoke.assert_awaited_once()
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, 2)

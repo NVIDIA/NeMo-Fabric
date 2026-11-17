@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Keep delay injection in the test fixture, outside the public echo example.
+FROM fabric-openshell-sdk:source
+USER root
+RUN install -d -o sandbox -g sandbox /opt/fabric/agents/echo
+COPY --chown=sandbox:sandbox tests/fixtures/openshell_echo/agent.py /opt/fabric/agents/echo/echo_adapter.py
+COPY --chown=sandbox:sandbox examples/openshell_echo/adapter/echo.fabric-adapter.json /opt/fabric/agents/echo/echo.fabric-adapter.json
+USER sandbox:sandbox
+WORKDIR /sandbox/workspace
