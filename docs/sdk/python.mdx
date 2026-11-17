@@ -120,7 +120,7 @@ and ATIF availability for the selected telemetry configuration. Inspection
 validates descriptor values in memory with the same rules as startup,
 without temporary descriptor files, executable adapter discovery, or harness SDK
 imports. Host inspection requires `nemo-fabric-runtime`; the dependency-free
-`nemo-fabric-adapter-catalog` is an optional metadata source. By default, unsupported configuration is returned in `inspection.issues`; check this list before accessing `capability_profile` or changing a deployment. `diagnostics=True` is the default. During migration, pass `diagnostics=False` to retain exception-based rejection of incompatibilities. Malformed input raises `FabricConfigError` in both modes.
+`nemo-fabric-adapter-catalog` is an optional metadata source. By default, unsupported configuration is returned in `inspection.issues`; check this list before accessing `capability_profile` or changing a deployment. `diagnostics=True` is the default. Pass `diagnostics=False` for exception-based rejection of incompatibilities. Malformed input raises `FabricConfigError` in both modes.
 
 Passing `None` still runs the native metadata-free configuration checks, including the `runtime.keep_state` artifact requirement. It permits basic execution with false capability claims. Requested skills, MCP, or telemetry without metadata produce one combined issue at `descriptor` and no capability profile.
 
@@ -170,7 +170,7 @@ image contents, credentials, network access, installed models, or runtime readin
 
 The Python return type changed from `AdapterCapabilityProfile` to
 `AdapterInspection`. Change `inspect_adapter(config, descriptor).mcp` to
-`inspect_adapter(config, descriptor).capability_profile.mcp` after checking `result.issues`. Compatibility failures return structured issues by default; malformed inputs raise `FabricConfigError` in both modes. Check `issues` and stop admission when it is nonempty. During migration, exception-dependent callers can explicitly pass `diagnostics=False`. Omitted arguments now select diagnostic behavior, so this escape hatch does not make the default change backward-compatible. There is no transitional return type.
+`inspect_adapter(config, descriptor).capability_profile.mcp` after checking `result.issues`. Compatibility failures return structured issues by default; malformed inputs raise `FabricConfigError` in both modes. Check `issues` and stop admission when it is nonempty. Callers that prefer exception-based rejection can explicitly pass `diagnostics=False`. Omitted arguments now select diagnostic behavior, so the default change is not backward-compatible. No transitional return types or deprecation period are provided.
 
 Rust inspection now takes descriptor values instead of descriptor paths. File callers deserialize before inspection:
 
@@ -182,7 +182,7 @@ let target: Option<AdapterTargetDescriptor> = None;
 let inspection = inspect_adapter_config(config, &descriptor, target.as_ref(), true)?;
 ```
 
-`AdapterInspection` and `AdapterCompatibilityIssue` are now public documented Rust types, marked `#[non_exhaustive]`. Rust callers explicitly pass `true` for structured compatibility issues, or `false` for exception-based rejection during migration. Both modes reject malformed inputs. No file-based inspection wrapper is provided. `doctor` continues to diagnose resolved deployment plans.
+`AdapterInspection` and `AdapterCompatibilityIssue` are now public documented Rust types, marked `#[non_exhaustive]`. Rust callers explicitly pass `true` for structured compatibility issues, or `false` for exception-based rejection. Both modes reject malformed inputs. No file-based inspection wrapper is provided. `doctor` continues to diagnose resolved deployment plans.
 
 ## Execution Model
 

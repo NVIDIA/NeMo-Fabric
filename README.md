@@ -69,7 +69,7 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 - **Add an execution target:** Adapters translate the NeMo Fabric contract into the native behavior of a harness, framework, custom agent, or remote service. Start with the [adapter contract](docs/adapter-contract/README.md) and [adapter examples](docs/adapter-contract/examples.md).
 
 Host-side metadata admission uses `inspect_adapter(config, descriptor)` from
-`nemo-fabric-runtime`. Diagnostic reports are the default; check `result.issues` before changing a deployment. During migration, `diagnostics=False` retains exception-based rejection. A compatible report provides capability flags in `result.capability_profile`; incompatible reports contain issues and no profile.
+`nemo-fabric-runtime`. Diagnostic reports are the default; check `result.issues` before changing a deployment. Pass `diagnostics=False` for exception-based rejection. A compatible report provides capability flags in `result.capability_profile`; incompatible reports contain issues and no profile.
 See the [inspection guide](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host)
 for descriptor sources, compatibility limits, and API migration examples.
 

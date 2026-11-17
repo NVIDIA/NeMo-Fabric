@@ -100,8 +100,8 @@ def inspect_adapter(
     Validates canonical descriptor values entirely in memory with shared Rust
     rules. No descriptor files, executable discovery, or harness SDKs are needed.
     By default, independent model, tool-routing, and MCP failures are returned
-    in issues. Check issues before deployment. Temporarily pass diagnostics=False
-    to retain exception-based rejection during migration.
+    in issues. Check issues before deployment. Pass diagnostics=False
+    for exception-based rejection of incompatibilities.
     Malformed inputs raise FabricConfigError. Settings, tool-definition schemas, and
     extensions retain first-error boundaries. Success does not imply readiness.
 

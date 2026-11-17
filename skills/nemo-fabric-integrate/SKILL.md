@@ -353,7 +353,7 @@ print(plan.adapter.adapter_id, report.status)
   with matching catalog or canonical external metadata. The returned
   `AdapterInspection` contains `issues` and `capability_profile`. Compatibility
   failures return issues and no profile by default (`diagnostics=True`).
-  Temporarily pass `diagnostics=False` for exception-based rejection during migration.
+  Pass `diagnostics=False` for exception-based rejection.
   Check issues before deployment. Malformed inputs raise in both modes. Read flags from
   `inspection.capability_profile`. The immutable
   `AdapterCapabilityProfile` has `adapter_id`, `descriptor_sha256`, `skills`,

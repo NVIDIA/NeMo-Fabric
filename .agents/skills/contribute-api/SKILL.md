@@ -30,8 +30,8 @@ runtime or bindings.
 - Metadata inspection takes canonical descriptors in memory. Python
   `inspect_adapter` returns `AdapterInspection`; consume the nested
   `capability_profile` only after checking `issues`. Compatibility failures
-  return issues by default (`diagnostics=True`); retain `diagnostics=False`
-  as a temporary migration escape hatch. Malformed inputs raise in both modes.
+  return issues by default (`diagnostics=True`); support `diagnostics=False`
+  for exception-based rejection. Malformed inputs raise in both modes.
   Keep startup validation rules shared and preserve malformed-input errors.
 - Update docs and examples in the same branch
 

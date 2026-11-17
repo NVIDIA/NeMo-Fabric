@@ -3294,7 +3294,7 @@ pub struct AdapterInspection {
 /// Inspect canonical descriptor values without discovery, filesystem access, or runtime startup.
 ///
 /// Pass `diagnostics = true` to return compatibility failures in `issues`;
-/// `false` retains exception-based rejection during migration.
+/// `false` returns an error for incompatibilities.
 /// Malformed configurations, descriptors, schemas, and selector mismatches are errors.
 /// Settings, tool-definition schemas, and extensions retain their first-error boundary; independent model, tool-routing, and MCP checks aggregate.
 /// Compatibility is conditional on the supplied metadata, not runtime readiness.

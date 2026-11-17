@@ -78,7 +78,7 @@ fn inspect_adapter_metadata(
     target_descriptor_json: Option<String>,
     diagnostics: bool,
 ) -> PyResult<String> {
-    // Parse errors must not echo JSON values, which can contain credentials.
+    // Only config parse errors are masked: config JSON values can contain credentials.
     let config = parse_config(config_json)
         .map_err(|_| PyRuntimeError::new_err("invalid Fabric configuration"))?;
     let Some(descriptor_json) = descriptor_json else {
