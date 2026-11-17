@@ -937,13 +937,33 @@ async def test_dispatched_failure_result_is_retrievable(
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Unix storage ownership")
 @pytest.mark.parametrize("one_shot", [False, True])
-def test_unusable_home_uses_private_temporary_storage(
-    hermes_shim_agent_dir, tmp_path, one_shot
+@pytest.mark.parametrize("explicit_artifacts", [False, True])
+@pytest.mark.parametrize(
+    "storage_case", ["unusable_home", "symlinked_temp", "unsafe_cache"]
+)
+def test_default_storage_falls_back_to_private_temporary_storage(
+    hermes_shim_agent_dir, tmp_path, one_shot, explicit_artifacts, storage_case
 ):
     temporary = tmp_path / "fallback"
-    temporary.mkdir()
+    temporary.mkdir(mode=0o700)
+    home = Path("/")
+    if storage_case == "symlinked_temp":
+        alias = tmp_path / "temporary-alias"
+        alias.symlink_to(temporary, target_is_directory=True)
+        temporary = alias
+    elif storage_case == "unsafe_cache":
+        home = tmp_path / "home"
+        home.mkdir(mode=0o700)
+        cache = home / ".cache"
+        cache.mkdir()
+        cache.chmod(0o775)
+    if home == Path("/") and os.geteuid() == 0:
+        home = tmp_path / "unusable-home"
+        home.write_text("not a directory")
     config = hermes_shim_config()
-    config.runtime.artifacts = None
+    config.runtime.artifacts = (
+        str(tmp_path / "explicit-artifacts") if explicit_artifacts else None
+    )
     config.environment.artifacts = None
     script = """
 import asyncio, json, os, pathlib, sys
@@ -952,18 +972,19 @@ async def main():
     client = Fabric()
     config = FabricConfig.from_mapping(json.loads(sys.argv[1]))
     if sys.argv[3] == "True":
-        result = await client.run(config, base_dir=sys.argv[2], input="home fallback")
+        result = await client.run(config, base_dir=sys.argv[2], input="storage fallback")
     else:
         runtime = await client.start_runtime(config, base_dir=sys.argv[2])
         try:
-            result = await runtime.invoke(input="home fallback")
+            result = await runtime.invoke(input="storage fallback")
         finally:
             await runtime.stop()
-    saved = await client.invocation_result(agent_name=result.agent_name, runtime_id=result.runtime_id, request_id=result.request_id)
+    saved = await client.invocation_result(agent_name=result.agent_name, runtime_id=result.runtime_id, request_id=result.request_id, artifacts=config.runtime.artifacts)
     assert saved == result
-    root = pathlib.Path(os.environ['TMPDIR']) / f'nemo-fabric-{os.geteuid()}-private'
+    root = pathlib.Path(os.environ['TMPDIR']).resolve() / f'nemo-fabric-{os.geteuid()}-private'
     assert root.stat().st_mode & 0o777 == 0o700
-    assert pathlib.Path(result.metadata['fabric_home']).is_relative_to(root)
+    artifact_root = pathlib.Path(config.runtime.artifacts).resolve() if config.runtime.artifacts else root
+    assert pathlib.Path(result.metadata['fabric_home']).is_relative_to(artifact_root)
 asyncio.run(main())
 """
     completed = subprocess.run(
@@ -976,10 +997,15 @@ asyncio.run(main())
             str(one_shot),
         ],
         env=dict(
-            os.environ, HOME="/", TMPDIR=str(temporary), ADAPTER_PYTHON=sys.executable
+            os.environ,
+            HOME=str(home),
+            TMPDIR=str(temporary),
+            ADAPTER_PYTHON=sys.executable,
         ),
         capture_output=True,
         text=True,
         timeout=30,
     )
     assert completed.returncode == 0, completed.stderr
+    if storage_case == "unsafe_cache":
+        assert cache.stat().st_mode & 0o777 == 0o775

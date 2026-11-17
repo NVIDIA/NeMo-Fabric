@@ -119,7 +119,7 @@ pub fn invocation_result_environment(
     result_lookup_response(crate::environment::command_runtime(
         environment,
         &command,
-        10,
+        Some(10),
     )?)
 }
 
@@ -1234,8 +1234,15 @@ fn default_artifact_root_for_user(home: &Path, uid: u32) -> Result<PathBuf> {
         && metadata.is_dir()
         && metadata.uid() == uid
         && metadata.mode() & 0o022 == 0
+        && results::trusted_ancestry(&home, "local-storage").is_ok()
     {
-        return Ok(home.join(".cache").join(format!("nemo-fabric-{uid}")));
+        let cache = home.join(".cache");
+        if results::create_artifact_root(&cache).is_ok()
+            && let Ok(cache) = std::fs::canonicalize(&cache)
+            && results::trusted_ancestry(&cache, "local-storage").is_ok()
+        {
+            return Ok(cache.join(format!("nemo-fabric-{uid}")));
+        }
     }
     temporary_artifact_root_for_user(&std::env::temp_dir(), uid)
 }
@@ -1243,7 +1250,8 @@ fn default_artifact_root_for_user(home: &Path, uid: u32) -> Result<PathBuf> {
 #[cfg(unix)]
 fn temporary_artifact_root_for_user(temporary: &Path, uid: u32) -> Result<PathBuf> {
     use std::os::unix::fs::MetadataExt;
-    results::trusted_ancestry(temporary, "local-storage")
+    let temporary = std::fs::canonicalize(temporary).map_err(|_| default_storage_unavailable())?;
+    results::trusted_ancestry(&temporary, "local-storage")
         .map_err(|_| default_storage_unavailable())?;
     let root = temporary.join(format!("nemo-fabric-{uid}-private"));
     // Atomic creation and lstat reject pre-created symlinks, other owners,
@@ -7293,12 +7301,66 @@ else:
         let fallback = unsafe_home.expect("shared home uses private temporary storage");
         assert_eq!(
             fallback,
-            std::env::temp_dir().join(format!("nemo-fabric-{uid}-private"))
+            fs::canonicalize(std::env::temp_dir())
+                .unwrap()
+                .join(format!("nemo-fabric-{uid}-private"))
         );
         assert_eq!(
             fs::metadata(&fallback).unwrap().permissions().mode() & 0o777,
             0o700
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn temporary_storage_resolves_symlinked_parent() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let base = std::env::temp_dir().join(new_id("fabric-temporary-alias-test"));
+        fs::create_dir(&base).unwrap();
+        let base = fs::canonicalize(base).unwrap();
+        let temporary = base.join("real");
+        fs::create_dir(&temporary).unwrap();
+        let alias = base.join("alias");
+        symlink(&temporary, &alias).unwrap();
+        // SAFETY: geteuid has no preconditions or side effects.
+        let uid = unsafe { libc::geteuid() };
+        let selected = temporary_artifact_root_for_user(&alias, uid);
+        let expected = temporary.join(format!("nemo-fabric-{uid}-private"));
+        let mode = fs::metadata(&expected).map(|metadata| metadata.permissions().mode() & 0o777);
+        fs::remove_dir_all(base).unwrap();
+        assert_eq!(selected.unwrap(), expected);
+        assert_eq!(mode.unwrap(), 0o700);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn default_storage_falls_back_for_unsafe_cache_ancestry() {
+        use std::os::unix::fs::PermissionsExt;
+        // SAFETY: geteuid has no preconditions or side effects.
+        let uid = unsafe { libc::geteuid() };
+        let expected = fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!("nemo-fabric-{uid}-private"));
+        for (unsafe_parent, mode) in [(false, 0o775), (false, 0o777), (true, 0o775)] {
+            let base = std::env::temp_dir().join(new_id("fabric-unsafe-cache-test"));
+            fs::create_dir(&base).unwrap();
+            let base = fs::canonicalize(base).unwrap();
+            let home = base.join("home");
+            fs::create_dir(&home).unwrap();
+            let cache = home.join(".cache");
+            fs::create_dir(&cache).unwrap();
+            let unsafe_directory = if unsafe_parent { &base } else { &cache };
+            fs::set_permissions(unsafe_directory, fs::Permissions::from_mode(mode)).unwrap();
+            let selected = default_artifact_root_for_user(&home, uid);
+            let remaining_mode =
+                fs::metadata(unsafe_directory).unwrap().permissions().mode() & 0o777;
+            fs::remove_dir_all(base).unwrap();
+            assert_eq!(selected.unwrap(), expected);
+            assert_eq!(
+                remaining_mode, mode,
+                "leave caller directory permissions unchanged"
+            );
+        }
     }
 
     #[cfg(unix)]
