@@ -66,6 +66,7 @@ navigation:
         path: ./integrations/consumer/nemoclaw.mdx
       - page: NVIDIA NeMo Helix
         path: ./integrations/consumer/helix.mdx
+      collapsed: open-by-default
     - section: Benchmarking & Evaluation
       contents:
       - page: Harbor Framework
@@ -74,6 +75,8 @@ navigation:
         path: ./integrations/consumer/gym.mdx
       - page: NVIDIA NeMo Polar
         path: ./integrations/consumer/polar.mdx
+      collapsed: open-by-default
+    collapsed: open-by-default
   - section: CLI (Experimental)
     path: ./experimentation/cli.mdx
     contents:
@@ -155,6 +158,7 @@ navigation:
       path: ./integrations/harness/qwen.mdx
     - page: Remote Agent
       path: ./integrations/harness/remote-agent.mdx
+    collapsed: open-by-default
   - section: Adapter Contract
     contents:
     - section: Tutorials
