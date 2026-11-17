@@ -27,6 +27,7 @@ from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
 
+from nemo_fabric import AdapterCapabilityProfile
 from nemo_fabric import EnvironmentConfig
 from nemo_fabric import DiscoveryConfig
 from nemo_fabric import FabricConfig
@@ -51,6 +52,25 @@ from nemo_fabric import WorkflowConfig
 from nemo_fabric.integrations.harbor.models import FabricRunPayload
 from nemo_fabric.integrations.harbor.models import FabricRunnerFailure
 from nemo_fabric.integrations.harbor.models import HarborMcpServer
+
+
+def _inspect_adapter_profile(
+    config: FabricConfig,
+    descriptor: Mapping[str, Any] | None,
+    *,
+    target_descriptor: Mapping[str, Any] | None = None,
+) -> AdapterCapabilityProfile:
+    inspection = inspect_adapter(
+        config, descriptor, target_descriptor=target_descriptor
+    )
+    if inspection.issues:
+        raise FabricConfigError(
+            "; ".join(f"{issue.field}: {issue.reason}" for issue in inspection.issues)
+        )
+    if inspection.capability_profile is None:
+        raise FabricConfigError("Adapter inspection returned no capability profile")
+    return inspection.capability_profile
+
 
 INSTALL_ENV_NAMES = {
     "HTTP_PROXY",
@@ -568,7 +588,7 @@ else:
                 raise FabricConfigError(
                     "Registered workflow admission requires host target descriptor metadata"
                 )
-            self._capability_profile = inspect_adapter(
+            self._capability_profile = _inspect_adapter_profile(
                 self._build_config(),
                 self._host_descriptor,
                 target_descriptor=self._host_target_descriptor,
@@ -739,7 +759,7 @@ else:
 
         def _build_spec(self, instruction: str) -> FabricRunPayload:
             config = self._build_config()
-            profile = inspect_adapter(
+            profile = _inspect_adapter_profile(
                 config,
                 self._host_descriptor,
                 target_descriptor=self._host_target_descriptor,
@@ -971,23 +991,57 @@ def _inspect_configured_model(options: FabricAgentOptions) -> None:
         raise ValueError(
             "fabric_model_config requires a readable host adapter descriptor"
         ) from None
+    target_descriptor = None
     try:
-        inspect_adapter(
-            FabricConfig(
-                metadata=MetadataConfig(name="harbor-model-preflight"),
-                harness=HarnessConfig(
-                    adapter_id=options.fabric_adapter_id,
-                    resolution="preinstalled",
-                    settings=dict(options.fabric_harness_settings or {}),
-                ),
-                models={"default": model},
+        if options.fabric_workflow_target_id is not None:
+            if options.fabric_target_descriptor is not None:
+                target_descriptor = json.loads(
+                    options.fabric_target_descriptor.read_text(encoding="utf-8")
+                )
+            else:
+                from nemo_fabric_adapter_catalog import get_target_descriptor
+
+                target_descriptor = get_target_descriptor(
+                    options.fabric_workflow_target_id
+                )
+    except (ImportError, KeyError, OSError, UnicodeError, ValueError):
+        raise ValueError(
+            "fabric_workflow_target_id requires a readable host target descriptor"
+        ) from None
+    try:
+        config = FabricConfig(
+            metadata=MetadataConfig(name="harbor-model-preflight"),
+            harness=HarnessConfig(
+                adapter_id=options.fabric_adapter_id,
+                resolution="preinstalled",
+                settings=dict(options.fabric_harness_settings or {}),
             ),
-            descriptor,
+            workflow=(
+                WorkflowConfig(
+                    target_id=options.fabric_workflow_target_id,
+                    settings=dict(options.fabric_workflow_settings or {}),
+                )
+                if options.fabric_workflow_target_id is not None
+                else None
+            ),
+            models={"default": model},
         )
-    except (ValueError, FabricConfigError):
+        inspection = inspect_adapter(
+            config, descriptor, target_descriptor=target_descriptor
+        )
+    except FabricConfigError as error:
+        raise ValueError(
+            f"fabric_model_config could not be inspected: {error}"
+        ) from None
+    except ValueError:
         raise ValueError(
             "fabric_model_config is invalid for the selected adapter descriptor"
         ) from None
+    if inspection.issues:
+        fields = ", ".join(sorted({issue.field for issue in inspection.issues}))
+        raise ValueError(
+            f"fabric_model_config is invalid for the selected adapter descriptor at: {fields}"
+        )
 
 
 def build_harbor_config(

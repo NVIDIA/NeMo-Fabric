@@ -267,7 +267,7 @@ def test_opencode_descriptor_projects_replace_system_instruction():
 
 
 def test_opencode_descriptor_rejects_append_system_instruction():
-    with pytest.raises(FabricConfigError, match="append"):
+    with pytest.raises(FabricConfigError, match="instructions.system.mode"):
         Fabric().plan(
             config(
                 system_instruction=InstructionConfig(
