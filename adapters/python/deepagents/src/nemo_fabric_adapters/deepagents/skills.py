@@ -152,10 +152,14 @@ def _paths_as_directories(
             and not path.exists()
             and _in_workspace(entry, workspace)
         ):
+            in_workspace = workspace / entry.lstrip("/\\")
+            if (in_workspace / SKILL_FILE).is_file():
+                # Deep Agents would list this skill's own folders, so route
+                # the skill like any other.
+                directories.append(SkillDirectory(skill=str(in_workspace)))
+                continue
             passthrough[len(directories)] = entry
-            directories.append(
-                SkillDirectory(folder=str(workspace / entry.lstrip("/\\")))
-            )
+            directories.append(SkillDirectory(folder=str(in_workspace)))
             continue
         if (path / SKILL_FILE).is_file():
             directories.append(SkillDirectory(skill=entry))
@@ -193,18 +197,58 @@ def _plan_sources(
         found = by_entry.get(f"skills.directories[{index}]", [])
         if not found:
             continue
-        # The source lists the entry's skills by folder name, as Deep Agents
-        # reads them, at the path that holds them in the task environment.
-        parent = Path(os.path.abspath(directory.path))
-        if directory.kind == "skill":
-            parent = parent.parent
+        # The source lists the entry's skills by the folder names they are
+        # reached through, at the path that holds them in the task environment.
+        configured = Path(os.path.abspath(directory.path))
+        parent = configured.parent if directory.kind == "skill" else configured
+        names = _reached_names(directory.kind, configured, found)
         source = _mount_point(parent, index)
-        routed = mounts.routes.setdefault(source, {})
-        for skill in found:
-            routed[Path(skill.path).name] = Path(skill.path)
+        if source in mounts.routes and set(names) & set(mounts.routes[source]):
+            source = _FALLBACK_MOUNT.format(index=index)
+        if any(
+            source != other and (source.startswith(other) or other.startswith(source))
+            for other in mounts.routes
+        ):
+            # A route inside another source's route would hide that source's
+            # skills, so this entry gets a path of its own.
+            source = _FALLBACK_MOUNT.format(index=index)
+        mounts.routes.setdefault(source, {}).update(names)
         if all(existing != source for _, existing in planned):
             planned.append((_position(fields[index]), source))
     mounts.sources = [source for _, source in sorted(planned)]
+
+
+def _reached_names(
+    kind: str, configured: Path, found: Sequence[FoundSkill]
+) -> dict[str, Path]:
+    """Return each skill's folder name as reached from the entry, to its folder.
+
+    Discovery reports resolved folders, so a symbolic link is listed under its
+    own name, as Deep Agents lists it.
+    """
+
+    if kind == "skill":
+        return {configured.name: Path(found[0].path)}
+    by_target: dict[Path, str] = {}
+    try:
+        children = sorted(configured.iterdir())
+    except OSError:
+        children = []
+    for child in children:
+        try:
+            by_target.setdefault(child.resolve(), child.name)
+        except OSError:
+            continue
+    names: dict[str, Path] = {}
+    for skill in found:
+        target = Path(skill.path)
+        name = by_target.get(target.resolve(), target.name)
+        if name in names:
+            name = (
+                skill.name if skill.name not in names else f"{skill.name}-{len(names)}"
+            )
+        names[name] = target
+    return names
 
 
 def _mount_point(parent: Path, index: int) -> str:

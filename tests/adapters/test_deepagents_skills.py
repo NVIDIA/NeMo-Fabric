@@ -417,3 +417,51 @@ def test_planning_accepts_directories_and_rejects_bundled(tmp_path):
     )
     with pytest.raises(Exception, match="skills.bundled"):
         Fabric().plan(config({"bundled": {}}), base_dir=tmp_path)
+
+
+def test_workspace_path_to_one_skill_loads_that_skill(tmp_path):
+    workspace = tmp_path / "ws"
+    write_skill(workspace / ".agents" / "skills" / "review", "review")
+
+    sources, backend, report = resolve(
+        tmp_path, paths("/.agents/skills/review"), workspace=workspace
+    )
+
+    assert list(loaded(sources, backend)) == ["review"]
+    assert report["loaded"][0]["entry"] == "skills.paths[0]"
+
+
+def test_symlinks_to_folders_with_one_name_keep_their_own_routes(tmp_path):
+    first = write_skill(tmp_path / "vendor-a" / "review", "alpha")
+    second = write_skill(tmp_path / "vendor-b" / "review", "beta")
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "alpha").symlink_to(first)
+    (bundle / "beta").symlink_to(second)
+
+    sources, backend, report = resolve(
+        tmp_path, directories(("folder", bundle)), workspace=tmp_path / "ws"
+    )
+
+    assert loaded(sources, backend) == {
+        "alpha": f"{bundle}/alpha/SKILL.md",
+        "beta": f"{bundle}/beta/SKILL.md",
+    }
+    assert sorted(skill["name"] for skill in report["loaded"]) == ["alpha", "beta"]
+
+
+def test_a_skill_inside_another_skill_entry_stays_reachable(tmp_path):
+    outer = write_skill(tmp_path / "skills" / "outer", "outer")
+    inner = write_skill(outer / "inner", "inner")
+
+    sources, backend, _ = resolve(
+        tmp_path,
+        directories(("skill", outer), ("skill", inner)),
+        workspace=tmp_path / "ws",
+    )
+
+    found = loaded(sources, backend)
+    assert sorted(found) == ["inner", "outer"]
+    for skill_md in found.values():
+        companion = str(Path(skill_md).parent / "references" / "example.md")
+        assert backend.read(companion).error is None, companion
