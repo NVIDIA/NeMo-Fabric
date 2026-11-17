@@ -292,7 +292,30 @@ def test_workspace_skills_folder_passes_through(tmp_path):
     assert sources == ["/.agents/skills"]
     assert list(loaded(sources, backend)) == ["report-writing"]
     assert isinstance(backend, FilesystemBackend)
-    assert report is None
+    assert report["loaded"][0]["entry"] == "skills.paths[0]"
+
+
+def test_workspace_skills_folder_is_compared_by_name(tmp_path):
+    # A routed skill and a staged workspace skill with the same name: Deep
+    # Agents keeps the later source, and the report records the clash.
+    workspace = tmp_path / "ws"
+    staged = write_skill(workspace / ".agents" / "skills" / "review", "review")
+    external = write_skill(tmp_path / "skills" / "review", "review")
+
+    sources, backend, report = resolve(
+        tmp_path, paths(external, "/.agents/skills"), workspace=workspace
+    )
+
+    # The earlier, shadowed copy is not routed at all.
+    assert sources == ["/.agents/skills"]
+    assert loaded(sources, backend) == {"review": "/.agents/skills/review/SKILL.md"}
+    assert report["duplicates"][0]["outcome"] == "selected"
+    assert report["duplicates"][0]["selected"] == str(staged.resolve())
+    assert [copy["entry"] for copy in report["duplicates"][0]["copies"]] == [
+        "skills.paths[0]",
+        "skills.paths[1]",
+    ]
+    assert [skill["entry"] for skill in report["loaded"]] == ["skills.paths[1]"]
 
 
 def test_local_shell_runs_skill_scripts_at_the_listed_path(tmp_path):

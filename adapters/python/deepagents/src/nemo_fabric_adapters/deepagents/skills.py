@@ -136,8 +136,9 @@ def _paths_as_directories(
     """Read each ``skills.paths`` entry as a ``skill`` or ``folder`` entry.
 
     Returns the entries, the ``skills.paths`` field of each entry by its
-    index, and the workspace paths passed through unchanged, by their
-    position in ``skills.paths``.
+    index, and the workspace paths passed to Deep Agents unchanged, by entry
+    index. Those are still checked, as folders under the workspace, so their
+    skills are reported and compared by name with the other entries.
     """
 
     directories: list[SkillDirectory] = []
@@ -145,10 +146,17 @@ def _paths_as_directories(
     passthrough: dict[int, str] = {}
     for index, entry in enumerate(paths):
         path = Path(entry)
-        if not path.exists() and _in_workspace(entry, workspace):
-            passthrough[index] = entry
-            continue
         fields[len(directories)] = f"skills.paths[{index}]"
+        if (
+            workspace is not None
+            and not path.exists()
+            and _in_workspace(entry, workspace)
+        ):
+            passthrough[len(directories)] = entry
+            directories.append(
+                SkillDirectory(folder=str(workspace / entry.lstrip("/\\")))
+            )
+            continue
         if (path / SKILL_FILE).is_file():
             directories.append(SkillDirectory(skill=entry))
         else:
@@ -176,8 +184,12 @@ def _plan_sources(
     by_entry: dict[str, list[FoundSkill]] = {}
     for skill in load.selected:
         by_entry.setdefault(skill.field, []).append(skill)
-    planned: list[tuple[int, str]] = list(passthrough.items())
+    planned: list[tuple[int, str]] = []
     for index, directory in enumerate(directories):
+        if index in passthrough:
+            # Deep Agents reads the workspace path itself.
+            planned.append((_position(fields[index]), passthrough[index]))
+            continue
         found = by_entry.get(f"skills.directories[{index}]", [])
         if not found:
             continue
