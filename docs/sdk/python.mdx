@@ -593,9 +593,12 @@ capability_config.add_mcp_server(
 
 Only the `service_account` token is requested and renewed by the adapter. The
 second token is sent as configured, so replace the variable and restart the
-runtime when it expires. A missing or rejected second token does not stop the
-server's tools from loading: the gateway accepts the bearer token, and the
-error appears in the tool result when the downstream system refuses the call.
+runtime when it expires. Set the variable before starting the runtime: an
+empty value fails startup with `AdapterConfigError`, and an unset variable is
+not expanded, so the literal `${DOWNSTREAM_TOKEN}` text is sent. A rejected
+second token does not stop the server's tools from loading: the gateway
+accepts the bearer token, and the error appears in the tool result when the
+downstream system refuses the call.
 
 Use `custom_headers` to send HTTP headers with an `sse` or `streamable-http`
 server. Header names and values must be valid HTTP header text. To provide a
