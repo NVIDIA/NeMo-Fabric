@@ -103,8 +103,6 @@ MCP-reported tool errors (`ToolException`) and argument validation failures retu
 
 The runtime starts even when some configured MCP servers are unavailable. A server that cannot be reached, or that does not list its tools within 60 seconds, is skipped, and the agent starts with the tools of the remaining servers. Each result from that runtime lists the skipped servers under `output.mcp.unavailable_servers`, with the server `name`, `transport`, `reason` (`failed` or `timed_out`) and `error_type`. The adapter also writes a warning to standard error. Error messages are not reported, because they can contain URLs, headers or other credentials. Discovery runs again on every runtime start, so a new runtime picks up a server that has recovered. Invalid server configuration, such as an unsupported transport or authentication mode, still fails startup.
 
-Skills in `skills.paths` load whether or not they are inside the workspace. The adapter resolves each entry in the task environment: an entry that contains `SKILL.md` is one skill, and any other folder is a folder of skills. It mounts the skills read-only at `/.fabric/skills/<name>/`, so the agent reads them with its file tools but cannot change them, and nothing is copied into the workspace. With the `local_shell` backend, the adapter copies the skills to `<workspace>/.fabric/skills/` on every start instead, so shell commands can run skill scripts. A missing entry, an entry that is not a folder, or two skills with the same name fail startup and name the `skills.paths` entry.
-
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, replacement system instructions, blocked tools, and telemetry.
 The adapter rejects `append` system instructions. Use
@@ -227,6 +225,18 @@ Python middleware, permission objects, Python tool objects, and precompiled
 subagents cannot cross the JSON configuration boundary. NeMo Fabric rejects an
 asynchronous subagent when `tools.enabled` or `tools.blocked` is configured
 because a local tools policy cannot gate remote tools.
+
+## Skills
+
+Configure skills with `skills.paths` or `skills.directories`. Skills load whether or not they are inside the workspace, and also without a workspace. Refer to [Configure Skills](./skills.mdx) for the shared rules.
+
+- Each entry is one Deep Agents `skills` source, in list order. Deep Agents loads the source's immediate child folders that hold a `SKILL.md` with `name` and `description` in its front matter.
+- The adapter routes each entry's skills into the Deep Agents backend at the path of the folder that holds them. File tools read and write the skills in place, and `local_shell` commands can run skill scripts at the same paths. Nothing is copied, and the mount decides whether the agent can change a skill.
+- A `paths` entry that holds `SKILL.md` is one skill. Any other folder is a folder of skills. An absolute `paths` entry that exists only under the workspace, such as `/.agents/skills`, is passed to Deep Agents unchanged.
+- `skills.duplicates` accepts `reject`, `first_wins`, and `last_wins`. When it is left out, the copy from the later entry loads, as in Deep Agents.
+- Deep Agents ships no bundled skills, so planning rejects `skills.bundled`.
+- A missing or invalid entry, or two skills with the same name under `reject`, fails startup with `deepagents_skill_not_found` or `deepagents_skill_invalid` and names the field.
+- Each result reports the loaded skills under `output.skills`, with any skipped candidates, empty entries, and duplicates.
 
 ## Understand the Runtime Lifecycle
 

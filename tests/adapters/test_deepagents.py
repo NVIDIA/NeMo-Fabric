@@ -2672,8 +2672,8 @@ async def test_openai_provider_keeps_openai_endpoint(
 async def test_skill_paths_are_mounted_for_deep_agents(
     tmp_path, make_payload, fake_sdks, monkeypatch
 ):
-    # Skill paths are host paths that the workspace-confined backend cannot
-    # read, so the adapter mounts them at one reserved virtual folder.
+    # Skill paths are task-environment paths that the workspace-confined
+    # backend cannot read, so the adapter routes them into it.
     for name in ("a", "b"):
         (tmp_path / "skills" / name).mkdir(parents=True)
         (tmp_path / "skills" / name / "SKILL.md").write_text(
@@ -2681,8 +2681,8 @@ async def test_skill_paths_are_mounted_for_deep_agents(
         )
     mounted = []
 
-    def mount(default, resolved):
-        mounted.append([skill.name for skill in resolved.skills])
+    def mount(default, mounts):
+        mounted.append(mounts.routes)
         return default
 
     monkeypatch.setattr(adapter.skill_mounts, "mounted_backend", mount)
@@ -2691,10 +2691,14 @@ async def test_skill_paths_are_mounted_for_deep_agents(
         "paths": [str(tmp_path / "skills" / "a"), str(tmp_path / "skills" / "b")]
     }
 
-    await invoke_once(payload)
+    output = await invoke_once(payload)
 
-    assert fake_sdks["create_kwargs"]["skills"] == ["/.fabric/skills/"]
-    assert mounted == [["a", "b"]]
+    skills_root = tmp_path / "skills"
+    assert fake_sdks["create_kwargs"]["skills"] == [f"{skills_root}/"]
+    assert mounted == [
+        {f"{skills_root}/": {"a": skills_root / "a", "b": skills_root / "b"}}
+    ]
+    assert [skill["name"] for skill in output["skills"]["loaded"]] == ["a", "b"]
 
 
 async def test_missing_skill_path_fails_start(tmp_path, make_payload):

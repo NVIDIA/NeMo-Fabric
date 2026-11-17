@@ -1,218 +1,344 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Make NeMo Fabric ``skills.paths`` readable through the Deep Agents backend.
+"""Make configured skills readable through the Deep Agents backend.
 
-NeMo Fabric resolves each ``skills.paths`` entry to a path in the task
-environment. Deep Agents reads skills only through its backend, which confines
-file access to the workspace and treats every path as relative to it, so those
-paths cannot be read directly. This module resolves each entry on disk and
-exposes the skills it finds at a reserved virtual path:
+NeMo Fabric resolves ``skills.paths`` and ``skills.directories`` to folders in
+the task environment. Deep Agents reads skills only through its backend, which
+confines file access to the workspace and reads every path relative to it, so
+it cannot read those folders directly. Deep Agents also treats each ``skills``
+source as a folder of skills: it lists the source's immediate child folders
+and loads each one that holds ``SKILL.md`` with a ``name`` and a
+``description`` in its front matter. The later source wins a name clash.
 
-- an entry that contains ``SKILL.md`` is one skill;
-- any other folder is a folder of skills, and each immediate child that
-  contains ``SKILL.md`` is a skill;
-- an absolute entry that does not exist in the task environment but does exist
-  under the workspace is a workspace path that is passed to Deep Agents
-  unchanged (for configurations that stage skills into the workspace
-  themselves);
-- anything else fails start, naming the ``skills.paths`` entry.
+This module checks the entries with the adapter contract's
+:func:`~nemo_fabric_adapter_contract.skills.load_directories` and routes each
+entry's skills into the backend at the path where they live in the task
+environment. Each entry is a Deep Agents source, in configuration order. The
+routes read and write the folders in place, so the mount decides whether the
+agent can change a skill, and shell commands of the ``local_shell`` backend
+reach the same files at the same paths.
 
-The default backends mount the skills read-only through a routed backend, so
-nothing is copied. The ``local_shell`` backend copies them into the workspace
-instead, so shell commands can run skill scripts.
+``skills.paths`` keeps its meaning: an entry that holds ``SKILL.md`` is one
+skill, and any other folder is a folder of skills. An absolute entry that does
+not exist in the task environment, but does under the workspace, names skills
+already staged in the workspace and is passed to Deep Agents unchanged.
 """
 
 from __future__ import annotations
 
-import logging
-import shutil
+import dataclasses
+import os
+from collections.abc import Sequence
 from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import field as dataclass_field
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any
 
-import yaml
+from nemo_fabric_adapter_contract.models import AgentSkillConfig
+from nemo_fabric_adapter_contract.models import SkillDirectory
+from nemo_fabric_adapter_contract.skills import SKILL_FILE
+from nemo_fabric_adapter_contract.skills import CandidateInfo
+from nemo_fabric_adapter_contract.skills import CandidateReader
+from nemo_fabric_adapter_contract.skills import DirectoryLoad
+from nemo_fabric_adapter_contract.skills import DiscoveryRules
+from nemo_fabric_adapter_contract.skills import DuplicateRecord
+from nemo_fabric_adapter_contract.skills import FoundSkill
+from nemo_fabric_adapter_contract.skills import SkillLoadError
+from nemo_fabric_adapter_contract.skills import front_matter_reader
+from nemo_fabric_adapter_contract.skills import load_directories
+from nemo_fabric_adapter_contract.skills import report_block
+from nemo_fabric_adapter_contract.skills import warn
+from nemo_fabric_adapters.common import lifecycle
 
-logger = logging.getLogger(__name__)
+ADAPTER = "Deep Agents"
 
-# Reserved virtual folder that holds the configured skills. Deep Agents lists
-# its immediate children as skills.
-SKILLS_MOUNT = "/.fabric/skills/"
-_SKILL_FILE = "SKILL.md"
-_READ_ONLY_ERROR = (
-    "Skills loaded from skills.paths are read-only; changes to them would not persist."
+# deepagents/middleware/skills.py _list_skills: a source's immediate child
+# folders are its skills, nothing deeper loads, and every child is listed.
+DEEPAGENTS_DISCOVERY = DiscoveryRules(
+    traversal="immediate_children",
+    nested_skills="stop_at_skill",
+    max_depth=1,
+    name_fallback=False,
+    excluded_dir_names=frozenset(),
 )
 
-
-class SkillsConfigError(RuntimeError):
-    """Raised when a ``skills.paths`` entry cannot be loaded."""
-
-
-@dataclass(frozen=True)
-class Skill:
-    """One skill folder found in the task environment."""
-
-    name: str
-    directory: Path
-    entry_index: int
+# Mount point for an entry whose own folder cannot be a backend path.
+_FALLBACK_MOUNT = "/.fabric/skills/{index}/"
 
 
 @dataclass
-class ResolvedSkills:
-    """Skills resolved from ``skills.paths``, ready for Deep Agents."""
+class SkillMounts:
+    """The Deep Agents ``skills`` sources and the backend routes behind them."""
 
-    skills: list[Skill] = field(default_factory=list)
-    workspace_sources: list[str] = field(default_factory=list)
+    sources: list[str] = dataclass_field(default_factory=list)
+    """Deep Agents ``skills`` sources, in configuration order."""
+    routes: dict[str, dict[str, Path]] = dataclass_field(default_factory=dict)
+    """Source path to the skill folders it lists, by folder name."""
+    load: DirectoryLoad | None = None
 
-    def report(self) -> dict[str, Any]:
-        """Describe what was loaded, for logs and run evidence."""
+    def report(self) -> dict[str, Any] | None:
+        """Return the ``output.skills`` block, or ``None`` when empty."""
 
-        return {
-            "loaded": [
-                {"name": skill.name, "entry": f"skills.paths[{skill.entry_index}]"}
-                for skill in self.skills
-            ],
-            "workspace_sources": list(self.workspace_sources),
-        }
+        return report_block(self.load) if self.load is not None else None
 
+    def warn(self) -> None:
+        """Write the start warnings to stderr."""
 
-def _front_matter_name(skill_file: Path) -> str | None:
-    """Return the ``name`` from the skill's YAML front matter, if it has one."""
-
-    try:
-        text = skill_file.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
-    if not text.startswith("---"):
-        return None
-    end = text.find("\n---", 3)
-    if end == -1:
-        return None
-    try:
-        data = yaml.safe_load(text[3:end])
-    except yaml.YAMLError:
-        return None
-    name = data.get("name") if isinstance(data, dict) else None
-    return name.strip() if isinstance(name, str) and name.strip() else None
+        if self.load is not None:
+            warn(ADAPTER, self.load)
 
 
-def _skill_name(directory: Path) -> str:
-    # Deep Agents keys skills by their front-matter name; fall back to the folder
-    # name so a malformed skill is still mounted and Deep Agents reports it.
-    name = _front_matter_name(directory / _SKILL_FILE)
-    if not name or "/" in name or "\\" in name or name in {".", ".."}:
-        return directory.name
-    return name
+def plan_skills(skills: AgentSkillConfig | None, workspace: Path | None) -> SkillMounts:
+    """Check the configured skills and plan the Deep Agents sources.
 
-
-def _workspace_source(entry: str, workspace: Path | None) -> bool:
-    if workspace is None or not entry.startswith("/"):
-        return False
-    candidate = workspace / entry.lstrip("/")
-    return candidate.is_dir()
-
-
-def resolve_skill_paths(entries: list[str], workspace: Path | None) -> ResolvedSkills:
-    """Resolve ``skills.paths`` entries in the task environment.
-
-    Fails with :class:`SkillsConfigError` naming the entry when an entry does
-    not exist or is not a folder, or when two skills share a name.
+    Raises:
+        lifecycle.LifecycleError: ``deepagents_skill_not_found`` or
+            ``deepagents_skill_invalid`` for an entry that cannot load, or a
+            duplicate under an explicit policy.
     """
 
-    resolved = ResolvedSkills()
-    seen: dict[str, Skill] = {}
-    for index, entry in enumerate(entries):
-        path = Path(entry)
-        if not path.exists():
-            if _workspace_source(entry, workspace):
-                resolved.workspace_sources.append(entry)
-                continue
-            raise SkillsConfigError(
-                f"skills.paths[{index}] ({entry!r}) was not found in the task environment."
-            )
-        if not path.is_dir():
-            raise SkillsConfigError(
-                f"skills.paths[{index}] ({entry!r}) is not a folder; each entry must be "
-                f"a skill folder containing {_SKILL_FILE} or a folder of skills."
-            )
-        if (path / _SKILL_FILE).is_file():
-            directories = [path]
-        else:
-            directories = sorted(
-                child
-                for child in path.iterdir()
-                if child.is_dir() and (child / _SKILL_FILE).is_file()
-            )
-            if not directories:
-                logger.warning(
-                    "skills.paths[%d] (%r) contains no skills.", index, entry
-                )
-        for directory in directories:
-            skill = Skill(_skill_name(directory), directory.resolve(), index)
-            if skill.name in seen:
-                first = seen[skill.name]
-                raise SkillsConfigError(
-                    f"Skill name {skill.name!r} is defined twice: in "
-                    f"skills.paths[{first.entry_index}] ({str(first.directory)!r}) and "
-                    f"skills.paths[{index}] ({str(skill.directory)!r}). Skill names must "
-                    "be unique."
-                )
-            seen[skill.name] = skill
-            resolved.skills.append(skill)
-    return resolved
-
-
-def skill_sources(resolved: ResolvedSkills) -> list[str] | None:
-    """Return the Deep Agents ``skills`` sources for the resolved entries."""
-
-    sources = [SKILLS_MOUNT] if resolved.skills else []
-    sources.extend(resolved.workspace_sources)
-    return sources or None
-
-
-def log_loaded(resolved: ResolvedSkills) -> None:
-    """Log which skills each ``skills.paths`` entry provided."""
-
-    for skill in resolved.skills:
-        logger.info(
-            "Loaded skill %r from skills.paths[%d] at %s%s",
-            skill.name,
-            skill.entry_index,
-            SKILLS_MOUNT,
-            skill.name,
+    mounts = SkillMounts()
+    if skills is None:
+        return mounts
+    passthrough: dict[int, str] = {}
+    if skills.directories is not None:
+        directories: list[SkillDirectory] = list(skills.directories)
+        fields = {
+            index: f"skills.directories[{index}]" for index in range(len(directories))
+        }
+    elif skills.paths:
+        directories, fields, passthrough = _paths_as_directories(
+            [os.fspath(path) for path in skills.paths], workspace
         )
-    for source in resolved.workspace_sources:
-        logger.info("Passing workspace skills folder %r to Deep Agents.", source)
+    else:
+        return mounts
+    try:
+        load = load_directories(
+            directories,
+            rules=DEEPAGENTS_DISCOVERY,
+            duplicates=skills.duplicates,
+            reader=deepagents_reader(),
+        )
+    except SkillLoadError as error:
+        raise skill_error(_renamed_error(error, fields)) from None
+    if skills.duplicates is None:
+        load = _native_duplicates(load)
+    _plan_sources(mounts, load, directories, fields, passthrough)
+    mounts.load = _renamed_load(load, fields)
+    return mounts
 
 
-def _read_only_backend(directory: Path) -> Any:
-    from deepagents.backends import FilesystemBackend
-    from deepagents.backends.protocol import EditResult
-    from deepagents.backends.protocol import FileUploadResponse
-    from deepagents.backends.protocol import WriteResult
+def _paths_as_directories(
+    paths: Sequence[str], workspace: Path | None
+) -> tuple[list[SkillDirectory], dict[int, str], dict[int, str]]:
+    """Read each ``skills.paths`` entry as a ``skill`` or ``folder`` entry.
 
-    class ReadOnlySkillBackend(FilesystemBackend):
-        """A skill folder that the agent can read but not change."""
+    Returns the entries, the ``skills.paths`` field of each entry by its
+    index, and the workspace paths passed through unchanged, by their
+    position in ``skills.paths``.
+    """
 
-        def write(self, file_path: str, content: str) -> Any:
-            return WriteResult(error=_READ_ONLY_ERROR)
+    directories: list[SkillDirectory] = []
+    fields: dict[int, str] = {}
+    passthrough: dict[int, str] = {}
+    for index, entry in enumerate(paths):
+        path = Path(entry)
+        if not path.exists() and _in_workspace(entry, workspace):
+            passthrough[index] = entry
+            continue
+        fields[len(directories)] = f"skills.paths[{index}]"
+        if (path / SKILL_FILE).is_file():
+            directories.append(SkillDirectory(skill=entry))
+        else:
+            directories.append(SkillDirectory(folder=entry))
+    return directories, fields, passthrough
 
-        def edit(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
-            return EditResult(error=_READ_ONLY_ERROR)
 
-        def delete(self, file_path: str) -> Any:
-            from deepagents.backends.protocol import DeleteResult
+def _in_workspace(entry: str, workspace: Path | None) -> bool:
+    if workspace is None or not Path(entry).is_absolute():
+        return False
+    return (workspace / entry.lstrip("/\\")).is_dir()
 
-            return DeleteResult(error=_READ_ONLY_ERROR)
 
-        def upload_files(self, files: list[tuple[str, bytes]]) -> list[Any]:
-            return [
-                FileUploadResponse(path=path, error="permission_denied")
-                for path, _content in files
-            ]
+def _position(field: str) -> int:
+    return int(field.rsplit("[", 1)[1].rstrip("]"))
 
-    return ReadOnlySkillBackend(root_dir=str(directory), virtual_mode=True)
+
+def _plan_sources(
+    mounts: SkillMounts,
+    load: DirectoryLoad,
+    directories: Sequence[SkillDirectory],
+    fields: dict[int, str],
+    passthrough: dict[int, str],
+) -> None:
+    by_entry: dict[str, list[FoundSkill]] = {}
+    for skill in load.selected:
+        by_entry.setdefault(skill.field, []).append(skill)
+    planned: list[tuple[int, str]] = list(passthrough.items())
+    for index, directory in enumerate(directories):
+        found = by_entry.get(f"skills.directories[{index}]", [])
+        if not found:
+            continue
+        # The source lists the entry's skills by folder name, as Deep Agents
+        # reads them, at the path that holds them in the task environment.
+        parent = Path(os.path.abspath(directory.path))
+        if directory.kind == "skill":
+            parent = parent.parent
+        source = _mount_point(parent, index)
+        routed = mounts.routes.setdefault(source, {})
+        for skill in found:
+            routed[Path(skill.path).name] = Path(skill.path)
+        if all(existing != source for _, existing in planned):
+            planned.append((_position(fields[index]), source))
+    mounts.sources = [source for _, source in sorted(planned)]
+
+
+def _mount_point(parent: Path, index: int) -> str:
+    """Return the backend path for a folder: its own path when it can be one."""
+
+    if os.name == "nt" or parent.anchor != "/" or parent == Path("/"):
+        return _FALLBACK_MOUNT.format(index=index)
+    return str(PurePosixPath(parent)).rstrip("/") + "/"
+
+
+def deepagents_reader() -> CandidateReader:
+    """Return a reader that names and checks each candidate as Deep Agents does.
+
+    It runs Deep Agents' own front-matter parser, which requires a ``name``
+    and a ``description`` and skips a skill whose front matter does not
+    parse. Without Deep Agents, as in dependency-free tests, it is the
+    helper's :func:`front_matter_reader` with the same required fields.
+    """
+
+    try:
+        from deepagents.middleware import skills as native
+    except ImportError:
+        native = None
+    parse = getattr(native, "_parse_skill_metadata", None)
+    if parse is None:
+        return front_matter_reader(required_fields=("name", "description"))
+
+    def read_one(folder: Path) -> CandidateInfo:
+        skill_md = folder / SKILL_FILE
+        try:
+            text = skill_md.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return CandidateInfo(None, valid=False, reason="unreadable")
+        metadata = parse(text, str(skill_md), folder.name)
+        if metadata is None:
+            return CandidateInfo(None, valid=False, reason="invalid_frontmatter")
+        return CandidateInfo(str(metadata["name"]))
+
+    def read(folders: Sequence[Path]) -> dict[Path, CandidateInfo]:
+        return {folder: read_one(folder) for folder in folders}
+
+    return read
+
+
+def _native_duplicates(load: DirectoryLoad) -> DirectoryLoad:
+    """Apply Deep Agents' own rule when ``duplicates`` is left out.
+
+    Each entry is a source and the later source wins, so a name supplied by
+    several entries resolves to the last one. Copies inside one entry stay
+    ``ambiguous``.
+    """
+
+    shadowed: set[int] = set()
+    records: list[DuplicateRecord] = []
+    for record in load.duplicates:
+        fields = [field for _, _, field in record.copies]
+        if record.outcome != "ambiguous" or len(set(fields)) != len(fields):
+            records.append(record)
+            continue
+        winner = record.copies[-1][1]
+        shadowed.update(
+            id(skill)
+            for skill in load.selected
+            if skill.name == record.name and skill.path != winner
+        )
+        records.append(dataclasses.replace(record, outcome="selected", selected=winner))
+    return dataclasses.replace(
+        load,
+        selected=[skill for skill in load.selected if id(skill) not in shadowed],
+        duplicates=records,
+    )
+
+
+def _rename(field: str, fields: dict[int, str]) -> str:
+    prefix = "skills.directories["
+    if not field.startswith(prefix):
+        return field
+    index, _, rest = field[len(prefix) :].partition("]")
+    if not index.isdigit() or int(index) not in fields:
+        return field
+    name = fields[int(index)]
+    # A skills.paths entry is a plain path, without a skill or folder key.
+    if name.startswith("skills.paths[") and rest in (".skill", ".folder"):
+        rest = ""
+    return name + rest
+
+
+def _renamed_load(load: DirectoryLoad, fields: dict[int, str]) -> DirectoryLoad:
+    """Name each entry by the configuration field it came from."""
+
+    return dataclasses.replace(
+        load,
+        selected=[
+            dataclasses.replace(skill, field=_rename(skill.field, fields))
+            for skill in load.selected
+        ],
+        entries=[
+            (_rename(field, fields), kind, path) for field, kind, path in load.entries
+        ],
+        empty_entries=[_rename(field, fields) for field in load.empty_entries],
+        skipped=[
+            dataclasses.replace(item, field=_rename(item.field, fields))
+            for item in load.skipped
+        ],
+        duplicates=[
+            dataclasses.replace(
+                record,
+                copies=tuple(
+                    (origin, path, _rename(field, fields))
+                    for origin, path, field in record.copies
+                ),
+            )
+            for record in load.duplicates
+        ],
+    )
+
+
+def _renamed_error(error: SkillLoadError, fields: dict[int, str]) -> SkillLoadError:
+    message = str(error)
+    # Replace higher indexes first so [1] never rewrites part of [10].
+    for index in sorted(fields, reverse=True):
+        for key in (".skill", ".folder", ""):
+            field = f"skills.directories[{index}]{key}"
+            message = message.replace(field, _rename(field, fields))
+    return SkillLoadError(
+        error.reason,
+        message,
+        field=_rename(error.field, fields),
+        paths=error.paths,
+    )
+
+
+def skill_error(error: SkillLoadError) -> lifecycle.LifecycleError:
+    """Map a skill entry failure to the adapter's error codes."""
+
+    metadata: dict[str, Any] = {"field": error.field, "reason": error.reason}
+    if error.paths:
+        metadata["path"] = str(error.paths[0])
+    if len(error.paths) > 1:
+        metadata["paths"] = [str(path) for path in error.paths]
+    code = (
+        "deepagents_skill_not_found"
+        if error.reason == "not_found"
+        else "deepagents_skill_invalid"
+    )
+    return lifecycle.LifecycleError(code, str(error), metadata=metadata)
 
 
 def _empty_backend() -> Any:
@@ -223,7 +349,7 @@ def _empty_backend() -> Any:
     from deepagents.backends.protocol import ReadResult
 
     class EmptyBackend(BackendProtocol):
-        """The skills folder itself; its children are the routed skills."""
+        """A source folder itself; its children are the routed skills."""
 
         def ls(self, path: str) -> Any:
             return LsResult(entries=[])
@@ -240,43 +366,29 @@ def _empty_backend() -> Any:
     return EmptyBackend()
 
 
-def mounted_backend(default: Any, resolved: ResolvedSkills) -> Any:
-    """Route ``SKILLS_MOUNT`` to read-only views of the resolved skills.
+def mounted_backend(default: Any, mounts: SkillMounts) -> Any:
+    """Route each source to its skill folders; ``default`` serves the rest.
 
-    ``default`` serves every other path. Returns ``default`` unchanged when no
-    skills need mounting.
+    Returns ``default`` unchanged when nothing needs routing.
     """
 
-    if not resolved.skills:
+    if not mounts.routes:
         return default
     from deepagents.backends import CompositeBackend
+    from deepagents.backends import FilesystemBackend
     from deepagents.backends import StateBackend
 
-    skills_folder = CompositeBackend(
-        default=_empty_backend(),
-        routes={
-            f"/{skill.name}/": _read_only_backend(skill.directory)
-            for skill in resolved.skills
-        },
-    )
+    routes = {
+        source: CompositeBackend(
+            default=_empty_backend(),
+            routes={
+                f"/{name}/": FilesystemBackend(root_dir=str(folder), virtual_mode=True)
+                for name, folder in skills.items()
+            },
+        )
+        for source, skills in mounts.routes.items()
+    }
     return CompositeBackend(
         default=default if default is not None else StateBackend(),
-        routes={SKILLS_MOUNT: skills_folder},
+        routes=routes,
     )
-
-
-def copy_into_workspace(workspace: Path, resolved: ResolvedSkills) -> None:
-    """Copy the resolved skills to ``SKILLS_MOUNT`` under the workspace.
-
-    Used for the ``local_shell`` backend, whose shell commands only see real
-    files. The folder is replaced on every start so it matches ``skills.paths``.
-    """
-
-    target = workspace / SKILLS_MOUNT.strip("/")
-    if target.exists():
-        shutil.rmtree(target)
-    if not resolved.skills:
-        return
-    target.mkdir(parents=True)
-    for skill in resolved.skills:
-        shutil.copytree(skill.directory, target / skill.name, symlinks=False)

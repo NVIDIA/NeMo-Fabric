@@ -461,7 +461,7 @@ async def test_skill_selection(
     config.models["default"].model = "fabric-echo"
     config.models["default"].base_url = f"{api_server}/v1"
     # The skills live outside the workspace, so they are only readable through
-    # the folder the adapter mounts them at.
+    # the routes the adapter adds for them.
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     config.environment = EnvironmentConfig(
@@ -483,12 +483,13 @@ async def test_skill_selection(
         config.add_skill_path(alternate_skill)
 
     if skill is not None:
+        selected_skill = default_skill if skill == "default" else alternate_skill
         scenario_response = requests.post(
             f"{api_server}/_scenario",
             json={
                 "tool_call": {
                     "name": "read_file",
-                    "arguments": {"file_path": f"/.fabric/skills/{skill}/SKILL.md"},
+                    "arguments": {"file_path": f"{selected_skill}/SKILL.md"},
                 }
             },
             timeout=5,
@@ -509,9 +510,12 @@ async def test_skill_selection(
         if message["role"] == "tool"
     ]
     if skill is not None:
-        # The mounted SKILL.md was read, not just requested.
+        # The routed SKILL.md was read, not just requested.
         assert any(f"{skill} skill loaded" in content for content in tool_results)
-    assert not (workspace / ".fabric").exists()
+        assert [item["name"] for item in result["output"]["skills"]["loaded"]] == [
+            skill
+        ]
+    assert list(workspace.iterdir()) == []
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")

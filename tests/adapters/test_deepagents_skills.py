@@ -1,25 +1,34 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Deep Agents loads ``skills.paths`` through its backend (real deepagents SDK)."""
+"""Deep Agents loads configured skills through its backend (real deepagents SDK)."""
 
+import json
+import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from deepagents.backends import FilesystemBackend
 from deepagents.middleware.skills import _list_skills_with_errors
+from nemo_fabric_adapter_contract.models import AgentSkillConfig
+from nemo_fabric_adapter_contract.models import SkillDirectory
+from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.deepagents import adapter
-from nemo_fabric_adapters.deepagents import skills as skill_mounts
+
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32", reason="skills mount at their POSIX task-environment paths"
+)
 
 
-def write_skill(root: Path, name: str, *, front_matter_name: str | None = None) -> Path:
+def write_skill(root: Path, name: str, *, description: bool = True) -> Path:
     (root / "references").mkdir(parents=True, exist_ok=True)
-    (root / "SKILL.md").write_text(
-        f"---\nname: {front_matter_name or name}\ndescription: The {name} skill.\n---\n"
-        f"# {name}\n"
-    )
-    (root / "references" / "example.md").write_text(f"{name} reference\n")
+    lines = ["---", f"name: {name}"]
+    if description:
+        lines.append(f"description: The {name} skill.")
+    (root / "SKILL.md").write_text("\n".join([*lines, "---", f"# {name}", ""]))
+    (root / "references" / "example.md").write_text(f"{root} reference\n")
     return root
 
 
@@ -31,170 +40,357 @@ def context(workspace: Path | None) -> SimpleNamespace:
     )
 
 
-def config(*paths: Path | str) -> SimpleNamespace:
-    return SimpleNamespace(skills=SimpleNamespace(paths=[str(p) for p in paths]))
-
-
-def resolve(
-    tmp_path: Path, *paths: Path | str, workspace: Path | None = None, local_shell=False
-):
+def resolve(tmp_path, skills, *, workspace=None, local_shell=False):
     runtime_context = context(workspace)
-    backend = None
     if local_shell:
         backend = adapter._local_shell_backend(
             root_dir=str(workspace), virtual_mode=True, env={}, inherit_env=False
         )
-    elif workspace is not None:
+    else:
         backend = adapter.resolve_backend(runtime_context, str(tmp_path))
-    return adapter.resolve_skills(
-        config(*paths),
-        runtime_context,
-        str(tmp_path),
-        backend,
-        local_shell=local_shell,
+    report: list = []
+    sources, backend = adapter.resolve_skills(
+        SimpleNamespace(skills=skills), runtime_context, str(tmp_path), backend, report
+    )
+    return sources, backend, (report[0] if report else None)
+
+
+def paths(*entries) -> AgentSkillConfig:
+    return AgentSkillConfig(paths=[str(entry) for entry in entries])
+
+
+def directories(*entries, duplicates=None) -> AgentSkillConfig:
+    return AgentSkillConfig(
+        directories=[SkillDirectory(**{kind: str(path)}) for kind, path in entries],
+        duplicates=duplicates,
     )
 
 
-def loaded(sources, backend) -> list[str]:
-    names = []
+def loaded(sources, backend) -> dict[str, str]:
+    """Load the sources the way SkillsMiddleware does: the later source wins."""
+
+    skills = {}
     for source in sources:
-        skills, error = _list_skills_with_errors(backend, source)
+        found, error = _list_skills_with_errors(backend, source)
         assert error is None, error
-        names.extend(skill["name"] for skill in skills)
-    return names
+        skills.update({skill["name"]: skill["path"] for skill in found})
+    return skills
 
 
-def test_single_skill_outside_the_workspace_is_readable(tmp_path):
+def test_single_skill_outside_the_workspace_loads_at_its_own_path(tmp_path):
     skill = write_skill(tmp_path / "skills" / "report-writing", "report-writing")
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
-    sources, backend = resolve(tmp_path, skill, workspace=workspace)
+    sources, backend, report = resolve(tmp_path, paths(skill), workspace=workspace)
 
-    assert sources == ["/.fabric/skills/"]
-    assert loaded(sources, backend) == ["report-writing"]
-    read = backend.read("/.fabric/skills/report-writing/references/example.md")
-    assert read.error is None
-    assert "report-writing reference" in str(read.file_data or read)
+    assert sources == [f"{skill.parent}/"]
+    assert loaded(sources, backend) == {"report-writing": f"{skill}/SKILL.md"}
+    assert backend.read(f"{skill}/references/example.md").error is None
+    assert report["loaded"] == [
+        {
+            "name": "report-writing",
+            "path": str(skill.resolve()),
+            "entry": "skills.paths[0]",
+            "origin": "external",
+        }
+    ]
     # Nothing is copied into the workspace.
-    assert not (workspace / ".fabric").exists()
+    assert list(workspace.iterdir()) == []
 
 
 def test_folder_of_skills_inside_the_workspace_loads_every_child(tmp_path):
     write_skill(tmp_path / "skills" / "files", "files")
     write_skill(tmp_path / "skills" / "evals", "evals")
+    write_skill(tmp_path / "skills" / "broken", "broken", description=False)
     (tmp_path / "skills" / "notes").mkdir()
 
-    sources, backend = resolve(tmp_path, tmp_path / "skills", workspace=tmp_path)
+    sources, backend, report = resolve(
+        tmp_path, paths(tmp_path / "skills"), workspace=tmp_path
+    )
 
     assert sorted(loaded(sources, backend)) == ["evals", "files"]
-    # The workspace itself is still served by the default backend.
+    assert [item["reason"] for item in report["skipped"]] == ["invalid_frontmatter"]
+    # The workspace is still served by the default backend.
     assert backend.ls("/skills").error is None
-
-
-def test_mixed_entries_keep_config_order(tmp_path):
-    write_skill(tmp_path / "pack" / "b", "b")
-    write_skill(tmp_path / "pack" / "c", "c")
-    single = write_skill(tmp_path / "one" / "a", "a")
-
-    sources, backend = resolve(tmp_path, single, tmp_path / "pack", workspace=tmp_path)
-
-    resolved = skill_mounts.resolve_skill_paths(
-        [str(single), str(tmp_path / "pack")], tmp_path
-    )
-    assert [(s.name, s.entry_index) for s in resolved.skills] == [
-        ("a", 0),
-        ("b", 1),
-        ("c", 1),
-    ]
-    assert sorted(loaded(sources, backend)) == ["a", "b", "c"]
 
 
 def test_skills_load_without_a_workspace(tmp_path):
     skill = write_skill(tmp_path / "skills" / "report-writing", "report-writing")
 
-    sources, backend = resolve(tmp_path, skill, workspace=None)
+    sources, backend, _ = resolve(tmp_path, paths(skill), workspace=None)
 
-    assert loaded(sources, backend) == ["report-writing"]
+    assert list(loaded(sources, backend)) == ["report-writing"]
 
 
-def test_mounted_skills_are_read_only(tmp_path):
+def test_writes_reach_the_mounted_folder(tmp_path):
+    skill = write_skill(tmp_path / "skills" / "report-writing", "report-writing")
+
+    _, backend, _ = resolve(tmp_path, paths(skill), workspace=tmp_path / "ws")
+
+    assert backend.write(f"{skill}/notes.md", "learned").error is None
+    assert (skill / "notes.md").read_text() == "learned"
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0, reason="root ignores permissions"
+)
+def test_a_read_only_mount_refuses_writes(tmp_path):
     skill = write_skill(tmp_path / "skills" / "report-writing", "report-writing")
     original = (skill / "SKILL.md").read_text()
-
-    _, backend = resolve(tmp_path, skill, workspace=tmp_path / "ws")
-
-    path = "/.fabric/skills/report-writing/SKILL.md"
-    assert "read-only" in backend.write(path, "changed").error
-    assert "read-only" in backend.edit(path, "name", "nom").error
+    _, backend, _ = resolve(tmp_path, paths(skill), workspace=tmp_path / "ws")
+    (skill / "SKILL.md").chmod(0o444)
+    skill.chmod(0o555)
+    try:
+        assert backend.edit(f"{skill}/SKILL.md", "name", "nom").error
+        assert backend.write(f"{skill}/notes.md", "x").error
+    finally:
+        skill.chmod(0o755)
+        (skill / "SKILL.md").chmod(0o644)
     assert (skill / "SKILL.md").read_text() == original
 
 
-def test_front_matter_name_is_the_mount_name(tmp_path):
-    skill = write_skill(
-        tmp_path / "skills" / "folder-name",
-        "folder-name",
-        front_matter_name="real-name",
-    )
-
-    sources, backend = resolve(tmp_path, skill, workspace=tmp_path)
-
-    assert loaded(sources, backend) == ["real-name"]
-
-
-def test_duplicate_names_fail_start_naming_both_entries(tmp_path):
+def test_paths_duplicates_follow_deep_agents_later_source_wins(tmp_path):
     first = write_skill(tmp_path / "a" / "review", "review")
     second = write_skill(tmp_path / "b" / "review", "review")
 
-    with pytest.raises(adapter.AdapterConfigError) as error:
-        resolve(tmp_path, first, second, workspace=tmp_path)
+    sources, backend, report = resolve(
+        tmp_path, paths(first, second), workspace=tmp_path
+    )
 
-    assert "skills.paths[0]" in str(error.value)
-    assert "skills.paths[1]" in str(error.value)
+    assert loaded(sources, backend) == {"review": f"{second}/SKILL.md"}
+    assert report["duplicates"] == [
+        {
+            "name": "review",
+            "outcome": "selected",
+            "selected": str(second.resolve()),
+            "copies": [
+                {
+                    "origin": "external",
+                    "path": str(first.resolve()),
+                    "entry": "skills.paths[0]",
+                },
+                {
+                    "origin": "external",
+                    "path": str(second.resolve()),
+                    "entry": "skills.paths[1]",
+                },
+            ],
+        }
+    ]
+    assert [skill["entry"] for skill in report["loaded"]] == ["skills.paths[1]"]
+
+
+@pytest.mark.parametrize(
+    ("policy", "winner"), [("first_wins", "a"), ("last_wins", "b")]
+)
+def test_directories_duplicate_policy_picks_the_copy(tmp_path, policy, winner):
+    write_skill(tmp_path / "a" / "review", "review")
+    write_skill(tmp_path / "b" / "review", "review")
+
+    sources, backend, report = resolve(
+        tmp_path,
+        directories(
+            ("folder", tmp_path / "a"), ("folder", tmp_path / "b"), duplicates=policy
+        ),
+        workspace=tmp_path,
+    )
+
+    expected = tmp_path / winner / "review"
+    assert loaded(sources, backend) == {"review": f"{expected}/SKILL.md"}
+    assert report["duplicates"][0]["selected"] == str(expected.resolve())
+
+
+def test_directories_reject_fails_start_naming_both_entries(tmp_path):
+    write_skill(tmp_path / "a" / "review", "review")
+    second = write_skill(tmp_path / "b" / "review", "review")
+
+    with pytest.raises(lifecycle.LifecycleError) as error:
+        resolve(
+            tmp_path,
+            directories(
+                ("folder", tmp_path / "a"), ("skill", second), duplicates="reject"
+            ),
+            workspace=tmp_path,
+        )
+
+    assert error.value.code == "deepagents_skill_invalid"
+    assert error.value.metadata["reason"] == "duplicate"
+    assert error.value.metadata["field"] == "skills.directories[1]"
+
+
+def test_skill_and_folder_entries_keep_config_order(tmp_path):
+    single = write_skill(tmp_path / "one" / "a", "a")
+    write_skill(tmp_path / "pack" / "b", "b")
+    write_skill(tmp_path / "pack" / "c", "c")
+
+    sources, backend, report = resolve(
+        tmp_path,
+        directories(("skill", single), ("folder", tmp_path / "pack")),
+        workspace=tmp_path,
+    )
+
+    assert sources == [f"{single.parent}/", f"{tmp_path / 'pack'}/"]
+    assert sorted(loaded(sources, backend)) == ["a", "b", "c"]
+    assert [skill["entry"] for skill in report["loaded"]] == [
+        "skills.directories[0]",
+        "skills.directories[1]",
+        "skills.directories[1]",
+    ]
+
+
+def test_a_skill_entry_hides_its_siblings(tmp_path):
+    chosen = write_skill(tmp_path / "skills" / "chosen", "chosen")
+    write_skill(tmp_path / "skills" / "other", "other")
+
+    sources, backend, _ = resolve(
+        tmp_path, directories(("skill", chosen)), workspace=tmp_path / "ws"
+    )
+
+    assert list(loaded(sources, backend)) == ["chosen"]
+
+
+def test_empty_folder_entry_is_reported(tmp_path):
+    (tmp_path / "empty").mkdir()
+
+    sources, _, report = resolve(
+        tmp_path, directories(("folder", tmp_path / "empty")), workspace=tmp_path
+    )
+
+    assert sources is None
+    assert report == {"empty_entries": ["skills.directories[0]"]}
 
 
 @pytest.mark.parametrize("kind", ["missing", "file"])
-def test_invalid_entries_fail_start_naming_the_entry(tmp_path, kind):
+def test_invalid_paths_entries_fail_start_naming_the_entry(tmp_path, kind):
+    write_skill(tmp_path / "ok" / "fine", "fine")
     entry = tmp_path / "skills"
     if kind == "file":
         entry.write_text("not a folder")
 
-    with pytest.raises(adapter.AdapterConfigError, match=r"skills\.paths\[0\]"):
-        resolve(tmp_path, entry, workspace=tmp_path / "ws")
+    with pytest.raises(lifecycle.LifecycleError) as error:
+        resolve(tmp_path, paths(tmp_path / "ok", entry), workspace=tmp_path / "ws")
+
+    assert error.value.code == (
+        "deepagents_skill_not_found"
+        if kind == "missing"
+        else "deepagents_skill_invalid"
+    )
+    assert error.value.metadata["field"] == "skills.paths[1]"
+    assert "skills.paths[1]" in str(error.value)
 
 
 def test_workspace_skills_folder_passes_through(tmp_path):
-    # Skills already staged under the workspace and named by their workspace path.
+    # Skills already staged under the workspace, named by their workspace path.
     workspace = tmp_path / "ws"
     write_skill(workspace / ".agents" / "skills" / "report-writing", "report-writing")
 
-    sources, backend = resolve(tmp_path, "/.agents/skills", workspace=workspace)
+    sources, backend, report = resolve(
+        tmp_path, paths("/.agents/skills"), workspace=workspace
+    )
 
     assert sources == ["/.agents/skills"]
-    assert loaded(sources, backend) == ["report-writing"]
+    assert list(loaded(sources, backend)) == ["report-writing"]
     assert isinstance(backend, FilesystemBackend)
+    assert report is None
 
 
-def test_local_shell_copies_skills_into_the_workspace(tmp_path):
+def test_local_shell_runs_skill_scripts_at_the_listed_path(tmp_path):
     skill = write_skill(tmp_path / "skills" / "report-writing", "report-writing")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "token.sh").write_text("echo SCRIPT-OK\n")
     workspace = tmp_path / "ws"
     workspace.mkdir()
-    stale = workspace / ".fabric" / "skills" / "removed"
-    stale.mkdir(parents=True)
 
-    sources, backend = resolve(tmp_path, skill, workspace=workspace, local_shell=True)
+    sources, backend, _ = resolve(
+        tmp_path, paths(skill), workspace=workspace, local_shell=True
+    )
 
-    assert sources == ["/.fabric/skills/"]
-    assert loaded(sources, backend) == ["report-writing"]
-    copied = workspace / ".fabric" / "skills" / "report-writing"
-    assert (copied / "references" / "example.md").is_file()
-    assert not stale.exists()
+    skill_md = loaded(sources, backend)["report-writing"]
+    script = Path(skill_md).parent / "scripts" / "token.sh"
+    result = backend.execute(f"sh {script}")
+    assert result.exit_code == 0
+    assert "SCRIPT-OK" in result.output
+    assert list(workspace.iterdir()) == []
 
 
-def test_no_skill_paths_leaves_the_backend_alone(tmp_path):
+def test_no_skills_leaves_the_backend_alone(tmp_path):
     runtime_context = context(tmp_path)
     backend = adapter.resolve_backend(runtime_context, str(tmp_path))
 
     assert adapter.resolve_skills(
         SimpleNamespace(skills=None), runtime_context, str(tmp_path), backend
     ) == (None, backend)
+
+
+def test_descriptor_advertises_implemented_skill_support():
+    """The descriptor's skills block matches what the adapter implements."""
+
+    root = Path(__file__).resolve().parents[2]
+    descriptor = json.loads(
+        (root / "adapters/python/deepagents/deepagents.fabric-adapter.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert "skills" in descriptor["config"]["accepts"]
+    skills = descriptor["skills"]
+    assert skills["directory_loading"] == {
+        "supported_entries": ["skill", "folder"],
+        "skill_file": "SKILL.md",
+        "discovery": {
+            "traversal": "immediate_children",
+            "nested_skills": "stop_at_skill",
+            "depth_limit": {"kind": "fixed", "levels": 1},
+        },
+        "parsing": {
+            "required_frontmatter_fields": ["name", "description"],
+            "name_fallback": "none",
+            "frontmatter_errors": "reject",
+        },
+    }
+    assert "bundled" not in skills
+    assert skills["duplicates"]["supported_policies"] == [
+        "reject",
+        "first_wins",
+        "last_wins",
+    ]
+    assert skills["duplicates"]["name_source"] == "frontmatter"
+
+
+def test_planning_accepts_directories_and_rejects_bundled(tmp_path):
+    from nemo_fabric import Fabric
+    from nemo_fabric import FabricConfig
+
+    def config(skills: dict) -> FabricConfig:
+        return FabricConfig.model_validate(
+            {
+                "metadata": {"name": "skills"},
+                "harness": {
+                    "adapter_id": "nvidia.fabric.langchain.deepagents",
+                    "resolution": "preinstalled",
+                },
+                "models": {
+                    "default": {
+                        "provider": "nvidia",
+                        "model": "m",
+                        "api_key_env": "NVIDIA_API_KEY",
+                    }
+                },
+                "skills": skills,
+                "runtime": {"input_schema": "chat", "output_schema": "message"},
+                "environment": {"provider": "local", "workspace": "."},
+            }
+        )
+
+    Fabric().plan(
+        config(
+            {
+                "directories": [{"folder": "skills"}, {"skill": "one/review"}],
+                "duplicates": "last_wins",
+            }
+        ),
+        base_dir=tmp_path,
+    )
+    with pytest.raises(Exception, match="skills.bundled"):
+        Fabric().plan(config({"bundled": {}}), base_dir=tmp_path)

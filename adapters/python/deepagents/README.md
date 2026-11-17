@@ -102,21 +102,28 @@ NeMo Fabric maps the following into the harness:
   (`FilesystemBackend(root_dir=..., virtual_mode=True)`). `virtual_mode`
   confines filesystem tools to the workspace: absolute paths and `..` cannot
   escape `root_dir`.
-- Routed `skills` (`native.skill_paths`) are resolved in the task environment.
-  An entry that contains `SKILL.md` is one skill; any other folder is a folder
-  of skills, and each immediate child that contains `SKILL.md` is loaded. The
-  adapter mounts the skills read-only at `/.fabric/skills/<name>/` through a
-  routed backend and passes `/.fabric/skills/` as the Deep Agents `skills`
-  source, so skills outside the workspace, or with no workspace at all, still
-  load. Nothing is copied, and writes or edits to the mounted files are refused.
-  With the `local_shell` backend, the adapter instead copies the skills to
-  `<workspace>/.fabric/skills/` on every start, so `execute` can run skill
-  scripts. A missing entry, an entry that is not a folder, or two skills with
-  the same name fail start, naming the `skills.paths` entry. An absolute entry
-  that exists only under the workspace (for example `/.agents/skills` for
-  skills already staged there) is passed to Deep Agents unchanged. Declarative
-  subagent `skills` in `harness.settings.deepagents.subagents` are passed to
-  Deep Agents unchanged and are read as workspace paths.
+- `skills.paths` and `skills.directories` are checked in the task environment
+  with the adapter contract's shared skills helper, using Deep Agents' own
+  front-matter parser (`name` and `description` are required). Each entry is
+  one Deep Agents `skills` source, in list order, and only its immediate child
+  folders are skills. The adapter routes each entry's skills into the Deep
+  Agents backend at the path of the folder that holds them, so skills outside
+  the workspace, or with no workspace at all, load, and `local_shell` commands
+  reach the same files at the same paths. Nothing is copied, and the mount
+  decides whether the agent can change a skill. A `paths` entry that holds
+  `SKILL.md` is one skill; any other folder is a folder of skills. An absolute
+  `paths` entry that exists only under the workspace (for example
+  `/.agents/skills` for skills already staged there) is passed to Deep Agents
+  unchanged. `skills.duplicates` (`reject`, `first_wins`, `last_wins`)
+  resolves skills that share a name; when it is left out, the later entry
+  wins, as in Deep Agents. A missing or invalid entry, or a duplicate under
+  `reject`, fails start with `deepagents_skill_not_found` or
+  `deepagents_skill_invalid`, naming the field. Every result reports
+  `output.skills` (loaded skills, skipped candidates, empty entries, and
+  duplicates). Deep Agents ships no bundled skills, so `skills.bundled` is
+  rejected at planning. Declarative subagent `skills` in
+  `harness.settings.deepagents.subagents` are passed to Deep Agents unchanged
+  and are read as workspace paths.
 - Configured MCP servers are loaded as Deep Agents tools via
   `langchain-mcp-adapters`. A misconfigured server (non-mapping, empty target,
   unsupported transport) is a normalized configuration failure, not a silent drop.
