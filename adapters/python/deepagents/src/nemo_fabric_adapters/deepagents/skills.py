@@ -21,8 +21,8 @@ reach the same files at the same paths.
 
 ``skills.paths`` keeps its meaning: an entry that holds ``SKILL.md`` is one
 skill, and any other folder is a folder of skills. An absolute entry that does
-not exist in the task environment, but does under the workspace, names skills
-already staged in the workspace and is passed to Deep Agents unchanged.
+not exist in the task environment, but does under the workspace, names that
+workspace folder, for skills already staged there, and loads like any other.
 """
 
 from __future__ import annotations
@@ -102,14 +102,13 @@ def plan_skills(skills: AgentSkillConfig | None, workspace: Path | None) -> Skil
     mounts = SkillMounts()
     if skills is None:
         return mounts
-    passthrough: dict[int, str] = {}
     if skills.directories is not None:
         directories: list[SkillDirectory] = list(skills.directories)
         fields = {
             index: f"skills.directories[{index}]" for index in range(len(directories))
         }
     elif skills.paths:
-        directories, fields, passthrough = _paths_as_directories(
+        directories, fields = _paths_as_directories(
             [os.fspath(path) for path in skills.paths], workspace
         )
     else:
@@ -125,47 +124,34 @@ def plan_skills(skills: AgentSkillConfig | None, workspace: Path | None) -> Skil
         raise skill_error(_renamed_error(error, fields)) from None
     if skills.duplicates is None:
         load = _native_duplicates(load)
-    _plan_sources(mounts, load, directories, fields, passthrough)
+    _plan_sources(mounts, load, directories, fields)
     mounts.load = _renamed_load(load, fields)
     return mounts
 
 
 def _paths_as_directories(
     paths: Sequence[str], workspace: Path | None
-) -> tuple[list[SkillDirectory], dict[int, str], dict[int, str]]:
+) -> tuple[list[SkillDirectory], dict[int, str]]:
     """Read each ``skills.paths`` entry as a ``skill`` or ``folder`` entry.
 
-    Returns the entries, the ``skills.paths`` field of each entry by its
-    index, and the workspace paths passed to Deep Agents unchanged, by entry
-    index. Those are still checked, as folders under the workspace, so their
-    skills are reported and compared by name with the other entries.
+    Returns the entries and the ``skills.paths`` field of each entry by its
+    index. An absolute entry that does not exist in the task environment but
+    does under the workspace names that folder of the workspace.
     """
 
     directories: list[SkillDirectory] = []
     fields: dict[int, str] = {}
-    passthrough: dict[int, str] = {}
     for index, entry in enumerate(paths):
         path = Path(entry)
         fields[len(directories)] = f"skills.paths[{index}]"
-        if (
-            workspace is not None
-            and not path.exists()
-            and _in_workspace(entry, workspace)
-        ):
-            in_workspace = workspace / entry.lstrip("/\\")
-            if (in_workspace / SKILL_FILE).is_file():
-                # Deep Agents would list this skill's own folders, so route
-                # the skill like any other.
-                directories.append(SkillDirectory(skill=str(in_workspace)))
-                continue
-            passthrough[len(directories)] = entry
-            directories.append(SkillDirectory(folder=str(in_workspace)))
-            continue
+        if not path.exists() and _in_workspace(entry, workspace):
+            assert workspace is not None
+            path = workspace / entry.lstrip("/\\")
         if (path / SKILL_FILE).is_file():
-            directories.append(SkillDirectory(skill=entry))
+            directories.append(SkillDirectory(skill=str(path)))
         else:
-            directories.append(SkillDirectory(folder=entry))
-    return directories, fields, passthrough
+            directories.append(SkillDirectory(folder=str(path)))
+    return directories, fields
 
 
 def _in_workspace(entry: str, workspace: Path | None) -> bool:
@@ -183,17 +169,12 @@ def _plan_sources(
     load: DirectoryLoad,
     directories: Sequence[SkillDirectory],
     fields: dict[int, str],
-    passthrough: dict[int, str],
 ) -> None:
     by_entry: dict[str, list[FoundSkill]] = {}
     for skill in load.selected:
         by_entry.setdefault(skill.field, []).append(skill)
     planned: list[tuple[int, str]] = []
     for index, directory in enumerate(directories):
-        if index in passthrough:
-            # Deep Agents reads the workspace path itself.
-            planned.append((_position(fields[index]), passthrough[index]))
-            continue
         found = by_entry.get(f"skills.directories[{index}]", [])
         if not found:
             continue
@@ -203,14 +184,11 @@ def _plan_sources(
         parent = configured.parent if directory.kind == "skill" else configured
         names = _reached_names(directory.kind, configured, found)
         source = _mount_point(parent, index)
-        if source in mounts.routes and set(names) & set(mounts.routes[source]):
-            source = _FALLBACK_MOUNT.format(index=index)
         if any(
-            source != other and (source.startswith(other) or other.startswith(source))
-            for other in mounts.routes
+            mounts.routes.get(source, {}).get(name, path) != path
+            for name, path in names.items()
         ):
-            # A route inside another source's route would hide that source's
-            # skills, so this entry gets a path of its own.
+            # Another entry lists a different skill under one of these names here.
             source = _FALLBACK_MOUNT.format(index=index)
         mounts.routes.setdefault(source, {}).update(names)
         if all(existing != source for _, existing in planned):
@@ -237,12 +215,13 @@ def _reached_names(
     for child in children:
         try:
             by_target.setdefault(child.resolve(), child.name)
-        except OSError:
+        except (OSError, RuntimeError):
+            # A symbolic link loop raises RuntimeError before Python 3.13.
             continue
     names: dict[str, Path] = {}
     for skill in found:
         target = Path(skill.path)
-        name = by_target.get(target.resolve(), target.name)
+        name = by_target.get(target, target.name)
         if name in names:
             name = (
                 skill.name if skill.name not in names else f"{skill.name}-{len(names)}"
@@ -397,21 +376,35 @@ def skill_error(error: SkillLoadError) -> lifecycle.LifecycleError:
     return lifecycle.LifecycleError(code, str(error), metadata=metadata)
 
 
-def _empty_backend() -> Any:
+def _listing_backend(names: Sequence[str]) -> Any:
+    """A source folder: it lists its routed skills and holds nothing else."""
+
     from deepagents.backends.protocol import BackendProtocol
+    from deepagents.backends.protocol import FileDownloadResponse
     from deepagents.backends.protocol import GlobResult
     from deepagents.backends.protocol import GrepResult
     from deepagents.backends.protocol import LsResult
     from deepagents.backends.protocol import ReadResult
 
-    class EmptyBackend(BackendProtocol):
-        """A source folder itself; its children are the routed skills."""
+    entries = [
+        {"path": f"/{name}/", "is_dir": True, "size": 0, "modified_at": ""}
+        for name in sorted(names)
+    ]
 
+    class ListingBackend(BackendProtocol):
         def ls(self, path: str) -> Any:
-            return LsResult(entries=[])
+            if path.rstrip("/") == "":
+                return LsResult(entries=[dict(entry) for entry in entries])
+            return LsResult(error=f"Directory '{path}' not found")
 
         def read(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
             return ReadResult(error=f"File '{file_path}' not found")
+
+        def download_files(self, paths: list[str]) -> list[Any]:
+            return [
+                FileDownloadResponse(path=path, error="file_not_found")
+                for path in paths
+            ]
 
         def grep(self, pattern: str, *args: Any, **kwargs: Any) -> Any:
             return GrepResult(matches=[])
@@ -419,13 +412,16 @@ def _empty_backend() -> Any:
         def glob(self, pattern: str, *args: Any, **kwargs: Any) -> Any:
             return GlobResult(matches=[])
 
-    return EmptyBackend()
+    return ListingBackend()
 
 
 def mounted_backend(default: Any, mounts: SkillMounts) -> Any:
-    """Route each source to its skill folders; ``default`` serves the rest.
+    """Route each source and each of its skills; ``default`` serves the rest.
 
-    Returns ``default`` unchanged when nothing needs routing.
+    Every skill is routed at its own full path and every source at its own
+    path, so the longest matching route always reaches the right folder, even
+    when one entry's path lies inside another's skill. Returns ``default``
+    unchanged when nothing needs routing.
     """
 
     if not mounts.routes:
@@ -434,16 +430,16 @@ def mounted_backend(default: Any, mounts: SkillMounts) -> Any:
     from deepagents.backends import FilesystemBackend
     from deepagents.backends import StateBackend
 
-    routes = {
-        source: CompositeBackend(
-            default=_empty_backend(),
-            routes={
-                f"/{name}/": FilesystemBackend(root_dir=str(folder), virtual_mode=True)
-                for name, folder in skills.items()
-            },
-        )
-        for source, skills in mounts.routes.items()
-    }
+    routes: dict[str, Any] = {}
+    for source, skills in mounts.routes.items():
+        for name, folder in skills.items():
+            routes[f"{source}{name}/"] = FilesystemBackend(
+                root_dir=str(folder), virtual_mode=True
+            )
+    for source, skills in mounts.routes.items():
+        # A source that is itself a routed skill's folder is listed by that
+        # skill's own backend.
+        routes.setdefault(source, _listing_backend(list(skills)))
     return CompositeBackend(
         default=default if default is not None else StateBackend(),
         routes=routes,

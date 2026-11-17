@@ -10,7 +10,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from deepagents.backends import FilesystemBackend
 from deepagents.middleware.skills import _list_skills_with_errors
 from nemo_fabric_adapter_contract.models import AgentSkillConfig
 from nemo_fabric_adapter_contract.models import SkillDirectory
@@ -280,7 +279,7 @@ def test_invalid_paths_entries_fail_start_naming_the_entry(tmp_path, kind):
     assert "skills.paths[1]" in str(error.value)
 
 
-def test_workspace_skills_folder_passes_through(tmp_path):
+def test_workspace_path_names_a_workspace_folder(tmp_path):
     # Skills already staged under the workspace, named by their workspace path.
     workspace = tmp_path / "ws"
     write_skill(workspace / ".agents" / "skills" / "report-writing", "report-writing")
@@ -289,10 +288,33 @@ def test_workspace_skills_folder_passes_through(tmp_path):
         tmp_path, paths("/.agents/skills"), workspace=workspace
     )
 
-    assert sources == ["/.agents/skills"]
+    assert sources == [f"{workspace / '.agents' / 'skills'}/"]
     assert list(loaded(sources, backend)) == ["report-writing"]
-    assert isinstance(backend, FilesystemBackend)
     assert report["loaded"][0]["entry"] == "skills.paths[0]"
+
+
+def test_workspace_symlink_to_an_outside_skill_loads(tmp_path):
+    # Deep Agents' workspace backend skips links that leave the workspace, so
+    # the selected copy is routed explicitly.
+    workspace = tmp_path / "ws"
+    vendor = write_skill(tmp_path / "vendor" / "review", "review")
+    (workspace / ".agents" / "skills").mkdir(parents=True)
+    (workspace / ".agents" / "skills" / "review").symlink_to(vendor)
+    external = write_skill(tmp_path / "opt" / "review", "review")
+
+    sources, backend, report = resolve(
+        tmp_path, paths(external, "/.agents/skills"), workspace=workspace
+    )
+
+    found = loaded(sources, backend)
+    assert list(found) == ["review"]
+    assert (
+        backend.read(
+            str(Path(found["review"]).parent / "references" / "example.md")
+        ).error
+        is None
+    )
+    assert report["duplicates"][0]["selected"] == str(vendor.resolve())
 
 
 def test_workspace_skills_folder_is_compared_by_name(tmp_path):
@@ -307,8 +329,8 @@ def test_workspace_skills_folder_is_compared_by_name(tmp_path):
     )
 
     # The earlier, shadowed copy is not routed at all.
-    assert sources == ["/.agents/skills"]
-    assert loaded(sources, backend) == {"review": "/.agents/skills/review/SKILL.md"}
+    assert sources == [f"{staged.parent}/"]
+    assert loaded(sources, backend) == {"review": f"{staged}/SKILL.md"}
     assert report["duplicates"][0]["outcome"] == "selected"
     assert report["duplicates"][0]["selected"] == str(staged.resolve())
     assert [copy["entry"] for copy in report["duplicates"][0]["copies"]] == [
@@ -465,3 +487,38 @@ def test_a_skill_inside_another_skill_entry_stays_reachable(tmp_path):
     for skill_md in found.values():
         companion = str(Path(skill_md).parent / "references" / "example.md")
         assert backend.read(companion).error is None, companion
+    # Each skill is listed at its own path in the task environment.
+    assert found == {"outer": f"{outer}/SKILL.md", "inner": f"{inner}/SKILL.md"}
+
+
+def test_local_shell_runs_scripts_of_nested_skills(tmp_path):
+    outer = write_skill(tmp_path / "skills" / "outer", "outer")
+    inner = write_skill(outer / "inner", "inner")
+    (inner / "scripts").mkdir()
+    (inner / "scripts" / "check.sh").write_text("echo INNER-OK\n")
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+
+    sources, backend, _ = resolve(
+        tmp_path,
+        directories(("skill", outer), ("skill", inner)),
+        workspace=workspace,
+        local_shell=True,
+    )
+
+    script = Path(loaded(sources, backend)["inner"]).parent / "scripts" / "check.sh"
+    result = backend.execute(f"sh {script}")
+    assert result.exit_code == 0
+    assert "INNER-OK" in result.output
+
+
+def test_a_symlink_loop_beside_a_skill_is_ignored(tmp_path):
+    folder = tmp_path / "skills"
+    write_skill(folder / "review", "review")
+    (folder / "loop").symlink_to(folder / "loop")
+
+    sources, backend, _ = resolve(
+        tmp_path, directories(("folder", folder)), workspace=tmp_path / "ws"
+    )
+
+    assert list(loaded(sources, backend)) == ["review"]

@@ -113,8 +113,8 @@ NeMo Fabric maps the following into the harness:
   decides whether the agent can change a skill. A `paths` entry that holds
   `SKILL.md` is one skill; any other folder is a folder of skills. An absolute
   `paths` entry that exists only under the workspace (for example
-  `/.agents/skills` for skills already staged there) is passed to Deep Agents
-  unchanged. `skills.duplicates` (`reject`, `first_wins`, `last_wins`)
+  `/.agents/skills` for skills already staged there) names that workspace
+  folder and is loaded like any other entry. `skills.duplicates` (`reject`, `first_wins`, `last_wins`)
   resolves skills that share a name; when it is left out, the later entry
   wins, as in Deep Agents. A missing or invalid entry, or a duplicate under
   `reject`, fails start with `deepagents_skill_not_found` or
