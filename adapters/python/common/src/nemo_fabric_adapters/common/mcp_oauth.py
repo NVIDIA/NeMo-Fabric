@@ -17,10 +17,12 @@ expire, either way.
 
 Files in the token directory, in one folder per server:
 
-- ``<server>/tokens.json``: tokens, with an absolute ``expires_at``.
-- ``<server>/client.json``: the registered or configured OAuth client.
-- ``<server>/metadata.json``: the authorization server metadata, so refresh
-  uses its token endpoint.
+- ``<server>-<digest>/tokens.json``: tokens, with an absolute ``expires_at``.
+- ``<server>-<digest>/client.json``: the registered or configured OAuth client.
+- ``<server>-<digest>/metadata.json``: the authorization server metadata, so
+  refresh uses its token endpoint.
+
+``<digest>`` is a hash of the full server name, so no two servers share a folder.
 
 Every HTTP request the auth's MCP client sends, including discovered OAuth
 endpoints and redirects, must use ``https`` (``http`` only on a loopback host);
@@ -88,13 +90,15 @@ def is_sign_in_error(error: BaseException) -> bool:
 
 
 def storage_name(server_name: str) -> str:
-    """Return a file name for ``server_name`` that cannot leave the directory."""
+    """Return a folder name for ``server_name`` that cannot leave the directory.
 
-    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", server_name)
-    if safe != server_name or safe.startswith("."):
-        digest = hashlib.sha256(server_name.encode()).hexdigest()[:12]
-        safe = f"{safe.lstrip('.')}-{digest}"
-    return safe
+    The readable part keeps only safe characters; the digest of the full name
+    keeps two different server names from sharing a folder.
+    """
+
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", server_name).lstrip(".")
+    digest = hashlib.sha256(server_name.encode()).hexdigest()[:16]
+    return f"{safe}-{digest}" if safe else digest
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:

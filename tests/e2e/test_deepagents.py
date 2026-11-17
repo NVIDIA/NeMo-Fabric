@@ -489,6 +489,7 @@ async def test_mcp_oauth2_browser_sign_in(api_server, tmp_path):
         McpAuthenticationConfig,
         RuntimeConfig,
     )
+    from nemo_fabric_adapters.common import mcp_oauth
 
     # The browser: follow the authorization URL, whose server approves at once
     # and redirects to the adapter's loopback callback.
@@ -558,11 +559,14 @@ async def test_mcp_oauth2_browser_sign_in(api_server, tmp_path):
     token_files = sorted(
         (tmp_path / "artifacts" / ".fabric" / "state").rglob("mcp-tokens/*/*")
     )
-    assert [path.relative_to(path.parents[1]).as_posix() for path in token_files] == [
-        "protected/client.json",
-        "protected/metadata.json",
-        "protected/tokens.json",
+    assert [path.name for path in token_files] == [
+        "client.json",
+        "metadata.json",
+        "tokens.json",
     ]
+    assert {path.parent.name for path in token_files} == {
+        mcp_oauth.storage_name("protected")
+    }
     if os.name == "posix":
         assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in token_files)
 

@@ -34,12 +34,16 @@ def _assert_owner_only(path: Path, mode: int = 0o600) -> None:
         assert stat.S_IMODE(path.stat().st_mode) == mode
 
 
-@pytest.mark.parametrize(
-    ("name", "expected"),
-    [("jira", "jira"), ("my-server_1.v2", "my-server_1.v2")],
-)
-def test_storage_name_keeps_safe_names(name, expected):
-    assert mcp_oauth.storage_name(name) == expected
+@pytest.mark.parametrize("name", ["jira", "my-server_1.v2"])
+def test_storage_name_keeps_safe_names_readable(name):
+    assert mcp_oauth.storage_name(name).startswith(f"{name}-")
+
+
+def test_storage_name_never_maps_two_servers_to_one_folder():
+    cleaned = mcp_oauth.storage_name("a/b")
+    # A server literally named after another server's folder still differs.
+    assert mcp_oauth.storage_name(cleaned) != cleaned
+    assert len({mcp_oauth.storage_name(name) for name in ("a/b", "a_b", cleaned)}) == 3
 
 
 @pytest.mark.parametrize("name", ["../escape", "a/b", ".hidden", "with space"])
@@ -60,9 +64,9 @@ async def test_tokens_are_stored_owner_only_with_absolute_expiry(tmp_path):
         OAuthToken(access_token="at-1", refresh_token="rt-1", expires_in=600)
     )
 
-    path = directory / "jira" / "tokens.json"
+    path = directory / mcp_oauth.storage_name("jira") / "tokens.json"
     _assert_owner_only(directory, 0o700)
-    _assert_owner_only(directory / "jira", 0o700)
+    _assert_owner_only(directory / mcp_oauth.storage_name("jira"), 0o700)
     _assert_owner_only(path)
     assert json.loads(path.read_text())["expires_at"] == 1600.0
     assert storage.has_tokens()
@@ -79,8 +83,8 @@ async def test_tokens_are_stored_owner_only_with_absolute_expiry(tmp_path):
 
 @pytest.mark.parametrize("content", ["not json", "[]", '{"token_type": "Bearer"}'])
 async def test_unreadable_tokens_are_ignored(tmp_path, content):
-    (tmp_path / "jira").mkdir()
-    (tmp_path / "jira" / "tokens.json").write_text(content)
+    (tmp_path / mcp_oauth.storage_name("jira")).mkdir()
+    (tmp_path / mcp_oauth.storage_name("jira") / "tokens.json").write_text(content)
     storage = mcp_oauth.FileTokenStorage(tmp_path, "jira")
 
     assert await storage.get_tokens() is None
@@ -350,8 +354,8 @@ async def test_browser_sign_in_registers_and_stores_tokens(tmp_path, servers, br
     assert registration["client_name"] == "NeMo Fabric"
     assert registration["token_endpoint_auth_method"] == "none"
     for name in ("tokens.json", "client.json", "metadata.json"):
-        _assert_owner_only(tmp_path / "jira" / name)
-    assert json.loads((tmp_path / "jira" / "metadata.json").read_text())["token_endpoint"] == (
+        _assert_owner_only(tmp_path / mcp_oauth.storage_name("jira") / name)
+    assert json.loads((tmp_path / mcp_oauth.storage_name("jira") / "metadata.json").read_text())["token_endpoint"] == (
         f"{AUTH_URL}/oauth/token"
     )
 
@@ -377,7 +381,7 @@ async def test_expired_tokens_are_refreshed_at_the_stored_token_endpoint(
     first = mcp_oauth.browser_sign_in_auth("jira", MCP_URL, tmp_path, open_browser=browser.open)
     first.sign_in.interactive = True
     await _call_mcp(first, servers)
-    tokens_path = tmp_path / "jira" / "tokens.json"
+    tokens_path = tmp_path / mcp_oauth.storage_name("jira") / "tokens.json"
     stored = json.loads(tokens_path.read_text())
     tokens_path.write_text(json.dumps({**stored, "expires_at": time.time() - 1}))
 
@@ -423,4 +427,4 @@ async def test_configured_client_signs_in_with_its_secret(tmp_path, servers, bro
     assert authorization.startswith("Basic ")
     assert "client_secret" not in form
     assert SECRET not in repr(auth)
-    _assert_owner_only(tmp_path / "jira" / "client.json")
+    _assert_owner_only(tmp_path / mcp_oauth.storage_name("jira") / "client.json")

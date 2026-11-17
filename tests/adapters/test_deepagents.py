@@ -2643,7 +2643,7 @@ def test_oauth2_connection_attaches_browser_sign_in(tmp_path, transport):
     assert sign_in.interactive is False
     assert sign_in.redirect_uri == "http://127.0.0.1:8765/callback"
     assert sign_in.timeout == 120
-    client = json.loads((tmp_path / "jira" / "client.json").read_text())
+    client = json.loads((tmp_path / mcp_oauth.storage_name("jira") / "client.json").read_text())
     assert client["client_id"] == "fabric-client"
     assert client["token_endpoint_auth_method"] == "client_secret_post"
     assert OAUTH_SECRET not in repr(connection)
