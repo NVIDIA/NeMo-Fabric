@@ -121,7 +121,7 @@ pip install nemo-fabric-adapters-openhands
 
 The OpenClaw adapter package does not install OpenClaw; install its npm package
 separately. The OpenHands adapter likewise requires separately installed
-`openhands-sdk==1.50.0`, `openhands-tools==1.50.0`, `litellm==1.100.1`, and
+`openhands-sdk==1.50.0`, `openhands-tools==1.50.0`, `litellm==1.100.4`, and
 `mcp==1.28.1`.
 
 An adapter distribution contains only adapter-owned runtime dependencies and

@@ -212,7 +212,7 @@ the NeMo Fabric extra:
 
 ```bash
 pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0" \
-  "litellm==1.100.1" "mcp==1.28.1"
+  "litellm==1.100.4" "mcp==1.28.1"
 pip install "nemo-fabric[openhands]"
 ```
 

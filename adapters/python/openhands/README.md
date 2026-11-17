@@ -16,7 +16,7 @@ Install the tested OpenHands SDK and tools, then install the adapter:
 
 ```bash
 pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0" \
-  "litellm==1.100.1" "mcp==1.28.1"
+  "litellm==1.100.4" "mcp==1.28.1"
 pip install nemo-fabric-adapters-openhands
 ```
 
@@ -35,7 +35,7 @@ processes:
 ```bash
 uv sync --group adapter-tests
 uv pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0" \
-  "litellm==1.100.1" "mcp==1.28.1"
+  "litellm==1.100.4" "mcp==1.28.1"
 export ADAPTER_PYTHON="$PWD/.venv/bin/python"
 ```
 

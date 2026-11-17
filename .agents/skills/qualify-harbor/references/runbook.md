@@ -36,7 +36,7 @@ Use `--mode registry --version "$PACKAGE_VERSION" --catalog-json "$WORK/catalog/
 The denominator is every descriptor in the checked-in metadata catalog, including both NOOA variants and remote-agent. Workflow-only adapters remain unsupported until an explicit registered target is selected with the SDK bridge; their catalog target IDs remain listed in the report. The separate BenchAgent entry exercises standalone NOOA. Future catalog entries appear automatically and need a reviewed installation recipe/provider profile. They are not silently removed when no harness or credential is available. The builder derives Python extras and TypeScript optional peers from package manifests; a few harnesses deliberately installed outside adapter dependencies have explicit tested recipes in `prepare.py`. Review those recipes when the supported harness pins change.
 
 The OpenHands recipe uses the adapter's documented compatible stack:
-`openhands-sdk==1.50.0`, `openhands-tools==1.50.0`, `litellm==1.100.1`, and
+`openhands-sdk==1.50.0`, `openhands-tools==1.50.0`, `litellm==1.100.4`, and
 `mcp==1.28.1`. Newer incompatible LiteLLM/MCP combinations can surface as an
 SDK service-unavailable error before any provider request. Inspect retained
 stderr and installed versions before attributing that error to inference.
