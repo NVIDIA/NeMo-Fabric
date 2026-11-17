@@ -32,6 +32,32 @@ An adapter descriptor opts into the southbound configuration with
 `config.input=agent_config`. Python adapters using the optional common
 lifecycle host pass `AgentConfig.from_mapping` as the `config_loader`.
 
+`AgentSkillConfig` carries the legacy `paths` list and, for adapters whose
+descriptor advertises them, the structured `directories` (`SkillDirectory`
+entries naming one `skill` or a `folder` of skills), `bundled`
+(`BundledSkills`), and `duplicates` fields. The dependency-free
+`nemo_fabric_adapter_contract.skills` module checks and discovers
+`directories` entries in the task environment: `load_directories()` applies
+an adapter's `DiscoveryRules` (one set for every entry, or a callable that
+returns the rules for each entry) and duplicate policy, raises `SkillLoadError`
+with the failing field and path, and returns a `DirectoryLoad` that
+`report_block()` turns into the `output.skills` run report and `warn()`
+summarizes on standard error. `DiscoveryRules` describe only the folder
+structure the harness searches. After discovery, `load_directories()` passes
+every candidate skill folder to one call of its `reader`, a
+`CandidateReader` that returns a `CandidateInfo` per folder: the name the
+harness reads (`None` for the folder name fallback), and whether the harness
+accepts the skill (`valid`, with a skip `reason` when it refuses it). Adapters
+pass a reader backed by the harness's own parser so that names and validity
+match the harness; the package stays dependency-free. The default
+`front_matter_reader()` reads only a single-line `name:` value and, with
+`required_fields`, checks for top-level keys. It marks YAML it doesn't read
+as `name_uncertain`. Refused candidates are skipped before any duplicate
+check. Under an explicit duplicate policy, an uncertain name fails with
+`unsupported_frontmatter_name`, and a skill whose validity is unknown
+(`valid=None`) fails with `unsupported_frontmatter` when the outcome depends
+on it.
+
 `AdapterCheckRequest` and `AdapterCheckResult` define health-probe requests and results. Results preserve required null fields and use fixed reason codes and evidence-source identifiers. The common Python lifecycle host publishes an authenticated health channel for adapters with an asynchronous `check(level)` method returning an `AdapterCheckResult` mapping. The host applies the remaining deadline and invalidates observations during shutdown. A service host uses its service ID in the probe's `runtime_id` field.
 
 ## Install

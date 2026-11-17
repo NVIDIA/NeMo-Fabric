@@ -110,6 +110,47 @@ reported counters under
 observations add `zero_unverified`. These observations do not establish
 complete accounting for retries, compaction, child agents, or background work.
 
+### Skills
+
+The adapter supports `skills.paths`, `skills.directories`, `skills.bundled`,
+and `skills.duplicates`. `skills.paths` is unchanged: each path must be a
+folder that holds `SKILL.md`, and is passed, resolved, to
+`skills.load.extraDirs`. The mount, not NeMo Fabric, makes a skill read-only.
+Each comment in this example names one setup; the whole list is the mixed
+setup:
+
+```yaml
+skills:
+  directories:
+    # A folder, read-only: mount it read-only; every skill in it loads.
+    - folder: /mnt/team-skills
+    # Chosen skills, read-only: mount each skill read-only, one skill entry each.
+    - skill: /mnt/release-review
+    - skill: /mnt/incident-triage
+    # A folder, read-write: skills written into it load at the next start.
+    - folder: /mnt/agent-skills
+  # Mixed: one list holds any of these; last_wins lets a later entry win.
+  duplicates: last_wins
+  bundled:
+    include: [github, weather]
+```
+
+Skills the agent installs through OpenClaw itself don't go to a `directories`
+folder, and are lost at stop until state is kept across restarts
+([#578](https://github.com/NVIDIA/NeMo-Fabric/issues/578)); the
+[OpenClaw guide](../../../docs/integrations/harness/openclaw/openclaw.mdx#skills)
+says where they go.
+
+At start, the adapter reads each skill's front matter with OpenClaw's own
+parser, through the `node` that runs OpenClaw, and runs
+`openclaw skills list` to confirm what loads.
+[Configure Skills](../../../docs/integrations/harness/skills.mdx) describes
+the fields, the common setups, start checks, the run report, and how OpenClaw
+differs from other harnesses. The
+[OpenClaw guide](../../../docs/integrations/harness/openclaw/openclaw.mdx#skills)
+covers OpenClaw's skip reasons, what happens when the parser can't run,
+precedence, and bundled-skill handling.
+
 ### Harness Settings
 
 Only OpenClaw's default `openclaw` agent runtime is supported.
