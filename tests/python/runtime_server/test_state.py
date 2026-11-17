@@ -499,6 +499,38 @@ async def test_stopped_runtime_records_are_bounded(
     ] == "succeeded"
 
 
+@pytest.mark.parametrize("owner", ["adapter", "fabric_runtime"])
+async def test_native_invocation_deadline_keeps_timeout_reason(
+    host, host_request, mock_runtime, owner
+):
+    from nemo_fabric import FabricRuntimeError
+
+    await host.handle(host_request("start"))
+    details = {
+        "owner": owner,
+        "timeout_seconds": 0.25,
+        "deadline_millis": 12345,
+        "cause_code": "kiro_prompt_timeout",
+        "native_code": "acp_prompt_timeout",
+    }
+    mock_runtime.invoke.side_effect = FabricRuntimeError(
+        "PRIVATE",
+        stage="invoke",
+        code="timeout",
+        details={**details, "private": "PRIVATE"},
+    )
+    response = await host.handle(host_request("invoke", input="wait"))
+    assert response["error"]["code"] == "timeout"
+    assert response["error"]["stage"] == "invoke"
+    assert response["error"]["effects"] == "unknown"
+    assert response["error"]["details"] == details
+    from nemo_fabric.runtime_server.protocol import validate_response
+
+    validate_response(response, "invoke")
+    assert response["error"]["details"] == details
+    assert "PRIVATE" not in str(response)
+
+
 async def test_busy_stop_reaches_sdk_before_invocation_finishes(
     host, host_request, mock_runtime
 ):

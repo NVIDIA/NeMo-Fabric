@@ -13,6 +13,22 @@ import { AcpRunnerError, startAcpSession } from "../dist/index.js";
 
 const fixture = fileURLToPath(new URL("./fixtures/acp-agent.mjs", import.meta.url));
 
+test("an explicit null prompt deadline disables the configured session cap", async () => {
+  const session = await startAcpSession({
+    command: process.execPath,
+    args: [fixture],
+    cwd: process.cwd(),
+    env: { ...process.env, TEST_PROMPT_DELAY_MS: "50" },
+    promptTimeoutMs: 1,
+  });
+  try {
+    assert.ok((await session.prompt("uncapped", null)).text.startsWith("uncapped:"));
+    await assert.rejects(session.prompt("hang"), { code: "acp_prompt_timeout" });
+  } finally {
+    await session.stop();
+  }
+});
+
 test("runs two turns through one ACP session with negotiated settings", async () => {
   const session = await startAcpSession({
     command: process.execPath,

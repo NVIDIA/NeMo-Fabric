@@ -1,0 +1,22 @@
+[
+  {
+    "max_response_bytes": 1,
+    "transport_bytes": 1048582
+  },
+  {
+    "max_response_bytes": 2048,
+    "transport_bytes": 1060864
+  },
+  {
+    "max_response_bytes": 4194304,
+    "transport_bytes": 26214400
+  },
+  {
+    "max_response_bytes": 8000000,
+    "transport_bytes": 49048576
+  },
+  {
+    "max_response_bytes": 4294967295,
+    "transport_bytes": 25770852346
+  }
+]

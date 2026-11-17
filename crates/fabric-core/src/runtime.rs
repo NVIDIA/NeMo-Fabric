@@ -39,6 +39,7 @@ use crate::system_stats::ResourceObservation;
 use crate::system_stats::{CgroupStats, InvocationSystemStats, StatsSession, SystemReader};
 
 mod openshell;
+mod response_limits;
 use openshell::OpenShellRuntimeAdapter;
 
 pub(crate) fn remote_check_agent(
@@ -70,7 +71,7 @@ pub fn runtime_status_environment(
         agent: agent.to_string(),
         runtime_id: runtime_id.to_string(),
     };
-    match crate::environment::command_runtime(environment, &command, 10)? {
+    match crate::environment::command_runtime(environment, &command, Some(10))? {
         crate::task_command::TaskCommandResponse::Returned { value } => Ok(value),
         crate::task_command::TaskCommandResponse::Rejected { error } => {
             Err(FabricError::EnvironmentProviderOperation {
@@ -91,9 +92,6 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
 const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";
 const LOCAL_HOST_START_TIMEOUT: Duration = Duration::from_secs(90);
-// Protocol liveness backstop. Adapters remain responsible for normal request
-// timeouts and should return a normalized response before this bound.
-const LOCAL_HOST_INVOKE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 // Adapters receive a deadline this much earlier than the host timeout so they
 // can interrupt native work and return a normalized result before it fires.
 const LOCAL_HOST_ADAPTER_RESERVE: Duration = Duration::from_secs(10);
@@ -233,6 +231,14 @@ pub struct RunResult {
     /// Adapter-specific metadata.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, Value>,
+}
+
+impl RunResult {
+    /// Enforce the response byte budget after the result has been finalized.
+    /// A breach replaces returned payloads with a bounded limit diagnostic.
+    pub fn enforce_response_limit(&mut self, limits: crate::config::ResponseLimits) -> Result<()> {
+        response_limits::enforce_response(self, limits)
+    }
 }
 
 /// Runtime completion status.
@@ -533,7 +539,7 @@ pub struct RuntimeContext {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<RuntimeTelemetryContext>,
     /// Unix time in milliseconds by which the adapter should return its result.
-    /// Present on every invocation, shortly before Fabric's own invocation timeout.
+    /// Present when runtime.timeout_seconds is set, shortly before Fabric's invocation timeout.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deadline_millis: Option<u64>,
     /// Absolute folder for the adapter's native state, present when
@@ -1010,7 +1016,7 @@ enum LocalServiceState {
 /// any completed result. Retry [`stop_runtime`] with that handle and this plan.
 pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
     let runtime = start_runtime(plan)?;
-    let mut result = match invoke_runtime(plan, &runtime, request) {
+    let result = match invoke_runtime(plan, &runtime, request) {
         Ok(result) => result,
         Err(error) => {
             let _ = stop_runtime(plan, &runtime);
@@ -1022,12 +1028,23 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
             return Err(error);
         }
     };
-    match stop_runtime(plan, &runtime) {
+    let stopped = match stop_runtime(plan, &runtime) {
         Err(error) if local_runtime_is_retained(&runtime.runtime_id) => {
             return Err(FabricError::RuntimeCleanupPending(Box::new(
                 crate::RuntimeCleanupPending::new(runtime, Some(result), error),
             )));
         }
+        stopped => stopped,
+    };
+    finish_run_result(plan, result, stopped)
+}
+
+fn finish_run_result(
+    plan: &RunPlan,
+    mut result: RunResult,
+    stopped: Result<Vec<FabricEvent>>,
+) -> Result<RunResult> {
+    match stopped {
         Ok(events) => result.events.extend(events),
         Err(error) if result.status == RunStatus::Succeeded => {
             result.status = RunStatus::Failed;
@@ -1043,6 +1060,11 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
             });
         }
         Err(_) => {}
+    }
+    if let Some(limits) = plan.config.runtime.response_limits.or_else(|| {
+        (planned_environment_provider(plan) == "openshell").then(crate::ResponseLimits::default)
+    }) {
+        result.enforce_response_limit(limits)?;
     }
     Ok(result)
 }
@@ -1412,9 +1434,18 @@ pub fn invoke_runtime(
     validate_runtime_handle(plan, runtime)?;
     if uses_local_host(plan) {
         if runtime.environment.provider == "openshell" {
-            return OpenShellRuntimeAdapter.invoke(plan, runtime, request);
+            let mut result = OpenShellRuntimeAdapter.invoke(plan, runtime, request)?;
+            response_limits::enforce_response(
+                &mut result,
+                plan.config.runtime.response_limits.unwrap_or_default(),
+            )?;
+            return Ok(result);
         }
-        return LocalHostAdapter.invoke(plan, runtime, request);
+        let mut result = LocalHostAdapter.invoke(plan, runtime, request)?;
+        if let Some(limits) = plan.config.runtime.response_limits {
+            response_limits::enforce_response(&mut result, limits)?;
+        }
+        return Ok(result);
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
         harness: harness(plan),
@@ -1487,7 +1518,12 @@ pub fn invoke_openai_stream(
         if runtime.environment.provider == "openshell" {
             return OpenShellRuntimeAdapter.invoke_openai_stream(plan, runtime, request, transport);
         }
-        return LocalHostAdapter.invoke_openai_stream(plan, runtime, request, transport);
+        let mut result =
+            LocalHostAdapter.invoke_openai_stream(plan, runtime, request, transport)?;
+        if let Some(limits) = plan.config.runtime.response_limits {
+            response_limits::enforce_response(&mut result, limits)?;
+        }
+        return Ok(result);
     }
     Err(FabricError::UnsupportedRuntimeAdapter {
         harness: harness(plan),
@@ -2717,19 +2753,21 @@ fn run_local_host_openai_stream_adapter(
     )
 }
 
-fn local_host_invoke_timeout(plan: &RunPlan) -> Result<Duration> {
+fn local_host_invoke_timeout(plan: &RunPlan) -> Result<Option<Duration>> {
     match plan.config.runtime.timeout_seconds {
         Some(seconds) if seconds <= 0.0 => Err(FabricError::InvalidConfig {
             field: "runtime.timeout_seconds".to_string(),
             reason: "must be a finite number greater than zero".to_string(),
         }),
         Some(seconds) => {
-            Duration::try_from_secs_f64(seconds).map_err(|_| FabricError::InvalidConfig {
-                field: "runtime.timeout_seconds".to_string(),
-                reason: "must be a finite number greater than zero".to_string(),
-            })
+            Duration::try_from_secs_f64(seconds)
+                .map(Some)
+                .map_err(|_| FabricError::InvalidConfig {
+                    field: "runtime.timeout_seconds".to_string(),
+                    reason: "must be a finite number greater than zero".to_string(),
+                })
         }
-        None => Ok(LOCAL_HOST_INVOKE_TIMEOUT),
+        None => Ok(None),
     }
 }
 
@@ -2737,7 +2775,7 @@ fn run_local_host_adapter_with_timeout(
     plan: &RunPlan,
     runtime: &RuntimeHandle,
     request: RunRequest,
-    invoke_timeout: Duration,
+    invoke_timeout: impl Into<Option<Duration>>,
 ) -> Result<RunResult> {
     run_local_host_invocation_with_timeout(
         plan,
@@ -2767,8 +2805,9 @@ fn run_local_host_invocation_with_timeout(
     runtime: &RuntimeHandle,
     mut request: RunRequest,
     invocation_kind: LocalHostInvocation,
-    invoke_timeout: Duration,
+    invoke_timeout: impl Into<Option<Duration>>,
 ) -> Result<RunResult> {
+    let invoke_timeout = invoke_timeout.into();
     let operation = invocation_kind.operation();
     if request.request_id.is_empty() {
         request.request_id = new_id("request");
@@ -2840,7 +2879,7 @@ fn run_local_host_invocation_with_timeout(
             &adapter_invocation.runtime_context.environment.env,
         )?;
         adapter_invocation.runtime_context.deadline_millis =
-            adapter_deadline_millis(invoke_timeout);
+            invoke_timeout.and_then(adapter_deadline_millis);
         let (lifecycle_request, adapter_payload) = match invocation_kind {
             LocalHostInvocation::Invoke => {
                 let mut persisted = adapter_invocation.clone();
@@ -3193,7 +3232,7 @@ fn run_local_host_invocation_with_timeout(
             serde_json::to_value(&agent_result.extensions).map_err(FabricError::SerializeJson)?,
         );
     }
-    Ok(RunResult {
+    let mut result = RunResult {
         session_ref: runtime.session_ref.clone(),
         agent_name: plan.agent_name.clone(),
         harness: harness(plan),
@@ -3215,7 +3254,11 @@ fn run_local_host_invocation_with_timeout(
             .collect(),
         events,
         metadata,
-    })
+    };
+    if let Some(limits) = plan.config.runtime.response_limits {
+        response_limits::enforce_local_artifacts(&mut result, limits)?;
+    }
+    Ok(result)
 }
 
 fn invalidate_timed_out_local_host(
@@ -3816,8 +3859,9 @@ fn exchange_lifecycle_message(
     host: &mut LocalAdapterHost,
     runtime_id: &str,
     request: &AdapterLifecycleRequest,
-    timeout: Duration,
+    timeout: impl Into<Option<Duration>>,
 ) -> Result<Value> {
+    let timeout = timeout.into();
     let operation = request.operation();
     if let Some(status) = host.child.try_wait().map_err(|source| {
         lifecycle_error(
@@ -3864,9 +3908,17 @@ fn exchange_lifecycle_message(
         ));
     }
 
-    let line = match host.responses.recv_timeout(timeout) {
+    let received = match timeout {
+        Some(timeout) => host.responses.recv_timeout(timeout),
+        None => host
+            .responses
+            .recv()
+            .map_err(|_| RecvTimeoutError::Disconnected),
+    };
+    let line = match received {
         Ok(line) => line,
         Err(RecvTimeoutError::Timeout) => {
+            let timeout = timeout.expect("finite receive deadline");
             return Err(FabricError::AdapterLifecycleOperation {
                 operation: operation.as_str(),
                 runtime_id: runtime_id.to_string(),
@@ -8387,6 +8439,18 @@ else:
     }
 
     #[test]
+    fn omitted_invocation_timeout_has_no_total_deadline() {
+        let (root, plan) = local_host_plan("success");
+        assert_eq!(local_host_invoke_timeout(&plan).expect("no timeout"), None);
+        let runtime = start_runtime(&plan).expect("start local host");
+        let result =
+            invoke_runtime(&plan, &runtime, RunRequest::text("no deadline")).expect("invoke");
+        assert!(result.output["deadline_millis"].is_null());
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn short_invocation_timeouts_split_adapter_deadline_and_reserve() {
         let before = now_millis();
         let deadline = u128::from(adapter_deadline_millis(Duration::from_secs(4)).unwrap());
@@ -8800,6 +8864,33 @@ else:
     }
 
     #[test]
+    fn run_plan_checks_stop_events_and_stop_errors_in_final_budget() {
+        let (root, mut plan) = local_host_plan("success");
+        let original = run_plan(&plan, RunRequest::text("test")).unwrap();
+        let initial_bytes = serde_json::to_vec(&original).unwrap().len() as u32;
+        plan.config.runtime.response_limits = Some(crate::ResponseLimits {
+            max_response_bytes: initial_bytes,
+            ..Default::default()
+        });
+        let event = event_with_metadata("stop", "x".repeat(2048), BTreeMap::new());
+        let stop_error = lifecycle_error(
+            AdapterLifecycleOperation::Stop,
+            "test",
+            "stop_failed",
+            "x".repeat(2048),
+            "",
+        );
+        for stopped in [Ok(vec![event]), Err(stop_error)] {
+            let result = finish_run_result(&plan, original.clone(), stopped).unwrap();
+            assert_eq!(result.status, RunStatus::Failed);
+            let error = result.error.unwrap();
+            assert_eq!(error.code, "response_limit_exceeded");
+            assert!(error.metadata["observed"].as_u64().unwrap() > u64::from(initial_bytes));
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn run_plan_stops_local_host_after_invoke_failure() {
         let (root, mut plan) = local_host_plan("invoke_failure");
         let agent_name = new_id("local-host-invoke-error-agent");
@@ -8860,7 +8951,6 @@ else:
     #[test]
     fn local_host_enriches_typed_usage_artifacts_and_extensions() {
         let (root, plan) = local_host_plan("typed_result");
-
         let result = run_plan(&plan, RunRequest::text("enrich")).expect("normalized result");
 
         assert_eq!(result.status, RunStatus::Succeeded);

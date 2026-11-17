@@ -1068,6 +1068,7 @@ async def _run_native_lifecycle(
                 raise invoke_error from error
             return result
         finally:
+            result_changed = False
             cleanup = "completed"
             stop_error: Exception | None = None
             try:
@@ -1079,6 +1080,7 @@ async def _run_native_lifecycle(
                     if result is None:
                         raise
                     if result.get("status") == "succeeded":
+                        result_changed = True
                         stop_error = _runtime_error(error, stage="stop")
                         result["status"] = "failed"
                         result["error"] = {
@@ -1089,8 +1091,19 @@ async def _run_native_lifecycle(
                             "metadata": stop_error.details,
                         }
                 stop_events = []
-            if result is not None and isinstance(stop_events, list):
+            if result is not None and isinstance(stop_events, list) and stop_events:
                 result.setdefault("events", []).extend(stop_events)
+                result_changed = True
+            limits = plan.get("config", {}).get("runtime", {}).get("response_limits")
+            if result is not None and result_changed and limits is not None:
+                finalized = json.loads(
+                    native.finalize_run_result(
+                        json.dumps(result),
+                        limits.get("max_response_bytes", 4 * 1024 * 1024),
+                    )
+                )
+                result.clear()
+                result.update(finalized)
             observations.update(
                 events=stop_events if isinstance(stop_events, list) else [],
                 cleanup=cleanup,

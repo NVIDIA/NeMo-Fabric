@@ -12,7 +12,7 @@ import { KiroAcpSessionFactory } from "../dist/kiro-acp.js";
 
 for (const fixtureType of process.platform === "win32" ? ["executable"] : ["shell", "executable"]) {
   for (const terminalState of ["timeout", "native exit"]) {
-    test(`runs a persistent Kiro-compatible ACP session with a ${fixtureType} fixture ending in ${terminalState}`, async () => {
+    test(`runs a persistent Kiro-compatible ACP session with a ${fixtureType} fixture ending in ${terminalState}`, async (t) => {
       const bin = await mkdtemp(join(tmpdir(), "fabric-kiro-bin-"));
       const executable = join(bin, process.platform === "win32" ? "kiro-cli.exe" : "kiro-cli");
       if (fixtureType === "executable") {
@@ -63,6 +63,12 @@ for (const fixtureType of process.platform === "win32" ? ["executable"] : ["shel
         assert.equal((await session.check("live")).outcome, "passed");
         assert.equal((await session.check("active")).outcome, "unsupported");
         assert.equal((await session.check("ready")).outcome, "unsupported");
+        const scheduled = [];
+        const originalSetTimeout = globalThis.setTimeout;
+        const timer = t.mock.method(globalThis, "setTimeout", (callback, milliseconds, ...args) => {
+          scheduled.push(milliseconds);
+          return originalSetTimeout(callback, milliseconds, ...args);
+        });
         const firstPending = session.prompt("one");
         const deadline = Date.now() + 2000;
         while (true) {
@@ -72,6 +78,8 @@ for (const fixtureType of process.platform === "win32" ? ["executable"] : ["shel
         }
         assert.equal((await session.check("live")).outcome, "passed");
         const first = await firstPending;
+        timer.mock.restore();
+        assert.ok(!scheduled.includes(300_000), "an omitted deadline must not schedule the former five-minute cap");
         assert.equal((await session.check("live")).outcome, "passed");
         const second = await session.prompt("permission");
         assert.equal(first.text, "one:1:plan:model-b:high:mcp=0:permission=none:ready=false");

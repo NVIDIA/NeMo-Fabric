@@ -25,7 +25,9 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::config::{ControlLocation, EnvironmentOwnership, EnvironmentPlan, RunPlan};
+use crate::config::{
+    ControlLocation, EnvironmentOwnership, EnvironmentPlan, ResponseLimits, RunPlan,
+};
 use crate::error::{FabricError, Result};
 use crate::runtime::{
     EnvironmentHandle, EnvironmentReference, absolute_path, new_id, resolve_path,
@@ -37,8 +39,8 @@ const OPEN_SHELL_PROVIDER_COMMAND: &str = "fabric-environment-openshell";
 const OPEN_SHELL_PROVIDER_COMMAND_ENV: &str = "NEMO_FABRIC_OPEN_SHELL_PROVIDER";
 const PROVIDER_PROTOCOL_VERSION: &str = "fabric.environment-provider.v1alpha1";
 const MAX_PROVIDER_REQUEST_BYTES: usize = 1024 * 1024;
-// Artifact collection can return 2 MiB of bytes as decimal JSON arrays, which
-// expand to at most about 8 MiB before the provider protocol envelope.
+// Lifecycle/control replies retain a fixed allowance. Invocation and artifact
+// replies derive their allowances from the configured runtime budgets.
 const MAX_PROVIDER_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
 const DEFAULT_PROVIDER_OPERATION_TIMEOUT_SECONDS: u64 = 30;
 const PROVIDER_RESPONSE_GRACE_SECONDS: u64 = 15;
@@ -282,7 +284,21 @@ pub(crate) fn release_environment(
 pub(crate) fn command_runtime(
     environment: &EnvironmentHandle,
     command: &TaskCommand,
-    timeout_seconds: u64,
+    timeout_seconds: Option<u64>,
+) -> Result<TaskCommandResponse> {
+    command_runtime_with_limits(
+        environment,
+        command,
+        timeout_seconds,
+        ResponseLimits::default(),
+    )
+}
+
+pub(crate) fn command_runtime_with_limits(
+    environment: &EnvironmentHandle,
+    command: &TaskCommand,
+    timeout_seconds: Option<u64>,
+    limits: ResponseLimits,
 ) -> Result<TaskCommandResponse> {
     if environment.provider != OPEN_SHELL_PROVIDER_ID {
         return Err(FabricError::UnsupportedEnvironmentProvider {
@@ -294,6 +310,7 @@ pub(crate) fn command_runtime(
         environment,
         command,
         timeout_seconds,
+        response_limit_bytes: limits.response_transport_bytes(),
     })
 }
 
@@ -301,9 +318,13 @@ pub(crate) fn command_runtime(
 pub(crate) fn collect_artifacts(
     environment: &EnvironmentHandle,
     paths: &[String],
-) -> Result<Vec<CollectedArtifact>> {
-    OPEN_SHELL_ENVIRONMENT_PROVIDER
-        .request(ProviderOperation::CollectArtifacts { environment, paths })
+    limits: ResponseLimits,
+) -> Result<CollectedArtifacts> {
+    OPEN_SHELL_ENVIRONMENT_PROVIDER.request(ProviderOperation::CollectArtifacts {
+        environment,
+        paths,
+        limits,
+    })
 }
 
 fn validate_open_shell_profile(
@@ -354,6 +375,7 @@ where
     }
     let operation_name = operation.name();
     let response_timeout = operation.response_timeout();
+    let response_limit = operation.response_limit_bytes();
     let request_id = new_id("environment-provider-request");
     let request = ProviderRequest {
         protocol_version: PROVIDER_PROTOCOL_VERSION,
@@ -389,7 +411,7 @@ where
     }
     let process = slot.as_mut().expect("provider process initialized");
     if process
-        .write_request(&encoded, Duration::from_secs(10))
+        .write_request(&encoded, Duration::from_secs(10), response_limit)
         .is_err()
     {
         process.shutdown();
@@ -400,7 +422,10 @@ where
             "could not write the bounded provider request".to_string(),
         );
     }
-    let output = match process.responses.recv_timeout(response_timeout) {
+    let output = match process
+        .responses
+        .recv_timeout(response_timeout.expect("bounded environment operation"))
+    {
         Ok(Ok(output)) => output,
         Ok(Err(_)) => {
             process.shutdown();
@@ -430,14 +455,14 @@ where
             );
         }
     };
-    if output.len() > MAX_PROVIDER_RESPONSE_BYTES {
+    if output.len() > response_limit {
         process.shutdown();
         *slot = None;
         return provider_error(
             operation_name,
             "response_too_large",
             format!(
-                "response is {} bytes; the limit is {MAX_PROVIDER_RESPONSE_BYTES}",
+                "response is {} bytes; the limit is {response_limit}",
                 output.len()
             ),
         );
@@ -551,13 +576,15 @@ where
             );
         }
         encoded.push(b'\n');
-        process.write_request(&encoded, remaining()?).map_err(|_| {
-            provider_failure(
-                "runtime_command",
-                "provider_protocol_error",
-                "health request could not be delivered".into(),
-            )
-        })?;
+        process
+            .write_request(&encoded, remaining()?, MAX_PROVIDER_RESPONSE_BYTES)
+            .map_err(|_| {
+                provider_failure(
+                    "runtime_command",
+                    "provider_protocol_error",
+                    "health request could not be delivered".into(),
+                )
+            })?;
         let output = match process.responses.recv_timeout(remaining()?) {
             Ok(Ok(output)) => output,
             Err(RecvTimeoutError::Timeout) => {
@@ -677,6 +704,7 @@ where
     };
     let process_key = serde_json::json!([environment_key, identity]).to_string();
     let response_timeout = operation.response_timeout();
+    let response_limit = operation.response_limit_bytes();
     let request = ProviderRequest {
         protocol_version: PROVIDER_PROTOCOL_VERSION,
         request_id: &request_id,
@@ -707,7 +735,7 @@ where
                 ));
             }
             process_guard
-                .write_request(&encoded, Duration::from_secs(10))
+                .write_request(&encoded, Duration::from_secs(10), response_limit)
                 .map_err(|_| {
                     provider_failure(
                         operation_name,
@@ -715,7 +743,14 @@ where
                         "could not write the bounded provider request".to_string(),
                     )
                 })?;
-            match process_guard.responses.recv_timeout(response_timeout) {
+            let received = match response_timeout {
+                Some(timeout) => process_guard.responses.recv_timeout(timeout),
+                None => process_guard
+                    .responses
+                    .recv()
+                    .map_err(|_| RecvTimeoutError::Disconnected),
+            };
+            match received {
                 Ok(Ok(output)) => Ok(output),
                 Ok(Err(_)) => Err(provider_failure(
                     operation_name,
@@ -746,10 +781,7 @@ where
             return Err(error);
         }
     };
-    if output.len() > MAX_PROVIDER_RESPONSE_BYTES
-        || output.is_empty()
-        || output.last() != Some(&b'\n')
-    {
+    if output.len() > response_limit || output.is_empty() || output.last() != Some(&b'\n') {
         retire_runtime_provider_process(&process_key, &process);
         return provider_error(
             operation_name,
@@ -982,6 +1014,7 @@ struct ProviderProcess {
     #[cfg(unix)]
     stdin: ChildStdin,
     responses: Receiver<std::io::Result<Vec<u8>>>,
+    response_limits: mpsc::Sender<usize>,
     responses_thread: Option<thread::JoinHandle<()>>,
     stderr_thread: Option<thread::JoinHandle<()>>,
     stopping: Arc<std::sync::atomic::AtomicBool>,
@@ -1065,14 +1098,16 @@ impl ProviderProcess {
             stopping: stopping.clone(),
         };
         let (response_sender, responses) = mpsc::sync_channel(1);
+        let (response_limits, next_limit) = mpsc::channel::<usize>();
         let responses_thread = thread::spawn(move || {
             let mut stdout = BufReader::new(stdout);
-            loop {
+            while let Ok(limit) = next_limit.recv() {
+                if limit == 0 {
+                    break;
+                }
                 let mut output = Vec::new();
                 let read = {
-                    let mut bounded = stdout
-                        .by_ref()
-                        .take((MAX_PROVIDER_RESPONSE_BYTES + 1) as u64);
+                    let mut bounded = stdout.by_ref().take(limit.saturating_add(1) as u64);
                     bounded.read_until(b'\n', &mut output)
                 };
                 match read {
@@ -1104,6 +1139,7 @@ impl ProviderProcess {
             #[cfg(unix)]
             stdin,
             responses,
+            response_limits,
             responses_thread: Some(responses_thread),
             stderr_thread: Some(stderr_thread),
             stopping,
@@ -1111,7 +1147,15 @@ impl ProviderProcess {
     }
 
     #[cfg(unix)]
-    fn write_request(&mut self, encoded: &[u8], timeout: Duration) -> std::io::Result<()> {
+    fn write_request(
+        &mut self,
+        encoded: &[u8],
+        timeout: Duration,
+        response_limit: usize,
+    ) -> std::io::Result<()> {
+        self.response_limits
+            .send(response_limit)
+            .map_err(|_| std::io::ErrorKind::BrokenPipe)?;
         use std::os::fd::AsRawFd;
         let descriptor = self.stdin.as_raw_fd();
         // The owned pipe remains nonblocking for subsequent bounded writes.
@@ -1141,7 +1185,12 @@ impl ProviderProcess {
     }
 
     #[cfg(not(unix))]
-    fn write_request(&mut self, _encoded: &[u8], _timeout: Duration) -> std::io::Result<()> {
+    fn write_request(
+        &mut self,
+        _encoded: &[u8],
+        _timeout: Duration,
+        _response_limit: usize,
+    ) -> std::io::Result<()> {
         Err(std::io::ErrorKind::Unsupported.into())
     }
 
@@ -1158,6 +1207,7 @@ impl ProviderProcess {
     }
 
     fn shutdown_check(mut self, started: Instant, budget: Duration) {
+        let _ = self.response_limits.send(0);
         self.stopping
             .store(true, std::sync::atomic::Ordering::Relaxed);
         reap_health_provider(self.child, started, budget);
@@ -1177,6 +1227,7 @@ impl ProviderProcess {
     }
 
     fn shutdown(&mut self) {
+        let _ = self.response_limits.send(0);
         let _ = self.child.kill();
         let _ = self.child.wait();
         if let Some(thread) = self.responses_thread.take() {
@@ -1224,11 +1275,13 @@ enum ProviderOperation<'a> {
     RuntimeCommand {
         environment: &'a EnvironmentHandle,
         command: &'a TaskCommand,
-        timeout_seconds: u64,
+        timeout_seconds: Option<u64>,
+        response_limit_bytes: usize,
     },
     CollectArtifacts {
         environment: &'a EnvironmentHandle,
         paths: &'a [String],
+        limits: ResponseLimits,
     },
     Release {
         environment: &'a EnvironmentHandle,
@@ -1236,6 +1289,16 @@ enum ProviderOperation<'a> {
 }
 
 impl ProviderOperation<'_> {
+    fn response_limit_bytes(&self) -> usize {
+        match self {
+            Self::RuntimeCommand {
+                response_limit_bytes,
+                ..
+            } => *response_limit_bytes,
+            Self::CollectArtifacts { limits, .. } => limits.artifact_transport_bytes(),
+            _ => MAX_PROVIDER_RESPONSE_BYTES,
+        }
+    }
     fn name(&self) -> &'static str {
         match self {
             Self::Prepare { .. } => "prepare",
@@ -1246,7 +1309,7 @@ impl ProviderOperation<'_> {
         }
     }
 
-    fn response_timeout(&self) -> Duration {
+    fn response_timeout(&self) -> Option<Duration> {
         let operation_seconds = match self {
             Self::Prepare { environment, .. } => readiness_seconds(environment, true)
                 .saturating_add(setting_seconds(
@@ -1259,7 +1322,9 @@ impl ProviderOperation<'_> {
                 .saturating_add(3 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS),
             Self::RuntimeCommand {
                 timeout_seconds, ..
-            } => timeout_seconds.saturating_add(2 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS),
+            } => timeout_seconds
+                .as_ref()?
+                .saturating_add(2 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS),
             Self::CollectArtifacts { .. } => 30 + 2 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS,
             Self::Release { environment } => connection_seconds(
                 &environment.connection,
@@ -1268,7 +1333,9 @@ impl ProviderOperation<'_> {
             )
             .saturating_add(3 * PROVIDER_GATEWAY_CALL_TIMEOUT_SECONDS),
         };
-        Duration::from_secs(operation_seconds.saturating_add(PROVIDER_RESPONSE_GRACE_SECONDS))
+        Some(Duration::from_secs(
+            operation_seconds.saturating_add(PROVIDER_RESPONSE_GRACE_SECONDS),
+        ))
     }
 }
 
@@ -1364,7 +1431,10 @@ mod tests {
             environment: &environment,
         };
 
-        assert_eq!(operation.response_timeout(), Duration::from_secs(285));
+        assert_eq!(
+            operation.response_timeout().expect("finite timeout"),
+            Duration::from_secs(285)
+        );
     }
 
     #[test]
@@ -1394,13 +1464,19 @@ mod tests {
             environment: &environment,
             reference: &reference,
         };
-        assert_eq!(attach.response_timeout(), Duration::from_secs(465));
+        assert_eq!(
+            attach.response_timeout().expect("finite timeout"),
+            Duration::from_secs(465)
+        );
 
         let prepare = ProviderOperation::Prepare {
             environment_id: "environment-test",
             environment: &environment,
         };
-        assert_eq!(prepare.response_timeout(), Duration::from_secs(765));
+        assert_eq!(
+            prepare.response_timeout().expect("finite timeout"),
+            Duration::from_secs(765)
+        );
     }
 
     #[test]
@@ -1423,16 +1499,32 @@ mod tests {
         let runtime = ProviderOperation::RuntimeCommand {
             environment: &environment,
             command: &command,
-            timeout_seconds: 315,
+            timeout_seconds: Some(315),
+            response_limit_bytes: MAX_PROVIDER_RESPONSE_BYTES,
         };
-        assert_eq!(runtime.response_timeout(), Duration::from_secs(390));
+        assert_eq!(
+            runtime.response_timeout().expect("finite timeout"),
+            Duration::from_secs(390)
+        );
+
+        let unlimited = ProviderOperation::RuntimeCommand {
+            environment: &environment,
+            command: &command,
+            timeout_seconds: None,
+            response_limit_bytes: MAX_PROVIDER_RESPONSE_BYTES,
+        };
+        assert_eq!(unlimited.response_timeout(), None);
 
         let paths = Vec::new();
         let artifacts = ProviderOperation::CollectArtifacts {
             environment: &environment,
             paths: &paths,
+            limits: ResponseLimits::default(),
         };
-        assert_eq!(artifacts.response_timeout(), Duration::from_secs(105));
+        assert_eq!(
+            artifacts.response_timeout().expect("finite timeout"),
+            Duration::from_secs(105)
+        );
     }
 
     fn provider_script(body: &str) -> (PathBuf, OsString) {
@@ -1450,7 +1542,11 @@ mod tests {
         let mut process = ProviderProcess::spawn(command, "prepare").expect("start provider");
         let started = Instant::now();
         let error = process
-            .write_request(&vec![b'x'; 1024 * 1024], Duration::from_millis(30))
+            .write_request(
+                &vec![b'x'; 1024 * 1024],
+                Duration::from_millis(30),
+                MAX_PROVIDER_RESPONSE_BYTES,
+            )
             .expect_err("blocked pipe write must expire");
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
         assert!(started.elapsed() < Duration::from_secs(1));
@@ -1516,7 +1612,8 @@ for line in sys.stdin:
                     ProviderOperation::RuntimeCommand {
                         environment: &environment,
                         command: &task,
-                        timeout_seconds: 10,
+                        timeout_seconds: Some(10),
+                        response_limit_bytes: MAX_PROVIDER_RESPONSE_BYTES,
                     },
                 );
                 sender.send(result).unwrap();
@@ -1595,7 +1692,8 @@ else:
                     ProviderOperation::RuntimeCommand {
                         environment: &environment,
                         command: &task,
-                        timeout_seconds: 1,
+                        timeout_seconds: Some(1),
+                        response_limit_bytes: MAX_PROVIDER_RESPONSE_BYTES,
                     },
                     timeout_seconds,
                 );
@@ -1665,4 +1763,21 @@ print(json.dumps({'protocol_version': 'PRIVATE response', 'request_id': request[
 pub(crate) struct CollectedArtifact {
     pub(crate) path: String,
     pub(crate) content: Vec<u8>,
+}
+
+/// Artifact collection either returns complete files or a correlated limit observation.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum CollectedArtifacts {
+    Files(Vec<CollectedArtifact>),
+    Limited(ArtifactLimitFailure),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ArtifactLimitFailure {
+    pub(crate) limit: String,
+    pub(crate) configured: u64,
+    pub(crate) observed: u64,
+    pub(crate) asset: String,
 }

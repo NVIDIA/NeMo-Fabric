@@ -102,7 +102,15 @@ test("preserves real ACP session history, isolates runtime state, and uses per-i
   assert.ok(state.args.includes("litellm/local"));
   assert.ok(state.args.includes("--instructions=--instruction-text"));
   assert.ok(state.args.includes("agentConfig.backgroundTasks=false"));
+  const scheduled = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  const timer = t.mock.method(globalThis, "setTimeout", (callback, milliseconds, ...args) => {
+    scheduled.push(milliseconds);
+    return originalSetTimeout(callback, milliseconds, ...args);
+  });
   const one = await first.prompt("secret-token");
+  timer.mock.restore();
+  assert.ok(!scheduled.includes(300_000), "an omitted deadline must not schedule the former five-minute cap");
   const two = await first.prompt("recall");
   assert.equal(two.text, "secret-token");
   assert.equal(one.usage.input_tokens, 11);
