@@ -26,6 +26,8 @@ struct Reservation {
     fingerprint: String,
     #[serde(default)]
     streaming: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max_result_bytes: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -206,7 +208,23 @@ fn options() -> OpenOptions {
     options
 }
 
+// Preserve the existing allowance for bounded SDK diagnostics. Only an
+// explicit larger response budget expands result storage.
+fn result_limit(configured: Option<u32>) -> u64 {
+    configured
+        .map_or(MAX_RESULT_BYTES, u64::from)
+        .max(MAX_RESULT_BYTES)
+}
+
 fn read<T: serde::de::DeserializeOwned>(path: &Path, runtime_id: &str) -> Result<Option<T>> {
+    read_with_limit(path, runtime_id, MAX_RESULT_BYTES)
+}
+
+fn read_with_limit<T: serde::de::DeserializeOwned>(
+    path: &Path,
+    runtime_id: &str,
+    limit: u64,
+) -> Result<Option<T>> {
     let file = match options().read(true).open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -215,15 +233,14 @@ fn read<T: serde::de::DeserializeOwned>(path: &Path, runtime_id: &str) -> Result
     let metadata = file
         .metadata()
         .map_err(|_| failure(runtime_id, "result_storage_failed"))?;
-    if !metadata.is_file() || metadata.len() > MAX_RESULT_BYTES || !owned_metadata(&metadata, true)
-    {
+    if !metadata.is_file() || metadata.len() > limit || !owned_metadata(&metadata, true) {
         return Err(failure(runtime_id, "result_storage_failed"));
     }
     let mut bytes = Vec::new();
-    file.take(MAX_RESULT_BYTES + 1)
+    file.take(limit + 1)
         .read_to_end(&mut bytes)
         .map_err(|_| failure(runtime_id, "result_storage_failed"))?;
-    if bytes.len() as u64 > MAX_RESULT_BYTES {
+    if bytes.len() as u64 > limit {
         return Err(failure(runtime_id, "result_storage_failed"));
     }
     serde_json::from_slice(&bytes)
@@ -309,7 +326,11 @@ fn completed_result(runtime: &Path, record: &Reservation) -> Result<Option<RunRe
         return Ok(None);
     }
     let invocation = directory(runtime, &record.invocation_id, false, &record.runtime_id)?;
-    let result: Option<RunResult> = read(&invocation.join("run-result.json"), &record.runtime_id)?;
+    let result: Option<RunResult> = read_with_limit(
+        &invocation.join("run-result.json"),
+        &record.runtime_id,
+        result_limit(record.max_result_bytes),
+    )?;
     if let Some(result) = &result
         && (result.agent_name != record.agent_name
             || result.runtime_id != record.runtime_id
@@ -327,6 +348,7 @@ pub(super) fn reserve(
     request: &RunRequest,
     invocation: &InvocationHandle,
     streaming: bool,
+    max_result_bytes: Option<u32>,
 ) -> Result<RequestReservation> {
     let runtime_dir = runtime_directory(root, &runtime.runtime_id, true)?;
     let requests = directory(&runtime_dir, "requests", true, &runtime.runtime_id)?;
@@ -341,6 +363,7 @@ pub(super) fn reserve(
             Sha256::digest(serde_json::to_vec(request).map_err(crate::FabricError::SerializeJson)?)
         ),
         streaming: Some(streaming),
+        max_result_bytes: max_result_bytes.filter(|limit| u64::from(*limit) > MAX_RESULT_BYTES),
     };
     let bytes = serde_json::to_vec(&record).map_err(crate::FabricError::SerializeJson)?;
     if bytes.len() as u64 > MAX_RESULT_BYTES {
@@ -365,6 +388,7 @@ pub(super) fn reserve(
                 || previous.request_id != record.request_id
                 || previous.fingerprint != record.fingerprint
                 || previous.streaming != record.streaming
+                || previous.max_result_bytes != record.max_result_bytes
             {
                 return Err(failure(&runtime.runtime_id, "request_conflict"));
             }
@@ -379,9 +403,9 @@ pub(super) fn reserve(
     }
 }
 
-pub(super) fn save(root: &Path, result: &RunResult) -> Result<()> {
+pub(super) fn save(root: &Path, result: &RunResult, max_result_bytes: Option<u32>) -> Result<()> {
     let bytes = serde_json::to_vec(result).map_err(crate::FabricError::SerializeJson)?;
-    if bytes.len() as u64 > MAX_RESULT_BYTES {
+    if bytes.len() as u64 > result_limit(max_result_bytes) {
         return Err(failure(&result.runtime_id, "result_storage_failed"));
     }
     let invocation = invocation_directory(root, &result.runtime_id, &result.invocation_id)?;
@@ -421,7 +445,7 @@ pub(super) fn finalize(root: &Path, result: &RunResult) -> Result<()> {
         &result.runtime_id,
         &result.request_id,
     )?;
-    save(root, result)?;
+    save(root, result, record.max_result_bytes)?;
     // Publish cleanup finality only after the replacement result is saved.
     fs::remove_file(finalization_path(&requests, &result.request_id))
         .map_err(|_| failure(&result.runtime_id, "result_storage_failed"))

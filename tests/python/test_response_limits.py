@@ -34,12 +34,9 @@ def test_transport_formula_matches_the_shared_rust_fixture():
         )
 
 
-@pytest.mark.parametrize("artifact_sizes", [[1] * 17, [600_000] * 4])
-@pytest.mark.parametrize("configured", [False, True])
-async def test_local_artifact_budgets_require_explicit_configuration(
-    tmp_path, artifact_sizes, configured
-):
-    from nemo_fabric import Fabric, FabricConfig, RunRequest
+@pytest.fixture
+def local_response_limit_config(tmp_path):
+    from nemo_fabric import FabricConfig
 
     root = Path(__file__).parents[2]
     descriptor = json.loads(
@@ -64,10 +61,22 @@ async def test_local_artifact_budgets_require_explicit_configuration(
             "environment": {"provider": "local", "workspace": str(tmp_path)},
             "runtime": {
                 "artifacts": str(tmp_path / "artifacts"),
-                "response_limits": {} if configured else None,
+                "response_limits": None,
             },
         }
     )
+    return config
+
+
+@pytest.mark.parametrize("artifact_sizes", [[1] * 17, [600_000] * 4])
+@pytest.mark.parametrize("configured", [False, True])
+async def test_local_artifact_budgets_require_explicit_configuration(
+    tmp_path, artifact_sizes, configured, local_response_limit_config
+):
+    from nemo_fabric import Fabric, RunRequest
+
+    config = local_response_limit_config
+    config.runtime.response_limits = ResponseLimits() if configured else None
     async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
         result = await runtime.invoke(
             request=RunRequest(
@@ -79,6 +88,56 @@ async def test_local_artifact_budgets_require_explicit_configuration(
         assert result.error.code == "response_limit_exceeded"
     else:
         assert len(result.artifacts.artifacts) >= len(artifact_sizes)
+
+
+@pytest.mark.parametrize("one_shot", [False, True])
+@pytest.mark.parametrize(
+    "budget,payload_bytes,status",
+    [(512, 16, "failed"), (8 * 1024 * 1024, 5 * 1024 * 1024, "succeeded")],
+)
+async def test_saved_result_matches_configured_response_budget(
+    local_response_limit_config, tmp_path, one_shot, budget, payload_bytes, status
+):
+    from nemo_fabric import Fabric, FabricRuntimeError, RunRequest
+
+    config = local_response_limit_config
+    config.runtime.response_limits = ResponseLimits(max_response_bytes=budget)
+    client = Fabric()
+    request = RunRequest(input="response", context={"response_bytes": payload_bytes})
+    if one_shot:
+        result = await client.run(config, base_dir=tmp_path, request=request)
+    else:
+        async with await client.start_runtime(config, base_dir=tmp_path) as runtime:
+            result = await runtime.invoke(request=request)
+    assert result.status == status
+    if status == "failed":
+        assert result.error.code == "response_limit_exceeded"
+    saved = await Fabric().invocation_result(
+        agent_name=result.agent_name,
+        runtime_id=result.runtime_id,
+        request_id=result.request_id,
+        artifacts=config.runtime.artifacts,
+    )
+    assert saved == result
+    if payload_bytes > 4 * 1024 * 1024:
+        stored = (
+            Path(config.runtime.artifacts)
+            / ".fabric"
+            / result.runtime_id
+            / result.invocation_id
+            / "run-result.json"
+        )
+        oversized = saved.to_mapping()
+        oversized["output"] = {"response": "x" * (budget + 1)}
+        stored.write_text(json.dumps(oversized), encoding="utf-8")
+        with pytest.raises(FabricRuntimeError) as caught:
+            await Fabric().invocation_result(
+                agent_name=result.agent_name,
+                runtime_id=result.runtime_id,
+                request_id=result.request_id,
+                artifacts=config.runtime.artifacts,
+            )
+        assert caught.value.code == "result_unavailable"
 
 
 @pytest.mark.parametrize("field", FIELDS)

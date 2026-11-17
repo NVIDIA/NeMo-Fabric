@@ -1097,7 +1097,7 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
     let original_request = request.clone();
     let invoked = begin_run_result(plan, &runtime, &request)
         .and_then(|()| invoke_runtime(plan, &runtime, request));
-    let result = match invoked {
+    let mut result = match invoked {
         Ok(result) => result,
         Err(error) => {
             let events = stop_runtime(plan, &runtime).unwrap_or_default();
@@ -1126,7 +1126,12 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
                     metadata: BTreeMap::new(),
                 });
             }
-            let error = save_run_result(plan, &runtime, &result)
+            let error = plan
+                .config
+                .runtime
+                .response_limits
+                .map_or(Ok(()), |limits| result.enforce_response_limit(limits))
+                .and_then(|()| save_run_result(plan, &runtime, &result))
                 .err()
                 .unwrap_or(error);
             return Err(FabricError::RuntimeCleanupPending(Box::new(
@@ -3078,12 +3083,18 @@ fn run_local_host_invocation_with_timeout(
     let root = artifact_manifest(plan)?
         .root
         .map_or_else(default_artifact_root, Ok)?;
+    let max_result_bytes = plan
+        .config
+        .runtime
+        .response_limits
+        .map(|limits| limits.max_response_bytes);
     let mut reservation = match results::reserve(
         &root,
         runtime,
         &request,
         &invocation,
         matches!(&invocation_kind, LocalHostInvocation::OpenAiStream(_)),
+        max_result_bytes,
     )? {
         results::RequestReservation::Cached(result) => return Ok(*result),
         results::RequestReservation::Pending(pending) => pending,
@@ -3097,8 +3108,11 @@ fn run_local_host_invocation_with_timeout(
         invocation.clone(),
         &mut reservation,
     )
-    .and_then(|result| {
-        results::save(&root, &result)?;
+    .and_then(|mut result| {
+        if let Some(limits) = plan.config.runtime.response_limits {
+            response_limits::enforce_response(&mut result, limits)?;
+        }
+        results::save(&root, &result, max_result_bytes)?;
         Ok(result)
     });
     if let Err(error) = &outcome
@@ -3156,7 +3170,7 @@ fn run_local_host_invocation_with_timeout(
             metadata: BTreeMap::new(),
         };
         // Retain the dispatched reservation even if this write fails.
-        results::save(&root, &result)?;
+        results::save(&root, &result, max_result_bytes)?;
     }
     outcome
 }
@@ -6837,6 +6851,69 @@ else:
 
     #[cfg(unix)]
     #[test]
+    fn one_shot_cleanup_failure_rechecks_response_budget() {
+        const BUDGET: u32 = 64 * 1024;
+        let (root, mut plan) = local_host_plan("cleanup_failure");
+        plan.config.runtime.response_limits = Some(crate::ResponseLimits {
+            max_response_bytes: BUDGET,
+            ..Default::default()
+        });
+        let retry_cleanup = |runtime: &RuntimeHandle| {
+            let directory = local_host_directory(&runtime.runtime_id).unwrap();
+            fs::remove_file(&directory).unwrap();
+            fs::create_dir_all(&directory).unwrap();
+            stop_runtime(&plan, runtime).expect("retain the original cleanup handle");
+            assert!(!local_hosts().contains_key(&runtime.runtime_id));
+        };
+
+        let error = run_plan(&plan, RunRequest::text("x")).unwrap_err();
+        let FabricError::RuntimeCleanupPending(pending) = error else {
+            panic!("expected retained cleanup context");
+        };
+        let mut baseline = pending.result().unwrap().clone();
+        baseline.status = RunStatus::Succeeded;
+        baseline.error = None;
+        let baseline_bytes = serde_json::to_vec(&baseline).unwrap().len();
+        retry_cleanup(pending.runtime());
+
+        let input_bytes = BUDGET as usize - baseline_bytes - 96 + 1;
+        let request = RunRequest::text("x".repeat(input_bytes));
+        let error = run_plan(&plan, request.clone()).unwrap_err();
+        let FabricError::RuntimeCleanupPending(pending) = error else {
+            panic!("expected retained cleanup context");
+        };
+        let result = pending.result().unwrap().clone();
+        let original_cause = matches!(
+            pending.cause(),
+            FabricError::AdapterLifecycleOperation { code, .. } if code == "cleanup_unconfirmed"
+        );
+        let saved = invocation_result(
+            &root.join("artifacts"),
+            &plan.agent_name,
+            &pending.runtime().runtime_id,
+            &request.request_id,
+        );
+        retry_cleanup(pending.runtime());
+        fs::remove_dir_all(root).unwrap();
+
+        assert!(original_cause);
+        assert_eq!(result.status, RunStatus::Failed);
+        assert_eq!(
+            result.error.as_ref().unwrap().code,
+            "response_limit_exceeded"
+        );
+        assert!(
+            result.error.as_ref().unwrap().metadata["observed"]
+                .as_u64()
+                .unwrap()
+                > u64::from(BUDGET)
+        );
+        assert!(serde_json::to_vec(&result).unwrap().len() <= BUDGET as usize);
+        assert_eq!(saved.unwrap().as_ref(), Some(&result));
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn freezing_an_owned_process_prevents_new_child_creation() {
         let (root, _) = local_host_plan("success");
         let ready = root.join("ready-to-fork");
@@ -7522,7 +7599,7 @@ else:
         let result = invoke_runtime(&plan, &runtime, RunRequest::text("hello")).unwrap();
         let mut oversized = result.clone();
         oversized.output = Value::String("x".repeat(4 * 1024 * 1024));
-        let saved = results::save(&root.join("artifacts"), &oversized);
+        let saved = results::save(&root.join("artifacts"), &oversized, None);
         stop_runtime(&plan, &runtime).unwrap();
         assert!(saved.is_err());
         assert_eq!(
