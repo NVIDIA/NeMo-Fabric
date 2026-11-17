@@ -1911,6 +1911,40 @@
           "required": [],
           "type": "object"
         },
+        "skills": {
+          "directory_loading": {
+            "discovery": {
+              "depth_limit": {
+                "kind": "fixed",
+                "levels": 1
+              },
+              "nested_skills": "stop_at_skill",
+              "traversal": "immediate_children"
+            },
+            "parsing": {
+              "frontmatter_errors": "reject",
+              "name_fallback": "none",
+              "required_frontmatter_fields": [
+                "name",
+                "description"
+              ]
+            },
+            "skill_file": "SKILL.md",
+            "supported_entries": [
+              "skill",
+              "folder"
+            ]
+          },
+          "duplicates": {
+            "name_source": "frontmatter",
+            "native": "Each entry is a Deep Agents skills source and the later source wins, so the copy from the later entry loads.",
+            "supported_policies": [
+              "reject",
+              "first_wins",
+              "last_wins"
+            ]
+          }
+        },
         "telemetry": {
           "providers": {
             "native": {
@@ -1934,7 +1968,7 @@
         "name": "nemo-fabric-adapters-deepagents",
         "version": "0.7.0"
       },
-      "sha256": "47a4ee43da37b7e131378bb52598d1c20903db6ac3ea41856fdf1128889303a3",
+      "sha256": "7516f42c5fff0271f32eb2ce113d6adb41375d4ca9a48da8d99b8ce6859d1f09",
       "source": "adapters/python/deepagents/deepagents.fabric-adapter.json"
     },
     "nvidia.fabric.mini-swe-agent": {

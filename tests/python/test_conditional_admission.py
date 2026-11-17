@@ -81,8 +81,8 @@ def test_invalid_static_requirements_fail_plan_and_host_admission(
     if model is not None:
         admission_config.models = {"default": ModelConfig(**model)}
 
-    with pytest.raises(FabricConfigError):
-        inspect_adapter(admission_config, get_adapter_descriptor(adapter_id))
+    report = inspect_adapter(admission_config, get_adapter_descriptor(adapter_id))
+    assert report.issues and report.capability_profile is None
     with pytest.raises(FabricConfigError):
         Fabric().plan(admission_config, base_dir=tmp_path)
 
@@ -191,6 +191,6 @@ def test_cross_field_error_does_not_disclose_config_values(admission_config, tmp
     admission_config.metadata.description = secret
     descriptor = get_adapter_descriptor(admission_config.harness.adapter_id)
     descriptor["config_schema"] = {"type": "object", "not": {}}
-    with pytest.raises(FabricConfigError) as error:
-        inspect_adapter(admission_config, descriptor)
-    assert secret not in str(error.value)
+    report = inspect_adapter(admission_config, descriptor)
+    assert report.issues and report.capability_profile is None
+    assert secret not in repr(report.issues)

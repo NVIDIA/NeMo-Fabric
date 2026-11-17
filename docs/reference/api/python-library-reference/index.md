@@ -25,6 +25,8 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 - [`client.Fabric`](./nemo_fabric.client.md#class-fabric): Primary Python entrypoint for NeMo Fabric.
 - [`capabilities.AdapterCapabilityProfile`](./nemo_fabric.capabilities.md#class-adaptercapabilityprofile): Declared runtime support, not observed execution provenance.
+- [`capabilities.AdapterCompatibilityIssue`](./nemo_fabric.capabilities.md#class-adaptercompatibilityissue): A value-free incompatibility at a NeMo Fabric configuration field.
+- [`capabilities.AdapterInspection`](./nemo_fabric.capabilities.md#class-adapterinspection): Metadata compatibility report; a profile is available only without issues.
 - [`check.CheckReport`](./nemo_fabric.check.md#class-checkreport): Immutable health check report.
 - [`check.CheckRequest`](./nemo_fabric.check.md#class-checkrequest): Select server, runtime, or registered service health.
 - [`runtime.Runtime`](./nemo_fabric.runtime.md#class-runtime): One logical, stateful harness execution.
@@ -59,6 +61,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`models.RelayOpenTelemetryConfig`](./nemo_fabric.models.md#class-relayopentelemetryconfig): NeMo Relay typed OpenTelemetry destination configuration.
 - [`models.RelayOpenTelemetryEndpointConfig`](./nemo_fabric.models.md#class-relayopentelemetryendpointconfig): One typed NeMo Relay OpenTelemetry destination.
 - [`models.RelayS3StorageConfig`](./nemo_fabric.models.md#class-relays3storageconfig): NeMo Relay ATIF S3 storage configuration.
+- [`models.ResponseLimits`](./nemo_fabric.models.md#class-responselimits): Inclusive byte and file budgets, enforced by the SDK in every environment.
 - [`models.RunRequest`](./nemo_fabric.models.md#class-runrequest): One validated NeMo Fabric invocation request.
 - [`models.RuntimeConfig`](./nemo_fabric.models.md#class-runtimeconfig): Invocation runtime contract.
 - [`models.SkillConfig`](./nemo_fabric.models.md#class-skillconfig): Skill capability configuration.

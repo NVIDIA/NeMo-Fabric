@@ -230,6 +230,18 @@ subagents cannot cross the JSON configuration boundary. NeMo Fabric rejects an
 asynchronous subagent when `tools.enabled` or `tools.blocked` is configured
 because a local tools policy cannot gate remote tools.
 
+## Skills
+
+Configure skills with `skills.paths` or `skills.directories`. Skills load whether or not they are inside the workspace, and also without a workspace. Refer to [Configure Skills](./skills.mdx) for the shared rules.
+
+- Each entry is one Deep Agents `skills` source, in list order. Deep Agents loads the source's immediate child folders that hold a `SKILL.md` with `name` and `description` in its front matter.
+- The adapter routes each entry's skills into the Deep Agents backend at the path of the folder that holds them. File tools read and write the skills in place, and `local_shell` commands can run skill scripts at the same paths. Nothing is copied, and the mount decides whether the agent can change a skill.
+- A `paths` entry that holds `SKILL.md` is one skill. Any other folder is a folder of skills. An absolute `paths` entry that exists only under the workspace, such as `/.agents/skills`, names that workspace folder and loads like any other entry.
+- `skills.duplicates` accepts `reject`, `first_wins`, and `last_wins`. When it is left out, the copy from the later entry loads, as in Deep Agents.
+- Deep Agents ships no bundled skills, so planning rejects `skills.bundled`.
+- A missing or invalid entry, or two skills with the same name under `reject`, fails startup with `deepagents_skill_not_found` or `deepagents_skill_invalid` and names the field.
+- Each result reports the loaded skills under `output.skills`, with any skipped candidates, empty entries, and duplicates.
+
 ## Understand the Runtime Lifecycle
 
 Each NeMo Fabric runtime compiles one Deep Agents graph and retains its

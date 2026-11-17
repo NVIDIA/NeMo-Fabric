@@ -23,6 +23,10 @@ NeMo Fabric gives applications, evaluation systems, and rollout platforms a cons
 - **Switch harnesses:** Reuse the consumer integration while adapters handle harness-specific behavior.
 - **Compare outcomes:** Collect normalized results, errors, artifacts, lifecycle events, and telemetry references.
 
+Invocation response and artifact budgets are configured under
+[`runtime.response_limits`](docs/sdk/python.mdx#response-and-artifact-limits),
+with the same policy for host and OpenShell execution.
+
 ## Supported Agent Harnesses
 
 NeMo Fabric includes adapters for the following harnesses and execution targets. Select a harness name for its adapter documentation:
@@ -68,6 +72,11 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 - **Shared Python contracts:** The SDK and adapter contract consume the standard-library [shared contract package](sdk/python/nemo-fabric-evidence/README.md) for software evidence and validation.
 - **Add an execution target:** Adapters translate the NeMo Fabric contract into the native behavior of a harness, framework, custom agent, or remote service. Start with the [adapter contract](docs/adapter-contract/README.md) and [adapter examples](docs/adapter-contract/examples.md).
 
+Host-side metadata admission uses `inspect_adapter(config, descriptor)` from
+`nemo-fabric-runtime`. Diagnostic reports are the default; check `result.issues` before changing a deployment. Pass `diagnostics=False` for exception-based rejection. A compatible report provides capability flags in `result.capability_profile`; incompatible reports contain issues and no profile.
+See the [inspection guide](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host)
+for descriptor sources, compatibility limits, and API migration examples.
+
 ## Documentation
 
 - [Quickstart](docs/getting-started/quickstart.mdx): Run a first agent through the Python SDK.
@@ -89,8 +98,6 @@ NeMo Fabric separates consumers from execution targets through a stable, version
 Planned areas of development include:
 
 - **Refine runtime resource measurements:** Improve CPU, memory, elapsed-time, and available GPU measurements through broader benchmark validation.
-- **Support long-running, artifact-heavy workloads:** Make OpenShell timeouts and response/artifact limits configurable, including unlimited task duration, with clear limit errors and guidance for retrieving large screenshots.
 - **Expose task progress and recoverable results:** Provide task state, step progress, plans, pending requests, sandbox task listings, and paginated events, with final results retrievable after invocation ends or the caller disconnects.
 - **Standardize model usage accounting:** Report input, cached, output, and reasoning tokens consistently, distinguish complete, partial, and unknown usage, and attribute delegated work to the correct invocation.
 - **Capture execution provenance:** Record NeMo Fabric and adapter versions, requested models, sanitized MCP configuration, and execution environment, with explicit sources and unknowns.
-

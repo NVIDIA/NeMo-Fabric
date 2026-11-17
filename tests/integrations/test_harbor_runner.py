@@ -919,7 +919,7 @@ def test_registered_workflow_options_preserve_selection_and_settings(tmp_path):
         payload.config,
         get_adapter_descriptor("nvidia.fabric.nooa"),
         target_descriptor=get_target_descriptor("nvidia.nooa.coding-agent"),
-    )
+    ).capability_profile
     assert payload.adapter_descriptor_sha256 == profile.descriptor_sha256
     assert agent._capability_profile.mcp and agent._capability_profile.skills
 
@@ -1017,7 +1017,9 @@ async def test_registered_workflow_round_trip_and_target_drift(tmp_path, monkeyp
     config.runtime.artifacts = str(tmp_path / "artifacts")
     config.environment.artifacts = str(tmp_path / "artifacts")
     config.enable_relay(output_dir=tmp_path / "relay")
-    profile = inspect_adapter(config, descriptor, target_descriptor=target)
+    profile = inspect_adapter(
+        config, descriptor, target_descriptor=target
+    ).capability_profile
     payload = FabricRunPayload(
         config=config,
         config_base_dir=str(tmp_path),
