@@ -90,7 +90,9 @@ The adapter receives a normalized payload from NeMo Fabric and materializes a na
 - replacement `instructions.system` and `runtime.max_turns`;
 - workspace and explicit environment variables through `environment`;
 - invocation timeout through `runtime.timeout_seconds`;
-- NeMo Fabric skills as external skill directories for Hermes Agent;
+- `skills.paths` and `skills.directories` as Hermes Agent's
+  `skills.external_dirs`, and `skills.bundled` as a staged
+  `HERMES_BUNDLED_SKILLS` folder (see [Skills](#skills));
 - NeMo Fabric MCP servers as Hermes Agent MCP server config;
 - `tools.enabled` and `tools.blocked` as Hermes-native toolset selection and
   blocking policy;
@@ -156,6 +158,40 @@ The `auxiliary` and `tools` settings use Hermes's native `config.yaml` structure
 
 These controls reduce automatic background model calls. They do not stop context compaction calls and do not correlate concurrent sessions; refer to the [Hermes guide](../../../docs/integrations/harness/hermes/hermes.mdx#native-harness-controls).
 
+## Skills
+
+The adapter supports `skills.paths`, `skills.directories`, `skills.bundled`,
+and `skills.duplicates`, and writes the configured skills to Hermes Agent's
+`skills.external_dirs`. Hermes always loads its `hermes-agent` bundled skill,
+so `skills.bundled` supports `exclude` (or `{}` for every bundled skill) but
+not `include` or `enabled: false`, and `exclude` cannot name `hermes-agent`.
+The mount, not NeMo Fabric, makes a skill read-only. Each comment in this
+example names one setup; the whole list is the mixed setup:
+
+```yaml
+skills:
+  directories:
+    # A folder, read-only: mount it read-only; every skill in it loads.
+    - folder: /sandbox/team-skills
+    # Chosen skills, read-only: mount each skill read-only, one skill entry each.
+    - skill: /sandbox/release-review
+    - skill: /sandbox/incident-triage
+    # A folder, read-write: mount it writable; Hermes edits its skills in place.
+    # New skills go to the Hermes home and persist with runtime.keep_state.
+    - folder: /sandbox/agent-skills
+  # Mixed: one list holds any of these; first_wins lets an earlier entry win.
+  duplicates: first_wins
+  bundled:
+    exclude: [xurl]
+```
+
+[Configure Skills](../../../docs/integrations/harness/skills.mdx) describes
+the fields, the common setups, start checks, the run report, and how Hermes
+differs from other harnesses. The
+[Hermes guide](../../../docs/integrations/harness/hermes/hermes.mdx#skills)
+covers Hermes's skip reasons, agent-written skills, and bundled-skill
+handling.
+
 ## Configuration Mapping and Ownership
 
 Managed native processes use the adapter's launcher to apply explicit instructions and behavioral settings before constructing agents. Explicit enabled tools, including an empty list, override native selection; a nonempty blocked list overrides native exclusions. Unspecified tool policies can differ between SDK and native paths.
@@ -163,6 +199,36 @@ Managed native processes use the adapter's launcher to apply explicit instructio
 The default Hermes home is `<artifact root>/.fabric/hermes/runtimes/<runtime-id>`. With `runtime.keep_state`, the adapter uses the agent state folder described in the [Hermes guide](../../../docs/integrations/harness/hermes/hermes.mdx#shared-runtime-home). The adapter writes native configuration and optional NeMo Relay plugin configuration there. When native interfaces are enabled, an owner-only `interfaces/agent-config.json` snapshot supplies the constructor mapping and is removed on stop. Model credentials are provided through child environments rather than public attachment metadata.
 
 The adapter leaves the installed Hermes source unchanged. Independently started processes do not automatically receive its mapping. Refer to [Shared Configuration and Ownership](../../../docs/integrations/harness/hermes/hermes.mdx#shared-configuration-and-ownership) for precedence and managed API gateway scope.
+
+## Cold Resume
+
+`SessionRef` resume requires `sdk.enabled: true`, which is the default. The run plan reports the adapter's declared `session_resume` capability. Native-only runtimes can retain their Hermes home with `runtime.keep_state` and start without issuing a session reference. Hermes rejects explicit SDK session selection in native-only mode with `session_resume_unsupported`.
+
+With `runtime.keep_state`, save `Runtime.session_ref.to_mapping()` in caller-owned
+storage. Pass `session_ref=SessionRef.from_mapping(saved_reference)`
+to `Fabric.start_runtime()` to reopen the exact native conversation. The caller
+must also retain the full artifact state tree, including NeMo Fabric's private
+relative bindings in `.fabric/state/nvidia.fabric.hermes/.sessions`. A corrected
+agent name can select the same reference. A different adapter cannot. A missing or incompatible session returns an explicit error.
+
+The adapter uses Hermes's native resume checks, conversation projection, and
+reopen operation. Hermes owns native identifiers and compression segments.
+NeMo Fabric supplies the current startup configuration and instructions and creates
+a new runtime ID. Hermes can restore its saved system prompt and pinned tools.
+NeMo Fabric does not override those native resume rules. `RunResult.session_ref`
+confirms the selected conversation.
+
+An uncertain earlier turn produces a `session_recovery_required` startup
+warning. NeMo Fabric preserves history, including unfinished requests. The model
+may act on those requests after acknowledgment. Inspect the
+native and external state before issuing a new `RunRequest` with
+`acknowledge_recovery=True`. This gate applies to NeMo Fabric-controlled invocations.
+NeMo Fabric does not change native API or dashboard session selection or behavior.
+
+The state lock remains held while shutdown is unconfirmed. On Unix, native API
+and dashboard processes inherit the lock so a surviving writer still prevents
+replacement after its host exits. Retry cleanup after a caller timeout and confirm that the runtime has stopped. See the [SDK resume guide](../../../docs/sdk/python.mdx#resume-a-hermes-conversation)
+for selection, recovery, and storage details.
 
 ## Execution Model
 

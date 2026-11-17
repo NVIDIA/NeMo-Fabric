@@ -315,6 +315,34 @@
     ],
     "system_instruction_modes": ["replace"]
   },
+  "skills": {
+    "directory_loading": {
+      "supported_entries": ["skill", "folder"],
+      "skill_file": "SKILL.md",
+      "discovery": {
+        "traversal": "recursive",
+        "nested_skills": "stop_at_skill",
+        "depth_limit": {"kind": "adapter_defined"}
+      },
+      "parsing": {
+        "required_frontmatter_fields": ["description"],
+        "name_fallback": "directory_name",
+        "frontmatter_errors": "reject"
+      }
+    },
+    "bundled": {
+      "default": "enabled",
+      "supports_enable": true,
+      "supports_disable": true,
+      "supports_include": true,
+      "supports_exclude": true
+    },
+    "duplicates": {
+      "supported_policies": ["reject", "first_wins", "last_wins"],
+      "native": "A higher OpenClaw source wins: workspace skills, then state-folder skills, then shipped skills, then skills.directories. Between skills.directories entries the later entry wins.",
+      "name_source": "frontmatter"
+    }
+  },
   "capabilities": {
     "service": true,
     "metadata": {"service_health_checks": ["live", "active", "ready"], "health_checks": ["live", "active", "ready"]},

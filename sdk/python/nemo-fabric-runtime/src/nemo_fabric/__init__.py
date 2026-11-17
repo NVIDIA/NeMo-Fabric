@@ -44,7 +44,9 @@ from nemo_fabric.models import RunRequest
 from nemo_fabric.models import SystemStatsConfig
 from nemo_fabric.models import SystemStatsSamplingConfig
 from nemo_fabric.models import RuntimeConfig
+from nemo_fabric.models import BundledSkills
 from nemo_fabric.models import SkillConfig
+from nemo_fabric.models import SkillDirectory
 from nemo_fabric.models import TelemetryConfig
 from nemo_fabric.models import TelemetryProviderConfig
 from nemo_fabric.models import ToolsConfig
@@ -57,6 +59,7 @@ from nemo_fabric.service import Service
 from nemo_fabric.service import ServiceStatus
 from nemo_fabric.streaming import InvokeStream
 from nemo_fabric.types import AdapterInfo
+from nemo_fabric.types import SessionRef
 from nemo_fabric.types import ArtifactManifest
 from nemo_fabric.types import ArtifactRef
 from nemo_fabric.types import DoctorCheck
@@ -90,6 +93,7 @@ from nemo_fabric.types import ServiceReference
 from nemo_fabric.types import TelemetryRef
 
 __all__ = [
+    "SessionRef",
     "CheckReport",
     "CheckRequest",
     "AdapterCapabilityProfile",
@@ -169,6 +173,8 @@ __all__ = [
     "ServiceReference",
     "ServiceStatus",
     "SkillConfig",
+    "SkillDirectory",
+    "BundledSkills",
     "TelemetryConfig",
     "TelemetryProviderConfig",
     "TelemetryRef",

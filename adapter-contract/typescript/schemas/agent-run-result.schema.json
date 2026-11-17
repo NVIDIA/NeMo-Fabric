@@ -252,6 +252,13 @@
     "output": {
       "description": "Primary adapter-target output."
     },
+    "session_id": {
+      "description": "Confirmed adapter-issued identity of the durable native session.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "status": {
       "$ref": "#/$defs/AgentRunStatus",
       "description": "Adapter-target completion status."

@@ -33,6 +33,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`service.ServiceStatus`](./nemo_fabric.service.md#class-servicestatus): Lifecycle state of a prepared or attached service.
 - [`streaming.InvokeStream`](./nemo_fabric.streaming.md#class-invokestream): Async iterator of raw ATOF records for one runtime invocation.
 - [`openai_streaming.OpenAIInvokeStream`](./nemo_fabric.openai_streaming.md#class-openaiinvokestream): Async iterator of OpenAI chat-completion chunks for one invocation.
+- [`models.BundledSkills`](./nemo_fabric.models.md#class-bundledskills): Selection of the skills shipped with the harness.
 - [`models.DiscoveryConfig`](./nemo_fabric.models.md#class-discoveryconfig): Explicit local descriptor discovery paths.
 - [`models.EnvironmentConfig`](./nemo_fabric.models.md#class-environmentconfig): Execution environment configuration supplied by the consumer.
 - [`models.FabricBaseModel`](./nemo_fabric.models.md#class-fabricbasemodel): Base class for SDK-facing Pydantic models.
@@ -61,6 +62,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`models.RunRequest`](./nemo_fabric.models.md#class-runrequest): One validated NeMo Fabric invocation request.
 - [`models.RuntimeConfig`](./nemo_fabric.models.md#class-runtimeconfig): Invocation runtime contract.
 - [`models.SkillConfig`](./nemo_fabric.models.md#class-skillconfig): Skill capability configuration.
+- [`models.SkillDirectory`](./nemo_fabric.models.md#class-skilldirectory): One structured skill entry: a single skill or a folder of skills.
 - [`models.SystemStatsConfig`](./nemo_fabric.models.md#class-systemstatsconfig): Native invocation stats selection, independent of Relay and recording.
 - [`models.SystemStatsSamplingConfig`](./nemo_fabric.models.md#class-systemstatssamplingconfig): Opt-in periodic collection; bounds include both endpoint samples.
 - [`models.TelemetryConfig`](./nemo_fabric.models.md#class-telemetryconfig): Telemetry configuration.
@@ -96,6 +98,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`types.SampleSummary`](./nemo_fabric.types.md#class-samplesummary): Retained native series, reductions, and collection-quality diagnostics.
 - [`types.ServiceHandle`](./nemo_fabric.types.md#class-servicehandle): Opaque identity and binding for one prepared or attached service.
 - [`types.ServiceReference`](./nemo_fabric.types.md#class-servicereference): Reference to an already-running caller-owned service.
+- [`types.SessionRef`](./nemo_fabric.types.md#class-sessionref): Portable native session identity, resolved within supplied retained storage.
 - [`types.SoftwareEntry`](./nemo_fabric.types.md#class-softwareentry): One selected software component.
 - [`types.SoftwareEnvironment`](./nemo_fabric.types.md#class-softwareenvironment): Observed installation context and selected coverage.
 - [`types.TelemetryRef`](./nemo_fabric.types.md#class-telemetryref): Reference to external or persisted telemetry for a run.

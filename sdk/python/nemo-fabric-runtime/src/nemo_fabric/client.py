@@ -41,6 +41,7 @@ from nemo_fabric.runtime import (
     _run_request_payload,
 )
 from nemo_fabric.service import Service
+from nemo_fabric.types import SessionRef
 from nemo_fabric.service import ServiceStatus
 from nemo_fabric.streaming import (
     _configured_stream_sink,
@@ -517,6 +518,7 @@ class Fabric:
         base_dir: str | os.PathLike[str] | None = None,
         input: Any = None,
         request: RunRequest | None = None,
+        session_ref: SessionRef | None = None,
         expected_descriptor_sha256: str | None = None,
     ) -> RunResult:
         """Execute one complete start, invoke, and stop lifecycle.
@@ -525,10 +527,14 @@ class Fabric:
         an empty text input. Use ``RunRequest`` when the invocation needs a
         caller-owned request ID, context, or overrides.
         NeMo Fabric attempts to stop a started runtime even when invocation fails.
+        Unconfirmed cleanup raises an error with ``cleanup_runtime`` for an
+        explicit stop retry in the same process.
 
         Args:
             config: Complete typed ``FabricConfig``.
             base_dir: Base directory for resolving relative paths.
+            session_ref: Native session to resume. Durable sessions
+                require retained storage and adapter support. Omission starts fresh.
             input: JSON-compatible invocation input.
             request: Complete validated ``RunRequest``.
             expected_descriptor_sha256: Optional host-inspection fingerprint.
@@ -556,12 +562,14 @@ class Fabric:
             input=input,
             request=request,
         )
+        plan = _with_session_ref(plan, session_ref)
         native = self._require_native_module("run")
         try:
             return RunResult.from_mapping(
                 await _run_native_lifecycle(native, plan.to_mapping(), request_payload)
             )
         except (FabricError, asyncio.CancelledError) as error:
+            self._attach_cleanup_runtime(error, plan)
             # The selected report already includes the caller and guest SDK facts.
             # Optional evidence must not change the lifecycle exception or cause.
             if isinstance(error, FabricError):
@@ -576,12 +584,50 @@ class Fabric:
             )
             raise
 
+    def _attach_cleanup_runtime(self, error: BaseException, plan: RunPlan) -> None:
+        cleanup = getattr(error, "_fabric_cleanup_runtime_handle", None)
+        if cleanup is not None:
+            recovery = Runtime(client=self, plan=plan, runtime=cleanup)
+            recovery._status = RuntimeStatus.FAILED
+            if isinstance(error, FabricError):
+                error._cleanup_runtime = recovery
+            else:
+                error.cleanup_runtime = recovery
+            del error._fabric_cleanup_runtime_handle
+
+    async def _call_start_with_cleanup(self, start: Any, plan: RunPlan) -> Any:
+        cleanup = None
+
+        def call():
+            nonlocal cleanup
+            try:
+                return start()
+            except Exception as error:
+                cleanup = getattr(error, "_fabric_cleanup_runtime_handle", None)
+                raise
+
+        try:
+            return await _call_blocking(call)
+        except BaseException as error:
+            if cleanup is not None:
+                failure = (
+                    error
+                    if isinstance(error, (FabricError, asyncio.CancelledError))
+                    else _runtime_error(error, stage="start")
+                )
+                failure._fabric_cleanup_runtime_handle = cleanup
+                self._attach_cleanup_runtime(failure, plan)
+                if failure is not error:
+                    raise failure from error
+            raise
+
     async def start_runtime(
         self,
         config: FabricConfig,
         *,
         base_dir: str | os.PathLike[str] | None = None,
         overrides: Mapping[str, Any] | None = None,
+        session_ref: SessionRef | None = None,
         streaming: bool = False,
         launch_collector: bool | None = None,
         completion_wait_timeout: float = 1.0,
@@ -601,6 +647,8 @@ class Fabric:
         Args:
             config: Complete typed ``FabricConfig``.
             base_dir: Base directory for resolving relative paths.
+            session_ref: Native session to resume. Durable sessions
+                require retained storage and adapter support. Omission starts fresh.
             overrides: JSON-compatible overrides applied to every invocation
                 in the runtime unless superseded by invocation overrides.
             streaming: Whether to enable collector-backed NeMo Relay ATOF
@@ -637,6 +685,7 @@ class Fabric:
 
         return await self._start_runtime(
             config,
+            session_ref=session_ref,
             base_dir=base_dir,
             overrides=overrides,
             streaming=streaming,
@@ -781,6 +830,7 @@ class Fabric:
         *,
         base_dir: str | os.PathLike[str] | None = None,
         overrides: Mapping[str, Any] | None = None,
+        session_ref: SessionRef | None = None,
         streaming: bool = False,
     ) -> Runtime:
         """Start one stateful runtime in an explicitly prepared or attached environment.
@@ -797,6 +847,8 @@ class Fabric:
             environment: Handle returned by ``prepare_environment()`` or
                 ``attach_environment()``.
             base_dir: Base directory for resolving relative paths.
+            session_ref: Native session to resume. Durable sessions
+                require retained storage and adapter support. Omission starts fresh.
             overrides: JSON-compatible runtime-scoped invocation overrides.
             streaming: Whether to provision NeMo Relay ATOF streaming.
 
@@ -819,6 +871,7 @@ class Fabric:
         return await self._start_runtime(
             config,
             environment=environment,
+            session_ref=session_ref,
             base_dir=base_dir,
             overrides=overrides,
             streaming=streaming,
@@ -857,6 +910,7 @@ class Fabric:
         environment: EnvironmentHandle | None = None,
         base_dir: str | os.PathLike[str] | None = None,
         overrides: Mapping[str, Any] | None = None,
+        session_ref: SessionRef | None = None,
         streaming: bool = False,
         launch_collector: bool | None = None,
         completion_wait_timeout: float = 1.0,
@@ -885,6 +939,7 @@ class Fabric:
                 config,
                 reservation=reservation,
                 environment=environment,
+                session_ref=session_ref,
                 base_dir=base_dir,
                 overrides=overrides,
                 streaming=streaming,
@@ -905,6 +960,7 @@ class Fabric:
         environment: EnvironmentHandle | None = None,
         base_dir: str | os.PathLike[str] | None = None,
         overrides: Mapping[str, Any] | None = None,
+        session_ref: SessionRef | None = None,
         streaming: bool = False,
         launch_collector: bool | None = None,
         completion_wait_timeout: float = 1.0,
@@ -1047,6 +1103,7 @@ class Fabric:
             )
             if expected_descriptor_sha256 is not None:
                 _verify_adapter_descriptor(plan, expected_descriptor_sha256)
+            plan = _with_session_ref(plan, session_ref)
             method = "start_runtime_in" if environment is not None else "start_runtime"
             native = self._require_native_module(method)
         except BaseException:
@@ -1069,7 +1126,7 @@ class Fabric:
             return started_runtime
 
         try:
-            runtime = await _call_blocking(start)
+            runtime = await self._call_start_with_cleanup(start, plan)
         except asyncio.CancelledError:
             if started_runtime is not None:
                 try:
@@ -1164,7 +1221,9 @@ class Fabric:
             return started_service
 
         try:
-            handle = ServiceHandle.from_mapping(await _call_blocking(prepare))
+            handle = ServiceHandle.from_mapping(
+                await self._call_start_with_cleanup(prepare, plan)
+            )
         except BaseException as error:
             await _release_registered_service(native, plan, started_service)
             if isinstance(error, (asyncio.CancelledError, FabricError)):
@@ -1225,7 +1284,9 @@ class Fabric:
             return attached_service
 
         try:
-            handle = ServiceHandle.from_mapping(await _call_blocking(attach))
+            handle = ServiceHandle.from_mapping(
+                await self._call_start_with_cleanup(attach, plan)
+            )
         except BaseException as error:
             await _release_registered_service(native, plan, attached_service)
             if isinstance(error, (asyncio.CancelledError, FabricError)):
@@ -1284,6 +1345,16 @@ def _environment_reference_json(reference: EnvironmentReference) -> str:
 
 def _base_dir_arg(base_dir: str | os.PathLike[str] | None) -> str | None:
     return None if base_dir is None else os.fspath(base_dir)
+
+
+def _with_session_ref(plan: RunPlan, session_ref: SessionRef | None) -> RunPlan:
+    if session_ref is None:
+        return plan
+    if not isinstance(session_ref, SessionRef):
+        raise FabricConfigError("session_ref must be a SessionRef")
+    return RunPlan.from_mapping(
+        {**plan.to_mapping(), "session_ref": session_ref.to_mapping()}
+    )
 
 
 async def _release_registered_service(

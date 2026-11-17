@@ -19,6 +19,7 @@ from typing import Any
 from typing import Literal
 from typing import Self
 from typing import TypeVar
+from typing import get_args
 
 from pydantic import BaseModel
 
@@ -536,25 +537,103 @@ class _EnvironmentConfig(_ConfigMapping):
         )
 
 
+SkillDuplicatePolicy = Literal["reject", "last_wins", "first_wins"]
+"""How skills that share a name across ``skills.directories`` entries resolve."""
+_SKILL_DUPLICATE_POLICIES: tuple[str, ...] = get_args(SkillDuplicatePolicy)
+
+
+def _skill_directories(value: Any) -> list[dict[str, str]]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise FabricConfigError("skills.directories must be a list")
+    entries: list[dict[str, str]] = []
+    for index, item in enumerate(value):
+        field = f"skills.directories[{index}]"
+        raw = _mapping(item, field)
+        unknown = sorted(set(raw).difference({"skill", "folder"}))
+        if unknown:
+            raise FabricConfigError(f"{field} has unknown field {unknown[0]!r}")
+        # A key set to null is absent, as it is in every other binding.
+        data = {key: path for key, path in raw.items() if path is not None}
+        if len(data) != 1:
+            raise FabricConfigError(f"{field} must set exactly one of skill or folder")
+        ((kind, path),) = data.items()
+        if not isinstance(path, str) or not path.strip():
+            raise FabricConfigError(f"{field}.{kind} must be a non-empty path string")
+        entries.append({kind: path})
+    return entries
+
+
+def _bundled_skills(value: Any) -> dict[str, Any]:
+    data = _mapping(value, "skills.bundled")
+    unknown = sorted(set(data).difference({"enabled", "include", "exclude"}))
+    if unknown:
+        raise FabricConfigError(f"skills.bundled has unknown field {unknown[0]!r}")
+    result: dict[str, Any] = {
+        "enabled": _boolean(data.get("enabled", True), "skills.bundled.enabled")
+    }
+    for key in ("include", "exclude"):
+        names = data.get(key)
+        if names is None:
+            continue
+        # Accept any sequence of names, such as a tuple, as the models do.
+        if (
+            isinstance(names, (str, bytes))
+            or not isinstance(names, Sequence)
+            or any(not isinstance(name, str) or not name.strip() for name in names)
+        ):
+            raise FabricConfigError(
+                f"skills.bundled.{key} must be a list of non-empty strings"
+            )
+        result[key] = list(names)
+    if "include" in result and "exclude" in result:
+        raise FabricConfigError("skills.bundled cannot set both include and exclude")
+    if not result["enabled"] and ("include" in result or "exclude" in result):
+        raise FabricConfigError(
+            "skills.bundled with enabled=false cannot set include or exclude"
+        )
+    return result
+
+
 class _SkillConfig(_ConfigMapping):
     """Skill capability configuration.
 
     The shape matches the ``skills`` section of ``FabricConfig`` while
-    providing small authoring helpers for Python callers.
+    providing small authoring helpers for Python callers. ``directories``,
+    ``bundled``, and ``duplicates`` are stored only when set.
     """
 
-    _fields = frozenset({"paths"})
+    _fields = frozenset({"paths", "directories", "bundled", "duplicates"})
     _omit_if_empty = frozenset({"paths"})
 
     def __init__(
         self,
         *,
         paths: Sequence[str | Path] | None = None,
+        directories: Sequence[Mapping[str, Any]] | None = None,
+        bundled: Mapping[str, Any] | None = None,
+        duplicates: str | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
         values: dict[str, Any] = {
             "paths": [str(path) for path in ([] if paths is None else paths)]
         }
+        if directories is not None:
+            if values["paths"]:
+                raise FabricConfigError(
+                    "skills.directories may be set only when skills.paths is empty"
+                )
+            values["directories"] = _skill_directories(_plain(directories))
+        if bundled is not None:
+            values["bundled"] = _bundled_skills(bundled)
+        if duplicates is not None:
+            if duplicates not in _SKILL_DUPLICATE_POLICIES:
+                raise FabricConfigError(
+                    "skills.duplicates must be one of: "
+                    + ", ".join(_SKILL_DUPLICATE_POLICIES)
+                )
+            if directories is None:
+                raise FabricConfigError("skills.duplicates requires skills.directories")
+            values["duplicates"] = duplicates
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
@@ -564,6 +643,9 @@ class _SkillConfig(_ConfigMapping):
         data = _mapping(value, "skills")
         return cls(
             paths=data.get("paths", []),
+            directories=data.get("directories"),
+            bundled=data.get("bundled"),
+            duplicates=data.get("duplicates"),
             extra_fields={
                 key: item for key, item in data.items() if key not in cls._fields
             },
@@ -572,6 +654,10 @@ class _SkillConfig(_ConfigMapping):
     def add_path(self, path: str | Path) -> "_SkillConfig":
         """Add a skill path to this config if it is not already present."""
 
+        if self.get("directories") is not None:
+            raise FabricConfigError(
+                "skills.paths cannot be combined with skills.directories"
+            )
         value = str(path)
         paths = list(self.get("paths", []))
         if value not in paths:
@@ -1396,6 +1482,38 @@ class AdapterInfo(FabricMapping):
         return data
 
 
+class SessionRef(FabricMapping):
+    """Portable native session identity, resolved within supplied retained storage.
+
+    ``session_id`` is opaque to NeMo Fabric and must not contain credentials or paths.
+    Changing an agent name does not change the referenced session.
+    """
+
+    schema_version: str
+    adapter_id: str
+    session_id: str
+    _fields = frozenset({"schema_version", "adapter_id", "session_id"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if set(data) != cls._fields:
+            raise FabricConfigError(
+                "SessionRef requires exactly schema_version, adapter_id, and session_id"
+            )
+        if data["schema_version"] != "fabric.session_ref/v1alpha1":
+            raise FabricConfigError("unsupported SessionRef schema_version")
+        for name in ("adapter_id", "session_id"):
+            data[name] = _required_text(data[name], name)
+        return data
+
+    def __repr__(self) -> str:
+        return (
+            "SessionRef(adapter_id="
+            + repr(self.adapter_id)
+            + ", session_id='[redacted]')"
+        )
+
+
 class RuntimeCapabilities(FabricMapping):
     """Operations declared by the resolved runtime and adapter.
 
@@ -1405,6 +1523,7 @@ class RuntimeCapabilities(FabricMapping):
 
     Attributes:
         service: Whether long-lived service handles are supported.
+        session_resume: Whether durable native session creation and resume are supported.
         streaming: Whether event streaming is supported.
         updates: Whether runtime configuration updates are supported.
         cancellation: Whether in-flight cancellation is supported.
@@ -1412,12 +1531,14 @@ class RuntimeCapabilities(FabricMapping):
     """
 
     service: bool
+    session_resume: bool
     streaming: bool
     updates: bool
     cancellation: bool
     metadata: Mapping[str, Any]
     _fields = frozenset(
         {
+            "session_resume",
             "service",
             "streaming",
             "updates",
@@ -1445,6 +1566,7 @@ class RunPlan(FabricMapping):
         config: Typed configuration snapshot.
         adapter: Resolved adapter identity.
         capabilities: Operations declared by the resolved runtime.
+        session_ref: Native session to resume. Omission starts a fresh conversation.
     """
 
     agent_name: str
@@ -1452,10 +1574,20 @@ class RunPlan(FabricMapping):
     config: _FabricConfigSnapshot
     adapter: AdapterInfo
     capabilities: RuntimeCapabilities
-    _fields = frozenset({"agent_name", "base_dir", "config", "adapter", "capabilities"})
+    session_ref: SessionRef | None
+    _fields = frozenset(
+        {"agent_name", "base_dir", "config", "adapter", "capabilities", "session_ref"}
+    )
+
+    @property
+    def session_ref(self) -> SessionRef | None:
+        """Explicit native session selection, when supplied."""
+        return self._data.get("session_ref")
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if data.get("session_ref") is not None:
+            data["session_ref"] = SessionRef.from_mapping(data["session_ref"])
         descriptor = data.get("adapter")
         if descriptor is None:
             descriptor = (data.get("adapter_descriptor") or {}).get("descriptor", {})
@@ -1806,6 +1938,8 @@ class RuntimeHandle(FabricMapping):
     """
 
     runtime_id: str
+    session_ref: SessionRef | None
+    recovery_warnings: Sequence[ErrorInfo]
     runtime_binding: str
     agent_name: str
     harness: str
@@ -1815,6 +1949,8 @@ class RuntimeHandle(FabricMapping):
     environment: Mapping[str, Any]
     _fields = frozenset(
         {
+            "session_ref",
+            "recovery_warnings",
             "runtime_id",
             "runtime_binding",
             "agent_name",
@@ -1827,8 +1963,24 @@ class RuntimeHandle(FabricMapping):
     )
     _json_fields = frozenset({"environment"})
 
+    @property
+    def session_ref(self) -> SessionRef | None:
+        """Confirmed durable session, or None for a runtime without one."""
+        return self._data.get("session_ref")
+
+    @property
+    def recovery_warnings(self) -> Sequence[ErrorInfo]:
+        """Recovery warnings reported when the native session was restored."""
+        return self._data.get("recovery_warnings", ())
+
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if data.get("session_ref") is not None:
+            data["session_ref"] = SessionRef.from_mapping(data["session_ref"])
+        if data.get("recovery_warnings"):
+            data["recovery_warnings"] = [
+                ErrorInfo.from_mapping(warning) for warning in data["recovery_warnings"]
+            ]
         for field in (
             "runtime_id",
             "runtime_binding",
@@ -2782,6 +2934,7 @@ class RunResult(FabricMapping):
     """
 
     agent_name: str
+    session_ref: SessionRef | None
     harness: str
     adapter_kind: str
     adapter_id: str
@@ -2801,6 +2954,7 @@ class RunResult(FabricMapping):
     metadata: Mapping[str, Any]
     _fields = frozenset(
         {
+            "session_ref",
             "agent_name",
             "harness",
             "adapter_kind",
@@ -2823,8 +2977,15 @@ class RunResult(FabricMapping):
     )
     _json_fields = frozenset({"metadata"})
 
+    @property
+    def session_ref(self) -> SessionRef | None:
+        """Confirmed durable session, or None when no durable session was selected."""
+        return self._data.get("session_ref")
+
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if data.get("session_ref") is not None:
+            data["session_ref"] = SessionRef.from_mapping(data["session_ref"])
         for field in (
             "agent_name",
             "harness",

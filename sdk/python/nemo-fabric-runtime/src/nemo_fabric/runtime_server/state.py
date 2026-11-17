@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
+from nemo_fabric.errors import FabricRuntimeError
 from nemo_fabric import (
     Fabric,
     FabricConfig,
@@ -22,6 +23,7 @@ from nemo_fabric import (
     RunRequest,
     Runtime,
     RuntimeStatus,
+    SessionRef,
 )
 from nemo_fabric.runtime_server.protocol import (
     OPERATIONS,
@@ -36,6 +38,17 @@ from nemo_fabric.runtime_server.health import (
 )
 
 MAX_STOPPED_RUNTIME_RECORDS = 128
+START_REJECTIONS = frozenset(
+    {
+        "state_in_use",
+        "session_not_found",
+        "session_incompatible",
+        "session_adapter_mismatch",
+        "session_ref_invalid",
+        "session_storage_required",
+        "session_resume_unsupported",
+    }
+)
 
 
 @dataclass
@@ -45,6 +58,7 @@ class OwnedRuntime:
     state: str = "running"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     generation: int = 0
+    stop_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
 
 class RuntimeServer:
@@ -76,10 +90,14 @@ class RuntimeServer:
 
     async def _stop(self, owned: OwnedRuntime) -> None:
         owned.generation += 1
-        owned.state = "unknown"
+        owned.state = "stopping"
         runtime = owned.runtime
-        if runtime is not None:
-            await runtime.stop()
+        try:
+            if runtime is not None:
+                await runtime.stop()
+        except BaseException:
+            owned.state = "unknown"
+            raise
         owned.runtime = None
         owned.state = "stopped"
         runtime_id = runtime.runtime_id if runtime is not None else None
@@ -141,10 +159,21 @@ class RuntimeServer:
                 async with self._start_lock:
                     if self.shutting_down:
                         raise ProtocolError("host_stopping")
+                    if any(
+                        owned.agent == request["agent"]
+                        and owned.state in ("stopping", "unknown")
+                        for owned in self.runtimes.values()
+                    ):
+                        raise ProtocolError("cleanup_unconfirmed", "start")
                     if self.start_uncertain:
                         raise ProtocolError("start_uncertain", "start")
                     stage = "validation"
                     config = FabricConfig.model_validate(request["config"])
+                    session_arguments = (
+                        {"session_ref": SessionRef.from_mapping(request["session_ref"])}
+                        if "session_ref" in request
+                        else {}
+                    )
                     previously_used = self.has_used_runtime
                     # Keep the sandbox marker if this request is cancelled while
                     # native start is running. A known validation rejection has
@@ -154,7 +183,7 @@ class RuntimeServer:
                     changed, effects, stage = None, "unknown", "start"
                     try:
                         runtime = await self.fabric.start_runtime(
-                            config, base_dir=self.directory
+                            config, base_dir=self.directory, **session_arguments
                         )
                     except FabricStateError as error:
                         if error.code != "runtime_limit_reached":
@@ -167,6 +196,13 @@ class RuntimeServer:
                         self.has_used_runtime = previously_used
                         self.start_uncertain = False
                         changed, effects = False, "none"
+                        raise
+                    except FabricRuntimeError as error:
+                        if error.code in START_REJECTIONS:
+                            self.has_used_runtime = previously_used
+                            self.start_uncertain = False
+                            changed, effects = False, "none"
+                            raise ProtocolError(error.code, "start") from error
                         raise
 
                     if runtime.runtime_id in self.runtimes:
@@ -192,16 +228,16 @@ class RuntimeServer:
             if operation == "stop" and owned.state != "stopped":
                 owned.generation += 1
                 owned.state = "stopping"
-            async with owned.lock:
-                if self.shutting_down:
-                    raise ProtocolError("host_stopping")
-                if operation == "stop":
+            if operation == "stop":
+                async with owned.stop_lock:
                     if owned.state == "stopped":
                         return envelope(operation, result)
                     changed, effects, stage = None, "unknown", "stop"
                     await self._stop(owned)
                     return envelope(operation, result, changed=True)
-
+            async with owned.lock:
+                if self.shutting_down:
+                    raise ProtocolError("host_stopping")
                 stage = "invoke"
                 if (
                     owned.state != "running"
@@ -265,6 +301,16 @@ class RuntimeServer:
         if owned.agent != command["agent"]:
             raise ProtocolError("wrong_agent", "check")
         runtime = owned.runtime
+        if owned.state in {"stopping", "unknown"}:
+            pending = owned.state == "stopping"
+            report = runtime_report(
+                request, "runtime_busy" if pending else "cleanup_unconfirmed", started
+            )
+            report["runtime"] = {
+                "state": "unknown" if pending else "failed",
+                "activity": "stopping" if pending else "unknown",
+            }
+            return check_response(report)
         if (
             self.shutting_down
             or owned.state != "running"
@@ -317,7 +363,7 @@ class RuntimeServer:
         cleanup_failures: list[Exception] = []
         async with self._start_lock:
             for owned in tuple(self.runtimes.values()):
-                async with owned.lock:
+                async with owned.stop_lock, owned.lock:
                     if owned.state != "stopped":
                         try:
                             await self._stop(owned)

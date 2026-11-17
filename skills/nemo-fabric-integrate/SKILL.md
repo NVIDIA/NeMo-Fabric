@@ -163,6 +163,13 @@ def to_fabric_config(job) -> FabricConfig:
   type.
 - Create deployment or evaluation variants with `model_copy(deep=True)` and
   ordinary Python functions; each copy plans and runs independently.
+- To give a skill path the same meaning on every adapter, set
+  `SkillConfig.directories` to `SkillDirectory(skill=...)` and
+  `SkillDirectory(folder=...)` entries instead of using `paths`, with optional
+  `bundled=BundledSkills(...)` and
+  `duplicates`. These need adapter support, and `add_skill_path` raises
+  `ValueError` once `directories` is set. Refer to
+  [Configure Skills](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/skills.mdx).
 - Pass `base_dir=...` to any `Fabric` call when the config uses relative paths,
   so skills, workspaces, and artifacts anchor to the consumer's own layout.
 
@@ -176,6 +183,22 @@ construction.
 For Hermes, embedded SDK execution is enabled and eager by default. Set `harness.settings.sdk.enabled=False` only for native-only runtimes with an enabled API, dashboard, or terminal interface; management through the SDK remains available, but invocation fails explicitly. Browser and terminal clients share one managed TUI backend. Native responses remain native even when Relay emits standard ATOF/ATIF; do not treat them as SDK `RunResult` objects. Follow the [Hermes invocation guides](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes/hermes.mdx) for interface-specific installation and attachment.
 
 For Deep Agents, mini-SWE-agent, and the LangGraph custom-agent example, pass the same UUID string through `RunRequest.relay_session_root` on each conversation turn to group Relay trajectories under one session. Core forwards the typed field as `AgentRunRequest.relay_session_root`; context keys do not control Relay propagation. An unusable UUID preserves per-request behavior. The remaining adapters do not consume this field.
+
+For Hermes cold resume, configure `runtime.keep_state` and retain the complete
+artifact state tree. Persist `Runtime.session_ref.to_mapping()` in caller-owned
+storage and pass `session_ref=SessionRef.from_mapping(saved_reference)`
+to `Fabric.start_runtime()`, `start_runtime_in()`, or `run()`. A new runtime ID
+does not change the selected session. Retention alone starts a fresh
+conversation. Never select the latest conversation implicitly. Agent names are
+labels, while the reference's adapter must match. Handle `state_in_use` and
+missing or incompatible session errors explicitly. Inspect
+`Runtime.recovery_warnings` before continuing an uncertain session. Send a new
+`RunRequest(..., acknowledge_recovery=True)` only after inspecting native and
+external state. Do not replay an interrupted request automatically. Keep
+ownership and retry cleanup when stop is unconfirmed. Native Hermes API and
+dashboard behavior remains owned by Hermes.
+
+Hermes `SessionRef` resume requires the SDK backend to be enabled. Native-only Hermes runtimes can retain state and report `RunPlan.capabilities.session_resume: false`. Explicit SDK session selection then fails with `session_resume_unsupported` before native startup.
 
 Pick the smallest lifecycle the consumer needs:
 

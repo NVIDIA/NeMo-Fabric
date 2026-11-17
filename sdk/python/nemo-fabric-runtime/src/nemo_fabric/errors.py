@@ -7,7 +7,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .runtime import Runtime
 
 
 class FabricError(RuntimeError):
@@ -48,6 +51,15 @@ class FabricError(RuntimeError):
         self.code = code
         self.retryable = retryable
         self.details = deepcopy(dict(details or {}))
+        self._cleanup_runtime: Runtime | None = None
+
+    @property
+    def cleanup_runtime(self) -> Runtime | None:
+        """Owned runtime for a failed lifecycle cleanup retry, or ``None``.
+
+        This in-memory capability is excluded from error text and structured details.
+        """
+        return self._cleanup_runtime
 
 
 class FabricConfigError(FabricError):
@@ -62,12 +74,23 @@ def _runtime_error(error: Exception, *, stage: str) -> FabricRuntimeError:
     """Preserve native deadline identity and adapter codes without parsing text."""
     if isinstance(error, FabricRuntimeError):
         return error
-    code = "timeout" if isinstance(error, TimeoutError) else getattr(error, "code", None)
-    return FabricRuntimeError(
+    code = (
+        "timeout" if isinstance(error, TimeoutError) else getattr(error, "code", None)
+    )
+    retryable = getattr(error, "retryable", False)
+    failure = FabricRuntimeError(
         str(error),
         stage=stage,
         code=code if isinstance(code, str) else None,
+        retryable=retryable if isinstance(retryable, bool) else False,
+        details=getattr(error, "details", None)
+        if isinstance(error, TimeoutError)
+        else None,
     )
+    cleanup = getattr(error, "_fabric_cleanup_runtime_handle", None)
+    if cleanup is not None:
+        failure._fabric_cleanup_runtime_handle = cleanup
+    return failure
 
 
 class FabricStateError(FabricRuntimeError):

@@ -13,6 +13,14 @@ pub type Result<T> = std::result::Result<T, FabricError>;
 /// Errors raised by NeMo Fabric config loading and validation.
 #[derive(Debug, thiserror::Error)]
 pub enum FabricError {
+    /// A normalized durable session operation could not be completed.
+    #[error("{code}: {message}")]
+    Session {
+        /// Stable machine-readable failure code.
+        code: String,
+        /// Safe diagnostic without the native session identifier.
+        message: String,
+    },
     /// The base directory could not be resolved to an absolute path.
     #[error("failed to resolve base directory {path}: {source}")]
     ResolveBaseDirectory {
@@ -226,7 +234,12 @@ pub enum FabricError {
         message: String,
         /// Bounded adapter-host diagnostics.
         diagnostics: String,
+        /// Structured adapter or runtime failure evidence.
+        metadata: std::collections::BTreeMap<String, serde_json::Value>,
     },
+    /// Owned lifecycle cleanup is unconfirmed; the original runtime remains owned.
+    #[error("{0}")]
+    RuntimeCleanupPending(Box<RuntimeCleanupPending>),
     /// A runtime handle was used with a different run plan than the one that created it.
     #[error(
         "runtime handle does not match run plan for `{field}`: expected `{expected}` but found `{actual}` (runtime `{runtime_id}`)"
@@ -427,4 +440,59 @@ pub enum FabricError {
         /// Underlying JSON error.
         source: serde_json::Error,
     },
+}
+
+/// Cleanup context retained when startup or invocation cannot finish owned cleanup.
+///
+/// Retry [`crate::stop_runtime`] with the original plan and [`Self::runtime`].
+/// The handle and completed output are deliberately excluded from diagnostic formatting.
+pub struct RuntimeCleanupPending {
+    runtime: crate::RuntimeHandle,
+    result: Option<crate::RunResult>,
+    cause: FabricError,
+}
+
+impl RuntimeCleanupPending {
+    pub(crate) fn new(
+        runtime: crate::RuntimeHandle,
+        result: Option<crate::RunResult>,
+        cause: FabricError,
+    ) -> Self {
+        Self {
+            runtime,
+            result,
+            cause,
+        }
+    }
+
+    /// The original handle required for a cleanup retry in this process.
+    pub fn runtime(&self) -> &crate::RuntimeHandle {
+        &self.runtime
+    }
+
+    /// The completed invocation result, if invocation succeeded before cleanup failed.
+    pub fn result(&self) -> Option<&crate::RunResult> {
+        self.result.as_ref()
+    }
+
+    /// The startup, invocation, or stop error that preceded the retained cleanup context.
+    pub fn cause(&self) -> &FabricError {
+        &self.cause
+    }
+}
+
+impl std::fmt::Debug for RuntimeCleanupPending {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RuntimeCleanupPending")
+            .field("result_available", &self.result.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Display for RuntimeCleanupPending {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "runtime cleanup is unconfirmed; retry stop with RuntimeCleanupPending::runtime()",
+        )
+    }
 }

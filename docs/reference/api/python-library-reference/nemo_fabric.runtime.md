@@ -72,9 +72,21 @@ Return a deep copy of the latest harness-provided message history.
 
 ---
 
+### <kbd>property</kbd> recovery_warnings
+
+Return recovery warnings. Acknowledge them through a new RunRequest.
+
+---
+
 ### <kbd>property</kbd> runtime_id
 
 Return the unique identifier for this started runtime lifecycle.
+
+---
+
+### <kbd>property</kbd> session_ref
+
+Return the confirmed durable native session, or None for legacy sessions.
 
 ---
 
@@ -211,7 +223,7 @@ The snapshot covers the local adapter host process and its live descendants. It 
 async def stop() -> None
 ```
 
-Destroy an idle runtime exactly once.
+Stop the runtime, interrupting an active buffered invocation if needed.
 
 Repeated calls after a successful stop are no-ops. A failed runtime may still be stopped so its resources are released.
 
@@ -219,7 +231,7 @@ Repeated calls after a successful stop are no-ops. A failed runtime may still be
 
 **Raises:**
 
- - <b>`FabricStateError`</b>:  If the runtime is already stopping or has an  invocation in flight.
+ - <b>`FabricStateError`</b>:  If the runtime is already stopping or has an  streaming invocation in flight.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is missing.
  - <b>`FabricRuntimeError`</b>:  If native runtime shutdown fails.
 

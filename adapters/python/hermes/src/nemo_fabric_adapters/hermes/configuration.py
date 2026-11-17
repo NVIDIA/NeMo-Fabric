@@ -17,6 +17,7 @@ from nemo_fabric_adapter_contract.models import McpOAuth2Config
 from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapters.hermes.interfaces import GATEWAY_DRAIN_TIMEOUT_SECONDS
+from nemo_fabric_adapters.hermes.skills import SkillPlan
 
 
 PROVIDER_DEFAULT_API_KEY_ENV = {
@@ -150,7 +151,14 @@ def build_hermes_config(
     workspace: str,
     relay_enabled: bool = False,
     interfaces: Collection[str] = (),
+    skill_plan: SkillPlan | None = None,
 ) -> dict[str, Any]:
+    """Return Hermes's native ``config.yaml`` settings.
+
+    ``skills.paths`` passes through to ``skills.external_dirs`` unchecked.
+    ``skills.directories`` and ``skills.bundled`` need ``skill_plan``, which
+    :func:`nemo_fabric_adapters.hermes.skills.plan_skills` builds at start.
+    """
     settings = _settings(agent_config)
     model_config = _selected_model(agent_config)
     blocked_toolsets = disabled_toolsets(agent_config)
@@ -195,13 +203,9 @@ def build_hermes_config(
         # Hermes reads booleans as aliases for on/off, so pass values through.
         config["tools"] = {"tool_search": {"enabled": tool_search["enabled"]}}
 
-    skill_dirs = (
-        [str(path) for path in agent_config.skills.paths]
-        if agent_config.skills is not None
-        else []
-    )
-    if skill_dirs:
-        config["skills"] = {"external_dirs": skill_dirs}
+    skills = _native_skills(agent_config, skill_plan)
+    if skills:
+        config["skills"] = skills
 
     mcp_servers = agent_config.mcp.servers if agent_config.mcp is not None else {}
     if mcp_servers:
@@ -220,6 +224,36 @@ def build_hermes_config(
     return config
 
 
+def _native_skills(
+    agent_config: AgentConfig, skill_plan: SkillPlan | None
+) -> dict[str, Any]:
+    """Return the ``skills`` section of ``config.yaml``."""
+
+    skills = agent_config.skills
+    if skills is None:
+        return {}
+    if skills.directories is None and skills.bundled is None:
+        # Legacy paths: passed through as configured, without checks.
+        skill_dirs = [str(path) for path in skills.paths]
+        return {"external_dirs": skill_dirs} if skill_dirs else {}
+    if skill_plan is None or not skill_plan.structured:
+        raise ValueError(
+            "skills.directories and skills.bundled need a skill plan from "
+            "nemo_fabric_adapters.hermes.skills.plan_skills"
+        )
+    section: dict[str, Any] = {}
+    if skill_plan.external_dirs is not None:
+        external = skill_plan.external_dirs
+    else:
+        external = [str(path) for path in skills.paths]
+    if external:
+        section["external_dirs"] = list(external)
+    # skills.bundled needs no setting here: left-out bundled skills never reach
+    # the home (see skills.stage_bundled), and skills.disabled would also hide
+    # an external or local skill of the same name.
+    return section
+
+
 def write_hermes_config(
     agent_config: AgentConfig,
     hermes_home: Path,
@@ -227,6 +261,7 @@ def write_hermes_config(
     workspace: str,
     relay_enabled: bool = False,
     interfaces: Collection[str] = (),
+    skill_plan: SkillPlan | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     hermes_home.mkdir(parents=True, exist_ok=True)
     config = build_hermes_config(
@@ -234,6 +269,7 @@ def write_hermes_config(
         workspace=workspace,
         relay_enabled=relay_enabled,
         interfaces=interfaces,
+        skill_plan=skill_plan,
     )
     config_path = hermes_home / "config.yaml"
     config_path.write_text(common_utils.dump_yaml(config), encoding="utf-8")
@@ -311,6 +347,11 @@ def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
         "model": config.get("model", {}),
         "terminal": config.get("terminal", {}),
         "skill_dirs": (config.get("skills") or {}).get("external_dirs", []),
+        **(
+            {"skills_disabled": disabled}
+            if (disabled := (config.get("skills") or {}).get("disabled"))
+            else {}
+        ),
         "mcp_servers": sorted((config.get("mcp_servers") or {}).keys()),
         "plugins": (config.get("plugins") or {}).get("enabled", []),
         "platform_toolsets": config.get("platform_toolsets", {}),

@@ -964,6 +964,7 @@ def test_openclaw_service_connection_without_fchmod(tmp_path: Path, monkeypatch)
         "http://127.0.0.1:18789",
         "TEST_ONLY_GATEWAY_TOKEN",
         "default",
+        None,
     )
     assert list(connection_path.parent.iterdir()) == [connection_path]
     if os.name == "posix":
@@ -1415,7 +1416,10 @@ async def test_openclaw_stop_continues_after_cleanup_failures(
     assert runtime._temp_dir is None
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Requires POSIX file permissions")
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "win32"},
+    reason="Starts the mock Gateway, which CI runs only on Linux",
+)
 async def test_openclaw_dashboard_serves_control_ui_with_a_token_file(
     mock_openclaw: Path, tmp_path: Path, dashboard_port: int
 ):

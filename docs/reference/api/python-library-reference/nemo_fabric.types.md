@@ -95,6 +95,80 @@ Return a detached, JSON-compatible mapping for serialization.
 ---
 
 
+## <kbd>class</kbd> `SessionRef`
+
+Portable native session identity, resolved within supplied retained storage.
+
+``session_id`` is opaque to NeMo Fabric and must not contain credentials or paths. Changing an agent name does not change the referenced session.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `schema_version` | `str` |
+| `adapter_id` | `str` |
+| `session_id` | `str` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
 ## <kbd>class</kbd> `RuntimeCapabilities`
 
 Operations declared by the resolved runtime and adapter.
@@ -106,6 +180,7 @@ Capabilities describe what the selected runtime can support; callers should stil
 **Attributes:**
 
  - <b>`service`</b>:  Whether long-lived service handles are supported.
+ - <b>`session_resume`</b>:  Whether durable native session creation and resume are supported.
  - <b>`streaming`</b>:  Whether event streaming is supported.
  - <b>`updates`</b>:  Whether runtime configuration updates are supported.
  - <b>`cancellation`</b>:  Whether in-flight cancellation is supported.
@@ -120,6 +195,7 @@ The mapping exposes the following typed fields:
 | Field | Type |
 | --- | --- |
 | `service` | `bool` |
+| `session_resume` | `bool` |
 | `streaming` | `bool` |
 | `updates` | `bool` |
 | `cancellation` | `bool` |
@@ -194,6 +270,7 @@ Immutable execution plan produced before a runtime is started.
  - <b>`config`</b>:  Typed configuration snapshot.
  - <b>`adapter`</b>:  Resolved adapter identity.
  - <b>`capabilities`</b>:  Operations declared by the resolved runtime.
+ - <b>`session_ref`</b>:  Native session to resume. Omission starts a fresh conversation.
 
 
 
@@ -208,6 +285,7 @@ The mapping exposes the following typed fields:
 | `config` | `_FabricConfigSnapshot` |
 | `adapter` | `AdapterInfo` |
 | `capabilities` | `RuntimeCapabilities` |
+| `session_ref` | `SessionRef \| None` |
 
 ### <kbd>method</kbd> `__init__`
 
@@ -225,6 +303,12 @@ def __init__(mapping: Mapping[str, Any]) -> None
 ### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
+
+---
+
+### <kbd>property</kbd> session_ref
+
+Explicit native session selection, when supplied.
 
 
 
@@ -1043,6 +1127,8 @@ The mapping exposes the following typed fields:
 | Field | Type |
 | --- | --- |
 | `runtime_id` | `str` |
+| `session_ref` | `SessionRef \| None` |
+| `recovery_warnings` | `Sequence[ErrorInfo]` |
 | `runtime_binding` | `str` |
 | `agent_name` | `str` |
 | `harness` | `str` |
@@ -1067,6 +1153,18 @@ def __init__(mapping: Mapping[str, Any]) -> None
 ### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
+
+---
+
+### <kbd>property</kbd> recovery_warnings
+
+Recovery warnings reported when the native session was restored.
+
+---
+
+### <kbd>property</kbd> session_ref
+
+Confirmed durable session, or None for a runtime without one.
 
 
 
@@ -2608,6 +2706,7 @@ The mapping exposes the following typed fields:
 | Field | Type |
 | --- | --- |
 | `agent_name` | `str` |
+| `session_ref` | `SessionRef \| None` |
 | `harness` | `str` |
 | `adapter_kind` | `str` |
 | `adapter_id` | `str` |
@@ -2642,6 +2741,12 @@ def __init__(mapping: Mapping[str, Any]) -> None
 ### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
+
+---
+
+### <kbd>property</kbd> session_ref
+
+Confirmed durable session, or None when no durable session was selected.
 
 
 

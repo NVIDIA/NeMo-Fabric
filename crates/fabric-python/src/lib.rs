@@ -16,7 +16,7 @@ use nemo_fabric_core::{
     resolve_diagnostic_plan_from_config_with_adapter_directories,
     resolve_run_plan_from_config_with_adapter_directories, run_plan,
 };
-use pyo3::exceptions::{PyRuntimeError, PyTimeoutError};
+use pyo3::exceptions::{PyException, PyRuntimeError, PyTimeoutError};
 use pyo3::prelude::*;
 
 pyo3::create_exception!(
@@ -430,9 +430,42 @@ where
 }
 
 fn to_py_error(error: nemo_fabric_core::FabricError) -> PyErr {
+    let session_code = match &error {
+        FabricError::Session { code, .. } => Some((code.as_str(), false)),
+        FabricError::StateInUse { .. } => Some(("state_in_use", true)),
+        FabricError::AdapterLifecycleOperation { code, .. } if code.starts_with("session_") => {
+            Some((code.as_str(), code == "session_busy"))
+        }
+        _ => None,
+    };
+    if let Some((code, retryable)) = session_code {
+        return Python::attach(|py| {
+            let exception = PyRuntimeError::new_err(error.to_string());
+            let _ = exception.value(py).setattr("code", code);
+            let _ = exception.value(py).setattr("retryable", retryable);
+            exception
+        });
+    }
     match &error {
-        FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout" => {
-            PyTimeoutError::new_err(error.to_string())
+        FabricError::AdapterLifecycleOperation { code, metadata, .. }
+            if code == "host_timeout" || code == "timeout" =>
+        {
+            let timeout = PyTimeoutError::new_err(error.to_string());
+            Python::attach(|py| {
+                let attachment = (|| -> PyResult<()> {
+                    let details = py.import("json")?.call_method1(
+                        "loads",
+                        (serde_json::to_string(metadata)
+                            .map_err(|error| PyRuntimeError::new_err(error.to_string()))?,),
+                    )?;
+                    timeout.value(py).setattr("details", details)
+                })();
+                // Metadata enrichment must not change the timeout classification.
+                match attachment {
+                    Err(error) if !error.is_instance_of::<PyException>(py) => error,
+                    _ => timeout,
+                }
+            })
         }
         FabricError::ResourceObservationUnavailable { .. } => {
             ResourceObservationUnavailableError::new_err(error.to_string())
@@ -446,6 +479,27 @@ fn to_py_error(error: nemo_fabric_core::FabricError) -> PyErr {
             match Python::attach(|py| py_error.value(py).setattr("code", code)) {
                 Ok(()) => py_error,
                 Err(setattr_error) => setattr_error,
+            }
+        }
+        FabricError::RuntimeCleanupPending(context) => {
+            let failure = PyRuntimeError::new_err(
+                "Runtime cleanup is unconfirmed; retry cleanup_runtime.stop().",
+            );
+            let encoded = match serde_json::to_string(context.runtime()) {
+                Ok(encoded) => encoded,
+                Err(_) => {
+                    return PyRuntimeError::new_err("Runtime cleanup context is unavailable.");
+                }
+            };
+            match Python::attach(|py| -> PyResult<()> {
+                failure.value(py).setattr("code", "cleanup_unconfirmed")?;
+                let handle = py.import("json")?.call_method1("loads", (encoded,))?;
+                failure
+                    .value(py)
+                    .setattr("_fabric_cleanup_runtime_handle", handle)
+            }) {
+                Ok(()) => failure,
+                Err(error) => error,
             }
         }
         _ => PyRuntimeError::new_err(error.to_string()),

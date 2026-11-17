@@ -55,7 +55,7 @@ function childEnvironment(input: AdapterStartInput): NodeJS.ProcessEnv {
   return environment;
 }
 
-function translateRunnerError(error: AcpRunnerError, stage: "start" | "prompt"): LifecycleError {
+function translateRunnerError(error: AcpRunnerError, stage: "start" | "prompt", timeoutMs = 300_000): LifecycleError {
   if (error.code === "acp_process_unavailable") {
     return new LifecycleError("kiro_harness_unavailable", "The installed Kiro CLI could not be started");
   }
@@ -78,7 +78,16 @@ function translateRunnerError(error: AcpRunnerError, stage: "start" | "prompt"):
     );
   }
   if (error.code === "acp_prompt_timeout") {
-    return new LifecycleError("kiro_prompt_timeout", "Kiro did not finish the invocation before the deadline");
+    return new LifecycleError(
+      "timeout",
+      `Kiro adapter invocation timed out after ${timeoutMs / 1000} seconds`,
+      { metadata: {
+        owner: "adapter",
+        timeout_seconds: timeoutMs / 1000,
+        cause_code: "kiro_prompt_timeout",
+        native_code: error.code,
+      } },
+    );
   }
   return new LifecycleError(
     stage === "start" ? "kiro_start_failed" : "kiro_session_failed",
@@ -185,12 +194,12 @@ class KiroAcpSession implements KiroSessionHandle {
         };
   }
 
-  async prompt(text: string, timeoutMs?: number): Promise<KiroPromptOutcome> {
+  async prompt(text: string, timeoutMs = 300_000): Promise<KiroPromptOutcome> {
     let result: AcpPromptResult;
     try {
       result = await this.session.prompt(text, timeoutMs);
     } catch (error) {
-      if (error instanceof AcpRunnerError) throw translateRunnerError(error, "prompt");
+      if (error instanceof AcpRunnerError) throw translateRunnerError(error, "prompt", timeoutMs);
       throw new LifecycleError("kiro_session_failed", "Kiro ACP session communication failed");
     }
     let usage: AgentUsage | undefined;

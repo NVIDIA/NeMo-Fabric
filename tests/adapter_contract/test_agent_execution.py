@@ -65,6 +65,7 @@ def test_agent_run_request_contains_only_southbound_request_fields():
         "context": {"task": "sample"},
     }
     assert {item.name for item in fields(AgentRunRequest)} == {
+        "acknowledge_recovery",
         "input",
         "relay_session_root",
         "context",
@@ -115,6 +116,7 @@ def test_agent_run_result_contains_only_adapter_owned_result_fields():
         ],
     }
     assert {item.name for item in fields(AgentRunResult)} == {
+        "session_id",
         "status",
         "output",
         "error",

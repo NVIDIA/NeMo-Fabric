@@ -97,7 +97,7 @@ The embedded SDK agent is enabled by default and initializes during runtime star
 
 The runtime starts even when some configured MCP servers are unavailable. Hermes Agent connects each server separately at startup and keeps the tools of the servers that connected. Each result from that runtime lists the servers Hermes Agent currently reports as failed under `output.mcp.unavailable_servers`, with the server `name`, `transport` and `reason` (`failed`). The adapter also writes a warning to standard error when a server first becomes unavailable. The list reflects Hermes Agent's state after each turn: a server that has since connected, or that is still connecting, is not listed, and each new runtime connects every server again. Hermes Agent records only an error message for a failed connection, and error messages are not reported because they can contain URLs, headers or other credentials, so entries have no `error_type` and timeouts are reported as `failed`. Invalid server configuration, such as an unsupported transport or authentication mode, still fails startup, and an OAuth server that cannot be authenticated still fails the invocation.
 
-Ordered SDK invocations reuse the same agent and conversation until stop closes them. API, browser, and terminal conversations do not execute through this agent or inherit its live history. Persisted files do not establish cross-runtime resume.
+Ordered SDK invocations reuse the same agent and conversation until stop closes them. API, browser, and terminal conversations do not execute through this agent or inherit its live history. Use a saved `SessionRef` and retained storage to select the same SDK conversation in a replacement runtime.
 
 Set `harness.settings.sdk.enabled` to `false` only when at least one native interface is enabled. Disabling the embedded Hermes agent does not affect runtime management: your application can still start, check, and stop the native interfaces through the NeMo Fabric SDK. SDK invocation returns a failed `RunResult` with the stable error code `hermes_sdk_disabled` and `retryable: false`. This is a configuration mismatch: enable the SDK agent before invoking through the SDK. The native interfaces and their health checks remain available.
 
@@ -114,3 +114,30 @@ Whenever the SDK agent is enabled, `check()` supports `live`, `active`, and `rea
 With `sdk.enabled: false`, checks observe the enabled native processes and endpoints, with activity reported as `unknown`. Check native endpoints or interface logs separately to diagnose a native interface in a mixed runtime; a normalized interface health target is planned under [#566](https://github.com/NVIDIA/NeMo-Fabric/issues/566). Checks do not run an agent turn.
 
 Refer to [SDK health checks](../../../sdk/health-checks.mdx) and the [shared limitations](./hermes.mdx#limitations-and-planned-work).
+
+## Resume a Saved SDK Conversation
+
+Enable `runtime.keep_state` and retain the full artifact directory. Save the `SessionRef` returned at startup in caller-owned storage. Pass the saved reference when starting a replacement runtime:
+
+```python
+from nemo_fabric import Fabric, SessionRef
+
+config.runtime.keep_state = True
+config.runtime.artifacts = "artifacts"
+fabric = Fabric()
+
+async with await fabric.start_runtime(config) as first:
+    saved_reference = first.session_ref.to_mapping()
+    await first.invoke(input="Remember the deployment target is staging.")
+
+async with await fabric.start_runtime(
+    config, session_ref=SessionRef.from_mapping(saved_reference)
+) as resumed:
+    result = await resumed.invoke(input="Which deployment target did we choose?")
+```
+
+The replacement gets a new runtime identifier and restores the selected native conversation. Omitting `session_ref` starts a fresh conversation. A corrected agent name can use the saved reference within the same retained storage. The reference must match the resolved adapter.
+
+Hermes applies its native resume checks, saved prompt, tool selection, and compression history. A missing or incompatible session produces a structured error. If `recovery_warnings` reports an uncertain earlier turn, inspect native and external state before sending a new request with `acknowledge_recovery=True`. NeMo Fabric preserves the conversation, including unfinished requests. The model may act on those requests after acknowledgment. The caller decides whether to continue with that history.
+
+`SessionRef` resume requires `sdk.enabled: true`, which is the default. `RunPlan.capabilities.session_resume` reports the adapter's declared capability. A native-only runtime can retain its Hermes home with `runtime.keep_state` and start without issuing a session reference. Hermes rejects explicit SDK session selection in native-only mode with `session_resume_unsupported` before native startup. API, browser, and terminal conversations use Hermes's native selection behavior. See the [SDK resume contract](../../../sdk/python.mdx#resume-a-hermes-conversation) for storage and recovery details.

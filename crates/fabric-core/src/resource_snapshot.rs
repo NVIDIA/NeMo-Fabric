@@ -86,7 +86,13 @@ impl LocalHostProcess {
     /// Confirm that the recorded process exited, without locking its lifecycle host.
     /// Unreadable process evidence must not be interpreted as an exit.
     pub(crate) fn has_exited(&self) -> Option<bool> {
-        platform::has_exited(self.pid, self.identity?)
+        platform::has_exited(self.pid, self.identity)
+    }
+
+    /// Whether the same process is suspended and cannot create children.
+    #[cfg(unix)]
+    pub(crate) fn is_stopped(&self) -> Option<bool> {
+        platform::is_stopped(self.pid, self.identity?)
     }
 
     /// Record the host `pid`, started by NeMo Fabric at `started_at`.
@@ -328,6 +334,7 @@ mod platform {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub(super) struct Stat {
         pub zombie: bool,
+        pub stopped: bool,
         pub ppid: u32,
         /// `utime + stime + cutime + cstime`, in clock ticks.
         pub cpu_ticks: u64,
@@ -348,6 +355,7 @@ mod platform {
             .sum::<Option<u64>>()?;
         Some(Stat {
             zombie: fields.first() == Some(&"Z"),
+            stopped: matches!(fields.first(), Some(&"T" | &"t")),
             ppid: u32::try_from(number(1)?).ok()?,
             cpu_ticks: ticks,
             start: number(19)?,
@@ -531,12 +539,18 @@ mod platform {
         stat(pid).ok().map(|stat| stat.start)
     }
 
-    pub(super) fn has_exited(pid: u32, identity: u64) -> Option<bool> {
+    pub(super) fn has_exited(pid: u32, identity: Option<u64>) -> Option<bool> {
         match stat(pid) {
-            Ok(stat) => Some(stat.start != identity || stat.zombie),
+            Ok(stat) if stat.zombie => Some(true),
+            Ok(stat) => identity.map(|identity| stat.start != identity),
             Err(ReadError::Gone) => Some(true),
             Err(ReadError::Unavailable(_)) => None,
         }
+    }
+
+    pub(super) fn is_stopped(pid: u32, identity: u64) -> Option<bool> {
+        let stat = stat(pid).ok()?;
+        Some(stat.start == identity && stat.stopped)
     }
 
     fn sysconf(name: libc::c_int) -> u64 {
@@ -721,14 +735,33 @@ mod platform {
         usage(pid).ok().map(|info| info.ri_proc_start_abstime)
     }
 
-    pub(super) fn has_exited(pid: u32, identity: u64) -> Option<bool> {
+    pub(super) fn has_exited(pid: u32, identity: Option<u64>) -> Option<bool> {
         match usage(pid) {
-            Ok(info) => {
-                Some(info.ri_proc_start_abstime != identity || info.ri_proc_exit_abstime != 0)
-            }
+            Ok(info) if info.ri_proc_exit_abstime != 0 => Some(true),
+            Ok(info) => identity.map(|identity| info.ri_proc_start_abstime != identity),
             Err(ReadError::Gone) => Some(true),
             Err(ReadError::Unavailable(_)) => None,
         }
+    }
+
+    pub(super) fn is_stopped(pid: u32, identity: u64) -> Option<bool> {
+        // SAFETY: proc_bsdinfo is an output structure with a valid zero representation.
+        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+        let size = std::mem::size_of_val(&info) as libc::c_int;
+        // SAFETY: the writable buffer matches PROC_PIDTBSDINFO and its size.
+        let read = unsafe {
+            libc::proc_pidinfo(
+                pid as libc::c_int,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                (&mut info as *mut libc::proc_bsdinfo).cast(),
+                size,
+            )
+        };
+        if read != size || start_identity(pid) != Some(identity) {
+            return None;
+        }
+        Some(info.pbi_status == libc::SSTOP)
     }
 
     pub(super) fn read_tree(root: u32, identity: u64) -> Result<TreeRead, &'static str> {
@@ -747,7 +780,12 @@ mod platform {
         None
     }
 
-    pub(super) fn has_exited(_pid: u32, _identity: u64) -> Option<bool> {
+    pub(super) fn has_exited(_pid: u32, _identity: Option<u64>) -> Option<bool> {
+        None
+    }
+
+    #[cfg(unix)]
+    pub(super) fn is_stopped(_pid: u32, _identity: u64) -> Option<bool> {
         None
     }
 
@@ -830,6 +868,25 @@ mod tests {
             host.has_exited(),
             Some(true),
             "a reused PID belongs to another process"
+        );
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn local_host_exit_can_be_confirmed_after_identity_capture_was_missed() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn child");
+        let mut host = LocalHostProcess::new(child.id(), SystemTime::now());
+        host.identity = None;
+        assert_eq!(host.has_exited(), None, "live process remains unconfirmed");
+        child.kill().expect("kill child");
+        child.wait().expect("reap child");
+        assert_eq!(
+            host.has_exited(),
+            Some(true),
+            "missing process confirms exit"
         );
     }
 
