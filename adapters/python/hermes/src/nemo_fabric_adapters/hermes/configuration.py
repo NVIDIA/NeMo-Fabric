@@ -192,8 +192,8 @@ def build_hermes_config(
     if interfaces:
         config["model"] = _interface_model(model_config)
         if model_config.base_url and config["model"].get("provider") == "custom":
-            # Resolve this route's declared key before Hermes's host-specific
-            # environment fallbacks, which can reject gateway placeholders.
+            # Hermes ignores model.api_key for openrouter.ai and reads
+            # OPENROUTER_API_KEY instead. Bind this route's declared key first.
             config["providers"] = {
                 "custom": {
                     "base_url": model_config.base_url,

@@ -17,8 +17,9 @@ from nemo_fabric_adapters.hermes.native import configured_kwargs
 @pytest.mark.usefixtures("requires_hermes_agent")
 @pytest.mark.parametrize("interface", ["api", "dashboard", "terminal"])
 @pytest.mark.parametrize("ambient_key", [None, "unrelated-router-key"])
+@pytest.mark.parametrize("openai_key", ["openshell", "unrelated-openai-key"])
 def test_native_custom_route_resolves_its_declared_placeholder_key(
-    tmp_path, interface, ambient_key
+    tmp_path, interface, ambient_key, openai_key
 ):
     from hermes_cli.config import load_config
     from hermes_cli.runtime_provider import frozen_runtime_config
@@ -44,7 +45,7 @@ def test_native_custom_route_resolves_its_declared_placeholder_key(
         "HOME": str(tmp_path),
         "HERMES_HOME": str(tmp_path / "hermes"),
         "FABRIC_ROUTE_KEY": "openshell",
-        "OPENAI_API_KEY": "openshell",
+        "OPENAI_API_KEY": openai_key,
     }
     if ambient_key is not None:
         environment["OPENROUTER_API_KEY"] = ambient_key
