@@ -12,12 +12,12 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
-from nemo_fabric.errors import FabricRuntimeError
 from nemo_fabric import (
     Fabric,
     FabricConfig,
     FabricConfigError,
     FabricStateError,
+    FabricRuntimeError,
     CheckRequest,
     EnvironmentHandle,
     RunRequest,
@@ -275,6 +275,12 @@ class RuntimeServer:
                         else "validation_failed"
                     )
                     error = ProtocolError(code, "validation")
+                elif (
+                    stage == "invoke"
+                    and isinstance(error, FabricRuntimeError)
+                    and error.code == "timeout"
+                ):
+                    error = ProtocolError("timeout", stage, details=error.details)
                 else:
                     error = ProtocolError(
                         f"{stage}_failed", stage, cause=getattr(error, "code", None)

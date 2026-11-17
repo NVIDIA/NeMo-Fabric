@@ -67,7 +67,8 @@ export interface AcpSession {
   readonly sessionId: string;
   readonly initializeResponse: InitializeResponse;
   observeProcess(): { alive: boolean };
-  prompt(text: string, timeoutMs?: number): Promise<AcpPromptResult>;
+  // Pass null to disable the prompt deadline; omission uses the session default.
+  prompt(text: string, timeoutMs?: number | null): Promise<AcpPromptResult>;
   stop(): Promise<void>;
 }
 
@@ -258,7 +259,7 @@ class SpawnedAcpSession implements AcpSession {
         this.child.signalCode === null,
     };
   }
-  async prompt(text: string, timeoutMs = this.promptTimeoutMs): Promise<AcpPromptResult> {
+  async prompt(text: string, timeoutMs: number | null = this.promptTimeoutMs): Promise<AcpPromptResult> {
     if (this.stopped) {
       throw new AcpRunnerError("acp_session_stopped", "The ACP session is already stopped");
     }
@@ -272,6 +273,7 @@ class SpawnedAcpSession implements AcpSession {
       };
     };
     try {
+      if (timeoutMs === null) return await exchange();
       return await timeout(
         exchange(),
         timeoutMs,

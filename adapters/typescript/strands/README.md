@@ -157,3 +157,5 @@ Refer to the [SDK health-check overview](../../../docs/sdk/health-checks.mdx) fo
 ## Invocation deadlines
 
 Strands prompt deadlines and already-expired invocation deadlines use canonical error code `timeout`. Error metadata retains `owner: "adapter"` and the native cause (`strands_prompt_timeout` or `strands_deadline_exceeded`), plus the enforced timeout in seconds or the absolute `deadline_millis`. Prompt expiration invalidates the session and attempts process cleanup. Startup and transport failures keep their existing error classifications.
+
+When `runtime.timeout_seconds` is omitted or null, NeMo Fabric does not impose a total prompt deadline. An explicit invocation deadline is forwarded to the ACP session; startup and shutdown remain separately bounded.

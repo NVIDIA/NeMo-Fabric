@@ -83,12 +83,20 @@ pub(super) fn check_agent(
         .filter(|binding| matches!(binding.state, State::Active | State::Invoking))
         .and_then(|binding| binding.agent.clone()))
 }
-fn invoke_seconds(plan: &RunPlan) -> Result<u64> {
-    let seconds = plan.config.runtime.timeout_seconds.unwrap_or(240.0);
-    if !seconds.is_finite() || seconds <= 0.0 || seconds > 300.0 {
-        return Err(FabricError::InvalidConfig {field: "runtime.timeout_seconds".to_string(), reason: "OpenShell buffered invocation supports a timeout greater than zero and at most 300 seconds".to_string()});
-    }
-    Ok(seconds.ceil() as u64)
+fn invoke_seconds(plan: &RunPlan) -> Result<Option<u64>> {
+    plan.config
+        .runtime
+        .timeout_seconds
+        .map(|seconds| {
+            if !seconds.is_finite() || seconds <= 0.0 || seconds.ceil() >= u64::MAX as f64 {
+                return Err(FabricError::InvalidConfig {
+                    field: "runtime.timeout_seconds".to_string(),
+                    reason: "must be a positive, finite, representable timeout".to_string(),
+                });
+            }
+            Ok(seconds.ceil() as u64)
+        })
+        .transpose()
 }
 
 /// Wait for a passing server check within the readiness allowance.
@@ -187,7 +195,7 @@ fn task_config(plan: &RunPlan, environment: &EnvironmentHandle) -> Result<crate:
         "artifacts",
         Some("/sandbox/artifacts"),
     )?;
-    let timeout = invoke_seconds(plan)?;
+    invoke_seconds(plan)?;
     let env_names = plan
         .config
         .environment
@@ -203,7 +211,6 @@ fn task_config(plan: &RunPlan, environment: &EnvironmentHandle) -> Result<crate:
         env_names,
     )?);
     config.runtime.artifacts = Some(artifacts.clone());
-    config.runtime.timeout_seconds = Some(timeout as f64);
     if let Some(harness) = &mut config.harness {
         harness.resolution = Some(ResolutionStrategy::Preinstalled);
     }
@@ -270,16 +277,17 @@ fn command_value(
 ) -> Result<Value> {
     match response {
         TaskCommandResponse::Returned { value } => Ok(value),
-        TaskCommandResponse::Rejected { error } => Err(lifecycle_error(
-            operation,
-            runtime_id,
-            error.code,
-            format!(
+        TaskCommandResponse::Rejected { error } => Err(FabricError::AdapterLifecycleOperation {
+            operation: operation.as_str(),
+            runtime_id: runtime_id.to_string(),
+            code: error.code,
+            message: format!(
                 "task command rejected during {} ({} effects)",
                 error.stage, error.effects
             ),
-            "",
-        )),
+            diagnostics: String::new(),
+            metadata: error.details,
+        }),
     }
 }
 fn claim(runtime: &RuntimeHandle, stopping: bool) -> Result<Option<(String, State)>> {
@@ -415,7 +423,7 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
             agent: plan.agent_name.clone(),
             config,
         };
-        let response = command_runtime(&environment, &command, 105);
+        let response = command_runtime(&environment, &command, Some(105));
         if let Ok(TaskCommandResponse::Rejected { error }) = &response
             && error.effects == "none"
             && !matches!(
@@ -537,7 +545,12 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
         let (key, _) = claim(runtime, false)?.expect("active invocation binding");
         let mut confirmed = false;
         let result = (|| {
-            let response = command_runtime(&runtime.environment, &command, timeout + 15)?;
+            // Leave room for command completion and the provider response envelope.
+            let response = command_runtime(
+                &runtime.environment,
+                &command,
+                timeout.map(|seconds| seconds.saturating_add(15)),
+            )?;
             if let TaskCommandResponse::Rejected { error } = &response {
                 confirmed = error.effects == "none";
             }
@@ -628,7 +641,7 @@ impl RuntimeAdapter for OpenShellRuntimeAdapter {
     }
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
         stop_with_command(runtime, |command| {
-            command_runtime(&runtime.environment, command, 30)
+            command_runtime(&runtime.environment, command, Some(30))
         })
     }
 }
@@ -1008,6 +1021,30 @@ fn write_artifact(_root: &Path, _path: &str, _bytes: &[u8]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guest_timeout_preserves_ownership_and_native_cause() {
+        for owner in ["adapter", "fabric_runtime"] {
+            let details = serde_json::json!({
+                "owner": owner, "timeout_seconds": 0.25,
+                "cause_code": "kiro_prompt_timeout", "native_code": "acp_prompt_timeout"
+            });
+            let response = serde_json::from_value(serde_json::json!({
+                "status": "rejected", "error": {
+                    "code": "timeout", "stage": "invoke", "effects": "unknown",
+                    "details": details
+                }
+            }))
+            .unwrap();
+            let error =
+                command_value(response, AdapterLifecycleOperation::Invoke, "guest").unwrap_err();
+            let FabricError::AdapterLifecycleOperation { code, metadata, .. } = error else {
+                panic!("expected lifecycle timeout");
+            };
+            assert_eq!(code, "timeout");
+            assert_eq!(serde_json::to_value(metadata).unwrap(), details);
+        }
+    }
 
     fn environment() -> EnvironmentHandle {
         EnvironmentHandle {

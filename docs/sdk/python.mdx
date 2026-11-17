@@ -1679,12 +1679,16 @@ All public SDK errors inherit from `FabricError`. One-shot lifecycle failures ca
 | `ResourceObservationUnsupportedError` | The runtime's adapter kind, environment provider, or operating system has no resource reader. Subclass of `FabricRuntimeError`. |
 
 Consumers own job-level retries and rollout-level failure policy.
+`runtime.timeout_seconds` sets a positive, finite total invocation limit. Omit it or set it to `None` to disable NeMo Fabric's total invocation deadline. The same configuration applies whether the agent executes on the host or inside a sandbox such as OpenShell. `runtime.max_turns` independently limits harness turns where supported. Startup, health checks, and cleanup retain separate deadlines; harness-native limits still apply.
+
 Core host-operation deadlines (`host_timeout`) become Python `TimeoutError`, then
 `FabricRuntimeError` with `code == "timeout"` and the failed lifecycle stage.
 If invocation succeeds in `Fabric.run()` but stop reaches this deadline,
 it returns a failed `RunResult` with `error.stage == "stop"` and
 `error.code == "timeout"`. Check the returned result as well as raised errors.
 Adapter lifecycle failures with canonical `code == "timeout"` also preserve deadline identity. Raised `FabricRuntimeError.details` retains structured source metadata: runtime host deadlines report `owner: "fabric_runtime"`, `timeout_seconds`, and `cause_code: "host_timeout"`; adapter deadlines retain their adapter-owned limit and cause. Native diagnostic messages remain available through exception chaining.
+
+OpenShell preserves this deadline identity across the guest SDK and provider boundary. Only bounded `owner`, `timeout_seconds`, `deadline_millis`, `cause_code`, and `native_code` details are forwarded; arbitrary guest metadata and native error text are excluded.
 
 Adapters can report execution deadlines in normalized results with
 `result.error.code == "timeout"`. Other adapter-specific timeout codes are not

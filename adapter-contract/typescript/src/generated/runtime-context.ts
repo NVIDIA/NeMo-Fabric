@@ -13,7 +13,7 @@ export interface RuntimeContext {
   artifacts: ArtifactManifest;
   /**
    * Unix time in milliseconds by which the adapter should return its result.
-   * Present on every invocation, shortly before Fabric's own invocation timeout.
+   * Present when runtime.timeout_seconds is set, shortly before Fabric's invocation timeout.
    */
   deadline_millis?: number | null;
   environment: EnvironmentHandle;
