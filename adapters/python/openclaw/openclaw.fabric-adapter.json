@@ -3,7 +3,8 @@
   "adapter_id": "nvidia.fabric.openclaw",
   "adapter_kind": "python",
   "runner": {
-    "module": "nemo_fabric_adapters.openclaw.adapter"
+    "module": "nemo_fabric_adapters.openclaw.adapter",
+    "stop_timeout_seconds": 30
   },
   "settings_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -97,7 +98,7 @@
               "port"
             ],
             "additionalProperties": false,
-            "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token."
+            "description": "OpenClaw's Control UI. After the Gateway starts, the adapter writes its sign-in token to <state_dir>/interfaces/dashboard.token with runtime.keep_state, or <artifact root>/.fabric/openclaw/runtimes/<runtime-id>/interfaces/dashboard.token for ephemeral state."
           },
           "terminal": {
             "type": "object",
@@ -125,7 +126,7 @@
         "type": "number",
         "exclusiveMinimum": 0,
         "default": 15,
-        "description": "Maximum graceful Gateway shutdown time before forced termination. Fabric allows 30 seconds for the complete adapter stop; leave time for cleanup within that limit."
+        "description": "Maximum graceful Gateway shutdown time before forced termination. NeMo Fabric allows 30 seconds for the complete adapter stop. Leave time for cleanup within that limit."
       },
       "connect_timeout_seconds": {
         "type": "number",
@@ -308,6 +309,7 @@
       "models.top_p",
       "models.max_tokens",
       "instructions.system",
+      "runtime.keep_state",
       "tools.enabled",
       "tools.blocked",
       "mcp",
@@ -344,6 +346,7 @@
     }
   },
   "capabilities": {
+    "session_resume": true,
     "service": true,
     "metadata": {"service_health_checks": ["live", "active", "ready"], "health_checks": ["live", "active", "ready"]},
     "streaming": false,

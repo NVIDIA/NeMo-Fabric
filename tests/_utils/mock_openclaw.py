@@ -9,7 +9,14 @@ import os
 import signal
 import sys
 import time
+import urllib.request
+from pathlib import Path
+from socketserver import TCPServer
+from uuid import uuid4
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from websockets.frames import Opcode
+from websockets.server import ServerProtocol
 
 
 args = sys.argv[1:]
@@ -25,11 +32,83 @@ if args[:3] == ["config", "validate", "--json"]:
         json.dump(value, stream)
     print(json.dumps({"valid": True}))
     raise SystemExit(0)
+if args[:2] == ["gateway", "call"]:
+    config = json.loads(Path(os.environ["OPENCLAW_CONFIG_PATH"]).read_text())
+    method = args[2]
+    params = json.loads(args[args.index("--params") + 1])
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{config['gateway']['port']}/_rpc/{method}",
+        data=json.dumps(params).encode(),
+        headers={
+            "Authorization": "Bearer " + os.environ["OPENCLAW_GATEWAY_TOKEN"],
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(request) as response:
+        print(response.read().decode())
+    raise SystemExit(0)
 if args[:2] != ["gateway", "run"]:
     raise SystemExit(2)
 
 port = int(args[args.index("--port") + 1])
 token = os.environ["OPENCLAW_GATEWAY_TOKEN"]
+state_file = Path(os.environ["OPENCLAW_STATE_DIR"]) / "mock-native-sessions.json"
+native_sessions = json.loads(state_file.read_text()) if state_file.exists() else {}
+
+
+def save_sessions():
+    state_file.write_text(json.dumps(native_sessions))
+
+
+def session_rpc(method, params):
+    if method == "sessions.create":
+        key = params["key"].lower()
+        if key in native_sessions:
+            raise ValueError("session already exists")
+        entry = {
+            "key": key,
+            "sessionId": str(uuid4()),
+            "messages": [],
+            "abortedLastRun": False,
+        }
+        native_sessions[key] = entry
+        save_sessions()
+        return {
+            "ok": True,
+            "key": key,
+            "sessionId": entry["sessionId"],
+            "entry": entry,
+            "runStarted": False,
+        }
+    if method == "sessions.resolve":
+        matches = [
+            entry
+            for entry in native_sessions.values()
+            if entry["sessionId"] == params["sessionId"]
+        ]
+        if not matches:
+            if params.get("allowMissing") is True:
+                return {"ok": False}
+            raise ValueError("No matching native session")
+        return {"ok": True, "key": matches[0]["key"], "agentId": params["agentId"]}
+    entry = native_sessions.get(params.get("key", params.get("sessionKey")))
+    if method == "chat.history":
+        return {
+            "sessionKey": entry["key"] if entry else None,
+            "sessionId": entry["sessionId"] if entry else None,
+            "totalMessages": len(entry["messages"]) if entry else 0,
+        }
+    if method == "sessions.abort":
+        return {"ok": True, "status": "no-active-run", "abortedRunId": None}
+    if method == "sessions.describe":
+        return {"session": entry}
+    if method == "sessions.get":
+        return {
+            "messages": entry["messages"][-params.get("limit", 200) :] if entry else []
+        }
+    raise ValueError("unknown method")
+
+
 if readonly_path := os.environ.get("FAKE_OPENCLAW_CONFIG_READONLY"):
     with open(readonly_path, "w", encoding="utf-8") as stream:
         stream.write(os.environ.get("OPENCLAW_CONFIG_READONLY", ""))
@@ -51,7 +130,67 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *unused):
         pass
 
+    def websocket(self):
+        protocol = ServerProtocol()
+        header = (
+            self.requestline
+            + "\r\n"
+            + "".join(f"{key}: {value}\r\n" for key, value in self.headers.items())
+            + "\r\n"
+        )
+        protocol.receive_data(header.encode())
+        request = protocol.events_received()[0]
+        protocol.send_response(protocol.accept(request))
+        for data in protocol.data_to_send():
+            self.wfile.write(data)
+
+        def send(value):
+            protocol.send_text(json.dumps(value).encode())
+            for data in protocol.data_to_send():
+                self.wfile.write(data)
+
+        send(
+            {
+                "type": "event",
+                "event": "connect.challenge",
+                "payload": {"nonce": "mock-challenge"},
+            }
+        )
+        try:
+            while data := self.rfile.read1(65536):
+                protocol.receive_data(data)
+                for frame in protocol.events_received():
+                    if frame.opcode == Opcode.TEXT:
+                        request = json.loads(frame.data)
+                        if request["method"] == "connect":
+                            authenticated = request["params"].get("auth") == {
+                                "token": token
+                            }
+                            payload = {"type": "hello-ok", "protocol": 4}
+                        else:
+                            assert authenticated
+                            payload = session_rpc(request["method"], request["params"])
+                        send(
+                            {
+                                "type": "res",
+                                "id": request["id"],
+                                "ok": authenticated,
+                                "payload": payload,
+                            }
+                        )
+                    elif frame.opcode == Opcode.CLOSE:
+                        for pending in protocol.data_to_send():
+                            self.wfile.write(pending)
+                        return
+                for pending in protocol.data_to_send():
+                    self.wfile.write(pending)
+        except (ConnectionError, OSError):
+            pass
+
     def do_GET(self):
+        if self.headers.get("Upgrade", "").lower() == "websocket":
+            self.websocket()
+            return
         if self.path == "/v1/chat/completions":
             self.send_response(405)
             self.send_header("Allow", "POST")
@@ -138,6 +277,24 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
+        if self.path.startswith("/_rpc/"):
+            if self.headers.get("Authorization") != f"Bearer {token}":
+                self.send_response(401)
+                self.end_headers()
+                return
+            params = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            try:
+                result = session_rpc(self.path.removeprefix("/_rpc/"), params)
+            except ValueError:
+                self.send_response(400)
+                self.end_headers()
+                return
+            body = json.dumps(result).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path != "/v1/chat/completions":
             self.send_response(404)
             self.end_headers()
@@ -153,13 +310,34 @@ class Handler(BaseHTTPRequestHandler):
         if requests_path := os.environ.get("FAKE_OPENCLAW_REQUESTS"):
             with open(requests_path, "a", encoding="utf-8") as stream:
                 stream.write(json.dumps(request) + "\n")
+        response_text = "OpenClaw response"
+        if key := self.headers.get("x-openclaw-session-key"):
+            entry = native_sessions[key]
+            entry["messages"].append(
+                {
+                    "role": "user",
+                    "content": request["messages"][-1]["content"],
+                    "__openclaw": {"id": str(uuid4())},
+                }
+            )
+            if os.environ.get("FAKE_OPENCLAW_MEMORY_REPLY"):
+                response_text = json.dumps(entry["messages"])
+            entry["messages"].append(
+                {
+                    "role": "assistant",
+                    "content": response_text,
+                    "stopReason": "stop",
+                    "__openclaw": {"id": str(uuid4())},
+                }
+            )
+            save_sessions()
         chunks = [
             {
                 "object": "chat.completion.chunk",
                 "choices": [
                     {
                         "index": 0,
-                        "delta": {"content": "OpenClaw response"},
+                        "delta": {"content": response_text},
                         "finish_reason": None,
                     }
                 ],
@@ -185,6 +363,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+class GatewayServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # Avoid reverse DNS delays for this loopback-only test server.
+        TCPServer.server_bind(self)
+        self.server_name = "localhost"
+        self.server_port = self.server_address[1]
+
+
+server = GatewayServer(("127.0.0.1", port), Handler)
 signal.signal(signal.SIGTERM, stop_gateway)
 server.serve_forever()
