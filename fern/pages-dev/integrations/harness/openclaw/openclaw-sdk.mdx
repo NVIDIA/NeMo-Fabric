@@ -91,10 +91,9 @@ does not use the OpenClaw configuration RPC. The generated configuration:
 - applies the normalized workspace, model, skills, and MCP servers, and any
   authored native Gateway controls;
 - disables OpenClaw anonymous telemetry; and
-- uses a unique temporary state directory.
+- uses the retained state directory when configured, or a unique temporary directory.
 
-Each invocation sends a terminal request to `/v1/chat/completions` with the
-NeMo Fabric runtime ID as the stable OpenClaw session key. A managed runtime
+Each invocation sends a terminal request to `/v1/chat/completions`. Ephemeral runtimes use the NeMo Fabric runtime ID as the Chat Completions `user`. Retained runtimes use an explicit native session key for the selected conversation. A managed runtime
 stops its Gateway during runtime shutdown. A prepared service keeps its Gateway
 running until the service is released, so multiple runtimes can connect to it.
 

@@ -328,3 +328,13 @@ Review the canonical schema for exact fields, defaults, and constraints.
 </Card>
 
 </CardGroup>
+
+
+### Local shutdown budget
+
+Local Python and process adapters have a 10-second stop exchange budget by default.
+An adapter descriptor can set `runner.stop_timeout_seconds` to an integer from
+1 through 300 when native shutdown requires more time. The value applies to
+that adapter's runtimes and services. Include the adapter's cleanup time in the
+budget. OpenClaw declares 30 seconds to allow its 15-second graceful shutdown
+and remaining cleanup.
