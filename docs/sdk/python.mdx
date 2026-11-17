@@ -160,7 +160,7 @@ and a reason that excludes configured values and credentials. Issues have a
 deterministic order. A report with issues has `capability_profile=None`;
 a successful report has an empty issue list and a populated profile.
 Malformed configurations, descriptors, embedded schemas, and selector mismatches raise `FabricConfigError` with the original field and validation message. Descriptor validation details are preserved for catalog, file-loaded, and directly supplied metadata. A valid adapter that does not declare the supplied workflow target’s type returns a compatibility issue at `workflow.target_id`; mismatched target or adapter IDs remain input errors. The static `runtime.keep_state` artifact-directory requirement is shared with planning and raises the same field and reason. Harness and workflow settings, tool-definition schemas,
-extensions, and telemetry retain first-error boundaries. Inspection never
+extensions, and telemetry retain first-error boundaries. Inspection and planning both require declared Relay ATIF output support and exactly one observability component when ATIF is requested. Inspection never
 substitutes another descriptor. Select catalog metadata matching the intended
 deployment release, then verify normalized descriptors in the task environment.
 Success establishes compatibility with supplied metadata; it does not establish

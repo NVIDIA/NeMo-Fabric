@@ -154,6 +154,67 @@ def test_relay_atif_request_requires_declared_output(custom_descriptor, custom_c
     )
 
 
+@pytest.mark.parametrize("component_style", ["first_class", "generic"])
+@pytest.mark.parametrize(
+    "outputs,enabled,ambiguous,compatible",
+    [
+        (["otel"], True, False, False),
+        (["atif"], True, False, True),
+        (["otel"], False, False, True),
+        (["atif"], True, True, False),
+    ],
+)
+def test_relay_atif_inspection_matches_planning(
+    custom_config,
+    custom_descriptor,
+    tmp_path,
+    component_style,
+    outputs,
+    enabled,
+    ambiguous,
+    compatible,
+):
+    from nemo_fabric import DiscoveryConfig, RelayComponentConfig
+
+    custom_descriptor["telemetry"]["providers"]["relay"]["outputs"] = outputs
+    if component_style == "first_class":
+        custom_config.enable_relay(observability={"atif": {"enabled": enabled}})
+    else:
+        custom_config.enable_relay()
+        custom_config.relay.components.append(
+            RelayComponentConfig(
+                kind="observability", config={"atif": {"enabled": enabled}}
+            )
+        )
+    if ambiguous:
+        custom_config.relay.components.append(
+            RelayComponentConfig(
+                kind="observability", config={"atif": {"enabled": False}}
+            )
+        )
+    path = tmp_path / "custom.fabric-adapter.json"
+    path.write_text(json.dumps(custom_descriptor))
+    custom_config.discovery = DiscoveryConfig(local_paths=[path])
+
+    report = inspect_adapter(custom_config, custom_descriptor)
+    if compatible:
+        assert report.issues == []
+        assert report.capability_profile.atif is enabled
+        Fabric().plan(custom_config, base_dir=tmp_path)
+    else:
+        assert report.capability_profile is None
+        assert len(report.issues) == 1
+        issue = report.issues[0]
+        assert issue.field == "telemetry.providers.relay"
+        with pytest.raises(FabricConfigError) as planning_error:
+            Fabric().plan(custom_config, base_dir=tmp_path)
+        with pytest.raises(FabricConfigError) as inspection_error:
+            inspect_adapter(custom_config, custom_descriptor, diagnostics=False)
+        assert str(planning_error.value) == str(inspection_error.value)
+        assert issue.field in str(planning_error.value)
+        assert issue.reason in str(planning_error.value)
+
+
 @pytest.mark.parametrize("atif", [[], {"enabled": "true"}, {"enabled": 1}])
 def test_malformed_generic_relay_atif_fails_admission(
     custom_descriptor, custom_config, atif

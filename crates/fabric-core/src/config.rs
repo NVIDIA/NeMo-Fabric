@@ -3492,6 +3492,29 @@ fn relay_atif_state(config: &FabricConfig) -> Result<RelayAtifState> {
     Ok(state)
 }
 
+fn validate_relay_atif_metadata(
+    config: &FabricConfig,
+    descriptor: Option<&AdapterDescriptor>,
+) -> MetadataResult<()> {
+    let atif = relay_atif_state(config)?;
+    let Some(descriptor) = descriptor else {
+        return Ok(());
+    };
+    let supports_atif = descriptor
+        .telemetry
+        .providers
+        .get(&TelemetryProvider::Relay)
+        .is_some_and(|provider| provider.outputs.iter().any(|output| output == "atif"));
+    if atif.requested && (atif.components != 1 || !supports_atif) {
+        return incompatible(
+            descriptor,
+            "telemetry.providers.relay".to_string(),
+            "Cannot confirm requested Relay ATIF output: the provider must declare ATIF and exactly one observability component must enable it",
+        );
+    }
+    Ok(())
+}
+
 // Execution's provenance-aware wrappers use the same metadata validators.
 // Inspection never constructs resolved descriptors or a RunPlan.
 fn inspect_metadata_compatibility(
@@ -3516,6 +3539,7 @@ fn inspect_metadata_compatibility(
         validate_workflow_metadata(config, target),
         validate_tool_definitions_metadata(config, Some(descriptor)),
         validate_agent_config_extensions_metadata(config, Some(descriptor), target),
+        validate_relay_atif_metadata(config, Some(descriptor)),
     ] {
         match result {
             Ok(()) => {}
@@ -3552,19 +3576,6 @@ fn inspect_metadata_compatibility(
         }
         Err(error) => return Err(error),
     };
-    let atif = relay_atif_state(config)?;
-    let supports_atif = descriptor
-        .telemetry
-        .providers
-        .get(&TelemetryProvider::Relay)
-        .is_some_and(|provider| provider.outputs.iter().any(|output| output == "atif"));
-    if atif.requested && (atif.components != 1 || !supports_atif) {
-        issues.push(AdapterCompatibilityIssue {
-            adapter_id: descriptor.adapter_id.clone(),
-            field: "telemetry.providers.relay".to_string(),
-            reason: "Cannot confirm requested Relay ATIF output: the provider must declare ATIF and exactly one observability component must enable it".to_string(),
-        });
-    }
     issues.sort_by(|a, b| (&a.field, &a.reason).cmp(&(&b.field, &b.reason)));
     issues.dedup();
     let telemetry_plan = if issues.is_empty() {
@@ -3694,6 +3705,8 @@ fn resolve_selected_descriptors(
     }
     let capabilities = resolve_runtime_capabilities(descriptor);
     let telemetry_plan = resolve_telemetry_plan(&config, descriptor)?;
+    validate_relay_atif_metadata(&config, descriptor)
+        .map_err(|error| metadata_error(error, adapter_descriptor.as_ref(), None))?;
     let agent_config = project_agent_config(
         &config,
         &capability_plan,

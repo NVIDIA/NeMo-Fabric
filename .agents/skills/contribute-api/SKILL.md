@@ -33,6 +33,8 @@ runtime or bindings.
   return issues by default (`diagnostics=True`); support `diagnostics=False`
   for exception-based rejection. Malformed inputs raise in both modes.
   Keep startup validation rules shared and preserve malformed-input errors.
+  Inspection and planning share Relay ATIF admission: requested output requires
+  descriptor support and exactly one observability component.
 - Update docs and examples in the same branch
 
 ## Minimum Acceptance
