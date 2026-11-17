@@ -1631,6 +1631,41 @@ async def test_openclaw_stop_ends_the_gateway_where_group_signals_are_denied(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+async def test_openclaw_start_preserves_cancellation_when_gateway_cleanup_fails(
+    mock_openclaw: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    runtime = adapter.OpenClawRuntime()
+    config = _config(mock_openclaw)
+    config.harness.settings["shutdown_timeout_seconds"] = 0.01
+    cancellation = asyncio.CancelledError("startup cancelled")
+    monkeypatch.setattr(runtime, "_wait_started", AsyncMock(side_effect=cancellation))
+
+    def deny_cleanup(pid, signum, *, fallback_to_pid=True):
+        if signum == signal.SIGKILL:
+            raise PermissionError("kill denied")
+
+    try:
+        with monkeypatch.context() as cleanup_patch:
+            cleanup_patch.setattr(
+                adapter.common_utils, "signal_process_group", deny_cleanup
+            )
+            with pytest.raises(asyncio.CancelledError) as caught:
+                await runtime.start(
+                    {
+                        "config": config,
+                        "runtime_context": _context(tmp_path).to_mapping(),
+                        "base_dir": str(tmp_path),
+                    }
+                )
+            assert caught.value is cancellation
+            assert runtime._process is not None
+            assert runtime._process.returncode is None
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
 async def test_openclaw_stop_allows_gateway_to_release_ownership(
     monkeypatch: pytest.MonkeyPatch,
 ):

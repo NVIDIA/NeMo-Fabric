@@ -1692,6 +1692,14 @@ class OpenClawRuntime:
             self._monitor_task = asyncio.create_task(
                 self._monitor_gateway(self._process, self._client, port)
             )
+        except asyncio.CancelledError:
+            try:
+                await self.stop()
+            except Exception:
+                logger.error(
+                    "OpenClaw cleanup failed after startup cancellation", exc_info=True
+                )
+            raise
         except BaseException:
             await self.stop()
             raise
