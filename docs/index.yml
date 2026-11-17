@@ -57,6 +57,7 @@ navigation:
     path: ./integrations/consumers.mdx
   - section: Python SDK
     path: ./sdk/python.mdx
+    collapsed: true
     contents:
     - page: Execution Model
       path: ./sdk/execution-model.mdx

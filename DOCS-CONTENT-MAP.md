@@ -63,7 +63,7 @@ SDK content rewrites, expanded consumer workflows, harness execution/streaming r
 
 Baseline: upstream main `4678ba4606d91e842c016a97f5b721f7812e98e6` (verified again before implementation). Ranges below are inclusive lines in that commit, including original front matter and comments. All 2,086 lines across the three source files are assigned exactly once. Only front matter, necessary heading levels, link destinations, and brief navigation/setup pointers change; the technical prose, examples, commands, tables and diagrams remain intact. No SDK behavior or API changes.
 
-The parent Python SDK opens its existing landing page. Its ten children are flat subsections with no intermediate chapter groups. Health and stats keep their existing public routes. Every former Python SDK heading anchor remains on the landing page beside a link to the new destination; authored incoming links point directly to the relocated sections. Generated references are untouched and their old links continue to resolve. Reference routing entries point to the single relocated source table/block.
+The parent Python SDK opens its existing landing page. Its ten children are flat subsections with no intermediate chapter groups. The Python SDK section is collapsed by default. Health and stats keep their existing public routes. Every former Python SDK heading anchor remains on the landing page beside a link to the new destination; authored incoming links point directly to the relocated sections. Generated references are untouched and their old links continue to resolve. Reference routing entries point to the single relocated source table/block.
 
 | Destination | Main source ranges | Preserved material |
 | --- | --- | --- |
