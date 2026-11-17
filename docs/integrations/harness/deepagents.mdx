@@ -267,8 +267,9 @@ function, or a `BaseTool` subclass that the adapter constructs with `settings`.
 A middleware `ref` names a LangChain `AgentMiddleware` subclass. The adapter
 rejects any other object without calling it. Each tool's name must equal its
 definition key, so `tools.enabled` and `tools.blocked` apply to it. Custom
-middleware runs on the main agent before the NeMo Fabric tool policy and NeMo
-Relay, and must implement the async hooks it wraps, such as
+middleware runs on the main agent before NeMo Relay. The NeMo Fabric tool
+policy checks each tool call both before and after it, and custom middleware
+must implement the async hooks it wraps, such as
 `awrap_model_call`. Planning checks the shape of each entry; a missing package
 or attribute fails when the runtime starts. Refer to the adapter guide for the
 complete rules.

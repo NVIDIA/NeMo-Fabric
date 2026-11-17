@@ -78,8 +78,8 @@ The LangChain Deep Agents adapter accepts `kind="python"` tool definitions whose
 installed in the adapter environment. The tool's name must equal the definition
 key. Custom LangChain `AgentMiddleware` subclasses go in
 `harness.settings.deepagents.middleware` as `{"ref": ..., "settings": {...}}`
-entries; they run before the tool policy and NeMo Relay and must implement the
-async hooks they wrap. Planning checks only the shape; a missing package fails
+entries; they run before NeMo Relay, inside tool-policy checks on both sides,
+and must implement the async hooks they wrap. Planning checks only the shape; a missing package fails
 at runtime start.
 
 `SkillConfig.paths` keeps each adapter's own meaning. For the same meaning on

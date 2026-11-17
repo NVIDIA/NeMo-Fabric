@@ -157,6 +157,10 @@ class ToolGateMiddleware(AgentMiddleware):  # type: ignore[misc]
         return handler(request)
 
 
+class ToolEntryGateMiddleware(ToolGateMiddleware):
+    """Apply the tool policy before custom middleware can run a tool itself."""
+
+
 def resolve_api_key_env(model_config: AgentModelConfig) -> str:
     """Resolve the credential env var.
 
@@ -404,17 +408,26 @@ def _enabled_tool_names(config: AgentConfig) -> set[str] | None:
 
 
 def _tool_gate_middleware(
-    is_blocked: Callable[[Any], bool], message: Callable[[Any], str]
+    is_blocked: Callable[[Any], bool],
+    message: Callable[[Any], str],
+    gate: type[ToolGateMiddleware] = ToolGateMiddleware,
 ) -> ToolGateMiddleware:
-    return ToolGateMiddleware(is_blocked, message)
+    return gate(is_blocked, message)
 
 
-def tool_policy_middleware(enabled: set[str] | None, blocked: set[str]) -> Any:
-    """Enforce tool selection and blocking across the full tool surface."""
+def tool_policy_middleware(
+    enabled: set[str] | None, blocked: set[str], *, entry: bool = False
+) -> Any:
+    """Enforce tool selection and blocking across the full tool surface.
+
+    ``entry`` builds the check that runs before custom middleware; it has its own
+    middleware name because LangChain rejects two middleware with the same name.
+    """
 
     return _tool_gate_middleware(
         lambda name: name in blocked or (enabled is not None and name not in enabled),
         lambda name: f"Tool '{name}' is blocked by the configured tools policy.",
+        ToolEntryGateMiddleware if entry else ToolGateMiddleware,
     )
 
 
@@ -547,7 +560,7 @@ def _reserved_middleware_names() -> set[str]:
 
     import langchain.agents.middleware as langchain_middleware
 
-    names = {ToolGateMiddleware.__name__}
+    names = {ToolGateMiddleware.__name__, ToolEntryGateMiddleware.__name__}
     modules: list[Any] = [langchain_middleware]
     try:
         deepagents_middleware = importlib.import_module("deepagents.middleware")
@@ -555,7 +568,9 @@ def _reserved_middleware_names() -> set[str]:
         deepagents_middleware = None
     if deepagents_middleware is not None:
         modules.append(deepagents_middleware)
-        for info in pkgutil.iter_modules(getattr(deepagents_middleware, "__path__", [])):
+        for info in pkgutil.iter_modules(
+            getattr(deepagents_middleware, "__path__", [])
+        ):
             try:
                 modules.append(
                     importlib.import_module(f"deepagents.middleware.{info.name}")
@@ -596,12 +611,13 @@ def resolve_custom_middleware(entries: list[dict[str, Any]]) -> list[AgentMiddle
                 f"{field}: {entry['ref']} is {_describe(target)}, not a LangChain "
                 "AgentMiddleware subclass; it was not called."
             )
-        if target.state_schema is not AgentMiddleware.state_schema:
+        instance = _construct(target, entry.get("settings", {}), field, entry["ref"])
+        # LangChain reads each instance's state_schema, so check after construction.
+        if instance.state_schema is not AgentMiddleware.state_schema:
             raise AdapterConfigError(
                 f"{field}: {entry['ref']} declares a custom state_schema, which the "
                 "Deep Agents adapter does not support."
             )
-        instance = _construct(target, entry.get("settings", {}), field, entry["ref"])
         name = instance.name
         if name in reserved:
             raise AdapterConfigError(
@@ -886,13 +902,16 @@ async def build_agent_kwargs(
     kwargs.update(
         {key: extra[key] for key in DEEPAGENTS_PASSTHROUGH_KEYS if key in extra}
     )
-    # Custom middleware runs before the tool policy (and before Relay, which is
-    # appended later), so it cannot route a call around the policy and telemetry
-    # records what actually executes.
+    # Custom middleware runs inside an entry policy check, so a wrapper that runs a
+    # tool itself cannot skip the policy, and before the final policy check, so a
+    # wrapper that rewrites a call is checked again. Relay is appended later, so
+    # telemetry records what actually executes.
     if custom_middleware:
         kwargs["middleware"] = list(custom_middleware)
     if enabled is not None or blocked:
         middleware = list(kwargs.get("middleware") or [])
+        if custom_middleware:
+            middleware.insert(0, tool_policy_middleware(enabled, blocked, entry=True))
         middleware.append(tool_policy_middleware(enabled, blocked))
         kwargs["middleware"] = middleware
         kwargs["subagents"] = _gated_subagents(
@@ -1938,7 +1957,6 @@ def _supported_kwargs(callable_obj: Any, kwargs: dict[str, Any]) -> dict[str, An
         return dict(kwargs)
     supported = {param.name for param in parameters}
     return {key: value for key, value in kwargs.items() if key in supported}
-
 
 
 # Selected software reported by the shared lifecycle host; no dependency scan.

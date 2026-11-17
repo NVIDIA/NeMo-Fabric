@@ -10,7 +10,9 @@ from pydantic import BaseModel, Field
 @tool
 def convert_units(value: float, unit: str) -> str:
     """Convert kilometres to miles ("km") or miles to kilometres ("mi")."""
-    return f"{value * 0.621371:.3f} mi" if unit == "km" else f"{value / 0.621371:.3f} km"
+    return (
+        f"{value * 0.621371:.3f} mi" if unit == "km" else f"{value / 0.621371:.3f} km"
+    )
 
 
 @tool("read_file")

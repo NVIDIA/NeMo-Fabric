@@ -3416,11 +3416,12 @@ async def test_custom_tools_and_middleware_run_before_the_tool_policy(
     assert tools[1].endpoint == "https://erp.example.test"
     middleware = create_kwargs["middleware"]
     assert [type(item).__name__ for item in middleware] == [
+        "ToolEntryGateMiddleware",
         "SystemMarker",
         "SecondMarker",
         "ToolGateMiddleware",
     ]
-    assert middleware[0].marker == "first"
+    assert middleware[1].marker == "first"
 
     request = types.SimpleNamespace(
         tool_call={"name": "convert_units", "id": "call-1", "args": {}}
@@ -3489,7 +3490,9 @@ async def test_custom_tools_and_middleware_run_before_the_tool_policy(
     ],
 )
 @pytest.mark.usefixtures("deepagents_extension")
-async def test_invalid_custom_tools_fail_runtime_start(build_kwargs, definition, message):
+async def test_invalid_custom_tools_fail_runtime_start(
+    build_kwargs, definition, message
+):
     with pytest.raises(adapter.AdapterConfigError, match=message):
         await build_kwargs(definitions={"tool": definition})
 
@@ -3544,6 +3547,10 @@ async def test_custom_tool_cannot_reuse_an_mcp_tool_name(build_kwargs, monkeypat
             r"declares a custom state_schema",
         ),
         (
+            {"ref": "fabric_test_extension.middleware:StatefulInInitMiddleware"},
+            r"declares a custom state_schema",
+        ),
+        (
             {
                 "ref": "fabric_test_extension.middleware:SystemMarker",
                 "settings": {"unknown": True},
@@ -3564,6 +3571,7 @@ async def test_custom_tool_cannot_reuse_an_mcp_tool_name(build_kwargs, monkeypat
         "plain-function",
         "tool-instead-of-middleware",
         "custom-state",
+        "custom-state-in-init",
         "bad-settings",
         "missing-attribute",
         "unknown-field",
@@ -3664,3 +3672,52 @@ async def test_custom_tools_and_middleware_run_in_a_real_deep_agent(
     assert tool_results == ["6.214 mi"]
     assert len(seen_prompts) == 2
     assert all("injected-by-custom-middleware" in prompt for prompt in seen_prompts)
+
+
+@pytest.mark.usefixtures("use_real_deepagents")
+async def test_tool_policy_applies_before_custom_middleware_runs_a_tool(
+    build_kwargs, deepagents_extension, monkeypatch
+):
+    monkeypatch.delitem(sys.modules, "langchain.chat_models", raising=False)
+    from deepagents import create_deep_agent
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+
+    create_kwargs = await build_kwargs(
+        definitions={
+            "convert_units": {
+                "kind": "python",
+                "ref": f"{deepagents_extension}.tools:convert_units",
+            }
+        },
+        middleware=[{"ref": f"{deepagents_extension}.middleware:SelfExecutingTools"}],
+        blocked=["convert_units"],
+    )
+    model = GenericFakeChatModel(
+        messages=iter(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "convert_units",
+                            "args": {"value": 10, "unit": "km"},
+                            "id": "call-1",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                AIMessage(content="done"),
+            ]
+        )
+    )
+    object.__setattr__(model, "bind_tools", lambda _tools, **_kwargs: model)
+    create_kwargs["model"] = model
+    agent = create_deep_agent(**create_kwargs)
+
+    state = await agent.ainvoke({"messages": [{"role": "user", "content": "10 km?"}]})
+
+    results = [m for m in state["messages"] if isinstance(m, ToolMessage)]
+    assert len(results) == 1
+    assert results[0].status == "error"
+    assert "blocked by the configured tools policy" in results[0].content
