@@ -588,15 +588,15 @@ NeMo Fabric reads named values at adapter start and checks them before each invo
 
 MCP authentication and custom-header support vary by adapter:
 
-| Adapter | OAuth 2.0 Authentication | HTTP `custom_headers` |
-| --- | --- | --- |
-| Claude | Unsupported | Supported |
-| Codex | Supported | Supported |
-| Deep Agents | Unsupported | Supported |
-| Hermes Agent | Supported | Supported |
+| Adapter | OAuth 2.0 (`oauth2`) | Client credentials (`service_account`) | HTTP `custom_headers` |
+| --- | --- | --- | --- |
+| Claude | Unsupported | Unsupported | Supported |
+| Codex | Supported | Unsupported | Supported |
+| Deep Agents | Unsupported | Supported | Supported |
+| Hermes Agent | Supported | Unsupported | Supported |
 
-Claude and Deep Agents return a configuration error when `authentication` is
-set. The bundled adapters do not support `service_account` MCP authentication.
+An adapter returns a configuration error when `authentication` uses a type it
+does not support.
 
 Configure OAuth 2.0 with `McpAuthenticationConfig`. The adapter and MCP server
 complete the authorization flow before the first agent turn. The flow can
@@ -616,6 +616,73 @@ capability_config.add_mcp_server(
     exposure="harness_native",
 )
 ```
+
+Configure OAuth 2.0 client credentials with `type="service_account"` when the
+agent calls an MCP server as its own service identity, with no user and no
+browser. `client_secret_env` names the environment variable that holds the
+client secret; the configuration contains only the name:
+
+```python
+capability_config.add_mcp_server(
+    "jira",
+    transport="streamable-http",
+    url="https://jira-mcp.example.com/mcp",
+    authentication=McpAuthenticationConfig(
+        type="service_account",
+        client_id="fabric-agent",
+        client_secret_env="JIRA_MCP_CLIENT_SECRET",
+        token_url="https://auth.example.com/oauth2/token",
+        scopes=["jira.read"],
+    ),
+)
+```
+
+The adapter requests a token from `token_url`, sends it as
+`Authorization: Bearer <token>` with every MCP request, and requests a new one
+before it expires. `token_endpoint_auth_method` selects `client_secret_basic`
+(the default) or `client_secret_post`, and `token_cache_buffer_seconds` (300 by
+default) sets how early the token is renewed. `service_account` applies to
+`sse` and `streamable-http` servers. Startup fails if the variable named by
+`client_secret_env` is unset, if `token_url` or the server `url` is not `https`
+(plain `http` is accepted only for a loopback host), if the transport is
+`websocket`, or if the same server sets an `Authorization` custom header.
+
+Some MCP servers sit behind a gateway and need two tokens: the
+`service_account` bearer token admits the agent to the server, and a second
+token, sent in its own header, selects the identity used for the system behind
+the server. That second token can belong to a service account in that system or
+to a user, so the agent sees what that account can see. Combine
+`service_account` with a `custom_headers` entry that references an environment
+variable:
+
+```python
+import os
+
+os.environ["DOWNSTREAM_TOKEN"] = "..."  # issued by the downstream system
+
+capability_config.add_mcp_server(
+    "bugs",
+    transport="streamable-http",
+    url="https://mcp-gateway.example.com/bugs/mcp",
+    authentication=McpAuthenticationConfig(
+        type="service_account",
+        client_id="fabric-agent",
+        client_secret_env="GATEWAY_CLIENT_SECRET",
+        token_url="https://auth.example.com/oauth2/token",
+        scopes=["bugs"],
+    ),
+    custom_headers={"X-Downstream-Token": "${DOWNSTREAM_TOKEN}"},
+)
+```
+
+Only the `service_account` token is requested and renewed by the adapter. The
+second token is sent as configured, so replace the variable and restart the
+runtime when it expires. Set the variable before starting the runtime: an
+empty value fails startup with `AdapterConfigError`, and an unset variable is
+not expanded, so the literal `${DOWNSTREAM_TOKEN}` text is sent. A rejected
+second token does not stop the server's tools from loading: the gateway
+accepts the bearer token, and the error appears in the tool result when the
+downstream system refuses the call.
 
 Use `custom_headers` to send HTTP headers with an `sse` or `streamable-http`
 server. Header names and values must be valid HTTP header text. To provide a
