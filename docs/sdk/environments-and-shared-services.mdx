@@ -1,0 +1,114 @@
+---
+title: "Environments and Shared Services"
+description: "Manage environment and shared-service lifecycles from the Python SDK."
+slug: /sdk/environments-and-shared-services
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+For examples that reuse `config`, start with [Start With One Run](python.mdx#start-with-one-run).
+
+## Explicit Environment Lifecycle
+
+`prepare_environment(config)` returns an immutable `EnvironmentHandle` without
+starting an agent. Pass it to `start_runtime_in(config, environment)` to start a
+runtime, then invoke and stop that runtime normally. Call
+`release_environment(environment)` separately after collecting results. Local
+release preserves caller-owned files and supports multiple runtimes.
+
+`attach_environment(config, EnvironmentReference.from_mapping(...))` asks the
+selected provider to verify an existing resource. Providers that do not support
+attachment return an unsupported-provider error. Attachment retains caller
+ownership; release detaches without deleting that resource. Provider availability
+and runtime reuse limits depend on the selected environment implementation.
+Non-local workspace and artifact paths refer to the task environment and are
+not resolved against the host's `base_dir`. The OpenShell provider starts the
+agent through the task SDK command bridge. One sandbox can host multiple
+independent runtime IDs; invoke and stop target a specific ID, and stopping one
+does not stop the others. Streaming and shared-service hosting remain local SDK
+capabilities.
+
+The optional [OpenShell provider](https://github.com/NVIDIA/NeMo-Fabric/blob/main/environment-providers/openshell/README.md)
+uses the task command bridge and returns the task-generated SDK runtime ID and
+normalized results. Declared files are collected under the host's
+`runtime.artifacts/<runtime_id>/<invocation_id>/` directory. The task artifact
+root is separate. OpenShell invocation is buffered; streaming and shared-service
+hosting remain local SDK capabilities. Commands with uncertain outcomes are
+never replayed; an uncertain start blocks further starts in that sandbox.
+
+
+## Shared Services
+
+Use `prepare_service(...)` when NeMo Fabric should create and supervise a
+long-lived service. Start independent runtimes against the returned service,
+then stop every runtime before releasing it.
+
+```python
+import asyncio
+
+from nemo_fabric import Fabric
+
+async def main():
+    fabric = Fabric()
+    async with await fabric.prepare_service(config) as service:
+        async with await fabric.start_runtime(config, service=service) as first:
+            async with await fabric.start_runtime(config, service=service) as second:
+                first_result = await first.invoke(input="Inspect the repository")
+                second_result = await second.invoke(input="Review the latest patch")
+
+asyncio.run(main())
+```
+
+Use `attach_service(...)` when another system owns deployment and supervision.
+The adapter defines the required `ServiceReference.connection` fields. The
+reference contains locators and secret references, not secret values. Releasing
+an attachment only removes NeMo Fabric-owned clients and temporary state.
+
+```python
+import asyncio
+
+from nemo_fabric import Fabric, ServiceReference
+
+async def main():
+    reference = ServiceReference.from_mapping(
+        {
+            "adapter_id": "nvidia.fabric.openclaw",
+            "service_type": "openclaw_gateway",
+            "connection": {
+                "gateway_url": "https://openclaw.example.com",
+                "gateway_token_env": "OPENCLAW_GATEWAY_TOKEN",
+            },
+        }
+    )
+
+    fabric = Fabric()
+    async with await fabric.attach_service(config, reference) as service:
+        async with await fabric.start_runtime(config, service=service) as runtime:
+            result = await runtime.invoke(input="Review the latest patch")
+
+asyncio.run(main())
+```
+
+`Service.handle` is safe to inspect but is valid only in the process that
+created it. Cold-resume behavior will be defined separately.
+
+
+## Install And Runtime Responsibilities
+
+In production, the consumer or execution environment is responsible for
+installing NeMo Fabric, the selected harness, adapter dependencies, model access,
+credentials, and any required native tools. NeMo Fabric validates and diagnoses the
+runtime assumptions, but it does not silently install harnesses or credentials at
+invocation time.
+
+Development environments may use extras, virtual environments, or local source
+checkouts to make iteration easy. Production environments should prefer explicit
+images, preinstalled dependencies, or managed deployment packages.
+
+Runtime compatibility checks should validate:
+
+- NeMo Fabric SDK and native extension versions;
+- selected adapter version;
+- selected harness version or version range;
+- required environment variables or secret references;
+- optional capability support such as NeMo Relay, MCP, or tool exposure.

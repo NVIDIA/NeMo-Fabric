@@ -55,8 +55,29 @@ navigation:
   contents:
   - page: Overview
     path: ./integrations/consumers.mdx
-  - page: Python SDK
+  - section: Python SDK
     path: ./sdk/python.mdx
+    contents:
+    - page: Execution Model
+      path: ./sdk/execution-model.mdx
+    - page: Configure Agents
+      path: ./sdk/configure-agents.mdx
+    - page: Requests and Runtimes
+      path: ./sdk/requests-and-runtimes.mdx
+    - page: Environments and Shared Services
+      path: ./sdk/environments-and-shared-services.mdx
+    - page: Streaming
+      path: ./sdk/streaming.mdx
+    - page: Results and Errors
+      path: ./sdk/results-and-errors.mdx
+    - page: Health Checks
+      path: ./sdk/health-checks.mdx
+    - page: Resource Usage and Stats
+      path: ./sdk/system-stats.mdx
+    - page: Software Execution Evidence
+      path: ./sdk/software-execution-evidence.mdx
+    - page: SDK Contract Boundaries
+      path: ./sdk/contract-boundaries.mdx
   - section: Consumer Integrations
     path: ./integrations/consumer/overview.mdx
     contents:
@@ -90,12 +111,6 @@ navigation:
       path: ./experimentation/examples.mdx
     - page: Scaffold an Application
       path: ./experimentation/scaffold.mdx
-  - page: Health Checks
-    path: ./sdk/health-checks.mdx
-    hidden: true
-  - page: Resource Usage and Stats
-    path: ./sdk/system-stats.mdx
-    hidden: true
 - section: Harnesses
   collapsed: open-by-default
   contents:

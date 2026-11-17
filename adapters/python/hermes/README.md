@@ -234,7 +234,7 @@ NeMo Fabric does not change native API or dashboard session selection or behavio
 
 The state lock remains held while shutdown is unconfirmed. On Unix, native API
 and dashboard processes inherit the lock so a surviving writer still prevents
-replacement after its host exits. Retry cleanup after a caller timeout and confirm that the runtime has stopped. See the [SDK resume guide](../../../docs/sdk/python.mdx#resume-a-hermes-conversation)
+replacement after its host exits. Retry cleanup after a caller timeout and confirm that the runtime has stopped. See the [SDK resume guide](../../../docs/sdk/requests-and-runtimes.mdx#resume-a-hermes-conversation)
 for selection, recovery, and storage details.
 
 ## Execution Model

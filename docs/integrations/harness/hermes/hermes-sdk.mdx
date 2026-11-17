@@ -90,7 +90,7 @@ async with await Fabric().start_runtime(config) as runtime:
     print(result.output)
 ```
 
-`Runtime.invoke_stream()` uses Relay-backed event streaming; retrieve its normalized result with `stream.result()`. Refer to [streaming](../../../sdk/python.mdx#nemo-relay-streaming) for the SDK usage pattern.
+`Runtime.invoke_stream()` uses Relay-backed event streaming; retrieve its normalized result with `stream.result()`. Refer to [streaming](../../../sdk/streaming.mdx#nemo-relay-streaming) for the SDK usage pattern.
 
 ## Lifecycle and Conversations
 
@@ -141,4 +141,4 @@ The replacement gets a new runtime identifier and restores the selected native c
 
 Hermes applies its native resume checks, saved prompt, tool selection, and compression history. A missing or incompatible session produces a structured error. If `recovery_warnings` reports an uncertain earlier turn, inspect native and external state before sending a new request with `acknowledge_recovery=True`. NeMo Fabric preserves the conversation, including unfinished requests. The model may act on those requests after acknowledgment. The caller decides whether to continue with that history.
 
-`SessionRef` resume requires `sdk.enabled: true`, which is the default. `RunPlan.capabilities.session_resume` reports the adapter's declared capability. A native-only runtime can retain its Hermes home with `runtime.keep_state` and start without issuing a session reference. Hermes rejects explicit SDK session selection in native-only mode with `session_resume_unsupported` before native startup. API, browser, and terminal conversations use Hermes's native selection behavior. See the [SDK resume contract](../../../sdk/python.mdx#resume-a-hermes-conversation) for storage and recovery details.
+`SessionRef` resume requires `sdk.enabled: true`, which is the default. `RunPlan.capabilities.session_resume` reports the adapter's declared capability. A native-only runtime can retain its Hermes home with `runtime.keep_state` and start without issuing a session reference. Hermes rejects explicit SDK session selection in native-only mode with `session_resume_unsupported` before native startup. API, browser, and terminal conversations use Hermes's native selection behavior. See the [SDK resume contract](../../../sdk/requests-and-runtimes.mdx#resume-a-hermes-conversation) for storage and recovery details.

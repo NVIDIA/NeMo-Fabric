@@ -9,7 +9,7 @@ All three phases target 0.7. Source baseline: upstream main `4678ba4606d91e842c0
 | --- | --- | --- |
 | About NeMo Fabric | `docs/overview-refresh` | Upstream main |
 | Getting Started | `docs/getting-started-refresh` | `docs/overview-refresh` |
-| Consumers and Harnesses | `docs/consumer-harness-hierarchy` | `docs/getting-started-refresh` |
+| Consumers, Harnesses, and SDK Subsections | `docs/consumer-harness-hierarchy` | `docs/getting-started-refresh` |
 
 ## Approved Content Changes
 
@@ -21,9 +21,9 @@ All three phases target 0.7. Source baseline: upstream main `4678ba4606d91e842c0
 
 | Source | Destination | Treatment |
 | --- | --- | --- |
-| `docs/sdk/python.mdx` | Consumers > Python SDK | Existing guide body unchanged; no SDK task-page split. |
-| `docs/sdk/health-checks.mdx` | Existing SDK route, linked from the SDK and Troubleshooting | Body unchanged. |
-| `docs/sdk/system-stats.mdx` | Existing SDK route, linked from the SDK and Troubleshooting | Body unchanged. |
+| `docs/sdk/python.mdx` | Consumers > Python SDK | Introduction and first-run example retained on the section landing; all remaining main content moved intact into ten direct subsections. See the SDK preservation map below. |
+| `docs/sdk/health-checks.mdx` | Consumers > Python SDK > Health Checks | Existing route and entire detailed guide retained; original SDK Runtime Health, Gateway Service Health, and Sandbox Command Bridge blocks appended. |
+| `docs/sdk/system-stats.mdx` | Consumers > Python SDK > Resource Usage and Stats | Existing route and entire detailed walkthrough retained; original SDK resource snapshots, invocation stats, sampled peaks/means, and cgroup blocks appended. |
 | Existing consumer Harbor guide | Consumers > Consumer Integrations > Benchmarking & Evaluation > Harbor Framework | Body unchanged, including latest main's Execution Deadlines section. |
 | Existing harness guides | Harnesses > Harness Integrations | Individual guide bodies unchanged; the landing page adds the NOOA documentation link and the relocated metadata-inspection subsection. |
 | Hermes and OpenClaw overview/interface pages | Existing paths, grouped under each harness | No content migration or rewrite. |
@@ -33,9 +33,9 @@ All three phases target 0.7. Source baseline: upstream main `4678ba4606d91e842c0
 | CLI: Experiment With Examples | Consumers > CLI (Experimental) > Examples | Exact section extraction. |
 | CLI: Scaffold Examples and its Python/Rust subsections | Consumers > CLI (Experimental) > Scaffold an Application | Exact section extraction. |
 | CLI introduction and boundaries | CLI (Experimental) section landing | Preserved; former section anchors link to the extracted pages. |
-| SDK API Inventory | Existing SDK section, linked from Reference > SDK API Inventory | No extraction or duplicated table. |
-| SDK compatibility matrix | Existing SDK section, linked from Reference > Harness Compatibility | No extraction or rewritten support claims. |
-| SDK contract-boundary/schema explanation | Existing SDK section, linked from Reference > Configuration and Schemas | No extraction or rewritten contracts. |
+| SDK API Inventory | Python SDK > Execution Model, linked from Reference > SDK API Inventory | Complete table moved once, without duplication. |
+| SDK compatibility matrix | Python SDK > Configure Agents, linked from Reference > Harness Compatibility | Complete matrix moved once; support claims unchanged. |
+| SDK contract-boundary/schema explanation | Python SDK > SDK Contract Boundaries, linked from Reference > Configuration and Schemas | Complete original block retained; contracts unchanged. |
 | Artifacts page | Reference > Packages and Distribution | Body and existing route retained. |
 | Installation: Inspect Adapter Metadata Without Harness SDKs | Harness Integrations > Inspect Adapter Metadata | Existing subsection body moved intact; installation links point directly to it, and the former Harnesses Overview anchor remains as a compatibility link. No standalone catalog page. |
 | Installation: Isolated Task Environment | Install a Harness Adapter | Existing deployment explanation and commands retained. |
@@ -53,9 +53,41 @@ All three phases target 0.7. Source baseline: upstream main `4678ba4606d91e842c0
 - Testing, Documentation Contributions, and Troubleshooting are brief indexes to existing guidance, with no newly authored commands or diagnostic examples.
 - Every nested section with landing content uses the section itself; no duplicate Overview child. Explicit Overview children are reserved for top-level groups.
 
+The subsequently approved SDK split supersedes the original decision to keep one SDK page and hidden health/stats entries. This is a preservation-only extraction from main, not adoption of the SDK rewrites in #611.
+
 ## Deferred From the Mockup
 
-SDK splits/rewrites, merged or expanded health/stats guides, expanded consumer workflows, harness execution/streaming rewrites, additional adapter-authoring guidance, new diagnostic examples, and unrelated command/capability corrections are excluded.
+SDK content rewrites, expanded consumer workflows, harness execution/streaming rewrites, additional adapter-authoring guidance, new diagnostic examples, and unrelated command/capability corrections are excluded.
+
+## Python SDK Preservation Map and Later PR Notes
+
+Baseline: upstream main `4678ba4606d91e842c016a97f5b721f7812e98e6` (verified again before implementation). Ranges below are inclusive lines in that commit, including original front matter and comments. All 2,086 lines across the three source files are assigned exactly once. Only front matter, necessary heading levels, link destinations, and brief navigation/setup pointers change; the technical prose, examples, commands, tables and diagrams remain intact. No SDK behavior or API changes.
+
+The parent Python SDK opens its existing landing page. Its ten children are flat subsections with no intermediate chapter groups. Health and stats keep their existing public routes. Every former Python SDK heading anchor remains on the landing page beside a link to the new destination; authored incoming links point directly to the relocated sections. Generated references are untouched and their old links continue to resolve. Reference routing entries point to the single relocated source table/block.
+
+| Destination | Main source ranges | Preserved material |
+| --- | --- | --- |
+| Python SDK landing | `python.mdx:1–23`, `python.mdx:24–137`, `python.mdx:1676–1678` | Introduction, full first-run and separate-host metadata examples, Next Steps. Section landing, no Overview child. |
+| Execution Model | `python.mdx:138–208`, `python.mdx:756–778` | Full execution-model diagram, five-object concepts table, hosting semantics, and API inventory table. |
+| Configure Agents | `python.mdx:374–755`, `python.mdx:1469–1497`, `python.mdx:1518–1565` | Entire configuration block, compatibility matrix, environment forwarding, MCP authentication/headers, tools/skills, Relay/telemetry and file output, dynamic plugins, feature support and custom fields. Keep the interdependent examples together. |
+| Requests and Runtimes | `python.mdx:237–266`, `python.mdx:834–867`, `python.mdx:868–1004`, `python.mdx:1372–1405` | Single/multi-turn execution, retained state, Hermes SessionRef resume, recorded runtime status and server states, ownership/recovery/cleanup/error behavior, application-owned parallelism. |
+| Environments and Shared Services | `python.mdx:209–236`, `python.mdx:779–833`, `python.mdx:1498–1517` | Explicit environment lifecycle, service preparation and attachment examples, install/runtime responsibilities. |
+| Streaming | `python.mdx:1198–1245`, `python.mdx:1246–1371` | Full native OpenAI and Relay streaming examples, constraints, backpressure, authentication and correlation. |
+| Results and Errors | `python.mdx:1406–1455`, `python.mdx:1456–1468`, `python.mdx:1566–1598` | RunResult usage/cache/cost/correlation semantics, events, errors/deadlines/evidence and cleanup behavior. |
+| Health Checks | `python.mdx:267–373`, `health-checks.mdx:1–104` | Entire detailed guide plus entire SDK health block, including diagram, runtime/service examples and sandbox command bridge. Visible direct child. |
+| Resource Usage and Stats | `python.mdx:1005–1197`, `system-stats.mdx:1–273` | Entire stats walkthrough and collection-window diagram plus SDK snapshots, invocation stats, sampled peaks/means, native cgroup constraints, examples and caveats. Visible direct child. |
+| Software Execution Evidence | `python.mdx:1679–1709` | Selected software inventories, collection bounds/lifetime, dispatch/shared services and calling-application reports. |
+| SDK Contract Boundaries | `python.mdx:1599–1675` | Schemas/models, versioning, configuration extensibility, resilience, capacity and backpressure. |
+
+### Notes to Carry Into the Subsequent PR
+
+- Describe this as a content-preserving SDK split added to phase three, alongside the Consumers/Harnesses organization work. Do not describe the SDK, health, or stats material as unchanged in location or hidden navigation.
+- Explicitly call out the retained execution-model diagram, concepts/API inventory tables, recorded runtime status, state retention, Hermes resume, lifecycle/error details, invocation stats, sampled peaks/means and cgroup examples.
+- Health Checks and Resource Usage and Stats each retain their entire main guide and the supporting SDK sections/examples, rather than replacing either with an introduction or link.
+- Preserve existing routes and old SDK heading links. Repository/source links are updated where content moved; generated API references use compatibility pointers. No generated-reference edits, product changes, or new consumer/harness procedures.
+- Validation: exact source-range audit covers all 2,086 source lines; all 22 tables and 44 fenced blocks match main (3 Mermaid diagrams, 41 code/output blocks; 31 SDK Python snippets parse). `just no_uv=true docs` passed with 0 errors and 12 existing warnings (generated-reference comment parsing and the unavailable FDR redirect comparison). All three Mermaid diagrams parsed and rendered through Mermaid CLI. The generated-link and publication-helper tests passed: 18 tests. All 98 authored Python snippets parse; authored fragment checks and the combined preview strict broken-link check pass. Browser checks confirm all ten new routes, detailed health/stats headings, rendered diagrams, and legacy heading navigation; phase-one/two SDK previews retain their monolithic guide. Fresh independent review found no material issues. Generated-reference churn was discarded.
+- No live model calls or all-harness execution are required for this text-preserving extraction. These examples retain the same prerequisites and behavioral limits as main.
+- Keep these notes for the later PR body, using the repository PR template when a PR is actually requested. Nothing is pushed or published during local preview.
 
 ## Validation
 
