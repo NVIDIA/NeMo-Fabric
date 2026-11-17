@@ -559,3 +559,29 @@ def test_a_nested_source_reached_through_a_link_maps_search_results(tmp_path):
     assert f"{outer}/alias/example.md" in paths
     for path in paths:
         assert backend.read(path).error is None, path
+
+
+def test_a_source_inside_a_skill_lists_only_configured_skills(tmp_path):
+    outer = write_skill(tmp_path / "skills" / "outer", "outer")
+    inner = write_skill(outer / "inner", "inner")
+    write_skill(outer / "extra", "extra")
+    nested = write_skill(outer / "references" / "nested", "nested")
+    write_skill(outer / "references" / "unused", "unused")
+
+    sources, backend, report = resolve(
+        tmp_path,
+        directories(("skill", outer), ("skill", inner), ("skill", nested)),
+        workspace=tmp_path / "ws",
+    )
+
+    assert sorted(loaded(sources, backend)) == ["inner", "nested", "outer"]
+    assert sorted(skill["name"] for skill in report["loaded"]) == [
+        "inner",
+        "nested",
+        "outer",
+    ]
+    # The outer skill's own files are still listed and readable.
+    listed = [entry["path"] for entry in backend.ls(f"{outer}/").entries]
+    assert f"{outer}/SKILL.md" in listed
+    assert f"{outer}/extra/" not in listed
+    assert backend.read(f"{outer}/references/example.md").error is None

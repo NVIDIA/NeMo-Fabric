@@ -393,13 +393,43 @@ def _with_paths(result: Any, field: str, offset: str) -> Any:
     return dataclasses.replace(result, **{field: [strip(item) for item in items]})
 
 
-def _listing_backend(names: Sequence[str], inner: Any = None, offset: str = "") -> Any:
-    """A source folder: it lists only its routed skills.
+def _without_other_skills(
+    result: Any, names: Sequence[str], folder: Path | None
+) -> Any:
+    """Drop the skill folders of a listing that are not configured."""
 
-    When the folder lies inside another routed skill, ``inner`` is that
-    skill's backend and ``offset`` the folder's path in it. Every other
-    operation then goes to ``inner``, so the containing skill's own files stay
-    reachable; otherwise the folder holds nothing else.
+    keep = set(names)
+
+    def shown(item: Any) -> bool:
+        if not isinstance(item, dict) or not item.get("is_dir"):
+            return True
+        name = PurePosixPath(str(item.get("path", "")).rstrip("/")).name
+        if name in keep or folder is None:
+            return True
+        return not (folder / name / SKILL_FILE).exists()
+
+    if isinstance(result, list):
+        return [item for item in result if shown(item)]
+    items = getattr(result, "entries", None)
+    if items is None:
+        return result
+    return dataclasses.replace(result, entries=[item for item in items if shown(item)])
+
+
+def _listing_backend(
+    names: Sequence[str],
+    inner: Any = None,
+    offset: str = "",
+    folder: Path | None = None,
+) -> Any:
+    """A source folder whose listing shows only the configured skills.
+
+    When the folder is, or lies inside, another routed skill, ``inner`` is
+    that skill's backend, ``offset`` the folder's path in it, and ``folder``
+    the folder on disk. The listing then shows the folder's own entries
+    except skill folders that were not configured, and every other operation
+    goes to ``inner``, so the containing skill's files stay reachable.
+    Otherwise the folder holds only the configured skills.
     """
 
     from deepagents.backends.protocol import BackendProtocol
@@ -419,6 +449,9 @@ def _listing_backend(names: Sequence[str], inner: Any = None, offset: str = "") 
 
     class ListingBackend(BackendProtocol):
         def ls(self, path: str) -> Any:
+            if path.rstrip("/") == "" and inner is not None:
+                result = _with_paths(inner.ls(offset or "/"), "entries", offset)
+                return _without_other_skills(result, names, folder)
             if path.rstrip("/") == "":
                 return LsResult(entries=[dict(entry) for entry in entries])
             if inner is None:
@@ -527,10 +560,8 @@ def mounted_backend(default: Any, mounts: SkillMounts) -> Any:
             skill_folders[f"{source}{name}/"] = folder
     routes = dict(skill_routes)
     for source, skills in mounts.routes.items():
-        if source in routes:
-            # The source is a routed skill's own folder, which that skill's
-            # backend lists.
-            continue
+        # A source that is, or lies inside, a routed skill's folder is listed
+        # from that folder, without its other skills.
         containing = max(
             (route for route in skill_routes if source.startswith(route)),
             key=len,
@@ -545,7 +576,10 @@ def mounted_backend(default: Any, mounts: SkillMounts) -> Any:
             routes[source] = _listing_backend(list(skills))
         else:
             routes[source] = _listing_backend(
-                list(skills), skill_routes[containing], offset
+                list(skills),
+                skill_routes[containing],
+                offset,
+                Path(skill_folders[containing]).resolve() / offset.lstrip("/"),
             )
     return CompositeBackend(
         default=default if default is not None else StateBackend(),
