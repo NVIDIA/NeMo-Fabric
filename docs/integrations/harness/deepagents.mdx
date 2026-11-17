@@ -223,10 +223,58 @@ access to host files.
 asynchronous subagents. A declarative subagent requires `name`, `description`,
 and `system_prompt`. An asynchronous subagent requires `name`, `description`,
 and `graph_id`. Refer to the adapter guide for the supported optional fields.
-Python middleware, permission objects, Python tool objects, and precompiled
-subagents cannot cross the JSON configuration boundary. NeMo Fabric rejects an
+Permission objects and precompiled subagents cannot cross the JSON
+configuration boundary. NeMo Fabric rejects an
 asynchronous subagent when `tools.enabled` or `tools.blocked` is configured
 because a local tools policy cannot gate remote tools.
+
+### Add Custom Python Tools and Middleware
+
+The configuration names custom LangChain code that is already installed in the
+adapter environment, as `package.module:attribute`. The adapter imports it when
+the runtime starts; NeMo Fabric never fetches or installs it.
+
+```python
+from nemo_fabric import HarnessConfig, ToolDefinitionConfig, ToolsConfig
+
+tools = ToolsConfig(
+    definitions={
+        "convert_units": ToolDefinitionConfig(
+            kind="python", ref="acme_agent_ext.tools:convert_units"
+        ),
+        "erp_lookup": ToolDefinitionConfig(
+            kind="python",
+            ref="acme_agent_ext.tools:ErpLookup",
+            settings={"endpoint": "https://erp.example.com/api"},
+        ),
+    },
+)
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.langchain.deepagents",
+    settings={
+        "deepagents": {
+            "middleware": [
+                {
+                    "ref": "acme_agent_ext.middleware:DateContext",
+                    "settings": {"timezone": "Europe/Berlin"},
+                }
+            ]
+        }
+    },
+)
+```
+
+A tool `ref` names a LangChain `BaseTool` instance, such as a `@tool`
+function, or a `BaseTool` subclass that the adapter constructs with `settings`.
+A middleware `ref` names a LangChain `AgentMiddleware` subclass. The adapter
+rejects any other object without calling it. Each tool's name must equal its
+definition key, so `tools.enabled` and `tools.blocked` apply to it. Custom
+middleware runs on the main agent before NeMo Relay. The NeMo Fabric tool
+policy checks each tool call both before and after it, and custom middleware
+must implement the async hooks it wraps, such as
+`awrap_model_call`. Planning checks the shape of each entry; a missing package
+or attribute fails when the runtime starts. Refer to the adapter guide for the
+complete rules.
 
 ## Skills
 

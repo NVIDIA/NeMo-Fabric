@@ -1575,6 +1575,7 @@
             "models.max_tokens",
             "instructions.system",
             "runtime.max_turns",
+            "tools.definitions",
             "tools.enabled",
             "tools.blocked",
             "mcp",
@@ -1874,6 +1875,29 @@
                   "default": {},
                   "description": "Mapping of Deep Agents tool names to human-in-the-loop interrupt policies; omitted tools run without an interrupt."
                 },
+                "middleware": {
+                  "default": [],
+                  "description": "Custom LangChain middleware for the main agent, applied in list order before NeMo Fabric's tool policy and telemetry middleware.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "ref": {
+                        "description": "Import path of an installed LangChain AgentMiddleware subclass, as package.module:Class.",
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$",
+                        "type": "string"
+                      },
+                      "settings": {
+                        "description": "Keyword arguments passed to the middleware class constructor.",
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "ref"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
                 "subagents": {
                   "default": [],
                   "description": "Caller-defined declarative or asynchronous subagents; the built-in general-purpose subagent remains available by default.",
@@ -1959,6 +1983,30 @@
               ]
             }
           }
+        },
+        "tool_definition_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "python",
+              "description": "A tool implemented in an installed Python package."
+            },
+            "ref": {
+              "description": "Import path of a LangChain BaseTool instance or BaseTool subclass, as package.module:attribute.",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$",
+              "type": "string"
+            },
+            "settings": {
+              "description": "Keyword arguments passed to a BaseTool subclass constructor; must be empty for a BaseTool instance.",
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "ref"
+          ],
+          "type": "object"
         }
       },
       "ecosystem": "python",
@@ -1966,7 +2014,7 @@
         "name": "nemo-fabric-adapters-deepagents",
         "version": "0.7.0"
       },
-      "sha256": "92c833819d0cd531c006864e1bb2c05f6d697a503ed0bfdac1b1c734a194e19c",
+      "sha256": "086da805482c7a91497ac162ac5839be9ea3dceb3c7b740ecf3c0e93c03a665a",
       "source": "adapters/python/deepagents/deepagents.fabric-adapter.json"
     },
     "nvidia.fabric.mini-swe-agent": {
