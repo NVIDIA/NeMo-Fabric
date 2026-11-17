@@ -12,6 +12,7 @@ LangGraph checkpointer across ordered invocations.
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import inspect
 import json
@@ -46,6 +47,7 @@ from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import mcp_availability
 from nemo_fabric_adapters.common import mcp_service_account
 import nemo_fabric_adapters.common.utils as common_utils
+from nemo_fabric_adapters.deepagents import skills as skill_mounts
 from pydantic import ValidationError
 
 HARNESS = "deepagents"
@@ -317,6 +319,14 @@ def _local_shell_backend(**kwargs: Any) -> Any:
     return WorkspaceLocalShellBackend(**kwargs)
 
 
+def _workspace_root(runtime_context: RuntimeContext, base_dir: str) -> Path | None:
+    workspace = runtime_context.environment.workspace
+    if not workspace:
+        return None
+    root = Path(str(workspace))
+    return root if root.is_absolute() else Path(base_dir) / root
+
+
 def resolve_backend(
     runtime_context: RuntimeContext,
     base_dir: str,
@@ -336,11 +346,9 @@ def resolve_backend(
             "environment.workspace so host shell execution is never rooted at the "
             "NeMo Fabric base directory."
         )
-    if not workspace:
+    root = _workspace_root(runtime_context, base_dir)
+    if root is None:
         return None
-    root = Path(str(workspace))
-    if not root.is_absolute():
-        root = Path(base_dir) / root
 
     if backend_config is not None:
         withheld = set(withheld_env)
@@ -406,11 +414,29 @@ def _interrupt_is_enabled(policy: Any) -> bool:
     return policy is True or isinstance(policy, dict)
 
 
-def resolve_skills(config: AgentConfig) -> list[str] | None:
-    """Map Fabric skill paths onto the Deep Agents ``skills`` sources."""
+def resolve_skills(
+    config: AgentConfig,
+    runtime_context: RuntimeContext,
+    base_dir: str,
+    backend: Any,
+    skills_report: list[dict[str, Any]] | None = None,
+) -> tuple[list[str] | None, Any]:
+    """Make the configured skills readable by Deep Agents.
 
-    skills = [str(path) for path in (config.skills.paths if config.skills else [])]
-    return skills or None
+    Returns the Deep Agents ``skills`` sources and the backend to use. The
+    skill folders are resolved in the task environment, which the backend
+    (confined to the workspace) cannot read directly, so each entry's skills
+    are routed into the backend at their own paths. The ``output.skills``
+    report is appended to ``skills_report`` when a list is supplied.
+    """
+
+    mounts = skill_mounts.plan_skills(
+        config.skills, _workspace_root(runtime_context, base_dir)
+    )
+    mounts.warn()
+    if skills_report is not None and (report := mounts.report()):
+        skills_report.append(report)
+    return mounts.sources or None, skill_mounts.mounted_backend(backend, mounts)
 
 
 def _mcp_validation_feedback(error: ValidationError) -> str:
@@ -700,6 +726,7 @@ async def build_agent_kwargs(
     model: Any,
     settings: dict[str, Any],
     unavailable_mcp_servers: list[dict[str, str]] | None = None,
+    skills_report: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the ``create_deep_agent`` arguments from the normalized config."""
     instruction = common_instructions.system_instruction(
@@ -744,14 +771,19 @@ async def build_agent_kwargs(
         "tools": await resolve_tools(config, unavailable_mcp_servers),
         # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
         "system_prompt": instruction.content if instruction else None,
-        "skills": resolve_skills(config),
-        "backend": resolve_backend(
+    }
+    kwargs["skills"], kwargs["backend"] = resolve_skills(
+        config,
+        runtime_context,
+        base_dir,
+        resolve_backend(
             runtime_context,
             base_dir,
             extra.get("backend"),
             withheld_env=_mcp_secret_env_names(config),
         ),
-    }
+        skills_report,
+    )
     # Deep Agents-specific settings (e.g. subagents, interrupt_on) pass through,
     # after validation against the documented JSON-serializable allow-list.
     kwargs.update(
@@ -884,6 +916,7 @@ class DeepAgentsRuntime:
         self._thread_id: str | None = None
         self._completed_invocations = 0
         self._mcp_unavailable: list[dict[str, str]] = []
+        self._skills_report: dict[str, Any] | None = None
         self._checkpointer: Any = None
         self._agent: Any = None
         self._observability: Observability | None = None
@@ -943,6 +976,7 @@ class DeepAgentsRuntime:
             )
 
             mcp_unavailable: list[dict[str, str]] = []
+            skills_report: list[dict[str, Any]] = []
             agent_kwargs = await build_agent_kwargs(
                 agent_config,
                 runtime_context,
@@ -950,8 +984,10 @@ class DeepAgentsRuntime:
                 model,
                 settings,
                 mcp_unavailable,
+                skills_report,
             )
             self._mcp_unavailable = mcp_unavailable
+            self._skills_report = skills_report[0] if skills_report else None
             self._checkpointer = await open_checkpointer(
                 checkpointer_path(runtime_context, base_dir, runtime_id)
             )
@@ -1067,6 +1103,7 @@ class DeepAgentsRuntime:
                 self._telemetry_quarantine_cause if inherited_quarantine else None
             ),
             unavailable_mcp_servers=self._mcp_unavailable,
+            skills_report=self._skills_report,
         )
         failed = bool(output.pop("failed", False))
         reported_error = output.pop("error", None)
@@ -1388,6 +1425,7 @@ class DeepAgentsRuntime:
         self._thread_id = None
         self._completed_invocations = 0
         self._mcp_unavailable = []
+        self._skills_report = None
         self._checkpointer = None
         self._agent = None
         self._observability = None
@@ -1610,6 +1648,7 @@ def normalize_output(
     telemetry_error: str | None = None,
     telemetry_quarantine_cause: str | None = None,
     unavailable_mcp_servers: list[dict[str, str]] | None = None,
+    skills_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the adapter output for one turn from the final graph state."""
     messages = _extract_messages(result_state)
@@ -1652,6 +1691,9 @@ def normalize_output(
     # Absent when every configured server loaded, so clean runs keep their shape.
     if mcp := mcp_availability.output_block(unavailable_mcp_servers or []):
         output["mcp"] = mcp
+    # Present when skills are configured; each result gets its own copy.
+    if skills_report:
+        output["skills"] = copy.deepcopy(skills_report)
     return output
 
 

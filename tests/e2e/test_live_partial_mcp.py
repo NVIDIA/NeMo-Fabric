@@ -98,6 +98,8 @@ def _deepagents():
     from examples.code_review_agent import deepagents_config
 
     config = deepagents_config()
+    # The example's skill folder is not under the temporary base directory.
+    config.skills = None
     config.models = {"default": _model("openai-compatible")}
     return config, "chat"
 
