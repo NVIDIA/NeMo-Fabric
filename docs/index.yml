@@ -34,12 +34,10 @@ navigation:
     contents:
     - page: Install the NeMo Fabric Runtime
       path: ./getting-started/install-fabric-runtime.mdx
-      icon: fa-solid fa-microchip
     - page: Install a Harness Adapter
       path: ./getting-started/install-adapters.mdx
     - page: NeMo Relay and Streaming Dependencies
       path: ./getting-started/install-relay.mdx
-      icon: fa-solid fa-tower-broadcast
     - page: Hermes Adapter
       path: ./getting-started/install-hermes.mdx
       hidden: true
