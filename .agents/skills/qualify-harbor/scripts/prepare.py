@@ -193,7 +193,7 @@ def adapter_dockerfile(plan: dict, row: dict, base: str) -> str:
         "nvidia.fabric.droid": "npm install --global droid@0.233.0",
         "nvidia.fabric.openhands": (
             'pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0" '
-            '"litellm==1.100.1" "mcp==1.28.1" && pip check'
+            '"litellm==1.100.4" "mcp==1.28.1" && pip check'
         ),
         "nvidia.fabric.openclaw": "npm install --global openclaw@2026.9.34 --allow-scripts=openclaw",
         "nvidia.fabric.cline": "npm install --prefix /opt/harness @cline/sdk@0.0.83",

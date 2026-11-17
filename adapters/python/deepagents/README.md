@@ -132,10 +132,28 @@ NeMo Fabric maps the following into the harness:
   60 seconds, is skipped at startup; the runtime starts with the tools of the
   remaining servers. Every result from that runtime reports the skipped servers
   under `output.mcp.unavailable_servers` (`name`, `transport`, `reason` of
-  `failed` or `timed_out`, and `error_type`), and the adapter writes a warning to
+  `failed`, `timed_out` or `authentication_required`, and `error_type`), and the adapter writes a warning to
   standard error. Error messages are omitted because they can carry
   credentials. Discovery runs again on each runtime start, so a recovered server
   is picked up by the next runtime.
+- MCP servers on `sse` or `streamable-http` accept `service_account`
+  authentication (OAuth 2.0 client credentials). The adapter requests a token
+  from `token_url` with the secret read from `client_secret_env`, sends it as a
+  bearer token, renews it before it expires, and on a `401` requests a new token
+  and retries the request once. The token is kept in memory only. A missing
+  secret variable, a `stdio` or `websocket` server, a non-`https` `token_url` (plain `http` is accepted only for
+  a loopback host), a non-`https` server `url` (same exception), or an
+  `Authorization` custom header on the same server fails startup. The server is
+  skipped and reported with reason `authentication_required` when the token
+  endpoint rejects the client (HTTP `400` or `401`) or the MCP server still
+  answers `401` after the token is renewed; any MCP server that answers `401`
+  during discovery, with or without `authentication`, is reported the same way.
+  A token endpoint that cannot be reached, answers with another error status
+  such as `5xx`, or returns no access token gives reason `failed`. The secret variable is withheld from the `local_shell`
+  backend's environment. A server that also needs a second token in its own
+  header takes it through `custom_headers` with a `${NAME}` reference; the
+  adapter sends it unchanged and does not renew it. `oauth2` authentication is
+  not supported.
 - `tools.enabled` and `tools.blocked` are enforced by middleware across the full
   tool surface: Deep Agents built-ins (including `task`), MCP tools, and
   **delegated subagents** alike. Use Deep Agents-native tool names.

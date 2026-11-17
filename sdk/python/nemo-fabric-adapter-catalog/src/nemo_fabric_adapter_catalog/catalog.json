@@ -1578,6 +1578,7 @@
             "tools.enabled",
             "tools.blocked",
             "mcp",
+            "mcp.auth.service_account",
             "skills"
           ],
           "system_instruction_modes": [
@@ -1965,7 +1966,7 @@
         "name": "nemo-fabric-adapters-deepagents",
         "version": "0.7.0"
       },
-      "sha256": "acadd61b7a4333bf518c6a98ddc2874f39ad9676790d94e5a29ae0fe842f7a09",
+      "sha256": "92c833819d0cd531c006864e1bb2c05f6d697a503ed0bfdac1b1c734a194e19c",
       "source": "adapters/python/deepagents/deepagents.fabric-adapter.json"
     },
     "nvidia.fabric.mini-swe-agent": {
@@ -2654,8 +2655,8 @@
               "type": "number"
             },
             "shutdown_timeout_seconds": {
-              "default": 5,
-              "description": "Maximum graceful Gateway shutdown time before forced termination.",
+              "default": 15,
+              "description": "Maximum graceful Gateway shutdown time before forced termination. Fabric allows 30 seconds for the complete adapter stop; leave time for cleanup within that limit.",
               "exclusiveMinimum": 0,
               "type": "number"
             },
@@ -2739,7 +2740,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.7.0"
       },
-      "sha256": "39de79c2135daaf4ede75b8299b00d6a57125b04a2aabb5079e735a1358642c4",
+      "sha256": "9c971306d6d20496ab3890fddad722afccb32c8a2fc224690267b673063f9181",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {

@@ -376,6 +376,115 @@ async def test_unavailable_mcp_servers_do_not_block_startup(
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
+async def test_mcp_service_account_authentication(api_server, tmp_path):
+    """Fetch, send and renew a client-credentials token through a real runtime."""
+    pytest.importorskip("deepagents")
+    from examples.code_review_agent import deepagents_config, with_skill_paths
+    from nemo_fabric import (
+        EnvironmentConfig,
+        Fabric,
+        McpAuthenticationConfig,
+        RuntimeConfig,
+    )
+
+    secret = "sa-secret-do-not-report"
+    os.environ["MCP_SA_SECRET"] = secret
+    os.environ["MCP_SA_WRONG_SECRET"] = "not-the-secret"
+    requests.post(
+        f"{api_server}/_oauth2",
+        json={"client_id": "fabric-agent", "client_secret": secret},
+        timeout=5,
+    ).raise_for_status()
+
+    def call_mcp_tool_once() -> None:
+        requests.post(
+            f"{api_server}/_scenario",
+            json={"tool_call": {"name": "get_authorization_header", "arguments": {}}},
+            timeout=5,
+        ).raise_for_status()
+
+    def service_account(secret_env: str) -> McpAuthenticationConfig:
+        return McpAuthenticationConfig(
+            type="service_account",
+            client_id="fabric-agent",
+            client_secret_env=secret_env,
+            token_url=f"{api_server}/oauth2/token",
+            scopes=["tools.read"],
+        )
+
+    config = with_skill_paths(deepagents_config())
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=tmp_path,
+        artifacts=tmp_path / "artifacts",
+    )
+    config.runtime = RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        artifacts=tmp_path / "artifacts",
+    )
+    config.add_mcp_server(
+        "protected",
+        transport="streamable-http",
+        url=f"{api_server}/mcp-protected",
+        authentication=service_account("MCP_SA_SECRET"),
+    )
+    config.add_mcp_server(
+        "rejected",
+        transport="streamable-http",
+        url=f"{api_server}/mcp-protected",
+        authentication=service_account("MCP_SA_WRONG_SECRET"),
+    )
+
+    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+        call_mcp_tool_once()
+        first = await runtime.invoke(input="Return the MCP Authorization header.")
+        # Invalidate the issued token so the MCP server answers 401.
+        requests.post(f"{api_server}/_oauth2", json={"revoke": True}, timeout=5)
+        call_mcp_tool_once()
+        second = await runtime.invoke(input="Return it again.")
+
+    results = (first.to_mapping(), second.to_mapping())
+    assert first["status"] == second["status"] == "succeeded", results
+    token_requests = requests.get(
+        f"{api_server}/_oauth2_token_requests", timeout=5
+    ).json()
+    assert all(
+        request == {"grant_type": "client_credentials", "scope": "tools.read"}
+        for request in token_requests
+    ), token_requests
+    issued = {f"sa-token-{index}" for index in range(1, len(token_requests) + 1)}
+    headers = requests.get(f"{api_server}/_mcp_authorization_headers", timeout=5).json()
+    last_request = requests.get(f"{api_server}/_requests", timeout=5).json()[-1]
+    tool_results = [
+        "".join(part["text"] for part in message["content"])
+        if isinstance(message["content"], list)
+        else message["content"]
+        for message in last_request["messages"]
+        if message["role"] == "tool"
+    ]
+    # The first turn's tool call used the startup token; the second used a
+    # token fetched after the MCP server rejected the revoked one.
+    first_token, second_token = (
+        result.removeprefix("Bearer ") for result in tool_results
+    )
+    assert first_token in issued and second_token in issued
+    assert first_token != second_token
+    assert f"Bearer {first_token}" in headers
+    for turn in (first, second):
+        assert turn["output"]["mcp"]["unavailable_servers"] == [
+            {
+                "name": "rejected",
+                "transport": "streamable-http",
+                "reason": "authentication_required",
+                "error_type": "ServiceAccountTokenError",
+            }
+        ], turn.to_mapping()
+    assert secret not in json.dumps(results)
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key")
 @pytest.mark.parametrize("enabled", [True, False])
 async def test_mcp_stdio_transport(api_server, tmp_path, enabled):
     pytest.importorskip("deepagents")

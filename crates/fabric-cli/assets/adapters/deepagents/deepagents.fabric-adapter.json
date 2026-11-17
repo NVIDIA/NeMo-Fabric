@@ -273,6 +273,7 @@
       "tools.enabled",
       "tools.blocked",
       "mcp",
+      "mcp.auth.service_account",
       "skills"
     ],
     "system_instruction_modes": ["replace"]
