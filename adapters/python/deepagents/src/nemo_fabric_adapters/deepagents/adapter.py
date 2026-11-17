@@ -24,6 +24,7 @@ import sys
 import uuid
 from collections.abc import Awaitable
 from collections.abc import Callable
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
@@ -47,6 +48,7 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import mcp_availability
+from nemo_fabric_adapters.common import mcp_service_account
 import nemo_fabric_adapters.common.utils as common_utils
 from pydantic import ValidationError
 
@@ -357,8 +359,13 @@ def resolve_backend(
     runtime_context: RuntimeContext,
     base_dir: str,
     backend_config: dict[str, Any] | None = None,
+    withheld_env: Iterable[str] = (),
 ) -> Any:
-    """Resolve the adapter-owned backend selection and root directory."""
+    """Resolve the adapter-owned backend selection and root directory.
+
+    Variables named in ``withheld_env``, such as MCP client secrets, are kept
+    out of the local shell's environment so agent commands cannot read them.
+    """
 
     workspace = runtime_context.environment.workspace
     if backend_config is not None and not workspace:
@@ -374,10 +381,15 @@ def resolve_backend(
         root = Path(base_dir) / root
 
     if backend_config is not None:
+        withheld = set(withheld_env)
         return _local_shell_backend(
             root_dir=str(root),
             virtual_mode=True,
-            env=dict(runtime_context.environment.env),
+            env={
+                key: value
+                for key, value in runtime_context.environment.env.items()
+                if key not in withheld
+            },
             inherit_env=False,
         )
 
@@ -694,6 +706,14 @@ def _mcp_tool_coroutine(
     return call_tool
 
 
+def _mcp_secret_env_names(config: AgentConfig) -> set[str]:
+    """Return the client-secret variables of ``service_account`` MCP servers."""
+    servers = config.mcp.servers if config.mcp is not None else {}
+    return mcp_service_account.secret_env_names(
+        spec.authentication for spec in servers.values()
+    )
+
+
 class McpToolResolution(NamedTuple):
     """MCP tools loaded at startup and the servers that could not be reached."""
 
@@ -701,12 +721,45 @@ class McpToolResolution(NamedTuple):
     unavailable: list[dict[str, str]]
 
 
+async def _discover_server_tools(
+    client: Any, name: str, token_client: Any | None
+) -> list[Any]:
+    """Fetch the server's token, if it has one, then list its tools."""
+    if token_client is not None:
+        # Fetch the token before connecting so a rejected client is reported as
+        # needing authentication instead of as a generic connection failure.
+        await token_client.get_access_token()
+    return await client.get_tools(server_name=name)
+
+
+def _unavailable_reason(error: BaseException) -> str:
+    """Classify a discovery failure; credential problems need authentication."""
+    pending: list[BaseException] = [error]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, mcp_service_account.ServiceAccountTokenError):
+            if current.rejected:
+                return mcp_availability.AUTHENTICATION_REQUIRED
+        response = getattr(current, "response", None)
+        if getattr(response, "status_code", None) == 401:
+            return mcp_availability.AUTHENTICATION_REQUIRED
+        pending.extend(getattr(current, "exceptions", ()))
+        for linked in (current.__cause__, current.__context__):
+            if linked is not None:
+                pending.append(linked)
+    return mcp_availability.FAILED
+
+
 async def _load_server_tools(
-    client: Any, name: str, transport: str
+    client: Any, name: str, transport: str, token_client: Any | None = None
 ) -> tuple[list[Any], dict[str, str] | None]:
     """List one server's tools, reporting an unreachable server instead of raising."""
     task, timed_out = await mcp_availability.wait_bounded(
-        client.get_tools(server_name=name),
+        _discover_server_tools(client, name, token_client),
         timeout=MCP_DISCOVERY_TIMEOUT_SECONDS,
         grace=MCP_DISCOVERY_CANCEL_GRACE_SECONDS,
     )
@@ -732,7 +785,7 @@ async def _load_server_tools(
         return [], mcp_availability.unavailable_server(
             name,
             transport,
-            mcp_availability.FAILED,
+            _unavailable_reason(error),
             mcp_availability.exception_type(error),
         )
     return list(tools), None
@@ -755,7 +808,12 @@ async def resolve_mcp_tools(config: AgentConfig) -> McpToolResolution:
     client = MultiServerMCPClient(connections)
     loaded = await asyncio.gather(
         *(
-            _load_server_tools(client, name, connection["transport"])
+            _load_server_tools(
+                client,
+                name,
+                connection["transport"],
+                getattr(connection.get("auth"), "token_client", None),
+            )
             for name, connection in connections.items()
         )
     )
@@ -787,6 +845,12 @@ def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
             f"MCP server '{name}' requires a url (or command in url)."
         )
     if transport in ("stdio", "command", "process"):
+        if spec.authentication is not None:
+            # A local process has no HTTP requests to carry a token.
+            raise AdapterConfigError(
+                f"MCP server {name!r} does not support {spec.authentication.type} "
+                "authentication with the stdio transport."
+            )
         connection: dict[str, Any] = {
             "transport": "stdio",
             "command": target,
@@ -815,10 +879,39 @@ def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
         connection["headers"] = headers
 
     auth = spec.authentication
-    if auth is not None:
+    if auth is None:
+        return connection
+    if auth.type != "service_account":
         raise AdapterConfigError(
             f"MCP server {name!r} {auth.type!r} authentication is not supported by Deep Agents."
         )
+    if transport == "websocket":
+        raise AdapterConfigError(
+            f"MCP server {name!r} does not support service_account authentication "
+            "with the websocket transport."
+        )
+    if any(header.lower() == "authorization" for header in spec.custom_headers):
+        raise AdapterConfigError(
+            f"MCP server {name!r} sets both service_account authentication and an "
+            "Authorization custom header; remove the header."
+        )
+    try:
+        mcp_service_account.validate_secure_url(name, "url", target)
+        token_url = mcp_service_account.validate_token_url(name, auth.token_url)
+        client_secret = mcp_service_account.resolve_client_secret(
+            name, auth.client_secret_env
+        )
+    except ValueError as error:
+        raise AdapterConfigError(f"{error}.") from None
+    token_client = mcp_service_account.ServiceAccountTokenClient(
+        client_id=auth.client_id,
+        client_secret=client_secret,
+        token_url=token_url,
+        scopes=auth.scopes,
+        token_endpoint_auth_method=auth.token_endpoint_auth_method,
+        token_cache_buffer_seconds=auth.token_cache_buffer_seconds,
+    )
+    connection["auth"] = mcp_service_account.service_account_auth(token_client)
     return connection
 
 
@@ -930,7 +1023,12 @@ async def build_agent_kwargs(
         # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
         "system_prompt": instruction.content if instruction else None,
         "skills": resolve_skills(config),
-        "backend": resolve_backend(runtime_context, base_dir, extra.get("backend")),
+        "backend": resolve_backend(
+            runtime_context,
+            base_dir,
+            extra.get("backend"),
+            withheld_env=_mcp_secret_env_names(config),
+        ),
     }
     # Deep Agents-specific settings (e.g. subagents, interrupt_on) pass through,
     # after validation against the documented JSON-serializable allow-list.

@@ -5705,7 +5705,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-## litellm (1.100.1)
+## litellm (1.100.4)
 
 ### Licenses
 License: `MIT`

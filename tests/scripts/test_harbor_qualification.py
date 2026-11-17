@@ -755,7 +755,7 @@ def test_openhands_install_uses_the_documented_compatible_sdk_stack(
     dockerfile = adapter_dockerfile(qualification_plan, row, "qualification-base:exact")
     assert (
         'pip install "openhands-sdk==1.50.0" "openhands-tools==1.50.0" '
-        '"litellm==1.100.1" "mcp==1.28.1" && pip check'
+        '"litellm==1.100.4" "mcp==1.28.1" && pip check'
     ) in dockerfile
     assert '"grpcio==' not in dockerfile
     assert '"protobuf==' not in dockerfile
