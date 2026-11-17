@@ -43,6 +43,7 @@ from nemo_fabric.models import RelayS3StorageConfig
 from nemo_fabric.models import RunRequest
 from nemo_fabric.models import SystemStatsConfig
 from nemo_fabric.models import SystemStatsSamplingConfig
+from nemo_fabric.models import ResponseLimits
 from nemo_fabric.models import RuntimeConfig
 from nemo_fabric.models import BundledSkills
 from nemo_fabric.models import SkillConfig
@@ -166,6 +167,7 @@ __all__ = [
     "SystemStatsConfig",
     "SystemStatsSamplingConfig",
     "RuntimeConfig",
+    "ResponseLimits",
     "Runtime",
     "RuntimeStatus",
     "Service",
