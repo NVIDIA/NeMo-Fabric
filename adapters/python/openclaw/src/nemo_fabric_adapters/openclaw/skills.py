@@ -978,7 +978,7 @@ def names_to_locate(plan_: SkillPlan, status: Any) -> list[str]:
     for name, rows in listed.items():
         if name not in known or (
             name in open_extensions
-            and _extension_path(plan_, name) is not None
+            and _extension_folder(plan_, name) is not None
             and rows[0].get("source") == "openclaw-extra"
         ):
             names.append(name)
@@ -1039,6 +1039,7 @@ def apply_status(
 
     listed = _loaded_listing(plan_, status)
     if listed is None:
+        refuse_unlisted_extension_clashes(plan_)
         return False
     changed = False
     if plan_.configured is not None:
@@ -1157,30 +1158,66 @@ def _refuse_extension_clashes(
 
     turned_off = set(plan_.disabled_extensions)
     for name in sorted(plan_.left_out_extensions - turned_off):
-        path = _extension_path(plan_, name)
+        # A shipped copy of the name is left out too, so only the extension's
+        # copy can compete with the configured or workspace one.
+        path = _extension_folder(plan_, name)
         rows = listed.get(name, [])
         if path is None or not rows or rows[0].get("source") != "openclaw-extra":
             continue
         where = plan_.located.get(name)
         if where is not None and _resolved(where.path) != path:
             continue
-        copies = _configured_copies(plan_).get(name, [])
-        detail = (
+        raise _extension_clash(
+            plan_,
+            name,
+            path,
             "loads in place of the other copy of that name"
             if where is not None
-            else "may load: OpenClaw could not say which copy of that name loads"
+            else "may load: OpenClaw could not say which copy of that name loads",
         )
-        raise lifecycle.LifecycleError(
-            "openclaw_skill_invalid",
-            f"OpenClaw's extension skill {name!r}, which skills.bundled leaves "
-            f"out, {detail}; OpenClaw can't turn off one copy without the other",
-            metadata={
-                "field": "skills.bundled",
-                "reason": EXTENSION_CLASH,
-                "name": name,
-                "paths": [str(path), *map(str, copies)],
-            },
-        )
+
+
+def refuse_unlisted_extension_clashes(plan_: SkillPlan) -> None:
+    """Fail when ``openclaw skills list`` could not run and a clash is possible.
+
+    Without the list, :func:`_refuse_extension_clashes` can't check which
+    copy loads. A configured skill that shares a left-out extension skill's
+    name would lose to an active extension's copy, so start fails. A name
+    only a workspace or selected shipped copy shares is left as it is: that
+    copy outranks the extension's.
+
+    Raises:
+        lifecycle.LifecycleError: If such a configured skill exists.
+    """
+
+    copies = _configured_copies(plan_)
+    for name in sorted(plan_.left_out_extensions - set(plan_.disabled_extensions)):
+        path = _extension_folder(plan_, name)
+        if path is not None and name in copies:
+            raise _extension_clash(
+                plan_,
+                name,
+                path,
+                "may load: OpenClaw could not list its skills to say which copy "
+                "of that name loads",
+            )
+
+
+def _extension_clash(
+    plan_: SkillPlan, name: str, path: Path, detail: str
+) -> lifecycle.LifecycleError:
+    copies = _configured_copies(plan_).get(name, [])
+    return lifecycle.LifecycleError(
+        "openclaw_skill_invalid",
+        f"OpenClaw's extension skill {name!r}, which skills.bundled leaves "
+        f"out, {detail}; OpenClaw can't turn off one copy without the other",
+        metadata={
+            "field": "skills.bundled",
+            "reason": EXTENSION_CLASH,
+            "name": name,
+            "paths": [str(path), *map(str, copies)],
+        },
+    )
 
 
 def _listed(status: Any) -> dict[str, list[dict[str, Any]]] | None:
@@ -1214,14 +1251,21 @@ def _loaded_listing(
     return listed
 
 
+def _extension_folder(plan_: SkillPlan, name: str) -> Path | None:
+    """Return the resolved folder of an extension skill, if an extension ships it."""
+
+    inventory = plan_.inventory
+    path = inventory.extensions.get(name) if inventory is not None else None
+    return _resolved(path) if path is not None else None
+
+
 def _extension_path(plan_: SkillPlan, name: str) -> Path | None:
     """Return the folder of an extension skill that is not also shipped in ``skills/``."""
 
     inventory = plan_.inventory
     if inventory is None or name in inventory.skills or name in inventory.custodian:
         return None
-    path = inventory.extensions.get(name)
-    return _resolved(path) if path is not None else None
+    return _extension_folder(plan_, name)
 
 
 def _extension_loads(

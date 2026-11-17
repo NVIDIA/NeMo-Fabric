@@ -3003,3 +3003,76 @@ def test_workspace_copy_of_a_left_out_extension_skill_is_not_turned_off(
 
     assert caught.value.metadata["reason"] == openclaw_skills.EXTENSION_CLASH
     assert caught.value.metadata["paths"] == [str(shipped.resolve())]
+
+
+def test_extension_skill_named_like_a_shipped_one_is_still_checked(
+    tmp_path: Path, workspace: Path, package: Path
+):
+    """Leaving the name out leaves out both the shipped and the extension copy,
+    so the extension's copy can still hide a configured one."""
+    shipped = _extension(package, "github-tools", "github")["github"]
+    mine = write_skill(tmp_path / "mine" / "github", "github")
+    _, plan = _generated(
+        tmp_path,
+        workspace,
+        {"paths": [str(mine)], "bundled": {"enabled": False}},
+        package,
+    )
+    status = _status(("github", "openclaw-extra"))
+    assert openclaw_skills.names_to_locate(plan, status) == ["github"]
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        openclaw_skills.apply_status(
+            plan, status, located={"github": _located("openclaw-extra", shipped)}
+        )
+
+    assert caught.value.metadata["paths"] == [
+        str(shipped.resolve()),
+        str(mine.resolve()),
+    ]
+
+
+@pytest.mark.parametrize("failure", ["command", "malformed", "deadline"])
+@pytest.mark.parametrize("configured", [True, False])
+async def test_unlisted_skills_fail_start_only_on_a_possible_clash(
+    tmp_path: Path,
+    workspace: Path,
+    package: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    configured: bool,
+):
+    """Without ``openclaw skills list`` the located-copy check can't run, so a
+    configured skill sharing a left-out extension skill's name fails start; a
+    name only a workspace copy shares keeps the warning."""
+    _extension(package, "canvas", "canvas")
+    if configured:
+        write_skill(tmp_path / "team" / "canvas", "canvas")
+        skills: dict[str, Any] = {
+            "directories": [{"folder": str(tmp_path / "team")}],
+            "bundled": {"enabled": False},
+        }
+    else:
+        write_skill(workspace / "skills" / "canvas", "canvas")
+        skills = {"bundled": {"enabled": False}}
+    _, plan = _generated(tmp_path, workspace, skills, package)
+    output = (
+        AsyncMock(side_effect=adapter.lifecycle.LifecycleError("x", "failed"))
+        if failure == "command"
+        else AsyncMock(return_value=json.dumps({"skills": "none"}))
+    )
+    monkeypatch.setattr(adapter, "_command_output", output)
+    timeout = 0 if failure == "deadline" else 5
+
+    async def apply() -> None:
+        await adapter._apply_skill_status(
+            plan, tmp_path / "openclaw", agent_id="default", env={}, timeout=timeout
+        )
+
+    if not configured:
+        await apply()
+        return
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await apply()
+    assert caught.value.metadata["reason"] == openclaw_skills.EXTENSION_CLASH
+    assert caught.value.metadata["name"] == "canvas"

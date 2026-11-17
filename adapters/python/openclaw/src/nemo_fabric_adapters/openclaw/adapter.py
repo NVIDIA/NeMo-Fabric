@@ -930,6 +930,7 @@ async def _apply_skill_status(
 
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
+    listed = False
     while (remaining := deadline - loop.time()) > 0:
         try:
             status = json.loads(
@@ -946,6 +947,9 @@ async def _apply_skill_status(
                 )
             )
         except (lifecycle.LifecycleError, OSError, ValueError):
+            # Without the list, a left-out extension skill that may hide a
+            # configured skill can't be ruled out.
+            openclaw_skills.refuse_unlisted_extension_clashes(skill_plan)
             logger.warning(
                 "OpenClaw could not list its skills; the skill report shows what "
                 "NeMo Fabric configured",
@@ -959,12 +963,16 @@ async def _apply_skill_status(
             env=env,
             timeout=deadline - loop.time(),
         )
+        listed = True
         if not openclaw_skills.apply_status(
             skill_plan, status, located=located, fallback=rewrite is not None
         ):
             return
         assert rewrite is not None
         rewrite()
+    if not listed:
+        # The deadline passed before any list ran.
+        openclaw_skills.refuse_unlisted_extension_clashes(skill_plan)
 
 
 async def _locate_skills(
