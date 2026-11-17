@@ -557,14 +557,45 @@ The adapter requests a token from `token_url`, sends it as
 `Authorization: Bearer <token>` with every MCP request, and requests a new one
 before it expires. `token_endpoint_auth_method` selects `client_secret_basic`
 (the default) or `client_secret_post`, and `token_cache_buffer_seconds` (300 by
-default) sets how early the token is renewed. Some servers also require a
-second, service-specific token; send it with `custom_headers` and a `${NAME}`
-reference alongside `service_account` authentication, under its own header
-name. `service_account` applies to `sse` and `streamable-http` servers. Startup
-fails if the variable named by `client_secret_env` is unset, if `token_url` or
-the server `url` is not `https` (plain `http` is accepted only for a loopback
-host), if the transport is `websocket`, or if the same server sets an
-`Authorization` custom header.
+default) sets how early the token is renewed. `service_account` applies to
+`sse` and `streamable-http` servers. Startup fails if the variable named by
+`client_secret_env` is unset, if `token_url` or the server `url` is not `https`
+(plain `http` is accepted only for a loopback host), if the transport is
+`websocket`, or if the same server sets an `Authorization` custom header.
+
+Some MCP servers sit behind a gateway and need two tokens: the
+`service_account` bearer token admits the agent to the server, and a second
+token, sent in its own header, selects the identity used for the system behind
+the server. That second token can belong to a service account in that system or
+to a user, so the agent sees what that account can see. Combine
+`service_account` with a `custom_headers` entry that references an environment
+variable:
+
+```python
+import os
+
+os.environ["DOWNSTREAM_TOKEN"] = "..."  # issued by the downstream system
+
+capability_config.add_mcp_server(
+    "bugs",
+    transport="streamable-http",
+    url="https://mcp-gateway.example.com/bugs/mcp",
+    authentication=McpAuthenticationConfig(
+        type="service_account",
+        client_id="fabric-agent",
+        client_secret_env="GATEWAY_CLIENT_SECRET",
+        token_url="https://auth.example.com/oauth2/token",
+        scopes=["bugs"],
+    ),
+    custom_headers={"X-Downstream-Token": "${DOWNSTREAM_TOKEN}"},
+)
+```
+
+Only the `service_account` token is requested and renewed by the adapter. The
+second token is sent as configured, so replace the variable and restart the
+runtime when it expires. A missing or rejected second token does not stop the
+server's tools from loading: the gateway accepts the bearer token, and the
+error appears in the tool result when the downstream system refuses the call.
 
 Use `custom_headers` to send HTTP headers with an `sse` or `streamable-http`
 server. Header names and values must be valid HTTP header text. To provide a

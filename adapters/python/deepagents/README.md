@@ -129,7 +129,10 @@ NeMo Fabric maps the following into the harness:
   during discovery, with or without `authentication`, is reported the same way.
   A token endpoint that cannot be reached, answers with another error status
   such as `5xx`, or returns no access token gives reason `failed`. The secret variable is withheld from the `local_shell`
-  backend's environment. `oauth2` authentication is not supported.
+  backend's environment. A server that also needs a second token in its own
+  header takes it through `custom_headers` with a `${NAME}` reference; the
+  adapter sends it unchanged and does not renew it. `oauth2` authentication is
+  not supported.
 - `tools.enabled` and `tools.blocked` are enforced by middleware across the full
   tool surface: Deep Agents built-ins (including `task`), MCP tools, and
   **delegated subagents** alike. Use Deep Agents-native tool names.
