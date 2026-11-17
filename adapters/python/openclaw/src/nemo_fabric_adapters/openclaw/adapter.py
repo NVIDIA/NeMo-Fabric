@@ -44,8 +44,9 @@ from nemo_fabric_adapters.openclaw import skills as openclaw_skills
 
 
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 60.0
-# Fabric gives the adapter host 10 s to stop, including this wait.
-DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 5.0
+# The pinned Gateway can take ~7 s to release ownership when OpenShell denies
+# process-group cleanup. Leave room within Fabric's 30 s host stop deadline.
+DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 15.0
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
 DEFAULT_READ_TIMEOUT_SECONDS = 600.0
 HEALTH_CHECK_INTERVAL_SECONDS = 2.0
@@ -1691,6 +1692,14 @@ class OpenClawRuntime:
             self._monitor_task = asyncio.create_task(
                 self._monitor_gateway(self._process, self._client, port)
             )
+        except asyncio.CancelledError:
+            try:
+                await self.stop()
+            except Exception:
+                logger.error(
+                    "OpenClaw cleanup failed after startup cancellation", exc_info=True
+                )
+            raise
         except BaseException:
             await self.stop()
             raise
@@ -2424,8 +2433,16 @@ class OpenClawRuntime:
         self._agent_id = "default"
         self._gateway_failure = None
         self._gateway_failed.clear()
+        if process is not None and process.returncode is None:
+            self._process = process
         if cancellation is not None:
             raise cancellation
+        if self._process is not None:
+            raise lifecycle.LifecycleError(
+                "openclaw_stop_failed",
+                "OpenClaw Gateway is still running after process cleanup",
+                metadata={"pid": self._process.pid},
+            )
 
 
 def main() -> None:
