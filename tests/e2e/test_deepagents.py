@@ -26,10 +26,10 @@ from _utils.utils import assert_atof_model, assert_atof_skill_selection
 @pytest.mark.parametrize("effort", [None, "none"])
 async def test_deepagents_persistent_host_with_mock_model(api_server, tmp_path, effort):
     pytest.importorskip("deepagents")
-    from examples.code_review_agent import deepagents_config
+    from examples.code_review_agent import deepagents_config, with_skill_paths
     from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
 
-    config = deepagents_config()
+    config = with_skill_paths(deepagents_config())
     if effort is not None:
         config.harness.settings["reasoning_effort"] = effort
     config.models["default"].base_url = f"{api_server}/v1"
@@ -77,7 +77,7 @@ async def test_deepagents_delegated_requests_use_model_reasoning_effort(
     api_server, tmp_path, subagent_model
 ):
     pytest.importorskip("deepagents")
-    from examples.code_review_agent import deepagents_config
+    from examples.code_review_agent import deepagents_config, with_skill_paths
     from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
 
     os.environ["OPENAI_API_KEY"] = "sk-test"
@@ -89,7 +89,7 @@ async def test_deepagents_delegated_requests_use_model_reasoning_effort(
     }
     if subagent_model is not None:
         subagent["model"] = subagent_model
-    config = deepagents_config()
+    config = with_skill_paths(deepagents_config())
     config.models["default"].model = "parent-model"
     config.models["default"].base_url = f"{api_server}/v1"
     config.harness.settings = {
@@ -149,10 +149,14 @@ async def test_deepagents_persistent_host_with_relay_and_mock_model(
     api_server, tmp_path, session_root, uuid_request_ids
 ):
     pytest.importorskip("deepagents")
-    from examples.code_review_agent import deepagents_config, with_relay
+    from examples.code_review_agent import (
+        deepagents_config,
+        with_relay,
+        with_skill_paths,
+    )
     from nemo_fabric import EnvironmentConfig, Fabric, RunRequest, RuntimeConfig
 
-    config = with_relay(deepagents_config())
+    config = with_relay(with_skill_paths(deepagents_config()))
     config.models["default"].base_url = f"{api_server}/v1"
     config.environment = EnvironmentConfig(
         provider="local",
@@ -242,7 +246,7 @@ async def test_deepagents_persistent_host_with_relay_and_mock_model(
 @pytest.mark.usefixtures("mock_nvidia_api_key")
 async def test_env_secrets_in_headers(api_server, tmp_path):
     pytest.importorskip("deepagents")
-    from examples.code_review_agent import deepagents_config
+    from examples.code_review_agent import deepagents_config, with_skill_paths
     from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
 
     os.environ["MY_KEY"] = "XYZ"
@@ -258,7 +262,7 @@ async def test_env_secrets_in_headers(api_server, tmp_path):
     )
     scenario_response.raise_for_status()
 
-    config = deepagents_config()
+    config = with_skill_paths(deepagents_config())
     config.models["default"].base_url = f"{api_server}/v1"
     config.environment = EnvironmentConfig(
         provider="local",
@@ -299,7 +303,11 @@ async def test_unavailable_mcp_servers_do_not_block_startup(
     pytest.importorskip("deepagents")
     if relay:
         request.getfixturevalue("nemo_relay")
-    from examples.code_review_agent import deepagents_config, with_relay
+    from examples.code_review_agent import (
+        deepagents_config,
+        with_relay,
+        with_skill_paths,
+    )
     from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
 
     os.environ["MY_KEY"] = "XYZ"
@@ -310,7 +318,7 @@ async def test_unavailable_mcp_servers_do_not_block_startup(
     )
     scenario_response.raise_for_status()
 
-    config = deepagents_config()
+    config = with_skill_paths(deepagents_config())
     if relay:
         config = with_relay(config)
     config.models["default"].base_url = f"{api_server}/v1"
@@ -371,7 +379,7 @@ async def test_unavailable_mcp_servers_do_not_block_startup(
 @pytest.mark.parametrize("enabled", [True, False])
 async def test_mcp_stdio_transport(api_server, tmp_path, enabled):
     pytest.importorskip("deepagents")
-    from examples.code_review_agent import deepagents_config
+    from examples.code_review_agent import deepagents_config, with_skill_paths
     from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
 
     tool_name = "get_current_time"
@@ -387,7 +395,7 @@ async def test_mcp_stdio_transport(api_server, tmp_path, enabled):
     )
     scenario_response.raise_for_status()
 
-    config = deepagents_config()
+    config = with_skill_paths(deepagents_config())
     config.models["default"].base_url = f"{api_server}/v1"
     config.environment = EnvironmentConfig(
         provider="local",
@@ -452,9 +460,13 @@ async def test_skill_selection(
     config = with_relay(with_skill_paths(deepagents_config()))
     config.models["default"].model = "fabric-echo"
     config.models["default"].base_url = f"{api_server}/v1"
+    # The skills live outside the workspace, so they are only readable through
+    # the folder the adapter mounts them at.
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
     config.environment = EnvironmentConfig(
         provider="local",
-        workspace=default_skill.parents[2],
+        workspace=workspace,
         artifacts=tmp_path / "artifacts",
     )
     config.runtime = RuntimeConfig(
@@ -471,14 +483,12 @@ async def test_skill_selection(
         config.add_skill_path(alternate_skill)
 
     if skill is not None:
-        selected_skill = default_skill if skill == "default" else alternate_skill
-        skill_file = selected_skill.relative_to(default_skill.parents[2]) / "SKILL.md"
         scenario_response = requests.post(
             f"{api_server}/_scenario",
             json={
                 "tool_call": {
                     "name": "read_file",
-                    "arguments": {"file_path": f"/{skill_file}"},
+                    "arguments": {"file_path": f"/.fabric/skills/{skill}/SKILL.md"},
                 }
             },
             timeout=5,
@@ -493,16 +503,29 @@ async def test_skill_selection(
 
     assert result["status"] == "succeeded", result.to_mapping()
     assert_atof_skill_selection(result["output"], skill)
+    tool_results = [
+        str(message["content"])
+        for message in result["output"]["messages"]
+        if message["role"] == "tool"
+    ]
+    if skill is not None:
+        # The mounted SKILL.md was read, not just requested.
+        assert any(f"{skill} skill loaded" in content for content in tool_results)
+    assert not (workspace / ".fabric").exists()
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
 @pytest.mark.parametrize("model", ["m1", "m2"])
 async def test_model_selection(api_server, tmp_path, model):
     pytest.importorskip("deepagents")
-    from examples.code_review_agent import deepagents_config, with_relay
+    from examples.code_review_agent import (
+        deepagents_config,
+        with_relay,
+        with_skill_paths,
+    )
     from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
 
-    config = with_relay(deepagents_config())
+    config = with_relay(with_skill_paths(deepagents_config()))
     config.models["default"].model = model
     config.models["default"].base_url = f"{api_server}/v1"
     config.environment = EnvironmentConfig(

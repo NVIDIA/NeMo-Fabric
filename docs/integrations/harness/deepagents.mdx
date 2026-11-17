@@ -103,6 +103,8 @@ MCP-reported tool errors (`ToolException`) and argument validation failures retu
 
 The runtime starts even when some configured MCP servers are unavailable. A server that cannot be reached, or that does not list its tools within 60 seconds, is skipped, and the agent starts with the tools of the remaining servers. Each result from that runtime lists the skipped servers under `output.mcp.unavailable_servers`, with the server `name`, `transport`, `reason` (`failed` or `timed_out`) and `error_type`. The adapter also writes a warning to standard error. Error messages are not reported, because they can contain URLs, headers or other credentials. Discovery runs again on every runtime start, so a new runtime picks up a server that has recovered. Invalid server configuration, such as an unsupported transport or authentication mode, still fails startup.
 
+Skills in `skills.paths` load whether or not they are inside the workspace. The adapter resolves each entry in the task environment: an entry that contains `SKILL.md` is one skill, and any other folder is a folder of skills. It mounts the skills read-only at `/.fabric/skills/<name>/`, so the agent reads them with its file tools but cannot change them, and nothing is copied into the workspace. With the `local_shell` backend, the adapter copies the skills to `<workspace>/.fabric/skills/` on every start instead, so shell commands can run skill scripts. A missing entry, an entry that is not a folder, or two skills with the same name fail startup and name the `skills.paths` entry.
+
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, replacement system instructions, blocked tools, and telemetry.
 The adapter rejects `append` system instructions. Use

@@ -44,6 +44,7 @@ from nemo_fabric_adapters.common import instructions as common_instructions
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import mcp_availability
 import nemo_fabric_adapters.common.utils as common_utils
+from nemo_fabric_adapters.deepagents import skills as skill_mounts
 from pydantic import ValidationError
 
 HARNESS = "deepagents"
@@ -315,6 +316,14 @@ def _local_shell_backend(**kwargs: Any) -> Any:
     return WorkspaceLocalShellBackend(**kwargs)
 
 
+def _workspace_root(runtime_context: RuntimeContext, base_dir: str) -> Path | None:
+    workspace = runtime_context.environment.workspace
+    if not workspace:
+        return None
+    root = Path(str(workspace))
+    return root if root.is_absolute() else Path(base_dir) / root
+
+
 def resolve_backend(
     runtime_context: RuntimeContext,
     base_dir: str,
@@ -329,11 +338,9 @@ def resolve_backend(
             "environment.workspace so host shell execution is never rooted at the "
             "NeMo Fabric base directory."
         )
-    if not workspace:
+    root = _workspace_root(runtime_context, base_dir)
+    if root is None:
         return None
-    root = Path(str(workspace))
-    if not root.is_absolute():
-        root = Path(base_dir) / root
 
     if backend_config is not None:
         return _local_shell_backend(
@@ -394,11 +401,37 @@ def _interrupt_is_enabled(policy: Any) -> bool:
     return policy is True or isinstance(policy, dict)
 
 
-def resolve_skills(config: AgentConfig) -> list[str] | None:
-    """Map Fabric skill paths onto the Deep Agents ``skills`` sources."""
+def resolve_skills(
+    config: AgentConfig,
+    runtime_context: RuntimeContext,
+    base_dir: str,
+    backend: Any,
+    *,
+    local_shell: bool = False,
+) -> tuple[list[str] | None, Any]:
+    """Make Fabric skill paths readable by Deep Agents.
 
-    skills = [str(path) for path in (config.skills.paths if config.skills else [])]
-    return skills or None
+    Returns the Deep Agents ``skills`` sources and the backend to use. Skill
+    paths are resolved in the task environment, so the backend (which confines
+    the agent to the workspace) cannot read them directly. The default backends
+    mount them read-only at a reserved virtual folder; ``local_shell`` copies
+    them into the workspace so shell commands can run skill scripts.
+    """
+
+    entries = [str(path) for path in (config.skills.paths if config.skills else [])]
+    if not entries:
+        return None, backend
+    workspace = _workspace_root(runtime_context, base_dir)
+    try:
+        resolved = skill_mounts.resolve_skill_paths(entries, workspace)
+    except skill_mounts.SkillsConfigError as error:
+        raise AdapterConfigError(str(error)) from error
+    if local_shell and workspace is not None:
+        skill_mounts.copy_into_workspace(workspace, resolved)
+    else:
+        backend = skill_mounts.mounted_backend(backend, resolved)
+    skill_mounts.log_loaded(resolved)
+    return skill_mounts.skill_sources(resolved), backend
 
 
 def _mcp_validation_feedback(error: ValidationError) -> str:
@@ -651,9 +684,14 @@ async def build_agent_kwargs(
         "tools": await resolve_tools(config, unavailable_mcp_servers),
         # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
         "system_prompt": instruction.content if instruction else None,
-        "skills": resolve_skills(config),
-        "backend": resolve_backend(runtime_context, base_dir, extra.get("backend")),
     }
+    kwargs["skills"], kwargs["backend"] = resolve_skills(
+        config,
+        runtime_context,
+        base_dir,
+        resolve_backend(runtime_context, base_dir, extra.get("backend")),
+        local_shell=extra.get("backend") is not None,
+    )
     # Deep Agents-specific settings (e.g. subagents, interrupt_on) pass through,
     # after validation against the documented JSON-serializable allow-list.
     kwargs.update(

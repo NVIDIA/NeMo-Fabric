@@ -102,7 +102,21 @@ NeMo Fabric maps the following into the harness:
   (`FilesystemBackend(root_dir=..., virtual_mode=True)`). `virtual_mode`
   confines filesystem tools to the workspace: absolute paths and `..` cannot
   escape `root_dir`.
-- Routed `skills` (`native.skill_paths`) become the Deep Agents `skills` sources.
+- Routed `skills` (`native.skill_paths`) are resolved in the task environment.
+  An entry that contains `SKILL.md` is one skill; any other folder is a folder
+  of skills, and each immediate child that contains `SKILL.md` is loaded. The
+  adapter mounts the skills read-only at `/.fabric/skills/<name>/` through a
+  routed backend and passes `/.fabric/skills/` as the Deep Agents `skills`
+  source, so skills outside the workspace, or with no workspace at all, still
+  load. Nothing is copied, and writes or edits to the mounted files are refused.
+  With the `local_shell` backend, the adapter instead copies the skills to
+  `<workspace>/.fabric/skills/` on every start, so `execute` can run skill
+  scripts. A missing entry, an entry that is not a folder, or two skills with
+  the same name fail start, naming the `skills.paths` entry. An absolute entry
+  that exists only under the workspace (for example `/.agents/skills` for
+  skills already staged there) is passed to Deep Agents unchanged. Declarative
+  subagent `skills` in `harness.settings.deepagents.subagents` are passed to
+  Deep Agents unchanged and are read as workspace paths.
 - Configured MCP servers are loaded as Deep Agents tools via
   `langchain-mcp-adapters`. A misconfigured server (non-mapping, empty target,
   unsupported transport) is a normalized configuration failure, not a silent drop.
