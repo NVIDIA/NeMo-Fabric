@@ -110,3 +110,33 @@ Follow the [OpenShell Code Review instructions](../../../../../../examples/code_
 The example starts the server, waits for its socket, starts a runtime, invokes twice, and stops through separate exec calls. The older NemoClaw client using `validate/prepare/configure` requires migration. Version 1 requests fail explicitly. Direct SDK lifecycle and streaming APIs retain their existing behavior.
 
 The task configuration carries the default-on `provenance` collector control and typed caller reports through the existing start request. `enabled=false` skips guest SDK and adapter collection. The guest records its own installation as `guest_sdk`; it never inspects caller packages. Returned RunResults preserve the caller reports and guest-owned snapshots. The host keeps its own snapshot independently so missing evidence from older intermediaries is explicit.
+
+
+### Recover a buffered invocation result
+
+NeMo Fabric saves each completed `RunResult` as `<artifact root>/.fabric/<runtime_id>/<invocation_id>/run-result.json` before returning the result. On Unix, result and request-record files are readable only by their owner. The artifact root comes from `runtime.artifacts` or the environment; without either setting, NeMo Fabric uses its temporary artifact directory. Files remain until their storage is removed; no automatic retention or eviction is added.
+
+Use a trusted artifact directory. On Unix, result storage validates ownership, permissions, and symlinks within the private `.fabric` subtree, and requires private record-file permissions. Explicit caller-configured artifact roots can have shared or group-writable ancestors. Serialized results must fit within 4 MiB. Request identifiers must not be blank or contain NUL. Buffered retries can return the saved result; a request ID cannot switch between buffered and streaming invocations. A completed streaming request returns `stream_replay_unsupported` on replay; retrieve its terminal result with `invocation_result()` instead.
+
+The SDK keeps the runtime active after `request_conflict`, `invocation_pending`, and `stream_replay_unsupported`. These request rejections do not dispatch a new turn.
+
+Choose a stable `RunRequest.request_id` before submitting work. After a command timeout, `invocation_timeout` reports unknown effects and returns the runtime and request identifiers. The invocation can continue. Retrieve the completed result with:
+
+```python
+result = await fabric.invocation_result(
+    agent_name="researcher", runtime_id=runtime_id,
+    request_id=request_id, artifacts="/path/to/artifacts",
+)
+```
+
+```sh
+fabric-agent-ctl result --agent researcher --runtime-id RUNTIME_ID --request-id REQUEST_ID
+```
+
+A null result means no completed result is available; it does not prove the request is still running or safe to repeat. A retry of the same request identifier and input returns the saved result, or reports that the original invocation is pending. Reusing that identifier with different input is rejected. Failed or interrupted reservations are not automatically replayed.
+
+For OpenShell, pass `environment=environment` instead of `artifacts` to query the original server through the provider. The CLI requires a retained ownership record on that server. A later local SDK client can read retained files using the explicit artifact root even after runtime stop. Neither path reconstructs a missing result. Remote results retain task-side artifact paths.
+
+The Unix default result root is `~/.cache/nemo-fabric-<effective user ID>` when the user-owned home directory and resolved cache path pass the ownership and ancestry checks. Local host directories use the same protected root, including when an artifact root is configured explicitly. If the home or cache path fails validation, NeMo Fabric resolves temporary-directory symlinks before validating the ancestry and uses `<temp_dir>/nemo-fabric-<effective user ID>-private`, validated for ownership, mode 0700, and symlink safety. Local one-shot lookup remains unavailable until the shutdown outcome is saved; interrupted or failed finalization does not expose an earlier success. Stored results use a 4 MiB default limit; an explicit larger `runtime.response_limits.max_response_bytes` is retained in the private request record and used for saved-result writes and lookup.
+
+Dispatched invocations that end in a host crash, host timeout, or invalid adapter response save a terminal failed result. The original call still raises its error. The saved result uses fixed diagnostic text, records unknown effects, and disables retry. A missing result never authorizes replay.

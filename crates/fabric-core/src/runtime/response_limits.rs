@@ -108,14 +108,28 @@ pub(super) fn enforce_local_artifacts(
 ) -> Result<()> {
     let mut paths = BTreeSet::new();
     let mut total = 0_u64;
+    // SDK paths are canonical, including Windows verbatim path prefixes.
+    let canonical_root = result
+        .artifacts
+        .root
+        .as_ref()
+        .and_then(|root| std::fs::canonicalize(root).ok());
     for artifact in &result.artifacts.artifacts {
         let relative = result
             .artifacts
             .root
             .as_ref()
             .and_then(|root| artifact.path.strip_prefix(root).ok())
+            .or_else(|| {
+                canonical_root
+                    .as_ref()
+                    .and_then(|root| artifact.path.strip_prefix(root).ok())
+            })
             .unwrap_or(&artifact.path);
-        if openshell::is_internal_sdk_artifact(&relative.to_string_lossy()) {
+        if relative.starts_with(".fabric")
+            || relative == Path::new("workspace.patch")
+            || relative == Path::new("workspace-status.txt")
+        {
             continue;
         }
         if !paths.insert(artifact.path.clone()) {
@@ -401,6 +415,82 @@ mod tests {
     }
 
     #[test]
+    fn canonical_sdk_artifacts_do_not_consume_local_artifact_budgets() {
+        let root = std::env::temp_dir().join(new_id("canonical-sdk-artifact"));
+        std::fs::create_dir_all(root.join("scope")).unwrap();
+        let canonical = std::fs::canonicalize(&root).unwrap();
+        let path = canonical
+            .join(".fabric")
+            .join("invocation")
+            .join("stdout.txt");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, vec![0_u8; 100]).unwrap();
+        let mut outcomes = Vec::new();
+        for configured_root in [canonical, root.join("scope").join("..")] {
+            let mut result = result();
+            result.artifacts.root = Some(configured_root);
+            result.artifacts.artifacts.push(ArtifactRef {
+                name: "stdout".into(),
+                kind: "log".into(),
+                path: path.clone(),
+                media_type: None,
+                metadata: BTreeMap::new(),
+            });
+            enforce_local_artifacts(
+                &mut result,
+                ResponseLimits {
+                    max_artifact_bytes: 1,
+                    max_artifact_file_bytes: 1,
+                    max_artifact_files: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            outcomes.push(result);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+        for result in outcomes {
+            assert_eq!(result.status, RunStatus::Succeeded, "{:?}", result.error);
+            assert_eq!(result.artifacts.artifacts.len(), 1);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn user_symlink_to_sdk_output_still_consumes_artifact_budget() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(new_id("linked-sdk-artifact"));
+        std::fs::create_dir_all(root.join(".fabric")).unwrap();
+        let target = root.join(".fabric").join("stdout.txt");
+        std::fs::write(&target, vec![0_u8; 100]).unwrap();
+        let declared = root.join("user-output.txt");
+        symlink(&target, &declared).unwrap();
+        let mut result = result();
+        result.artifacts.root = Some(root.clone());
+        result.artifacts.artifacts.push(ArtifactRef {
+            name: "user-output".into(),
+            kind: "file".into(),
+            path: declared,
+            media_type: None,
+            metadata: BTreeMap::new(),
+        });
+        enforce_local_artifacts(
+            &mut result,
+            ResponseLimits {
+                max_artifact_file_bytes: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+        assert_eq!(result.status, RunStatus::Failed);
+        assert_eq!(
+            result.error.unwrap().metadata["limit"],
+            "max_artifact_file_bytes"
+        );
+    }
+
+    #[test]
     fn each_artifact_budget_is_independent_and_inclusive() {
         let root = std::env::temp_dir().join(new_id("response-limits"));
         std::fs::create_dir_all(root.join(".fabric")).unwrap();
@@ -411,7 +501,9 @@ mod tests {
             ("second.png", 4),
             (".fabric/stdout.txt", 100),
         ] {
-            let path = root.join(name);
+            let path = name
+                .split('/')
+                .fold(root.clone(), |path, name| path.join(name));
             std::fs::write(&path, vec![0_u8; bytes]).unwrap();
             original.artifacts.artifacts.push(ArtifactRef {
                 name: name.into(),

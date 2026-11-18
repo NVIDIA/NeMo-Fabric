@@ -103,6 +103,24 @@ async def client(
     writer = None
     try:
         encoded = encode_request(request)
+        if operation == "invoke":
+            from nemo_fabric.models import RunRequest
+
+            try:
+                payload = (
+                    RunRequest.model_validate(request["request"])
+                    if "request" in request
+                    else RunRequest(input=request["input"])
+                )
+            except (TypeError, ValueError):
+                raise ProtocolError("invalid_request") from None
+            request = {
+                key: value
+                for key, value in request.items()
+                if key not in ("request", "input")
+            }
+            request["request"] = payload.to_mapping()
+            encoded = encode_request(request)
         if operation == "check":
             timeout = min(
                 timeout if timeout is not None else CALL_SECONDS,
@@ -130,6 +148,20 @@ async def client(
             await writer.drain()
             response = await read_message(reader, response_limit)
             validate_response(response, operation)
+            if (
+                operation == "result"
+                and response["status"] == "succeeded"
+                and response["result"] is not None
+            ):
+                if any(
+                    response["result"][key] != request[request_key]
+                    for key, request_key in (
+                        ("agent_name", "agent"),
+                        ("runtime_id", "runtime_id"),
+                        ("request_id", "request_id"),
+                    )
+                ):
+                    raise ProtocolError("invalid_response", "transport")
             if operation == "status" and response["status"] == "succeeded":
                 result = response["result"]
                 if (result["runtime_id"], result["agent_name"]) != (
@@ -161,6 +193,15 @@ async def client(
                     report["completed_at"] = (
                         datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
                     )
+            if (
+                operation == "invoke"
+                and response["error"] is not None
+                and response["error"]["effects"] == "unknown"
+            ):
+                response["result"] = {
+                    "runtime_id": request["runtime_id"],
+                    "request_id": request["request"]["request_id"],
+                }
             return response
     except (OSError, ValueError, TypeError, KeyError, TimeoutError) as error:
         if operation == "check" and isinstance(error, TimeoutError):
@@ -186,12 +227,23 @@ async def client(
             )
         if not isinstance(error, ProtocolError):
             error = ProtocolError(
-                "invalid_response" if sent else "host_unavailable", "transport"
+                "invocation_timeout"
+                if sent and operation == "invoke" and isinstance(error, TimeoutError)
+                else "invalid_response"
+                if sent
+                else "host_unavailable",
+                "transport",
             )
         uncertain = sent and operation in (*LIFECYCLE_OPERATIONS, "invoke")
+        recovery = None
+        if uncertain and operation == "invoke" and "request" in request:
+            recovery = {
+                "runtime_id": request["runtime_id"],
+                "request_id": request["request"]["request_id"],
+            }
         return envelope(
             operation,
-            None,
+            recovery,
             changed=None if uncertain else False,
             error=error,
             effects="unknown" if uncertain else "none",
