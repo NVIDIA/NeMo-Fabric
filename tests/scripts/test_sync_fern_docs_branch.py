@@ -308,6 +308,30 @@ def test_card_source_links_resume_after_unclosed_list_fence(tmp_path: Path):
     )
 
 
+@pytest.mark.parametrize(
+    "preceding_block",
+    ["> - Item\n\n", "> > - Item\n\n", "* * *\n\n", "- - -\n\n", "_ _ _\n\n"],
+)
+def test_card_source_links_preserve_top_level_fence_after_container(
+    tmp_path: Path, preceding_block: str
+):
+    page = tmp_path / "page.mdx"
+    original = (
+        "---\nslug: /guides/overview\n---\n"
+        + preceding_block
+        + '  ~~~mdx\n<Card href="./example-only.mdx">Example</Card>\n  ~~~\n'
+        + '<Card href="./destination.mdx">Real link</Card>\n'
+    )
+    page.write_text(original)
+    (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
+
+    sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+
+    assert page.read_text() == original.replace(
+        'href="./destination.mdx"', 'href="../sdk/client"'
+    )
+
+
 def test_card_source_links_reject_missing_targets(tmp_path: Path):
     page = tmp_path / "page.mdx"
     page.write_text('---\nslug: /page\n---\n<Card href="missing.mdx">Missing</Card>\n')
