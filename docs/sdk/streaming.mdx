@@ -126,7 +126,7 @@ Streaming has the following v0.1 constraints:
   an embedded collector and configures Relay to publish NDJSON to it. Set
   `launch_collector=False` to use an externally managed collector. In that
   case, configure exactly one `nemo-fabric-stream` sink with an `http` or
-  `https` collector base URL and `transport="ndjson"`; Fabric sends Relay to
+  `https` collector base URL and `transport="ndjson"`; NVIDIA NeMo Fabric sends Relay to
   `<base-url>/v1/atof`. Pi is the exception as Pi streaming supports only the
   default embedded collector. Do not set `launch_collector=False` for Pi
   because its extension does not attach the NeMo Fabric request IDs required

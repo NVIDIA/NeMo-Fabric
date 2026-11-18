@@ -8,10 +8,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 ## Unified Run Results
 
-Every invocation that reaches the adapter boundary returns a normalized
-`RunResult`, even when the harness invocation itself failed. Inspect `status`,
-`error`, `events`, and `artifacts` first, then process `output` when the status
-is successful.
+Adapters report completed invocations through a normalized `RunResult`, including harness failures they can normalize. If the adapter host crashes or the protocol fails before a normalized result is available, the SDK can raise `FabricRuntimeError` instead. Inspect `status`, `error`, `events`, and `artifacts` first, then process `output` when the status is successful.
 
 Important fields:
 

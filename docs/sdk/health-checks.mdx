@@ -159,7 +159,7 @@ and command bridge before this path; server checks stop at the runtime server.
 
 ```mermaid
 flowchart LR
-    SDK["Fabric SDK"] --> Core["Rust core"]
+    SDK["NeMo Fabric SDK"] --> Core["Rust core"]
     Core -->|"start / invoke / stop<br/>stdin / stdout"| Lifecycle
     Core -->|"check<br/>authenticated loopback TCP"| Health
     Endpoint["health.endpoint.json<br/>port and shared secret"] -.->|"endpoint discovery"| Core
@@ -182,11 +182,13 @@ to the probe.
 
 Check a prepared or attached OpenClaw Gateway with `Fabric.check(service=..., request=...)`. Service checks use the selected process-local `ServiceHandle`:
 
+Use the OpenClaw `service_config` from [Shared Services](environments-and-shared-services.mdx#shared-services), including its installation and credential prerequisites.
+
 ```python
 from nemo_fabric import CheckRequest, Fabric
 
 fabric = Fabric()
-async with await fabric.prepare_service(config) as service:
+async with await fabric.prepare_service(service_config) as service:
     report = await fabric.check(
         service=service.handle,
         request=CheckRequest(
