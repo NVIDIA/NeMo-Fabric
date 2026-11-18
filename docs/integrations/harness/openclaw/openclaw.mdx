@@ -249,6 +249,8 @@ harness:
 | `tools.exec.notifyOnExit` | boolean | `false` stops the system event and heartbeat when a backgrounded `exec` process exits. |
 | `tools.toolSearch` | boolean | `false` presents tool schemas directly instead of behind tool search. |
 | `tools.codeMode` | boolean | Code Mode. When enabled, it can take precedence over tool search and exposes only `exec` and `wait`, so do not combine it with blocking `exec` through `tools.blocked`. |
+| `tools.web.fetch.ssrfPolicy.allowRfc2544BenchmarkRange` | boolean | `true` lets `web_fetch`, `image`, and `pdf` connect to addresses in `198.18.0.0/15`, which a fake-IP proxy such as OpenShell's policy DNS answers for every name. OpenClaw blocks that range otherwise. Set it only when such a proxy owns the range and enforces its own destination policy. |
+| `tools.web.fetch.ssrfPolicy.allowIpv6UniqueLocalRange` | boolean | The same opt-in for `fc00::/7`. |
 | `plugins.entries.memory-core.config.dreaming.enabled` | boolean | `false` turns off scheduled dreaming in the `memory-core` plugin. |
 
 The adapter merges only the fields you set into the generated `openclaw.json` before the Gateway starts. It adds them beside the generated `agents.defaults`, the `tools.allow` and `tools.deny` lists, and any adapter-owned plugin entry without replacing generated keys. Omitting a field preserves the current behavior. The closed descriptor schema rejects unknown fields and invalid values. Heartbeat durations require units. OpenClaw treats an unparseable value such as `30 minutes` as no heartbeat, so the schema rejects it, and it also rejects bare numbers such as `30` to avoid ambiguity.
