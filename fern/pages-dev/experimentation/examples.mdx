@@ -1,0 +1,35 @@
+---
+title: Examples
+slug: /experimentation/examples
+description: "Discover maintained CLI examples and inspect their available variants."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+These commands require the separately installed [experimental CLI](install.mdx).
+
+## Experiment With Examples
+
+List the maintained workflows and inspect an example's available variants:
+
+```bash
+nemo-fabric example list
+nemo-fabric example show code-review
+```
+
+Run an example with its default variant:
+
+```bash
+nemo-fabric run --example code-review --input "Review the workspace"
+```
+
+Select a different maintained harness variant when you want to compare its
+behavior:
+
+```bash
+nemo-fabric run --example code-review --variant hermes \
+  --input "Review the workspace"
+```
+
+The `plan` and `doctor` commands accept the same `--example` and `--variant`
+selectors.
