@@ -262,15 +262,19 @@ def rewrite_internal_card_links(pages_dir: Path) -> None:
             return match[1] + match[2] + route + match[2]
 
         def rewrite_prose(text: str) -> str:
-            # Code spans can cross lines and contain shorter backtick runs. Only
-            # matching runs delimit a span; unmatched backticks remain prose.
+            # Code spans can cross lines within a paragraph, but not blank lines.
+            # An opener needs an even number of preceding backslashes. Inside a
+            # span, backslashes are literal and do not escape the closing run.
             parts: list[str] = []
-            offset = 0
-            for code in re.finditer(r"(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)", text):
-                parts.append(card_link.sub(replace, text[offset : code.start()]))
-                parts.append(code[0])
-                offset = code.end()
-            parts.append(card_link.sub(replace, text[offset:]))
+            for block in re.split(r"(\n[ \t]*\n)", text):
+                offset = 0
+                for code in re.finditer(
+                    r"(?<![\\`])(?:\\\\)*(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)", block
+                ):
+                    parts.append(card_link.sub(replace, block[offset : code.start()]))
+                    parts.append(code[0])
+                    offset = code.end()
+                parts.append(card_link.sub(replace, block[offset:]))
             return "".join(parts)
 
         original = page.read_text(encoding="utf-8")
