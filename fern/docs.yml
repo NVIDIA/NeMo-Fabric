@@ -10,6 +10,11 @@ navbar-links:
 - type: github
   value: https://github.com/NVIDIA/NeMo-Fabric
 global-theme: nvidia
+redirects:
+- source: /nemo/fabric/about-ne-mo-fabric/ecosystem
+  destination: /nemo/fabric/about-nemo-fabric/ecosystem
+- source: /nemo/fabric/adapter-contract/optional-open-ai-streaming
+  destination: /nemo/fabric/adapter-contract/optional-openai-streaming
 products:
 - display-name: NeMo Fabric
   slug: /

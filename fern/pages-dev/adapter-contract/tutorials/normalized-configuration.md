@@ -1,3 +1,6 @@
+---
+slug: /adapter-contract/tutorials/map-normalized-configuration
+---
 {/*
 SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0
@@ -356,7 +359,7 @@ stages:
 
 <CardGroup cols={2}>
 
-<Card title="Implement execution" href="execution.md">
+<Card title="Implement execution" href="implement-execution">
 
 Continue to Stage 3 and implement the required `start`, `invoke`, and `stop`
 lifecycle.

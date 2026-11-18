@@ -1,3 +1,6 @@
+---
+slug: /adapter-contract/tutorials/register-and-discover-adapter
+---
 {/*
 SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0
@@ -193,7 +196,7 @@ adapter authoring stages:
 
 <CardGroup cols={2}>
 
-<Card title="Verify the adapter" href="conformance.md">
+<Card title="Verify the adapter" href="verify-adapter">
 
 Continue to Stage 6 and verify every descriptor claim.
 </Card>

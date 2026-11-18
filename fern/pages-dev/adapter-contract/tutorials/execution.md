@@ -1,3 +1,6 @@
+---
+slug: /adapter-contract/tutorials/implement-execution
+---
 {/*
 SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0
@@ -207,7 +210,7 @@ With the lifecycle working, continue through the adapter authoring stages:
 
 <CardGroup cols={2}>
 
-<Card title="Normalize results and telemetry" href="results.md">
+<Card title="Normalize results and telemetry" href="normalize-results-and-telemetry">
 
 Continue to Stage 4 and normalize the lifecycle's terminal outcomes.
 </Card>
@@ -217,7 +220,7 @@ Continue to Stage 4 and normalize the lifecycle's terminal outcomes.
 Review the canonical schema for the exact operation-context shape.
 </Card>
 
-<Card title="Optional OpenAI Streaming" href="../openai-streaming.md">
+<Card title="Optional OpenAI Streaming" href="../optional-openai-streaming">
 
 Add the narrower native OpenAI streaming capability when the target needs
 progressive output.

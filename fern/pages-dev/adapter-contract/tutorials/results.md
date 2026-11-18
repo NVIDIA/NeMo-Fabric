@@ -1,3 +1,6 @@
+---
+slug: /adapter-contract/tutorials/normalize-results-and-telemetry
+---
 {/*
 SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0
@@ -151,7 +154,7 @@ With outcomes safe and stable, continue through the adapter authoring stages:
 
 <CardGroup cols={2}>
 
-<Card title="Register and discover the adapter" href="registration-and-discovery.md">
+<Card title="Register and discover the adapter" href="register-and-discover-adapter">
 
 Continue to Stage 5 and package and register the adapter.
 </Card>

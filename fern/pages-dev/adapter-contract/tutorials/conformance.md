@@ -1,3 +1,6 @@
+---
+slug: /adapter-contract/tutorials/verify-adapter
+---
 {/*
 SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0
@@ -104,12 +107,12 @@ With the adapter verified, compare it against maintained implementations:
 
 <CardGroup cols={2}>
 
-<Card title="Examples and References" href="../examples.md">
+<Card title="Examples and References" href="../examples-and-references">
 
 Compare the finished adapter with the closest maintained implementation.
 </Card>
 
-<Card title="Adapter Contract overview" href="../README.md">
+<Card title="Adapter Contract overview" href="../overview">
 
 Revisit the full contract surface and the six-stage authoring flow.
 </Card>

@@ -1,3 +1,6 @@
+---
+slug: /adapter-contract/tutorials/describe-adapter
+---
 {/*
 SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0
@@ -317,7 +320,7 @@ With the descriptor in place, continue through the adapter authoring stages:
 
 <CardGroup cols={2}>
 
-<Card title="Map the normalized configuration" href="normalized-configuration.md">
+<Card title="Map the normalized configuration" href="map-normalized-configuration">
 
 Continue to Stage 2 and implement only the fields listed in `config.accepts`.
 </Card>
