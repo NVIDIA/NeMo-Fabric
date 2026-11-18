@@ -109,7 +109,7 @@ python first_agent.py
 
 The returned adapter ID should be `nvidia.fabric.langchain.deepagents`. A successful request has status `succeeded` and request ID `first-code-review`. The review should identify that `average([])` causes division by zero. The prose and suggested fix can vary; check the status and the finding separately. The request to avoid tools and file changes is an instruction to the agent, not a security boundary.
 
-`Fabric.run()` starts the runtime, invokes it once, and attempts shutdown. It can return a failed normalized result; configuration and lifecycle failures can instead raise SDK exceptions. Follow [Troubleshooting](../sdk/python.mdx#errors) if the run does not succeed.
+`Fabric.run()` starts the runtime, invokes it once, and attempts shutdown. It can return a failed normalized result; configuration and lifecycle failures can instead raise SDK exceptions. Follow [Troubleshooting](../sdk/results-and-errors.mdx#errors) if the run does not succeed.
 
 </Step>
 
@@ -119,4 +119,4 @@ The returned adapter ID should be `nvidia.fabric.langchain.deepagents`. A succes
 
 Change only the input to ask for a test that covers the empty-list case. The same configuration and result-handling code still apply. Then continue to [2. Switch Harnesses](switch-harnesses.mdx) to run the review through another harness while retaining your application interface.
 
-For further exploration, see [Multi-Turn Runtimes](../sdk/python.mdx#multi-turn-runtimes) to preserve state between related turns, or the maintained [onboarding notebooks](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/notebooks) for an interactive tour.
+For further exploration, see [Multi-Turn Runtimes](../sdk/requests-and-runtimes.mdx#multi-turn-runtimes) to preserve state between related turns, or the maintained [onboarding notebooks](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/notebooks) for an interactive tour.

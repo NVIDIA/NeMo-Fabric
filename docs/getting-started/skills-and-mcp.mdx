@@ -141,7 +141,7 @@ Look for status `succeeded` and a review that identifies the empty-list division
 {"values": [2.0, 4.0, 6.0], "average": 4.0, "error": null}
 ```
 
-The log proves the local tool ran. A successful agent response alone does not prove tool use or skill loading; the requested heading is an observable sign that the skill's instructions influenced the review. For a repeat run, distinguish newly appended records from earlier calls. If startup or invocation fails, follow [Troubleshooting](../sdk/python.mdx#errors). If the run succeeds without the required checks, inspect the response and tool log before treating the task as complete.
+The log proves the local tool ran. A successful agent response alone does not prove tool use or skill loading; the requested heading is an observable sign that the skill's instructions influenced the review. For a repeat run, distinguish newly appended records from earlier calls. If startup or invocation fails, follow [Troubleshooting](../sdk/results-and-errors.mdx#errors). If the run succeeds without the required checks, inspect the response and tool log before treating the task as complete.
 
 </Step>
 
@@ -149,4 +149,4 @@ The log proves the local tool ran. A successful agent response alone does not pr
 
 ## Next Steps
 
-Continue to [4. Run in OpenShell (Optional)](openshell.mdx) for the source-checkout sandbox example. Refer to [Tools, Skills, and MCP](../sdk/python.mdx#configure-agents-in-code) for authentication, tool policy, and adapter differences, or [Plan and Diagnose](../sdk/python.mdx#start-with-one-run) to inspect configuration before execution.
+Continue to [4. Run in OpenShell (Optional)](openshell.mdx) for the source-checkout sandbox example. Refer to [Tools, Skills, and MCP](../sdk/configure-agents.mdx#configure-agents-in-code) for authentication, tool policy, and adapter differences, or [Plan and Diagnose](../sdk/python.mdx#start-with-one-run) to inspect configuration before execution.
