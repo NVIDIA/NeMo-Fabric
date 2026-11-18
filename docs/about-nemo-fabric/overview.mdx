@@ -13,7 +13,7 @@ NVIDIA NeMo Fabric provides applications, evaluation systems, and rollout platfo
 - **Switch harnesses:** Reuse the consumer integration while adapters handle harness-specific behavior.
 - **Compare outcomes:** Collect normalized results and errors, along with available artifacts, lifecycle events, and telemetry references.
 
-![Diagram showing NeMo Fabric connecting applications, evaluation systems, and reinforcement learning rollouts to agent harnesses, with results, artifacts, and telemetry as outputs.](../../assets/fabric-hero.svg)
+![Applications, evaluation systems, and rollout platforms send FabricConfig through the Python SDK to the Rust core, which normalizes configuration, runs harness adapters, and returns RunResult; optional NeMo Relay captures telemetry.](../../assets/fabric-hero-docs.svg)
 
 {/* The docs sync resolves repository-relative Card source paths for the published site. */}
 <CardGroup cols={2}>

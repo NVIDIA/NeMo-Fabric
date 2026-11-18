@@ -12,7 +12,7 @@ NVIDIA NeMo Fabric uses a Python SDK backed by a Rust core to validate configura
 
 The following diagram shows how applications, evaluation systems, and rollout platforms use NeMo Fabric to run harnesses and receive execution evidence.
 
-![Applications, evaluation systems, and reinforcement learning rollouts connect through NeMo Fabric to agent harnesses, which return results, artifacts, and telemetry.](../../assets/fabric-hero.svg)
+![Applications, evaluation systems, and rollout platforms send FabricConfig through the Python SDK to the Rust core, which normalizes configuration, runs harness adapters, and returns RunResult; optional NeMo Relay captures telemetry.](../../assets/fabric-hero-docs.svg)
 
 ## Components
 
@@ -31,9 +31,13 @@ The components divide responsibility as follows:
 
 For example, an application asks an agent to review a code change:
 
-1. **Submit the task.** Your application sends the review request with its selected harness, model, and workspace settings.
-2. **Run the agent.** NeMo Fabric validates the settings and starts the harness through its adapter. The harness performs the review using its own agent logic and tools.
-3. **Return the outcome.** The adapter maps the outcome into a normalized result. NeMo Fabric returns the review output or failure details, plus available artifact and telemetry references. For a single-request run, it also attempts runtime cleanup before returning.
+1. Your application submits the task by sending the review request with its selected harness, model, and workspace settings.
+2. NeMo Fabric validates the settings and starts the harness through its adapter.
+3. The harness performs the review using its own agent logic and tools.
+4. The adapter maps the outcome into a normalized result.
+5. NeMo Fabric returns the review output or failure details, plus available artifact and telemetry references.
+
+For a single-request run, NeMo Fabric also attempts runtime cleanup before returning.
 
 ## Related Topics
 
