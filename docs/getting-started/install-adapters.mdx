@@ -43,7 +43,7 @@ pip install "nemo-fabric[openhands]"
 The root extras install the dependencies selected for each adapter. Some include
 the harness; OpenClaw, OpenHands, and Hermes require separate harness installation
 as described in the individual harness guides. You can combine independent `nemo-fabric` extras. For
-example, the following command also installs Harbor; the Claude harness extra
+example, on Python 3.12 or later, the following command also installs Harbor; the Claude harness extra
 supplies the Relay CLI, while `relay` supplies the Relay Python package:
 
 ```bash
@@ -176,7 +176,7 @@ An adapter package's `full` extra applies to the adapter environment; it does no
 
 The host application constructs and serializes the final typed `FabricConfig`. It then runs NeMo Fabric, the selected adapter, and the harness inside an isolated task environment such as a Docker container or sandbox. Adapter discovery and task-path resolution occur inside that environment.
 
-Harbor uses this model. Install its integration in the host environment:
+Harbor uses this model. Use Python 3.12 or later in the host environment; on Python 3.11, the environment marker omits Harbor even when the extra is requested. Install its integration in the host environment:
 
 ```bash
 pip install "nemo-fabric[harbor]"
