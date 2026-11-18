@@ -1,17 +1,17 @@
 ---
-title: "Benchmarking & Evaluation"
+title: "Benchmarking and Evaluation"
 slug: /integrations/consumer-integrations/benchmarking-and-evaluation
 description: "Choose a framework for benchmarking agents, evaluating configurations, or collecting rollouts through NeMo Fabric."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-Use an existing framework to benchmark agent harnesses, evaluate configurations, or collect reinforcement learning rollouts through NVIDIA NeMo Fabric. The framework owns the evaluation or rollout workflow; NeMo Fabric runs the selected harness.
+Run benchmark and evaluation workloads through NVIDIA NeMo Fabric using an existing integration. The consuming framework manages tasks, environments, scoring, or rollout collection; NeMo Fabric runs the selected agent harness.
 
-| Integration | Use It For |
+| Integration | Integration instructions |
 | --- | --- |
-| [Harbor Framework](harbor.mdx) | Compare agents and harnesses on benchmark tasks. |
-| [NVIDIA NeMo Gym](gym.mdx) | Evaluate agents in task environments and collect training rollouts. |
-| [NVIDIA NeMo Polar](polar.mdx) | Collect reinforcement learning rollouts from agent harnesses. |
+| Harbor Framework | [Harbor Framework guide](harbor.mdx) |
+| NVIDIA NeMo Gym | [Upstream NeMo Fabric agent instructions](https://github.com/NVIDIA-NeMo/Gym/tree/main/responses_api_agents/nemo_fabric_agent) |
+| NVIDIA NeMo Polar | [Upstream NeMo Fabric preset instructions](https://github.com/NVIDIA-NeMo/ProRL-Agent-Server/blob/stable/src/polar/agent/README.md#nemo-fabric) |
 
-For project descriptions and upstream repositories, refer to [Ecosystem](../../about-nemo-fabric/ecosystem.mdx).
+For project descriptions and integration status, see [Ecosystem](../../about-nemo-fabric/ecosystem.mdx).

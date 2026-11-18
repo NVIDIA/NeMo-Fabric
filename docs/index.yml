@@ -63,6 +63,8 @@ navigation:
       path: ./sdk/execution-model.mdx
     - page: Configure Agents
       path: ./sdk/configure-agents.mdx
+    - page: Configure Skills
+      path: ./integrations/harness/skills.mdx
     - page: Requests and Runtimes
       path: ./sdk/requests-and-runtimes.mdx
     - page: Environments and Shared Services
@@ -82,24 +84,14 @@ navigation:
   - section: Consumer Integrations
     path: ./integrations/consumer/overview.mdx
     contents:
-    - section: Deployments
-      path: ./integrations/consumer/deployments.mdx
-      contents:
-      - page: NVIDIA NemoClaw
-        path: ./integrations/consumer/nemoclaw.mdx
-      - page: NVIDIA NeMo Helix
-        path: ./integrations/consumer/helix.mdx
-      collapsed: open-by-default
-    - section: Benchmarking & Evaluation
+    - section: Benchmarking and Evaluation
       path: ./integrations/consumer/benchmarking-and-evaluation.mdx
+      collapsed: open-by-default
       contents:
       - page: Harbor Framework
         path: ./integrations/consumer/harbor.mdx
-      - page: NVIDIA NeMo Gym
-        path: ./integrations/consumer/gym.mdx
-      - page: NVIDIA NeMo Polar
-        path: ./integrations/consumer/polar.mdx
-      collapsed: open-by-default
+    - page: Deployments
+      path: ./integrations/consumer/deployments.mdx
     collapsed: open-by-default
   - section: CLI (Experimental)
     path: ./experimentation/cli.mdx
@@ -120,8 +112,6 @@ navigation:
   - section: Harness Integrations
     path: ./integrations/harness/overview.mdx
     contents:
-    - page: Configure Skills
-      path: ./integrations/harness/skills.mdx
     - page: Claude Code
       path: ./integrations/harness/claude.mdx
     - page: Codex
@@ -245,6 +235,8 @@ navigation:
     path: ./reference/api-inventory.mdx
   - page: Harness Compatibility
     path: ./reference/compatibility.mdx
+  - page: Adapter Metadata
+    path: ./reference/adapter-metadata.mdx
   - page: Configuration and Schemas
     path: ./reference/configuration.mdx
   - page: Packages and Distribution
