@@ -6,6 +6,10 @@ navigation:
   contents:
   - page: Overview
     path: ./about-nemo-fabric/overview.mdx
+  - page: Key Features
+    path: ./about-nemo-fabric/key-features.mdx
+  - page: Architecture Overview
+    path: ./about-nemo-fabric/architecture-overview.mdx
   - page: Ecosystem
     path: ./about-nemo-fabric/ecosystem.mdx
   - page: Supported Harnesses
