@@ -1,0 +1,16 @@
+---
+title: "Function prepare_environment"
+sidebar-title: "prepare_environment"
+description: "Prepare an execution environment for a run plan."
+position: 36
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn prepare_environment(plan: &amp;<a href=\"../config/struct-runplan.mdx\">RunPlan</a>) -&gt; <a href=\"../error/type-result.mdx\">Result</a>&lt;<a href=\"struct-environmenthandle.mdx\">EnvironmentHandle</a>&gt;"}} /></pre>
+
+Prepare an execution environment for a run plan.
+
+This block implements local environment preparation. Other providers return [`FabricError::UnsupportedEnvironmentProvider`](../error/enum-fabricerror.mdx#variant.UnsupportedEnvironmentProvider) until their provider block is added.

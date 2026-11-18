@@ -1,0 +1,94 @@
+---
+title: "Installation Overview"
+description: "Choose a supported environment, deployment scenario, and package combination."
+slug: "/getting-started/install"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Install the [NVIDIA NeMo Fabric](../about-nemo-fabric/overview.mdx) runtime and an adapter for your chosen harness. Some harnesses require a separate installation. For a guided first run, follow the [Quickstart](quickstart-overview.mdx).
+
+<a id="supported-python-versions"></a>
+<a id="supported-platforms"></a>
+
+## Requirements and Supported Platforms
+
+**Python 3.11–3.14.** Linux (x86_64, arm64), macOS (arm64), and Windows (x86_64). Hermes Agent v0.22.7 requires Python 3.14; OpenHands and Harbor require 3.12+. Check your [harness guide](../integrations/harness/overview.mdx) for additional requirements.
+
+Some harness adapters also require Node.js or Bun and separately installed SDKs or CLIs. Follow your harness-specific installation instructions for the required versions.
+
+Compare capabilities on [Supported Harnesses](../about-nemo-fabric/supported-harnesses.mdx); use [adapter installation](install-adapters.mdx) for setup instructions.
+
+<a id="runtime-and-harness-in-the-same-environment"></a>
+<a id="isolated-task-environment"></a>
+<a id="runtime-and-harness-in-separate-environments"></a>
+
+## Deployment Scenarios
+
+| Scenario | What runs where | Installation route |
+| --- | --- | --- |
+| Shared environment | Runtime, adapter, and harness together | [Complete setup](install-adapters.mdx#runtime-and-adapter-together) or [existing harness](install-adapters.mdx#existing-harness-environment) |
+| Separate environments | Runtime launches the adapter environment's Python | [Adapter and harness](install-adapters.mdx#separate-python-environments) |
+| Isolated task | Runtime, adapter, and harness in the task environment | [Harbor](../integrations/consumer/harbor.mdx) or [Environments](../sdk/environments-and-shared-services.mdx#explicit-environment-lifecycle) |
+
+<a id="package-installation-method"></a>
+
+## Choose an Installation
+
+What each package installs. ✅ means the package installs the component; — means the package does not install it. Install the component separately if required. These are representative combinations; [adapter installation](install-adapters.mdx) covers the available routes.
+
+| Installation | Runtime | Collector | Adapter | Harness | Relay Python | Relay CLI |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: |
+| `nemo-fabric` | ✅ | — | — | — | — | — |
+| `nemo-fabric[streaming]` | ✅ | ✅ | — | — | — | — |
+| `nemo-fabric[relay]` | ✅ | — | — | — | ✅ | — |
+| `nemo-fabric[hermes-agent]` | ✅ | — | ✅ | — | — | — |
+| `nemo-fabric[hermes-agent]` plus `nemo-fabric-adapters-hermes[relay]` | ✅ | — | ✅ | — | ✅ | — |
+| `nemo-fabric-adapters-claude[harness]` | — | — | ✅ | ✅ | — | ✅ |
+| `nemo-fabric-adapters-claude[full]` | — | — | ✅ | ✅ | — | ✅ |
+| `nemo-fabric-adapters-deepagents[full]` | — | — | ✅ | ✅ | ✅ | — |
+| `nemo-fabric-adapters-mini-swe-agent[full]` | — | — | ✅ | ✅ | ✅ | — |
+| `nemo-fabric-adapters-nooa[full]` | — | — | ✅ | ✅ | ✅ | — |
+| `nemo-fabric-adapters-openclaw` | — | — | ✅ | — | — | — |
+| `nemo-fabric-adapters-openhands` | — | — | ✅ | — | — | — |
+| `nemo-fabric-adapters-hermes[full]` | — | — | ✅ | — | ✅ | — |
+| `nemo-fabric-adapters-hermes[relay]` | — | — | ✅ | — | ✅ | — |
+| `nemo-fabric-adapters-claude` | — | — | ✅ | — | — | — |
+
+An adapter's `full` extra does not install the NeMo Fabric runtime; its contents vary by adapter. Hermes Agent must be installed separately. Refer to [Install a Harness Adapter](install-adapters.mdx) for setup options and dedicated adapter guides.
+
+Use matching runtime and adapter releases unless another combination has been validated. For Hermes telemetry, use the adapter's `relay` extra. Hermes v0.22.7 uses Relay 0.11; v0.22.5 remains supported with Relay 0.10.
+
+### Inspect Adapter Metadata Without Harness SDKs
+
+For the optional catalog package and descriptor lookup example, refer to [Inspect Adapter Metadata](../reference/adapter-metadata.mdx#inspect-adapter-metadata).
+
+## Next Steps
+
+<a id="install-the-nemo-fabric-runtime"></a>
+
+[Install the runtime](install-fabric-runtime.mdx).
+
+<a id="install-a-complete-runtime-and-harness"></a>
+<a id="install-hermes-agent"></a>
+<a id="install-cline"></a>
+<a id="install-factory-droid"></a>
+<a id="install-kiro"></a>
+<a id="install-an-adapter-and-harness-without-the-runtime"></a>
+<a id="add-an-adapter-to-an-existing-harness-environment"></a>
+
+[Install a harness adapter](install-adapters.mdx).
+
+<a id="install-nemo-relay"></a>
+<a id="nemo-relay-python-package"></a>
+<a id="upgrade-to-relay-011"></a>
+<a id="migrate-relay-observability-configurations-to-version-4"></a>
+<a id="nemo-relay-cli"></a>
+
+[NeMo Relay and streaming dependencies](install-relay.mdx).
+
+<a id="source-installation-method"></a>
+
+[Development setup and building from source](../contributing/setup.mdx).
+
+For package names, refer to [Packages and Distribution](artifacts.mdx).

@@ -1,0 +1,250 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+navigation:
+- section: About NeMo Fabric
+  contents:
+  - page: Overview
+    path: ../pages-v0.7.0/about-nemo-fabric/overview.mdx
+  - page: Ecosystem
+    path: ../pages-v0.7.0/about-nemo-fabric/ecosystem.mdx
+  - page: Supported Harnesses
+    path: ../pages-v0.7.0/about-nemo-fabric/supported-harnesses.mdx
+  - page: Release Notes
+    path: ../pages-v0.7.0/about-nemo-fabric/release-notes.mdx
+- section: Getting Started
+  path: ../pages-v0.7.0/getting-started/overview.mdx
+  collapsed: open-by-default
+  contents:
+  - section: Quickstart
+    path: ../pages-v0.7.0/getting-started/quickstart-overview.mdx
+    collapsed: open-by-default
+    contents:
+    - page: 1. Install One Harness
+      path: ../pages-v0.7.0/getting-started/quickstart.mdx
+    - page: 2. Switch Harnesses
+      path: ../pages-v0.7.0/getting-started/switch-harnesses.mdx
+    - page: 3. Add Skills and MCP
+      path: ../pages-v0.7.0/getting-started/skills-and-mcp.mdx
+    - page: 4. Run in OpenShell (Optional)
+      path: ../pages-v0.7.0/getting-started/openshell.mdx
+  - section: Installation
+    path: ../pages-v0.7.0/getting-started/install.mdx
+    collapsed: open-by-default
+    contents:
+    - page: Install the NeMo Fabric Runtime
+      path: ../pages-v0.7.0/getting-started/install-fabric-runtime.mdx
+    - page: Install a Harness Adapter
+      path: ../pages-v0.7.0/getting-started/install-adapters.mdx
+    - page: NeMo Relay and Streaming Dependencies
+      path: ../pages-v0.7.0/getting-started/install-relay.mdx
+    - page: Hermes Adapter
+      path: ../pages-v0.7.0/getting-started/install-hermes.mdx
+      hidden: true
+    - page: Cline Adapter
+      path: ../pages-v0.7.0/getting-started/install-cline.mdx
+      hidden: true
+    - page: Factory Droid Adapter
+      path: ../pages-v0.7.0/getting-started/install-droid.mdx
+      hidden: true
+    - page: Kiro Adapter
+      path: ../pages-v0.7.0/getting-started/install-kiro.mdx
+      hidden: true
+- section: Consumers
+  collapsed: open-by-default
+  contents:
+  - page: Overview
+    path: ../pages-v0.7.0/integrations/consumers.mdx
+  - section: Python SDK
+    path: ../pages-v0.7.0/sdk/python.mdx
+    collapsed: true
+    contents:
+    - page: Execution Model
+      path: ../pages-v0.7.0/sdk/execution-model.mdx
+    - page: Configure Agents
+      path: ../pages-v0.7.0/sdk/configure-agents.mdx
+    - page: Configure Skills
+      path: ../pages-v0.7.0/integrations/harness/skills.mdx
+    - page: Requests and Runtimes
+      path: ../pages-v0.7.0/sdk/requests-and-runtimes.mdx
+    - page: Environments and Shared Services
+      path: ../pages-v0.7.0/sdk/environments-and-shared-services.mdx
+    - page: Streaming
+      path: ../pages-v0.7.0/sdk/streaming.mdx
+    - page: Results and Errors
+      path: ../pages-v0.7.0/sdk/results-and-errors.mdx
+    - page: Health Checks
+      path: ../pages-v0.7.0/sdk/health-checks.mdx
+    - page: Resource Usage and Stats
+      path: ../pages-v0.7.0/sdk/system-stats.mdx
+    - page: Software Execution Evidence
+      path: ../pages-v0.7.0/sdk/software-execution-evidence.mdx
+    - page: SDK Contract Boundaries
+      path: ../pages-v0.7.0/sdk/contract-boundaries.mdx
+  - section: Consumer Integrations
+    path: ../pages-v0.7.0/integrations/consumer/overview.mdx
+    contents:
+    - section: Benchmarking and Evaluation
+      path: ../pages-v0.7.0/integrations/consumer/benchmarking-and-evaluation.mdx
+      collapsed: open-by-default
+      contents:
+      - page: Harbor Framework
+        path: ../pages-v0.7.0/integrations/consumer/harbor.mdx
+    - page: Deployments
+      path: ../pages-v0.7.0/integrations/consumer/deployments.mdx
+    collapsed: open-by-default
+  - section: CLI (Experimental)
+    path: ../pages-v0.7.0/experimentation/cli.mdx
+    contents:
+    - page: Install
+      path: ../pages-v0.7.0/experimentation/install.mdx
+    - page: Presets
+      path: ../pages-v0.7.0/experimentation/presets.mdx
+    - page: Examples
+      path: ../pages-v0.7.0/experimentation/examples.mdx
+    - page: Scaffold an Application
+      path: ../pages-v0.7.0/experimentation/scaffold.mdx
+- section: Harnesses
+  collapsed: open-by-default
+  contents:
+  - page: Overview
+    path: ../pages-v0.7.0/integrations/harnesses.mdx
+  - section: Harness Integrations
+    path: ../pages-v0.7.0/integrations/harness/overview.mdx
+    contents:
+    - page: Claude Code
+      path: ../pages-v0.7.0/integrations/harness/claude.mdx
+    - page: Codex
+      path: ../pages-v0.7.0/integrations/harness/codex.mdx
+    - page: Cline
+      path: ../pages-v0.7.0/integrations/harness/cline.mdx
+    - page: Factory Droid
+      path: ../pages-v0.7.0/integrations/harness/droid.mdx
+    - section: Hermes Agent
+      collapsed: true
+      path: ../pages-v0.7.0/integrations/harness/hermes/hermes.mdx
+      contents:
+      - page: SDK
+        path: ../pages-v0.7.0/integrations/harness/hermes/hermes-sdk.mdx
+      - page: HTTP API
+        path: ../pages-v0.7.0/integrations/harness/hermes/hermes-api.mdx
+      - page: Dashboard
+        path: ../pages-v0.7.0/integrations/harness/hermes/hermes-dashboard.mdx
+      - page: Terminal TUI
+        path: ../pages-v0.7.0/integrations/harness/hermes/hermes-tui.mdx
+    - page: LangChain Deep Agents
+      path: ../pages-v0.7.0/integrations/harness/deepagents.mdx
+    - page: Kilo Code
+      path: ../pages-v0.7.0/integrations/harness/kilo.mdx
+    - page: Kiro
+      path: ../pages-v0.7.0/integrations/harness/kiro.mdx
+    - page: AWS Strands
+      path: ../pages-v0.7.0/integrations/harness/strands.mdx
+    - page: mini-SWE-agent
+      path: ../pages-v0.7.0/integrations/harness/mini-swe-agent.mdx
+    - page: NOOA
+      path: ../pages-v0.7.0/integrations/harness/nooa.mdx
+    - section: OpenClaw
+      collapsed: true
+      path: ../pages-v0.7.0/integrations/harness/openclaw/openclaw.mdx
+      contents:
+      - page: SDK
+        path: ../pages-v0.7.0/integrations/harness/openclaw/openclaw-sdk.mdx
+      - page: HTTP API
+        path: ../pages-v0.7.0/integrations/harness/openclaw/openclaw-api.mdx
+      - page: Dashboard
+        path: ../pages-v0.7.0/integrations/harness/openclaw/openclaw-dashboard.mdx
+      - page: Terminal TUI
+        path: ../pages-v0.7.0/integrations/harness/openclaw/openclaw-tui.mdx
+    - page: OpenHands
+      path: ../pages-v0.7.0/integrations/harness/openhands.mdx
+    - page: OpenCode
+      path: ../pages-v0.7.0/integrations/harness/opencode.mdx
+    - page: Pi
+      path: ../pages-v0.7.0/integrations/harness/pi.mdx
+    - page: Qwen Code
+      path: ../pages-v0.7.0/integrations/harness/qwen.mdx
+    - page: Remote Agent
+      path: ../pages-v0.7.0/integrations/harness/remote-agent.mdx
+    collapsed: open-by-default
+  - section: Adapter Contract
+    contents:
+    - section: Tutorials
+      contents:
+      - page: 1. Describe the Adapter
+        path: ../pages-v0.7.0/adapter-contract/tutorials/adapter-descriptor.md
+      - page: 2. Map Normalized Configuration
+        path: ../pages-v0.7.0/adapter-contract/tutorials/normalized-configuration.md
+      - page: 3. Implement Execution
+        path: ../pages-v0.7.0/adapter-contract/tutorials/execution.md
+      - page: 4. Normalize Results and Telemetry
+        path: ../pages-v0.7.0/adapter-contract/tutorials/results.md
+      - page: 5. Register and Discover the Adapter
+        path: ../pages-v0.7.0/adapter-contract/tutorials/registration-and-discovery.md
+      - page: 6. Verify the Adapter
+        path: ../pages-v0.7.0/adapter-contract/tutorials/conformance.md
+    - page: Custom-Agent Integrations
+      path: ../pages-v0.7.0/adapter-contract/custom-agents.md
+    - page: Optional Native OpenAI Streaming
+      path: ../pages-v0.7.0/adapter-contract/openai-streaming.md
+    - page: Examples and References
+      path: ../pages-v0.7.0/adapter-contract/examples.md
+    path: ../pages-v0.7.0/adapter-contract/README.md
+- section: Troubleshooting
+  path: ../pages-v0.7.0/troubleshooting.mdx
+  contents: []
+- section: Contributing
+  collapsed: true
+  contents:
+  - page: Overview
+    path: ../pages-v0.7.0/contributing/overview.mdx
+  - page: Development Setup and Building from Source
+    path: ../pages-v0.7.0/contributing/setup.mdx
+  - page: Testing and Validation
+    path: ../pages-v0.7.0/contributing/testing.mdx
+  - page: Documentation Contributions
+    path: ../pages-v0.7.0/contributing/documentation.mdx
+- section: Reference
+  collapsed: true
+  contents:
+  - section: Python API Reference
+    contents:
+    - page: Client
+      path: ../pages-v0.7.0/reference/api/python-library-reference/nemo_fabric.client.md
+    - page: Adapter Capability Inspection
+      path: ../pages-v0.7.0/reference/api/python-library-reference/nemo_fabric.capabilities.md
+    - page: Runtime Health
+      path: ../pages-v0.7.0/reference/api/python-library-reference/nemo_fabric.check.md
+    - page: Runtime
+      path: ../pages-v0.7.0/reference/api/python-library-reference/nemo_fabric.runtime.md
+    - page: Service
+      path: ../pages-v0.7.0/reference/api/python-library-reference/nemo_fabric.service.md
+    - page: Relay Streaming
+      path: ../pages-v0.7.0/reference/api/python-library-reference/nemo_fabric.streaming.md
+    - page: OpenAI Streaming
+      path: ../pages-v0.7.0/reference/api/python-library-reference/nemo_fabric.openai_streaming.md
+    - page: Models
+      path: ../pages-v0.7.0/reference/api/python-library-reference/nemo_fabric.models.md
+    - page: Types
+      path: ../pages-v0.7.0/reference/api/python-library-reference/nemo_fabric.types.md
+    - page: Errors
+      path: ../pages-v0.7.0/reference/api/python-library-reference/nemo_fabric.errors.md
+    path: ../pages-v0.7.0/reference/api/python-library-reference/index.md
+    collapsed: true
+  - page: SDK API Inventory
+    path: ../pages-v0.7.0/reference/api-inventory.mdx
+  - page: Harness Compatibility
+    path: ../pages-v0.7.0/reference/compatibility.mdx
+  - page: Adapter Metadata
+    path: ../pages-v0.7.0/reference/adapter-metadata.mdx
+  - page: Configuration and Schemas
+    path: ../pages-v0.7.0/reference/configuration.mdx
+  - page: Packages and Distribution
+    path: ../pages-v0.7.0/getting-started/artifacts.mdx
+  - folder: ../pages-v0.7.0/reference/api/rust-library-reference
+    title: Rust Library Reference
+    slug: api/rust-library-reference
+- section: Resources
+  contents:
+  - folder: ../pages-v0.7.0/resources/legal
+    title: Legal

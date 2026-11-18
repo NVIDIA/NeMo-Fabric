@@ -1,0 +1,216 @@
+---
+title: "Health Checks"
+description: "Understand health scopes, levels, and the native evidence used by NVIDIA NeMo Fabric adapters."
+slug: /sdk/health-checks
+---
+
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved. */}
+{/* SPDX-License-Identifier: Apache-2.0 */}
+
+Use `Fabric.check()` to check the health of a runtime server, an agent runtime, or an OpenClaw Gateway service. NVIDIA NeMo Fabric returns an immutable `CheckReport` with the selected target, outcome, individual observations, timestamps, and elapsed time. The [Python SDK guide](health-checks.mdx#runtime-health) shows runtime and service examples.
+
+## Choose the Scope
+
+The scope selects the component that must answer the check:
+
+| Scope     | Target                                                                | Execution Modes                                                                                                                       | Evidence                                                                                            |
+| --------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `server`  | The runtime server in the supplied environment.                       | OpenShell SDK routing or `fabric-agent-ctl check` inside the sandbox. Local SDK server checks return `unsupported/unsupported_scope`. | The runtime server responds through its command transport and reports whether shutdown has started. |
+| `runtime` | The exact `runtime_id` in the supplied environment.                   | Local SDK execution, or the OpenShell command bridge to the local SDK inside the sandbox.                                             | The selected adapter's native observations, described below.                                        |
+| `service` | The exact `service_id` in the supplied process-local `ServiceHandle`. | Local SDK service checks for a prepared or attached OpenClaw Gateway.                                                                 | Gateway HTTP responses. A Gateway can be checked before any runtime starts.                         |
+
+Server checks do not take a health level. Runtime and service checks default to `live`. The sandbox command bridge supports server and runtime targets; service checks require the local SDK service handle.
+
+To select a runtime through the command bridge, provide both the agent name and runtime ID:
+
+```sh
+fabric-agent-ctl check --agent researcher --runtime-id R1 --ready --timeout-seconds 3
+```
+
+Refer to the [runtime server command guide](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.7.0/sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md) for command syntax.
+
+## Read the Levels and Outcomes
+
+The levels describe progressively stronger observations of the selected target:
+
+| Level    | Question                                                                           |
+| -------- | ---------------------------------------------------------------------------------- |
+| `live`   | Does the adapter have current evidence that the owned agent or session is alive?   |
+| `active` | Does the native request interface meet the adapter's qualified availability check? |
+| `ready`  | Does the native readiness response, or the adapter's qualified equivalent, pass?   |
+
+Checks are cumulative: `ready` evaluates `live`, then `active`, then `ready`. Evaluation stops at the first result that does not pass. The report's `checks` list shows which observations ran. Different adapters use different native evidence; the same level does not promise identical behavior across harnesses.
+
+The report uses one of these outcomes:
+
+| Outcome       | Meaning                                                                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `passed`      | The requested observations passed for the selected target.                                                                                    |
+| `failed`      | An observation found a stopped agent, closed session, failed native health response, or another concrete failure.                             |
+| `unknown`     | The check could not establish the result, for example because of a timeout, unavailable target, invalid native response, or ownership change. |
+| `unsupported` | The installed adapter or execution mode does not provide the requested check.                                                                 |
+
+Runtime `activity` is separate from health. A runtime can report `busy` and pass every supported level while an invocation waits for a model response. It can also pass with `activity: unknown` when the adapter has positive native health evidence but cannot observe whether work is in progress. A passing runtime check reports `state: active`; activity may be `idle`, `busy`, or `unknown`. An unknown activity value alone does not establish health, and `stopping` or `stopped` activity cannot pass.
+
+This rule applies to every adapter. It does not change which native evidence each adapter must collect, or turn an `outcome: unknown` into a pass. Consumers waiting for an idle runtime must require `activity: idle`; a passing health result with unknown activity does not establish that an agent will accept another prompt.
+
+## Native Evidence by Adapter
+
+The table covers all runtime adapters and the OpenClaw Gateway service. Each row lists native evidence and unsupported levels, with links to qualification tests or capability descriptors. Support depends on the installed adapter version and its descriptor. Check the installed adapter's advertised health levels before selecting a level.
+
+| Adapter                                                                                                                 | `live` Evidence                                                                                                                                        | `active` Evidence                                                                                                                                                           | `ready` Evidence                                                                                                                                | Qualification Tests / Capability Evidence                                                                                                         |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Pi](../integrations/harness/pi.mdx)                                                                                    | Completed initialization, unchanged native session identity, and a fresh `extensionRunner.createContext().isIdle()` response; idle and busy both pass. | Completed extension binding and an available native request interface after liveness passes.                                                                                | The selected model remains configured, required tools remain available, and required MCP transports have no observed error or closure.          | [Tests](https://github.com/NVIDIA/NeMo-Fabric/blob/66341998b2e954a008cc7f726be64020adc3d1f4/tests/e2e/test_checks.py)                             |
+| [OpenClaw Runtime](../integrations/harness/openclaw/openclaw.mdx)                                                                | Valid `GET /healthz` response; an owned Gateway process must also remain running.                                                                      | `GET /startupz` confirms startup, authenticated `GET /v1/models` includes the selected agent, and `GET /v1/chat/completions` returns the expected `405` with `Allow: POST`. | `GET /readyz` reports `ready: true`, including configured channel health.                                                                       | [Tests](https://github.com/NVIDIA/NeMo-Fabric/blob/66341998b2e954a008cc7f726be64020adc3d1f4/tests/e2e/test_openclaw_checks.py)                    |
+| [OpenClaw Gateway Service](../integrations/harness/openclaw/openclaw.mdx)                                                        | Valid `GET /healthz` response.                                                                                                                         | Authenticated `GET /v1/models` returns a valid inventory.                                                                                                                   | `GET /readyz` reports native Gateway readiness, including configured channel health.                                                            | [Tests](https://github.com/NVIDIA/NeMo-Fabric/blob/66341998b2e954a008cc7f726be64020adc3d1f4/tests/e2e/test_openclaw_checks.py)                    |
+| [Codex](../integrations/harness/codex.mdx)                                                                              | The owned app-server process has not exited.                                                                                                           | A fresh native thread read confirms that the selected thread is loaded.                                                                                                     | The fresh thread response reports `idle` or `active`; `systemError` fails readiness.                                                            | [Tests](https://github.com/NVIDIA/NeMo-Fabric/blob/86c52264d6e2ecfe7f72f1eb0161f1d1e425ddbb/tests/e2e/test_codex_checks.py)                       |
+| [Claude Code](../integrations/harness/claude.mdx)                                                                       | The owned Claude CLI process has not exited.                                                                                                           | A fresh, valid native `get_mcp_status()` response.                                                                                                                          | The same native status operation establishes initialized CLI responsiveness. Reported MCP connection failures do not themselves fail readiness. | [Tests](https://github.com/NVIDIA/NeMo-Fabric/blob/563ca53755f1a2f57329a79985095acfcfcd5cde/tests/e2e/test_claude_checks.py)                      |
+| [LangChain Deep Agents](../integrations/harness/deepagents.mdx)                                                         | A fresh read from the owned checkpoint connection with `SELECT 1`.                                                                                     | The compiled graph exposes its message input schema and invocation interface.                                                                                               | Native `aget_state()` returns valid state for the exact owned LangGraph thread.                                                                 | [Tests](https://github.com/NVIDIA/NeMo-Fabric/blob/5c065c1a7775e4490269f57b406635d30e8a0fd8/tests/e2e/test_deepagents_checks.py)                  |
+| [Hermes](../integrations/harness/hermes/hermes.mdx) | SDK enabled: agent/session database ownership and fresh diagnostics. SDK disabled: enabled native processes have not exited. | SDK enabled: initialized `run_conversation()` and diagnostics. SDK disabled: process checks plus API `/health` or TUI `/api/status` and authenticated RPC. | SDK enabled: valid `get_activity_summary()` with SDK idle/busy activity. SDK disabled: native process/endpoint checks with unknown activity. Separate interface failures do not fail an enabled SDK agent's runtime health. | [SDK tests](https://github.com/NVIDIA/NeMo-Fabric/blob/a51d5b0bca28261e61f56866b3fe8d93fddb4f7d/tests/e2e/test_hermes_checks.py), [native interface tests](https://github.com/NVIDIA/NeMo-Fabric/blob/1e9533f44f135da548441870f06dec3aec2ed1eb/tests/adapters/test_hermes_interfaces.py) |
+| [OpenHands](../integrations/harness/openhands.mdx)                                                                      | The owned `LocalConversation` native closure flags show that the conversation remains open.                                                            | The native lazy-initialization flag confirms that the request interface has initialized. Before initialization, returns `unknown/capabilities_unverified`.                  | Unsupported.                                                                                                                                    | [Tests](https://github.com/NVIDIA/NeMo-Fabric/blob/6df3e0cef0ea972f125c0217d44ce7246be3bc68/tests/e2e/test_openhands_checks.py)                   |
+| [OpenCode](../integrations/harness/opencode.mdx)                                                                        | A fresh `sessions.get({ sessionID })` response identifies the exact, unarchived native session.                                                        | The same native session-read operation.                                                                                                                                     | The same native session-read operation establishes narrow session readiness.                                                                    | [Tests](https://github.com/NVIDIA/NeMo-Fabric/blob/ba027bb56aedae3adf6de57ca0d33846a0788932/tests/e2e/test_opencode_checks.py)                    |
+| [Qwen Code](../integrations/harness/qwen.mdx)                                                                           | A fresh native `Query.supportedCommands()` response from the owned CLI query.                                                                          | The same native control operation.                                                                                                                                          | The same native control operation establishes initialized CLI responsiveness.                                                                   | [Tests](https://github.com/NVIDIA/NeMo-Fabric/blob/9e483024adad293eb1bbdf105c93401c15b5c087/tests/e2e/test_qwen_checks.py)                        |
+| [Factory Droid](../integrations/harness/droid.mdx)                                                                      | A fresh native `DroidSession.listTools()` response from the selected subprocess.                                                                       | Unsupported.                                                                                                                                                                | Unsupported.                                                                                                                                    | [Tests](https://github.com/NVIDIA/NeMo-Fabric/blob/15bd746bd88cb4b4b0fa6884b86449e88f0c00b2/tests/e2e/test_droid_health.py)                       |
+| [Kilo Code](../integrations/harness/kilo.mdx)                                                                           | The owned Kilo server process has not exited.                                                                                                          | Native `session.get()` identifies the selected session.                                                                                                                     | Native `global.health()` reports `healthy: true`.                                                                                               | [Tests](https://github.com/NVIDIA/NeMo-Fabric/blob/c7c6f7560c7f5cdb02a9b0a9b6be6c355823f37b/adapters/typescript/kilo/test/native-health.test.mjs) |
+| [Kiro](../integrations/harness/kiro.mdx)                                                                                | The owned ACP child process has a process identifier and has not exited or terminated by a signal.                                                     | Unsupported.                                                                                                                                                                | Unsupported.                                                                                                                                    | [Tests](https://github.com/NVIDIA/NeMo-Fabric/blob/01a729397a91d3fd46c3694d7dbca3e0a5a09ac3/tests/e2e/test_kiro_native_health.py)                 |
+| [AWS Strands](../integrations/harness/strands.mdx)                                                                      | The owned ACP child process has not exited or terminated by a signal.                                                                                  | Unsupported.                                                                                                                                                                | Unsupported.                                                                                                                                    | [Tests](https://github.com/NVIDIA/NeMo-Fabric/blob/90a4d259255d89d1069a3a62a5e3e9d55e6647ff/tests/e2e/test_strands_checks.py)                     |
+| [Cline](../integrations/harness/cline.mdx)                                                                              | The local host retains the same resident session and agent identity, and the native agent has not shut down.                                           | Native `canStartRun()` and running state establish availability; a running invocation remains healthy.                                                                      | A fresh `ClineCore.get()` response identifies the owned resident session with an `idle`, `running`, or `pending` status.                        | [Tests](https://github.com/NVIDIA/NeMo-Fabric/blob/8ab38bd6e7721440cbbc75c0e327674372cc38b0/adapters/typescript/cline/test/native-health.mjs)     |
+| [mini-SWE-agent](../integrations/harness/mini-swe-agent.mdx)                                                            | Unsupported.                                                                                                                                           | Unsupported.                                                                                                                                                                | Unsupported.                                                                                                                                    | [Descriptor](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.7.0/adapters/python/mini-swe-agent/mini-swe-agent.fabric-adapter.json)                   |
+| [NOOA InteractiveAgent](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.7.0/adapters/python/nooa/docs/interactive-agent.md) | Unsupported.                                                                                                                                           | Unsupported.                                                                                                                                                                | Unsupported.                                                                                                                                    | [Descriptor](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.7.0/adapters/python/nooa/nooa.fabric-adapter.json)                                       |
+| [NOOA BenchAgent](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.7.0/adapters/python/nooa/docs/bench-agent.md)             | Unsupported.                                                                                                                                           | Unsupported.                                                                                                                                                                | Unsupported.                                                                                                                                    | [Descriptor](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.7.0/adapters/python/nooa/nooa-bench.fabric-adapter.json)                                 |
+| [Remote Agent](../integrations/harness/remote-agent.mdx)                                                                | Unsupported.                                                                                                                                           | Unsupported.                                                                                                                                                                | Unsupported.                                                                                                                                    | [Descriptor](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.7.0/adapters/python/remote-agent/remote-agent.fabric-adapter.json)                       |
+
+mini-SWE-agent, NOOA InteractiveAgent, NOOA BenchAgent, and Remote Agent advertise no runtime health levels. A health check for a running runtime using one of these adapters returns `unsupported/unsupported_adapter`. This outcome describes check support rather than an agent failure. Server checks remain available in OpenShell environments.
+
+Pi readiness checks configured model, tool, and MCP state. Those observations do not perform a model request or execute a tool. OpenClaw readiness follows the Gateway's channel policies and can use the Gateway's cached observations. The linked OpenClaw endpoint tests use controlled Gateway HTTP responses.
+
+On Linux and macOS, confirmed exit of an adapter host owned by NeMo Fabric returns `failed/agent_exited` at `live` for any adapter that advertises `live`. Checks evaluate `live` before higher levels, so a confirmed host exit fails a `ready` check even when the adapter does not support `ready`. The managed runtime can no longer serve requests, even if a separate native child process or attached service survives. This observation does not establish descendant cleanup. An unreadable process identity or a failed health connection alone remains `unknown`.
+
+Adapter checks also preserve confirmed native-process exit and closed-session evidence when a native health request fails. A changed runtime or NeMo Fabric session invalidates the observation and returns `unknown/observation_changed`.
+
+Kilo checks the NeMo Fabric session and runtime generation at every level. The `active` probe also returns `unknown/observation_changed` when the native session identifier differs from the selected session. Kilo's `ready` probe checks server health without comparing the native session identifier; a full `ready` check still runs `active` first.
+
+Passing a health check does not establish successful inference, valid model credentials, provider availability, or successful tool execution unless the particular probe verifies that property. For example, Claude's readiness response does not require connected MCP servers, and Qwen's command response does not test model access. The linked qualification tests hold a local model response to verify that health checks can complete during invocation; those tests provide separate invocation evidence rather than changing what the health result means.
+
+## Deadlines and Concurrent Invocations
+
+One positive, finite timeout covers routing, worker queues, transport, all evaluated levels, and response decoding. The default is three seconds. A deadline is not restarted for each level. An expired check returns `unknown/probe_timeout`; the health timeout leaves the invocation running.
+
+Some native SDK requests cannot be cancelled safely. A caller timeout can therefore leave a native health request pending. Adapters with this behavior bound their pending native work. A later check either waits within its own remaining deadline before obtaining a fresh response, or returns `unknown/probe_timeout` while the earlier request remains pending. A delayed response is not reused as fresh evidence for a later check.
+
+Checks observe the selected native runtime through a health connection that is independent of the invocation request. A successful health response while an invocation is pending does not prove that the invocation will eventually succeed. Stop, release, and session replacement invalidate observations collected for an earlier owner.
+
+## Maintain the Evidence Table
+
+When an adapter changes its advertised levels or native probe, update this table, the adapter guide, and its qualification tests together. Keep native response details in the adapter documentation and preserve the shared report schema across harnesses.
+
+## Runtime Health
+
+For examples that reuse `config`, start with [Start With One Run](python.mdx#start-with-one-run).
+
+Use `Fabric.check(environment=..., request=...)` to check runtime health. Refer to the [health-check overview](health-checks.mdx) for scopes, outcomes, and deadlines, and the [adapter support table](health-checks.mdx#native-evidence-by-adapter) for supported levels and native evidence.
+
+The runtime ID selects the exact session inside the supplied environment:
+
+```python
+from nemo_fabric import CheckRequest, Fabric
+
+fabric = Fabric()
+environment = await fabric.prepare_environment(config)
+runtime = await fabric.start_runtime_in(config, environment)
+try:
+    report = await fabric.check(
+        environment=environment,
+        request=CheckRequest(
+            scope="runtime", runtime_id=runtime.runtime_id, level="ready"
+        ),
+    )
+    print(report.outcome)
+finally:
+    await runtime.stop()
+    await fabric.release_environment(environment)
+```
+
+The default level is `live`, and the default timeout is three seconds. A request
+for `ready` evaluates `live`, `active`, and `ready` in order, stopping at the
+first nonpassing result. One deadline covers routing, every probe, and response
+decoding. Checks can run during an invocation; a busy session can pass all
+three levels. A timeout returns `unknown/probe_timeout`. Stop or environment release during a probe returns
+`unknown/observation_changed`.
+
+`CheckReport` is an immutable mapping with outcomes `passed`, `failed`, `unknown`,
+and `unsupported`. Reports contain fixed evidence-source IDs, UTC timestamps,
+and elapsed milliseconds. An unavailable runtime returns
+`unknown/runtime_unavailable`. Adapters without health support return
+`unsupported/unsupported_adapter`.
+
+Cline `live` checks verify native session residency, identity, and closure. `active` checks also inspect request-interface state. `ready` checks additionally call `ClineCore.get()` to read a fresh native session snapshot. Cline checks can run during the first invocation and do not require model access. Refer to the [Cline health contract](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.7.0/adapters/typescript/cline/README.md#runtime-health).
+
+Codex checks its owned app-server process and a fresh loaded-thread response; native `idle` or `active` status is the readiness equivalent. Pi checks native session liveness, initialization and request-interface guards, and required model, tool, and MCP connection state. OpenClaw checks Gateway liveness, completed startup, selected-agent registration, the enabled Chat Completions endpoint, and native readiness including configured channels. Deep Agents checks its owned checkpoint connection, compiled message interface, and native state for the selected LangGraph thread. Hermes checks its owned native session, initialized invocation interface, and a fresh `get_activity_summary()` diagnostic response. Runtime activity covers NeMo Fabric invocations. Refer to the [OpenClaw runtime health guide](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.7.0/adapters/python/openclaw/README.md#runtime-health).
+
+A local `CheckRequest(scope="server")` returns `unsupported/unsupported_scope`. For OpenShell environments,
+`Fabric.check()` maps to `fabric-agent-ctl check` in the sandbox. Server requests
+stop at the runtime server; runtime requests select the owned agent and use the
+local SDK health path inside the sandbox. Health uses an independent provider
+worker during remote invocations.
+
+The diagram shows the local runtime adapter path. OpenShell adds the provider
+and command bridge before this path; server checks stop at the runtime server.
+
+```mermaid
+flowchart LR
+    SDK["NeMo Fabric SDK"] --> Core["Rust core"]
+    Core -->|"start / invoke / stop<br/>stdin / stdout"| Lifecycle
+    Core -->|"check<br/>authenticated loopback TCP"| Health
+    Endpoint["health.endpoint.json<br/>port and shared secret"] -.->|"endpoint discovery"| Core
+    subgraph Host["Adapter host process"]
+        Lifecycle["Lifecycle dispatcher"] -->|"await operation"| Adapter["Adapter runtime instance"]
+        Health["Health listener"] -->|"check native state"| Adapter
+        Adapter --> Harness["Native harness SDK"]
+    end
+```
+
+The lifecycle dispatcher awaits each start, invocation, or stop operation. The
+health listener checks the same adapter runtime through a separate connection,
+so checks can run while an invocation is pending. The host publishes the port
+and a per-process shared secret in a private `health.endpoint.json` file under
+`FABRIC_HOME`; the Rust core reads that file and authenticates health requests
+and responses. Each health request carries the remaining timeout budget, which the host applies
+to the probe.
+
+### Gateway Service Health
+
+Check a prepared or attached OpenClaw Gateway with `Fabric.check(service=..., request=...)`. Service checks use the selected process-local `ServiceHandle`:
+
+Use the OpenClaw `service_config` from [Shared Services](environments-and-shared-services.mdx#shared-services), including its installation and credential prerequisites.
+
+```python
+from nemo_fabric import CheckRequest, Fabric
+
+fabric = Fabric()
+async with await fabric.prepare_service(service_config) as service:
+    report = await fabric.check(
+        service=service.handle,
+        request=CheckRequest(
+            scope="service", service_id=service.service_id, level="ready"
+        ),
+    )
+    print(report.outcome)
+```
+
+For OpenClaw, `live` validates `/healthz`, `active` validates an authenticated `/v1/models` response, and `ready` follows native `/readyz`, including configured channel health. A failed channel can fail Gateway readiness while `live` and `active` pass. Refer to the [OpenClaw Gateway health guide](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.7.0/adapters/python/openclaw/README.md#gateway-health).
+
+Service checks evaluate earlier levels in order under the same three-second default deadline. They can run during invocations. Reports have `scope="service"`, the selected `service_id`, and null runtime evidence. Release during a check invalidates evidence with `unknown/observation_changed`; a released or unavailable binding returns `unknown/service_unavailable`. Service hosting and checks remain local SDK capabilities; the sandbox command bridge continues to support server and runtime checks.
+
+
+### Sandbox Command Bridge
+
+`fabric-agent-ctl check` checks server responsiveness with a three-second default deadline. Use `--timeout-seconds SECONDS` to set another positive, finite budget. Server checks work before a runtime exists and during an invocation. Completed checks return a `fabric.check/v1alpha1` report in `result`, with `changed: false`; passed health exits 0, while failed, unknown, or unsupported health exits 1. Use `fabric-agent-ctl check --agent researcher --runtime-id R1 --ready` to check one runtime and return a runtime-scoped report. Runtime checks require both target flags and default to `--live`; `--active` and `--ready` are mutually exclusive alternatives. OpenShell SDK requests map to these named commands. Each layer forwards the remaining deadline, and failed health evidence stays in the typed SDK report.
+
+`fabric.check/v1alpha1` identifies the shared report schema returned by
+`Fabric.check()` and `fabric-agent-ctl check`. The executable ships with
+`nemo-fabric-runtime` and follows the SDK package release. Health readers validate reason codes strictly. Use the same `nemo-fabric-runtime` release for the caller, sandbox server, and `fabric-agent-ctl`; mixed-release health reports are not supported. The schema identifier does not negotiate SDK releases.
+
+`fabric-agent-ctl serve` starts one runtime server per sandbox. The `start`, `invoke`, `stop`, and `status` commands call `Fabric.start_runtime()`, `Runtime.invoke()`, `Runtime.stop()`, and `Fabric.runtime_status()`. Start accepts `FabricConfig` and returns the SDK `RuntimeHandle` mapping. Invoke accepts a full `RunRequest` through `--request` or any JSON SDK input through `--input`, and returns the SDK `RunResult` mapping. Stop returns JSON null. These payloads occupy the response envelope's `result` field; command diagnostics remain separate. Targeted commands require the returned runtime ID and exact agent name. The caller waits for the private socket before start. Caller-side preflight uses `Fabric.plan()` and `Fabric.doctor()`; startup validates configuration against installed descriptors.
+
+One sandbox can own multiple runtimes, each addressed by its returned runtime ID. Invoke and stop operations are independent across IDs; stopping one runtime leaves the others usable, and another runtime can be started after a stop. An uncertain start blocks further starts because the server cannot safely determine whether an unaddressable runtime exists. Buffered SDK stop confirms owned process cleanup before reporting success and retains ownership when cleanup is unconfirmed. The runtime server also retains `fabric.unclean` after runtime use or an uncertain start until previous sandbox process cleanup can be confirmed. Refer to the [runtime server command guide](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.7.0/sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md).

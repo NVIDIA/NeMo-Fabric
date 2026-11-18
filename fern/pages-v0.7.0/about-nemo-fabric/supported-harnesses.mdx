@@ -1,0 +1,35 @@
+---
+title: Supported Harnesses
+description: Compare supported agent harnesses and find their adapter guides.
+slug: /about-nemo-fabric/supported-harnesses
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+NVIDIA NeMo Fabric includes adapters for the following harnesses and execution targets. Select a harness name for its adapter documentation:
+
+| Agent Harness | Tool Policy | MCP | Skills | Telemetry | Native Interfaces |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| [Claude Code](../integrations/harness/claude.mdx) | ✅ | ✅ | ✅ | ✅ | — |
+| [Cline](../integrations/harness/cline.mdx) | ✅ | ✅ | ✅ | — | — |
+| [Codex](../integrations/harness/codex.mdx) | — | ✅ | ✅ | ✅ | — |
+| [Factory Droid](../integrations/harness/droid.mdx) | ✅ | ✅ | ✅ | — | — |
+| [Hermes Agent](../integrations/harness/hermes/hermes.mdx) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Kilo Code](../integrations/harness/kilo.mdx) | ✅ | ✅ | ✅ | — | — |
+| [AWS Kiro](../integrations/harness/kiro.mdx) | — | ✅ | — | — | — |
+| [AWS Strands](../integrations/harness/strands.mdx) | — | ✅ | — | — | — |
+| [LangChain Deep Agents](../integrations/harness/deepagents.mdx) | ✅ | ✅ | ✅ | ✅ | — |
+| [mini-SWE-agent](../integrations/harness/mini-swe-agent.mdx) | — | — | — | ✅ | — |
+| [NOOA](../integrations/harness/nooa.mdx) | — | ✅ | ✅ | ✅ | — |
+| [OpenClaw](../integrations/harness/openclaw/openclaw.mdx) | ✅ | ✅ | ✅ | — | ✅ |
+| [OpenHands](../integrations/harness/openhands.mdx) | ✅ | ✅ | ✅ | — | — |
+| [OpenCode](../integrations/harness/opencode.mdx) | — | ✅ | ✅ | — | — |
+| [Pi](../integrations/harness/pi.mdx) | ✅ | — | ✅ | ✅ | — |
+| [Qwen Code](../integrations/harness/qwen.mdx) | ✅ | ✅ | ✅ | — | — |
+| [Remote Agent](../integrations/harness/remote-agent.mdx) | — | — | — | ✅ | — |
+
+Native interfaces: harness-native API, dashboard, or TUI access enabled through NeMo Fabric.
+
+✅ Support may come through normalized configuration, native harness behavior, or a specific target. Refer to each adapter guide or the [complete compatibility matrix](../sdk/configure-agents.mdx#normalized-configuration-compatibility) for details and limitations.
+
+Use [Installation](../getting-started/install-adapters.mdx) for adapter and harness setup, or [Adapter Contract](../adapter-contract/README.md) for a custom integration.

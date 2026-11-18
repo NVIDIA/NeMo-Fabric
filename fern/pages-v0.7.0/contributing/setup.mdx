@@ -1,0 +1,65 @@
+---
+slug: "/contributing/setup"
+title: "Development Setup and Building from Source"
+description: "Prepare a checkout and build the public packages."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Use a source checkout when developing NVIDIA NeMo Fabric. For ordinary application usage, prefer the [package installation routes](../getting-started/install.mdx).
+
+```bash
+git clone https://github.com/NVIDIA/NeMo-Fabric.git
+cd NeMo-Fabric
+```
+
+## Build From Source
+
+
+
+**Prerequisites:**
+- Rust and Cargo
+- Python 3.11 through 3.14
+- Node.js 22.19.0 or later with npm
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
+- `just` 1.50.0+
+
+1. Create a Python virtual environment and activate it (replace `3.13` with your preferred Python version):
+
+```bash
+uv venv -p 3.13 --seed .venv
+source .venv/bin/activate
+```
+
+2. Build the Rust core, Python libraries, and TypeScript packages.
+
+```bash
+just build-all
+```
+
+The above command will install only those dependencies that are strictly necessary for the build.
+Alternately If you want to install all optional dependencies, you can run:
+
+```bash
+uv sync --all-groups --all-extras
+```
+
+Then run the build command with the `no_uv=true` flag to avoid re-installing the dependencies:
+
+This path installs every local Python package, including NOOA, which requires Python 3.12 or 3.13. Use one of those versions for the all-packages build.
+
+```bash
+just no_uv=true build-all
+```
+
+### Optional Hermes Agent Development
+
+If you are developing or testing the Hermes adapter, install Hermes Agent separately:
+
+```bash
+just install-hermes-agent
+```
+
+This step is not required for the general build. Refer to [Install the Hermes Agent adapter](../integrations/harness/hermes/hermes.mdx#install-the-adapter) for its additional requirements.
+
+Follow the full [contribution guide](https://github.com/NVIDIA/NeMo-Fabric/blob/v0.7.0/CONTRIBUTING.md) for current repository setup and toolchain requirements.

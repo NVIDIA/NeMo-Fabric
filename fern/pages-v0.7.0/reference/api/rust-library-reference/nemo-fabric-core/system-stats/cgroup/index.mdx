@@ -1,0 +1,22 @@
+---
+title: "Module cgroup"
+sidebar-title: "cgroup"
+slug: "/reference/api/rust-library-reference/nemo-fabric-core/system_stats/cgroup"
+description: "Native, read-only cgroup v2 observations of the executing adapter host. A cgroup is a scope, not a claim of exclusive ownership by this invocation."
+position: 4
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p nemo-fabric-core`.
+
+Native, read-only cgroup v2 observations of the executing adapter host. A cgroup is a scope, not a claim of exclusive ownership by this invocation.
+
+## Structs
+
+- [CgroupSnapshot](struct-cgroupsnapshot.mdx): One observation of the cgroup containing the adapter host. Its counters include the cgroup's descendants and may include other workloads. Limits cover only visible ancestors; ancestors hidden by namespaces are unknown.
+
+## Enums
+
+- [CgroupObservation](enum-cgroupobservation.mdx): A cgroup reading, or why the correctly targeted scope was unavailable.
+- [Measurement](enum-measurement.mdx): A measured value or its availability. Unlimited is distinct from unknown and is used only for limits. No missing measurement is replaced with zero.
