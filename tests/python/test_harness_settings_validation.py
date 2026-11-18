@@ -204,6 +204,22 @@ _config = partial(
             for every in ("0m", "30m", "1h30m", "500ms", "1.5h")
         ],
         pytest.param(
+            "nvidia.fabric.openclaw",
+            {
+                "tools": {
+                    "web": {
+                        "fetch": {
+                            "ssrfPolicy": {
+                                "allowRfc2544BenchmarkRange": True,
+                                "allowIpv6UniqueLocalRange": True,
+                            }
+                        }
+                    }
+                }
+            },
+            id="openclaw-web-fetch-fake-ip-ranges",
+        ),
+        pytest.param(
             "nvidia.fabric.openhands",
             {"condenser": "none"},
             id="openhands",
@@ -698,6 +714,32 @@ def test_openclaw_rejects_relay(tmp_path: Path):
             {"tools": {"codeMode": "auto"}},
             "harness.settings.tools.codeMode",
             id="openclaw-code-mode-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {
+                "tools": {
+                    "web": {
+                        "fetch": {"ssrfPolicy": {"allowRfc2544BenchmarkRange": "true"}}
+                    }
+                }
+            },
+            "harness.settings.tools.web.fetch.ssrfPolicy.allowRfc2544BenchmarkRange",
+            id="openclaw-web-fetch-benchmark-range-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {
+                "tools": {
+                    "web": {
+                        "fetch": {
+                            "ssrfPolicy": {"dangerouslyAllowPrivateNetwork": True}
+                        }
+                    }
+                }
+            },
+            "harness.settings.tools.web.fetch.ssrfPolicy.dangerouslyAllowPrivateNetwork",
+            id="openclaw-web-fetch-private-network-undeclared",
         ),
         pytest.param(
             "nvidia.fabric.openclaw",

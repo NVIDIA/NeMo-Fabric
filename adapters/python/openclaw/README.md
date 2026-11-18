@@ -174,6 +174,8 @@ The following settings are specific to the OpenClaw adapter:
 | `tools.exec.notifyOnExit` | OpenClaw native default | System event and heartbeat when a backgrounded `exec` process exits. |
 | `tools.toolSearch` | OpenClaw native default | Tool search for large tool catalogs. |
 | `tools.codeMode` | OpenClaw native default | Code Mode, which can take precedence over tool search and exposes only `exec` and `wait`; do not combine it with blocking `exec`. |
+| `tools.web.fetch.ssrfPolicy.allowRfc2544BenchmarkRange` | OpenClaw native default (blocked) | Lets `web_fetch`, `image`, and `pdf` connect to `198.18.0.0/15`; set it only behind a fake-IP proxy that owns the range and enforces its own destination policy. |
+| `tools.web.fetch.ssrfPolicy.allowIpv6UniqueLocalRange` | OpenClaw native default (blocked) | The same opt-in for `fc00::/7`. |
 | `plugins.entries.memory-core.config.dreaming.enabled` | OpenClaw native default | Scheduled dreaming in the `memory-core` plugin. |
 
 The `agents`, `tools`, and `plugins` settings use OpenClaw's native structure. The adapter merges only the fields you set into the generated `openclaw.json` for managed runtimes and prepared services, beside the generated `agents.defaults`, `tools.allow`, `tools.deny`, and adapter-owned plugin entries, without replacing generated keys. Omitting a field preserves the current behavior. `harness.settings.tools` is separate from the normalized top-level `tools.enabled` and `tools.blocked` selectors. Attached Gateways reject these settings. These controls do not stop context compaction or correlate concurrent sessions, and they do not add NeMo Relay support; refer to [Native Gateway Controls](../../../docs/integrations/harness/openclaw/openclaw.mdx#native-gateway-controls).

@@ -9,7 +9,7 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and engineers use this skill to integrate NVIDIA NeMo Fabric into their own applications, services, evaluation harnesses, or platforms through the public typed Python SDK, mapping consumer configuration into an in-memory FabricConfig, selecting a runtime lifecycle, validating with plan and doctor, and handling normalized results, artifacts, telemetry, and errors. <br>
+Developers and engineers use this skill to integrate NVIDIA NeMo Fabric into their own applications, services, evaluation harnesses, or platforms through the public typed Python SDK, mapping their configuration into FabricConfig, selecting a runtime lifecycle, validating with plan and doctor, and consuming normalized results, artifacts, and telemetry. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
@@ -25,19 +25,21 @@ Risk: Review before execution as proposals could introduce incorrect or misleadi
 Mitigation: Review and scan skill before deployment. <br>
 
 ## Reference(s): <br>
-- [config-mapping.md](references/config-mapping.md) <br>
-- [results-and-errors.md](references/results-and-errors.md) <br>
-- [sdk-api-inventory.md](references/sdk-api-inventory.md) <br>
-- [NeMo Fabric installation guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx) <br>
-- [NeMo Fabric Python SDK guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx) <br>
-- [Hermes integration guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes/hermes.mdx) <br>
-- [NeMo Fabric adapter catalog guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/sdk/python/nemo-fabric-adapter-catalog/README.md) <br>
-- [code_review_agent example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent) <br>
+- [Mapping Consumer Config To FabricConfig](references/config-mapping.md) <br>
+- [Results, Evidence, And Errors](references/results-and-errors.md) <br>
+- [SDK API Inventory](references/sdk-api-inventory.md) <br>
+- [NeMo Fabric Python SDK](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx) <br>
+- [NeMo Fabric Installation Guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx) <br>
+- [NeMo Fabric Overview](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/about-nemo-fabric/overview.mdx) <br>
+- [Configure Skills](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/skills.mdx) <br>
+- [Hermes Integration Guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/hermes/hermes.mdx) <br>
+- [OpenClaw Integration Guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/integrations/harness/openclaw/openclaw.mdx) <br>
+- [code_review_agent Example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent) <br>
 
 
 ## Skill Output: <br>
-**Output Type(s):** [Code, Configuration instructions, Analysis] <br>
-**Output Format:** [Markdown with inline Python code blocks] <br>
+**Output Type(s):** [Code, Configuration instructions, Shell commands] <br>
+**Output Format:** [Markdown with inline Python and bash code blocks] <br>
 **Output Parameters:** [1D] <br>
 **Other Properties Related to Output:** [None] <br>
 
@@ -48,7 +50,7 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Evaluation Tasks: <br>
-6 evaluation tasks (4 positive, 2 negative), 1 attempt per task, each attempt run in its own isolated sandbox pod (`k8s-sandbox` environment); each task was also attempted without the skill as a baseline. Evaluator version `1.6.9`, evaluation date 2026-11-09. <br>
+6 evaluation tasks (4 positive, 2 negative), 1 attempt per task, each run in its own isolated sandbox pod in the `k8s-sandbox` environment; each task was also attempted without the skill as a baseline. Evaluator version `1.6.9`, evaluation date 2026-11-18. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
@@ -72,20 +74,18 @@ Underlying evaluation signals used in this run: <br>
 ## Evaluation Results: <br>
 > ✅ **Overall verdict: PASS — Recommended for publication**
 
-### Publication Recommendation
-
-Recommended for publication based on the completed evaluation evidence in this report.
+**Publication Recommendation:** Recommended for publication based on the completed evaluation evidence in this report.
 
 ### Results at a Glance
 
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 84.7% — baseline ran, but no comparable score was available; uplift unavailable | 81.1% — baseline ran, but no comparable score was available; uplift unavailable |
-| Security | 100.0% → 100.0% (±0.0 points) | 100.0% → 91.7% (-8.3 points) |
-| Correctness | 50.0% → 90.0% (+40.0 points) | 23.3% → 76.7% (+53.4 points) |
-| Discoverability | 90.0% — baseline ran, but no comparable score was available; uplift unavailable | 90.0% — baseline ran, but no comparable score was available; uplift unavailable |
-| Effectiveness | 34.7% → 71.0% (+36.3 points) | 30.6% → 69.1% (+38.5 points) |
-| Efficiency | 72.7% — baseline ran, but no comparable score was available; uplift unavailable | 77.9% — baseline ran, but no comparable score was available; uplift unavailable |
+| Overall | 83.8% — baseline ran, but no comparable score was available; uplift unavailable | 76.1% — baseline ran, but no comparable score was available; uplift unavailable |
+| Security | 83.3% → 100.0% (+16.7 points) | 100.0% → 83.3% (-16.7 points) |
+| Correctness | 33.3% → 90.0% (+56.7 points) | 23.3% → 63.3% (+40.0 points) |
+| Discoverability | 91.3% — baseline ran, but no comparable score was available; uplift unavailable | 87.5% — baseline ran, but no comparable score was available; uplift unavailable |
+| Effectiveness | 39.0% → 65.1% (+26.1 points) | 23.4% → 70.1% (+46.7 points) |
+| Efficiency | 72.8% — baseline ran, but no comparable score was available; uplift unavailable | 76.4% — baseline ran, but no comparable score was available; uplift unavailable |
 
 **How to read this table:** baseline is the same task attempted without the target skill. Scores are rounded to one decimal; threshold-adjacent values use additional precision so their displayed band matches the verdict. Uplift is derived from those displayed scores and shown in percentage points.
 
@@ -93,27 +93,27 @@ Example: `47.0% → 92.0% (+45.0 points)` means the skill-assisted run scored 92
 
 A partial dimension was calculated from only the available configured signals; review the detailed report before relying on it.
 
-#### Comparison details
+### Comparison details
 
 Shared-source comparisons use the same signals and weights on both conditions. They do not replace the full dimension scores above or change the publication verdict.
 
 | Agent | Dimension | Basis | Baseline → With skill (uplift) | Explanation |
 | --- | --- | --- | --- | --- |
 | claude-code | Discoverability | Dimension comparison | N/A | Discoverability is not applicable to the no-skill baseline; there is no installed skill to discover. |
-| claude-code | Efficiency | Token-only comparison | 88.9% → 82.7% (-6.2 points) | Only Token Efficiency is comparable; the full dimension scores use different evaluator sources. |
+| claude-code | Efficiency | Token-only comparison | 93.5% → 83.3% (-10.2 points) | Only Token Efficiency is comparable; the full dimension scores use different evaluator sources. |
 | codex | Discoverability | Dimension comparison | N/A | Discoverability is not applicable to the no-skill baseline; there is no installed skill to discover. |
-| codex | Efficiency | Token-only comparison | 91.8% → 87.1% (-4.7 points) | Only Token Efficiency is comparable; the full dimension scores use different evaluator sources. |
+| codex | Efficiency | Token-only comparison | 92.2% → 86.4% (-5.8 points) | Only Token Efficiency is comparable; the full dimension scores use different evaluator sources. |
 
 ### Tier Status
 
 | Tier | Purpose | Status | Evidence |
 |---|---|---|---|
 | Tier 1 | Static validation | **PASSED WITH OBSERVATIONS** | 11 validator(s); 12 finding(s) |
-| Tier 2 | Semantic deduplication | **PASSED** | 2 validator(s); 0 finding(s) |
+| Tier 2 | Semantic deduplication | **PASSED WITH OBSERVATIONS** | 2 validator(s); 1 finding(s) |
 | Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 6 task(s) |
 
 ## Skill Version(s): <br>
-0.0.0 (source: pyproject.toml; git SHA c5d9a5a, committed 2026-11-08) <br>
+2f65895 (source: git SHA, committed 2026-11-17) <br>
 
 ## Ethical Considerations: <br>
 NVIDIA believes Trustworthy AI is a shared responsibility and we have established policies and practices to enable development for a wide array of AI applications. When downloaded or used in accordance with our terms of service, developers should work with their internal team to ensure this skill meets requirements for the relevant industry and use case and addresses unforeseen product misuse. <br>
