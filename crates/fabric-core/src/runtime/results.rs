@@ -182,6 +182,20 @@ pub(super) fn host_directory(root: &Path, runtime_id: &str) -> Result<PathBuf> {
     directory(&hosts, runtime_id, true, runtime_id)
 }
 
+/// Host records under a root the caller configured. As for results there, the
+/// private `.fabric` namespace protects them, not the root's ancestry: the
+/// caller chose the root.
+pub(super) fn configured_host_directory(root: &Path, runtime_id: &str) -> Result<PathBuf> {
+    if !leaf(runtime_id) {
+        return Err(failure(runtime_id, "invalid_result_target"));
+    }
+    create_artifact_root(root).map_err(|_| failure(runtime_id, "result_storage_failed"))?;
+    let root = fs::canonicalize(root).map_err(|_| failure(runtime_id, "result_storage_failed"))?;
+    let fabric = directory(&root, ".fabric", true, runtime_id)?;
+    let hosts = directory(&fabric, "hosts", true, runtime_id)?;
+    directory(&hosts, runtime_id, true, runtime_id)
+}
+
 pub(super) fn invocation_directory(
     root: &Path,
     runtime_id: &str,
