@@ -201,6 +201,8 @@ def test_card_source_links_resume_after_unclosed_quoted_fence(tmp_path: Path):
         '`` `<Card href="./example-only.mdx">Example</Card>` ``',
         '`<Card\n href="./example-only.mdx">Example</Card>`',
         '`unmatched before ``<Card href="./example-only.mdx">Example</Card>``',
+        r'\\`<Card href="./example-only.mdx">Example</Card>`',
+        r'\\\\`<Card href="./example-only.mdx">Example</Card>`',
     ],
 )
 def test_card_source_links_preserve_inline_examples(tmp_path: Path, example: str):
@@ -209,6 +211,31 @@ def test_card_source_links_preserve_inline_examples(tmp_path: Path, example: str
         "---\nslug: /guides/overview\n---\n"
         f'Example: {example} and <Card href="./destination.mdx">Real link</Card>\n'
     )
+    page.write_text(original)
+    (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
+
+    sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+
+    assert page.read_text() == original.replace(
+        'href="./destination.mdx"', 'href="../sdk/client"'
+    )
+
+
+@pytest.mark.parametrize(
+    "prose",
+    [
+        r'Escaped \` <Card href="./destination.mdx">Real link</Card> \`',
+        r'Escaped \\\` <Card href="./destination.mdx">Real link</Card> \\\`',
+        'Unmatched ` here.\n\n<Card href="./destination.mdx">Real link</Card>'
+        "\n\nAnother unmatched ` here.",
+        'Unmatched ` here.\n \t\n<Card href="./destination.mdx">Real link</Card>'
+        "\n \t\nAnother unmatched ` here.",
+        r'`Literal backslash \` <Card href="./destination.mdx">Real link</Card>',
+    ],
+)
+def test_card_source_links_rewrite_outside_inline_code(tmp_path: Path, prose: str):
+    page = tmp_path / "page.mdx"
+    original = "---\nslug: /guides/overview\n---\n" + prose + "\n"
     page.write_text(original)
     (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
 
@@ -260,13 +287,17 @@ def test_sync_dev_rewrites_navigation_and_preserves_versions(tmp_path: Path):
     assert not (target_fern / "pages-dev" / "_source").exists()
     assert (target_fern / "fern.config.json").is_file()
     assert (
-        target_fern
-        / "pages-dev"
-        / "reference"
-        / "api"
-        / "python-library-reference"
-        / "client.md"
-    ).read_text(encoding="utf-8").startswith(sync_fern_docs_branch.MDX_SPDX_HEADER)
+        (
+            target_fern
+            / "pages-dev"
+            / "reference"
+            / "api"
+            / "python-library-reference"
+            / "client.md"
+        )
+        .read_text(encoding="utf-8")
+        .startswith(sync_fern_docs_branch.MDX_SPDX_HEADER)
+    )
 
     navigation = sync_fern_docs_branch.read_yaml(target_fern / "versions" / "dev.yml")
     assert navigation["navigation"][0]["path"] == "../pages-dev/guide.mdx"
@@ -278,7 +309,9 @@ def test_sync_dev_rewrites_navigation_and_preserves_versions(tmp_path: Path):
 
 
 @pytest.mark.parametrize("release", [False, True])
-def test_repository_image_links_resolve_after_publication(tmp_path: Path, release: bool):
+def test_repository_image_links_resolve_after_publication(
+    tmp_path: Path, release: bool
+):
     """Images outside docs remain reachable in dev and release layouts."""
     source_root = tmp_path / "source"
     target_root = tmp_path / "target"
@@ -389,10 +422,14 @@ def test_release_version_promotes_stable_snapshot(tmp_path: Path):
     assert "blob/v0.2.0/docs/My%20Guide.md" in guide
     assert "blob/main/notebooks/quickstart.ipynb" in guide
     assert (
-        target_fern
-        / "pages-v0.2.0"
-        / "reference"
-        / "api"
-        / "python-library-reference"
-        / "client.md"
-    ).read_text(encoding="utf-8").startswith(sync_fern_docs_branch.MDX_SPDX_HEADER)
+        (
+            target_fern
+            / "pages-v0.2.0"
+            / "reference"
+            / "api"
+            / "python-library-reference"
+            / "client.md"
+        )
+        .read_text(encoding="utf-8")
+        .startswith(sync_fern_docs_branch.MDX_SPDX_HEADER)
+    )
