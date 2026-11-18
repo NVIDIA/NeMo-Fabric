@@ -24,8 +24,10 @@ from inspect import (
     signature,
 )
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import nemo_fabric
+import yaml
 from pydantic import BaseModel
 
 
@@ -361,35 +363,49 @@ def test_generated_module_and_class_headings_have_blank_lines():
             assert text.startswith("\n", match.end()), (page, match.group())
 
 
-def test_landing_page_routes_new_users_through_the_product() -> None:
+def test_landing_page_routes_new_users_through_the_product():
     landing = LANDING_PAGE.read_text(encoding="utf-8")
-    installation = INSTALL_PAGE.read_text(encoding="utf-8")
     quickstart = QUICKSTART_PAGE.read_text(encoding="utf-8")
-    navigation = NAVIGATION.read_text(encoding="utf-8")
+    navigation = yaml.safe_load(NAVIGATION.read_text(encoding="utf-8"))
 
-    assert "      - section: API\n" in navigation
-    assert "      - section: APIs\n" not in navigation
-    assert 'title: "NVIDIA NeMo Fabric Documentation"' in landing
-    assert 'title: "NVIDIA NeMo Fabric Installation"' in installation
-    assert 'title: "NVIDIA NeMo Fabric Quickstart"' in quickstart
-    assert 'template-library-version: "1.0.0"' in landing
-    assert 'template-library-version: "1.0.0"' in quickstart
+    # These reader destinations survive each stage of the navigation reorganization.
+    pending = list(navigation["navigation"])
+    pages = set()
+    while pending:
+        item = pending.pop()
+        pending.extend(item.get("contents", []))
+        if "path" in item:
+            pages.add((NAVIGATION.parent / item["path"]).resolve())
+
+    for destination in (
+        LANDING_PAGE,
+        INSTALL_PAGE,
+        QUICKSTART_PAGE,
+        ROOT / "docs" / "sdk" / "python.mdx",
+    ):
+        assert destination.resolve() in pages
 
     for heading in (
-        "## What NeMo Fabric Gives You",
-        "## Choose Your Interface",
-        "## Core Workflow",
-        "## Learn More",
+        "## What You Can Do with NeMo Fabric",
+        "## How NeMo Fabric Works",
+        "## Next Steps",
     ):
         assert heading in landing
 
     for destination in (
-        "../getting-started/install.mdx",
-        "../getting-started/quickstart.mdx",
-        "../experimentation/cli.mdx",
-        "../sdk/python.mdx",
-        "../reference/api/python-library-reference/nemo_fabric.client.md",
-        "../reference/api/python-library-reference/nemo_fabric.runtime.md",
-        "../reference/api/python-library-reference/nemo_fabric.streaming.md",
+        "../adapter-contract/README.md",
+        "../integrations/consumer/overview.mdx",
     ):
         assert destination in landing
+
+    assert '<Card title="Start Here: Run Your First Agent"' in landing
+    # Card links must lead to real, published pages rather than source-only files.
+    for href in re.findall(r'<Card\b[^>]*?href="([^"]+)"', landing):
+        target = urlsplit(href)
+        if target.scheme or target.netloc or not target.path:
+            continue
+        destination = (LANDING_PAGE.parent / target.path).resolve()
+        assert destination.is_file(), href
+        assert destination in pages, href
+
+    assert "```python" in quickstart

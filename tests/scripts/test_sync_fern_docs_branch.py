@@ -110,6 +110,235 @@ def test_repository_links_are_resolved_only_in_published_pages(tmp_path, title):
     assert f"blob/v0.6.0/README.md{title})" in released.read_text()
 
 
+def test_card_source_links_resolve_only_in_published_pages(tmp_path: Path):
+    source_root = tmp_path / "source"
+    target_root = tmp_path / "target"
+    _source_tree(source_root)
+    guide = source_root / "docs" / "guide.mdx"
+    original = (
+        "---\nslug: /guides/overview\n---\n"
+        '<Card title="Client" href="./My%20Guide.md?view=full#request">Client</Card>\n'
+        '<Card\n title="Client again"\n href="./My%20Guide.md">Client</Card>\n'
+        '<Card href="#local">Local</Card>\n'
+        '<Card href="https://example.com/guide.md">External</Card>\n'
+        '```mdx\n<Card href="./missing.mdx">Sample source</Card>\n```\n'
+    )
+    guide.write_text(original)
+    (source_root / "docs" / "My Guide.md").write_text(
+        "---\nslug: /sdk/client\n---\n# Client\n"
+    )
+
+    sync_fern_docs_branch.sync_dev(source_root, target_root)
+
+    published = target_root / "fern" / "pages-dev" / "guide.mdx"
+    assert guide.read_text() == original
+    assert published.read_text() == original.replace(
+        "./My%20Guide.md?view=full#request", "../sdk/client?view=full#request"
+    ).replace('href="./My%20Guide.md"', 'href="../sdk/client"')
+    sync_fern_docs_branch.release_version(target_root, "0.6.0", source_root)
+    released = target_root / "fern" / "pages-v0.6.0" / "guide.mdx"
+    assert 'href="../sdk/client?view=full#request"' in released.read_text()
+
+
+@pytest.mark.parametrize(
+    ("opening", "inside", "closing"),
+    [
+        ("~~~mdx", "~~~not-a-closing-fence", "~~~"),
+        ("```mdx", "```not-a-closing-fence", "```"),
+        ("~~~~mdx", "~~~", "~~~~"),
+        ("````mdx", "```", "````"),
+        ("~~~mdx", "```", "~~~~ \t"),
+        ("```mdx", "~~~", "```` \t"),
+        ("~~~mdx", "    ~~~", "   ~~~"),
+        ("```mdx", "    ```", "   ```"),
+        ("```mdx", "> ```", "```"),
+        ("~~~mdx", "> ~~~", "~~~"),
+    ],
+)
+@pytest.mark.parametrize("quote_prefix", ["", "> ", "> > ", "   > "])
+def test_card_source_links_preserve_fenced_examples(
+    tmp_path: Path, opening: str, inside: str, closing: str, quote_prefix: str
+):
+    page = tmp_path / "page.mdx"
+    literal = '<Card href="./example-only.mdx">Literal example</Card>'
+    original = (
+        "---\nslug: /guides/overview\n---\n"
+        f"{quote_prefix}{opening}\n{quote_prefix}{inside}\n"
+        f"{quote_prefix}{literal}\n{quote_prefix}{closing}\n"
+        '<Card href="./destination.mdx">Real link</Card>\n'
+    )
+    page.write_text(original)
+    (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
+
+    sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+
+    assert page.read_text() == original.replace(
+        'href="./destination.mdx"', 'href="../sdk/client"'
+    )
+
+
+def test_card_source_links_resume_after_unclosed_quoted_fence(tmp_path: Path):
+    page = tmp_path / "page.mdx"
+    original = (
+        "---\nslug: /guides/overview\n---\n"
+        '> ```mdx\n> <Card href="./example-only.mdx">Example</Card>\n\n'
+        '<Card href="./destination.mdx">Real link</Card>\n'
+    )
+    page.write_text(original)
+    (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
+
+    sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+
+    assert page.read_text() == original.replace(
+        'href="./destination.mdx"', 'href="../sdk/client"'
+    )
+
+
+@pytest.mark.parametrize(
+    "example",
+    [
+        '`<Card href="./example-only.mdx">Example</Card>`',
+        '`` `<Card href="./example-only.mdx">Example</Card>` ``',
+        '`<Card\n href="./example-only.mdx">Example</Card>`',
+        '`unmatched before ``<Card href="./example-only.mdx">Example</Card>``',
+        r'\\`<Card href="./example-only.mdx">Example</Card>`',
+        r'\\\\`<Card href="./example-only.mdx">Example</Card>`',
+    ],
+)
+def test_card_source_links_preserve_inline_examples(tmp_path: Path, example: str):
+    page = tmp_path / "page.mdx"
+    original = (
+        "---\nslug: /guides/overview\n---\n"
+        f'Example: {example} and <Card href="./destination.mdx">Real link</Card>\n'
+    )
+    page.write_text(original)
+    (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
+
+    sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+
+    assert page.read_text() == original.replace(
+        'href="./destination.mdx"', 'href="../sdk/client"'
+    )
+
+
+@pytest.mark.parametrize(
+    "prose",
+    [
+        r'Escaped \` <Card href="./destination.mdx">Real link</Card> \`',
+        r'Escaped \\\` <Card href="./destination.mdx">Real link</Card> \\\`',
+        'Unmatched ` here.\n\n<Card href="./destination.mdx">Real link</Card>'
+        "\n\nAnother unmatched ` here.",
+        'Unmatched ` here.\n \t\n<Card href="./destination.mdx">Real link</Card>'
+        "\n \t\nAnother unmatched ` here.",
+        r'`Literal backslash \` <Card href="./destination.mdx">Real link</Card>',
+    ],
+)
+def test_card_source_links_rewrite_outside_inline_code(tmp_path: Path, prose: str):
+    page = tmp_path / "page.mdx"
+    original = "---\nslug: /guides/overview\n---\n" + prose + "\n"
+    page.write_text(original)
+    (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
+
+    sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+
+    assert page.read_text() == original.replace(
+        'href="./destination.mdx"', 'href="../sdk/client"'
+    )
+
+
+@pytest.mark.parametrize("quote_prefix", ["", "> ", "> > "])
+@pytest.mark.parametrize(
+    ("opening", "continuation"),
+    [
+        ("- ~~~mdx", "  "),
+        ("* ```mdx", "  "),
+        ("+ ~~~mdx", "  "),
+        ("1. ```mdx", "   "),
+        ("12. ~~~mdx", "    "),
+        ("- 1. ```mdx", "     "),
+        ("- Item\n\n  ```mdx", "  "),
+        ("- Outer\n  - Inner\n\n    ~~~mdx", "    "),
+    ],
+)
+def test_card_source_links_preserve_list_fences(
+    tmp_path: Path, quote_prefix: str, opening: str, continuation: str
+):
+    fence = "~~~" if "~~~" in opening else "```"
+    listed = (
+        opening
+        + "\n"
+        + continuation
+        + "    "
+        + fence
+        + "\n"
+        + continuation
+        + '<Card href="./example-only.mdx">Example</Card>\n'
+        + continuation
+        + fence
+        + "\n"
+    )
+    original = (
+        "---\nslug: /guides/overview\n---\n"
+        + "".join(quote_prefix + line for line in listed.splitlines(keepends=True))
+        + '<Card href="./destination.mdx">Real link</Card>\n'
+    )
+    page = tmp_path / "page.mdx"
+    page.write_text(original)
+    (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
+
+    sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+
+    assert page.read_text() == original.replace(
+        'href="./destination.mdx"', 'href="../sdk/client"'
+    )
+
+
+def test_card_source_links_resume_after_unclosed_list_fence(tmp_path: Path):
+    page = tmp_path / "page.mdx"
+    original = (
+        "---\nslug: /guides/overview\n---\n"
+        '- ```mdx\n  <Card href="./example-only.mdx">Example</Card>\n\n'
+        '<Card href="./destination.mdx">Real link</Card>\n'
+    )
+    page.write_text(original)
+    (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
+    sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+    assert page.read_text() == original.replace(
+        'href="./destination.mdx"', 'href="../sdk/client"'
+    )
+
+
+@pytest.mark.parametrize(
+    "preceding_block",
+    ["> - Item\n\n", "> > - Item\n\n", "* * *\n\n", "- - -\n\n", "_ _ _\n\n"],
+)
+def test_card_source_links_preserve_top_level_fence_after_container(
+    tmp_path: Path, preceding_block: str
+):
+    page = tmp_path / "page.mdx"
+    original = (
+        "---\nslug: /guides/overview\n---\n"
+        + preceding_block
+        + '  ~~~mdx\n<Card href="./example-only.mdx">Example</Card>\n  ~~~\n'
+        + '<Card href="./destination.mdx">Real link</Card>\n'
+    )
+    page.write_text(original)
+    (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
+
+    sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+
+    assert page.read_text() == original.replace(
+        'href="./destination.mdx"', 'href="../sdk/client"'
+    )
+
+
+def test_card_source_links_reject_missing_targets(tmp_path: Path):
+    page = tmp_path / "page.mdx"
+    page.write_text('---\nslug: /page\n---\n<Card href="missing.mdx">Missing</Card>\n')
+    with pytest.raises(ValueError, match="Card destination does not exist"):
+        sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+
+
 def test_sync_dev_rewrites_navigation_and_preserves_versions(tmp_path: Path):
     source_root = tmp_path / "source"
     target_root = tmp_path / "target"
@@ -144,13 +373,17 @@ def test_sync_dev_rewrites_navigation_and_preserves_versions(tmp_path: Path):
     assert not (target_fern / "pages-dev" / "_source").exists()
     assert (target_fern / "fern.config.json").is_file()
     assert (
-        target_fern
-        / "pages-dev"
-        / "reference"
-        / "api"
-        / "python-library-reference"
-        / "client.md"
-    ).read_text(encoding="utf-8").startswith(sync_fern_docs_branch.MDX_SPDX_HEADER)
+        (
+            target_fern
+            / "pages-dev"
+            / "reference"
+            / "api"
+            / "python-library-reference"
+            / "client.md"
+        )
+        .read_text(encoding="utf-8")
+        .startswith(sync_fern_docs_branch.MDX_SPDX_HEADER)
+    )
 
     navigation = sync_fern_docs_branch.read_yaml(target_fern / "versions" / "dev.yml")
     assert navigation["navigation"][0]["path"] == "../pages-dev/guide.mdx"
@@ -162,7 +395,9 @@ def test_sync_dev_rewrites_navigation_and_preserves_versions(tmp_path: Path):
 
 
 @pytest.mark.parametrize("release", [False, True])
-def test_repository_image_links_resolve_after_publication(tmp_path: Path, release: bool):
+def test_repository_image_links_resolve_after_publication(
+    tmp_path: Path, release: bool
+):
     """Images outside docs remain reachable in dev and release layouts."""
     source_root = tmp_path / "source"
     target_root = tmp_path / "target"
@@ -273,10 +508,14 @@ def test_release_version_promotes_stable_snapshot(tmp_path: Path):
     assert "blob/v0.2.0/docs/My%20Guide.md" in guide
     assert "blob/main/notebooks/quickstart.ipynb" in guide
     assert (
-        target_fern
-        / "pages-v0.2.0"
-        / "reference"
-        / "api"
-        / "python-library-reference"
-        / "client.md"
-    ).read_text(encoding="utf-8").startswith(sync_fern_docs_branch.MDX_SPDX_HEADER)
+        (
+            target_fern
+            / "pages-v0.2.0"
+            / "reference"
+            / "api"
+            / "python-library-reference"
+            / "client.md"
+        )
+        .read_text(encoding="utf-8")
+        .startswith(sync_fern_docs_branch.MDX_SPDX_HEADER)
+    )

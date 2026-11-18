@@ -12,6 +12,7 @@ under ``fern/pages-*``.
 from __future__ import annotations
 
 import argparse
+import posixpath
 import re
 import shutil
 from pathlib import Path
@@ -210,6 +211,145 @@ def rewrite_repository_links(pages_dir: Path, source_root: Path) -> None:
             page.write_text(updated, encoding="utf-8")
 
 
+def rewrite_internal_card_links(pages_dir: Path) -> None:
+    """Resolve source-file Card links only in the published copy.
+
+    Fern resolves Markdown links but leaves Card href props literal. Keeping
+    source paths in authored pages preserves repository navigation; resolving
+    them here keeps versioned site navigation relative to the current product.
+    """
+    pages_dir = pages_dir.resolve()
+    slugs: dict[Path, str] = {}
+    card_link = re.compile(r"(<Card\b[^>]*?\bhref=)([\"'])([^\"']+)\2")
+
+    def page_slug(page: Path) -> str:
+        if page not in slugs:
+            text = page.read_text(encoding="utf-8")
+            header = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)", text, re.S)
+            metadata = yaml.safe_load(header[1]) if header else {}
+            value = metadata.get("slug") if isinstance(metadata, dict) else None
+            if not isinstance(value, str) or not value.startswith("/"):
+                raise ValueError(
+                    f"Card source links require an explicit page slug: {page}"
+                )
+            slugs[page] = value
+        return slugs[page]
+
+    for page in pages_dir.rglob("*"):
+        if not page.is_file() or page.suffix not in {".md", ".mdx"}:
+            continue
+
+        def replace(match: re.Match[str]) -> str:
+            target = urlsplit(match[3])
+            if (
+                target.scheme
+                or target.netloc
+                or not target.path.endswith((".md", ".mdx"))
+            ):
+                return match[0]
+            linked = (page.parent / unquote(target.path)).resolve()
+            if not linked.is_relative_to(pages_dir) or not linked.is_file():
+                raise ValueError(
+                    f"Card destination does not exist within docs: {page}: {match[3]}"
+                )
+            route = posixpath.relpath(
+                page_slug(linked), posixpath.dirname(page_slug(page))
+            )
+            if target.query:
+                route += "?" + target.query
+            if target.fragment:
+                route += "#" + target.fragment
+            return match[1] + match[2] + route + match[2]
+
+        def rewrite_prose(text: str) -> str:
+            # Code spans can cross lines within a paragraph, but not blank lines.
+            # An opener needs an even number of preceding backslashes. Inside a
+            # span, backslashes are literal and do not escape the closing run.
+            parts: list[str] = []
+            for block in re.split(r"(\n[ \t]*\n)", text):
+                offset = 0
+                for code in re.finditer(
+                    r"(?<![\\`])(?:\\\\)*(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)", block
+                ):
+                    parts.append(card_link.sub(replace, block[offset : code.start()]))
+                    parts.append(code[0])
+                    offset = code.end()
+                parts.append(card_link.sub(replace, block[offset:]))
+            return "".join(parts)
+
+        original = page.read_text(encoding="utf-8")
+        rewritten: list[str] = []
+        chunk: list[str] = []
+        fence: str | None = None
+        fence_quote_depth = 0
+        fence_list_indent = 0
+        lists_by_quote_depth: dict[int, list[int]] = {}
+        for line in original.splitlines(keepends=True):
+            # Strip quote containers only for fence detection, preserving the
+            # authored text and the three-space fence indentation limit.
+            parsed_line = line.expandtabs(4)
+            quote = re.match(r"^(?: {0,3}>[ \t]?)*", parsed_line)
+            quote_depth = quote[0].count(">")
+            content = parsed_line[quote.end() :]
+            for depth in tuple(lists_by_quote_depth):
+                if depth > quote_depth:
+                    del lists_by_quote_depth[depth]
+            list_indents = lists_by_quote_depth.setdefault(quote_depth, [])
+            # Leaving a quote also ends an unclosed fence in that container.
+            if fence and quote_depth < fence_quote_depth:
+                fence = None
+            indent = len(content) - len(content.lstrip(" "))
+            if fence and content.strip() and indent < fence_list_indent:
+                fence = None
+            if fence:
+                content = content[fence_list_indent:]
+            elif content.strip():
+                while list_indents and indent < list_indents[-1]:
+                    list_indents.pop()
+                list_indent = list_indents[-1] if list_indents else 0
+                content = content[list_indent:]
+                # Lists can nest on one line or continue on indented lines.
+                while item := re.match(
+                    r"^ {0,3}(?:[-+*]|\d{1,9}[.)])(?P<padding> +)", content
+                ):
+                    # A thematic break takes precedence over a list item.
+                    if re.fullmatch(
+                        r" {0,3}([*_-])(?: *\1){2,} *", content.rstrip("\n")
+                    ):
+                        break
+                    padding = len(item["padding"])
+                    width = item.start("padding") + (padding if padding <= 4 else 1)
+                    list_indent += width
+                    list_indents.append(list_indent)
+                    content = content[width:]
+            marker = re.match(r"^ {0,3}(`{3,}|~{3,})", content)
+            if marker:
+                if fence is None:
+                    rewritten.append(rewrite_prose("".join(chunk)))
+                    chunk.clear()
+                    fence = marker[1]
+                    fence_quote_depth = quote_depth
+                    fence_list_indent = list_indents[-1] if list_indents else 0
+                # Inside a fence, a marker with trailing text is literal code.
+                elif (
+                    quote_depth == fence_quote_depth
+                    and marker[1][0] == fence[0]
+                    and len(marker[1]) >= len(fence)
+                    and not content[marker.end() :].strip()
+                ):
+                    fence = None
+                rewritten.append(line)
+            else:
+                if fence:
+                    rewritten.append(line)
+                else:
+                    chunk.append(line)
+        rewritten.append(rewrite_prose("".join(chunk)))
+        updated = "".join(rewritten)
+        if updated != original:
+            page.write_text(updated, encoding="utf-8")
+
+
 def sync_dev(source_root: Path, target_root: Path) -> None:
     source_docs = source_root / "docs"
     source_fern = source_root / "fern"
@@ -230,6 +370,7 @@ def sync_dev(source_root: Path, target_root: Path) -> None:
     shutil.copytree(source_docs, pages_dev, ignore=docs_ignore)
     prepare_generated_python_references_for_fern(pages_dev)
     rewrite_repository_links(pages_dev, source_root)
+    rewrite_internal_card_links(pages_dev)
 
     navigation = read_yaml(source_docs / "index.yml")
     write_yaml(
@@ -288,6 +429,7 @@ def release_version(target_root: Path, tag: str, source_root: Path) -> None:
     shutil.copytree(source_docs, pages_version, ignore=docs_ignore)
     prepare_generated_python_references_for_fern(pages_version)
     rewrite_repository_links(pages_version, source_root)
+    rewrite_internal_card_links(pages_version)
     copy_repository_assets(source_root, target_fern)
     update_github_links(pages_version, display_tag, source_root)
     version_navigation = rewrite_doc_references(
