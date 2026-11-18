@@ -3992,15 +3992,10 @@ fn local_host_path(artifacts: &ArtifactManifest, id: &str) -> Result<PathBuf> {
 }
 
 fn create_local_host_directory(artifacts: &ArtifactManifest, id: &str) -> Result<PathBuf> {
-    let Some(root) = &artifacts.root else {
-        return results::host_directory(&default_artifact_root()?, id);
-    };
-    let directory = results::configured_host_directory(root, id)?;
-    LOCAL_HOST_DIRECTORIES
-        .lock()
-        .unwrap_or_else(|error| error.into_inner())
-        .insert(id.to_owned(), directory.clone());
-    Ok(directory)
+    match &artifacts.root {
+        Some(root) => results::configured_host_directory(root, id),
+        None => results::host_directory(&default_artifact_root()?, id),
+    }
 }
 
 fn spawn_local_host(
@@ -4025,11 +4020,22 @@ fn spawn_local_host(
     // Lock acquisition creates retained storage, allowing its physical path to resolve.
     let scope = cleanup_scope(plan, state_dir.as_deref(), runtime.service_id.as_deref());
     let runtime_dir = create_local_host_directory(&artifacts, &runtime.runtime_id)?;
+    let configured_root = artifacts.root.is_some();
     let stderr_path = runtime_dir.join("host.stderr.log");
-    let stderr = File::create(&stderr_path).map_err(|source| FabricError::Write {
-        path: stderr_path.clone(),
-        source,
-    })?;
+    let mut stderr_options = std::fs::OpenOptions::new();
+    stderr_options.write(true).create(true).truncate(true);
+    // Never write host output through a link someone else placed.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        stderr_options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let stderr = stderr_options
+        .open(&stderr_path)
+        .map_err(|source| FabricError::Write {
+            path: stderr_path.clone(),
+            source,
+        })?;
     let (mut command, command_display) = match local_host_command(plan, runtime) {
         Ok(command) => command,
         Err(error) => {
@@ -4165,6 +4171,14 @@ fn spawn_local_host(
             command: command_display,
             source,
         });
+    }
+    // Registered only once the host exists, so a failed start leaves no
+    // entry; removing the host's files drops it.
+    if configured_root {
+        LOCAL_HOST_DIRECTORIES
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .insert(runtime.runtime_id.clone(), runtime_dir.clone());
     }
     Ok(LocalAdapterHost {
         stop_timeout,

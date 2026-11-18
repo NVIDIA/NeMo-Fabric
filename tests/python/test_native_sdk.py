@@ -1092,6 +1092,7 @@ def test_configured_private_artifacts_hold_host_storage_in_a_shared_sandbox(
     assert Path(outcome["fabric_home"]).is_relative_to(artifacts.resolve())
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix storage ownership")
 @pytest.mark.parametrize("one_shot", [False, True])
 def test_a_shared_fabric_namespace_is_refused_for_host_storage(
     hermes_shim_agent_dir, tmp_path, one_shot, shared_sandbox
@@ -1107,6 +1108,7 @@ def test_a_shared_fabric_namespace_is_refused_for_host_storage(
     assert outcome == {"failed": "result_storage_failed"}
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix storage ownership")
 def test_start_without_private_storage_names_local_storage(
     hermes_shim_agent_dir, tmp_path, shared_sandbox
 ):
