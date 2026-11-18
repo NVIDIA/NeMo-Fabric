@@ -282,15 +282,37 @@ def rewrite_internal_card_links(pages_dir: Path) -> None:
         chunk: list[str] = []
         fence: str | None = None
         fence_quote_depth = 0
+        fence_list_indent = 0
+        list_indents: list[int] = []
         for line in original.splitlines(keepends=True):
             # Strip quote containers only for fence detection, preserving the
             # authored text and the three-space fence indentation limit.
-            quote = re.match(r"^(?: {0,3}>[ \t]?)*", line)
+            parsed_line = line.expandtabs(4)
+            quote = re.match(r"^(?: {0,3}>[ \t]?)*", parsed_line)
             quote_depth = quote[0].count(">")
-            content = line[quote.end() :]
+            content = parsed_line[quote.end() :]
             # Leaving a quote also ends an unclosed fence in that container.
             if fence and quote_depth < fence_quote_depth:
                 fence = None
+            indent = len(content) - len(content.lstrip(" "))
+            if fence and content.strip() and indent < fence_list_indent:
+                fence = None
+            if fence:
+                content = content[fence_list_indent:]
+            elif content.strip():
+                while list_indents and indent < list_indents[-1]:
+                    list_indents.pop()
+                list_indent = list_indents[-1] if list_indents else 0
+                content = content[list_indent:]
+                # Lists can nest on one line or continue on indented lines.
+                while item := re.match(
+                    r"^ {0,3}(?:[-+*]|\d{1,9}[.)])(?P<padding> +)", content
+                ):
+                    padding = len(item["padding"])
+                    width = item.start("padding") + (padding if padding <= 4 else 1)
+                    list_indent += width
+                    list_indents.append(list_indent)
+                    content = content[width:]
             marker = re.match(r"^ {0,3}(`{3,}|~{3,})", content)
             if marker:
                 if fence is None:
@@ -298,6 +320,7 @@ def rewrite_internal_card_links(pages_dir: Path) -> None:
                     chunk.clear()
                     fence = marker[1]
                     fence_quote_depth = quote_depth
+                    fence_list_indent = list_indents[-1] if list_indents else 0
                 # Inside a fence, a marker with trailing text is literal code.
                 elif (
                     quote_depth == fence_quote_depth
