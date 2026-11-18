@@ -2739,6 +2739,32 @@
                 "toolSearch": {
                   "description": "Whether OpenClaw compacts large tool catalogs behind search tools.",
                   "type": "boolean"
+                },
+                "web": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "fetch": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "ssrfPolicy": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "allowIpv6UniqueLocalRange": {
+                              "description": "Whether web_fetch, image, and pdf may connect to addresses in fc00::/7. Set it only behind a fake-IP proxy that owns that range and enforces its own destination policy.",
+                              "type": "boolean"
+                            },
+                            "allowRfc2544BenchmarkRange": {
+                              "description": "Whether web_fetch, image, and pdf may connect to addresses in 198.18.0.0/15. Set it only behind a fake-IP proxy that owns that range and enforces its own destination policy.",
+                              "type": "boolean"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
                 }
               },
               "type": "object"
@@ -2791,7 +2817,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.7.0"
       },
-      "sha256": "a94d5ad7b4c8fd61388879dd417215cc242a5ca3d68cebe595e7e2d9d1beb26e",
+      "sha256": "651b4ddd9b9e5238809126bd2a3eec657e6d80d6f46fedec72fdcfc9ebde4c15",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {

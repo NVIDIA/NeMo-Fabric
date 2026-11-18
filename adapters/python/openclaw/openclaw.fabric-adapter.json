@@ -199,6 +199,32 @@
           "codeMode": {
             "type": "boolean",
             "description": "Whether OpenClaw Code Mode is enabled. Code Mode can take precedence over tool search."
+          },
+          "web": {
+            "type": "object",
+            "properties": {
+              "fetch": {
+                "type": "object",
+                "properties": {
+                  "ssrfPolicy": {
+                    "type": "object",
+                    "properties": {
+                      "allowRfc2544BenchmarkRange": {
+                        "type": "boolean",
+                        "description": "Whether web_fetch, image, and pdf may connect to addresses in 198.18.0.0/15. Set it only behind a fake-IP proxy that owns that range and enforces its own destination policy."
+                      },
+                      "allowIpv6UniqueLocalRange": {
+                        "type": "boolean",
+                        "description": "Whether web_fetch, image, and pdf may connect to addresses in fc00::/7. Set it only behind a fake-IP proxy that owns that range and enforces its own destination policy."
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false,
