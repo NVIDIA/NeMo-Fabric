@@ -283,7 +283,7 @@ def rewrite_internal_card_links(pages_dir: Path) -> None:
         fence: str | None = None
         fence_quote_depth = 0
         fence_list_indent = 0
-        list_indents: list[int] = []
+        lists_by_quote_depth: dict[int, list[int]] = {}
         for line in original.splitlines(keepends=True):
             # Strip quote containers only for fence detection, preserving the
             # authored text and the three-space fence indentation limit.
@@ -291,6 +291,10 @@ def rewrite_internal_card_links(pages_dir: Path) -> None:
             quote = re.match(r"^(?: {0,3}>[ \t]?)*", parsed_line)
             quote_depth = quote[0].count(">")
             content = parsed_line[quote.end() :]
+            for depth in tuple(lists_by_quote_depth):
+                if depth > quote_depth:
+                    del lists_by_quote_depth[depth]
+            list_indents = lists_by_quote_depth.setdefault(quote_depth, [])
             # Leaving a quote also ends an unclosed fence in that container.
             if fence and quote_depth < fence_quote_depth:
                 fence = None
@@ -308,6 +312,11 @@ def rewrite_internal_card_links(pages_dir: Path) -> None:
                 while item := re.match(
                     r"^ {0,3}(?:[-+*]|\d{1,9}[.)])(?P<padding> +)", content
                 ):
+                    # A thematic break takes precedence over a list item.
+                    if re.fullmatch(
+                        r" {0,3}([*_-])(?: *\1){2,} *", content.rstrip("\n")
+                    ):
+                        break
                     padding = len(item["padding"])
                     width = item.start("padding") + (padding if padding <= 4 else 1)
                     list_indent += width
