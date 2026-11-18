@@ -176,9 +176,10 @@ The following settings are specific to the OpenClaw adapter:
 | `tools.codeMode` | OpenClaw native default | Code Mode, which can take precedence over tool search and exposes only `exec` and `wait`; do not combine it with blocking `exec`. |
 | `tools.web.fetch.ssrfPolicy.allowRfc2544BenchmarkRange` | OpenClaw native default (blocked) | Lets `web_fetch`, `image`, and `pdf` connect to `198.18.0.0/15`; set it only behind a fake-IP proxy that owns the range and enforces its own destination policy. |
 | `tools.web.fetch.ssrfPolicy.allowIpv6UniqueLocalRange` | OpenClaw native default (blocked) | The same opt-in for `fc00::/7`. |
-| `plugins.entries.memory-core.config.dreaming.enabled` | OpenClaw native default | Scheduled dreaming in the `memory-core` plugin. |
+| `plugins.bundled.entries.memory-core.config.dreaming.enabled` | OpenClaw native default | Scheduled dreaming in the `memory-core` plugin. |
+| `plugins.bundled`, `plugins.external` | None | Plugins to turn on or off; refer to [Plugins](#plugins). |
 
-The `agents`, `tools`, and `plugins` settings use OpenClaw's native structure. The adapter merges only the fields you set into the generated `openclaw.json` for managed runtimes and prepared services, beside the generated `agents.defaults`, `tools.allow`, `tools.deny`, and adapter-owned plugin entries, without replacing generated keys. Omitting a field preserves the current behavior. `harness.settings.tools` is separate from the normalized top-level `tools.enabled` and `tools.blocked` selectors. Attached Gateways reject these settings. These controls do not stop context compaction or correlate concurrent sessions, and they do not add NeMo Relay support; refer to [Native Gateway Controls](../../../docs/integrations/harness/openclaw/openclaw.mdx#native-gateway-controls).
+The `agents` and `tools` settings use OpenClaw's native structure, and `plugins` maps onto it. The adapter merges only the fields you set into the generated `openclaw.json` for managed runtimes and prepared services, beside the generated `agents.defaults`, `tools.allow`, `tools.deny`, and adapter-owned plugin entries, without replacing generated keys. Omitting a field preserves the current behavior. `harness.settings.tools` is separate from the normalized top-level `tools.enabled` and `tools.blocked` selectors. Attached Gateways reject these settings. These controls do not stop context compaction or correlate concurrent sessions, and they do not add NeMo Relay support; refer to [Native Gateway Controls](../../../docs/integrations/harness/openclaw/openclaw.mdx#native-gateway-controls).
 
 OpenClaw's [derived-port mapping](https://docs.openclaw.ai/gateway/multiple-gateways#port-mapping-derived) uses `base_port + 2` for browser control and allocates browser CDP ports from `base_port + 11` through `base_port + 110`. Set `port_range` when the consumer reserves a port range before configuring NeMo Fabric; the adapter selects a base whose complete derived footprint fits inside that range. The adapter verifies only that `base_port` and `base_port + 2` are available before startup. OpenClaw allocates the CDP ports on demand instead of reserving the complete range, so the adapter cannot guarantee that those ports will still be available when OpenClaw needs them. Keep the configured range reserved for the lifetime of the runtime when using OpenClaw browser features.
 
@@ -191,6 +192,10 @@ After readiness, private `interfaces/gateway.json` discovery references `dashboa
 Refer to the [four-path architecture](../../../docs/integrations/harness/openclaw/openclaw.mdx) and [repeatable examples](../../../examples/interfaces/openclaw/README.md). Relay telemetry, ATIF/ATOF export, and native OpenTelemetry are not supported.
 
 With native browser or terminal access enabled, runtime activity is `unknown`; healthy endpoints can still pass normalized checks. SDK invocation state alone cannot account for native work.
+
+### Plugins
+
+`harness.settings.plugins.bundled.entries` turns plugins that ship with OpenClaw on or off. `harness.settings.plugins.external` lists prepared plugin folders in `paths` and their plugins in `entries`. At start, every entry with `enabled: true` must be loaded by the Gateway. With `runtime.keep_state=true`, plugins the agent installs stay after a restart. Refer to [Plugins](../../../docs/integrations/harness/openclaw/openclaw.mdx#plugins).
 
 ## Cold Resume
 

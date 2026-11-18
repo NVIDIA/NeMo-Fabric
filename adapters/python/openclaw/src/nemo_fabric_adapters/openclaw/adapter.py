@@ -37,10 +37,12 @@ from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import local_interfaces
 from nemo_fabric_adapters.common import mcp_availability
 from nemo_fabric_adapters.common import openai_chat
+from nemo_fabric_adapters.common import plugins as common_plugins
 from nemo_fabric_adapters.common import utils as common_utils
 from nemo_fabric_adapters.openclaw import _windows_job
 from nemo_fabric_adapters.openclaw import gateway
 from nemo_fabric_adapters.openclaw import interfaces as native_interfaces
+from nemo_fabric_adapters.openclaw import plugins as openclaw_plugins
 from nemo_fabric_adapters.openclaw import sessions
 from nemo_fabric_adapters.openclaw import skills as openclaw_skills
 
@@ -75,6 +77,8 @@ SKILL_INFO_CONCURRENCY = 4
 MCP_SERVER_DIAGNOSTIC_PREFIX = "mcp-server-diagnostic:"
 # Harness settings written into the Gateway's native openclaw.json.
 NATIVE_SETTING_SECTIONS = ("agents", "tools", "plugins")
+# The adapter's own plugin, which shares the system instruction with native clients.
+SHARED_CONFIG_PLUGIN = openclaw_plugins.SHARED_CONFIG_PLUGIN
 
 
 logger = logging.getLogger(__name__)
@@ -654,6 +658,163 @@ def _merge_native_settings(
         target[key] = section
 
 
+PLUGIN_SECTIONS = ("bundled", "external")
+PLUGINS_FIELD = "harness.settings.plugins"
+
+
+def _plugin_entries(settings: dict[str, Any]) -> list[tuple[str, str, Any]]:
+    """Return ``(section, plugin id, entry)`` for every authored plugin entry."""
+    plugins = settings.get("plugins")
+    found: list[tuple[str, str, Any]] = []
+    for section in PLUGIN_SECTIONS:
+        block = plugins.get(section) if isinstance(plugins, dict) else None
+        entries = block.get("entries") if isinstance(block, dict) else None
+        for plugin_id, entry in (entries or {}).items():
+            found.append((section, plugin_id, entry))
+    return found
+
+
+def _plugin_field(section: str, plugin_id: str) -> str:
+    return f"{PLUGINS_FIELD}.{section}.entries.{plugin_id}"
+
+
+def _resolve_plugin_paths(paths: list[str], base_dir: Path) -> list[str]:
+    """Resolve ``external.paths`` against the base directory; each must exist."""
+    return [
+        str(
+            common_plugins.resolve_plugin_path(
+                path,
+                base_dir,
+                harness="openclaw",
+                label="OpenClaw",
+                field=f"{PLUGINS_FIELD}.external.paths[{index}]",
+            )
+        )
+        for index, path in enumerate(paths)
+    ]
+
+
+def _merge_plugin_settings(
+    result: dict[str, Any], authored: dict[str, Any], *, base_dir: Path
+) -> None:
+    """Write ``bundled`` and ``external`` plugins as OpenClaw's native section."""
+    entries: dict[str, Any] = {}
+    sections: dict[str, str] = {}
+    for section, plugin_id, entry in _plugin_entries({"plugins": authored}):
+        if plugin_id == SHARED_CONFIG_PLUGIN:
+            raise lifecycle.LifecycleError(
+                "openclaw_invalid_configuration",
+                f"OpenClaw plugin id {SHARED_CONFIG_PLUGIN} is reserved for NeMo Fabric",
+                metadata={"field": _plugin_field(section, plugin_id)},
+            )
+        if plugin_id in sections:
+            raise lifecycle.LifecycleError(
+                "openclaw_invalid_configuration",
+                f"OpenClaw plugin {plugin_id} is listed as both "
+                f"{sections[plugin_id]} and {section}",
+                metadata={"field": _plugin_field(section, plugin_id)},
+            )
+        sections[plugin_id] = section
+        entries[plugin_id] = copy.deepcopy(entry)
+    if entries:
+        _merge_native_settings(
+            result, "plugins", {"entries": entries}, field=PLUGINS_FIELD
+        )
+    external = authored.get("external")
+    paths = external.get("paths") if isinstance(external, dict) else None
+    if paths:
+        section = result.setdefault("plugins", {}).setdefault("load", {})
+        section["paths"] = list(
+            dict.fromkeys(
+                [*section.get("paths", []), *_resolve_plugin_paths(paths, base_dir)]
+            )
+        )
+
+
+def _requested_plugins(settings: dict[str, Any]) -> list[tuple[str, str]]:
+    """Return ``(field, plugin id)`` for each plugin the settings turn on."""
+    return [
+        (_plugin_field(section, plugin_id), plugin_id)
+        for section, plugin_id, entry in _plugin_entries(settings)
+        if isinstance(entry, dict) and entry.get("enabled") is True
+    ]
+
+
+def _plugin_setting_field(settings: dict[str, Any], native_path: str) -> str:
+    """Map an OpenClaw ``plugins.…`` config path to the authored setting."""
+    parts = native_path.split(".")
+    if len(parts) >= 3 and parts[1] == "entries":
+        for section, plugin_id, _ in _plugin_entries(settings):
+            if plugin_id == parts[2]:
+                return ".".join([_plugin_field(section, plugin_id), *parts[3:]])
+    if len(parts) >= 2 and parts[1] == "load":
+        return f"{PLUGINS_FIELD}.external.paths"
+    return PLUGINS_FIELD
+
+
+async def _check_plugins(
+    port: int, token: str, requested: list[tuple[str, str]], *, timeout: float
+) -> None:
+    """Fail start unless the running Gateway loaded every requested plugin."""
+    if not requested:
+        return
+    client = gateway.SessionClient(f"http://127.0.0.1:{port}", token)
+    try:
+        listing = await client.call("plugins.list", {}, timeout=timeout)
+    except lifecycle.LifecycleError:
+        raise lifecycle.LifecycleError(
+            "openclaw_command_failed",
+            "OpenClaw Gateway did not report its plugins",
+            metadata={"method": "plugins.list"},
+        ) from None
+    finally:
+        await client.close()
+    plugins = {
+        plugin["id"]: plugin
+        for plugin in listing.get("plugins", [])
+        if isinstance(plugin, dict) and isinstance(plugin.get("id"), str)
+    }
+
+    def lookup(plugin_id: str) -> str | None:
+        plugin = plugins.get(plugin_id)
+        if plugin is None:
+            return None
+        runtime = plugin.get("runtime")
+        runtime = runtime if isinstance(runtime, dict) else {}
+        state = runtime.get("state")
+        if state == "active":
+            return ""
+        return str(runtime.get("error") or state or "not loaded")
+
+    common_plugins.check_requested(
+        requested,
+        lookup,
+        harness="openclaw",
+        label="OpenClaw",
+    )
+
+
+def _raise_plugin_config_issues(output: str, settings: dict[str, Any]) -> None:
+    """Report a plugin setting ``openclaw config validate --json`` rejects."""
+    try:
+        report = json.loads(output)
+    except ValueError:
+        return
+    issues = report.get("issues") if isinstance(report, dict) else None
+    for issue in issues if isinstance(issues, list) else []:
+        path = issue.get("path") if isinstance(issue, dict) else None
+        if isinstance(path, str) and path.startswith("plugins."):
+            message = str(issue.get("message", "invalid value"))
+            raise lifecycle.LifecycleError(
+                "openclaw_invalid_configuration",
+                f"OpenClaw rejected plugin setting {path}: {message}",
+                metadata={
+                    "field": _plugin_setting_field(settings, path),
+                    "detail": message,
+                },
+            )
+
+
 def _openclaw_config(
     config: contract.AgentConfig,
     context: contract.RuntimeContext,
@@ -750,7 +911,7 @@ def _openclaw_config(
                     "paths": [str(Path(__file__).with_name("native_config").resolve())]
                 },
                 "entries": {
-                    "fabric-shared-config": {
+                    SHARED_CONFIG_PLUGIN: {
                         "enabled": True,
                         "hooks": {
                             "allowConversationAccess": True,
@@ -784,7 +945,9 @@ def _openclaw_config(
         result["mcp"] = {"servers": mcp}
     settings = config.harness.settings if config.harness else {}
     for section in NATIVE_SETTING_SECTIONS:
-        if section in settings:
+        if section == "plugins" and section in settings:
+            _merge_plugin_settings(result, settings[section], base_dir=base_dir)
+        elif section in settings:
             _merge_native_settings(
                 result,
                 section,
@@ -887,9 +1050,11 @@ async def _command_output(
     env: dict[str, str],
     timeout: float,
     process_group: bool = False,
+    on_failure: Callable[[str], None] | None = None,
 ) -> str:
     """Run one OpenClaw CLI command and return its standard output.
 
+    ``on_failure`` may raise a more specific error from a failed command's output.
     With ``process_group``, the command runs in its own process group so a
     timeout or cancellation also stops any child it started, and reaping is
     bounded even if a descendant keeps the output pipes open.
@@ -918,6 +1083,8 @@ async def _command_output(
         await _kill_and_reap(process, process_group=process_group)
         raise
     if process.returncode != 0:
+        if on_failure is not None:
+            on_failure(stdout.decode(errors="replace").strip())
         stderr_detail = stderr.decode(errors="replace").strip()
         stdout_detail = stdout.decode(errors="replace").strip()
         detail = stderr_detail or stdout_detail
@@ -1248,6 +1415,7 @@ class OpenClawRuntime:
         self._gateway_failed = asyncio.Event()
         self._stopping = False
         self._temp_dir: tempfile.TemporaryDirectory[str] | None = None
+        self._state_config_path: Path | None = None
         self._port: int | None = None
         self._token: str | None = None
         self._dashboard_token_path: Path | None = None
@@ -1627,7 +1795,6 @@ class OpenClawRuntime:
             raise lifecycle.LifecycleError(
                 "session_storage_required", "Durable sessions require retained storage"
             )
-        config_path = Path(temp_dir.name) / "openclaw.json"
         generated = _openclaw_config(
             config,
             context,
@@ -1638,17 +1805,38 @@ class OpenClawRuntime:
             dashboard=dashboard_port is not None,
             skill_plan=skill_plan,
         )
-        config_path.write_text(json.dumps(generated, indent=2) + "\n", encoding="utf-8")
-        config_path.chmod(0o600)
+        plugin_section = generated.get("plugins", {})
+        if context.state_dir:
+            # The agent's plugin commands write through the include.
+            state_config = openclaw_plugins.state_folder(state_dir)
+            plugin_section = openclaw_plugins.prepare(
+                state_config, generated.pop("plugins", {})
+            )
+            generated["plugins"] = dict(openclaw_plugins.INCLUDE)
+            config_path = state_config / openclaw_plugins.CONFIG_FILE
+            self._state_config_path = config_path
+        else:
+            config_path = Path(temp_dir.name) / "openclaw.json"
+
+        def write_config() -> None:
+            text = json.dumps(generated, indent=2) + "\n"
+            if context.state_dir:
+                local_interfaces.write_private_file(config_path, text)
+            else:
+                config_path.write_text(text, encoding="utf-8")
+                config_path.chmod(0o600)
+
+        write_config()
         child_env.update(
             {
                 "OPENCLAW_CONFIG_PATH": str(config_path),
                 "OPENCLAW_STATE_DIR": str(state_dir),
-                "OPENCLAW_CONFIG_READONLY": "1",  # Tells OpenClaw to treat the configuration as read-only
                 token_env: token,
                 "DO_NOT_TRACK": "1",  # opt out of tracking
             }
         )
+        if not context.state_dir:
+            child_env["OPENCLAW_CONFIG_READONLY"] = "1"
         self._temp_dir = temp_dir
         try:
             self._shutdown_timeout = _positive_setting(
@@ -1668,14 +1856,13 @@ class OpenClawRuntime:
                 "--json",
                 env=child_env,
                 timeout=startup_remaining(),
+                on_failure=lambda output: _raise_plugin_config_issues(output, settings),
             )
             if skill_plan.needs_status:
 
                 def rewrite_skills() -> None:
                     generated["skills"] = _skills_section(config, base_dir, skill_plan)
-                    config_path.write_text(
-                        json.dumps(generated, indent=2) + "\n", encoding="utf-8"
-                    )
+                    write_config()
 
                 await _apply_skill_status(
                     skill_plan,
@@ -1738,9 +1925,10 @@ class OpenClawRuntime:
             ]
             self._install_signal_handlers()
             await self._wait_started(port, token, startup_remaining())
-            if "fabric-shared-config" in generated.get("plugins", {}).get(
-                "entries", {}
-            ):
+            await _check_plugins(
+                port, token, _requested_plugins(settings), timeout=startup_remaining()
+            )
+            if SHARED_CONFIG_PLUGIN in plugin_section.get("entries", {}):
                 await self._verify_shared_configuration(
                     port, token, _agent_id(settings), startup_remaining()
                 )
@@ -2606,9 +2794,12 @@ class OpenClawRuntime:
         except Exception:
             logger.error("OpenClaw could not stop log-capture tasks", exc_info=True)
         temp_dir, self._temp_dir = self._temp_dir, None
+        state_config, self._state_config_path = self._state_config_path, None
         try:
             if temp_dir is not None:
                 temp_dir.cleanup()
+            if state_config is not None:
+                openclaw_plugins.remove_config(state_config)
         except Exception:
             logger.error(
                 "OpenClaw could not remove its temporary Gateway configuration",
