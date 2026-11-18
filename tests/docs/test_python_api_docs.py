@@ -35,7 +35,8 @@ ROOT = Path(__file__).resolve().parents[2]
 REFERENCE_DIR = ROOT / "docs" / "reference" / "api" / "python-library-reference"
 LANDING_PAGE = ROOT / "docs" / "about-nemo-fabric" / "overview.mdx"
 INSTALL_PAGE = ROOT / "docs" / "getting-started" / "install.mdx"
-QUICKSTART_PAGE = ROOT / "docs" / "getting-started" / "quickstart.mdx"
+QUICKSTART_PAGE = ROOT / "docs" / "getting-started" / "quickstart-overview.mdx"
+TUTORIAL_PAGE = ROOT / "docs" / "getting-started" / "tutorial.mdx"
 NAVIGATION = ROOT / "docs" / "index.yml"
 MODULE_SLUGS = {
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
@@ -381,6 +382,7 @@ def test_landing_page_routes_new_users_through_the_product():
         LANDING_PAGE,
         INSTALL_PAGE,
         QUICKSTART_PAGE,
+        TUTORIAL_PAGE,
         ROOT / "docs" / "sdk" / "python.mdx",
     ):
         assert destination.resolve() in pages
@@ -408,4 +410,5 @@ def test_landing_page_routes_new_users_through_the_product():
         assert destination.is_file(), href
         assert destination in pages, href
 
-    assert "```python" in quickstart
+    assert "examples/notebooks/01_quickstart.ipynb" in quickstart
+    assert "```python" in TUTORIAL_PAGE.read_text(encoding="utf-8")

@@ -16,18 +16,10 @@ navigation:
   path: ./getting-started/overview.mdx
   collapsed: open-by-default
   contents:
-  - section: Quickstart
+  - page: Quickstart
     path: ./getting-started/quickstart-overview.mdx
-    collapsed: open-by-default
-    contents:
-    - page: 1. Install One Harness
-      path: ./getting-started/quickstart.mdx
-    - page: 2. Switch Harnesses
-      path: ./getting-started/switch-harnesses.mdx
-    - page: 3. Add Skills and MCP
-      path: ./getting-started/skills-and-mcp.mdx
-    - page: 4. Run in OpenShell (Optional)
-      path: ./getting-started/openshell.mdx
+  - page: Python Tutorial
+    path: ./getting-started/tutorial.mdx
   - section: Installation
     path: ./getting-started/install.mdx
     collapsed: open-by-default

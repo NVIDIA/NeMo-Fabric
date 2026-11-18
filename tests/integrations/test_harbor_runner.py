@@ -887,7 +887,8 @@ def test_root_readme_routes_to_primary_documentation():
 
     primary_documentation = (
         "docs/getting-started/install.mdx",
-        "docs/getting-started/quickstart.mdx",
+        "docs/getting-started/quickstart-overview.mdx",
+        "docs/getting-started/tutorial.mdx",
         "docs/about-nemo-fabric/overview.mdx",
         "adapters/README.md",
         "CONTRIBUTING.md",

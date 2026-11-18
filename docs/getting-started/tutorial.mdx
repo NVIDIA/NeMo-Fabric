@@ -1,0 +1,465 @@
+---
+title: "Run and Extend an Agent with Python"
+sidebar-title: "Python Tutorial"
+description: "Run a code review, switch harnesses, and add a skill and an MCP tool through the NeMo Fabric Python SDK."
+slug: "/getting-started/tutorial"
+template-library-version: "1.0.0"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Learn to use NVIDIA NeMo Fabric's Python SDK by building a code-review agent, running the same task through two harnesses, and extending the agent with a skill and a local tool. This tutorial starts with [LangChain Deep Agents](https://github.com/langchain-ai/deepagents) and adds [Hermes Agent](https://github.com/NousResearch/hermes-agent), using an NVIDIA-hosted model for both.
+
+<Card>
+
+**Goal:** Run and extend a code-review agent while keeping a common application interface across harnesses.
+
+**In this tutorial, you will:**
+
+1. [Install the first harness](#install-the-first-harness) and [provide model access](#provide-model-access).
+2. [Run a code review](#run-a-code-review) and check its normalized result.
+3. [Switch harnesses](#switch-harnesses) without rewriting the invocation and result-handling contract.
+4. [Add skills and MCP](#add-skills-and-mcp) and verify the tool actually ran.
+5. Optionally, [run a separate source-checkout example in OpenShell](#run-in-openshell-optional).
+
+</Card>
+
+## Prerequisites
+
+Before you start, complete the following prerequisites:
+
+1. Install Python 3.11–3.14 on Linux, macOS, or Windows with WSL2. On Windows, run all commands inside WSL2. Refer to [Requirements and Supported Platforms](install.mdx#requirements-and-supported-platforms).
+2. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and Git for the Hermes setup. Hermes uses a separate Python 3.14 environment; the commands below create it.
+3. Create an [NVIDIA API key](https://build.nvidia.com/) for the hosted model.
+4. Create an application directory and open a POSIX shell there. Keep the files and the application's `.venv` throughout the tutorial.
+
+The local steps do not require the separate NeMo Fabric CLI or NeMo Relay. The optional OpenShell section requires a Linux host, Docker, and a prepared NeMo Fabric source checkout; it lists its additional requirements there.
+
+## Related Concepts
+
+The examples introduce these concepts as you work. Use these references for more detail:
+
+<CardGroup cols={2}>
+  <Card title="Agent Configuration" href="../sdk/configure-agents.mdx">
+    A typed FabricConfig selects the harness, model, tools, skills, and execution environment.
+  </Card>
+  <Card title="Execution and Results" href="../sdk/execution-model.mdx">
+    Harness adapters translate a common execution request into native harness operations and return normalized results.
+  </Card>
+</CardGroup>
+
+## Tutorial Steps
+
+Work through the local steps in order. Each section reuses the files and configuration from the preceding sections.
+
+<a id="install-one-harness"></a>
+
+### Install the First Harness
+
+Create an isolated application environment, then install NeMo Fabric and its supported Deep Agents adapter and dependencies. In your POSIX shell, run:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install 'nemo-fabric[deepagents]'
+```
+
+This example does not require the separate CLI or NeMo Relay.
+
+**Success check:** The installation completes in your application's active `.venv`. Keep this environment active for the local steps.
+
+### Provide Model Access
+
+Create an API key at [NVIDIA Build](https://build.nvidia.com/) and set it in the shell that will run the application:
+
+```bash
+export NVIDIA_API_KEY='<your-key>'
+```
+
+Keep the key out of the Python file.
+
+**Success check:** `NVIDIA_API_KEY` is set in the shell that will run the examples. The next step verifies model access with a real request.
+
+### Run a Code Review
+
+Save this complete example as `first_agent.py` in your application directory. The request supplies the function inline and asks for a review without tool use or file changes.
+
+```python
+import asyncio
+
+from nemo_fabric import (
+    EnvironmentConfig, Fabric, FabricConfig, HarnessConfig,
+    MetadataConfig, ModelConfig, RunRequest, ToolsConfig,
+)
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="code-review"),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.langchain.deepagents"),
+    models={
+        "default": ModelConfig(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            api_key_env="NVIDIA_API_KEY",
+            base_url="https://integrate.api.nvidia.com/v1",
+        )
+    },
+    environment=EnvironmentConfig(provider="local", workspace="."),
+    tools=ToolsConfig(enabled=[]),
+)
+
+REVIEW_INPUT = (
+    "Review this Python function for correctness issues. Explain any bug you find. "
+    "Do not use tools or change files.\n\n"
+    "def average(values):\n"
+    "    return sum(values) / len(values)\n"
+)
+
+async def main():
+    fabric = Fabric()
+    result = await fabric.run(
+        config,
+        request=RunRequest(
+            input=REVIEW_INPUT,
+            request_id="first-code-review",
+        ),
+    )
+    print("Adapter:", result.adapter_id)
+    print("Status:", result.status)
+    print("Request:", result.request_id)
+    if result.status == "succeeded":
+        print(result.output.response)
+    else:
+        print("Error:", result.error)
+    print("Artifacts:", result.artifacts)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+Run it from the application directory:
+
+```bash
+python first_agent.py
+```
+
+#### Check the Outcome
+
+**Success check:** The returned adapter ID should be `nvidia.fabric.langchain.deepagents`. A successful request has status `succeeded` and request ID `first-code-review`. The review should identify that `average([])` causes division by zero. The prose and suggested fix can vary; check the status and the finding separately. The request to avoid tools and file changes is an instruction to the agent, not a security boundary.
+
+`Fabric.run()` starts the runtime, invokes it once, and attempts shutdown. It can return a failed normalized result; configuration and lifecycle failures can instead raise SDK exceptions. Follow [Troubleshooting](../sdk/results-and-errors.mdx#errors) if the run does not succeed.
+
+### Switch Harnesses
+
+Keep `first_agent.py` and its `config`. Your application can keep its invocation and result-handling contract while changing harnesses. This section compares Deep Agents and Hermes Agent on the same review task.
+
+#### Install the Second Harness
+
+This example compares Deep Agents with [Hermes Agent](https://github.com/NousResearch/hermes-agent), using its ready-made NeMo Fabric adapter. The supported Hermes v0.22.7 stack requires Python 3.14; NeMo Fabric itself supports Python 3.11–3.14. Keep Hermes in a separate environment to isolate its dependencies. Both variants use the NVIDIA model and credential from the code-review step.
+
+With your application's `.venv` still active, run the following in your application directory using a POSIX shell. The commands check out the supported Hermes release, use its frozen dependency lockfile, and install the Hermes adapter version matching your application:
+
+```bash
+uv python install 3.14
+uv venv --python 3.14 .venv-hermes
+git clone --filter=blob:none --no-checkout https://github.com/NousResearch/hermes-agent.git hermes-agent
+git -C hermes-agent fetch --depth 1 origin b200f5bc60e31588ba2cb60e288029c4a54ba5fa
+git -C hermes-agent checkout --detach FETCH_HEAD
+UV_PROJECT_ENVIRONMENT="$PWD/.venv-hermes" uv sync \
+  --project ./hermes-agent --frozen --no-default-groups --extra mcp \
+  --config-settings-package hermes-agent:editable_mode=compat
+FABRIC_VERSION="$(python -c 'from importlib.metadata import version; print(version("nemo-fabric"))')"
+uv pip install --python .venv-hermes/bin/python "nemo-fabric-adapters-hermes==$FABRIC_VERSION"
+export HERMES_ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"
+```
+
+Do not activate `.venv-hermes`; your application still runs in `.venv`. `HERMES_ADAPTER_PYTHON` selects the second interpreter only when launching Hermes. If you already have the supported Hermes environment, install the matching adapter there and set this variable to its absolute interpreter path instead. Refer to the [Hermes installation guide](install-hermes.mdx) for the source-checkout alternative and upstream platform guidance.
+
+#### Construct Explicit Variants
+
+Save the following as `compare_agents.py`. Set `HERMES_ADAPTER_PYTHON` to the supported Hermes environment's absolute Python path before running it:
+
+```python
+import asyncio
+import os
+import sys
+
+from first_agent import REVIEW_INPUT, config
+from nemo_fabric import Fabric, HarnessConfig
+
+async def main():
+    original_python = os.environ.get("ADAPTER_PYTHON")
+    for name, adapter_id, interpreter in [
+        ("deepagents", "nvidia.fabric.langchain.deepagents", sys.executable),
+        ("hermes", "nvidia.fabric.hermes", os.environ["HERMES_ADAPTER_PYTHON"]),
+    ]:
+        variant = config.model_copy(deep=True)
+        variant.harness = HarnessConfig(adapter_id=adapter_id)
+        os.environ["ADAPTER_PYTHON"] = interpreter
+        try:
+            result = await Fabric().run(
+                variant, input=REVIEW_INPUT
+            )
+            print(f"\nHarness: {name}")
+            print("Adapter:", result.adapter_id)
+            print("Status:", result.status)
+            if result.status == "succeeded":
+                print("Review:", result.output.response)
+            else:
+                print("Error:", result.error)
+        finally:
+            if original_python is None:
+                os.environ.pop("ADAPTER_PYTHON", None)
+            else:
+                os.environ["ADAPTER_PYTHON"] = original_python
+
+asyncio.run(main())
+```
+
+Run both variants from your application directory:
+
+```bash
+python compare_agents.py
+```
+
+The environment-variable switch is sequential and intended for this local lesson. Do not mutate shared process environment variables around concurrent runtime starts. Production launchers should establish consistent execution environments.
+
+#### Interpret the Results
+
+**Success check:** Look for two labeled results, one per harness. Each should report `Status: succeeded`, the expected adapter ID, and a review identifying that an empty input list causes division by zero. For example, the output can look like this; review wording varies:
+
+```text
+Harness: deepagents
+Adapter: nvidia.fabric.langchain.deepagents
+Status: succeeded
+Review: average([]) raises ZeroDivisionError because len(values) is zero.
+
+Harness: hermes
+Adapter: nvidia.fabric.hermes
+Status: succeeded
+Review: Handle an empty list before dividing by its length.
+```
+
+The shared `RunResult` fields let your application check status before reading `output.response`, regardless of the harness. If a result fails, inspect the labeled error and follow [Troubleshooting](../sdk/results-and-errors.mdx#errors); configuration or startup failures can instead raise SDK exceptions. Different prompts, defaults, tools, and native semantics can produce different reviews. This exercise demonstrates common invocation and result handling; it is not a benchmark or proof of equivalent behavior.
+
+Before changing another configuration field, consult [Harness Compatibility](../sdk/configure-agents.mdx#normalized-configuration-compatibility). For a controlled task and verifier, use [Harbor](../integrations/consumer/harbor.mdx). The maintained [variations notebook](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/02_variations.ipynb) expands this pattern to additional harnesses, capabilities, and telemetry.
+
+
+Keep `HERMES_ADAPTER_PYTHON` set for the next section.
+
+### Add Skills and MCP
+
+Extend the Hermes variant with a code-review skill and a local Model Context Protocol (MCP) tool. Reuse the model and configuration in `first_agent.py`, the Hermes environment with MCP support, and `HERMES_ADAPTER_PYTHON`. Keep your application's `.venv` active.
+
+<a id="add-a-skill"></a>
+
+#### Add a Review Skill
+
+Create `skills/review/SKILL.md` beside `first_agent.py` with the following content:
+
+```markdown
+---
+name: review
+description: Use when reviewing a Python function for correctness.
+---
+
+Report findings under the heading "Review checks". Include the triggering
+input, what fails, and a suggested correction. When the check_average MCP
+tool is available, use it with an empty list and with [2, 4, 6] to check the
+example's edge case and ordinary case. Distinguish tool results from your
+own reasoning.
+```
+
+The skill supplies review instructions. The MCP server in the next step supplies an executable tool; these are separate capabilities.
+
+<a id="connect-an-mcp-server"></a>
+
+#### Create a Local MCP Tool
+
+The Hermes environment created in the preceding section includes MCP 2.3 through its `mcp` extra. This example uses that version's `MCPServer` API. Save this complete server as `review_tools.py` beside `first_agent.py`. It computes the example's average without network access and records each tool call in a local JSON Lines file:
+
+```python
+import json
+from pathlib import Path
+
+from mcp.server.mcpserver import MCPServer
+
+server = MCPServer("review-tools", log_level="ERROR")
+call_log = Path(__file__).with_name("mcp-tool-calls.jsonl")
+
+
+@server.tool()
+def check_average(values: list[float]) -> dict:
+    """Check the average calculation, including the empty-list edge case."""
+    if values:
+        result = {"average": sum(values) / len(values), "error": None}
+    else:
+        result = {"average": None, "error": "division_by_zero"}
+    with call_log.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"values": values, **result}) + "\n")
+    return result
+
+
+if __name__ == "__main__":
+    server.run(transport="stdio")
+```
+
+Do not start the server manually. The harness launches it through stdio when the agent starts. Keep protocol output on stdout; the example writes call evidence to the file instead.
+
+#### Run the Extended Agent
+
+Save this complete example as `extended_agent.py` beside the other files. It selects the already-installed Hermes adapter and uses the same Hermes interpreter for the adapter and MCP server:
+
+```python
+import asyncio
+import os
+from pathlib import Path
+
+from first_agent import config
+from nemo_fabric import Fabric, HarnessConfig
+
+app_dir = Path(__file__).resolve().parent
+hermes_python = os.environ["HERMES_ADAPTER_PYTHON"]
+variant = config.model_copy(deep=True)
+variant.harness = HarnessConfig(adapter_id="nvidia.fabric.hermes")
+variant.tools = None
+variant.add_skill_path(app_dir / "skills" / "review")
+variant.add_mcp_server(
+    "review-tools",
+    transport="stdio",
+    url=hermes_python,
+    args=[str(app_dir / "review_tools.py")],
+    exposure="harness_native",
+)
+
+
+async def main():
+    original_python = os.environ.get("ADAPTER_PYTHON")
+    os.environ["ADAPTER_PYTHON"] = hermes_python
+    try:
+        result = await Fabric().run(
+            variant,
+            input=(
+                "Use the review skill to review this Python function. "
+                "Call the check_average MCP tool with [] and [2, 4, 6], "
+                "then explain the bug and a correction.\n\n"
+                "def average(values):\n"
+                "    return sum(values) / len(values)\n"
+            ),
+        )
+        print("Status:", result.status)
+        if result.status == "succeeded":
+            print(result.output.response)
+        else:
+            print("Error:", result.error)
+    finally:
+        if original_python is None:
+            os.environ.pop("ADAPTER_PYTHON", None)
+        else:
+            os.environ["ADAPTER_PYTHON"] = original_python
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+From the application directory, run:
+
+```bash
+python extended_agent.py
+```
+
+The environment-variable selection is sequential, as in the harness comparison. Production launchers should establish consistent execution environments instead of changing process-wide variables around concurrent starts.
+
+#### Check the Review and Tool Calls
+
+**Success check:** Look for status `succeeded` and a review that identifies the empty-list division error under the skill's requested heading. Inspect `mcp-tool-calls.jsonl` for these records; ordering and repeat calls can vary:
+
+```jsonl
+{"values": [], "average": null, "error": "division_by_zero"}
+{"values": [2.0, 4.0, 6.0], "average": 4.0, "error": null}
+```
+
+The log proves the local tool ran. A successful agent response alone does not prove tool use or skill loading; the requested heading is an observable sign that the skill's instructions influenced the review. For a repeat run, distinguish newly appended records from earlier calls. If startup or invocation fails, follow [Troubleshooting](../sdk/results-and-errors.mdx#errors). If the run succeeds without the required checks, inspect the response and tool log before treating the task as complete.
+
+### Run in OpenShell (Optional)
+
+Run a Hermes code-review agent inside an [OpenShell](https://github.com/NVIDIA/OpenShell) sandbox, controlled by the NVIDIA NeMo Fabric Python SDK on the host. OpenShell supplies isolation and policy; the adapter and harness execute the task inside the sandbox.
+
+This optional continuation uses the repository's [Hermes code-review example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent#run-hermes-in-openshell). It requires a source checkout and a Linux host. It packages a sample repository and skill in a task image rather than automatically moving the scripts or MCP server from the preceding sections into a sandbox.
+
+
+#### Prepare a Linux Host
+
+Use a NeMo Fabric source checkout with its Python SDK and native extension installed, following [Development Setup](../contributing/setup.mdx). The shared launcher requires Docker with Linux containers, Rust/Cargo, `uv`, Python 3, `curl`, `openssl`, and `tar`. The Docker daemon must be running. The launcher currently supports Linux x86_64 and arm64 hosts; this procedure does not run directly on macOS or Windows.
+
+From the repository root, select your installed host SDK environment and provide the NVIDIA API key used for model access:
+
+```bash
+export UV_PROJECT_ENVIRONMENT="$PWD/.venv"
+export NVIDIA_API_KEY='<your-key>'
+```
+
+The image contains its own Hermes installation and adapter. You do not need to reuse the local Hermes interpreter from the harness comparison. Refer to the [shared launcher requirements](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/openshell/README.md#requirements) if your host environment is elsewhere.
+
+<a id="run-the-sandboxed-review"></a>
+
+#### Run the Sandboxed Code Review
+
+Run from the repository root:
+
+```bash
+OPENSHELL_EXAMPLE_MODE=fabric_owned \
+  bash examples/openshell/run-demo.sh \
+  examples/code_review_agent/demo-openshell-hermes-sdk.sh
+```
+
+The launcher builds the provider and task images, downloads its pinned OpenShell release, starts a local gateway, and configures model access. The host consumer prepares a sandbox, runs two review turns on one runtime, then stops the runtime and releases the sandbox. NeMo Relay is off by default.
+
+The example uses its own configured NVIDIA model. To select another model available to your key, set `OPENSHELL_CODE_REVIEW_MODEL` before launching. Alternate endpoints also need a matching OpenShell provider policy, as described in the [example's model-access instructions](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent#run-hermes-in-openshell).
+
+#### Inspect the Result
+
+Open `.tmp/code-review-hermes/fabric_owned-report.json`. **Success check:** A completed run has top-level `status: "succeeded"` and two entries in `reviews`, each with status `succeeded`. Inspect each review's `output.response` for the finding and follow-up explanation. The second review should recall the example's `cedar-4827` review tag. Collected runtime artifacts appear under `.tmp/code-review-hermes/artifacts/`.
+
+The consumer attempts runtime shutdown and environment release even after a failure. The launcher checks sandbox removal in this ownership mode and cleans up its gateway resources. If the command fails, inspect the report's `error` field and launcher output; the [OpenShell example guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/openshell/README.md) explains setup, networking, and ownership modes.
+
+## Troubleshooting
+
+Use the following checks if a step does not complete:
+
+| Symptom | What to Check |
+| --- | --- |
+| The first review fails or raises an exception | Confirm model access and inspect the result's error or the SDK exception. Refer to [Results and Errors](../sdk/results-and-errors.mdx#errors). |
+| Hermes cannot start | Confirm `HERMES_ADAPTER_PYTHON` points to the separate Python 3.14 environment with the supported Hermes release and matching adapter. Refer to [Hermes Installation](install-hermes.mdx). |
+| The extended review does not show tool evidence | Inspect newly appended records in `mcp-tool-calls.jsonl`. A successful response alone does not prove tool use or skill loading. |
+| The sandbox launcher fails | Inspect its output and report's `error` field, then refer to the [OpenShell example guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/openshell/README.md). |
+
+## What You Learned
+
+By completing the local steps, you have:
+
+- Configured a supported harness and run an inline code-review task with `Fabric.run()`.
+- Checked status and the expected finding before treating the task as successful.
+- Run the same task through Deep Agents and Hermes using a common result contract.
+- Added a review skill and an MCP server, then inspected the tool-call log for execution evidence.
+
+The optional OpenShell section demonstrates a separate source-checkout workflow with sandbox preparation, multi-turn execution, and cleanup.
+
+## Next Steps
+
+Try changing only `REVIEW_INPUT` to ask for a test covering the empty-list case. Then explore stateful execution or additional harness configurations:
+
+<CardGroup cols={2}>
+  <Card title="Multi-Turn Runtimes" href="../sdk/requests-and-runtimes.mdx#multi-turn-runtimes">
+    Preserve conversation state between related requests.
+  </Card>
+  <Card title="Configure Agents" href="../sdk/configure-agents.mdx">
+    Explore models, tool policy, skills, MCP authentication, and adapter compatibility.
+  </Card>
+  <Card title="Explore the Variations Notebook" href="https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/02_variations.ipynb">
+    Vary harnesses, capabilities, and telemetry in the maintained code-review example.
+  </Card>
+  <Card title="Environments and Shared Services" href="../sdk/environments-and-shared-services.mdx">
+    Integrate sandbox preparation, runtime ownership, and release into your application.
+  </Card>
+</CardGroup>

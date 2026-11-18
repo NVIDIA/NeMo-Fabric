@@ -19,6 +19,22 @@ redirects:
     destination: /nemo/fabric/about-nemo-fabric/ecosystem
   - source: /nemo/fabric/adapter-contract/optional-open-ai-streaming
     destination: /nemo/fabric/adapter-contract/optional-openai-streaming
+  - source: /nemo/fabric/getting-started/quickstart
+    destination: /nemo/fabric/getting-started/tutorial
+  - source: /nemo/fabric/getting-started/quickstart/switch-harnesses
+    destination: /nemo/fabric/getting-started/tutorial#switch-harnesses
+  - source: /nemo/fabric/getting-started/quickstart/skills-and-mcp
+    destination: /nemo/fabric/getting-started/tutorial#add-skills-and-mcp
+  - source: /nemo/fabric/getting-started/quickstart/openshell
+    destination: /nemo/fabric/getting-started/tutorial#run-in-openshell-optional
+  - source: /nemo/fabric/dev/getting-started/quickstart
+    destination: /nemo/fabric/dev/getting-started/tutorial
+  - source: /nemo/fabric/dev/getting-started/quickstart/switch-harnesses
+    destination: /nemo/fabric/dev/getting-started/tutorial#switch-harnesses
+  - source: /nemo/fabric/dev/getting-started/quickstart/skills-and-mcp
+    destination: /nemo/fabric/dev/getting-started/tutorial#add-skills-and-mcp
+  - source: /nemo/fabric/dev/getting-started/quickstart/openshell
+    destination: /nemo/fabric/dev/getting-started/tutorial#run-in-openshell-optional
 
 products:
   - display-name: "NeMo Fabric"

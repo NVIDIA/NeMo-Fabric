@@ -1,64 +1,59 @@
 ---
-title: "Start Here: Run Your First Agent"
-description: "Review a small Python function in the starter notebook or the three-part Python Quickstart."
+title: "Run Your First Agent in a Notebook"
+sidebar-title: "Quickstart"
+description: "Preview the starter notebook, then run a code review and a stateful follow-up with Hermes Agent."
 slug: "/getting-started/quickstart/overview"
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-Run your first code review with NVIDIA NeMo Fabric. Give an agent a small Python function, inspect the bug it finds, and read the result returned through NeMo Fabric. Choose the starter notebook for an interactive walkthrough or the Python Quickstart for a script you can extend.
+Run a code review with NVIDIA NeMo Fabric's [starter notebook](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/01_quickstart.ipynb). The notebook builds a reviewer with [Hermes Agent](https://github.com/NousResearch/hermes-agent), sends it a small Python function, and inspects the result through the Python SDK. Every agent configuration is defined inline.
 
-<CardGroup cols={2}>
-  <Card title="Open the Starter Notebook" icon="fa-solid fa-book-open" href="#use-the-starter-notebook">
-    Follow the existing code-review example in Jupyter, with configuration, execution, and results explained cell by cell.
-  </Card>
-  <Card title="Follow the Python Quickstart" icon="fa-brands fa-python" href="#follow-the-python-quickstart">
-    Install one harness and run the same review task from a Python script. Then switch harnesses and add capabilities.
-  </Card>
-</CardGroup>
+## What You Will Do
 
-## Use the Starter Notebook
+The notebook guides you through the following sequence. Live model calls require the harness and credentials; the inspection calls do not run the agent.
 
-<Steps>
-<Step title="Prepare Your Checkout">
+| Notebook Section | What You Do | What to Look For |
+| --- | --- | --- |
+| Set up the environment | Prepare the SDK and a separate Hermes environment, then load or securely enter an NVIDIA API key. | The setup reports whether the native extension, adapter interpreter, and key are available for live runs. |
+| Describe the agent | Build a typed `FabricConfig` selecting Hermes, an NVIDIA-hosted model, review instructions, and an artifact location. | The configuration identifies the reviewer and its execution settings. |
+| Run a review | Call `Fabric.run()` with the function below and inspect the normalized result. | Status `succeeded`, a finding about division by zero for an empty list, and correlation IDs and artifact references. |
+| Keep state across turns | Start a runtime, request the review, then ask the agent to fix the issue in a follow-up turn. | The second response uses the earlier review's context. |
+| Inspect and diagnose (optional) | Call `plan()` to inspect the resolved configuration and `doctor()` to run preflight checks. | The selected adapter and capabilities, followed by a diagnostic report. Neither call runs the agent. |
 
-The starter notebook uses Hermes Agent from a NeMo Fabric source checkout. Complete [Development Setup](../contributing/setup.mdx) and the supported [Hermes Agent installation](install-hermes.mdx), then provide an [NVIDIA API key](https://build.nvidia.com/). The [notebook setup guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/README.md#prerequisites) explains the notebook's environment and credential prompts.
-
-Open or download [the starter notebook on GitHub](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/01_quickstart.ipynb). A source checkout includes it at `examples/notebooks/01_quickstart.ipynb`.
-
-</Step>
-<Step title="Open the Notebook in Jupyter">
-
-From the prepared repository root, run:
-
-```bash
-just notebooks
-```
-
-Open `01_quickstart.ipynb` and run its cells in order. The notebook constructs the reviewer and supplies this function directly in the request; it does not need to read project files:
+The review request includes this function directly; the agent does not need to read project files:
 
 ```python
 def average(values):
     return sum(values) / len(values)
 ```
 
-</Step>
-<Step title="Recognize a Successful Review">
+## Before You Start
 
-With the notebook's prerequisites available, the run should return status `succeeded`. The review should identify that an empty input list causes division by zero. Wording and suggested fixes can vary; check both the status and the finding. A skipped live cell means a prerequisite is missing, not that a review completed.
+Prepare the supported source-checkout environment before opening the notebook:
 
-The remaining cells demonstrate runtime reuse and optional diagnostics. Notebook [02_variations.ipynb](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/02_variations.ipynb) explores harness and configuration changes after the first run.
+1. Complete [Development Setup](../contributing/setup.mdx) to build the SDK and native extension in a NeMo Fabric checkout.
+2. Have Git and [uv](https://docs.astral.sh/uv/getting-started/installation/) available. The notebook's setup cells install the supported Hermes release and adapter in a separate Python 3.14 environment. Refer to [Hermes Installation](install-hermes.mdx) if you need to prepare or select that environment yourself.
+3. Create an [NVIDIA API key](https://build.nvidia.com/). Export `NVIDIA_API_KEY`, place it in the checkout's gitignored `.env`, or enter it at the notebook's secure prompt. Keep credentials out of saved notebook cells.
 
-</Step>
-</Steps>
+The [notebook setup guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/README.md#prerequisites) provides the environment details. Live execution cells skip when their checked prerequisites are missing; a skipped cell does not demonstrate a completed review.
 
-## Follow the Python Quickstart
+## Open the Notebook
 
-These three connected guides use the same code-review task. Follow them in order; the later guides reuse the configuration from the first. An optional fourth guide moves to the source-checkout OpenShell example:
+From the prepared repository root, launch Jupyter using the existing recipe:
 
-1. [Install One Harness](quickstart.mdx). Install NeMo Fabric with LangChain Deep Agents, provide model access, and review the function. Keep the resulting `first_agent.py` for the next two guides.
-2. [Switch Harnesses](switch-harnesses.mdx). Reuse that configuration to run Deep Agents and Hermes Agent variants, then compare results through the same application interface.
-3. [Add Skills and MCP](skills-and-mcp.mdx). Extend the Hermes variant with a review skill and a working local MCP tool, then inspect evidence of its tool calls.
-4. [Run in OpenShell (Optional)](openshell.mdx). On a Linux host, run the source-checkout Hermes code-review example in a sandbox.
+```bash
+just notebooks
+```
 
-Start with Python 3.11 or later and an [NVIDIA API key](https://build.nvidia.com/). The second guide adds a separate Python 3.14 environment for Hermes Agent; the third supplies a complete local stdio MCP server. The optional sandbox guide requires a Linux host and a source checkout. Each guide explains its additional setup. For supported platforms and other installation routes, see the [Installation Overview](install.mdx).
+Open `01_quickstart.ipynb` in Jupyter and run its cells in order. The file is under `examples/notebooks/` in the checkout. You can also [preview its cells on GitHub](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/01_quickstart.ipynb) before launching.
+
+## Check Your Results
+
+A successful review reports status `succeeded` and identifies that `average([])` causes division by zero. Wording and suggested fixes can vary; check both the status and the finding. In the multi-turn example, check that the follow-up proposes a correction for the same issue.
+
+The notebook also prints runtime and invocation IDs and artifact information. Its inspection cells show the resolved plan and diagnostic results without making an additional agent request.
+
+## Next Steps
+
+Continue with [02_variations.ipynb](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/02_variations.ipynb) to vary harnesses, skills, MCP servers, and telemetry using the maintained code-review example. Refer to the [Python SDK guide](../sdk/python.mdx) when integrating the workflow into your application.
