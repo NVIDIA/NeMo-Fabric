@@ -1,0 +1,41 @@
+---
+title: Key Features of NVIDIA NeMo Fabric
+sidebar-title: Key Features
+description: Configure agent runs, compare harnesses and execution evidence, and share custom agents through a common interface.
+slug: /about-nemo-fabric/key-features
+template-library-version: "1.0.0"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+NVIDIA NeMo Fabric offers the following features for running supported agent harnesses through a common application interface:
+
+- **Run configuration:** Select models and configure supported tools, skills, MCP servers, subagents, and runtime settings.
+- **Configuration validation:** Check configuration compatibility before starting a runtime.
+- **Harness adapters:** Reuse a consumer integration while adapters handle harness-specific initialization and execution.
+- **Normalized execution evidence:** Collect results and errors, along with available artifacts, lifecycle events, telemetry references, and software versions.
+- **System stats:** Collect available CPU and memory measurements for the adapter host and its child processes.
+
+The following sections describe how to use these features. For component responsibilities and the execution flow, refer to the [Architecture Overview](architecture-overview.mdx).
+
+## Use Multiple Harnesses in Your Product
+
+NeMo Fabric lets your product use multiple supported agent harnesses through a common application interface. Adapters handle each harness’s initialization and execution, so your product can use a common request format and receive normalized results across harnesses. Select the capabilities each harness supports without building a separate execution integration for each one.
+
+## Evaluate and Optimize Agent Configurations Across Harnesses
+
+Use NeMo Fabric as the agent execution layer in your evaluation systems. Compare harnesses, models, and agent configurations on the same tasks. Your evaluation framework supplies the tasks and scoring; NeMo Fabric runs the configured agent and returns normalized results and available execution evidence.
+
+Test whether adding a skill, tool, or MCP integration improves task outcomes enough to justify its added cost for each harness and model.
+
+Meaningful comparisons also require knowing what ran. NeMo Fabric records selected software versions and available infrastructure software versions so you can identify differences between runs that could affect results.
+
+Available evidence depends on the selected adapter and environment; use the returned coverage and availability fields when comparing runs.
+
+## Optimize Execution with System Stats
+
+Use NeMo Fabric’s [system stats](../sdk/system-stats.mdx) to compare CPU and memory usage across harnesses and configurations. Process measurements cover the adapter host and its child processes. For Remote Agent, this is the local adapter process tree; it excludes the remote agent service. Default before/after readings can miss memory peaks, and sampled readings can miss spikes between samples. Check measurement scope, coverage, and availability before using the results to size resources or tune execution.
+
+## Make Your Agent Available to Other Teams
+
+Make your custom agent or custom harness available through NeMo Fabric by implementing the adapter contract. Other teams can then run it in their applications and evaluation systems through the same interface they use for supported harnesses, without building a separate integration.
