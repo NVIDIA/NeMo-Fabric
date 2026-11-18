@@ -13,13 +13,48 @@ navigation:
   - page: Release Notes
     path: ../pages-dev/about-nemo-fabric/release-notes.mdx
 - section: Getting Started
+  path: ../pages-dev/getting-started/overview.mdx
+  collapsed: open-by-default
   contents:
-  - page: Install
+  - section: Quickstart
+    path: ../pages-dev/getting-started/quickstart-overview.mdx
+    collapsed: open-by-default
+    contents:
+    - page: 1. Install One Harness
+      path: ../pages-dev/getting-started/quickstart.mdx
+    - page: 2. Switch Harnesses
+      path: ../pages-dev/getting-started/switch-harnesses.mdx
+    - page: 3. Add Skills and MCP
+      path: ../pages-dev/getting-started/skills-and-mcp.mdx
+    - page: 4. Run in OpenShell (Optional)
+      path: ../pages-dev/getting-started/openshell.mdx
+  - section: Installation
     path: ../pages-dev/getting-started/install.mdx
-  - page: Artifacts
+    collapsed: open-by-default
+    contents:
+    - page: Install the NeMo Fabric Runtime
+      path: ../pages-dev/getting-started/install-fabric-runtime.mdx
+    - page: Install a Harness Adapter
+      path: ../pages-dev/getting-started/install-adapters.mdx
+    - page: NeMo Relay and Streaming Dependencies
+      path: ../pages-dev/getting-started/install-relay.mdx
+    - page: Hermes Adapter
+      path: ../pages-dev/getting-started/install-hermes.mdx
+      hidden: true
+    - page: Cline Adapter
+      path: ../pages-dev/getting-started/install-cline.mdx
+      hidden: true
+    - page: Factory Droid Adapter
+      path: ../pages-dev/getting-started/install-droid.mdx
+      hidden: true
+    - page: Kiro Adapter
+      path: ../pages-dev/getting-started/install-kiro.mdx
+      hidden: true
+  - page: Packages and Distribution
     path: ../pages-dev/getting-started/artifacts.mdx
-  - page: Quickstart
-    path: ../pages-dev/getting-started/quickstart.mdx
+  - page: Development Setup and Building from Source
+    path: ../pages-dev/contributing/setup.mdx
+    hidden: true
 - section: Experimentation
   contents:
   - page: CLI
