@@ -1026,13 +1026,18 @@ async def main():
         else:
             runtime = await client.start_runtime(config, base_dir=sys.argv[2])
             try:
+                host = pathlib.Path(config.runtime.artifacts or ".") / ".fabric" / "hosts" / runtime.runtime_id
+                host_dir = host.is_dir()
                 result = await runtime.invoke(input="shared sandbox")
             finally:
                 await runtime.stop()
     except Exception as error:
         print(json.dumps({"failed": getattr(error, "code", None)}))
         return
-    print(json.dumps({"status": str(result.status), "fabric_home": result.metadata["fabric_home"]}))
+    outcome = {"status": str(result.status), "fabric_home": result.metadata["fabric_home"]}
+    if sys.argv[3] != "True":
+        outcome["host_dir"] = host_dir
+    print(json.dumps(outcome))
 asyncio.run(main())
 """
 
@@ -1069,8 +1074,12 @@ def _run_in_shared_sandbox(
 
 
 def _comparable(path: str | Path) -> Path:
-    # Windows reports native paths in extended-length form (\\?\C:\...).
+    # Windows reports native paths in extended-length form: \\?\C:\... for a
+    # drive and \\?\UNC\server\share\... for a share.
     text = os.path.normcase(os.path.normpath(str(path)))
+    unc = os.path.normcase("\\\\?\\UNC\\")
+    if text.startswith(unc):
+        return Path("\\\\" + text[len(unc) :])
     return Path(text.removeprefix("\\\\?\\"))
 
 
@@ -1096,8 +1105,11 @@ def test_configured_private_artifacts_hold_host_storage_in_a_shared_sandbox(
 
     assert outcome["status"] == "succeeded", outcome
     assert _comparable(outcome["fabric_home"]).is_relative_to(
-        _comparable(artifacts.resolve())
+        _comparable(artifacts.resolve() / ".fabric")
     )
+    if not one_shot:
+        # The running host's records are in <root>/.fabric/hosts/<runtime id>.
+        assert outcome["host_dir"] is True, outcome
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Unix storage ownership")
