@@ -246,6 +246,68 @@ def test_card_source_links_rewrite_outside_inline_code(tmp_path: Path, prose: st
     )
 
 
+@pytest.mark.parametrize("quote_prefix", ["", "> ", "> > "])
+@pytest.mark.parametrize(
+    ("opening", "continuation"),
+    [
+        ("- ~~~mdx", "  "),
+        ("* ```mdx", "  "),
+        ("+ ~~~mdx", "  "),
+        ("1. ```mdx", "   "),
+        ("12. ~~~mdx", "    "),
+        ("- 1. ```mdx", "     "),
+        ("- Item\n\n  ```mdx", "  "),
+        ("- Outer\n  - Inner\n\n    ~~~mdx", "    "),
+    ],
+)
+def test_card_source_links_preserve_list_fences(
+    tmp_path: Path, quote_prefix: str, opening: str, continuation: str
+):
+    fence = "~~~" if "~~~" in opening else "```"
+    listed = (
+        opening
+        + "\n"
+        + continuation
+        + "    "
+        + fence
+        + "\n"
+        + continuation
+        + '<Card href="./example-only.mdx">Example</Card>\n'
+        + continuation
+        + fence
+        + "\n"
+    )
+    original = (
+        "---\nslug: /guides/overview\n---\n"
+        + "".join(quote_prefix + line for line in listed.splitlines(keepends=True))
+        + '<Card href="./destination.mdx">Real link</Card>\n'
+    )
+    page = tmp_path / "page.mdx"
+    page.write_text(original)
+    (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
+
+    sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+
+    assert page.read_text() == original.replace(
+        'href="./destination.mdx"', 'href="../sdk/client"'
+    )
+
+
+def test_card_source_links_resume_after_unclosed_list_fence(tmp_path: Path):
+    page = tmp_path / "page.mdx"
+    original = (
+        "---\nslug: /guides/overview\n---\n"
+        '- ```mdx\n  <Card href="./example-only.mdx">Example</Card>\n\n'
+        '<Card href="./destination.mdx">Real link</Card>\n'
+    )
+    page.write_text(original)
+    (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
+    sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+    assert page.read_text() == original.replace(
+        'href="./destination.mdx"', 'href="../sdk/client"'
+    )
+
+
 def test_card_source_links_reject_missing_targets(tmp_path: Path):
     page = tmp_path / "page.mdx"
     page.write_text('---\nslug: /page\n---\n<Card href="missing.mdx">Missing</Card>\n')
