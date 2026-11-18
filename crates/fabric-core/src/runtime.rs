@@ -189,6 +189,10 @@ const DEFAULT_PYTHON: &str = "python.exe";
 static TEST_STOPPED_AGENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static LOCAL_HOSTS: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<LocalAdapterHost>>>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
+// Host record directories by runtime or service ID, for hosts whose records
+// live under a configured artifact root instead of default local storage.
+static LOCAL_HOST_DIRECTORIES: LazyLock<Mutex<BTreeMap<String, PathBuf>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 // Adapter host processes by runtime id. A host's own mutex stays locked for a
 // whole invocation, so a resource snapshot reads the PID from here instead.
 static LOCAL_HOST_PROCESSES: LazyLock<Mutex<BTreeMap<String, LocalHostProcess>>> =
@@ -1557,7 +1561,7 @@ fn start_service(
     let mut artifacts = artifact_manifest(plan)?;
     let fabric_home = prepare_fabric_home(&artifacts, &runtime, &invocation)?;
     let relay_config = prepare_relay_runtime_config(plan, &runtime, &fabric_home, &mut artifacts)?;
-    let connection_path = local_host_directory(&service_id)?.join("service-connection.json");
+    let connection_path = local_host_path(&artifacts, &service_id)?.join("service-connection.json");
     let service_context = match reference {
         Some(reference) => AdapterServiceContext::Attach {
             connection_path: connection_path.clone(),
@@ -3961,7 +3965,42 @@ fn local_services()
 }
 
 pub(crate) fn local_host_directory(id: &str) -> Result<PathBuf> {
+    if let Some(directory) = LOCAL_HOST_DIRECTORIES
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .get(id)
+    {
+        return Ok(directory.clone());
+    }
     Ok(default_artifact_root()?.join("hosts").join(id))
+}
+
+/// Where a host's records go: under the configured artifact root when there is
+/// one, so a sandbox whose home and temporary directories aren't private to the
+/// user can still run hosts, and otherwise in default local storage.
+fn local_host_path(artifacts: &ArtifactManifest, id: &str) -> Result<PathBuf> {
+    match &artifacts.root {
+        Some(root) => {
+            let root = std::fs::canonicalize(root).map_err(|source| FabricError::Write {
+                path: root.clone(),
+                source,
+            })?;
+            Ok(root.join(".fabric").join("hosts").join(id))
+        }
+        None => Ok(default_artifact_root()?.join("hosts").join(id)),
+    }
+}
+
+fn create_local_host_directory(artifacts: &ArtifactManifest, id: &str) -> Result<PathBuf> {
+    let Some(root) = &artifacts.root else {
+        return results::host_directory(&default_artifact_root()?, id);
+    };
+    let directory = results::configured_host_directory(root, id)?;
+    LOCAL_HOST_DIRECTORIES
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .insert(id.to_owned(), directory.clone());
+    Ok(directory)
 }
 
 fn spawn_local_host(
@@ -3985,7 +4024,7 @@ fn spawn_local_host(
     };
     // Lock acquisition creates retained storage, allowing its physical path to resolve.
     let scope = cleanup_scope(plan, state_dir.as_deref(), runtime.service_id.as_deref());
-    let runtime_dir = results::host_directory(&default_artifact_root()?, &runtime.runtime_id)?;
+    let runtime_dir = create_local_host_directory(&artifacts, &runtime.runtime_id)?;
     let stderr_path = runtime_dir.join("host.stderr.log");
     let stderr = File::create(&stderr_path).map_err(|source| FabricError::Write {
         path: stderr_path.clone(),
@@ -4793,10 +4832,16 @@ fn resume_host(pid: u32) -> std::io::Result<()> {
 
 fn remove_local_host_files(host: &LocalAdapterHost) -> std::io::Result<()> {
     match std::fs::remove_dir_all(&host.runtime_dir) {
-        Ok(()) => Ok(()),
-        Err(source) if source.kind() == ErrorKind::NotFound => Ok(()),
-        Err(source) => Err(source),
+        Ok(()) => {}
+        Err(source) if source.kind() == ErrorKind::NotFound => {}
+        Err(source) => return Err(source),
     }
+    // A failed removal keeps the entry so a retried cleanup finds the files.
+    LOCAL_HOST_DIRECTORIES
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .retain(|_, directory| *directory != host.runtime_dir);
+    Ok(())
 }
 
 fn adapter_id(plan: &RunPlan) -> Option<String> {
