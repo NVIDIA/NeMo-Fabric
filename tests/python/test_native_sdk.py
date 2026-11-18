@@ -1068,6 +1068,12 @@ def _run_in_shared_sandbox(
     return json.loads(completed.stdout.strip().splitlines()[-1])
 
 
+def _comparable(path: str | Path) -> Path:
+    # Windows reports native paths in extended-length form (\\?\C:\...).
+    text = os.path.normcase(os.path.normpath(str(path)))
+    return Path(text.removeprefix("\\\\?\\"))
+
+
 @pytest.fixture
 def shared_sandbox(tmp_path: Path) -> Path:
     sandbox = tmp_path / "sandbox"
@@ -1089,7 +1095,9 @@ def test_configured_private_artifacts_hold_host_storage_in_a_shared_sandbox(
     )
 
     assert outcome["status"] == "succeeded", outcome
-    assert Path(outcome["fabric_home"]).is_relative_to(artifacts.resolve())
+    assert _comparable(outcome["fabric_home"]).is_relative_to(
+        _comparable(artifacts.resolve())
+    )
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Unix storage ownership")
