@@ -83,7 +83,11 @@ just install-hermes-agent
 ```
 
 The recipe checks out Hermes Agent under `external/hermes-agent` and installs
-it with the adapter into `.venv-hermes`, separately from the active `.venv`. Run Hermes tests with `just test-hermes`, which uses that interpreter. End users should follow
+it with the adapter into `.venv-hermes`, separately from the active `.venv`. Run Hermes tests with `just test-hermes`, which uses that interpreter.
+
+For a Hermes application launched from `.venv`, run `export ADAPTER_PYTHON="$PWD/.venv-hermes/bin/python"` from the repository root. Refer to the [Hermes adapter setup](../getting-started/install-hermes.mdx) for application configuration.
+
+End users should follow
 the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation)
 and install `nemo-fabric-adapters-hermes` without a harness extra.
 
