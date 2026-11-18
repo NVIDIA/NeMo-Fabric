@@ -38,12 +38,12 @@ Relay subfields:
 | `models.<role>.top_p`, `.max_tokens` | No | No | Yes | Yes | Yes; passed through LiteLLM |
 | `instructions.system` | `replace`, `append` | `replace`; maps to Codex base instructions | `replace` | `replace` | `replace` |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core |
-| `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core |
+| `runtime.artifacts`, `.timeout_seconds`, `.response_limits` | Core | Core | Core | Core | Core |
 | `runtime.max_turns` | Yes | No | Yes; maps to LangGraph supersteps | Yes; maps to Hermes iterations | Yes |
 | `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core |
 | `environment.workspace`, `.artifacts`, `.env`, `.env_names` | Core | Core | Core | Core | Core |
 | `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
-| `tools.definitions` | No | No | No | No | No |
+| `tools.definitions` | No | No | Yes; `kind: python` LangChain tools | No | No |
 | `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names | No |
 | `skills.paths` | Yes | Yes | Yes | Yes | No |
 | `skills.directories`, `.bundled`, `.duplicates` | No | No | No | Yes; refer to [Configure Skills](../integrations/harness/skills.mdx) | No |
@@ -175,15 +175,15 @@ NeMo Fabric reads named values at adapter start and checks them before each invo
 
 MCP authentication and custom-header support vary by adapter:
 
-| Adapter | OAuth 2.0 Authentication | HTTP `custom_headers` |
-| --- | --- | --- |
-| Claude | Unsupported | Supported |
-| Codex | Supported | Supported |
-| Deep Agents | Unsupported | Supported |
-| Hermes Agent | Supported | Supported |
+| Adapter | OAuth 2.0 (`oauth2`) | Client credentials (`service_account`) | HTTP `custom_headers` |
+| --- | --- | --- | --- |
+| Claude | Unsupported | Unsupported | Supported |
+| Codex | Supported | Unsupported | Supported |
+| Deep Agents | Unsupported | Supported | Supported |
+| Hermes Agent | Supported | Unsupported | Supported |
 
-Claude and Deep Agents return a configuration error when `authentication` is
-set. The bundled adapters do not support `service_account` MCP authentication.
+An adapter returns a configuration error when `authentication` uses a type it
+does not support.
 
 Configure OAuth 2.0 with `McpAuthenticationConfig`. The adapter and MCP server
 complete the authorization flow before the first agent turn. The flow can
@@ -203,6 +203,73 @@ capability_config.add_mcp_server(
     exposure="harness_native",
 )
 ```
+
+Configure OAuth 2.0 client credentials with `type="service_account"` when the
+agent calls an MCP server as its own service identity, with no user and no
+browser. `client_secret_env` names the environment variable that holds the
+client secret; the configuration contains only the name:
+
+```python
+capability_config.add_mcp_server(
+    "jira",
+    transport="streamable-http",
+    url="https://jira-mcp.example.com/mcp",
+    authentication=McpAuthenticationConfig(
+        type="service_account",
+        client_id="fabric-agent",
+        client_secret_env="JIRA_MCP_CLIENT_SECRET",
+        token_url="https://auth.example.com/oauth2/token",
+        scopes=["jira.read"],
+    ),
+)
+```
+
+The adapter requests a token from `token_url`, sends it as
+`Authorization: Bearer <token>` with every MCP request, and requests a new one
+before it expires. `token_endpoint_auth_method` selects `client_secret_basic`
+(the default) or `client_secret_post`, and `token_cache_buffer_seconds` (300 by
+default) sets how early the token is renewed. `service_account` applies to
+`sse` and `streamable-http` servers. Startup fails if the variable named by
+`client_secret_env` is unset, if `token_url` or the server `url` is not `https`
+(plain `http` is accepted only for a loopback host), if the transport is
+`websocket`, or if the same server sets an `Authorization` custom header.
+
+Some MCP servers sit behind a gateway and need two tokens: the
+`service_account` bearer token admits the agent to the server, and a second
+token, sent in its own header, selects the identity used for the system behind
+the server. That second token can belong to a service account in that system or
+to a user, so the agent sees what that account can see. Combine
+`service_account` with a `custom_headers` entry that references an environment
+variable:
+
+```python
+import os
+
+os.environ["DOWNSTREAM_TOKEN"] = "..."  # issued by the downstream system
+
+capability_config.add_mcp_server(
+    "bugs",
+    transport="streamable-http",
+    url="https://mcp-gateway.example.com/bugs/mcp",
+    authentication=McpAuthenticationConfig(
+        type="service_account",
+        client_id="fabric-agent",
+        client_secret_env="GATEWAY_CLIENT_SECRET",
+        token_url="https://auth.example.com/oauth2/token",
+        scopes=["bugs"],
+    ),
+    custom_headers={"X-Downstream-Token": "${DOWNSTREAM_TOKEN}"},
+)
+```
+
+Only the `service_account` token is requested and renewed by the adapter. The
+second token is sent as configured, so replace the variable and restart the
+runtime when it expires. Set the variable before starting the runtime: an
+empty value fails startup with `AdapterConfigError`, and an unset variable is
+not expanded, so the literal `${DOWNSTREAM_TOKEN}` text is sent. A rejected
+second token does not stop the server's tools from loading: the gateway
+accepts the bearer token, and the error appears in the tool result when the
+downstream system refuses the call.
 
 Use `custom_headers` to send HTTP headers with an `sse` or `streamable-http`
 server. Header names and values must be valid HTTP header text. To provide a
@@ -424,7 +491,6 @@ plugin_config.enable_relay()
 
 NeMo Fabric preserves the `relay.plugins` section alongside any configured `relay.observability`, `relay.components`, and `relay.policy`. Relay owns manifest validation, loading, and activation. Use absolute manifest paths accessible inside the agent environment. Plugin activation depends on the selected adapter's Relay integration and the installed Relay version. For Hermes installation requirements, refer to [Use the Hermes Agent Adapter](../integrations/harness/hermes/hermes.mdx).
 
-
 ## Feature Support Across Harness Adapters
 
 The SDK presents one consistent shape across adapters, but adapters differ in
@@ -453,7 +519,6 @@ harness-native surface. `unsupported` means neither side can execute it.
 Routes apply to tools, skills, and MCP servers. Scalar fields such as
 `instructions.system` and `runtime.max_turns` are validated separately against
 the adapter descriptor.
-
 
 ## Custom Fields And Adapter Settings
 
