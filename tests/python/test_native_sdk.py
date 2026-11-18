@@ -982,7 +982,10 @@ async def main():
     saved = await client.invocation_result(agent_name=result.agent_name, runtime_id=result.runtime_id, request_id=result.request_id, artifacts=config.runtime.artifacts)
     assert saved == result
     root = pathlib.Path(os.environ['TMPDIR']).resolve() / f'nemo-fabric-{os.geteuid()}-private'
-    assert root.stat().st_mode & 0o777 == 0o700
+    # A configured artifact root holds the host records, so only an
+    # unconfigured runtime needs default storage.
+    if not config.runtime.artifacts:
+        assert root.stat().st_mode & 0o777 == 0o700
     artifact_root = pathlib.Path(config.runtime.artifacts).resolve() if config.runtime.artifacts else root
     assert pathlib.Path(result.metadata['fabric_home']).is_relative_to(artifact_root)
 asyncio.run(main())
