@@ -13,7 +13,7 @@ SPDX-License-Identifier: Apache-2.0
 [![Crates.io](https://img.shields.io/crates/v/nemo-fabric-cli?label=nemo-fabric-cli&color=B7410E&logo=rust)](https://crates.io/crates/nemo-fabric-cli)
 
 <p align="center">
-  <img src="assets/fabric-hero.png" alt="Diagram showing NeMo Fabric connecting applications, evaluation systems, and reinforcement learning rollouts to Hermes Agent, Codex, Claude Code, LangChain Deep Agents, and custom agents, with results, artifacts, and telemetry as outputs." width="1000">
+  <img src="assets/fabric-hero.svg" alt="Diagram showing NeMo Fabric connecting applications, evaluation systems, and reinforcement learning rollouts to Hermes Agent, Codex, Claude Code, LangChain Deep Agents, and custom agents, with results, artifacts, and telemetry as outputs." width="1000">
 </p>
 
 NeMo Fabric gives applications, evaluation systems, and rollout platforms a consistent interface for running agent harnesses and custom agents.
@@ -80,10 +80,10 @@ for descriptor sources, compatibility limits, and API migration examples.
 ## Documentation
 
 - [Quickstart](docs/getting-started/quickstart.mdx): Run a first agent through the Python SDK.
-- [Invocation system stats](docs/sdk/python.mdx#invocation-system-stats): Select per-invocation metric groups, sampled peaks, and cgroup conditions; disable collection independently of sampling.
-- [Selected software evidence](docs/sdk/python.mdx#selected-software-evidence): Inspect versions in optional `RunResult.execution` and control collection before initialization.
-- [Conversation telemetry](docs/sdk/python.mdx): Use `RunRequest.relay_session_root` to group Deep Agents and mini-SWE-agent turns under one NeMo Relay session.
-- [Hermes cold resume](docs/sdk/python.mdx#resume-a-hermes-conversation): Retain native state and explicitly reopen a conversation with `SessionRef`.
+- [Invocation system stats](docs/sdk/system-stats.mdx#invocation-system-stats): Select per-invocation metric groups, sampled peaks, and cgroup conditions; disable collection independently of sampling.
+- [Selected software evidence](docs/sdk/software-execution-evidence.mdx#selected-software-evidence): Inspect versions in optional `RunResult.execution` and control collection before initialization.
+- [Conversation telemetry](docs/sdk/configure-agents.mdx#custom-fields-and-adapter-settings): Use `RunRequest.relay_session_root` to group Deep Agents and mini-SWE-agent turns under one NeMo Relay session.
+- [Hermes cold resume](docs/sdk/requests-and-runtimes.mdx#resume-a-hermes-conversation): Retain native state and explicitly reopen a conversation with `SessionRef`.
 - [Installation](docs/getting-started/install.mdx): Install the runtime, adapters, harness dependencies, and telemetry components, and choose a deployment scenario.
 - [Adapter catalog](sdk/python/nemo-fabric-adapter-catalog/README.md): Inspect bundled adapter metadata on a host without installing harness SDKs.
 - [Host admission](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host): Validate requested capabilities and descriptor-declared conditional requirements, then reject host/task descriptor drift before execution. Installed dependencies, native model catalogs, credentials, and endpoint health remain runtime checks.

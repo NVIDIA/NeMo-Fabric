@@ -46,6 +46,12 @@ logger = logging.getLogger(__name__)
 
 _PI_ADAPTER_ID = "nvidia.fabric.pi"
 _PI_STREAM_CORRELATION_MODE = "pi_turn_window"
+# Result-store rejections do not dispatch a new turn to the adapter.
+_INVOCATION_REJECTION_CODES = (
+    "request_conflict",
+    "invocation_pending",
+    "stream_replay_unsupported",
+)
 
 
 class RuntimeStatus(str, Enum):
@@ -321,12 +327,18 @@ class Runtime:
                 else:
                     self._status = RuntimeStatus.STOPPED
                 raise
-            except FabricError:
-                if self._status is not RuntimeStatus.STOPPED:
+            except FabricError as error:
+                if (
+                    self._status is not RuntimeStatus.STOPPED
+                    and error.code not in _INVOCATION_REJECTION_CODES
+                ):
                     self._status = RuntimeStatus.FAILED
                 raise
             except Exception as error:
-                if self._status is not RuntimeStatus.STOPPED:
+                if (
+                    self._status is not RuntimeStatus.STOPPED
+                    and getattr(error, "code", None) not in _INVOCATION_REJECTION_CODES
+                ):
                     self._status = RuntimeStatus.FAILED
                 raise _runtime_error(error, stage="invoke") from error
             if absorb_result:
@@ -915,6 +927,12 @@ class Runtime:
                 await self._collector.aclose()
 
     def _absorb(self, result: RunResult) -> None:
+        identity = (result.runtime_id, result.invocation_id, result.request_id)
+        if any(
+            (item["runtime_id"], item["invocation_id"], item["request_id"]) == identity
+            for item in self._invocations
+        ):
+            return
         self._invocations.append(
             {
                 "request_id": result.request_id,
@@ -1055,6 +1073,10 @@ async def _run_native_lifecycle(
         invoke_error: FabricError | None = None
         try:
             try:
+                if runtime.get("environment", {}).get("provider") == "local":
+                    native._begin_run_result(
+                        plan_json, runtime_json, json.dumps(dict(request))
+                    )
                 result = json.loads(
                     native.invoke_runtime(
                         plan_json, runtime_json, json.dumps(dict(request))
@@ -1076,6 +1098,8 @@ async def _run_native_lifecycle(
             except Exception as error:
                 stop_error = error
                 cleanup = "failed"
+                if _runtime_error(error, stage="stop").code == "cleanup_unconfirmed":
+                    cleanup_runtime_handle = runtime
                 if invoke_error is None:
                     if result is None:
                         raise
@@ -1110,12 +1134,20 @@ async def _run_native_lifecycle(
             )
             if result is not None:
                 observations["partial_result"] = result
-            if (
-                stop_error is not None
-                and _runtime_error(stop_error, stage="stop").code
-                == "cleanup_unconfirmed"
-            ):
-                cleanup_runtime_handle = runtime
+                if runtime.get("environment", {}).get("provider") == "local":
+                    try:
+                        native._save_run_result(
+                            plan_json, runtime_json, json.dumps(result)
+                        )
+                    except Exception as error:
+                        failure = FabricRuntimeError(
+                            "The final invocation result could not be saved.",
+                            stage="result",
+                            code="result_storage_failed",
+                        )
+                        _retain_runtime_evidence(failure, observations)
+                        raise failure from error
+            if cleanup_runtime_handle is not None:
                 failure = invoke_error or FabricRuntimeError(
                     "Runtime cleanup is unconfirmed; retry cleanup_runtime.stop().",
                     stage="stop",
@@ -1126,6 +1158,24 @@ async def _run_native_lifecycle(
                 if invoke_error is None:
                     raise failure from stop_error
             if invoke_error is not None:
+                if runtime.get("environment", {}).get("provider") == "local":
+                    try:
+                        native._finish_failed_run_result(
+                            plan_json,
+                            runtime_json,
+                            json.dumps(dict(request)),
+                            json.dumps(
+                                stop_events if isinstance(stop_events, list) else []
+                            ),
+                        )
+                    except Exception as error:
+                        failure = FabricRuntimeError(
+                            "The final invocation result could not be saved.",
+                            stage="result",
+                            code="result_storage_failed",
+                        )
+                        _retain_runtime_evidence(failure, observations)
+                        raise failure from error
                 # Keep obtained identity and cleanup evidence beside the original
                 # exception. A protocol failure is not a normalized invocation.
                 _retain_runtime_evidence(invoke_error, observations)
@@ -1138,7 +1188,9 @@ async def _run_native_lifecycle(
         if cleanup_runtime_handle is not None:
             error._fabric_cleanup_runtime_handle = cleanup_runtime_handle
         raise
-    except FabricError:
+    except FabricError as error:
+        if cleanup_runtime_handle is not None:
+            error._fabric_cleanup_runtime_handle = cleanup_runtime_handle
         raise
     except Exception as error:
         raise _runtime_error(error, stage="run") from error

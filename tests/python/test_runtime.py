@@ -248,6 +248,29 @@ async def test_one_shot_retains_a_cleanup_runtime_without_exposing_its_handle(
     assert mock_native.stop_runtime.call_count == 2
 
 
+@pytest.mark.parametrize("invoke_fails", [False, True])
+async def test_result_storage_failure_preserves_pending_cleanup(
+    native_client, mock_native, invoke_fails
+):
+    if invoke_fails:
+        mock_native.invoke_runtime.side_effect = FabricRuntimeError(
+            "synthetic invoke failure", stage="invoke", code="host_crashed"
+        )
+    mock_native.stop_runtime.side_effect = FabricRuntimeError(
+        "synthetic cleanup failure", stage="stop", code="cleanup_unconfirmed"
+    )
+    method = "_finish_failed_run_result" if invoke_fails else "_save_run_result"
+    getattr(mock_native, method).side_effect = RuntimeError("synthetic storage failure")
+    with pytest.raises(FabricRuntimeError) as caught:
+        await native_client.run(_config(), input="synthetic work")
+    assert caught.value.code == "result_storage_failed"
+    recovery = caught.value.cleanup_runtime
+    assert isinstance(recovery, Runtime)
+    mock_native.stop_runtime.side_effect = None
+    await recovery.stop()
+    assert recovery.status is RuntimeStatus.STOPPED
+
+
 async def test_cancelled_one_shot_retains_a_cleanup_runtime(native_client, mock_native):
     entered, release = threading.Event(), threading.Event()
 
@@ -307,6 +330,31 @@ async def test_stop_does_not_wait_for_a_saturated_default_executor(mock_native):
             loop.set_default_executor(previous_executor)
     assert stopping in completed
     mock_native.stop_runtime.assert_called_once()
+
+
+async def test_remote_one_shot_does_not_write_to_local_result_storage(mock_native):
+    runtime = _runtime()
+    runtime["environment"]["provider"] = "openshell"
+    mock_native.start_runtime.return_value = json.dumps(runtime)
+    result = await runtime_mod._run_native_lifecycle(
+        mock_native, _plan(), {"request_id": "remote-request", "input": "remote work"}
+    )
+    assert result["status"] == "succeeded"
+    mock_native._save_run_result.assert_not_called()
+
+
+async def test_final_save_failure_retains_one_shot_recovery_evidence(mock_native):
+    mock_native._save_run_result.side_effect = RuntimeError("storage unavailable")
+    with pytest.raises(FabricRuntimeError) as caught:
+        await runtime_mod._run_native_lifecycle(
+            mock_native, _plan(), {"request_id": "saved-request", "input": "hello"}
+        )
+    assert caught.value.stage == "result"
+    evidence = caught.value.details["runtime_evidence"]
+    assert evidence["runtime_id"] == "runtime-1"
+    assert evidence["request_id"] == "saved-request"
+    assert evidence["cleanup"] == "completed"
+    assert evidence["partial_result"]["status"] == "succeeded"
 
 
 @pytest.mark.parametrize("stage", ["start", "invoke", "stop"])
@@ -466,8 +514,41 @@ async def test_runtime_reuses_runtime_and_orders_turns(mock_native: MagicMock):
     assert len(runtime.invocations) == 2
 
 
-async def test_native_invoke_failure_marks_runtime_failed(mock_native: MagicMock):
-    mock_native.invoke_runtime.side_effect = RuntimeError("invoke failed")
+@pytest.mark.parametrize(
+    "code", ["request_conflict", "invocation_pending", "stream_replay_unsupported"]
+)
+@pytest.mark.parametrize("structured", [False, True])
+async def test_request_rejection_keeps_runtime_usable(mock_native, code, structured):
+    error = (
+        FabricRuntimeError("request rejected", stage="invoke", code=code)
+        if structured
+        else RuntimeError("request rejected")
+    )
+    error.code = code
+    invoke = mock_native.invoke_runtime.side_effect
+    mock_native.invoke_runtime.side_effect = error
+    runtime = _runtime_wrapper(mock_native)
+    try:
+        with pytest.raises(FabricRuntimeError) as caught:
+            await runtime.invoke(input="rejected")
+        assert caught.value.code == code
+        assert runtime.status is RuntimeStatus.ACTIVE
+        if structured:
+            assert caught.value is error
+        else:
+            assert caught.value.__cause__ is error
+        mock_native.invoke_runtime.side_effect = invoke
+        fresh = await runtime.invoke(input="fresh")
+        assert fresh.status == "succeeded"
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.parametrize("code", [None, "host_crashed", "result_storage_failed"])
+async def test_native_invoke_failure_marks_runtime_failed(mock_native: MagicMock, code):
+    error = RuntimeError("invoke failed")
+    error.code = code
+    mock_native.invoke_runtime.side_effect = error
     runtime = _runtime_wrapper(mock_native)
 
     with pytest.raises(FabricRuntimeError, match="invoke failed"):
@@ -1984,3 +2065,20 @@ async def test_failed_start_preserves_private_cleanup_runtime(
     finally:
         release.set()
         await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_failed_result_finalization_retains_runtime_evidence(mock_native):
+    mock_native.invoke_runtime.side_effect = FabricRuntimeError(
+        "synthetic invocation failure", stage="invoke", code="host_crashed"
+    )
+    mock_native._finish_failed_run_result.side_effect = RuntimeError(
+        "synthetic storage failure"
+    )
+    with pytest.raises(FabricRuntimeError) as caught:
+        await runtime_mod._run_native_lifecycle(
+            mock_native, _plan(), {"request_id": "failed-request", "input": "synthetic"}
+        )
+    assert caught.value.code == "result_storage_failed"
+    assert caught.value.stage == "result"
+    assert caught.value.details["runtime_evidence"]["runtime_id"] == "runtime-1"
+    assert caught.value.details["runtime_evidence"]["request_id"] == "failed-request"

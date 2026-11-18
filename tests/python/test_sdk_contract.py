@@ -1751,6 +1751,7 @@ def _fabric_config() -> FabricConfig:
 class NativeRecorder:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
+        self.saved_results: list[dict[str, Any]] = []
         self.config_base_dir_calls: list[str | None] = []
         self.stopped = 0
         self.fail_invoke = False
@@ -1837,6 +1838,30 @@ class NativeRecorder:
     def stop_runtime(self, plan_json: str, runtime_json: str) -> str:
         self.stopped += 1
         return json.dumps([])
+
+    def _begin_run_result(
+        self, plan_json: str, runtime_json: str, request_json: str
+    ) -> None:
+        assert json.loads(plan_json)["agent_name"] == "demo"
+        assert json.loads(runtime_json)["runtime_id"] == "runtime-1"
+        assert json.loads(request_json)["request_id"]
+
+    def _finish_failed_run_result(
+        self, plan_json: str, runtime_json: str, request_json: str, events_json: str
+    ) -> None:
+        self._begin_run_result(plan_json, runtime_json, request_json)
+        assert self.stopped > 0
+        assert isinstance(json.loads(events_json), list)
+
+    def _save_run_result(
+        self, plan_json: str, runtime_json: str, result_json: str
+    ) -> None:
+        result = json.loads(result_json)
+        assert self.stopped > 0
+        assert json.loads(plan_json)["agent_name"] == result["agent_name"]
+        assert json.loads(runtime_json)["runtime_id"] == result["runtime_id"]
+        assert self.requests[-1]["request_id"] == result["request_id"]
+        self.saved_results.append(result)
 
 
 class NativeClient(Fabric):
@@ -2205,6 +2230,7 @@ async def test_run_accepts_full_run_request():
 
     assert isinstance(result, RunResult)
     assert result.status == "succeeded"
+    assert RunResult.from_mapping(native.saved_results[0]) == result
     assert native.requests[0] == {
         "input": "hello",
         "request_id": "request-4",

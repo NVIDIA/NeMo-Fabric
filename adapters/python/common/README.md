@@ -143,7 +143,7 @@ introduced in Relay 0.10.3. NeMo Fabric supports the `>=0.9,<0.12` CLI range.
 An optional `AdapterRuntime.check(level)` method returns native health evidence
 through the shared `AdapterCheckResult` contract. The host serves checks through
 an authenticated loopback channel and applies the remaining request deadline.
-Refer to the [SDK health transport diagram](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#runtime-health) for lifecycle and health request routing.
+Refer to the [SDK health transport diagram](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/health-checks.mdx#runtime-health) for lifecycle and health request routing.
 
 ## Relay Request Correlation
 

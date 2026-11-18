@@ -38,6 +38,11 @@ pub(crate) enum TaskCommand {
         agent: String,
         runtime_id: String,
     },
+    Result {
+        agent: String,
+        runtime_id: String,
+        request_id: String,
+    },
     Stop {
         agent: String,
         runtime_id: String,
