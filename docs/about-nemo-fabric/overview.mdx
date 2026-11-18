@@ -13,50 +13,63 @@ NVIDIA NeMo Fabric provides applications, evaluation systems, and rollout platfo
 - **Switch harnesses:** Reuse the consumer integration while adapters handle harness-specific behavior.
 - **Compare outcomes:** Collect normalized results and errors, along with available artifacts, lifecycle events, and telemetry references.
 
-{/* The docs sync resolves repository-relative Card source paths for the published site. */}
-<CardGroup cols={2}>
-  <Card title="Who Should Use NeMo Fabric" icon="fa-solid fa-users" href="#what-you-can-do-with-nemo-fabric">
-    Find out how NeMo Fabric can help your team build applications, compare harnesses, and share agents.
-  </Card>
-  <Card title="Start Here: Run Your First Agent" icon="fa-solid fa-rocket" href="../getting-started/quickstart-overview.mdx">
-    Use the starter notebook or follow the Python Quickstart.
-  </Card>
-  <Card title="Bring Your Own Custom Agent or Harness" icon="fa-solid fa-puzzle-piece" href="../adapter-contract/README.md">
-    Make your agent work with NeMo Fabric: implement an adapter that applications and evaluation tools can reuse.
-  </Card>
-  <Card title="Use Ready-Made Integrations" icon="fa-solid fa-plug" href="../integrations/consumer/overview.mdx">
-    Explore sandboxed workflows, evaluation, training, and agent optimization through NVIDIA NemoClaw, Harbor Framework, NVIDIA NeMo Gym, NVIDIA NeMo Helix, and NVIDIA NeMo Polar.
-  </Card>
-</CardGroup>
-
 <a id="what-you-can-do-with-fabric"></a>
-
-## What You Can Do with NeMo Fabric
-
+<a id="what-you-can-do-with-nemo-fabric"></a>
 <a id="use-multiple-harnesses-in-your-product"></a>
 <a id="evaluate-and-optimize-agent-configurations-across-harnesses"></a>
 <a id="optimize-execution-with-system-stats"></a>
 <a id="make-your-agent-available-to-other-teams"></a>
 
-Use NeMo Fabric to integrate multiple supported harnesses into your product, compare agent configurations on the same tasks, inspect available execution evidence, or share a custom agent with other teams. The [Key Features](key-features.mdx) page describes these workflows and their measurement limits.
+**What You Can Do with NeMo Fabric**
 
-## How NeMo Fabric Works
+Use NeMo Fabric to integrate multiple supported harnesses into your product, compare agent configurations on the same tasks, inspect available execution evidence, or share a custom agent with other teams. The [Key Features](key-features.mdx) page describes these workflows and their measurement details.
 
-Your application submits a task and configuration through the Python SDK. NeMo Fabric validates the settings, runs the selected harness through its adapter and environment provider, and returns a normalized outcome with available execution evidence. Your application owns scheduling, retries, scoring, and recovery.
+<a id="how-nemo-fabric-works"></a>
 
-For component responsibilities and a code-review execution example, refer to the [Architecture Overview](architecture-overview.mdx).
+**How NeMo Fabric Works**
 
-## Next Steps
+Your application submits a task and configuration through the Python SDK. NeMo Fabric validates the settings, runs the selected harness through its adapter and environment provider, and returns a normalized outcome with available execution evidence. Your application owns scheduling, retries, scoring, and recovery. The [Architecture Overview](architecture-overview.mdx) describes in more detail the component responsibilities and data flow.
 
-Choose a guided first run or explore the SDK in a notebook:
+<a id="next-steps"></a>
 
-<CardGroup cols={2}>
-  <Card title="Follow the Quickstart" icon="fa-solid fa-rocket" href="../getting-started/quickstart-overview.mdx">
-    Install one supported harness and run your first agent task with the Python SDK.
+## Skip Ahead
+
+Choose a starting point for your workflow:
+
+{/* The docs sync resolves repository-relative Card source paths for the published site. */}
+<CardGroup cols={3}>
+  <Card title="Notebook Quickstart" icon="fa-solid fa-book-open" href="../getting-started/quickstart-overview.mdx">
+    Configure a reviewer, run a task, and explore stateful execution in the starter notebook.
   </Card>
-  <Card title="Open the SDK Starter Notebook" icon="fa-solid fa-book-open" href="https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/01_quickstart.ipynb">
-    Work through configuration, execution, and results step by step in the source-checkout notebook.
+  <Card title="Consumer Integrations" icon="fa-solid fa-plug" href="../integrations/consumer/overview.mdx">
+    Connect your evaluation or deployment workflow to NeMo Fabric.
+  </Card>
+  <Card title="Harness Integrations" icon="fa-solid fa-layer-group" href="../integrations/harness/overview.mdx">
+    Find configuration and usage guidance for supported agent harnesses.
+  </Card>
+  <Card title="Adapter Contract Tutorial" icon="fa-solid fa-puzzle-piece" href="../adapter-contract/tutorials/adapter-descriptor.md">
+    Learn to build an adapter that makes your agent work with NeMo Fabric.
+  </Card>
+  <Card title="Python SDK" icon="fa-brands fa-python" href="../sdk/python.mdx">
+    Configure agents, manage execution, and consume normalized results in your application.
+  </Card>
+  <Card title="Troubleshooting" icon="fa-solid fa-wrench" href="../troubleshooting.mdx">
+    Diagnose setup problems, interpret errors, and investigate failed execution.
   </Card>
 </CardGroup>
 
-The [notebook guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/README.md) covers setup and a second notebook for comparing harnesses and varying agent capabilities.
+## Use Cases
+
+Explore common ways to use NeMo Fabric:
+
+<CardGroup cols={3}>
+  <Card title="Use Multiple Harnesses in Your Application" icon="fa-solid fa-layer-group" href="../sdk/python.mdx">
+    Let your application select supported harnesses through a common execution interface while adapters handle their native behavior.
+  </Card>
+  <Card title="Compare Agent Configurations" icon="fa-solid fa-scale-balanced" href="../integrations/consumer/harbor.mdx">
+    Run the same tasks across harnesses, models, and supported capabilities. Use normalized results and available execution evidence in your evaluation workflow.
+  </Card>
+  <Card title="Make Your Agent Available to Other Teams" icon="fa-solid fa-share-nodes" href="../adapter-contract/README.md">
+    Implement an adapter so other teams can run your custom agent through the same interface they use for supported harnesses.
+  </Card>
+</CardGroup>

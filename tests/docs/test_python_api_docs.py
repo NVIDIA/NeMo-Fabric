@@ -386,9 +386,10 @@ def test_landing_page_routes_new_users_through_the_product():
         assert destination.resolve() in pages
 
     for heading in (
-        "## What You Can Do with NeMo Fabric",
-        "## How NeMo Fabric Works",
-        "## Next Steps",
+        "**What You Can Do with NeMo Fabric**",
+        "**How NeMo Fabric Works**",
+        "## Skip Ahead",
+        "## Use Cases",
     ):
         assert heading in landing
 
@@ -398,7 +399,7 @@ def test_landing_page_routes_new_users_through_the_product():
     ):
         assert destination in landing
 
-    assert '<Card title="Start Here: Run Your First Agent"' in landing
+    assert '<Card title="Notebook Quickstart"' in landing
     # Card links must lead to real, published pages rather than source-only files.
     for href in re.findall(r'<Card\b[^>]*?href="([^"]+)"', landing):
         target = urlsplit(href)
