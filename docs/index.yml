@@ -18,7 +18,7 @@ navigation:
   contents:
   - page: Quickstart
     path: ./getting-started/quickstart-overview.mdx
-  - page: Python Tutorial
+  - page: Multi-Harness Tutorial
     path: ./getting-started/tutorial.mdx
   - section: Installation
     path: ./getting-started/install.mdx

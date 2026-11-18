@@ -80,7 +80,7 @@ for descriptor sources, compatibility limits, and API migration examples.
 ## Documentation
 
 - [Quickstart](docs/getting-started/quickstart-overview.mdx): Preview and run the interactive starter notebook.
-- [Python Tutorial](docs/getting-started/tutorial.mdx): Run a review, switch harnesses, and add a skill and an MCP tool.
+- [Multi-Harness Tutorial](docs/getting-started/tutorial.mdx): Run a review, switch harnesses, and add a skill and an MCP tool.
 - [Invocation system stats](docs/sdk/system-stats.mdx#invocation-system-stats): Select per-invocation metric groups, sampled peaks, and cgroup conditions; disable collection independently of sampling.
 - [Selected software evidence](docs/sdk/software-execution-evidence.mdx#selected-software-evidence): Inspect versions in optional `RunResult.execution` and control collection before initialization.
 - [Conversation telemetry](docs/sdk/configure-agents.mdx#custom-fields-and-adapter-settings): Use `RunRequest.relay_session_root` to group Deep Agents and mini-SWE-agent turns under one NeMo Relay session.
