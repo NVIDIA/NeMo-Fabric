@@ -16,14 +16,19 @@ selected descriptor's existing `capabilities.streaming` claim. If the claim is
 false, `invoke_openai_stream()` raises `FabricCapabilityError` with code
 `openai_streaming_unavailable`.
 
+Run the following example from a NeMo Fabric source checkout after completing the [NVIDIA NeMo Agent Toolkit reference adapter bootstrap](../../external/nat/README.md#development-bootstrap). Export `NVIDIA_API_KEY` for the NVIDIA-hosted model selected by its maintained calculator configuration. That configuration discovers the source-only adapter and registered target, and starts its calculator MCP server over stdio; no separately managed agent endpoint is required. The reference adapter supports native OpenAI chunks when the workflow declares the required `ChatResponseChunk` output schema.
+
 ```python
+from external.nat.examples.calculator import build_config
 from nemo_fabric import Fabric
 
-async with await Fabric().start_runtime(config) as runtime:
+native_streaming_config = build_config()
+
+async with await Fabric().start_runtime(native_streaming_config) as runtime:
     if not runtime.supports_openai_streaming:
         raise RuntimeError("the selected adapter does not support OpenAI streaming")
 
-    stream = runtime.invoke_openai_stream(input="Review the latest patch")
+    stream = runtime.invoke_openai_stream(input="What is 21 multiplied by 2?")
     async for chunk in stream:
         print(chunk)
 

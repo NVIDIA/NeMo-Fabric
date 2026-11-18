@@ -33,8 +33,8 @@ contributing changes.
 Install these tools before you start:
 
 - **Rust** (stable toolchain) -- install with [rustup](https://rustup.rs/)
-- **Python** >= 3.11
-- **Node.js** >= 20.18.3 with npm
+- **Python** 3.12 or 3.13 for the all-packages build below
+- **Node.js** >= 22.19.0 with npm
 - **uv** -- follow the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/)
 - **just** >= 1.50.0 -- `cargo install just --locked`
 
@@ -52,7 +52,7 @@ uv sync --all-groups --all-extras
 just no_uv=true build-all
 ```
 
-In the above, replace `3.13` with the Python version you want to use for development.
+The all-packages build installs NOOA, which requires Python 3.12 or 3.13. Keep the default 3.13 or use 3.12. For other supported Python versions, follow [Development Setup and Building from Source](docs/contributing/setup.mdx).
 
 Verify the checkout by running the test suites described in [Testing](#testing).
 
@@ -72,15 +72,15 @@ uv pip install --find-links ./dist nemo-fabric
 ```
 
 Hermes Agent 0.20 and later is not installable from PyPI. For local development,
-check out the pinned Hermes source and synchronize it into the project
-environment with:
+check out the pinned Hermes source and synchronize it into its separate
+Python 3.14 environment with:
 
 ```bash
 just install-hermes-agent
 ```
 
 The recipe checks out Hermes Agent under `external/hermes-agent` and installs
-it as the editable source declared in `pyproject.toml`. End users should follow
+it with the adapter into `.venv-hermes`, separately from the active `.venv`. Run Hermes tests with `just test-hermes`, which uses that interpreter. End users should follow
 the [Hermes Agent installation guide](https://hermes-agent.nousresearch.com/docs/installation)
 and install `nemo-fabric-adapters-hermes` without a harness extra.
 

@@ -46,7 +46,8 @@ Relay subfields:
 | `tools.definitions` | No | No | Yes; `kind: python` LangChain tools | No | No |
 | `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names | No |
 | `skills.paths` | Yes | Yes | Yes | Yes | No |
-| `skills.directories`, `.bundled`, `.duplicates` | No | No | No | Yes; refer to [Configure Skills](../integrations/harness/skills.mdx) | No |
+| `skills.directories`, `.duplicates` | No | No | Yes; refer to [Configure Skills](../integrations/harness/skills.mdx) | Yes; refer to [Configure Skills](../integrations/harness/skills.mdx) | No |
+| `skills.bundled` | No | No | No | Yes; refer to [Configure Skills](../integrations/harness/skills.mdx) | No |
 | `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes | No |
 | `mcp.servers.<name>.allowed_tools`, `.blocked_tools` | No | No | No | No | No |
 | `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No |
@@ -207,10 +208,32 @@ capability_config.add_mcp_server(
 Configure OAuth 2.0 client credentials with `type="service_account"` when the
 agent calls an MCP server as its own service identity, with no user and no
 browser. `client_secret_env` names the environment variable that holds the
-client secret; the configuration contains only the name:
+client secret; the configuration contains only the name. Use a separate Deep Agents configuration, which supports this authentication type. Install the [Deep Agents runtime and adapter](../integrations/harness/deepagents.mdx#install-the-adapter), set `NVIDIA_API_KEY` and `JIRA_MCP_CLIENT_SECRET` in the launching environment, and replace the example MCP/token URLs and client ID with your service's values:
 
 ```python
-capability_config.add_mcp_server(
+from nemo_fabric import (
+    FabricConfig,
+    HarnessConfig,
+    McpAuthenticationConfig,
+    MetadataConfig,
+    ModelConfig,
+    ToolsConfig,
+)
+
+service_account_config = FabricConfig(
+    metadata=MetadataConfig(name="service-account-agent"),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.langchain.deepagents"),
+    models={
+        "default": ModelConfig(
+            provider="openai",
+            model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            base_url="https://integrate.api.nvidia.com/v1",
+            api_key_env="NVIDIA_API_KEY",
+        )
+    },
+    tools=ToolsConfig(blocked=["execute"]),
+)
+service_account_config.add_mcp_server(
     "jira",
     transport="streamable-http",
     url="https://jira-mcp.example.com/mcp",
@@ -240,14 +263,18 @@ token, sent in its own header, selects the identity used for the system behind
 the server. That second token can belong to a service account in that system or
 to a user, so the agent sees what that account can see. Combine
 `service_account` with a `custom_headers` entry that references an environment
-variable:
+variable. Create a gateway-only variant of the Deep Agents configuration so it does not inherit the preceding Jira server. Set `GATEWAY_CLIENT_SECRET` and your downstream token before starting this variant:
 
 ```python
 import os
 
+from nemo_fabric import McpConfig
+
 os.environ["DOWNSTREAM_TOKEN"] = "..."  # issued by the downstream system
 
-capability_config.add_mcp_server(
+gateway_config = service_account_config.model_copy(deep=True)
+gateway_config.mcp = McpConfig()
+gateway_config.add_mcp_server(
     "bugs",
     transport="streamable-http",
     url="https://mcp-gateway.example.com/bugs/mcp",
