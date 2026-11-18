@@ -6,7 +6,12 @@ slug: "/about-nemo-fabric/overview"
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-NVIDIA NeMo Fabric gives applications a common interface for running agents across supported agent harnesses. Teams can switch harnesses, compare them on the same tasks, and share custom agents without building a separate application integration for each one. NeMo Fabric provides a Python SDK backed by a Rust core.
+NVIDIA NeMo Fabric gives applications, evaluation systems, and rollout platforms a consistent interface for running agent harnesses and custom agents. It provides this interface through a Python SDK backed by a Rust core.
+
+- **Configure runs:** Select models and configure supported tools, skills, MCP servers, subagents, and runtime settings.
+- **Validate before execution:** Check configuration compatibility before starting a runtime.
+- **Switch harnesses:** Reuse the consumer integration while adapters handle harness-specific behavior.
+- **Compare outcomes:** Collect normalized results and errors, along with available artifacts, lifecycle events, and telemetry references.
 
 ![Diagram showing NeMo Fabric connecting applications, evaluation systems, and reinforcement learning rollouts to agent harnesses, with results, artifacts, and telemetry as outputs.](../../assets/fabric-hero.svg)
 
