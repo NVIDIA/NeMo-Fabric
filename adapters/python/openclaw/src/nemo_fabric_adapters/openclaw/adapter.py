@@ -124,6 +124,8 @@ def _validate_attach_config(config: contract.AgentConfig) -> None:
     model = _selected_model(config)
     if model.base_url is not None:
         unsupported.append("models.base_url")
+    if "api" in model.extensions:
+        unsupported.append("models.api")
     if model.api_key_env is not None:
         unsupported.append("models.api_key_env")
     if "supports_usage_in_streaming" in model.settings:
@@ -674,6 +676,16 @@ def _openclaw_config(
             "OpenClaw supports_usage_in_streaming must be a boolean and requires models.base_url",
             metadata={"field": "models.settings.supports_usage_in_streaming"},
         )
+    # The descriptor's model extension schema limits api to OpenClaw's request
+    # adapters; it selects the wire protocol and where the key goes, such as
+    # x-api-key for anthropic-messages.
+    api = model.extensions.get("api", "openai-completions")
+    if "api" in model.extensions and model.base_url is None:
+        raise lifecycle.LifecycleError(
+            "openclaw_invalid_configuration",
+            "OpenClaw model api requires models.base_url",
+            metadata={"field": "models.api"},
+        )
     model_ref = f"{model.provider}/{model_id}"
     params = {
         key: value
@@ -784,7 +796,7 @@ def _openclaw_config(
         provider.update(
             {
                 "baseUrl": model.base_url,
-                "api": "openai-completions",
+                "api": api,
                 "models": [{"id": model_id, "name": model_id}],
             }
         )

@@ -86,10 +86,12 @@ disappears from later results. Reading the inventory runs one OpenClaw CLI comma
 when MCP servers are configured. Runtimes that connect to a prepared service
 do not report MCP availability.
 
-For custom OpenAI-compatible providers, set `models.<role>.base_url`; the
-adapter generates an OpenClaw custom provider using the
-`openai-completions` API adapter. Set `api_key_env` when that provider requires
-an API key.
+For custom providers, set `models.<role>.base_url`; the adapter generates an
+OpenClaw custom provider using the `openai-completions` API adapter, or the
+OpenClaw request adapter named by `models.<role>.api`, such as
+`anthropic-messages`. Set `api_key_env` when that provider requires an API
+key. `api` requires `base_url` and is unavailable when attaching to a
+deployment-owned service.
 
 If that endpoint supports `stream_options.include_usage`, set
 `models.<role>.settings.supports_usage_in_streaming` to `true`. This maps to
