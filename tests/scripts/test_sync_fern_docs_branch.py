@@ -151,17 +151,63 @@ def test_card_source_links_resolve_only_in_published_pages(tmp_path: Path):
         ("```mdx", "~~~", "```` \t"),
         ("~~~mdx", "    ~~~", "   ~~~"),
         ("```mdx", "    ```", "   ```"),
+        ("```mdx", "> ```", "```"),
+        ("~~~mdx", "> ~~~", "~~~"),
     ],
 )
+@pytest.mark.parametrize("quote_prefix", ["", "> ", "> > ", "   > "])
 def test_card_source_links_preserve_fenced_examples(
-    tmp_path: Path, opening: str, inside: str, closing: str
+    tmp_path: Path, opening: str, inside: str, closing: str, quote_prefix: str
 ):
     page = tmp_path / "page.mdx"
     literal = '<Card href="./example-only.mdx">Literal example</Card>'
     original = (
         "---\nslug: /guides/overview\n---\n"
-        f"{opening}\n{inside}\n{literal}\n{closing}\n"
+        f"{quote_prefix}{opening}\n{quote_prefix}{inside}\n"
+        f"{quote_prefix}{literal}\n{quote_prefix}{closing}\n"
         '<Card href="./destination.mdx">Real link</Card>\n'
+    )
+    page.write_text(original)
+    (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
+
+    sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+
+    assert page.read_text() == original.replace(
+        'href="./destination.mdx"', 'href="../sdk/client"'
+    )
+
+
+def test_card_source_links_resume_after_unclosed_quoted_fence(tmp_path: Path):
+    page = tmp_path / "page.mdx"
+    original = (
+        "---\nslug: /guides/overview\n---\n"
+        '> ```mdx\n> <Card href="./example-only.mdx">Example</Card>\n\n'
+        '<Card href="./destination.mdx">Real link</Card>\n'
+    )
+    page.write_text(original)
+    (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")
+
+    sync_fern_docs_branch.rewrite_internal_card_links(tmp_path)
+
+    assert page.read_text() == original.replace(
+        'href="./destination.mdx"', 'href="../sdk/client"'
+    )
+
+
+@pytest.mark.parametrize(
+    "example",
+    [
+        '`<Card href="./example-only.mdx">Example</Card>`',
+        '`` `<Card href="./example-only.mdx">Example</Card>` ``',
+        '`<Card\n href="./example-only.mdx">Example</Card>`',
+        '`unmatched before ``<Card href="./example-only.mdx">Example</Card>``',
+    ],
+)
+def test_card_source_links_preserve_inline_examples(tmp_path: Path, example: str):
+    page = tmp_path / "page.mdx"
+    original = (
+        "---\nslug: /guides/overview\n---\n"
+        f'Example: {example} and <Card href="./destination.mdx">Real link</Card>\n'
     )
     page.write_text(original)
     (tmp_path / "destination.mdx").write_text("---\nslug: /sdk/client\n---\n")

@@ -51,7 +51,7 @@ Available evidence depends on the selected adapter and environment; use the retu
 
 ### Optimize Execution with System Stats
 
-Use NeMo Fabric’s system stats to understand CPU and memory usage during agent execution. NeMo Fabric tracks resource usage across the harness process and its child processes, giving you a clearer picture of the run’s memory footprint. Use these insights to compare harnesses and configurations, guide resource sizing, and tune execution efficiency.
+Use NeMo Fabric’s [system stats](../sdk/system-stats.mdx) to compare CPU and memory usage across harnesses and configurations. Process measurements cover the adapter host and its child processes. For Remote Agent, this is the local adapter process tree; it excludes the remote agent service. Default before/after readings can miss memory peaks, and sampled readings can miss spikes between samples. Check measurement scope, coverage, and availability before using the results to size resources or tune execution.
 
 ### Make Your Agent Available to Other Teams
 

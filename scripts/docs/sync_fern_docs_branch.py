@@ -261,22 +261,45 @@ def rewrite_internal_card_links(pages_dir: Path) -> None:
                 route += "#" + target.fragment
             return match[1] + match[2] + route + match[2]
 
+        def rewrite_prose(text: str) -> str:
+            # Code spans can cross lines and contain shorter backtick runs. Only
+            # matching runs delimit a span; unmatched backticks remain prose.
+            parts: list[str] = []
+            offset = 0
+            for code in re.finditer(r"(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)", text):
+                parts.append(card_link.sub(replace, text[offset : code.start()]))
+                parts.append(code[0])
+                offset = code.end()
+            parts.append(card_link.sub(replace, text[offset:]))
+            return "".join(parts)
+
         original = page.read_text(encoding="utf-8")
         rewritten: list[str] = []
         chunk: list[str] = []
         fence: str | None = None
+        fence_quote_depth = 0
         for line in original.splitlines(keepends=True):
-            marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+            # Strip quote containers only for fence detection, preserving the
+            # authored text and the three-space fence indentation limit.
+            quote = re.match(r"^(?: {0,3}>[ \t]?)*", line)
+            quote_depth = quote[0].count(">")
+            content = line[quote.end() :]
+            # Leaving a quote also ends an unclosed fence in that container.
+            if fence and quote_depth < fence_quote_depth:
+                fence = None
+            marker = re.match(r"^ {0,3}(`{3,}|~{3,})", content)
             if marker:
                 if fence is None:
-                    rewritten.append(card_link.sub(replace, "".join(chunk)))
+                    rewritten.append(rewrite_prose("".join(chunk)))
                     chunk.clear()
                     fence = marker[1]
+                    fence_quote_depth = quote_depth
                 # Inside a fence, a marker with trailing text is literal code.
                 elif (
-                    marker[1][0] == fence[0]
+                    quote_depth == fence_quote_depth
+                    and marker[1][0] == fence[0]
                     and len(marker[1]) >= len(fence)
-                    and not line[marker.end() :].strip()
+                    and not content[marker.end() :].strip()
                 ):
                     fence = None
                 rewritten.append(line)
@@ -285,7 +308,7 @@ def rewrite_internal_card_links(pages_dir: Path) -> None:
                     rewritten.append(line)
                 else:
                     chunk.append(line)
-        rewritten.append(card_link.sub(replace, "".join(chunk)))
+        rewritten.append(rewrite_prose("".join(chunk)))
         updated = "".join(rewritten)
         if updated != original:
             page.write_text(updated, encoding="utf-8")
