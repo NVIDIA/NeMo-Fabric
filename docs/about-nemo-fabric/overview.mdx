@@ -14,19 +14,16 @@ NVIDIA NeMo Fabric provides applications, evaluation systems, and rollout platfo
 - **Compare outcomes:** Collect normalized results and errors, along with available artifacts, lifecycle events, and telemetry references.
 
 <a id="what-you-can-do-with-fabric"></a>
-<a id="what-you-can-do-with-nemo-fabric"></a>
 <a id="use-multiple-harnesses-in-your-product"></a>
 <a id="evaluate-and-optimize-agent-configurations-across-harnesses"></a>
 <a id="optimize-execution-with-system-stats"></a>
 <a id="make-your-agent-available-to-other-teams"></a>
 
-**What You Can Do with NeMo Fabric**
+<h2 id="what-you-can-do-with-nemo-fabric" style={{ fontSize: "1rem", lineHeight: "1.5rem", marginTop: "1.5rem", marginBottom: "0.75rem" }}>What You Can Do with NeMo Fabric</h2>
 
 Use NeMo Fabric to integrate multiple supported harnesses into your product, compare agent configurations on the same tasks, inspect available execution evidence, or share a custom agent with other teams. The [Key Features](key-features.mdx) page describes these workflows and their measurement details.
 
-<a id="how-nemo-fabric-works"></a>
-
-**How NeMo Fabric Works**
+<h2 id="how-nemo-fabric-works" style={{ fontSize: "1rem", lineHeight: "1.5rem", marginTop: "1.5rem", marginBottom: "0.75rem" }}>How NeMo Fabric Works</h2>
 
 Your application submits a task and configuration through the Python SDK. NeMo Fabric validates the settings, runs the selected harness through its adapter and environment provider, and returns a normalized outcome with available execution evidence. Your application owns scheduling, retries, scoring, and recovery. The [Architecture Overview](architecture-overview.mdx) describes in more detail the component responsibilities and data flow.
 
@@ -55,21 +52,5 @@ Choose a starting point for your workflow:
   </Card>
   <Card title="Troubleshooting" icon="fa-solid fa-wrench" href="../troubleshooting.mdx">
     Diagnose setup problems, interpret errors, and investigate failed execution.
-  </Card>
-</CardGroup>
-
-## Use Cases
-
-Explore common ways to use NeMo Fabric:
-
-<CardGroup cols={3}>
-  <Card title="Use Multiple Harnesses in Your Application" icon="fa-solid fa-layer-group" href="../sdk/python.mdx">
-    Let your application select supported harnesses through a common execution interface while adapters handle their native behavior.
-  </Card>
-  <Card title="Compare Agent Configurations" icon="fa-solid fa-scale-balanced" href="../integrations/consumer/harbor.mdx">
-    Run the same tasks across harnesses, models, and supported capabilities. Use normalized results and available execution evidence in your evaluation workflow.
-  </Card>
-  <Card title="Make Your Agent Available to Other Teams" icon="fa-solid fa-share-nodes" href="../adapter-contract/README.md">
-    Implement an adapter so other teams can run your custom agent through the same interface they use for supported harnesses.
   </Card>
 </CardGroup>
