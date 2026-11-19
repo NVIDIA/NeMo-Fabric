@@ -96,11 +96,11 @@ for descriptor sources, compatibility limits, and API migration examples.
 
 ## Roadmap
 
-Future development is guided by the following backlog themes:
+Planned areas of development include:
 
-- **Broader harness and interface support:** Expand agent coverage, native interfaces, and plugin compatibility.
-- **More flexible agent configuration:** Improve model, tool, MCP, and subagent configuration across harnesses, with clearer validation and configuration explanations.
-- **Interactive execution and session continuity:** Extend live guidance, cancellation, and conversation resume and branching across supported harnesses.
-- **Reliable sandbox execution:** Broaden environment-provider compatibility and strengthen runtime lifecycle and recovery behavior.
-- **Unified execution visibility:** Improve task progress, traces, resource and model-usage reporting, and execution evidence.
-- **Deeper ecosystem integrations:** Strengthen application, evaluation, and training workflows through shared execution and results.
+- **Task visibility and control:** Monitor agent progress, guide ongoing work, and manage pauses, approvals, and continuation.
+- **Extensible agents and subagents:** Extend custom tools, skills, and middleware to support richer agent workflows and delegation.
+- **Execution observability:** Provide connected run histories, traces, diagnostics, and retained evidence across successful and failed executions.
+- **Usage, cost, and comparison:** Standardize model-usage accounting, add transparent cost estimates, and enable meaningful comparisons across task attempts.
+- **Broader agent coverage:** Expand supported agents and evaluation workflows, including NOOA Atom and Goose.
+- **Simpler integration and setup:** Improve onboarding, configuration validation, and adapter environment setup.
