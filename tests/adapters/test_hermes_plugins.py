@@ -504,8 +504,10 @@ def test_stage_mounted_creates_replaces_and_removes_links(tmp_path: Path):
     home = tmp_path / "home"
     plugin = _plugin_folder(tmp_path / "mount", "mine", "mine")
     stale_target = _plugin_folder(tmp_path / "old", "mine", "mine")
-    (home / "plugins").mkdir(parents=True)
-    (home / "plugins" / "mine").symlink_to(stale_target)
+    # An earlier start that never stopped left its link behind.
+    hermes_plugins.stage_mounted(
+        hermes_plugins.plan_mounted(_external([str(stale_target)]), tmp_path), home
+    )
     mounted = hermes_plugins.plan_mounted(_external([str(plugin)]), tmp_path)
 
     links = hermes_plugins.stage_mounted(mounted, home)
@@ -517,6 +519,37 @@ def test_stage_mounted_creates_replaces_and_removes_links(tmp_path: Path):
     hermes_plugins.remove_mounted(links)
     assert not link.exists() and not link.is_symlink()
     assert (plugin / "plugin.yaml").is_file()
+    assert not (home / hermes_plugins.LINKS_RECORD).exists()
+
+
+def test_stage_mounted_refuses_to_replace_a_user_symlink(tmp_path: Path):
+    home = tmp_path / "home"
+    personal = _plugin_folder(tmp_path / "personal", "mine", "mine")
+    plugin = _plugin_folder(tmp_path / "mount", "mine", "mine")
+    (home / "plugins").mkdir(parents=True)
+    (home / "plugins" / "mine").symlink_to(personal)
+    mounted = hermes_plugins.plan_mounted(_external([str(plugin)]), tmp_path)
+
+    with pytest.raises(LifecycleError) as error:
+        hermes_plugins.stage_mounted(mounted, home)
+
+    assert error.value.code == "hermes_plugin_duplicate"
+    assert (home / "plugins" / "mine").resolve() == personal.resolve()
+
+
+def test_remove_mounted_leaves_a_link_replaced_during_the_run(tmp_path: Path):
+    home = tmp_path / "home"
+    plugin = _plugin_folder(tmp_path / "mount", "mine", "mine")
+    other = _plugin_folder(tmp_path / "other", "mine", "mine")
+    mounted = hermes_plugins.plan_mounted(_external([str(plugin)]), tmp_path)
+    links = hermes_plugins.stage_mounted(mounted, home)
+    links[0].unlink()
+    links[0].symlink_to(other)
+
+    hermes_plugins.remove_mounted(links)
+
+    assert links[0].resolve() == other.resolve()
+    assert not (home / hermes_plugins.LINKS_RECORD).exists()
 
 
 def test_stage_mounted_records_links_in_the_given_list(tmp_path: Path):

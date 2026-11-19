@@ -25,7 +25,9 @@ turns on has loaded.
 from __future__ import annotations
 
 import copy
+import json
 import logging
+import os
 from collections.abc import Iterable
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -457,6 +459,38 @@ def plan_mounted(
     return mounted
 
 
+LINKS_RECORD = ".nemo-fabric-plugin-links.json"
+
+
+def _read_links_record(hermes_home: Path) -> dict[str, str]:
+    """The links an earlier start made, by plugin name, with their targets."""
+
+    try:
+        record = json.loads((hermes_home / LINKS_RECORD).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(record, dict):
+        return {}
+    return {str(name): str(target) for name, target in record.items()}
+
+
+def _write_links_record(hermes_home: Path, record: Mapping[str, str]) -> None:
+    path = hermes_home / LINKS_RECORD
+    if record:
+        path.write_text(json.dumps(dict(record), sort_keys=True), encoding="utf-8")
+    else:
+        path.unlink(missing_ok=True)
+
+
+def _is_recorded_link(link: Path, record: Mapping[str, str]) -> bool:
+    """Whether ``link`` is a symlink NeMo Fabric made and nothing has replaced."""
+
+    try:
+        return link.is_symlink() and os.readlink(link) == record.get(link.name)
+    except OSError:
+        return False
+
+
 def stage_mounted(
     mounted: Iterable[MountedPlugin],
     hermes_home: Path,
@@ -464,32 +498,37 @@ def stage_mounted(
 ) -> list[Path]:
     """Link each mounted plugin into ``$HERMES_HOME/plugins/<name>``.
 
-    Replaces a symlink of that name, which an earlier start left. A real
-    folder of that name is a plugin the agent installed, so start fails with
-    ``hermes_plugin_duplicate`` rather than shadow it. Returns the links made,
-    for :func:`remove_mounted`, appending each to ``links`` as it's made when
-    given; links made before a failure are removed.
+    Each link is recorded in ``$HERMES_HOME/.nemo-fabric-plugin-links.json``. A link of that
+    name that an earlier start recorded is replaced; anything else of that
+    name, whether a folder or a symlink, belongs to the user or the agent, so
+    start fails with ``hermes_plugin_duplicate`` rather than shadow it.
+    Returns the links made, for :func:`remove_mounted`, appending each to
+    ``links`` as it's made when given; links made before a failure are
+    removed.
     """
 
     plugins_dir = hermes_home / "plugins"
     links = [] if links is None else links
+    record = _read_links_record(hermes_home)
     try:
         for plugin in mounted:
             plugins_dir.mkdir(parents=True, exist_ok=True)
             link = plugins_dir / plugin.name
-            if link.is_symlink():
+            if _is_recorded_link(link, record):
                 link.unlink()
-            elif link.exists():
+            elif link.is_symlink() or link.exists():
                 raise LifecycleError(
                     "hermes_plugin_duplicate",
                     f"Hermes plugin {plugin.name!r} from {plugin.field} has the "
-                    "name of a plugin installed in the Hermes home",
+                    "name of a plugin already in the Hermes home",
                     metadata={
                         "field": plugin.field,
                         "plugin": plugin.name,
                         "paths": [str(link), str(plugin.path)],
                     },
                 )
+            record[plugin.name] = str(plugin.path)
+            _write_links_record(hermes_home, record)
             link.symlink_to(plugin.path, target_is_directory=True)
             links.append(link)
     except BaseException:
@@ -499,13 +538,29 @@ def stage_mounted(
 
 
 def remove_mounted(links: Iterable[Path]) -> None:
-    """Remove the links :func:`stage_mounted` made; the plugin folders stay."""
+    """Remove the links :func:`stage_mounted` made; the plugin folders stay.
 
+    A link the user or the agent replaced since start is left alone.
+    """
+
+    records: dict[Path, dict[str, str]] = {}
     for link in links:
+        hermes_home = link.parent.parent
+        record = records.setdefault(hermes_home, _read_links_record(hermes_home))
         try:
-            if link.is_symlink():
+            if _is_recorded_link(link, record):
                 link.unlink()
         except OSError:
             LOGGER.warning(
                 "Hermes plugin link %s could not be removed", link, exc_info=True
+            )
+        record.pop(link.name, None)
+    for hermes_home, record in records.items():
+        try:
+            _write_links_record(hermes_home, record)
+        except OSError:
+            LOGGER.warning(
+                "Hermes plugin link record in %s could not be updated",
+                hermes_home,
+                exc_info=True,
             )
