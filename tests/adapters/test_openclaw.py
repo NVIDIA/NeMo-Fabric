@@ -3891,6 +3891,46 @@ async def test_openclaw_does_not_claim_the_old_identity_after_a_native_session_r
         await runtime.stop()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Mock Gateway is a POSIX executable")
+@pytest.mark.parametrize("keep_state", [True, False])
+async def test_openclaw_long_turn_keeps_the_native_session_usable(
+    tmp_path: Path,
+    mock_openclaw: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    keep_state: bool,
+):
+    # Scale websockets' 20 s keepalive down so a 1.5 s turn spans several pings.
+    class ShortKeepalive(adapter.gateway._DirectConnect):
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            super().__init__(*args, ping_interval=0.1, ping_timeout=0.3, **kwargs)
+
+    monkeypatch.setattr(adapter.gateway, "_DirectConnect", ShortKeepalive)
+    os.environ["FAKE_OPENCLAW_CAPTURE"] = str(tmp_path / "config.json")
+    os.environ["FAKE_OPENCLAW_REQUEST"] = str(tmp_path / "request.json")
+    # More events than websockets buffers before it stops reading the socket.
+    os.environ["FAKE_OPENCLAW_TURN_EVENTS"] = "40"
+    os.environ["FAKE_OPENCLAW_TURN_SECONDS"] = "1.5"
+    context = _context(tmp_path)
+    if keep_state:
+        context.state_dir = str(tmp_path / "retained")
+    runtime = adapter.OpenClawRuntime()
+    try:
+        started = await runtime.start(
+            {
+                "config": _config(mock_openclaw),
+                "runtime_context": context.to_mapping(),
+                "base_dir": str(tmp_path),
+            }
+        )
+        for prompt in ("Take your time.", "Take your time again."):
+            result = await runtime.invoke(AgentRunRequest(input=prompt), context)
+            assert result.status == "succeeded", result.error
+            assert result.output["response"] == "OpenClaw response"
+            assert result.session_id == (started or {}).get("session_id")
+    finally:
+        await runtime.stop()
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Uses POSIX descriptor inheritance")
 @pytest.mark.parametrize("descriptor", ["1", "-1", "invalid", "99999999"])
 async def test_openclaw_rejects_an_invalid_inherited_state_lock(

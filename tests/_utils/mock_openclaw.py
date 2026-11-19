@@ -8,6 +8,7 @@ import json
 import os
 import signal
 import sys
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -16,6 +17,7 @@ from uuid import uuid4
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from websockets.frames import Opcode
+from websockets.exceptions import InvalidState
 from websockets.server import ServerProtocol
 
 
@@ -58,6 +60,8 @@ port = int(args[args.index("--port") + 1])
 token = os.environ["OPENCLAW_GATEWAY_TOKEN"]
 state_file = Path(os.environ["OPENCLAW_STATE_DIR"]) / "mock-native-sessions.json"
 native_sessions = json.loads(state_file.read_text()) if state_file.exists() else {}
+# The real Gateway broadcasts agent and chat events to every operator connection.
+event_streams = set()
 
 
 def save_sessions():
@@ -190,10 +194,13 @@ class Handler(BaseHTTPRequestHandler):
         for data in protocol.data_to_send():
             self.wfile.write(data)
 
+        lock = threading.Lock()
+
         def send(value):
-            protocol.send_text(json.dumps(value).encode())
-            for data in protocol.data_to_send():
-                self.wfile.write(data)
+            with lock:
+                protocol.send_text(json.dumps(value).encode())
+                for data in protocol.data_to_send():
+                    self.wfile.write(data)
 
         send(
             {
@@ -202,10 +209,15 @@ class Handler(BaseHTTPRequestHandler):
                 "payload": {"nonce": "mock-challenge"},
             }
         )
+        event_streams.add(send)
         try:
             while data := self.rfile.read1(65536):
-                protocol.receive_data(data)
-                for frame in protocol.events_received():
+                with lock:
+                    protocol.receive_data(data)
+                    frames = protocol.events_received()
+                    for pending in protocol.data_to_send():
+                        self.wfile.write(pending)
+                for frame in frames:
                     if frame.opcode == Opcode.TEXT:
                         request = json.loads(frame.data)
                         if request["method"] == "connect":
@@ -225,13 +237,11 @@ class Handler(BaseHTTPRequestHandler):
                             }
                         )
                     elif frame.opcode == Opcode.CLOSE:
-                        for pending in protocol.data_to_send():
-                            self.wfile.write(pending)
                         return
-                for pending in protocol.data_to_send():
-                    self.wfile.write(pending)
         except (ConnectionError, OSError):
             pass
+        finally:
+            event_streams.discard(send)
 
     def do_GET(self):
         if self.headers.get("Upgrade", "").lower() == "websocket":
@@ -356,6 +366,18 @@ class Handler(BaseHTTPRequestHandler):
         if requests_path := os.environ.get("FAKE_OPENCLAW_REQUESTS"):
             with open(requests_path, "a", encoding="utf-8") as stream:
                 stream.write(json.dumps(request) + "\n")
+        if events := int(os.environ.get("FAKE_OPENCLAW_TURN_EVENTS", "0")):
+            # A slow model turn streams events to the session connections.
+            seconds = float(os.environ.get("FAKE_OPENCLAW_TURN_SECONDS", "0"))
+            for sequence in range(events):
+                for stream_event in list(event_streams):
+                    try:
+                        stream_event(
+                            {"type": "event", "event": "agent", "seq": sequence}
+                        )
+                    except (OSError, InvalidState):
+                        event_streams.discard(stream_event)
+                time.sleep(seconds / events)
         response_text = "OpenClaw response"
         if key := self.headers.get("x-openclaw-session-key"):
             entry = native_sessions[key]
