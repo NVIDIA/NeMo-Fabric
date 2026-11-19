@@ -733,6 +733,7 @@ def test_merge_keeps_agent_config_under_an_empty_fabric_object():
         pytest.param(
             {"entries": {"x": {"config": {"n": False}}}}, 0, id="false-vs-zero"
         ),
+        pytest.param({"entries": {"x": {"config": {"n": True}}}}, 1, id="true-vs-one"),
     ],
 )
 def test_merge_applies_values_that_only_look_equal(agent: dict, fabric_value: Any):
