@@ -106,6 +106,8 @@ def merge_plugins(
     for path, value in fabric_leaves.items():
         if value == {} and isinstance(_get(merged, path), dict):
             continue  # an empty object adds no setting of its own
+        if path not in previous and _get(merged, path) == value:
+            continue  # the agent's own value; NeMo Fabric doesn't claim it
         _set(merged, path, value)
         applied.append(path)
 

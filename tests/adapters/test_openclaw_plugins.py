@@ -776,27 +776,30 @@ def test_unreadable_plugin_state_fails_and_is_kept(
         pytest.param(3, {}, id="record-write"),
         # plugins.json wasn't written: the agent's value stays.
         pytest.param(2, {"entries": {"x": {"enabled": True}}}, id="policy-write"),
+        # The agent already has NeMo Fabric's value, so the policy is unchanged.
+        pytest.param(-2, {"entries": {"x": {"enabled": True}}}, id="same-policy"),
     ],
 )
 def test_prepare_recovers_from_a_failed_write(
     tmp_path: Path, monkeypatch, failing_write: int, expected: dict
 ):
     folder = openclaw_plugins.state_folder(tmp_path)
-    if failing_write == 2:
-        (folder / "plugins.json").write_text('{"entries": {"x": {"enabled": true}}}')
+    if failing_write in (2, -2):
+        policy = {"entries": {"x": {"enabled": True}}}
+        (folder / "plugins.json").write_text(json.dumps(policy, indent=2) + "\n")
     write = openclaw_plugins.local_interfaces.write_private_file
     calls = []
 
     def flaky_write(path, text):
         calls.append(path)
-        if len(calls) == failing_write:
+        if len(calls) == abs(failing_write):
             raise OSError("disk full")
         write(path, text)
 
     monkeypatch.setattr(
         openclaw_plugins.local_interfaces, "write_private_file", flaky_write
     )
-    fabric = {"entries": {"x": {"enabled": failing_write == 3}}}
+    fabric = {"entries": {"x": {"enabled": failing_write != 2}}}
     with pytest.raises(OSError):
         openclaw_plugins.prepare(folder, fabric)
     monkeypatch.undo()
