@@ -40,6 +40,7 @@ from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import mcp_availability
 from nemo_fabric_adapters.hermes import configuration
 from nemo_fabric_adapters.hermes import interfaces
+from nemo_fabric_adapters.hermes import plugins
 from nemo_fabric_adapters.hermes import skills
 from nemo_fabric_adapters.hermes import telemetry
 
@@ -194,6 +195,7 @@ class HermesRuntime:
         self._relay_plugin_config_path: Path | None = None
         self._active_invoke_task: asyncio.Task[tuple[dict[str, Any], str]] | None = None
         self._interfaces = interfaces.InterfaceChildren()
+        self._mounted_plugin_links: list[Path] = []
 
     async def start(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         """Apply shared configuration and start the selected SDK/native backends.
@@ -254,6 +256,9 @@ class HermesRuntime:
                 runtime_context, common_utils.base_dir(payload)
             )
             self._hermes_home.mkdir(parents=True, exist_ok=True)
+            # Agent-installed plugins aren't supported: their environment
+            # would take over this process at the Hermes import.
+            plugins.check_no_agent_installs(self._hermes_home)
             # An abruptly ended runtime can leave credentials and attachment
             # records in a kept Hermes home.
             token_path = self._hermes_home / "interfaces" / "api.token"
@@ -311,6 +316,20 @@ class HermesRuntime:
                 skills.excluded_copies, skill_plan, self._hermes_home
             )
 
+            # Check plugins.external before anything starts; link them into the
+            # home before any Hermes discovery reads it.
+            mounted_plugins = plugins.plan_mounted(
+                self._settings, common_utils.base_dir(payload)
+            )
+            # Owned before staging, so stop removes them after a cancelled start.
+            self._mounted_plugin_links = []
+            await _run_to_completion(
+                plugins.stage_mounted,
+                mounted_plugins,
+                self._hermes_home,
+                self._mounted_plugin_links,
+            )
+
             if relay_enabled:
                 relay_payload = {**payload, "config": agent_config.to_mapping()}
                 (
@@ -365,6 +384,8 @@ class HermesRuntime:
                     if relay_enabled:
                         common_utils.reject_ambient_relay_plugin_config()
                     discover_plugins(force=True)
+                    # Before MCP discovery, which can take minutes.
+                    plugins.check_loaded_plugins(self._settings)
                     loaded_hermes_config = load_config()
                     # Hermes 0.12+ no longer discovers MCP tools as an import side effect
                     # (#16856). Fabric is a Hermes host: discover after config.yaml exists
@@ -421,6 +442,14 @@ class HermesRuntime:
                             session_db=self._session_db,
                         )
                     )
+            elif plugins.configured(self._settings):
+                # The interfaces discover plugins in their own processes;
+                # discover here too, so a missing plugin fails start.
+                from hermes_cli.plugins import discover_plugins
+
+                with redirect_stdout(StringIO()):
+                    discover_plugins(force=True)
+                plugins.check_loaded_plugins(self._settings)
             if interface_ports:
                 if "api" in interface_ports:
                     from hermes_cli.profile_channels import platform_ids
@@ -1120,6 +1149,11 @@ class HermesRuntime:
         self._started = False
         # The native interfaces have stopped, so nothing reads the folder.
         self._restore_bundled_skills()
+        mounted_plugin_links, self._mounted_plugin_links = (
+            self._mounted_plugin_links,
+            [],
+        )
+        plugins.remove_mounted(mounted_plugin_links)
 
         if had_relay_plugin:
             for name in telemetry.HERMES_RELAY_ENV_NAMES:
