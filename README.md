@@ -96,9 +96,11 @@ for descriptor sources, compatibility limits, and API migration examples.
 
 ## Roadmap
 
-Planned areas of development include the following. These are development directions, not committed release dates:
+Future development is guided by the following backlog themes:
 
-- **Refine runtime resource measurements:** Improve CPU, memory, elapsed-time, and available GPU measurements through broader benchmark validation.
-- **Expand task visibility:** Build on recorded runtime status and saved invocation results with step progress, plans, pending requests, sandbox task listings, and paginated events.
-- **Standardize model usage accounting:** Report input, cached, output, and reasoning tokens consistently, distinguish complete, partial, and unknown usage, and attribute delegated work to the correct invocation.
-- **Extend execution provenance:** Build on selected software-version evidence with requested models, sanitized configuration and MCP settings, and execution-environment context, preserving explicit sources and unknowns.
+- **Broader harness and interface support:** Expand agent coverage, native interfaces, and plugin compatibility.
+- **More flexible agent configuration:** Improve model, tool, MCP, and subagent configuration across harnesses, with clearer validation and configuration explanations.
+- **Interactive execution and session continuity:** Extend live guidance, cancellation, and conversation resume and branching across supported harnesses.
+- **Reliable sandbox execution:** Broaden environment-provider compatibility and strengthen runtime lifecycle and recovery behavior.
+- **Unified execution visibility:** Improve task progress, traces, resource and model-usage reporting, and execution evidence.
+- **Deeper ecosystem integrations:** Strengthen application, evaluation, and training workflows through shared execution and results.
