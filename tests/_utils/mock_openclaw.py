@@ -17,6 +17,7 @@ from uuid import uuid4
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from websockets.frames import Opcode
+from websockets.exceptions import InvalidState
 from websockets.server import ServerProtocol
 
 
@@ -374,7 +375,7 @@ class Handler(BaseHTTPRequestHandler):
                         stream_event(
                             {"type": "event", "event": "agent", "seq": sequence}
                         )
-                    except OSError:
+                    except (OSError, InvalidState):
                         event_streams.discard(stream_event)
                 time.sleep(seconds / events)
         response_text = "OpenClaw response"

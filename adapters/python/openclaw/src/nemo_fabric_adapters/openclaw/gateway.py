@@ -95,12 +95,14 @@ class SessionClient:
         self, method: str, params: dict[str, Any], *, timeout: float
     ) -> dict[str, Any]:
         async with self._lock:
-            await self._stop_reading()
-            if self._failed:
-                raise LifecycleError(
-                    "session_incompatible", "Native session connection is unavailable"
-                )
             try:
+                # Cancellation here still closes the connection below.
+                await self._stop_reading()
+                if self._failed:
+                    raise LifecycleError(
+                        "session_incompatible",
+                        "Native session connection is unavailable",
+                    )
                 async with asyncio.timeout(timeout):
                     if self._connection is None:
                         self._connection = await _DirectConnect(
@@ -158,7 +160,9 @@ class SessionClient:
 
     async def close(self) -> None:
         self._failed = True
-        await self._stop_reading()
         connection, self._connection = self._connection, None
-        if connection is not None:
-            await connection.close()
+        try:
+            await self._stop_reading()
+        finally:
+            if connection is not None:
+                await connection.close()

@@ -143,6 +143,70 @@ async def test_session_connection_reads_gateway_events_between_calls(
         await asyncio.wait_for(connections[0].wait_closed(), 2)
 
 
+@pytest.mark.parametrize("operation", ["call", "close"])
+async def test_cancelled_reader_handoff_still_closes_the_connection(
+    unused_tcp_port, operation
+):
+    connections = []
+
+    async def respond(socket):
+        connections.append(socket)
+        await socket.send(
+            json.dumps(
+                {
+                    "type": "event",
+                    "event": "connect.challenge",
+                    "payload": {"nonce": "challenge"},
+                }
+            )
+        )
+        async for message in socket:
+            request = json.loads(message)
+            result = (
+                {"type": "hello-ok", "protocol": 4}
+                if request["method"] == "connect"
+                else {"method": request["method"]}
+            )
+            await socket.send(
+                json.dumps(
+                    {"type": "res", "id": request["id"], "ok": True, "payload": result}
+                )
+            )
+
+    async with serve(respond, "127.0.0.1", unused_tcp_port):
+        client = gateway.SessionClient(
+            f"http://127.0.0.1:{unused_tcp_port}", "private-test-token"
+        )
+        try:
+            await client.call("sessions.describe", {"key": "selected"}, timeout=2)
+            stop_reading = client._stop_reading
+            stopped = asyncio.Event()
+
+            async def interrupted_stop():
+                # Cancellation arrives after the reader is gone, before the
+                # handoff returns.
+                client._stop_reading = stop_reading
+                await stop_reading()
+                stopped.set()
+                await asyncio.Event().wait()
+
+            client._stop_reading = interrupted_stop
+            task = asyncio.create_task(
+                client.call("sessions.describe", {"key": "selected"}, timeout=2)
+                if operation == "call"
+                else client.close()
+            )
+            await asyncio.wait_for(stopped.wait(), 2)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            await asyncio.wait_for(connections[0].wait_closed(), 2)
+            with pytest.raises(LifecycleError):
+                await client.call("sessions.describe", {"key": "selected"}, timeout=2)
+        finally:
+            await client.close()
+
+
 @pytest.mark.parametrize(
     "failure", ["authentication", "rpc", "timeout", "cancel", "disconnect", "invalid"]
 )
