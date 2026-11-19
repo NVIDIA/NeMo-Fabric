@@ -16,6 +16,7 @@ from nemo_fabric_adapter_contract.models import AgentModelConfig
 from nemo_fabric_adapter_contract.models import McpOAuth2Config
 from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 import nemo_fabric_adapters.common.utils as common_utils
+from nemo_fabric_adapters.hermes import plugins as hermes_plugins
 from nemo_fabric_adapters.hermes.interfaces import GATEWAY_DRAIN_TIMEOUT_SECONDS
 from nemo_fabric_adapters.hermes.skills import SkillPlan
 
@@ -226,9 +227,9 @@ def build_hermes_config(
     if enabled_toolsets is not None:
         config["platform_toolsets"] = {"cli": enabled_toolsets}
 
-    plugins = common_utils.normalize_list(settings.get("plugins_enabled"))
+    plugins = hermes_plugins.native_section(settings)
     if plugins:
-        config["plugins"] = {"enabled": plugins}
+        config["plugins"] = plugins
 
     return config
 
@@ -363,6 +364,11 @@ def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
         ),
         "mcp_servers": sorted((config.get("mcp_servers") or {}).keys()),
         "plugins": (config.get("plugins") or {}).get("enabled", []),
+        **(
+            {"plugins_disabled": disabled}
+            if (disabled := (config.get("plugins") or {}).get("disabled"))
+            else {}
+        ),
         "platform_toolsets": config.get("platform_toolsets", {}),
         "disabled_toolsets": (config.get("agent") or {}).get("disabled_toolsets", []),
     }

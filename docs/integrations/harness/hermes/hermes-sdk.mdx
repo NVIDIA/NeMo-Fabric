@@ -66,7 +66,8 @@ The descriptor uses closed schemas, so unknown settings are rejected.
 | --- | --- | --- |
 | `sdk.enabled` | `true` | Initialize the embedded SDK agent. Set to `false` for native-only execution; enable at least one native interface. SDK invocation then fails with `hermes_sdk_disabled`, while runtime management remains available. |
 | `reasoning_config` | `{"effort": "none"}` | Optional `enabled` boolean and `effort`: `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
-| `plugins_enabled` | `[]` | List of native Hermes plugin identifiers to enable. Configure NeMo Relay through NeMo Fabric telemetry settings. |
+| `plugins` | None | Plugins by source, `bundled.entries` and `external`; refer to [Plugins](./hermes.mdx#plugins). Configure NeMo Relay through NeMo Fabric telemetry settings. |
+| `plugins_enabled` | `[]` | Native Hermes plugin identifiers to enable. |
 | `save_trajectories` | `false` | Save native JSONL trajectories; separate from normalized telemetry. |
 | `max_tokens` | Hermes native default | Response-token limit used when the selected model has no explicit `max_tokens`. A model-level limit takes precedence; if both are omitted, Hermes uses its native default. |
 | `terminal_timeout` | `60` | Positive timeout in seconds for a Hermes terminal tool operation; this does not enable a TUI. |

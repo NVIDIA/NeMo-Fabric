@@ -132,7 +132,8 @@ The descriptor validates the following `harness.settings` fields:
 | --- | --- | --- | --- |
 | `sdk.enabled` | boolean | `true` | Initialize the embedded Hermes `AIAgent`. Disable only with an enabled native interface; invocation then fails with `hermes_sdk_disabled` while runtime management remains available. |
 | `reasoning_config` | object | `{"effort": "none"}` | Configures Hermes model reasoning. The closed object accepts an optional `enabled` boolean and an optional `effort` value of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
-| `plugins_enabled` | array of nonempty strings | `[]` | List of native Hermes plugin identifiers to enable. Configure NeMo Relay through NeMo Fabric telemetry settings. |
+| `plugins` | object | None | Plugins by source, `bundled.entries` and `external` (`paths`, `entries`), each entry with `enabled`, `config`, and `capabilities`, plus Hermes's own plugin controls. Start fails when an enabled plugin didn't load. Refer to [Plugins](../../../docs/integrations/harness/hermes/hermes.mdx#plugins). Configure NeMo Relay through NeMo Fabric telemetry settings. |
+| `plugins_enabled` | array of nonempty strings | `[]` | Native Hermes plugin identifiers to enable. |
 | `save_trajectories` | boolean | `false` | Enables Hermes-native JSONL conversation trajectory saving. This is separate from normalized NeMo Fabric telemetry. |
 | `max_tokens` | positive integer | Hermes native default | Used when the selected model has no explicit `max_tokens`. A model-level limit takes precedence; if both are omitted, Hermes uses its native default. |
 | `terminal_timeout` | positive number | `60` | Limits a Hermes terminal tool operation in seconds; it does not enable a TUI. |
