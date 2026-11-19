@@ -477,7 +477,10 @@ def _read_links_record(hermes_home: Path) -> dict[str, str]:
 def _write_links_record(hermes_home: Path, record: Mapping[str, str]) -> None:
     path = hermes_home / LINKS_RECORD
     if record:
-        path.write_text(json.dumps(dict(record), sort_keys=True), encoding="utf-8")
+        # Replace the record whole, so a failed write keeps the previous one.
+        partial = path.with_name(f"{path.name}.partial")
+        partial.write_text(json.dumps(dict(record), sort_keys=True), encoding="utf-8")
+        os.replace(partial, path)
     else:
         path.unlink(missing_ok=True)
 
@@ -551,9 +554,11 @@ def remove_mounted(links: Iterable[Path]) -> None:
             if _is_recorded_link(link, record):
                 link.unlink()
         except OSError:
+            # Keep the entry, so a later start can still replace the link.
             LOGGER.warning(
                 "Hermes plugin link %s could not be removed", link, exc_info=True
             )
+            continue
         record.pop(link.name, None)
     for hermes_home, record in records.items():
         try:

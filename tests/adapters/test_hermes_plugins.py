@@ -720,3 +720,28 @@ async def test_runtime_start_fails_on_an_agent_plugin_install_in_a_kept_home(
     runtime = adapter.HermesRuntime()
     await runtime.start(_payload(tmp_path, {}, state_dir=state_dir))
     await runtime.stop()
+
+
+def test_remove_mounted_keeps_the_record_when_a_link_cannot_be_removed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    home = tmp_path / "home"
+    plugin = _plugin_folder(tmp_path / "mount", "mine", "mine")
+    mounted = hermes_plugins.plan_mounted(_external([str(plugin)]), tmp_path)
+    links = hermes_plugins.stage_mounted(mounted, home)
+    real_unlink = Path.unlink
+
+    def failing_unlink(self: Path, missing_ok: bool = False) -> None:
+        if self == links[0]:
+            raise PermissionError("read-only")
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", failing_unlink)
+    hermes_plugins.remove_mounted(links)
+    monkeypatch.undo()
+
+    assert links[0].is_symlink()
+    # The next start still recognizes the link as its own and replaces it.
+    assert hermes_plugins.stage_mounted(mounted, home) == links
+    hermes_plugins.remove_mounted(links)
+    assert not links[0].is_symlink()
