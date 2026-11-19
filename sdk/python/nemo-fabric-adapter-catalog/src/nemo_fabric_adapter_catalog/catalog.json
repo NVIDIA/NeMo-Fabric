@@ -841,11 +841,54 @@
             "type": "object"
           }
         },
+        "plugins": {
+          "agent_installed": {
+            "supported": false
+          },
+          "bundled": {
+            "supports_disable": true,
+            "supports_enable": true
+          },
+          "duplicates": {
+            "supported_policies": [
+              "reject"
+            ]
+          },
+          "external": {
+            "provisions_dependencies": false,
+            "requires_explicit_enable": true
+          }
+        },
         "requirements": {},
         "runner": {
           "module": "nemo_fabric_adapters.hermes.adapter"
         },
         "settings_schema": {
+          "$defs": {
+            "pluginEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "capabilities": {
+                  "description": "Capabilities granted to the plugin, such as tools.override, written to plugins.entries.<id>.granted_capabilities. Hermes ignores ids it doesn't know.",
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                "config": {
+                  "description": "The plugin's own settings, written to plugins.entries.<id>.settings.",
+                  "type": "object"
+                },
+                "enabled": {
+                  "description": "Turn the plugin on or off. true makes start fail unless Hermes loads it.",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "allOf": [
@@ -1026,9 +1069,109 @@
               "minimum": 1,
               "type": "integer"
             },
+            "plugins": {
+              "additionalProperties": false,
+              "description": "Hermes plugins, translated to Hermes's native plugins section in config.yaml. A plugin id may appear in only one section. The other fields are Hermes's own plugin controls and are written as they are. Plugins the agent installs itself are not supported.",
+              "properties": {
+                "auto_apply": {
+                  "description": "Whether the update check applies Git plugin updates unattended. Hermes's default is false.",
+                  "type": "boolean"
+                },
+                "auto_update_check_hours": {
+                  "description": "Hours between read-only plugin update checks; 0 disables them. Hermes's default is 24.",
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "bundled": {
+                  "additionalProperties": false,
+                  "description": "Plugins that ship with Hermes.",
+                  "properties": {
+                    "entries": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/pluginEntry"
+                      },
+                      "description": "Plugins that ship with Hermes, keyed by plugin key or name, such as security-guidance or browser/firecrawl. enabled: true makes start fail unless Hermes loads the plugin; enabled: false turns off one Hermes loads by default. Start fails if the plugin doesn't ship with Hermes.",
+                      "propertyNames": {
+                        "minLength": 1
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                "clone_timeout_seconds": {
+                  "description": "Seconds for one plugin Git clone, fetch, or checkout. Hermes's default is 300.",
+                  "exclusiveMinimum": 0,
+                  "maximum": 3600,
+                  "type": "number"
+                },
+                "external": {
+                  "additionalProperties": false,
+                  "description": "Plugins with user-prepared code and dependencies.",
+                  "properties": {
+                    "entries": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/pluginEntry"
+                      },
+                      "description": "Plugins from those folders, keyed by manifest name. A path alone doesn't enable a plugin; with enabled set to true, start fails unless Hermes loads it.",
+                      "propertyNames": {
+                        "minLength": 1
+                      },
+                      "type": "object"
+                    },
+                    "paths": {
+                      "description": "Plugin folders, each holding plugin.yaml and the plugin's code, such as plugins mounted on a volume. The adapter links each into the Hermes home's plugins folder under its manifest name at start and unlinks it at stop. Relative paths resolve against the NeMo Fabric base directory; start fails if one doesn't exist. Python dependencies must already be importable.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "uniqueItems": true
+                    }
+                  },
+                  "type": "object"
+                },
+                "hook_callback_timeout": {
+                  "description": "Seconds for one in-process plugin hook callback; 0 means no cap. Hermes's default is 30.",
+                  "maximum": 600,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "host": {
+                  "additionalProperties": false,
+                  "description": "Hermes's plugin-host settings.",
+                  "properties": {
+                    "launcher": {
+                      "description": "Command prefix the plugin host runs under, such as a sandbox runner.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "isolation": {
+                  "description": "Run third-party Python plugins inside Hermes or in Hermes's plugin-host process. Hermes's default is in_process.",
+                  "enum": [
+                    "in_process",
+                    "host"
+                  ],
+                  "type": "string"
+                },
+                "load_timeout_seconds": {
+                  "description": "Seconds for one plugin's import and registration at load; 0 means no deadline. Hermes's default is 10.",
+                  "maximum": 600,
+                  "minimum": 0,
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
             "plugins_enabled": {
               "default": [],
-              "description": "Hermes plugin identifiers to enable.",
+              "description": "Hermes plugin keys or names to turn on; prefer plugins.bundled or plugins.external. Start fails when an identifier is absent or did not load.",
               "items": {
                 "minLength": 1,
                 "type": "string"
@@ -1180,7 +1323,7 @@
         "name": "nemo-fabric-adapters-hermes",
         "version": "0.7.0"
       },
-      "sha256": "e4f7fb7039ccc28a3299ebe714bed8deea2c95bd485f4a3586ca6185f1540cdf",
+      "sha256": "3873209d1c07c9047400f5eaeba7dd974f0ec398c55cd3cd5321239fe25fc776",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {
