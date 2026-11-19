@@ -321,8 +321,13 @@ class HermesRuntime:
             mounted_plugins = plugins.plan_mounted(
                 self._settings, common_utils.base_dir(payload)
             )
-            self._mounted_plugin_links = await _run_to_completion(
-                plugins.stage_mounted, mounted_plugins, self._hermes_home
+            # Owned before staging, so stop removes them after a cancelled start.
+            self._mounted_plugin_links = []
+            await _run_to_completion(
+                plugins.stage_mounted,
+                mounted_plugins,
+                self._hermes_home,
+                self._mounted_plugin_links,
             )
 
             if relay_enabled:

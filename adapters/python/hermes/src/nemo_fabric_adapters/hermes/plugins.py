@@ -238,20 +238,21 @@ def check_enabled(
 def check_bundled(
     entries: Iterable[PluginEntry], listed: Iterable[Mapping[str, Any]]
 ) -> None:
-    """Fail when a ``bundled`` entry names a plugin Hermes doesn't ship.
-
-    Only entries Hermes lists are checked; a missing one is reported by
-    :func:`check_enabled` when it's turned on.
-    """
+    """Fail when a ``bundled`` entry names a plugin Hermes doesn't ship."""
 
     listed = list(listed)
     for plugin in entries:
         if plugin.section != "bundled":
             continue
-        sources = {
-            str(entry.get("source")) for entry in _matches(plugin.plugin, listed)
-        }
-        if sources and BUNDLED_SOURCE not in sources:
+        matches = _matches(plugin.plugin, listed)
+        if not matches:
+            raise LifecycleError(
+                common_plugins.not_found_code(HARNESS),
+                f"{LABEL} plugin {plugin.plugin!r} was not found",
+                metadata={"field": plugin.field, "plugin": plugin.plugin},
+            )
+        sources = {str(entry.get("source")) for entry in matches}
+        if BUNDLED_SOURCE not in sources:
             raise LifecycleError(
                 "hermes_invalid_config",
                 f"Hermes plugin {plugin.plugin!r} doesn't ship with Hermes; "
@@ -456,17 +457,22 @@ def plan_mounted(
     return mounted
 
 
-def stage_mounted(mounted: Iterable[MountedPlugin], hermes_home: Path) -> list[Path]:
+def stage_mounted(
+    mounted: Iterable[MountedPlugin],
+    hermes_home: Path,
+    links: list[Path] | None = None,
+) -> list[Path]:
     """Link each mounted plugin into ``$HERMES_HOME/plugins/<name>``.
 
     Replaces a symlink of that name, which an earlier start left. A real
     folder of that name is a plugin the agent installed, so start fails with
     ``hermes_plugin_duplicate`` rather than shadow it. Returns the links made,
-    for :func:`remove_mounted`; links made before a failure are removed.
+    for :func:`remove_mounted`, appending each to ``links`` as it's made when
+    given; links made before a failure are removed.
     """
 
     plugins_dir = hermes_home / "plugins"
-    links: list[Path] = []
+    links = [] if links is None else links
     try:
         for plugin in mounted:
             plugins_dir.mkdir(parents=True, exist_ok=True)

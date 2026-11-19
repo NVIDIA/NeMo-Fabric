@@ -239,15 +239,34 @@ def test_check_bundled_rejects_a_plugin_hermes_does_not_ship():
     assert "plugins.external" in error.value.message
 
 
-def test_check_bundled_accepts_a_shipped_or_unlisted_plugin():
+def test_check_bundled_accepts_shipped_plugins_on_or_off():
     entries = hermes_plugins.plugin_entries(
-        _bundled(**{"security-guidance": {"enabled": True}, "absent": {}})
+        _bundled(
+            **{
+                "security-guidance": {"enabled": True},
+                "browser/firecrawl": {"enabled": False},
+            }
+        )
     )
     listed = [
-        {"key": "security-guidance", "name": "security-guidance", "source": "bundled"}
+        {"key": "security-guidance", "name": "security-guidance", "source": "bundled"},
+        {"key": "browser/firecrawl", "name": "firecrawl", "source": "bundled"},
     ]
 
     hermes_plugins.check_bundled(entries, listed)
+
+
+def test_check_bundled_rejects_a_missing_plugin_even_when_turned_off():
+    entries = hermes_plugins.plugin_entries(_bundled(nope={"enabled": False}))
+
+    with pytest.raises(LifecycleError) as error:
+        hermes_plugins.check_bundled(entries, [])
+
+    assert error.value.code == "hermes_plugin_not_found"
+    assert error.value.metadata == {
+        "field": "harness.settings.plugins.bundled.entries.nope",
+        "plugin": "nope",
+    }
 
 
 def test_check_enabled_accepts_key_and_name_matches():
@@ -498,6 +517,18 @@ def test_stage_mounted_creates_replaces_and_removes_links(tmp_path: Path):
     hermes_plugins.remove_mounted(links)
     assert not link.exists() and not link.is_symlink()
     assert (plugin / "plugin.yaml").is_file()
+
+
+def test_stage_mounted_records_links_in_the_given_list(tmp_path: Path):
+    plugin = _plugin_folder(tmp_path / "mount", "mine", "mine")
+    mounted = hermes_plugins.plan_mounted(_external([str(plugin)]), tmp_path)
+    owned: list[Path] = []
+
+    links = hermes_plugins.stage_mounted(mounted, tmp_path / "home", owned)
+
+    assert links is owned
+    assert owned == [tmp_path / "home" / "plugins" / "mine"]
+    hermes_plugins.remove_mounted(owned)
 
 
 def test_stage_mounted_refuses_to_shadow_an_installed_plugin(tmp_path: Path):
