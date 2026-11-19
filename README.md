@@ -23,9 +23,7 @@ NeMo Fabric gives applications, evaluation systems, and rollout platforms a cons
 - **Switch harnesses:** Reuse the consumer integration while adapters handle harness-specific behavior.
 - **Compare outcomes:** Collect normalized results, errors, artifacts, lifecycle events, and telemetry references.
 
-Invocation response and artifact budgets are configured under
-[`runtime.response_limits`](docs/sdk/python.mdx#response-and-artifact-limits),
-with the same policy for host and OpenShell execution.
+Configure buffered response and artifact budgets with [`runtime.response_limits`](docs/sdk/results-and-errors.mdx#response-and-artifact-limits). Both host and OpenShell execution enforce configured budgets. When limits are omitted, OpenShell applies default transfer budgets; local execution has no SDK response or artifact budget enforcement.
 
 ## Supported Agent Harnesses
 
@@ -83,6 +81,9 @@ for descriptor sources, compatibility limits, and API migration examples.
 - [Invocation system stats](docs/sdk/system-stats.mdx#invocation-system-stats): Select per-invocation metric groups, sampled peaks, and cgroup conditions; disable collection independently of sampling.
 - [Selected software evidence](docs/sdk/software-execution-evidence.mdx#selected-software-evidence): Inspect versions in optional `RunResult.execution` and control collection before initialization.
 - [Conversation telemetry](docs/sdk/configure-agents.mdx#custom-fields-and-adapter-settings): Use `RunRequest.relay_session_root` to group Deep Agents and mini-SWE-agent turns under one NeMo Relay session.
+- [Native interfaces](adapters/python/hermes/README.md#execution-paths): Use the Hermes API, dashboard, or experimental terminal TUI; refer to the [OpenClaw adapter](adapters/python/openclaw/README.md) for Gateway access.
+- [Recorded runtime status](docs/sdk/requests-and-runtimes.mdx#recorded-runtime-status): Rediscover runtime handles and read recorded lifecycle state; use health checks for a fresh observation.
+- [Saved invocation results](docs/sdk/results-and-errors.mdx#recover-a-buffered-invocation-result): Retrieve completed results by runtime and request ID from retained storage. A missing result does not establish that repeating the request is safe.
 - [Hermes cold resume](docs/sdk/requests-and-runtimes.mdx#resume-a-hermes-conversation): Retain native state and explicitly reopen a conversation with `SessionRef`.
 - [Installation](docs/getting-started/install.mdx): Install the runtime, adapters, harness dependencies, and telemetry components, and choose a deployment scenario.
 - [Adapter catalog](sdk/python/nemo-fabric-adapter-catalog/README.md): Inspect bundled adapter metadata on a host without installing harness SDKs.
@@ -95,9 +96,9 @@ for descriptor sources, compatibility limits, and API migration examples.
 
 ## Roadmap
 
-Planned areas of development include:
+Planned areas of development include the following. These are development directions, not committed release dates:
 
 - **Refine runtime resource measurements:** Improve CPU, memory, elapsed-time, and available GPU measurements through broader benchmark validation.
-- **Expose task progress and recoverable results:** Provide task state, step progress, plans, pending requests, sandbox task listings, and paginated events, with final results retrievable after invocation ends or the caller disconnects.
+- **Expand task visibility:** Build on recorded runtime status and saved invocation results with step progress, plans, pending requests, sandbox task listings, and paginated events.
 - **Standardize model usage accounting:** Report input, cached, output, and reasoning tokens consistently, distinguish complete, partial, and unknown usage, and attribute delegated work to the correct invocation.
-- **Capture execution provenance:** Record NeMo Fabric and adapter versions, requested models, sanitized MCP configuration, and execution environment, with explicit sources and unknowns.
+- **Extend execution provenance:** Build on selected software-version evidence with requested models, sanitized configuration and MCP settings, and execution-environment context, preserving explicit sources and unknowns.
