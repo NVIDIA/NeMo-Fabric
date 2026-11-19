@@ -630,7 +630,11 @@ async def test_native_controls_apply_to_pinned_gateway(
                 "codeMode": False,
             },
             "plugins": {
-                "entries": {"memory-core": {"config": {"dreaming": {"enabled": False}}}}
+                "bundled": {
+                    "entries": {
+                        "memory-core": {"config": {"dreaming": {"enabled": False}}}
+                    }
+                }
             },
         }
     )

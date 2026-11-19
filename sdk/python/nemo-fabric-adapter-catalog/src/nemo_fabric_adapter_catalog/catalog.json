@@ -2502,12 +2502,58 @@
           ],
           "type": "object"
         },
+        "plugins": {
+          "agent_installed": {
+            "requires_keep_state": true
+          },
+          "bundled": {
+            "supports_disable": true,
+            "supports_enable": true
+          },
+          "duplicates": {
+            "supported_policies": [
+              "reject"
+            ]
+          },
+          "external": {
+            "provisions_dependencies": false,
+            "requires_explicit_enable": true
+          }
+        },
         "requirements": {},
         "runner": {
           "module": "nemo_fabric_adapters.openclaw.adapter",
           "stop_timeout_seconds": 30
         },
         "settings_schema": {
+          "$defs": {
+            "pluginEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "config": {
+                  "description": "The plugin's own configuration, checked by OpenClaw against the plugin's schema.",
+                  "type": "object"
+                },
+                "enabled": {
+                  "description": "Turn the plugin on or off. true makes start fail unless OpenClaw loads it.",
+                  "type": "boolean"
+                },
+                "hooks": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "allowConversationAccess": {
+                      "type": "boolean"
+                    },
+                    "allowPromptInjection": {
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "dependentSchemas": {
@@ -2670,32 +2716,72 @@
             },
             "plugins": {
               "additionalProperties": false,
-              "description": "Native OpenClaw plugin controls for NeMo Fabric-owned Gateways. Only authored fields are written; attached Gateways reject them.",
+              "description": "OpenClaw plugins for NeMo Fabric-owned Gateways, translated to OpenClaw's native plugins section. A plugin id may appear in only one section, and fabric-shared-config is reserved for the adapter. Attached Gateways reject plugin settings.",
               "properties": {
-                "entries": {
+                "bundled": {
                   "additionalProperties": false,
+                  "description": "Plugins that ship with OpenClaw.",
                   "properties": {
-                    "memory-core": {
-                      "additionalProperties": false,
+                    "entries": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/pluginEntry"
+                      },
+                      "description": "Plugins that ship with OpenClaw, keyed by plugin id. With enabled set to true, start fails unless OpenClaw loads the plugin.",
                       "properties": {
-                        "config": {
-                          "additionalProperties": false,
+                        "fabric-shared-config": false,
+                        "memory-core": {
+                          "$ref": "#/$defs/pluginEntry",
                           "properties": {
-                            "dreaming": {
-                              "additionalProperties": false,
+                            "config": {
                               "properties": {
-                                "enabled": {
-                                  "description": "Whether the memory-core plugin runs scheduled dreaming.",
-                                  "type": "boolean"
+                                "dreaming": {
+                                  "properties": {
+                                    "enabled": {
+                                      "description": "Whether the memory-core plugin runs scheduled dreaming.",
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "type": "object"
                                 }
                               },
                               "type": "object"
                             }
-                          },
-                          "type": "object"
+                          }
                         }
                       },
+                      "propertyNames": {
+                        "minLength": 1
+                      },
                       "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                "external": {
+                  "additionalProperties": false,
+                  "description": "Plugins with user-prepared code and dependencies.",
+                  "properties": {
+                    "entries": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/pluginEntry"
+                      },
+                      "description": "Plugins from those folders, keyed by plugin id. A path alone doesn't enable a plugin; with enabled set to true, start fails unless OpenClaw loads it.",
+                      "properties": {
+                        "fabric-shared-config": false
+                      },
+                      "propertyNames": {
+                        "minLength": 1
+                      },
+                      "type": "object"
+                    },
+                    "paths": {
+                      "description": "Plugin folders OpenClaw loads, each with its built code and node_modules, such as plugins mounted on a volume. Relative paths are resolved from the NeMo Fabric base directory; start fails if one doesn't exist.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "uniqueItems": true
                     }
                   },
                   "type": "object"
@@ -2841,7 +2927,7 @@
         "name": "nemo-fabric-adapters-openclaw",
         "version": "0.8.0"
       },
-      "sha256": "2dafa059211dd33e696181173e344110eb643ff846a3b2b507f7e47d9e7d49c5",
+      "sha256": "92c38d430d0b4d2beebcbd097f51ad92179761c77dc20cdae0dc2747fe836a9e",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {
