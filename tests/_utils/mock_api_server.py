@@ -24,6 +24,7 @@ def mock_api_server(port: int) -> Iterator[str]:
     Use the /_requests endpoint to inspect captured chat-completion payloads after a test action.
     Use the /_scenario endpoint to configure a status code, a response delay, or ordered tool calls for subsequent requests.
     Use the /_chat_authorization_headers endpoint to inspect the Authorization header of each chat-completion request.
+    Use the /_messages_requests endpoint to inspect the path and key headers of each Messages API request.
     Use the /_reset endpoint to clear all retained request and scenario state.
 
     Args:
@@ -41,6 +42,7 @@ def mock_api_server(port: int) -> Iterator[str]:
         app.state.delay_seconds = 0.0
         app.state.response_text = None
         app.state.chat_authorization_headers = []
+        app.state.messages_requests = []
         app.state.tool_calls = []
         app.state.tool_call_index = 0
         app.state.mcp_authorization_headers = []
@@ -114,6 +116,10 @@ def mock_api_server(port: int) -> Iterator[str]:
     @app.get("/_chat_authorization_headers")
     def chat_authorization_headers() -> list[str | None]:
         return list(app.state.chat_authorization_headers)
+
+    @app.get("/_messages_requests")
+    def messages_requests() -> list[dict[str, str | None]]:
+        return list(app.state.messages_requests)
 
     @app.get("/_mcp_authorization_headers")
     def mcp_authorization_headers() -> list[str | None]:
@@ -312,10 +318,19 @@ def mock_api_server(port: int) -> Iterator[str]:
             events = _responses_text_events(payload, "echo response")
         return StreamingResponse(events, media_type="text/event-stream")
 
+    # Anthropic-compatible gateways serve the Messages API under any path prefix.
     @app.post("/v1/messages")
+    @app.post("/{prefix:path}/v1/messages")
     async def messages(request: Request):
         payload = await request.json()
         app.state.requests.append(payload)
+        app.state.messages_requests.append(
+            {
+                "path": request.url.path,
+                "x-api-key": request.headers.get("x-api-key"),
+                "authorization": request.headers.get("authorization"),
+            }
+        )
         if app.state.status_code != 200:
             return JSONResponse(
                 status_code=app.state.status_code,
