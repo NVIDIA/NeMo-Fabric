@@ -104,6 +104,7 @@ Use a single `FabricConfig` to define supported settings for all four Hermes pat
 - **Tool filters:** enabled and blocked Hermes toolsets.
 - **MCP:** server definitions and supported authentication settings.
 - **Skills:** skill folders, bundled-skill selection, and duplicate handling. Refer to [Skills](#skills).
+- **Plugins:** bundled plugins and external plugin folders. Refer to [Plugins](#plugins).
 - **Workspace:** the agent's working directory.
 - **Execution limits:** maximum agent turns and response tokens.
 - **NeMo Relay:** telemetry and export configuration, when enabled.
@@ -190,6 +191,44 @@ The run report has the shape that [Configure Skills](../skills.mdx#run-report) d
 - **`loaded`:** Lists every skill Hermes's catalog loads, that is, every skill Hermes resolves its name to and shows on this platform. The configured skills come first, in entry order, with `origin: external`. Every other skill follows, by name, with its `path`: Hermes's copy of a bundled skill in the Hermes home as `bundled`, and the agent's own skills in the home, project skills, skills from `skills.paths`, and any other skill Hermes reads as `local`. A skill the agent created in a kept state folder appears as `local` from the next runtime on. An empty list means Hermes loads no skill. When Hermes's catalog can't be read, the report lists only the configured skills.
 - **`duplicates`:** Lists each name that more than one skill folder provides among the skills Hermes sees, including a bundled copy and the agent's own skill in the Hermes home with no external copy. The outcome is `selected` when a configured copy loads, or, with no configured copy, when Hermes loads one copy. It is `shadowed` when a copy in the Hermes home wins over the configured copies, and `ambiguous` when Hermes refuses the name.
 - **`bundled`:** Adds `essential`, the skills Hermes always loads. `selected` also lists them.
+
+### Plugins
+
+`harness.settings.plugins` names each plugin by where it comes from. The adapter writes it to Hermes's native `plugins` section in `config.yaml`:
+
+```yaml
+harness:
+  adapter_id: nvidia.fabric.hermes
+  settings:
+    plugins:
+      bundled:
+        entries:
+          security-guidance: {enabled: true}
+          browser/firecrawl: {enabled: false}
+      external:
+        paths: [/sandbox/plugins/my-plugin]
+        entries:
+          my-plugin: {enabled: true, config: {greeting: hi}}
+      load_timeout_seconds: 20
+```
+
+- **`bundled.entries`:** Plugins that ship with Hermes, keyed by registry key or manifest name. `enabled: false` turns off a plugin Hermes loads by default.
+- **`external`:** Plugin folders that something else provides, such as a mounted volume. The adapter links each folder into `$HERMES_HOME/plugins` at start and removes the link at stop. A folder's Python dependencies must already be importable. A path alone doesn't turn a plugin on.
+- **Entries:** Each takes `enabled`, `config` (written to `plugins.entries.<id>.settings`), and `capabilities` (written to `plugins.entries.<id>.granted_capabilities`). A plugin id may appear in only one section.
+- **Hermes controls:** `load_timeout_seconds`, `hook_callback_timeout`, `clone_timeout_seconds`, `auto_update_check_hours`, `auto_apply`, `isolation`, and `host.launcher` are written as they are.
+
+After Hermes discovers its plugins, startup fails unless every entry with `enabled: true` loaded. Each error names the setting in `metadata.field`:
+
+| Error | When |
+| --- | --- |
+| `hermes_plugin_not_found` | Hermes has no such plugin, an external folder doesn't exist, or no folder provides an `external.entries` name. |
+| `hermes_plugin_unavailable` | The plugin didn't load or its entry also turns it off. The message carries Hermes's reason. |
+| `hermes_plugin_invalid` | An external path isn't a folder or has no readable `plugin.yaml`. |
+| `hermes_plugin_duplicate` | Two external folders share a name, or the Hermes home already holds a plugin of that name. |
+| `hermes_invalid_config` | A plugin id is in both sections, or a `bundled` entry doesn't ship with Hermes. |
+| `hermes_plugin_agent_installed_unsupported` | The kept Hermes home holds a plugin environment (`installs/<key>/environments`) from an agent plugin install. |
+
+NeMo Fabric doesn't support plugins the agent installs itself. Hermes builds a Python environment for each install, and importing Hermes later switches the whole adapter process to it, which removes NeMo Fabric's packages. With `runtime.keep_state`, startup fails before Hermes is imported; delete the folder and provide the plugin through `external` instead.
 
 ### Shared Runtime Home
 
