@@ -23,8 +23,6 @@ NeMo Fabric gives applications, evaluation systems, and rollout platforms a cons
 - **Switch harnesses:** Reuse the consumer integration while adapters handle harness-specific behavior.
 - **Compare outcomes:** Collect normalized results, errors, artifacts, lifecycle events, and telemetry references.
 
-Configure buffered response and artifact budgets with [`runtime.response_limits`](docs/sdk/results-and-errors.mdx#response-and-artifact-limits). Both host and OpenShell execution enforce configured budgets. When limits are omitted, OpenShell applies default transfer budgets; local execution has no SDK response or artifact budget enforcement.
-
 ## Supported Agent Harnesses
 
 NeMo Fabric includes adapters for the following harnesses and execution targets. Select a harness name for its adapter documentation:
