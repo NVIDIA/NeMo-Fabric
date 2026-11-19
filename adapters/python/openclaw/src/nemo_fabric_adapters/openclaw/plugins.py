@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import re
 from collections.abc import Iterator
@@ -189,31 +190,36 @@ def _valid_record(owned: dict[str, Any]) -> bool:
     )
 
 
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
 def prepare(folder: Path, fabric: dict[str, Any]) -> dict[str, Any]:
     """Merge NeMo Fabric's plugin settings into ``plugins.json`` and return them."""
-    agent = _read_object(folder / PLUGINS_FILE, kind="plugin settings")
+    policy_path = folder / PLUGINS_FILE
     owned_path = folder / OWNED_FILE
+    agent = _read_object(policy_path, kind="plugin settings")
     owned = _read_object(owned_path, kind="plugin ownership record")
+    pending = owned.pop("pending", None)
+    if isinstance(pending, dict):
+        # A start that failed between writes: its record counts only if
+        # plugins.json holds exactly what that start wrote.
+        text = policy_path.read_text(encoding="utf-8") if policy_path.exists() else ""
+        if pending.get("sha256") == _digest(text):
+            owned = {k: v for k, v in pending.items() if k != "sha256"}
     if not _valid_record(owned):
         raise _state_invalid(
             owned_path, "plugin ownership record", "unexpected record shape"
         )
     merged, record = merge_plugins(agent, fabric, owned)
-    # Record the union first, so a failed write below never leaves a NeMo
-    # Fabric setting in plugins.json that the record doesn't claim.
-    union = {
-        "leaves": [*owned.get("leaves", []), *record["leaves"]],
-        "items": {
-            key: list(dict.fromkeys([*owned.get("items", {}).get(key, []), *values]))
-            for key, values in {**owned.get("items", {}), **record["items"]}.items()
-        },
-    }
-    for path, value in (
-        (owned_path, union),
-        (folder / PLUGINS_FILE, merged),
-        (owned_path, record),
+    text = json.dumps(merged, indent=2) + "\n"
+    staged = {**owned, "pending": {**record, "sha256": _digest(text)}}
+    for path, content in (
+        (owned_path, json.dumps(staged, indent=2) + "\n"),
+        (policy_path, text),
+        (owned_path, json.dumps(record, indent=2) + "\n"),
     ):
-        local_interfaces.write_private_file(path, json.dumps(value, indent=2) + "\n")
+        local_interfaces.write_private_file(path, content)
     return merged
 
 
