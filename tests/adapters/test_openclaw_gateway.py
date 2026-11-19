@@ -69,6 +69,80 @@ async def test_session_calls_share_one_authenticated_connection(
         await asyncio.wait_for(connections[0].wait_closed(), 2)
 
 
+@pytest.mark.parametrize("stray_response", [False, True])
+async def test_session_connection_reads_gateway_events_between_calls(
+    unused_tcp_port, monkeypatch, stray_response
+):
+    # Scale websockets' 20 s keepalive down so the idle gap spans several pings.
+    class ShortKeepalive(gateway._DirectConnect):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, ping_interval=0.1, ping_timeout=0.3, **kwargs)
+
+    monkeypatch.setattr(gateway, "_DirectConnect", ShortKeepalive)
+    connections = []
+    requests = []
+
+    async def respond(socket):
+        connections.append(socket)
+        await socket.send(
+            json.dumps(
+                {
+                    "type": "event",
+                    "event": "connect.challenge",
+                    "payload": {"nonce": "challenge"},
+                }
+            )
+        )
+        async for message in socket:
+            request = json.loads(message)
+            requests.append(request["method"])
+            result = (
+                {"type": "hello-ok", "protocol": 4}
+                if request["method"] == "connect"
+                else {"method": request["method"]}
+            )
+            await socket.send(
+                json.dumps(
+                    {"type": "res", "id": request["id"], "ok": True, "payload": result}
+                )
+            )
+            if request["method"] == "connect":
+                continue
+            # While a turn runs over HTTP, the Gateway keeps sending events,
+            # more than websockets buffers before it stops reading the socket.
+            for sequence in range(40):
+                await socket.send(
+                    json.dumps({"type": "event", "event": "agent", "seq": sequence})
+                )
+            if stray_response:
+                await socket.send(
+                    json.dumps(
+                        {"type": "res", "id": "unrequested", "ok": True, "payload": {}}
+                    )
+                )
+
+    async with serve(respond, "127.0.0.1", unused_tcp_port):
+        client = gateway.SessionClient(
+            f"http://127.0.0.1:{unused_tcp_port}", "private-test-token"
+        )
+        try:
+            await client.call("sessions.describe", {"key": "selected"}, timeout=2)
+            await asyncio.sleep(1)
+            if stray_response:
+                with pytest.raises(LifecycleError):
+                    await client.call("chat.history", {"key": "selected"}, timeout=2)
+                assert requests == ["connect", "sessions.describe"]
+            else:
+                assert await client.call(
+                    "chat.history", {"key": "selected"}, timeout=2
+                ) == {"method": "chat.history"}
+                assert requests == ["connect", "sessions.describe", "chat.history"]
+        finally:
+            await client.close()
+        assert len(connections) == 1
+        await asyncio.wait_for(connections[0].wait_closed(), 2)
+
+
 @pytest.mark.parametrize(
     "failure", ["authentication", "rpc", "timeout", "cancel", "disconnect", "invalid"]
 )
