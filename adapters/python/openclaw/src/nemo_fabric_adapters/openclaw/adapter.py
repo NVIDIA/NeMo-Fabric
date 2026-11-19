@@ -660,6 +660,8 @@ def _merge_native_settings(
 
 PLUGIN_SECTIONS = ("bundled", "external")
 PLUGINS_FIELD = "harness.settings.plugins"
+# The origin OpenClaw reports for a plugin from each section.
+PLUGIN_ORIGINS = {"bundled": "bundled", "external": "config"}
 
 
 def _plugin_entries(settings: dict[str, Any]) -> list[tuple[str, str, Any]]:
@@ -786,6 +788,20 @@ async def _check_plugins(
             return ""
         return str(runtime.get("error") or state or "not loaded")
 
+    for field, plugin_id in requested:
+        plugin = plugins.get(plugin_id) or {}
+        origin = plugin.get("origin")
+        section = field.split(".")[3]
+        if plugin.get("installed") is not False and origin not in (
+            None,
+            PLUGIN_ORIGINS[section],
+        ):
+            raise lifecycle.LifecycleError(
+                common_plugins.not_found_code("openclaw"),
+                f"OpenClaw plugin {plugin_id!r} was not found in {section}; "
+                f"the Gateway's copy has origin {origin}",
+                metadata={"field": field, "plugin": plugin_id, "origin": origin},
+            )
     common_plugins.check_requested(
         requested,
         lookup,

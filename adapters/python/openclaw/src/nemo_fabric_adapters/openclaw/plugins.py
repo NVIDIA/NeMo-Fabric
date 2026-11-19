@@ -56,6 +56,8 @@ def _get(value: dict[str, Any], path: Leaf, default: Any = None) -> Any:
 
 def _same(left: Any, right: Any) -> bool:
     """JSON equality: ``0``, ``False`` and ``0.0`` stay distinct."""
+    if left is _MISSING or right is _MISSING:
+        return left is right
     return json.dumps(left, sort_keys=True) == json.dumps(right, sort_keys=True)
 
 
@@ -92,33 +94,47 @@ def _owned_items(owned: dict[str, Any], path: Leaf) -> list[str]:
     return [item for item in items if isinstance(item, str)]
 
 
+def _owned_leaves(owned: dict[str, Any]) -> dict[Leaf, dict[str, Any]]:
+    return {tuple(leaf["path"]): leaf for leaf in owned.get("leaves", [])}
+
+
 def merge_plugins(
     agent: dict[str, Any], fabric: dict[str, Any], owned: dict[str, Any]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Merge NeMo Fabric's plugin section into the agent's.
 
-    NeMo Fabric's leaves win, leaves it set last time and no longer sets are
-    deleted, and list fields keep the agent's items. Returns the merged
-    section and the new ownership record.
+    NeMo Fabric's leaves win over the agent's, which are kept in the record.
+    A leaf NeMo Fabric no longer sets goes back to the agent's value, unless
+    the agent changed it since. List fields keep the agent's items. Returns
+    the merged section and the new ownership record.
     """
     merged = copy.deepcopy(agent)
     fabric_leaves = dict(_leaves(fabric))
-    previous = {
-        tuple(path)
-        for path in owned.get("leaves", [])
-        if isinstance(path, list) and path and all(isinstance(k, str) for k in path)
-    }
-    for path in sorted(previous - fabric_leaves.keys()):
-        _delete(merged, path)
+    previous = _owned_leaves(owned)
+    for path in sorted(previous.keys() - fabric_leaves.keys()):
+        leaf = previous[path]
+        if not _same(_get(merged, path, _MISSING), leaf["value"]):
+            continue  # the agent changed it since; keep the agent's choice
+        if "shadowed" in leaf:
+            _set(merged, path, leaf["shadowed"])
+        else:
+            _delete(merged, path)
     applied = []
     for path, value in fabric_leaves.items():
         if value == {} and isinstance(_get(merged, path), dict):
             continue  # an empty object adds no setting of its own
         current = _get(merged, path, _MISSING)
-        if path not in previous and current is not _MISSING and _same(current, value):
+        leaf = previous.get(path)
+        if leaf is None and current is not _MISSING and _same(current, value):
             continue  # the agent's own value; NeMo Fabric doesn't claim it
+        record_leaf = {"path": list(path), "value": copy.deepcopy(value)}
+        if leaf is not None and _same(current, leaf["value"]):
+            if "shadowed" in leaf:
+                record_leaf["shadowed"] = leaf["shadowed"]
+        elif current is not _MISSING:
+            record_leaf["shadowed"] = copy.deepcopy(current)
         _set(merged, path, value)
-        applied.append(path)
+        applied.append(record_leaf)
 
     owned_items: dict[str, list[str]] = {}
     for path in LIST_FIELDS:
@@ -148,7 +164,7 @@ def merge_plugins(
         added = [i for i in fabric_items if i not in before or i in previous_items]
         if added:
             owned_items[".".join(path)] = added
-    record = {"leaves": [list(path) for path in applied], "items": owned_items}
+    record = {"leaves": applied, "items": owned_items}
     return merged, record
 
 
@@ -196,6 +212,14 @@ def _valid_record(owned: dict[str, Any]) -> bool:
     items = owned.get("items", {})
     return (
         isinstance(leaves, list)
+        and all(
+            isinstance(leaf, dict)
+            and "value" in leaf
+            and isinstance(leaf.get("path"), list)
+            and leaf["path"]
+            and all(isinstance(key, str) for key in leaf["path"])
+            for leaf in leaves
+        )
         and isinstance(items, dict)
         and all(isinstance(value, list) for value in items.values())
     )

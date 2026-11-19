@@ -288,13 +288,13 @@ harness:
 
 Each entry takes OpenClaw's `enabled`, `config`, and `hooks` fields. A plugin id may appear in only one section, and `fabric-shared-config` is reserved.
 
-With `runtime.keep_state=true`, the agent can install, enable, and disable plugins with OpenClaw's own commands, and they stay after a restart. The plugin settings live in `<state_dir>/fabric/plugins.json`; at each start the adapter merges its settings into that file, and the agent can still change them during a run.
+With `runtime.keep_state=true`, the agent can install, enable, and disable plugins with OpenClaw's own commands, and they stay after a restart. The plugin settings live in `<state_dir>/fabric/plugins.json`; at each start the adapter merges its settings into that file, and the agent can still change them during a run. When a setting is removed from `harness.settings.plugins`, the agent's earlier value comes back, unless the agent changed it during a run.
 
 At start, the adapter asks the running Gateway which plugins it loaded. Every entry with `enabled: true` must be active:
 
 | Error | Cause |
 | --- | --- |
-| `openclaw_plugin_not_found` | An unknown plugin id, or an `external.paths` folder that doesn't exist. |
+| `openclaw_plugin_not_found` | An unknown plugin id, an `external.paths` folder that doesn't exist, or a plugin whose Gateway copy comes from another source; `metadata.origin` names that source. |
 | `openclaw_plugin_unavailable` | The plugin failed to load; `metadata.reason` has OpenClaw's error. |
 | `openclaw_invalid_configuration` | An id in both sections, a reserved id, or a plugin `config` that OpenClaw rejects. |
 | `openclaw_plugin_state_invalid` | `plugins.json` can't be read. |

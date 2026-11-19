@@ -68,7 +68,8 @@ def plugins_rpc():
     # Each entry is "active" when enabled and "unloaded" otherwise.
     # FAKE_OPENCLAW_PLUGINS maps an id to a runtime state ("absent" leaves it
     # out, "catalog" lists it as not installed); FAKE_OPENCLAW_PLUGIN_ERRORS
-    # maps an id to a load error.
+    # maps an id to a load error. FAKE_OPENCLAW_PLUGIN_ORIGINS maps an id to
+    # the origin the Gateway reports.
     if log_path := os.environ.get("FAKE_OPENCLAW_PLUGIN_COMMANDS"):
         with open(log_path, "a", encoding="utf-8") as stream:
             stream.write("plugins.list\n")
@@ -84,12 +85,14 @@ def plugins_rpc():
     errors = json.loads(os.environ.get("FAKE_OPENCLAW_PLUGIN_ERRORS", "{}"))
     states.update({key: "unloaded" for key in errors})
     states.update(json.loads(os.environ.get("FAKE_OPENCLAW_PLUGINS", "{}")))
+    origins = json.loads(os.environ.get("FAKE_OPENCLAW_PLUGIN_ORIGINS", "{}"))
     return {
         "plugins": [
             {
                 "id": key,
                 "enabled": state == "active",
                 **({"installed": False} if state == "catalog" else {}),
+                **({"origin": origins[key]} if key in origins else {}),
                 "runtime": {
                     "state": "unloaded" if state == "catalog" else state,
                     **({"error": errors[key]} if key in errors else {}),

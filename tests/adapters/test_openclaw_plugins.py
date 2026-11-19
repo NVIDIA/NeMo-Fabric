@@ -395,6 +395,52 @@ async def test_start_fails_when_an_enabled_plugin_does_not_load(
 
 
 @posix_only
+@pytest.mark.parametrize(
+    ("plugins", "origin", "field"),
+    [
+        pytest.param(
+            _external([], {"memory-wiki": {"enabled": True}}),
+            "bundled",
+            "harness.settings.plugins.external.entries.memory-wiki",
+            id="external-from-bundled",
+        ),
+        pytest.param(
+            _bundled({"memory-wiki": {"enabled": True}}),
+            "global",
+            "harness.settings.plugins.bundled.entries.memory-wiki",
+            id="bundled-from-installed",
+        ),
+    ],
+)
+async def test_start_fails_when_a_plugin_loads_from_another_source(
+    mock_openclaw: Path, tmp_path: Path, capture: Path, plugins, origin, field
+):
+    os.environ["FAKE_OPENCLAW_PLUGIN_ORIGINS"] = json.dumps({"memory-wiki": origin})
+
+    error = await _start_error(tmp_path, _config(mock_openclaw, plugins))
+
+    assert error.code == "openclaw_plugin_not_found"
+    assert error.metadata == {"field": field, "plugin": "memory-wiki", "origin": origin}
+
+
+@posix_only
+@pytest.mark.parametrize(
+    ("plugins", "origin"),
+    [
+        pytest.param(_bundled({"memory-wiki": {"enabled": True}}), "bundled"),
+        pytest.param(_external([], {"memory-wiki": {"enabled": True}}), "config"),
+    ],
+)
+async def test_start_accepts_a_plugin_from_its_own_source(
+    mock_openclaw: Path, tmp_path: Path, capture: Path, plugins, origin
+):
+    os.environ["FAKE_OPENCLAW_PLUGIN_ORIGINS"] = json.dumps({"memory-wiki": origin})
+    runtime = adapter.OpenClawRuntime()
+    await _start(runtime, tmp_path, _config(mock_openclaw, plugins))
+    await runtime.stop()
+
+
+@posix_only
 async def test_load_errors_for_plugins_not_requested_do_not_fail_start(
     mock_openclaw: Path, tmp_path: Path, capture: Path
 ):
@@ -606,8 +652,38 @@ def test_merge_writes_fabric_leaves_over_the_agents():
     assert merged == {
         "entries": {"github": {"enabled": False, "config": {"token": "agent"}}}
     }
-    assert owned == {"leaves": [["entries", "github", "enabled"]], "items": {}}
+    assert owned == {
+        "leaves": [
+            {"path": ["entries", "github", "enabled"], "value": False, "shadowed": True}
+        ],
+        "items": {},
+    }
     assert agent["entries"]["github"]["enabled"] is True  # not changed in place
+
+
+def test_merge_restores_the_agents_value_when_fabric_stops_setting_it():
+    agent = {"entries": {"github": {"enabled": True}}}
+    merged, owned = merge(agent, {"entries": {"github": {"enabled": False}}}, {})
+    merged, owned = merge(merged, {"entries": {"github": {"enabled": False}}}, owned)
+
+    merged, owned = merge(merged, {}, owned)
+
+    assert merged == agent
+    assert owned == {"leaves": [], "items": {}}
+
+
+def test_merge_keeps_an_agent_edit_made_after_fabric_set_the_value():
+    fabric = {"entries": {"x": {"config": {"level": 1}}}}
+    merged, owned = merge({"entries": {"x": {"config": {"level": 0}}}}, fabric, {})
+    merged["entries"]["x"]["config"]["level"] = 5  # the agent changes it
+
+    # NeMo Fabric still sets it: its value wins, the agent's edit is kept aside.
+    again, again_owned = merge(merged, fabric, owned)
+    assert again["entries"]["x"]["config"]["level"] == 1
+    assert merge(again, {}, again_owned)[0] == merged
+
+    # NeMo Fabric stops setting it: the agent's edit stays.
+    assert merge(merged, {}, owned)[0] == merged
 
 
 def test_merge_keeps_the_agents_own_settings():
@@ -676,7 +752,7 @@ def test_merge_removes_what_fabric_no_longer_sets():
         },
     }
     assert owned == {
-        "leaves": [["entries", "mounted", "enabled"]],
+        "leaves": [{"path": ["entries", "mounted", "enabled"], "value": True}],
         "items": {"allow": ["mounted"], "load.paths": ["/new/fabric-shared-config"]},
     }
 
@@ -743,7 +819,9 @@ def test_merge_applies_values_that_only_look_equal(agent: dict, fabric_value: An
 
     value = merged["entries"]["x"]["config"]["n"]
     assert value == fabric_value and type(value) is type(fabric_value)
-    assert owned["leaves"] == [["entries", "x", "config", "n"]]
+    assert [leaf["path"] for leaf in owned["leaves"]] == [
+        ["entries", "x", "config", "n"]
+    ]
 
 
 def test_merge_adds_enabled_plugins_to_an_agent_allow_list():
@@ -771,6 +849,7 @@ def test_merge_does_not_own_an_agent_load_path():
         pytest.param("plugins.json", "[]", id="not-an-object"),
         pytest.param("plugins.owned.json", "{", id="invalid-record"),
         pytest.param("plugins.owned.json", '{"items": null}', id="record-shape"),
+        pytest.param("plugins.owned.json", '{"leaves": [["a"]]}', id="leaf-shape"),
         pytest.param("plugins.json", b"\xff", id="invalid-utf8"),
     ],
 )
