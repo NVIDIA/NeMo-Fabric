@@ -43,12 +43,20 @@ def _leaves(value: dict[str, Any], prefix: Leaf = ()) -> Iterator[tuple[Leaf, An
             yield path, item
 
 
-def _get(value: dict[str, Any], path: Leaf) -> Any:
+_MISSING = object()
+
+
+def _get(value: dict[str, Any], path: Leaf, default: Any = None) -> Any:
     for key in path:
         if not isinstance(value, dict) or key not in value:
-            return None
+            return default
         value = value[key]
     return value
+
+
+def _same(left: Any, right: Any) -> bool:
+    """JSON equality: ``0``, ``False`` and ``0.0`` stay distinct."""
+    return json.dumps(left, sort_keys=True) == json.dumps(right, sort_keys=True)
 
 
 def _set(value: dict[str, Any], path: Leaf, item: Any) -> None:
@@ -106,7 +114,8 @@ def merge_plugins(
     for path, value in fabric_leaves.items():
         if value == {} and isinstance(_get(merged, path), dict):
             continue  # an empty object adds no setting of its own
-        if path not in previous and _get(merged, path) == value:
+        current = _get(merged, path, _MISSING)
+        if path not in previous and current is not _MISSING and _same(current, value):
             continue  # the agent's own value; NeMo Fabric doesn't claim it
         _set(merged, path, value)
         applied.append(path)

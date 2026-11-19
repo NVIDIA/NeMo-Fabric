@@ -726,6 +726,25 @@ def test_merge_keeps_agent_config_under_an_empty_fabric_object():
     assert merged == {"entries": {"probe": {"config": {"mode": "x", "level": 2}}}}
 
 
+@pytest.mark.parametrize(
+    ("agent", "fabric_value"),
+    [
+        pytest.param({}, None, id="null-on-missing"),
+        pytest.param(
+            {"entries": {"x": {"config": {"n": False}}}}, 0, id="false-vs-zero"
+        ),
+    ],
+)
+def test_merge_applies_values_that_only_look_equal(agent: dict, fabric_value: Any):
+    fabric = {"entries": {"x": {"config": {"n": fabric_value}}}}
+
+    merged, owned = merge(agent, fabric, {})
+
+    value = merged["entries"]["x"]["config"]["n"]
+    assert value == fabric_value and type(value) is type(fabric_value)
+    assert owned["leaves"] == [["entries", "x", "config", "n"]]
+
+
 def test_merge_adds_enabled_plugins_to_an_agent_allow_list():
     merged, owned = merge(
         {"allow": ["installed"]}, {"entries": {"x": {"enabled": True}}}, {}
