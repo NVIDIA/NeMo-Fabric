@@ -164,6 +164,125 @@ def test_hermes_interfaces_read_the_model_endpoint_and_key_from_config():
     assert config["agent"]["restart_drain_timeout"] == 0
 
 
+def test_hermes_interfaces_send_an_anthropic_route_to_its_endpoint():
+    endpoint = "https://gateway.example/custom/v1"
+    config = configuration.build_hermes_config(
+        AgentConfig.from_mapping(
+            {
+                "models": {
+                    "default": {
+                        "provider": "anthropic",
+                        "model": "claude-fabric-echo",
+                        "base_url": endpoint,
+                        "api_key_env": "FABRIC_TEST_MODEL_KEY",
+                    }
+                }
+            }
+        ),
+        workspace=".",
+        interfaces={"api": 8642},
+    )
+
+    assert config["model"] == {
+        "provider": "custom",
+        "default": "claude-fabric-echo",
+        "base_url": endpoint,
+        "api_key": "${FABRIC_TEST_MODEL_KEY}",
+        "api_mode": "anthropic_messages",
+    }
+    assert config["providers"] == {
+        "custom": {
+            "base_url": endpoint,
+            "key_env": "FABRIC_TEST_MODEL_KEY",
+            "transport": "anthropic_messages",
+        }
+    }
+
+
+# Hermes's own anthropic provider uses only the last path, so the first two
+# reached https://api.anthropic.com instead (NVIDIA/NeMo-Fabric#666).
+ANTHROPIC_ENDPOINT_PATHS = ["/custom/v1", "/v1", "/anthropic/v1"]
+
+
+@pytest.mark.parametrize("path", ANTHROPIC_ENDPOINT_PATHS)
+async def test_anthropic_route_reaches_its_endpoint_from_sdk_and_api(
+    tmp_path, api_server, path
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    os.environ["FABRIC_TEST_MODEL_KEY"] = MODEL_KEY
+    port = _free_port()
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "anthropic-endpoint"},
+            "harness": {
+                "adapter_id": "nvidia.fabric.hermes",
+                "settings": {
+                    "sdk": {"enabled": True},
+                    "interfaces": {"api": {"port": port}},
+                },
+            },
+            "models": {
+                "default": {
+                    "provider": "anthropic",
+                    "model": "claude-fabric-echo",
+                    "base_url": f"{api_server}{path}",
+                    "api_key_env": "FABRIC_TEST_MODEL_KEY",
+                }
+            },
+            "tools": {"enabled": []},
+            "environment": {
+                "provider": "local",
+                "workspace": str(tmp_path),
+                "artifacts": str(tmp_path / "artifacts"),
+            },
+        }
+    )
+    fabric = Fabric()
+    environment = await fabric.prepare_environment(config, base_dir=tmp_path)
+    try:
+        async with await fabric.start_runtime_in(
+            config, environment, base_dir=tmp_path
+        ) as runtime:
+            result = await runtime.invoke(input="through the SDK")
+            assert result.status == "succeeded", result.to_mapping()
+            sdk_requests = await asyncio.to_thread(
+                requests.get, f"{api_server}/_messages_requests", timeout=5
+            )
+            token = (
+                tmp_path
+                / "artifacts/.fabric/hermes/runtimes"
+                / runtime.runtime_id
+                / "interfaces/api.token"
+            ).read_text()
+            reply = await asyncio.to_thread(
+                requests.post,
+                f"http://127.0.0.1:{port}/v1/chat/completions",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "model": "hermes-agent",
+                    "messages": [{"role": "user", "content": "through the API"}],
+                },
+                timeout=60,
+            )
+            all_requests = await asyncio.to_thread(
+                requests.get, f"{api_server}/_messages_requests", timeout=5
+            )
+    finally:
+        await fabric.release_environment(environment)
+
+    expected = {
+        "path": f"{path}/messages",
+        "x-api-key": MODEL_KEY,
+        "authorization": None,
+    }
+    sdk_seen = sdk_requests.json()
+    api_seen = all_requests.json()[len(sdk_seen) :]
+    assert sdk_seen and all(request == expected for request in sdk_seen)
+    assert reply.status_code == 200, reply.text
+    assert "echo response" in reply.json()["choices"][0]["message"]["content"]
+    assert api_seen and all(request == expected for request in api_seen)
+
+
 async def test_hermes_gateway_agents_receive_fabric_behavior(
     tmp_path: Path, api_server: str
 ):

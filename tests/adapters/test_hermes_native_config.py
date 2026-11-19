@@ -63,6 +63,53 @@ def test_native_custom_route_resolves_its_declared_placeholder_key(
     assert route["api_mode"] == "chat_completions"
 
 
+@pytest.mark.usefixtures("requires_hermes_agent")
+@pytest.mark.parametrize("interface", ["api", "dashboard", "terminal"])
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "https://gateway.example/custom/v1",
+        "https://gateway.example/v1",
+        "https://gateway.example/anthropic/v1",
+        "https://api.anthropic.com",
+    ],
+)
+@pytest.mark.parametrize("api_key_env", [None, "FABRIC_ROUTE_KEY"])
+def test_native_anthropic_route_resolves_its_declared_endpoint(
+    tmp_path, interface, endpoint, api_key_env
+):
+    from hermes_cli.config import load_config
+    from hermes_cli.runtime_provider import frozen_runtime_config
+    from hermes_cli.runtime_provider import resolve_runtime_provider
+
+    model = {"provider": "anthropic", "model": "configured-model", "base_url": endpoint}
+    if api_key_env is not None:
+        model["api_key_env"] = api_key_env
+    config = AgentConfig.from_mapping({"models": {"default": model}})
+    configuration.write_hermes_config(
+        config, tmp_path / "hermes", workspace=str(tmp_path), interfaces=[interface]
+    )
+    # The adapter passes the key to Hermes's processes in ANTHROPIC_API_KEY too.
+    environment = {
+        "HOME": str(tmp_path),
+        "HERMES_HOME": str(tmp_path / "hermes"),
+        "ANTHROPIC_API_KEY": "openshell",
+        api_key_env or "ANTHROPIC_API_KEY": "openshell",
+    }
+
+    with patch.dict(os.environ, environment, clear=True):
+        native_config = load_config()
+        with frozen_runtime_config(native_config):
+            route = resolve_runtime_provider(
+                requested=native_config["model"]["provider"],
+                target_model="configured-model",
+            )
+
+    assert route["base_url"] == endpoint
+    assert route["api_key"] == "openshell"
+    assert route["api_mode"] == "anthropic_messages"
+
+
 @pytest.mark.parametrize(
     ("model_limit", "harness_limit", "expected_limit"),
     [(None, None, None), (None, 96, 96), (128, None, 128), (128, 96, 128)],

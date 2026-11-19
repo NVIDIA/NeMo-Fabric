@@ -106,18 +106,26 @@ def _interface_model(model_config: AgentModelConfig) -> dict[str, Any]:
     """Return the model section Hermes's own processes read from config.yaml.
 
     Fabric's embedded agent receives the endpoint and key as arguments; the
-    gateway and dashboard read them from config.yaml, where Hermes's ``openai``
-    provider ignores ``base_url``. The key stays in the environment.
+    gateway and dashboard read them from config.yaml. There Hermes's ``openai``
+    provider ignores ``base_url``, and its ``anthropic`` provider uses it only
+    for endpoints Hermes recognizes as Anthropic's (paths ending in
+    ``/anthropic`` or ``/anthropic/v1``, and some hosts), sending requests to
+    ``https://api.anthropic.com`` otherwise. Hermes's ``custom`` provider uses
+    ``base_url`` as declared, and ``api_mode`` keeps an ``anthropic`` route on
+    the Messages API. The key stays in the environment.
     """
 
     provider = str(model_config.provider or "").lower()
-    if model_config.base_url and provider in {"openai", "custom"}:
-        return {
+    if model_config.base_url and provider in {"openai", "custom", "anthropic"}:
+        model = {
             "provider": "custom",
             "default": model_config.model,
             "base_url": model_config.base_url,
             "api_key": f"${{{_api_key_env(model_config)}}}",
         }
+        if provider == "anthropic":
+            model["api_mode"] = "anthropic_messages"
+        return model
     return common_utils.without_none(
         {
             "provider": model_config.provider,
@@ -201,6 +209,10 @@ def build_hermes_config(
                     "key_env": _api_key_env(model_config),
                 }
             }
+            if api_mode := config["model"].get("api_mode"):
+                # Hermes resolves the route from this entry, which sets its
+                # own wire protocol; its migrations name the field transport.
+                config["providers"]["custom"]["transport"] = api_mode
     if "api" in interfaces:
         config["agent"]["cron_drain_timeout"] = GATEWAY_DRAIN_TIMEOUT_SECONDS
         config["agent"]["restart_drain_timeout"] = 0

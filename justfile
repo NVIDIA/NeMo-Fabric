@@ -442,8 +442,9 @@ install-hermes-agent:
     fi
     # Use the release lockfile, including upstream's security dependency overrides.
     # From the messaging extra, install only aiohttp, which Hermes's API server needs.
+    # The anthropic extra serves models whose provider is anthropic.
     UV_PROJECT_ENVIRONMENT="$REPO_ROOT/.venv-hermes" uv sync \
-        --project "$hermes_checkout" --frozen --no-default-groups --extra mcp --extra messaging \
+        --project "$hermes_checkout" --frozen --no-default-groups --extra mcp --extra messaging --extra anthropic \
         --no-install-package discord-py --no-install-package python-telegram-bot \
         --no-install-package slack-bolt --no-install-package slack-sdk \
         --no-install-package qrcode --no-install-package brotlicffi \
