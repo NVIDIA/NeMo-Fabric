@@ -1,74 +1,75 @@
 [
   {
     "id": "nemo-fabric-build-adapter-001-new-python-adapter",
-    "question": "Build a third-party Python adapter package for AcmeHarness. It must accept normalized models, instructions, MCP servers, and tool policy, support repeated invocations, and expose registered workflows selected by target ID. Define the adapter and target descriptors, lifecycle, discovery metadata, and validation approach.",
+    "question": "Use /workspace/repo/acme_sdk.py (the deterministic target SDK) and acme_adapter.py (the adapter starter). Each case starts independently. The real Fabric adapter contract and test tools are preinstalled; use /workspace/.fabric-eval-venv/bin/python. No live harness, service, model credentials, package installation, or wheel publication is required. Implement the AcmeRuntime starter as a third-party adapter accepting normalized models, instructions, MCP servers, and tool policy. Add adapter and registered-workflow target descriptor files plus packaging configuration for their standard discovery locations. Use AcmeSession.options for native translation. Add and run focused lifecycle and two-runtime-isolation tests. Describe the separate wheel-install/discovery handoff checks; do not claim a published package or completed conformance certification.",
     "expected_skill": "nemo-fabric-build-adapter",
     "expected_script": null,
-    "ground_truth": "The agent builds against the published adapter contract. It defines a self-contained acme.fabric-adapter.json before implementation, declares only enforced normalized fields and capabilities, lists supported target types, and creates one *.fabric-target.json per registered workflow target with the same contract version, adapter_id, typed entry point, and closed workflow settings schema. It installs adapter and target descriptors under share/nemo-fabric/adapters and share/nemo-fabric/targets, maps the validated AgentConfig at the adapter boundary, implements start/invoke/stop with isolated runtime state, returns safe normalized outcomes, and validates discovery, planning of both resolved descriptors, doctor checks, lifecycle failures, cleanup, and runtime isolation.",
+    "ground_truth": "The agent builds against the published adapter contract. It defines a self-contained acme.fabric-adapter.json before implementation, declares only enforced normalized fields and capabilities, lists supported target types, and creates one *.fabric-target.json per registered workflow target with the same contract version, adapter_id, typed entry point, and closed workflow settings schema. It writes packaging configuration to install adapter and target descriptors under share/nemo-fabric/adapters and share/nemo-fabric/targets, maps the validated AgentConfig at the adapter boundary, implements start/invoke/stop with isolated runtime state, returns safe normalized outcomes, and runs focused lifecycle-failure, cleanup, and runtime-isolation tests. It describes the separate wheel-install, discovery, planning of both resolved descriptors, and doctor handoff checks; those checks need not execute in this starter workspace. The supplied starter files and preinstalled dependencies are sufficient for this bounded exercise. Judge the concrete implementation or code/design proposal requested by the prompt; no live model, real harness deployment, or package publication is required.",
     "expected_behavior": [
-      "Routes to nemo-fabric-build-adapter",
       "Uses the published adapter contract and committed JSON Schemas",
       "Defines a named *.fabric-adapter.json before implementing target translation",
       "Declares only normalized fields and capabilities the adapter enforces",
       "Lists supported target types and defines one *.fabric-target.json per registered workflow target",
       "Keeps adapter and target contract versions aligned and validates workflow settings against the target descriptor",
-      "Installs discovery metadata under share/nemo-fabric/adapters and share/nemo-fabric/targets",
+      "Writes packaging configuration for discovery metadata under share/nemo-fabric/adapters and share/nemo-fabric/targets",
       "Maps a validated AgentConfig into target-native values at the adapter boundary",
       "Implements one start, ordered invoke calls, and one stop with isolated runtime state",
-      "Tests discovery, resolution of both descriptors in plan, doctor, failures, cleanup, and two-runtime isolation"
-    ]
+      "Runs lifecycle-failure, cleanup, and two-runtime-isolation tests, and describes the separate installed-wheel discovery, both-descriptor plan resolution, and doctor handoff checks"
+    ],
+    "should_trigger": true
   },
   {
     "id": "nemo-fabric-build-adapter-002-native-openai-streaming",
-    "question": "Extend our third-party Python adapter, which uses the common Fabric host, with native OpenAI Chat Completions streaming. The target SDK yields chunks and a separate terminal result. What descriptor capability, lifecycle method, adapter-owned output rules, and tests are required?",
+    "question": "Use /workspace/repo/acme_sdk.py (the deterministic target SDK) and acme_adapter.py (the adapter starter). Each case starts independently. The real Fabric adapter contract and test tools are preinstalled; use /workspace/.fabric-eval-venv/bin/python. No live harness, service, model credentials, package installation, or wheel publication is required. Implement native OpenAI streaming in the adapter starter and give its descriptor capability declaration. AcmeSession.stream yields chunks and get_final_reply returns the separate terminal reply; execute the target once, await emit for each valid chunk, and return a normalized AgentRunResult. Use the common host transport rather than implementing NDJSON/SSE yourself. Add and run tests for empty/multiple/invalid chunks, a separate terminal result, and one target invocation.",
     "expected_skill": "nemo-fabric-build-adapter",
     "expected_script": null,
-    "ground_truth": "The agent sets capabilities.streaming only when the adapter implements async invoke_openai_stream(payload, emit). The adapter invokes the target exactly once, awaits emit only for structurally valid openai.chat_completions.chunk/v1 mappings, translates target failures at the adapter boundary, and returns one separate JSON-compatible terminal outcome. It relies on the common host for authenticated loopback NDJSON transport and consumer lifecycle, does not emit SSE or log credentials, and tests empty and multi-chunk streams, invalid target chunks, target failure, one active turn, a separate terminal result, and exactly one target invocation.",
+    "ground_truth": "The agent sets capabilities.streaming only when the adapter implements async invoke_openai_stream(request, context, emit). The adapter invokes the target exactly once, awaits emit only for structurally valid openai.chat_completions.chunk/v1 mappings, translates target failures at the adapter boundary, and returns one separate AgentRunResult terminal outcome. It relies on the common host for authenticated loopback NDJSON transport and consumer lifecycle, does not emit SSE or log credentials, and tests empty and multi-chunk streams, invalid target chunks, target failure, one active turn, a separate terminal result, and exactly one target invocation. The supplied starter files and preinstalled dependencies are sufficient for this bounded exercise. Judge the concrete implementation or code/design proposal requested by the prompt; no live model, real harness deployment, or package publication is required.",
     "expected_behavior": [
-      "Routes to nemo-fabric-build-adapter",
       "Declares capabilities.streaming only with an invoke_openai_stream implementation",
       "Invokes the target exactly once and awaits emit for each valid chunk",
-      "Returns a separate JSON-compatible terminal outcome",
+      "Implements invoke_openai_stream(request, context, emit) and returns a separate AgentRunResult",
       "Uses the openai.chat_completions.chunk/v1 profile and valid chat.completion.chunk records",
       "Relies on the SDK-owned authenticated loopback NDJSON transport rather than SSE or stdout",
       "Tests empty and multi-chunk streams, invalid target chunks, target failure, one active turn, a separate terminal result, and exactly one target invocation",
       "Does not conflate native OpenAI streaming with Relay-backed ATOF streaming"
-    ]
+    ],
+    "should_trigger": true
   },
   {
     "id": "nemo-fabric-build-adapter-003-consumer-integration-negative",
-    "question": "Add NeMo Fabric to our existing application so it can choose Codex or Hermes Agent, validate configuration, invoke the selected harness, and return normalized results. We are not creating a new harness adapter.",
+    "question": "Which workflow should own adding NeMo Fabric to an existing consumer application that selects Codex or Hermes, validates configuration, and returns normalized SDK results, without creating a new harness adapter? Give a short boundary/handoff answer. Do not implement it, edit files, or invoke an alternate skill; the consumer-integration skill is not installed in this isolated exercise.",
     "expected_skill": null,
     "expected_script": null,
-    "ground_truth": "This is consumer-side SDK integration, not third-party adapter authoring. The agent must not route it to nemo-fabric-build-adapter and should use nemo-fabric-integrate when that skill is available.",
+    "ground_truth": "Identifies the consumer SDK integration workflow with existing adapters and no new adapter descriptor or adapter lifecycle. A short planning answer completes the requested triage. No alternate skill activation, implementation, dependency installation, or source checkout is required.",
     "expected_behavior": [
       "Does not route to nemo-fabric-build-adapter",
-      "Recognizes the request as consumer Python SDK integration",
-      "Routes to nemo-fabric-integrate when it is available",
-      "Does not propose a fabric-adapter.json descriptor or adapter lifecycle"
-    ]
+      "Identifies the owning workflow as: Consumer Python SDK integration",
+      "Explains the task boundary and next handoff without implementing the out-of-scope task",
+      "Does not edit files, install dependencies, or require an unavailable alternate skill"
+    ],
+    "should_trigger": false
   },
   {
     "id": "nemo-fabric-build-adapter-004-first-party-maintenance-negative",
-    "question": "Add a new first-party adapter inside the NVIDIA NeMo Fabric repository, including workspace packaging, catalogs, CI wiring, repository tests, and release metadata.",
+    "question": "Which workflow should own a first-party adapter added inside NVIDIA NeMo Fabric, including workspace packaging, catalogs, CI wiring, repository tests, and release metadata? Explain the boundary in a short planning answer. Do not implement it, edit files, or invoke an alternate skill; no repository maintainer skills are installed here.",
     "expected_skill": null,
     "expected_script": null,
-    "ground_truth": "This is repository-internal first-party adapter development. The portable third-party adapter skill must not handle it; the agent should use the repository's contribute-adapter maintainer workflow instead.",
+    "ground_truth": "Identifies the repository maintainer workflow that owns workspace packaging, CI, catalogs, tests, and releases; the portable third-party adapter workflow does not own this change. A short planning answer completes the requested triage. No alternate skill activation, implementation, dependency installation, or source checkout is required.",
     "expected_behavior": [
       "Does not route to nemo-fabric-build-adapter",
-      "Recognizes the request as first-party NeMo Fabric repository maintenance",
-      "Routes to the contribute-adapter maintainer workflow when it is available",
-      "Keeps repository packaging, catalogs, CI, and release wiring out of the portable integration skill"
-    ]
+      "Identifies the owning workflow as: First-party repository adapter contribution",
+      "Explains the task boundary and next handoff without implementing the out-of-scope task",
+      "Does not edit files, install dependencies, or require an unavailable alternate skill"
+    ],
+    "should_trigger": false
   },
   {
     "id": "nemo-fabric-build-adapter-005-system-instruction-composition",
-    "question": "Our third-party harness has a native system prompt. Add normalized NeMo Fabric system instructions so consumers can either replace that prompt or append policy text after it. Define the descriptor claims, translation behavior, validation, and tests.",
+    "question": "Use /workspace/repo/acme_sdk.py (the deterministic target SDK) and acme_adapter.py (the adapter starter). Each case starts independently. The real Fabric adapter contract and test tools are preinstalled; use /workspace/.fabric-eval-venv/bin/python. No live harness, service, model credentials, package installation, or wheel publication is required. Implement normalized system-instruction composition in the adapter starter and declare the exact descriptor instruction modes. AcmeSession.DEFAULT_SYSTEM_PROMPT is the native default; supplying options[\"system\"] overrides it. Preserve omission, implement distinct replace and append semantics, and reject unsupported modes at the adapter boundary. Add and run tests for omission, both modes, and rejection, and describe metadata-only planning validation.",
     "expected_skill": "nemo-fabric-build-adapter",
     "expected_script": null,
-    "ground_truth": "The agent declares instructions.system in config.accepts and explicitly lists replace and append in config.system_instruction_modes. Planning rejects modes outside that declaration, and the adapter validates the mode again at startup before applying it. Omitting instructions.system preserves the harness-native prompt, replace discards it, and append preserves it and adds the configured content afterward. Tests cover omission, both supported modes, an unsupported mode, descriptor validation, and startup failure without silently falling back.",
+    "ground_truth": "The agent declares instructions.system in config.accepts and explicitly lists replace and append in config.system_instruction_modes. Planning rejects modes outside that declaration, and the adapter validates the mode again at startup before applying it. Omitting instructions.system preserves the harness-native prompt, replace discards it, and append preserves it and adds the configured content afterward. Tests cover omission, both supported modes, an unsupported mode, descriptor validation, and startup failure without silently falling back. The supplied starter files and preinstalled dependencies are sufficient for this bounded exercise. Judge the concrete implementation or code/design proposal requested by the prompt; no live model, real harness deployment, or package publication is required.",
     "expected_behavior": [
-      "Routes to nemo-fabric-build-adapter",
       "Declares instructions.system in config.accepts",
       "Declares the exact supported values in config.system_instruction_modes",
       "Preserves the harness-native prompt when instructions.system is omitted",
@@ -76,16 +77,16 @@
       "Validates the selected mode during planning and again at adapter startup",
       "Rejects unsupported modes instead of falling back or silently ignoring them",
       "Tests omission, replacement, append composition, descriptor claims, and unsupported-mode failure"
-    ]
+    ],
+    "should_trigger": true
   },
   {
     "id": "nemo-fabric-build-adapter-006-relay-request-correlation",
-    "question": "Our in-process third-party adapter uses the common Fabric host and owns the invocation-level NeMo Relay Agent scope. Propagate each Fabric request ID into Relay while preserving useful correlation for both UUID and non-UUID request IDs, and let a caller group invocations into one Relay session. Explain the boundary and validation.",
+    "question": "Use /workspace/repo/acme_sdk.py (the deterministic target SDK) and acme_adapter.py (the adapter starter). Each case starts independently. The real Fabric adapter contract and test tools are preinstalled; use /workspace/.fabric-eval-venv/bin/python. No live harness, service, model credentials, package installation, or wheel publication is required. Provide an adapter-owned Relay Agent-scope code proposal and test matrix for propagating request IDs and caller-selected Relay session roots. Use the common helpers and preserve request/invocation/runtime metadata. Explain UUID and non-UUID behavior and unsupported external-gateway boundaries. This is a contract review; no real Relay collector, telemetry emission, or SDK installation is required.",
     "expected_skill": "nemo-fabric-build-adapter",
     "expected_script": null,
-    "ground_truth": "The agent wraps the adapter-owned invocation-level Agent scope with relay_request_context(context.request_id, request.relay_session_root) from nemo_fabric_adapters.common.utils. A UUID request ID becomes Relay's propagated root, while every request ID is also emitted as nemo_fabric_request_id metadata; non-UUID values remain metadata only. A typed AgentRunRequest.relay_session_root UUID that Relay accepts becomes the root instead, with a UUID request ID as parent (otherwise the session root is also the parent) and nemo_fabric_session_root in the metadata; unusable session roots fall back to a usable UUID request root, otherwise the helper returns nullcontext() without setting propagation. Context keys do not control propagation. The adapter does not apply this pattern to an external Relay gateway or an upstream integration that creates an isolated scope unless that boundary accepts a per-turn propagation context. Tests cover UUID and non-UUID IDs, valid and unusable session roots, metadata, scope cleanup, and the unsupported boundary without leaking scope state.",
+    "ground_truth": "The agent wraps the adapter-owned invocation-level Agent scope with relay_request_context(context.request_id, request.relay_session_root) from nemo_fabric_adapters.common.utils. A UUID request ID becomes Relay's propagated root, while every request ID is also emitted as nemo_fabric_request_id metadata; non-UUID values remain metadata only. A typed AgentRunRequest.relay_session_root UUID that Relay accepts becomes the root instead, with a UUID request ID as parent (otherwise the session root is also the parent) and nemo_fabric_session_root in the metadata; unusable session roots fall back to a usable UUID request root, otherwise the helper returns nullcontext() without setting propagation. Context keys do not control propagation. The adapter does not apply this pattern to an external Relay gateway or an upstream integration that creates an isolated scope unless that boundary accepts a per-turn propagation context. Tests cover UUID and non-UUID IDs, valid and unusable session roots, metadata, scope cleanup, and the unsupported boundary without leaking scope state. Merge relay_correlation_metadata(context) into the helper metadata rather than replacing it, preserving request, invocation, runtime, and optional session-root correlation. The supplied starter files and preinstalled dependencies are sufficient for this bounded exercise. Judge the concrete implementation or code/design proposal requested by the prompt; no live model, real harness deployment, or package publication is required.",
     "expected_behavior": [
-      "Routes to nemo-fabric-build-adapter",
       "Uses relay_request_context with RuntimeContext.request_id",
       "Uses a UUID request ID as Relay's propagated root",
       "Always preserves the original value as nemo_fabric_request_id metadata",
@@ -94,17 +95,18 @@
       "Falls back to the request root for a missing or unusable session root",
       "Applies the helper only when the adapter owns the invocation-level Agent scope",
       "Does not claim the same behavior for external gateways or isolated upstream scope boundaries",
-      "Tests UUID and non-UUID correlation, valid and unusable session roots, plus scope cleanup"
-    ]
+      "Tests UUID and non-UUID correlation, valid and unusable session roots, plus scope cleanup",
+      "Merges relay_correlation_metadata(context) into existing helper metadata without losing session-root metadata"
+    ],
+    "should_trigger": true
   },
   {
     "id": "nemo-fabric-build-adapter-007-warm-session-continuation",
-    "question": "Our custom-agent harness has no durable resume support, but sequential invocations on one live Fabric runtime must retain conversation context. Add warm continuation without inventing a cold-resume API or a shared transcript service. What state belongs where, and how should we test it?",
+    "question": "Use /workspace/repo/acme_sdk.py (the deterministic target SDK) and acme_adapter.py (the adapter starter). Each case starts independently. The real Fabric adapter contract and test tools are preinstalled; use /workspace/.fabric-eval-venv/bin/python. No live harness, service, model credentials, package installation, or wheel publication is required. Implement warm continuation using the live AcmeSession on the per-runtime adapter instance. A second result must depend on the first request without caller replay; bound retained history through a declared typed setting and reset invocation-only accounting. Convert cumulative target counters to per-invocation usage. Add and run tests for context-dependent continuation, the history bound, cleanup, and independent-runtime isolation. Do not add durable resume or a transcript service.",
     "expected_skill": "nemo-fabric-build-adapter",
     "expected_script": null,
-    "ground_truth": "The adapter creates and retains a target-native session with suitable deployment retention semantics or adapter-owned history on its per-runtime instance during start. It does not substitute a framework's development-only in-memory checkpointer in a production adapter. Each invoke appends the new request to that live state while resetting invocation-only timeout, counters, results, usage, and telemetry. Retained history has a deliberate bound; if consumers control it, the adapter publishes a typed setting with explicit units, defaults, validation bounds, and overflow behavior rather than overloading runtime.max_turns. Stop discards the state, and independent runtimes never share it. The implementation does not add durable resume, a Fabric-owned transcript store, or generic adapter-common history utilities. Tests require a second result that depends on the first turn without caller replay, direct evidence that prior context reaches the target, a history-bound case, and separate-runtime isolation.",
+    "ground_truth": "The adapter creates and retains a target-native session with suitable deployment retention semantics or adapter-owned history on its per-runtime instance during start. It does not substitute a framework's development-only in-memory checkpointer in a production adapter. Each invoke appends the new request to that live state while resetting invocation-only timeout, counters, results, usage, and telemetry. Retained history has a deliberate bound; if consumers control it, the adapter publishes a typed setting with explicit units, defaults, validation bounds, and overflow behavior rather than overloading runtime.max_turns. Stop discards the state, and independent runtimes never share it. The implementation does not add durable resume, a Fabric-owned transcript store, or generic adapter-common history utilities. Tests require a second result that depends on the first turn without caller replay, direct evidence that prior context reaches the target, a history-bound case, and separate-runtime isolation. The supplied starter files and preinstalled dependencies are sufficient for this bounded exercise. Judge the concrete implementation or code/design proposal requested by the prompt; no live model, real harness deployment, or package publication is required.",
     "expected_behavior": [
-      "Routes to nemo-fabric-build-adapter",
       "Uses the existing start, ordered invoke, and stop lifecycle",
       "Retains target-native or adapter-owned context on the per-runtime instance",
       "Avoids framework checkpointers that are documented only for development or testing",
@@ -115,6 +117,42 @@
       "Tests a context-dependent second invocation without caller replay",
       "Tests that prior context reaches the target and that the history bound is enforced",
       "Tests isolation between independent runtimes and cleanup at stop"
-    ]
+    ],
+    "should_trigger": true
+  },
+  {
+    "id": "nemo-fabric-build-adapter-008-structured-skill-discovery",
+    "question": "Use /workspace/repo/acme_sdk.py (the deterministic target SDK) and acme_adapter.py (the adapter starter). Each case starts independently. The real Fabric adapter contract and test tools are preinstalled; use /workspace/.fabric-eval-venv/bin/python. No live harness, service, model credentials, package installation, or wheel publication is required. Produce a concrete descriptor/startup/result-reporting code proposal and test matrix for structured external skill directories, collection folders, explicit duplicate handling, and bundled-skill selection. Use harness-matching discovery rules and an injected native front-matter reader; use spec'd mocks for that parser boundary rather than implementing a YAML parser. Describe stable failures and loaded/skipped/conflict reports. This is a contract review; no real harness discovery or deployment is required.",
+    "expected_skill": "nemo-fabric-build-adapter",
+    "expected_script": null,
+    "ground_truth": "Declare skills in config.accepts and advertise only implemented directory_loading, bundled, and duplicates features in the top-level skills descriptor block, including discovery traversal, depth_limit, parsing rules, supported entry types, bundled selection flags, and supported duplicate policies. Planning validates advertised support, while start checks the mounted directories. A Python adapter can use the dependency-free load_directories helper with DiscoveryRules matching the harness and a CandidateReader backed by its native parser. The default reader is limited to single-line name values and marks uncertain names. Apply explicit duplicate selection before passing skills to the harness, reject unknown bundled names, translate SkillLoadError reasons into stable adapter error codes with field/path, and return report_block as output.skills. Test missing and invalid folders, nested and skipped traversal, parser edge cases, duplicate policies, bundled selection, and accurate loaded/skipped/conflict reports. The supplied starter files and preinstalled dependencies are sufficient for this bounded exercise. Judge the concrete implementation or code/design proposal requested by the prompt; no live model, real harness deployment, or package publication is required.",
+    "expected_behavior": [
+      "Declares skills in config.accepts and only implemented structured features in the top-level skills block",
+      "Separates metadata-only planning checks from mounted-folder validation in start",
+      "Uses harness-matching DiscoveryRules and a CandidateReader backed by the native parser",
+      "Does not treat the default front_matter_reader as a complete YAML parser",
+      "Enforces explicit duplicate policy before passing selected skills to the harness and rejects unknown bundled names",
+      "Maps SkillLoadError to stable adapter codes with field and path and returns output.skills",
+      "Tests parser and traversal failures, duplicate policies, bundled selection, and result reports"
+    ],
+    "should_trigger": true
+  },
+  {
+    "id": "nemo-fabric-build-adapter-009-durable-session-resume",
+    "question": "Use /workspace/repo/acme_sdk.py (the deterministic target SDK) and acme_adapter.py (the adapter starter). Each case starts independently. The real Fabric adapter contract and test tools are preinstalled; use /workspace/.fabric-eval-venv/bin/python. No live harness, service, model credentials, package installation, or wheel publication is required. Design the contract/lifecycle changes required when the target gains native durable sessions. The supplied AcmeSession is intentionally in-memory: do not claim it already supports cold resume or build a new persistence engine. Give the descriptor claims, RuntimeContext state/session selection, confirmed identities, uncertain-turn recovery/acknowledgement, locking requirements, and observable test matrix. This is a design review, not a request for a live resumed session.",
+    "expected_skill": "nemo-fabric-build-adapter",
+    "expected_script": null,
+    "ground_truth": "Declare runtime.keep_state support and capabilities.session_resume only when implemented. Keep native durable state in RuntimeContext.state_dir and read the optional RuntimeContext.session_ref at start. A supplied reference selects the exact native conversation; omission starts fresh. Confirm session_id in start output and each AgentRunResult, reject missing or incompatible references without falling back, and report structured startup recovery_warnings for uncertain turns. Native APIs own history restoration and identifier interpretation; the adapter must not replay interrupted work. Require AgentRunRequest.acknowledge_recovery before new Fabric-controlled work after uncertain recovery and keep native interface writers covered by the inherited state lock on Unix. Test explicit resume versus fresh start, identity continuity, incompatible or missing references, uncertain-turn acknowledgement without replay, and concurrent state ownership. The supplied starter files and preinstalled dependencies are sufficient for this bounded exercise. Judge the concrete implementation or code/design proposal requested by the prompt; no live model, real harness deployment, or package publication is required.",
+    "expected_behavior": [
+      "Declares session_resume only with implemented native durable-session support",
+      "Stores retained native state under RuntimeContext.state_dir and reads session_ref at startup",
+      "Distinguishes explicit conversation selection from fresh start when the reference is omitted",
+      "Confirms session_id at startup and on each AgentRunResult",
+      "Rejects invalid or incompatible sessions without silently starting a new conversation",
+      "Returns structured recovery_warnings and requires a new acknowledged request after uncertain recovery",
+      "Preserves native history without replay and respects the inherited Unix state lock",
+      "Tests resumed identity, missing sessions, uncertain-turn recovery, and state ownership"
+    ],
+    "should_trigger": true
   }
 ]

@@ -1,0 +1,11 @@
+{
+  "status": "failed",
+  "output": {},
+  "error": {"code": "adapter_failed", "message": "The target reported a failed outcome"},
+  "usage": null,
+  "artifacts": [],
+  "telemetry": [],
+  "runtime_id": "runtime-b",
+  "invocation_id": "invocation-b",
+  "request_id": "request-b"
+}
