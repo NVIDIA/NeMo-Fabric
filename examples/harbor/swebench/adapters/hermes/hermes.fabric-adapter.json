@@ -44,7 +44,107 @@
           "minLength": 1
         },
         "default": [],
-        "description": "Hermes plugin identifiers to enable."
+        "description": "Hermes plugin keys or names to turn on; prefer plugins.bundled or plugins.external. Start fails when an identifier is absent or did not load."
+      },
+      "plugins": {
+        "type": "object",
+        "properties": {
+          "bundled": {
+            "type": "object",
+            "properties": {
+              "entries": {
+                "type": "object",
+                "propertyNames": {
+                  "minLength": 1
+                },
+                "additionalProperties": {
+                  "$ref": "#/$defs/pluginEntry"
+                },
+                "description": "Plugins that ship with Hermes, keyed by plugin key or name, such as security-guidance or browser/firecrawl. enabled: true makes start fail unless Hermes loads the plugin; enabled: false turns off one Hermes loads by default. Start fails if the plugin doesn't ship with Hermes."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Plugins that ship with Hermes."
+          },
+          "external": {
+            "type": "object",
+            "properties": {
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true,
+                "description": "Plugin folders, each holding plugin.yaml and the plugin's code, such as plugins mounted on a volume. The adapter links each into the Hermes home's plugins folder under its manifest name at start and unlinks it at stop. Relative paths resolve against the NeMo Fabric base directory; start fails if one doesn't exist. Python dependencies must already be importable."
+              },
+              "entries": {
+                "type": "object",
+                "propertyNames": {
+                  "minLength": 1
+                },
+                "additionalProperties": {
+                  "$ref": "#/$defs/pluginEntry"
+                },
+                "description": "Plugins from those folders, keyed by manifest name. A path alone doesn't enable a plugin; with enabled set to true, start fails unless Hermes loads it."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Plugins with user-prepared code and dependencies."
+          },
+          "load_timeout_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 600,
+            "description": "Seconds for one plugin's import and registration at load; 0 means no deadline. Hermes's default is 10."
+          },
+          "hook_callback_timeout": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 600,
+            "description": "Seconds for one in-process plugin hook callback; 0 means no cap. Hermes's default is 30."
+          },
+          "clone_timeout_seconds": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 3600,
+            "description": "Seconds for one plugin Git clone, fetch, or checkout. Hermes's default is 300."
+          },
+          "auto_update_check_hours": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Hours between read-only plugin update checks; 0 disables them. Hermes's default is 24."
+          },
+          "auto_apply": {
+            "type": "boolean",
+            "description": "Whether the update check applies Git plugin updates unattended. Hermes's default is false."
+          },
+          "isolation": {
+            "type": "string",
+            "enum": [
+              "in_process",
+              "host"
+            ],
+            "description": "Run third-party Python plugins inside Hermes or in Hermes's plugin-host process. Hermes's default is in_process."
+          },
+          "host": {
+            "type": "object",
+            "properties": {
+              "launcher": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": "Command prefix the plugin host runs under, such as a sandbox runner."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Hermes's plugin-host settings."
+          }
+        },
+        "additionalProperties": false,
+        "description": "Hermes plugins, translated to Hermes's native plugins section in config.yaml. A plugin id may appear in only one section. The other fields are Hermes's own plugin controls and are written as they are. Plugins the agent installs itself are not supported."
       },
       "save_trajectories": {
         "type": "boolean",
@@ -285,7 +385,32 @@
           }
         }
       }
-    ]
+    ],
+    "$defs": {
+      "pluginEntry": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Turn the plugin on or off. true makes start fail unless Hermes loads it."
+          },
+          "config": {
+            "type": "object",
+            "description": "The plugin's own settings, written to plugins.entries.<id>.settings."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true,
+            "description": "Capabilities granted to the plugin, such as tools.override, written to plugins.entries.<id>.granted_capabilities. Hermes ignores ids it doesn't know."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
   },
   "extension_schemas": {
     "run_error": {
@@ -354,6 +479,24 @@
       ],
       "native": "Two different skills with the same name in skills.external_dirs are refused as ambiguous; a skill in the Hermes home, bundled or agent-created, outranks external_dirs.",
       "name_source": "frontmatter"
+    }
+  },
+  "plugins": {
+    "bundled": {
+      "supports_enable": true,
+      "supports_disable": true
+    },
+    "external": {
+      "requires_explicit_enable": true,
+      "provisions_dependencies": false
+    },
+    "agent_installed": {
+      "supported": false
+    },
+    "duplicates": {
+      "supported_policies": [
+        "reject"
+      ]
     }
   },
   "telemetry": {

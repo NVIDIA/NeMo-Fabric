@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+name: hermes-mounted
+version: 1.0.0
+description: "Mounted test plugin with one tool and no Python dependencies"
+provides_tools:
+  - hermes_mounted

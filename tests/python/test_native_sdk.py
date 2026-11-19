@@ -982,7 +982,10 @@ async def main():
     saved = await client.invocation_result(agent_name=result.agent_name, runtime_id=result.runtime_id, request_id=result.request_id, artifacts=config.runtime.artifacts)
     assert saved == result
     root = pathlib.Path(os.environ['TMPDIR']).resolve() / f'nemo-fabric-{os.geteuid()}-private'
-    assert root.stat().st_mode & 0o777 == 0o700
+    # A configured artifact root holds the host records, so only an
+    # unconfigured runtime needs default storage.
+    if not config.runtime.artifacts:
+        assert root.stat().st_mode & 0o777 == 0o700
     artifact_root = pathlib.Path(config.runtime.artifacts).resolve() if config.runtime.artifacts else root
     assert pathlib.Path(result.metadata['fabric_home']).is_relative_to(artifact_root)
 asyncio.run(main())
@@ -1009,3 +1012,126 @@ asyncio.run(main())
     assert completed.returncode == 0, completed.stderr
     if storage_case == "unsafe_cache":
         assert cache.stat().st_mode & 0o777 == 0o775
+
+
+_SHARED_SANDBOX_SCRIPT = """
+import asyncio, json, pathlib, sys
+from nemo_fabric import Fabric, FabricConfig
+async def main():
+    client = Fabric()
+    config = FabricConfig.from_mapping(json.loads(sys.argv[1]))
+    try:
+        if sys.argv[3] == "True":
+            result = await client.run(config, base_dir=sys.argv[2], input="shared sandbox")
+        else:
+            runtime = await client.start_runtime(config, base_dir=sys.argv[2])
+            try:
+                host = pathlib.Path(config.runtime.artifacts or ".") / ".fabric" / "hosts" / runtime.runtime_id
+                host_dir = host.is_dir()
+                result = await runtime.invoke(input="shared sandbox")
+            finally:
+                await runtime.stop()
+    except Exception as error:
+        print(json.dumps({"failed": getattr(error, "code", None)}))
+        return
+    outcome = {"status": str(result.status), "fabric_home": result.metadata["fabric_home"]}
+    if sys.argv[3] != "True":
+        outcome["host_dir"] = host_dir
+    print(json.dumps(outcome))
+asyncio.run(main())
+"""
+
+
+def _run_in_shared_sandbox(
+    tmp_path: Path, agent_dir: Path, one_shot: bool, artifacts: Path | None
+) -> dict:
+    # A sandbox whose home is shared and writable by everyone, with its
+    # temporary directory beneath it, as OpenShell's Kubernetes sandboxes are.
+    config = hermes_shim_config()
+    config.runtime.artifacts = str(artifacts) if artifacts else None
+    config.environment.artifacts = None
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            _SHARED_SANDBOX_SCRIPT,
+            config.model_dump_json(exclude_none=True),
+            str(agent_dir),
+            str(one_shot),
+        ],
+        env=dict(
+            os.environ,
+            HOME=str(tmp_path / "sandbox"),
+            TMPDIR=str(tmp_path / "sandbox" / "tmp"),
+            ADAPTER_PYTHON=sys.executable,
+        ),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout.strip().splitlines()[-1])
+
+
+def _comparable(path: str | Path) -> Path:
+    # Windows reports native paths in extended-length form: \\?\C:\... for a
+    # drive and \\?\UNC\server\share\... for a share.
+    text = os.path.normcase(os.path.normpath(str(path)))
+    unc = os.path.normcase("\\\\?\\UNC\\")
+    if text.startswith(unc):
+        return Path("\\\\" + text[len(unc) :])
+    return Path(text.removeprefix("\\\\?\\"))
+
+
+@pytest.fixture
+def shared_sandbox(tmp_path: Path) -> Path:
+    sandbox = tmp_path / "sandbox"
+    sandbox.mkdir()
+    sandbox.chmod(0o777)
+    (sandbox / "tmp").mkdir(mode=0o700)
+    return sandbox
+
+
+@pytest.mark.parametrize("one_shot", [False, True])
+def test_configured_private_artifacts_hold_host_storage_in_a_shared_sandbox(
+    hermes_shim_agent_dir, tmp_path, one_shot, shared_sandbox
+):
+    artifacts = shared_sandbox / "artifacts"
+    artifacts.mkdir(mode=0o700)
+
+    outcome = _run_in_shared_sandbox(
+        tmp_path, hermes_shim_agent_dir, one_shot, artifacts
+    )
+
+    assert outcome["status"] == "succeeded", outcome
+    assert _comparable(outcome["fabric_home"]).is_relative_to(
+        _comparable(artifacts.resolve() / ".fabric")
+    )
+    if not one_shot:
+        # The running host's records are in <root>/.fabric/hosts/<runtime id>.
+        assert outcome["host_dir"] is True, outcome
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix storage ownership")
+@pytest.mark.parametrize("one_shot", [False, True])
+def test_a_shared_fabric_namespace_is_refused_for_host_storage(
+    hermes_shim_agent_dir, tmp_path, one_shot, shared_sandbox
+):
+    artifacts = shared_sandbox / "artifacts"
+    (artifacts / ".fabric").mkdir(parents=True)
+    (artifacts / ".fabric").chmod(0o777)
+
+    outcome = _run_in_shared_sandbox(
+        tmp_path, hermes_shim_agent_dir, one_shot, artifacts
+    )
+
+    assert outcome == {"failed": "result_storage_failed"}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix storage ownership")
+def test_start_without_private_storage_names_local_storage(
+    hermes_shim_agent_dir, tmp_path, shared_sandbox
+):
+    outcome = _run_in_shared_sandbox(tmp_path, hermes_shim_agent_dir, False, None)
+
+    assert outcome == {"failed": "local_storage_unavailable"}

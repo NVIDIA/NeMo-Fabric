@@ -896,6 +896,7 @@ def test_openclaw_attach_rejects_deployment_owned_configuration(
 ):
     config = _config(mock_openclaw, with_skills=True)
     config.models["default"].settings["supports_usage_in_streaming"] = True
+    config.models["default"].extensions["api"] = "anthropic-messages"
     assert config.harness is not None
     config.harness.settings["channel_config"] = {
         "channels": {"telegram": {"enabled": True}},
@@ -913,6 +914,7 @@ def test_openclaw_attach_rejects_deployment_owned_configuration(
     assert caught.value.code == "openclaw_attach_configuration_unverifiable"
     assert set(caught.value.metadata["fields"]) == {
         "models.base_url",
+        "models.api",
         "models.settings.supports_usage_in_streaming",
         "tools",
         "mcp",
@@ -2586,6 +2588,77 @@ def test_openclaw_config_rejects_invalid_streaming_usage_capability(
     assert caught.value.code == "openclaw_invalid_configuration"
 
 
+@pytest.mark.parametrize(
+    ("api", "accepted"),
+    [
+        pytest.param("anthropic-messages", True, id="anthropic-messages"),
+        pytest.param("openai-responses", True, id="openai-responses"),
+        pytest.param("anthropic", False, id="not-an-openclaw-api"),
+    ],
+)
+def test_openclaw_plan_accepts_only_openclaw_model_apis(
+    tmp_path: Path, api: str, accepted: bool
+):
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "openclaw-model-api"},
+            "harness": {
+                "adapter_id": "nvidia.fabric.openclaw",
+                "resolution": "preinstalled",
+            },
+            "models": {
+                "default": {
+                    "provider": "anthropic",
+                    "model": "claude-test",
+                    "base_url": "https://models.example.test/anthropic",
+                    "api_key_env": "ANTHROPIC_API_KEY",
+                    "api": api,
+                }
+            },
+            "environment": {"provider": "local", "workspace": "."},
+        }
+    )
+
+    if accepted:
+        Fabric().plan(config, base_dir=tmp_path)
+    else:
+        with pytest.raises(FabricConfigError):
+            Fabric().plan(config, base_dir=tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("api", "native"),
+    [
+        pytest.param("anthropic-messages", "anthropic-messages", id="declared"),
+        pytest.param(None, "openai-completions", id="omitted"),
+    ],
+)
+def test_openclaw_custom_provider_uses_the_model_api(
+    tmp_path: Path, api: str | None, native: str
+):
+    config = _config(Path("openclaw"))
+    if api is not None:
+        config.models["default"].extensions["api"] = api
+    generated = adapter._openclaw_config(
+        config, _context(tmp_path), base_dir=tmp_path, port=20000, token_env="TOKEN"
+    )
+
+    assert generated["models"]["providers"]["test"]["api"] == native
+
+
+def test_openclaw_model_api_requires_custom_endpoint(tmp_path: Path):
+    config = _config(Path("openclaw"))
+    config.models["default"].base_url = None
+    config.models["default"].extensions["api"] = "anthropic-messages"
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        adapter._openclaw_config(
+            config, _context(tmp_path), base_dir=tmp_path, port=20000, token_env="TOKEN"
+        )
+
+    assert caught.value.code == "openclaw_invalid_configuration"
+    assert caught.value.metadata == {"field": "models.api"}
+
+
 def test_openclaw_streaming_usage_capability_requires_custom_endpoint(tmp_path: Path):
     config = _config(Path("openclaw"))
     config.models["default"].base_url = None
@@ -3091,7 +3164,9 @@ def _native_controls() -> dict[str, object]:
             "codeMode": False,
         },
         "plugins": {
-            "entries": {"memory-core": {"config": {"dreaming": {"enabled": False}}}}
+            "bundled": {
+                "entries": {"memory-core": {"config": {"dreaming": {"enabled": False}}}}
+            }
         },
     }
 
@@ -3144,7 +3219,7 @@ def _assert_native_controls_merged(generated: dict[str, object]):
             {
                 "agents": {"defaults": {"heartbeat": {}, "compaction": {}}},
                 "tools": {"exec": {}},
-                "plugins": {"entries": {"memory-core": {"config": {}}}},
+                "plugins": {"bundled": {"entries": {"memory-core": {"config": {}}}}},
             },
             id="empty-leaves",
         ),
@@ -3205,8 +3280,10 @@ def test_openclaw_omitted_native_controls_keep_generated_config(
         pytest.param(
             {
                 "plugins": {
-                    "entries": {
-                        "memory-core": {"config": {"dreaming": {"enabled": True}}}
+                    "bundled": {
+                        "entries": {
+                            "memory-core": {"config": {"dreaming": {"enabled": True}}}
+                        }
                     }
                 }
             },

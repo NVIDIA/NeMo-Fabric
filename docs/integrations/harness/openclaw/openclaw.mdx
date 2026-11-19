@@ -25,7 +25,7 @@ The adapter's existing `replace` mode selects the Fabric-provided instruction; i
 
 Before publishing native connection files, startup makes an authenticated, model-free check that the loaded plugin's registered hook supplies the instruction for the selected agent. Missing, blocked, or mismatched hooks fail startup with `openclaw_shared_configuration_unavailable`. This startup check is separate from normalized runtime health checks.
 
-The generated configuration is read-only. Native clients share the configured backend but keep separate conversations when they select different native sessions. Filesystem access and Gateway credentials are shared within the runtime; this is not a user-isolation boundary. Native session/model overrides are not qualified; shared defaults do not enforce immutable policy. Native reconfiguration controls do not provide a supported way to change the Fabric-owned configuration.
+The generated configuration is read-only, except that with `runtime.keep_state=true` the agent can change it so it can install [plugins](#plugins). Native clients share the configured backend but keep separate conversations when they select different native sessions. Filesystem access and Gateway credentials are shared within the runtime; this is not a user-isolation boundary. Native session/model overrides are not qualified; shared defaults do not enforce immutable policy. Native reconfiguration controls do not provide a supported way to change the Fabric-owned configuration.
 
 ## Ownership and Normalization
 
@@ -112,7 +112,7 @@ Set model provider, model, endpoint, generation parameters (`temperature`, `top_
 
 An MCP server that cannot be reached does not stop the runtime: OpenClaw skips it for the run and retries it on a later run. Each SDK result from a managed runtime lists the servers OpenClaw could not use under `output.mcp.unavailable_servers` (`name`, `transport`, and a `reason` of `failed` or `timed_out`), read from OpenClaw's `tools.effective` session inventory, and the adapter writes a standard-error warning the first time a server is reported unavailable. Error messages are omitted because they can carry credentials. Runtimes that connect to a prepared service do not report MCP availability.
 
-For a custom OpenAI-compatible endpoint, set the model's `base_url` and, when credentials are required, `api_key_env`.
+For a custom endpoint, set the model's `base_url` and, when credentials are required, `api_key_env`. The custom provider uses OpenClaw's `openai-completions` request adapter unless the model sets `api` to another OpenClaw request adapter, such as `anthropic-messages` for an Anthropic Messages endpoint, which sends the key in `x-api-key`. For `anthropic-messages`, OpenClaw accepts the endpoint's base URL with or without a trailing `/v1`. `api` requires `base_url`, and attached services don't accept it.
 
 The optional `models.<role>.settings.supports_usage_in_streaming` setting controls OpenClaw's native `compat.supportsUsageInStreaming`:
 
@@ -236,11 +236,12 @@ harness:
       toolSearch: false
       codeMode: false
     plugins:
-      entries:
-        memory-core:
-          config:
-            dreaming:
-              enabled: false
+      bundled:
+        entries:
+          memory-core:
+            config:
+              dreaming:
+                enabled: false
 ```
 
 | Setting | Values | Behavior |
@@ -250,13 +251,53 @@ harness:
 | `tools.exec.notifyOnExit` | boolean | `false` stops the system event and heartbeat when a backgrounded `exec` process exits. |
 | `tools.toolSearch` | boolean | `false` presents tool schemas directly instead of behind tool search. |
 | `tools.codeMode` | boolean | Code Mode. When enabled, it can take precedence over tool search and exposes only `exec` and `wait`, so do not combine it with blocking `exec` through `tools.blocked`. |
-| `plugins.entries.memory-core.config.dreaming.enabled` | boolean | `false` turns off scheduled dreaming in the `memory-core` plugin. |
+| `tools.web.fetch.ssrfPolicy.allowRfc2544BenchmarkRange` | boolean | `true` lets `web_fetch`, `image`, and `pdf` connect to addresses in `198.18.0.0/15`, which a fake-IP proxy such as OpenShell's policy DNS answers for every name. OpenClaw blocks that range otherwise. Set it only when such a proxy owns the range and enforces its own destination policy. |
+| `tools.web.fetch.ssrfPolicy.allowIpv6UniqueLocalRange` | boolean | The same opt-in for `fc00::/7`. |
+| `plugins.bundled.entries.memory-core.config.dreaming.enabled` | boolean | `false` turns off scheduled dreaming in the `memory-core` plugin. |
 
 The adapter merges only the fields you set into the generated `openclaw.json` before the Gateway starts. It adds them beside the generated `agents.defaults`, the `tools.allow` and `tools.deny` lists, and any adapter-owned plugin entry without replacing generated keys. Omitting a field preserves the current behavior. The closed descriptor schema rejects unknown fields and invalid values. Heartbeat durations require units. OpenClaw treats an unparseable value such as `30 minutes` as no heartbeat, so the schema rejects it, and it also rejects bare numbers such as `30` to avoid ambiguity.
 
 - **Ownership:** Managed runtimes and NeMo Fabric-owned prepared services apply these controls, so they reach SDK invocations, every runtime connected to a prepared service, and the native API, dashboard, and terminal clients of a managed runtime. A caller-owned Gateway keeps its deployment-owned configuration: `attach_service()` rejects these fields with `openclaw_attach_configuration_unverifiable`.
 - **Tool selection:** `harness.settings.tools` is OpenClaw's native tools section. It is separate from NeMo Fabric's normalized top-level `tools.enabled` and `tools.blocked` selectors, which still generate `tools.allow` and `tools.deny`.
 - **Scope:** These controls reduce automatic background turns; they do not stop context compaction. They apply to every session on the Gateway and do not correlate concurrent sessions, so a consumer that tracks only the latest model request must use one session at a time. They do not add NeMo Relay support to the OpenClaw adapter.
+
+### Plugins
+
+`harness.settings.plugins` turns OpenClaw plugins on or off for NeMo Fabric-owned Gateways. Attached Gateways reject it.
+
+```yaml
+harness:
+  adapter_id: nvidia.fabric.openclaw
+  settings:
+    plugins:
+      bundled:
+        entries:
+          memory-wiki: { enabled: true }
+          github: { enabled: false }
+      external:
+        paths: [/sandbox/plugins/my-plugin]
+        entries:
+          my-plugin: { enabled: true, config: {} }
+```
+
+| Field | Behavior |
+| --- | --- |
+| `bundled.entries.<id>` | A plugin that ships with OpenClaw. |
+| `external.paths` | Plugin folders, each with its built code and `node_modules`, owned by the Gateway's Unix user. Relative paths resolve from the base directory. |
+| `external.entries.<id>` | A plugin from those folders. A path alone doesn't enable it. |
+
+Each entry takes OpenClaw's `enabled`, `config`, and `hooks` fields. A plugin id may appear in only one section, and `fabric-shared-config` is reserved.
+
+With `runtime.keep_state=true`, the agent can install, enable, and disable plugins with OpenClaw's own commands, and they stay after a restart. The plugin settings live in `<state_dir>/fabric/plugins.json`; at each start the adapter merges its settings into that file, and the agent can still change them during a run. When a setting is removed from `harness.settings.plugins`, the agent's earlier value comes back, unless the agent changed it during a run.
+
+At start, the adapter asks the running Gateway which plugins it loaded. Every entry with `enabled: true` must be active:
+
+| Error | Cause |
+| --- | --- |
+| `openclaw_plugin_not_found` | An unknown plugin id, an `external.paths` folder that doesn't exist, or a plugin whose Gateway copy comes from another source; `metadata.origin` names that source. |
+| `openclaw_plugin_unavailable` | The plugin failed to load; `metadata.reason` has OpenClaw's error. |
+| `openclaw_invalid_configuration` | An id in both sections, a reserved id, or a plugin `config` that OpenClaw rejects. |
+| `openclaw_plugin_state_invalid` | `plugins.json` can't be read. |
 
 ## Select Native Interfaces
 

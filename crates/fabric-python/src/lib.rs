@@ -581,6 +581,11 @@ fn to_py_error(error: nemo_fabric_core::FabricError) -> PyErr {
     let session_code = match &error {
         FabricError::Session { code, .. } => Some((code.as_str(), false)),
         FabricError::StateInUse { .. } => Some(("state_in_use", true)),
+        // Name the cause so callers that keep only codes, such as the runtime
+        // server's diagnostics, can tell why local storage was refused.
+        FabricError::InvalidConfig { field, .. } if field == "local_storage" => {
+            Some(("local_storage_unavailable", false))
+        }
         FabricError::AdapterLifecycleOperation { code, .. } if code.starts_with("session_") => {
             Some((code.as_str(), code == "session_busy"))
         }

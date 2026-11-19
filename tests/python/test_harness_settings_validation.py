@@ -194,8 +194,12 @@ _config = partial(
                         "codeMode": True,
                     },
                     "plugins": {
-                        "entries": {
-                            "memory-core": {"config": {"dreaming": {"enabled": False}}}
+                        "bundled": {
+                            "entries": {
+                                "memory-core": {
+                                    "config": {"dreaming": {"enabled": False}}
+                                }
+                            }
                         }
                     },
                 },
@@ -203,6 +207,22 @@ _config = partial(
             )
             for every in ("0m", "30m", "1h30m", "500ms", "1.5h")
         ],
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {
+                "tools": {
+                    "web": {
+                        "fetch": {
+                            "ssrfPolicy": {
+                                "allowRfc2544BenchmarkRange": True,
+                                "allowIpv6UniqueLocalRange": True,
+                            }
+                        }
+                    }
+                }
+            },
+            id="openclaw-web-fetch-fake-ip-ranges",
+        ),
         pytest.param(
             "nvidia.fabric.openhands",
             {"condenser": "none"},
@@ -701,32 +721,70 @@ def test_openclaw_rejects_relay(tmp_path: Path):
         ),
         pytest.param(
             "nvidia.fabric.openclaw",
+            {
+                "tools": {
+                    "web": {
+                        "fetch": {"ssrfPolicy": {"allowRfc2544BenchmarkRange": "true"}}
+                    }
+                }
+            },
+            "harness.settings.tools.web.fetch.ssrfPolicy.allowRfc2544BenchmarkRange",
+            id="openclaw-web-fetch-benchmark-range-type",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {
+                "tools": {
+                    "web": {
+                        "fetch": {
+                            "ssrfPolicy": {"dangerouslyAllowPrivateNetwork": True}
+                        }
+                    }
+                }
+            },
+            "harness.settings.tools.web.fetch.ssrfPolicy.dangerouslyAllowPrivateNetwork",
+            id="openclaw-web-fetch-private-network-undeclared",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
             {"tools": {"allow": ["exec"]}},
             "harness.settings.tools.allow",
             id="openclaw-native-tools-not-normalized",
         ),
         pytest.param(
             "nvidia.fabric.openclaw",
-            {"plugins": {"entries": {"memory-core": {"enabled": False}}}},
-            "harness.settings.plugins.entries.memory-core.enabled",
+            {"plugins": {"bundled": {"entries": {"memory-core": {"install": "npm"}}}}},
+            "harness.settings.plugins.bundled.entries.memory-core.install",
             id="openclaw-memory-core-unknown",
         ),
         pytest.param(
             "nvidia.fabric.openclaw",
-            {"plugins": {"entries": {"other": {"enabled": True}}}},
-            "harness.settings.plugins.entries.other",
-            id="openclaw-plugin-unknown",
+            {"plugins": {"external": {"entries": {"other": {"enabled": "yes"}}}}},
+            "harness.settings.plugins.external.entries.other.enabled",
+            id="openclaw-plugin-enabled-type",
         ),
         pytest.param(
             "nvidia.fabric.openclaw",
             {
                 "plugins": {
-                    "entries": {
-                        "memory-core": {"config": {"dreaming": {"enabled": "no"}}}
+                    "bundled": {"entries": {"fabric-shared-config": {"enabled": True}}}
+                }
+            },
+            "harness.settings.plugins.bundled.entries.fabric-shared-config",
+            id="openclaw-plugin-reserved",
+        ),
+        pytest.param(
+            "nvidia.fabric.openclaw",
+            {
+                "plugins": {
+                    "bundled": {
+                        "entries": {
+                            "memory-core": {"config": {"dreaming": {"enabled": "no"}}}
+                        }
                     }
                 }
             },
-            "harness.settings.plugins.entries.memory-core.config.dreaming.enabled",
+            "harness.settings.plugins.bundled.entries.memory-core.config.dreaming.enabled",
             id="openclaw-dreaming-type",
         ),
         pytest.param(

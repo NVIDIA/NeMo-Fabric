@@ -8,6 +8,30 @@
   },
   "settings_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$defs": {
+      "pluginEntry": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Turn the plugin on or off. true makes start fail unless OpenClaw loads it."
+          },
+          "config": {
+            "type": "object",
+            "description": "The plugin's own configuration, checked by OpenClaw against the plugin's schema."
+          },
+          "hooks": {
+            "type": "object",
+            "properties": {
+              "allowConversationAccess": {"type": "boolean"},
+              "allowPromptInjection": {"type": "boolean"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
     "type": "object",
     "properties": {
       "openclaw_command": {
@@ -199,32 +223,23 @@
           "codeMode": {
             "type": "boolean",
             "description": "Whether OpenClaw Code Mode is enabled. Code Mode can take precedence over tool search."
-          }
-        },
-        "additionalProperties": false,
-        "description": "Native OpenClaw tools controls for NeMo Fabric-owned Gateways, merged with the allow and deny lists generated from NeMo Fabric's normalized top-level tools. Only authored fields are written; attached Gateways reject them."
-      },
-      "plugins": {
-        "type": "object",
-        "properties": {
-          "entries": {
+          },
+          "web": {
             "type": "object",
             "properties": {
-              "memory-core": {
+              "fetch": {
                 "type": "object",
                 "properties": {
-                  "config": {
+                  "ssrfPolicy": {
                     "type": "object",
                     "properties": {
-                      "dreaming": {
-                        "type": "object",
-                        "properties": {
-                          "enabled": {
-                            "type": "boolean",
-                            "description": "Whether the memory-core plugin runs scheduled dreaming."
-                          }
-                        },
-                        "additionalProperties": false
+                      "allowRfc2544BenchmarkRange": {
+                        "type": "boolean",
+                        "description": "Whether web_fetch, image, and pdf may connect to addresses in 198.18.0.0/15. Set it only behind a fake-IP proxy that owns that range and enforces its own destination policy."
+                      },
+                      "allowIpv6UniqueLocalRange": {
+                        "type": "boolean",
+                        "description": "Whether web_fetch, image, and pdf may connect to addresses in fc00::/7. Set it only behind a fake-IP proxy that owns that range and enforces its own destination policy."
                       }
                     },
                     "additionalProperties": false
@@ -237,7 +252,69 @@
           }
         },
         "additionalProperties": false,
-        "description": "Native OpenClaw plugin controls for NeMo Fabric-owned Gateways. Only authored fields are written; attached Gateways reject them."
+        "description": "Native OpenClaw tools controls for NeMo Fabric-owned Gateways, merged with the allow and deny lists generated from NeMo Fabric's normalized top-level tools. Only authored fields are written; attached Gateways reject them."
+      },
+      "plugins": {
+        "type": "object",
+        "properties": {
+          "bundled": {
+            "type": "object",
+            "properties": {
+              "entries": {
+                "type": "object",
+                "properties": {
+                  "fabric-shared-config": false,
+                  "memory-core": {
+                    "$ref": "#/$defs/pluginEntry",
+                    "properties": {
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "dreaming": {
+                            "type": "object",
+                            "properties": {
+                              "enabled": {
+                                "type": "boolean",
+                                "description": "Whether the memory-core plugin runs scheduled dreaming."
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "propertyNames": {"minLength": 1},
+                "additionalProperties": {"$ref": "#/$defs/pluginEntry"},
+                "description": "Plugins that ship with OpenClaw, keyed by plugin id. With enabled set to true, start fails unless OpenClaw loads the plugin."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Plugins that ship with OpenClaw."
+          },
+          "external": {
+            "type": "object",
+            "properties": {
+              "paths": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": true,
+                "description": "Plugin folders OpenClaw loads, each with its built code and node_modules, such as plugins mounted on a volume. Relative paths are resolved from the NeMo Fabric base directory; start fails if one doesn't exist."
+              },
+              "entries": {
+                "type": "object",
+                "properties": {"fabric-shared-config": false},
+                "propertyNames": {"minLength": 1},
+                "additionalProperties": {"$ref": "#/$defs/pluginEntry"},
+                "description": "Plugins from those folders, keyed by plugin id. A path alone doesn't enable a plugin; with enabled set to true, start fails unless OpenClaw loads it."
+              }
+            },
+            "additionalProperties": false,
+            "description": "Plugins with user-prepared code and dependencies."
+          }
+        },
+        "additionalProperties": false,
+        "description": "OpenClaw plugins for NeMo Fabric-owned Gateways, translated to OpenClaw's native plugins section. A plugin id may appear in only one section, and fabric-shared-config is reserved for the adapter. Attached Gateways reject plugin settings."
       }
     },
     "dependentSchemas": {
@@ -271,6 +348,30 @@
     "additionalProperties": false
   },
   "extension_schemas": {
+    "model": {
+      "type": "object",
+      "properties": {
+        "api": {
+          "type": "string",
+          "enum": [
+            "openai-completions",
+            "openai-responses",
+            "openai-chatgpt-responses",
+            "anthropic-messages",
+            "google-generative-ai",
+            "google-interactions",
+            "google-vertex",
+            "github-copilot",
+            "bedrock-converse-stream",
+            "ollama",
+            "pi-messages",
+            "azure-openai-responses"
+          ],
+          "description": "OpenClaw's request adapter for the custom provider at base_url, written as models.providers.<provider>.api. Requires base_url; when omitted, the custom provider uses openai-completions."
+        }
+      },
+      "additionalProperties": false
+    },
     "usage": {
       "type": "object",
       "properties": {
@@ -344,6 +445,12 @@
       "native": "A higher OpenClaw source wins: workspace skills, then state-folder skills, then shipped skills, then skills.directories. Between skills.directories entries the later entry wins.",
       "name_source": "frontmatter"
     }
+  },
+  "plugins": {
+    "bundled": {"supports_enable": true, "supports_disable": true},
+    "external": {"requires_explicit_enable": true, "provisions_dependencies": false},
+    "agent_installed": {"requires_keep_state": true},
+    "duplicates": {"supported_policies": ["reject"]}
   },
   "capabilities": {
     "session_resume": true,
