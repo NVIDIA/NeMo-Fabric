@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 import sqlite3
 import sys
 from pathlib import Path
@@ -137,7 +138,13 @@ async def _plugins_list(config_path: Path, state_dir: Path) -> dict[str, dict]:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await asyncio.wait_for(process.communicate(), 120)
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), 120)
+    except BaseException:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+        raise
     assert process.returncode == 0, stderr.decode()
     return {plugin["id"]: plugin for plugin in json.loads(stdout)["plugins"]}
 
@@ -360,7 +367,7 @@ async def test_agent_installed_plugin_survives_restart_until_disabled(
         state_dir = config_path.parent.parent
         installed = await runtime.invoke(
             input=f"Use your exec tool to run exactly this shell command:\n"
-            f"{command} plugins install {fixture}\n"
+            f"{shlex.join([command, 'plugins', 'install', str(fixture)])}\n"
             "Then reply with the last line of its output."
         )
         assert installed.status == "succeeded", installed.to_mapping()
@@ -400,7 +407,7 @@ async def test_agent_installed_plugin_survives_restart_until_disabled(
         assert any("PROBE-OK:lynx" in output for output in outputs), outputs
         disabled = await runtime.invoke(
             input=f"Use your exec tool to run exactly this shell command:\n"
-            f"{command} plugins disable fabric-probe\n"
+            f"{shlex.join([command, 'plugins', 'disable', 'fabric-probe'])}\n"
             "Then reply with the last line of its output."
         )
         assert disabled.status == "succeeded", disabled.to_mapping()

@@ -51,10 +51,11 @@ def resolve_plugin_path(
     ``path``. The returned path is absolute with symlinks resolved.
     """
 
-    path = Path(entry).expanduser()
-    if not path.is_absolute():
-        path = Path(base_dir) / path
+    path = Path(entry)
     try:
+        path = path.expanduser()
+        if not path.is_absolute():
+            path = Path(base_dir) / path
         return path.resolve(strict=True)
     except (OSError, RuntimeError):
         raise LifecycleError(

@@ -777,8 +777,8 @@ async def _check_plugins(
 
     def lookup(plugin_id: str) -> str | None:
         plugin = plugins.get(plugin_id)
-        if plugin is None:
-            return None
+        if plugin is None or plugin.get("installed") is False:
+            return None  # catalog-only entries aren't on this Gateway
         runtime = plugin.get("runtime")
         runtime = runtime if isinstance(runtime, dict) else {}
         state = runtime.get("state")
@@ -2794,15 +2794,21 @@ class OpenClawRuntime:
         except Exception:
             logger.error("OpenClaw could not stop log-capture tasks", exc_info=True)
         temp_dir, self._temp_dir = self._temp_dir, None
-        state_config, self._state_config_path = self._state_config_path, None
         try:
             if temp_dir is not None:
                 temp_dir.cleanup()
-            if state_config is not None:
-                openclaw_plugins.remove_config(state_config)
         except Exception:
             logger.error(
                 "OpenClaw could not remove its temporary Gateway configuration",
+                exc_info=True,
+            )
+        try:
+            if self._state_config_path is not None:
+                openclaw_plugins.remove_config(self._state_config_path)
+                self._state_config_path = None
+        except Exception:
+            logger.error(
+                "OpenClaw could not remove its retained Gateway configuration",
                 exc_info=True,
             )
         self._native_session = None

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,8 @@ INCLUDE = {"$include": f"./{PLUGINS_FILE}"}
 SHARED_CONFIG_PLUGIN = "fabric-shared-config"
 # List fields merged item by item, so the agent's own items are kept.
 LIST_FIELDS: tuple[tuple[str, ...], ...] = (("allow",), ("deny",), ("load", "paths"))
+# Copies OpenClaw writes next to a writable configuration.
+GENERATED_COPY = re.compile(r"\.(bak(\.\d+)?|last-good|clobbered\..+)")
 
 Leaf = tuple[str, ...]
 
@@ -98,20 +101,26 @@ def merge_plugins(
     }
     for path in sorted(previous - fabric_leaves.keys()):
         _delete(merged, path)
+    applied = []
     for path, value in fabric_leaves.items():
+        if value == {} and isinstance(_get(merged, path), dict):
+            continue  # an empty object adds no setting of its own
         _set(merged, path, value)
+        applied.append(path)
 
     owned_items: dict[str, list[str]] = {}
     for path in LIST_FIELDS:
         fabric_items = list(_get(fabric, path) or [])
-        if (
-            path == ("allow",)
-            and SHARED_CONFIG_PLUGIN in fabric.get("entries", {})
-            and (fabric_items or _get(merged, path))
-            and SHARED_CONFIG_PLUGIN not in fabric_items
-        ):
-            fabric_items.append(SHARED_CONFIG_PLUGIN)
-        stale = set(_owned_items(owned, path)) - set(fabric_items)
+        if path == ("allow",) and (fabric_items or _get(merged, path)):
+            # An existing allowlist must name every plugin NeMo Fabric enables.
+            for plugin_id, entry in fabric.get("entries", {}).items():
+                enabled = isinstance(entry, dict) and entry.get("enabled") is True
+                if enabled and plugin_id not in fabric_items:
+                    fabric_items.append(plugin_id)
+        previous_items = _owned_items(owned, path)
+        stale = set(previous_items) - set(fabric_items)
+        before = _get(agent, path)
+        before = before if isinstance(before, list) else []
         current = _get(merged, path)
         kept = [
             item
@@ -123,12 +132,11 @@ def merge_plugins(
             _set(merged, path, combined)
         else:
             _delete(merged, path)
-        if fabric_items:
-            owned_items[".".join(path)] = fabric_items
-    record = {
-        "leaves": [list(path) for path in fabric_leaves],
-        "items": owned_items,
-    }
+        # Only items NeMo Fabric added, never ones the agent already had.
+        added = [i for i in fabric_items if i not in before or i in previous_items]
+        if added:
+            owned_items[".".join(path)] = added
+    record = {"leaves": [list(path) for path in applied], "items": owned_items}
     return merged, record
 
 
@@ -137,7 +145,7 @@ def _read_object(path: Path, *, kind: str) -> dict[str, Any]:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return {}
-    except OSError as error:
+    except (OSError, UnicodeDecodeError) as error:
         raise _state_invalid(path, kind, str(error)) from error
     try:
         value = json.loads(text)
@@ -171,17 +179,41 @@ def state_folder(state_dir: Path) -> Path:
     return folder
 
 
+def _valid_record(owned: dict[str, Any]) -> bool:
+    leaves = owned.get("leaves", [])
+    items = owned.get("items", {})
+    return (
+        isinstance(leaves, list)
+        and isinstance(items, dict)
+        and all(isinstance(value, list) for value in items.values())
+    )
+
+
 def prepare(folder: Path, fabric: dict[str, Any]) -> dict[str, Any]:
     """Merge NeMo Fabric's plugin settings into ``plugins.json`` and return them."""
     agent = _read_object(folder / PLUGINS_FILE, kind="plugin settings")
-    owned = _read_object(folder / OWNED_FILE, kind="plugin ownership record")
+    owned_path = folder / OWNED_FILE
+    owned = _read_object(owned_path, kind="plugin ownership record")
+    if not _valid_record(owned):
+        raise _state_invalid(
+            owned_path, "plugin ownership record", "unexpected record shape"
+        )
     merged, record = merge_plugins(agent, fabric, owned)
-    local_interfaces.write_private_file(
-        folder / PLUGINS_FILE, json.dumps(merged, indent=2) + "\n"
-    )
-    local_interfaces.write_private_file(
-        folder / OWNED_FILE, json.dumps(record, indent=2) + "\n"
-    )
+    # Record the union first, so a failed write below never leaves a NeMo
+    # Fabric setting in plugins.json that the record doesn't claim.
+    union = {
+        "leaves": [*owned.get("leaves", []), *record["leaves"]],
+        "items": {
+            key: list(dict.fromkeys([*owned.get("items", {}).get(key, []), *values]))
+            for key, values in {**owned.get("items", {}), **record["items"]}.items()
+        },
+    }
+    for path, value in (
+        (owned_path, union),
+        (folder / PLUGINS_FILE, merged),
+        (owned_path, record),
+    ):
+        local_interfaces.write_private_file(path, json.dumps(value, indent=2) + "\n")
     return merged
 
 
@@ -189,4 +221,5 @@ def remove_config(path: Path) -> None:
     """Remove the generated ``openclaw.json`` and OpenClaw's copies of it."""
     path.unlink(missing_ok=True)
     for copy_path in path.parent.glob(f"{path.name}.*"):
-        copy_path.unlink(missing_ok=True)
+        if GENERATED_COPY.fullmatch(copy_path.name[len(path.name) :]):
+            copy_path.unlink(missing_ok=True)

@@ -344,6 +344,13 @@ async def test_start_checks_every_enabled_plugin_loads(
             id="absent",
         ),
         pytest.param(
+            {"memory-wiki": "catalog"},
+            {},
+            "openclaw_plugin_not_found",
+            {},
+            id="catalog-only",
+        ),
+        pytest.param(
             {"memory-wiki": "disabled"},
             {},
             "openclaw_plugin_unavailable",
@@ -630,8 +637,9 @@ def test_merge_keeps_the_agents_own_settings():
         },
         "slots": {"memory": "memory-core"},
     }
+    # memory-wiki was the agent's already, so NeMo Fabric doesn't own it.
     assert owned["items"] == {
-        "allow": ["memory-wiki", "mounted"],
+        "allow": ["mounted"],
         "deny": ["github"],
         "load.paths": ["/sandbox/plugins/mounted"],
     }
@@ -659,7 +667,7 @@ def test_merge_removes_what_fabric_no_longer_sets():
     merged, owned = merge(merged, second, owned)
 
     assert merged == {
-        "allow": ["installed"],
+        "allow": ["mounted", "installed"],
         "load": {"paths": ["/new/fabric-shared-config"]},
         "entries": {
             # The agent's own leaf under a Fabric entry is kept.
@@ -669,7 +677,7 @@ def test_merge_removes_what_fabric_no_longer_sets():
     }
     assert owned == {
         "leaves": [["entries", "mounted", "enabled"]],
-        "items": {"load.paths": ["/new/fabric-shared-config"]},
+        "items": {"allow": ["mounted"], "load.paths": ["/new/fabric-shared-config"]},
     }
 
 
@@ -711,8 +719,28 @@ def test_merge_does_not_add_an_allow_list():
 def test_merge_keeps_agent_config_under_an_empty_fabric_object():
     agent = {"entries": {"probe": {"config": {"mode": "x"}}}}
 
-    merged, _ = merge(agent, {"entries": {"probe": {"config": {}}}}, {})
+    merged, owned = merge(agent, {"entries": {"probe": {"config": {}}}}, {})
+    assert merged == agent
 
+    merged, _ = merge(merged, {"entries": {"probe": {"config": {"level": 2}}}}, owned)
+    assert merged == {"entries": {"probe": {"config": {"mode": "x", "level": 2}}}}
+
+
+def test_merge_adds_enabled_plugins_to_an_agent_allow_list():
+    merged, owned = merge(
+        {"allow": ["installed"]}, {"entries": {"x": {"enabled": True}}}, {}
+    )
+    assert merged["allow"] == ["installed", "x"]
+
+    merged, _ = merge(merged, {}, owned)
+    assert merged == {"allow": ["installed"]}
+
+
+def test_merge_does_not_own_an_agent_load_path():
+    agent = {"load": {"paths": ["/sandbox/plugins/probe"]}}
+    merged, owned = merge(agent, {"load": {"paths": ["/sandbox/plugins/probe"]}}, {})
+
+    merged, _ = merge(merged, {}, owned)
     assert merged == agent
 
 
@@ -722,20 +750,65 @@ def test_merge_keeps_agent_config_under_an_empty_fabric_object():
         pytest.param("plugins.json", "{not json", id="invalid-json"),
         pytest.param("plugins.json", "[]", id="not-an-object"),
         pytest.param("plugins.owned.json", "{", id="invalid-record"),
+        pytest.param("plugins.owned.json", '{"items": null}', id="record-shape"),
+        pytest.param("plugins.json", b"\xff", id="invalid-utf8"),
     ],
 )
 def test_unreadable_plugin_state_fails_and_is_kept(
     tmp_path: Path, name: str, text: str
 ):
     folder = openclaw_plugins.state_folder(tmp_path)
-    (folder / name).write_text(text)
+    data = text if isinstance(text, bytes) else text.encode()
+    (folder / name).write_bytes(data)
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
         openclaw_plugins.prepare(folder, {"entries": {"x": {"enabled": True}}})
 
     assert caught.value.code == "openclaw_plugin_state_invalid"
     assert caught.value.metadata["path"] == str(folder / name)
-    assert (folder / name).read_text() == text
+    assert (folder / name).read_bytes() == data
+
+
+def test_prepare_recovers_when_the_record_write_fails(tmp_path: Path, monkeypatch):
+    folder = openclaw_plugins.state_folder(tmp_path)
+    write = openclaw_plugins.local_interfaces.write_private_file
+    calls = []
+
+    def failing_write(path, text):
+        calls.append(path)
+        if len(calls) == 3:
+            raise OSError("disk full")
+        write(path, text)
+
+    monkeypatch.setattr(
+        openclaw_plugins.local_interfaces, "write_private_file", failing_write
+    )
+    with pytest.raises(OSError):
+        openclaw_plugins.prepare(folder, {"entries": {"x": {"enabled": True}}})
+    monkeypatch.undo()
+
+    assert openclaw_plugins.prepare(folder, {}) == {}
+
+
+def test_remove_config_keeps_other_files(tmp_path: Path):
+    config = tmp_path / "openclaw.json"
+    for name in (
+        "openclaw.json",
+        "openclaw.json.bak",
+        "openclaw.json.bak.1",
+        "openclaw.json.last-good",
+        "openclaw.json.clobbered.x",
+        "openclaw.json.saved",
+        "plugins.json",
+    ):
+        (tmp_path / name).write_text("{}")
+
+    openclaw_plugins.remove_config(config)
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "openclaw.json.saved",
+        "plugins.json",
+    ]
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Checks POSIX modes")
@@ -757,6 +830,7 @@ def test_prepare_writes_owner_only_files(tmp_path: Path):
     ]
 
 
+@posix_only
 def test_state_folder_refuses_a_symlink(tmp_path: Path):
     (tmp_path / "elsewhere").mkdir()
     (tmp_path / "fabric").symlink_to(tmp_path / "elsewhere")

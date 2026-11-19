@@ -67,7 +67,8 @@ def save_sessions():
 def plugins_rpc():
     # Each entry is "active" when enabled and "unloaded" otherwise.
     # FAKE_OPENCLAW_PLUGINS maps an id to a runtime state ("absent" leaves it
-    # out); FAKE_OPENCLAW_PLUGIN_ERRORS maps an id to a load error.
+    # out, "catalog" lists it as not installed); FAKE_OPENCLAW_PLUGIN_ERRORS
+    # maps an id to a load error.
     if log_path := os.environ.get("FAKE_OPENCLAW_PLUGIN_COMMANDS"):
         with open(log_path, "a", encoding="utf-8") as stream:
             stream.write("plugins.list\n")
@@ -88,8 +89,9 @@ def plugins_rpc():
             {
                 "id": key,
                 "enabled": state == "active",
+                **({"installed": False} if state == "catalog" else {}),
                 "runtime": {
-                    "state": state,
+                    "state": "unloaded" if state == "catalog" else state,
                     **({"error": errors[key]} if key in errors else {}),
                 },
             }
