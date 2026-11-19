@@ -41,6 +41,28 @@ class SessionClient:
         self._connection: ClientConnection | None = None
         self._lock = asyncio.Lock()
         self._failed = False
+        self._reader: asyncio.Task[None] | None = None
+
+    async def _read_events(self, connection: ClientConnection) -> None:
+        # The Gateway keeps sending events between calls, including during an
+        # HTTP turn. Left unread, they fill the websockets receive buffer, which
+        # then stops reading the socket, so keepalive pongs go unseen and
+        # websockets closes the connection.
+        try:
+            while True:
+                frame = json.loads(await connection.recv())
+                if not isinstance(frame, dict) or frame.get("type") != "event":
+                    raise ValueError("Unexpected Gateway frame")
+        except (ValueError, WebSocketException):
+            # The next call reports the connection as unavailable.
+            self._failed = True
+
+    async def _stop_reading(self) -> None:
+        reader, self._reader = self._reader, None
+        if reader is not None:
+            # Cancelling recv() loses no frame; the next call reads it.
+            reader.cancel()
+            await asyncio.wait([reader])
 
     async def _response(self, identifier: str) -> dict[str, Any]:
         assert self._connection is not None
@@ -73,11 +95,14 @@ class SessionClient:
         self, method: str, params: dict[str, Any], *, timeout: float
     ) -> dict[str, Any]:
         async with self._lock:
-            if self._failed:
-                raise LifecycleError(
-                    "session_incompatible", "Native session connection is unavailable"
-                )
             try:
+                # Cancellation here still closes the connection below.
+                await self._stop_reading()
+                if self._failed:
+                    raise LifecycleError(
+                        "session_incompatible",
+                        "Native session connection is unavailable",
+                    )
                 async with asyncio.timeout(timeout):
                     if self._connection is None:
                         self._connection = await _DirectConnect(
@@ -117,7 +142,7 @@ class SessionClient:
                             or hello.get("protocol") != 4
                         ):
                             raise ValueError("Unsupported Gateway protocol")
-                    return await self._request(method, params)
+                    result = await self._request(method, params)
             except BaseException as error:
                 await self.close()
                 if isinstance(
@@ -130,9 +155,14 @@ class SessionClient:
                         metadata={"method": method},
                     ) from None
                 raise
+            self._reader = asyncio.create_task(self._read_events(self._connection))
+            return result
 
     async def close(self) -> None:
         self._failed = True
         connection, self._connection = self._connection, None
-        if connection is not None:
-            await connection.close()
+        try:
+            await self._stop_reading()
+        finally:
+            if connection is not None:
+                await connection.close()
