@@ -94,6 +94,17 @@ def _owned_items(owned: dict[str, Any], path: Leaf) -> list[str]:
     return [item for item in items if isinstance(item, str)]
 
 
+def _displaced(value: dict[str, Any], path: Leaf) -> dict[str, Any] | None:
+    """Return the agent's non-object value at an ancestor of ``path``, if any."""
+    for end in range(1, len(path)):
+        ancestor = _get(value, path[:end], _MISSING)
+        if ancestor is _MISSING:
+            return None
+        if not isinstance(ancestor, dict):
+            return {"path": list(path[:end]), "value": copy.deepcopy(ancestor)}
+    return None
+
+
 def _owned_leaves(owned: dict[str, Any]) -> dict[Leaf, dict[str, Any]]:
     return {tuple(leaf["path"]): leaf for leaf in owned.get("leaves", [])}
 
@@ -119,6 +130,9 @@ def merge_plugins(
             _set(merged, path, leaf["shadowed"])
         else:
             _delete(merged, path)
+        displaced = leaf.get("displaced")
+        if displaced and _get(merged, tuple(displaced["path"]), _MISSING) is _MISSING:
+            _set(merged, tuple(displaced["path"]), displaced["value"])
     applied = []
     for path, value in fabric_leaves.items():
         if value == {} and isinstance(_get(merged, path), dict):
@@ -129,10 +143,13 @@ def merge_plugins(
             continue  # the agent's own value; NeMo Fabric doesn't claim it
         record_leaf = {"path": list(path), "value": copy.deepcopy(value)}
         if leaf is not None and _same(current, leaf["value"]):
-            if "shadowed" in leaf:
-                record_leaf["shadowed"] = leaf["shadowed"]
+            for key in ("shadowed", "displaced"):
+                if key in leaf:
+                    record_leaf[key] = leaf[key]
         elif current is not _MISSING:
             record_leaf["shadowed"] = copy.deepcopy(current)
+        elif displaced := _displaced(merged, path):
+            record_leaf["displaced"] = displaced
         _set(merged, path, value)
         applied.append(record_leaf)
 
@@ -207,6 +224,16 @@ def state_folder(state_dir: Path) -> Path:
     return folder
 
 
+def _valid_displaced(displaced: Any) -> bool:
+    return displaced is None or (
+        isinstance(displaced, dict)
+        and "value" in displaced
+        and isinstance(displaced.get("path"), list)
+        and bool(displaced["path"])
+        and all(isinstance(key, str) for key in displaced["path"])
+    )
+
+
 def _valid_record(owned: dict[str, Any]) -> bool:
     leaves = owned.get("leaves", [])
     items = owned.get("items", {})
@@ -218,6 +245,7 @@ def _valid_record(owned: dict[str, Any]) -> bool:
             and isinstance(leaf.get("path"), list)
             and leaf["path"]
             and all(isinstance(key, str) for key in leaf["path"])
+            and _valid_displaced(leaf.get("displaced"))
             for leaf in leaves
         )
         and isinstance(items, dict)

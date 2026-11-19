@@ -672,6 +672,19 @@ def test_merge_restores_the_agents_value_when_fabric_stops_setting_it():
     assert owned == {"leaves": [], "items": {}}
 
 
+def test_merge_restores_an_agent_value_a_fabric_object_replaced():
+    agent = {"entries": {"x": {"config": "agent"}}}
+    fabric = {"entries": {"x": {"config": {"level": 1, "mode": "a"}}}}
+    merged, owned = merge(agent, fabric, {})
+    assert merged == fabric
+
+    merged, owned = merge(merged, {"entries": {"x": {"config": {"level": 1}}}}, owned)
+    assert merged == {"entries": {"x": {"config": {"level": 1}}}}
+
+    merged, owned = merge(merged, {}, owned)
+    assert merged == agent
+
+
 def test_merge_keeps_an_agent_edit_made_after_fabric_set_the_value():
     fabric = {"entries": {"x": {"config": {"level": 1}}}}
     merged, owned = merge({"entries": {"x": {"config": {"level": 0}}}}, fabric, {})
@@ -850,6 +863,11 @@ def test_merge_does_not_own_an_agent_load_path():
         pytest.param("plugins.owned.json", "{", id="invalid-record"),
         pytest.param("plugins.owned.json", '{"items": null}', id="record-shape"),
         pytest.param("plugins.owned.json", '{"leaves": [["a"]]}', id="leaf-shape"),
+        pytest.param(
+            "plugins.owned.json",
+            '{"leaves": [{"path": ["a", "b"], "value": 1, "displaced": {}}]}',
+            id="displaced-shape",
+        ),
         pytest.param("plugins.json", b"\xff", id="invalid-utf8"),
     ],
 )
