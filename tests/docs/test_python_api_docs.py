@@ -385,16 +385,18 @@ def test_landing_page_routes_new_users_through_the_product():
     ):
         assert destination.resolve() in pages
 
-    for heading in (
-        "**What You Can Do with NeMo Fabric**",
-        "**How NeMo Fabric Works**",
-        "## Skip Ahead",
-        "## Use Cases",
+    for anchor, heading in (
+        ("what-you-can-do-with-nemo-fabric", "What You Can Do with NeMo Fabric"),
+        ("how-nemo-fabric-works", "How NeMo Fabric Works"),
     ):
-        assert heading in landing
+        assert re.search(
+            rf'<h2\b[^>]*\bid="{anchor}"[^>]*>\s*{re.escape(heading)}\s*</h2>',
+            landing,
+        )
+    assert "## Skip Ahead" in landing
 
     for destination in (
-        "../adapter-contract/README.md",
+        "../adapter-contract/tutorials/adapter-descriptor.md",
         "../integrations/consumer/overview.mdx",
     ):
         assert destination in landing
