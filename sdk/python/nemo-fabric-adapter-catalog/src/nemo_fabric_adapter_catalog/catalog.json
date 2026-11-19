@@ -233,7 +233,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-claude",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "303693778c2f6255a8a13f74c8abf2980a998149c93c47a1063913422c9671c8",
       "source": "adapters/python/claude/claude.fabric-adapter.json"
@@ -430,7 +430,7 @@
       "ecosystem": "typescript",
       "package": {
         "name": "nemo-fabric-adapters-cline",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "d536a86c564fef01d6be9e9cf3c671c4b2e1acba9b9e02acd2105520703711d4",
       "source": "adapters/typescript/cline/cline.fabric-adapter.json"
@@ -654,7 +654,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-codex",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "823aa2423aad2b524ffc47aaf88de71a56e2aaf5e7c1837768a7b5c829d0411c",
       "source": "adapters/python/codex/codex.fabric-adapter.json"
@@ -789,7 +789,7 @@
       "ecosystem": "typescript",
       "package": {
         "name": "nemo-fabric-adapters-droid",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "0c44210e0ba4e58a173b6ed1e38ecb4d518d84a4dd5c68449a7155463c591c73",
       "source": "adapters/typescript/droid/droid.fabric-adapter.json"
@@ -841,11 +841,54 @@
             "type": "object"
           }
         },
+        "plugins": {
+          "agent_installed": {
+            "supported": false
+          },
+          "bundled": {
+            "supports_disable": true,
+            "supports_enable": true
+          },
+          "duplicates": {
+            "supported_policies": [
+              "reject"
+            ]
+          },
+          "external": {
+            "provisions_dependencies": false,
+            "requires_explicit_enable": true
+          }
+        },
         "requirements": {},
         "runner": {
           "module": "nemo_fabric_adapters.hermes.adapter"
         },
         "settings_schema": {
+          "$defs": {
+            "pluginEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "capabilities": {
+                  "description": "Capabilities granted to the plugin, such as tools.override, written to plugins.entries.<id>.granted_capabilities. Hermes ignores ids it doesn't know.",
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                "config": {
+                  "description": "The plugin's own settings, written to plugins.entries.<id>.settings.",
+                  "type": "object"
+                },
+                "enabled": {
+                  "description": "Turn the plugin on or off. true makes start fail unless Hermes loads it.",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "allOf": [
@@ -1026,9 +1069,109 @@
               "minimum": 1,
               "type": "integer"
             },
+            "plugins": {
+              "additionalProperties": false,
+              "description": "Hermes plugins, translated to Hermes's native plugins section in config.yaml. A plugin id may appear in only one section. The other fields are Hermes's own plugin controls and are written as they are. Plugins the agent installs itself are not supported.",
+              "properties": {
+                "auto_apply": {
+                  "description": "Whether the update check applies Git plugin updates unattended. Hermes's default is false.",
+                  "type": "boolean"
+                },
+                "auto_update_check_hours": {
+                  "description": "Hours between read-only plugin update checks; 0 disables them. Hermes's default is 24.",
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "bundled": {
+                  "additionalProperties": false,
+                  "description": "Plugins that ship with Hermes.",
+                  "properties": {
+                    "entries": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/pluginEntry"
+                      },
+                      "description": "Plugins that ship with Hermes, keyed by plugin key or name, such as security-guidance or browser/firecrawl. enabled: true makes start fail unless Hermes loads the plugin; enabled: false turns off one Hermes loads by default. Start fails if the plugin doesn't ship with Hermes.",
+                      "propertyNames": {
+                        "minLength": 1
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                "clone_timeout_seconds": {
+                  "description": "Seconds for one plugin Git clone, fetch, or checkout. Hermes's default is 300.",
+                  "exclusiveMinimum": 0,
+                  "maximum": 3600,
+                  "type": "number"
+                },
+                "external": {
+                  "additionalProperties": false,
+                  "description": "Plugins with user-prepared code and dependencies.",
+                  "properties": {
+                    "entries": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/pluginEntry"
+                      },
+                      "description": "Plugins from those folders, keyed by manifest name. A path alone doesn't enable a plugin; with enabled set to true, start fails unless Hermes loads it.",
+                      "propertyNames": {
+                        "minLength": 1
+                      },
+                      "type": "object"
+                    },
+                    "paths": {
+                      "description": "Plugin folders, each holding plugin.yaml and the plugin's code, such as plugins mounted on a volume. The adapter links each into the Hermes home's plugins folder under its manifest name at start and unlinks it at stop. Relative paths resolve against the NeMo Fabric base directory; start fails if one doesn't exist. Python dependencies must already be importable.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "uniqueItems": true
+                    }
+                  },
+                  "type": "object"
+                },
+                "hook_callback_timeout": {
+                  "description": "Seconds for one in-process plugin hook callback; 0 means no cap. Hermes's default is 30.",
+                  "maximum": 600,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "host": {
+                  "additionalProperties": false,
+                  "description": "Hermes's plugin-host settings.",
+                  "properties": {
+                    "launcher": {
+                      "description": "Command prefix the plugin host runs under, such as a sandbox runner.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "isolation": {
+                  "description": "Run third-party Python plugins inside Hermes or in Hermes's plugin-host process. Hermes's default is in_process.",
+                  "enum": [
+                    "in_process",
+                    "host"
+                  ],
+                  "type": "string"
+                },
+                "load_timeout_seconds": {
+                  "description": "Seconds for one plugin's import and registration at load; 0 means no deadline. Hermes's default is 10.",
+                  "maximum": 600,
+                  "minimum": 0,
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
             "plugins_enabled": {
               "default": [],
-              "description": "Hermes plugin identifiers to enable.",
+              "description": "Hermes plugin keys or names to turn on; prefer plugins.bundled or plugins.external. Start fails when an identifier is absent or did not load.",
               "items": {
                 "minLength": 1,
                 "type": "string"
@@ -1178,9 +1321,9 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-hermes",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
-      "sha256": "e4f7fb7039ccc28a3299ebe714bed8deea2c95bd485f4a3586ca6185f1540cdf",
+      "sha256": "3873209d1c07c9047400f5eaeba7dd974f0ec398c55cd3cd5321239fe25fc776",
       "source": "adapters/python/hermes/hermes.fabric-adapter.json"
     },
     "nvidia.fabric.kilo": {
@@ -1411,7 +1554,7 @@
       "ecosystem": "typescript",
       "package": {
         "name": "nemo-fabric-adapters-kilo",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "bb236376f76d986c5b087952dd815e9c100dfa9ccd235964e25e8bc9f610cedd",
       "source": "adapters/typescript/kilo/kilo.fabric-adapter.json"
@@ -1548,7 +1691,7 @@
       "ecosystem": "typescript",
       "package": {
         "name": "nemo-fabric-adapters-kiro",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "7273f357f8f8f3d429f4127d06f29653c015d20fb4d82d3c8c0f4dee9f84ff2c",
       "source": "adapters/typescript/kiro/kiro.fabric-adapter.json"
@@ -2012,7 +2155,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-deepagents",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "086da805482c7a91497ac162ac5839be9ea3dceb3c7b740ecf3c0e93c03a665a",
       "source": "adapters/python/deepagents/deepagents.fabric-adapter.json"
@@ -2128,7 +2271,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-mini-swe-agent",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "2480f84f77fdbc681ddd83ebedf3b30cbb766273f7104ad54408e54307f121db",
       "source": "adapters/python/mini-swe-agent/mini-swe-agent.fabric-adapter.json"
@@ -2240,7 +2383,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-nooa",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "6ec836b371326efaf0cf217256dae76848f2e7e0067420c602307c30aab1df17",
       "source": "adapters/python/nooa/nooa.fabric-adapter.json"
@@ -2332,7 +2475,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-nooa",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "87e09e21e71d7b7bb081c357f1cbc2278a9b467ba76cc4db77d230713d126b20",
       "source": "adapters/python/nooa/nooa-bench.fabric-adapter.json"
@@ -2502,12 +2645,58 @@
           ],
           "type": "object"
         },
+        "plugins": {
+          "agent_installed": {
+            "requires_keep_state": true
+          },
+          "bundled": {
+            "supports_disable": true,
+            "supports_enable": true
+          },
+          "duplicates": {
+            "supported_policies": [
+              "reject"
+            ]
+          },
+          "external": {
+            "provisions_dependencies": false,
+            "requires_explicit_enable": true
+          }
+        },
         "requirements": {},
         "runner": {
           "module": "nemo_fabric_adapters.openclaw.adapter",
           "stop_timeout_seconds": 30
         },
         "settings_schema": {
+          "$defs": {
+            "pluginEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "config": {
+                  "description": "The plugin's own configuration, checked by OpenClaw against the plugin's schema.",
+                  "type": "object"
+                },
+                "enabled": {
+                  "description": "Turn the plugin on or off. true makes start fail unless OpenClaw loads it.",
+                  "type": "boolean"
+                },
+                "hooks": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "allowConversationAccess": {
+                      "type": "boolean"
+                    },
+                    "allowPromptInjection": {
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "dependentSchemas": {
@@ -2670,32 +2859,72 @@
             },
             "plugins": {
               "additionalProperties": false,
-              "description": "Native OpenClaw plugin controls for NeMo Fabric-owned Gateways. Only authored fields are written; attached Gateways reject them.",
+              "description": "OpenClaw plugins for NeMo Fabric-owned Gateways, translated to OpenClaw's native plugins section. A plugin id may appear in only one section, and fabric-shared-config is reserved for the adapter. Attached Gateways reject plugin settings.",
               "properties": {
-                "entries": {
+                "bundled": {
                   "additionalProperties": false,
+                  "description": "Plugins that ship with OpenClaw.",
                   "properties": {
-                    "memory-core": {
-                      "additionalProperties": false,
+                    "entries": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/pluginEntry"
+                      },
+                      "description": "Plugins that ship with OpenClaw, keyed by plugin id. With enabled set to true, start fails unless OpenClaw loads the plugin.",
                       "properties": {
-                        "config": {
-                          "additionalProperties": false,
+                        "fabric-shared-config": false,
+                        "memory-core": {
+                          "$ref": "#/$defs/pluginEntry",
                           "properties": {
-                            "dreaming": {
-                              "additionalProperties": false,
+                            "config": {
                               "properties": {
-                                "enabled": {
-                                  "description": "Whether the memory-core plugin runs scheduled dreaming.",
-                                  "type": "boolean"
+                                "dreaming": {
+                                  "properties": {
+                                    "enabled": {
+                                      "description": "Whether the memory-core plugin runs scheduled dreaming.",
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "type": "object"
                                 }
                               },
                               "type": "object"
                             }
-                          },
-                          "type": "object"
+                          }
                         }
                       },
+                      "propertyNames": {
+                        "minLength": 1
+                      },
                       "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                "external": {
+                  "additionalProperties": false,
+                  "description": "Plugins with user-prepared code and dependencies.",
+                  "properties": {
+                    "entries": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/pluginEntry"
+                      },
+                      "description": "Plugins from those folders, keyed by plugin id. A path alone doesn't enable a plugin; with enabled set to true, start fails unless OpenClaw loads it.",
+                      "properties": {
+                        "fabric-shared-config": false
+                      },
+                      "propertyNames": {
+                        "minLength": 1
+                      },
+                      "type": "object"
+                    },
+                    "paths": {
+                      "description": "Plugin folders OpenClaw loads, each with its built code and node_modules, such as plugins mounted on a volume. Relative paths are resolved from the NeMo Fabric base directory; start fails if one doesn't exist.",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "uniqueItems": true
                     }
                   },
                   "type": "object"
@@ -2839,9 +3068,9 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-openclaw",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
-      "sha256": "2dafa059211dd33e696181173e344110eb643ff846a3b2b507f7e47d9e7d49c5",
+      "sha256": "92c38d430d0b4d2beebcbd097f51ad92179761c77dc20cdae0dc2747fe836a9e",
       "source": "adapters/python/openclaw/openclaw.fabric-adapter.json"
     },
     "nvidia.fabric.opencode": {
@@ -3066,7 +3295,7 @@
       "ecosystem": "typescript",
       "package": {
         "name": "nemo-fabric-adapters-opencode",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "8cb126e7d382bb58fc3447166a7d5f858ae2af14118aa1533bf7ae6f4c206495",
       "source": "adapters/typescript/opencode/opencode.fabric-adapter.json"
@@ -3188,7 +3417,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-openhands",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "4039f0131e9f8db3348b74eaed48be062f0d989769ecfbb9c86af693e20e2962",
       "source": "adapters/python/openhands/openhands.fabric-adapter.json"
@@ -3487,7 +3716,7 @@
       "ecosystem": "typescript",
       "package": {
         "name": "nemo-fabric-adapters-pi",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "1d3f4b6933689530782ba0ebd019ca9af3476a8f9b7d5b955783d0a59b743283",
       "source": "adapters/typescript/pi/pi.fabric-adapter.json"
@@ -3604,7 +3833,7 @@
       "ecosystem": "typescript",
       "package": {
         "name": "nemo-fabric-adapters-qwen",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "bb260462f2f5322f22c5e3bb6d4fdcd4e3f23845b7ad8fdeec017928cf062fb3",
       "source": "adapters/typescript/qwen/qwen.fabric-adapter.json"
@@ -3741,7 +3970,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-remote-agent",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "39870c056b7aa15b8706b6cabf9190029f6c9165c5c9ce4b427f5f18bd7ba70a",
       "source": "adapters/python/remote-agent/remote-agent.fabric-adapter.json"
@@ -3957,13 +4186,13 @@
       "ecosystem": "typescript",
       "package": {
         "name": "nemo-fabric-adapters-strands",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "3b6e7f1dec2fc416c30c00e24225b21a161160252b6aba3846028319478ca3c9",
       "source": "adapters/typescript/strands/strands.fabric-adapter.json"
     }
   },
-  "catalog_version": "0.7.0",
+  "catalog_version": "0.8.0",
   "format_version": 1,
   "targets": {
     "nvidia.nooa.arc-solver": {
@@ -4009,7 +4238,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-nooa",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "34a8447cc5a91495e049984171994ec4ee7a48a021ccbdfeba225643190016ba",
       "source": "adapters/python/nooa/targets/arc-solver.fabric-target.json"
@@ -4036,7 +4265,7 @@
       "ecosystem": "python",
       "package": {
         "name": "nemo-fabric-adapters-nooa",
-        "version": "0.7.0"
+        "version": "0.8.0"
       },
       "sha256": "a38a20a44fcaaa38cae13face8bce8231b33b22d73b8641692b1a7814a958c9e",
       "source": "adapters/python/nooa/targets/coding-agent.fabric-target.json"

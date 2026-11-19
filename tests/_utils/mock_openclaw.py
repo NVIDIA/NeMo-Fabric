@@ -31,6 +31,10 @@ if args[:3] == ["config", "validate", "--json"]:
         value = json.load(stream)
     with open(os.environ["FAKE_OPENCLAW_CAPTURE"], "w", encoding="utf-8") as stream:
         json.dump(value, stream)
+    if issues := os.environ.get("FAKE_OPENCLAW_CONFIG_ISSUES"):
+        print(json.dumps({"ok": False, "valid": False, "issues": json.loads(issues)}))
+        print("noise on standard error", file=sys.stderr)
+        raise SystemExit(1)
     print(json.dumps({"valid": True}))
     raise SystemExit(0)
 if args[:2] == ["gateway", "call"]:
@@ -63,7 +67,49 @@ def save_sessions():
     state_file.write_text(json.dumps(native_sessions))
 
 
+def plugins_rpc():
+    # Each entry is "active" when enabled and "unloaded" otherwise.
+    # FAKE_OPENCLAW_PLUGINS maps an id to a runtime state ("absent" leaves it
+    # out, "catalog" lists it as not installed); FAKE_OPENCLAW_PLUGIN_ERRORS
+    # maps an id to a load error. FAKE_OPENCLAW_PLUGIN_ORIGINS maps an id to
+    # the origin the Gateway reports.
+    if log_path := os.environ.get("FAKE_OPENCLAW_PLUGIN_COMMANDS"):
+        with open(log_path, "a", encoding="utf-8") as stream:
+            stream.write("plugins.list\n")
+    config_path = Path(os.environ["OPENCLAW_CONFIG_PATH"])
+    plugins = json.loads(config_path.read_text(encoding="utf-8")).get("plugins", {})
+    if "$include" in plugins:
+        include = config_path.parent / plugins["$include"]
+        plugins = json.loads(include.read_text(encoding="utf-8"))
+    states = {
+        key: "active" if entry.get("enabled", True) else "unloaded"
+        for key, entry in plugins.get("entries", {}).items()
+    }
+    errors = json.loads(os.environ.get("FAKE_OPENCLAW_PLUGIN_ERRORS", "{}"))
+    states.update({key: "unloaded" for key in errors})
+    states.update(json.loads(os.environ.get("FAKE_OPENCLAW_PLUGINS", "{}")))
+    origins = json.loads(os.environ.get("FAKE_OPENCLAW_PLUGIN_ORIGINS", "{}"))
+    return {
+        "plugins": [
+            {
+                "id": key,
+                "enabled": state == "active",
+                **({"installed": False} if state == "catalog" else {}),
+                **({"origin": origins[key]} if key in origins else {}),
+                "runtime": {
+                    "state": "unloaded" if state == "catalog" else state,
+                    **({"error": errors[key]} if key in errors else {}),
+                },
+            }
+            for key, state in states.items()
+            if state != "absent"
+        ]
+    }
+
+
 def session_rpc(method, params):
+    if method == "plugins.list":
+        return plugins_rpc()
     if method == "sessions.create":
         key = params["key"].lower()
         if key in native_sessions:

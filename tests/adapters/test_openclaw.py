@@ -3164,7 +3164,9 @@ def _native_controls() -> dict[str, object]:
             "codeMode": False,
         },
         "plugins": {
-            "entries": {"memory-core": {"config": {"dreaming": {"enabled": False}}}}
+            "bundled": {
+                "entries": {"memory-core": {"config": {"dreaming": {"enabled": False}}}}
+            }
         },
     }
 
@@ -3217,7 +3219,7 @@ def _assert_native_controls_merged(generated: dict[str, object]):
             {
                 "agents": {"defaults": {"heartbeat": {}, "compaction": {}}},
                 "tools": {"exec": {}},
-                "plugins": {"entries": {"memory-core": {"config": {}}}},
+                "plugins": {"bundled": {"entries": {"memory-core": {"config": {}}}}},
             },
             id="empty-leaves",
         ),
@@ -3278,8 +3280,10 @@ def test_openclaw_omitted_native_controls_keep_generated_config(
         pytest.param(
             {
                 "plugins": {
-                    "entries": {
-                        "memory-core": {"config": {"dreaming": {"enabled": True}}}
+                    "bundled": {
+                        "entries": {
+                            "memory-core": {"config": {"dreaming": {"enabled": True}}}
+                        }
                     }
                 }
             },
