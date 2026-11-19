@@ -45,15 +45,15 @@ Conversation resume requires `runtime.keep_state`, retained artifact storage, an
 
 Hermes Agent requires Python 3.14 in its own environment. Applications using another supported Python version can select that environment with `ADAPTER_PYTHON`. Keep the Relay version matched to the installed Hermes release: v0.22.7 uses Relay `>=0.11,<0.12`, while the supported legacy v0.22.5 pairing uses `>=0.10,<0.11`. Refer to the [Hermes installation guide](../integrations/harness/hermes/hermes.mdx).
 
-The Fabric Harbor extra continues to select `harbor>=0.24,<0.25`. Harbor's phase-timeout ownership fix is a separate requirement for correct inner-deadline reporting in trial summaries. Upgrading Fabric alone does not correct those summaries in older Harbor versions. Refer to [Harbor Execution Deadlines](../integrations/consumer/harbor.mdx#execution-deadlines).
+The NeMo Fabric Harbor extra continues to select `harbor>=0.24,<0.25`. Harbor's phase-timeout ownership fix is a separate requirement for correct inner-deadline reporting in trial summaries. Upgrading NeMo Fabric alone does not correct those summaries in older Harbor versions. Refer to [Harbor Execution Deadlines](../integrations/consumer/harbor.mdx#execution-deadlines).
 
 ## Release Highlights
 
 ### Resume Hermes and OpenClaw Conversations
 
-Retain native agent state across runtimes and explicitly reopen a selected Hermes or OpenClaw conversation with `SessionRef`. A replacement runtime receives a new Fabric runtime identifier while retaining the native conversation. Missing or incompatible sessions fail explicitly, and uncertain earlier work is not automatically replayed.
+Retain native agent state across runtimes and explicitly reopen a selected Hermes or OpenClaw conversation with `SessionRef`. A replacement runtime receives a new NeMo Fabric runtime identifier while retaining the native conversation. Missing or incompatible sessions fail explicitly, and uncertain earlier work is not automatically replayed.
 
-Fabric locks retained state against overlapping managed runtimes for the same agent storage scope. Failed cleanup can keep ownership held and block a replacement until cleanup succeeds. Refer to the [Hermes resume guide](../sdk/requests-and-runtimes.mdx#resume-a-hermes-conversation) and the [OpenClaw integration guide](../integrations/harness/openclaw/openclaw.mdx).
+NeMo Fabric locks retained state against overlapping managed runtimes for the same agent storage scope. Failed cleanup can keep ownership held and block a replacement until cleanup succeeds. Refer to the [Hermes resume guide](../sdk/requests-and-runtimes.mdx#resume-a-hermes-conversation) and the [OpenClaw integration guide](../integrations/harness/openclaw/openclaw.mdx).
 
 ### Retrieve Results and Inspect Runtime Status
 
@@ -71,9 +71,9 @@ Hermes and OpenClaw support bundled and external plugins. OpenClaw can also reta
 
 ### Extend Deep Agents and Report Unavailable MCP Servers
 
-Deep Agents accepts installed Python tools and middleware through configuration. Tool definitions name LangChain tools, and middleware entries name LangChain middleware classes. The adapter imports the configured code at runtime; Fabric does not fetch or install those extensions. Deep Agents also loads skills through its configured backend and supports OAuth client-credentials authentication for eligible remote MCP servers.
+Deep Agents accepts installed Python tools and middleware through configuration. Tool definitions name LangChain tools, and middleware entries name LangChain middleware classes. The adapter imports the configured code at runtime; NeMo Fabric does not fetch or install those extensions. Deep Agents also loads skills through its configured backend and supports OAuth client-credentials authentication for eligible remote MCP servers.
 
-Deep Agents, Claude, and Codex report unavailable MCP servers while allowing supported startup with the remaining tools. Deep Agents returns MCP tool and argument-validation failures as model-visible tool feedback where supported, so the model can correct a call. Invalid configuration still fails startup. Refer to the [Deep Agents guide](../integrations/harness/deepagents.mdx) and each adapter's MCP guidance.
+Deep Agents, Claude, and Codex report unavailable MCP servers while allowing supported startup with the remaining tools. The Deep Agents adapter returns MCP tool and argument-validation failures as model-visible tool feedback where supported, so the model can correct a call. Invalid configuration still fails startup. Refer to the [Deep Agents guide](../integrations/harness/deepagents.mdx) and each adapter's MCP guidance.
 
 ### Inspect Compatibility and Bound Returned Data
 
@@ -95,8 +95,8 @@ Set `runtime.response_limits` to bound buffered response size, artifact count, t
 
 - Conversation resume is adapter-specific and requires the original retained storage and explicit session reference. An OpenClaw native session reset can still race with final invocation dispatch; refer to [issue #638](https://github.com/NVIDIA/NeMo-Fabric/issues/638).
 - Saved results remain until their storage is removed. Runtime status records belong to the owning process and do not survive server restart. Terminal results from completed streams can be retrieved, but automatic stream replay is unsupported.
-- Native terminal attachment and interactive approvals remain subject to the qualification limits in the Hermes and OpenClaw guides. Caller-owned OpenClaw Gateways reject retained-session selection and plugin configuration when Fabric cannot establish the required ownership boundary.
+- Native terminal attachment and interactive approvals remain subject to the qualification limits in the Hermes and OpenClaw guides. Caller-owned OpenClaw Gateways reject retained-session selection and plugin configuration when NeMo Fabric cannot establish the required ownership boundary.
 - Metadata inspection does not verify image contents, installed harness software, credentials, endpoint access, or runtime readiness.
 - Prepared and attached service hosting remains a local SDK capability. The OpenShell command bridge returns buffered results and does not support native streaming; artifact transfer remains bounded.
 - Health observations are adapter-specific. Resource statistics exclude remote model and tool servers and GPU usage. Selected software evidence is not a complete dependency inventory or an attestation.
-- Kiro and AWS Strands do not provide Relay telemetry or native Fabric streaming. The adapter catalog provides metadata snapshots rather than executable provider registries or an automated conformance suite.
+- Kiro and AWS Strands do not provide Relay telemetry or native NeMo Fabric streaming. The adapter catalog provides metadata snapshots rather than executable provider registries or an automated conformance suite.
