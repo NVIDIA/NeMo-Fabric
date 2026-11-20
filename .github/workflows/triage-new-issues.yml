@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Triage New Issues
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  triage:
+    name: Add triage label
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions:
+      issues: write
+    steps:
+      - name: Label new issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: gh issue edit "$ISSUE_NUMBER" --repo "$GH_REPO" --add-label triage
