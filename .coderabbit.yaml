@@ -26,6 +26,22 @@ reviews:
       mode: warning
     issue_assessment:
       mode: warning
+    custom_checks:
+      - name: Fork source branch
+        mode: warning
+        instructions: |
+          Determine whether this pull request's source (head) repository differs
+          from its target (base) repository using GitHub pull request metadata.
+          Pass when the source repository is a fork of the target repository.
+          When both repositories are the same, warn in the PR review comment:
+          "Please open pull requests from a branch in your own fork of this
+          repository. Recreate this PR from your fork with the same changes;
+          do not create topic branches in the upstream repository."
+          Apply this policy regardless of author, source branch name, or target
+          branch, including main and release branches.
+          If repository metadata is unavailable or the fork relationship cannot
+          be established, report the check as inconclusive rather than guessing
+          from branch names, commit authors, or the PR description.
   auto_title_placeholder: "@coderabbitai"
   auto_title_instructions: |
     Generate the PR title using Conventional Commits format:
