@@ -18,14 +18,10 @@ SPDX-License-Identifier: Apache-2.0
 
 NeMo Fabric gives applications, evaluation systems, and rollout platforms a consistent interface for running agent harnesses and custom agents.
 
-- **Compose runs:** Configure models, tools, skills, MCP servers, subagents, and runtime settings consistently.
+- **Compose runs:** Configure models, tools, skills, plugins, MCP servers, subagents, and runtime settings consistently.
 - **Validate before execution:** Detect unsupported configurations before starting a runtime.
 - **Switch harnesses:** Reuse the consumer integration while adapters handle harness-specific behavior.
 - **Compare outcomes:** Collect normalized results, errors, artifacts, lifecycle events, and telemetry references.
-
-Invocation response and artifact budgets are configured under
-[`runtime.response_limits`](docs/sdk/python.mdx#response-and-artifact-limits),
-with the same policy for host and OpenShell execution.
 
 ## Supported Agent Harnesses
 
@@ -57,47 +53,46 @@ Native interfaces: harness-native API, dashboard, or TUI access enabled through 
 
 ## Ecosystem
 
-NeMo Fabric brings supported agent harnesses into the frameworks teams use to benchmark and improve agents:
+NeMo Fabric connects supported agent harnesses to benchmarking, training, and deployment workflows.
 
-- **Harbor ships FabricAgent upstream.** [Harbor 0.25.0](https://github.com/harbor-framework/harbor/releases/tag/v0.25.0) includes `FabricAgent`, bringing NeMo Fabric-backed harnesses directly into Harbor's benchmarking workflows. Its `fabric` extra requires NeMo Fabric 0.5.x; for NeMo Fabric 0.6, use the separate [Harbor bridge](docs/integrations/consumer/harbor.mdx) with Harbor 0.24. The bridge preserves available guest evidence on execution failure with explicit coverage gaps.
-- **NeMo Gym supports NeMo Fabric-backed agents.** [NVIDIA NeMo Gym](https://github.com/NVIDIA-NeMo/gym) integrates NeMo Fabric for evaluation and training rollouts.
+### Benchmarking and Training
 
-The ecosystem also includes shipped workflows in [NVIDIA NeMo Helix](https://github.com/NVIDIA-NeMo/nemo-helix), an active integration with [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw/), and emerging rollout integrations such as [NVIDIA Polar](https://github.com/NVIDIA-NeMo/ProRL-Agent-Server). [Explore the NeMo Fabric ecosystem](docs/about-nemo-fabric/ecosystem.mdx).
+- **[Harbor Framework](https://github.com/harbor-framework/harbor):** Compare harnesses, models, and agent configurations on the same benchmark tasks.
+- **[NVIDIA NeMo Gym](https://github.com/NVIDIA-NeMo/Gym):** Evaluate interchangeable harnesses in shared task environments and collect training rollouts.
+- **[NVIDIA NeMo Polar](https://github.com/NVIDIA-NeMo/ProRL-Agent-Server):** Switch harnesses while keeping the same task and reinforcement learning rollout workflow.
+
+### Deployment and Management
+
+- **[NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw):** Deploy and manage sandboxed agents through a common workflow across harnesses.
+- **[NVIDIA NeMo Helix](https://github.com/NVIDIA-NeMo/nemo-helix):** Run, evaluate, and improve agents through platform-managed workflows.
+
+Refer to the [ecosystem guide](docs/about-nemo-fabric/ecosystem.mdx) for integration status and details.
 
 ## Extensibility
 
-NeMo Fabric separates consumers from execution targets through a stable, versioned contract. This makes it extensible in two directions:
+Integrate with NeMo Fabric as a consumer or an agent harness:
 
-- **Integrate a consumer:** Applications, evaluation systems, and rollout platforms use the Python SDK and typed `FabricConfig` to run different harnesses without implementing each harness integration. Start with the [consumer integration overview](docs/integrations/consumer/overview.mdx) or [consumer integration skills](skills/README.md).
-- **Shared Python contracts:** The SDK and adapter contract consume the standard-library [shared contract package](sdk/python/nemo-fabric-evidence/README.md) for software evidence and validation.
-- **Add an execution target:** Adapters translate the NeMo Fabric contract into the native behavior of a harness, framework, custom agent, or remote service. Start with the [adapter contract](docs/adapter-contract/README.md) and [adapter examples](docs/adapter-contract/examples.md).
+- **Consumer integration:** Use the Python SDK to run supported agent harnesses from your application, evaluation system, or rollout platform. Start with the [consumer integration guide](docs/integrations/consumer/overview.mdx).
+- **Harness integration:** Build an adapter to make your harness, custom agent, or remote service available through NeMo Fabric’s common execution interface. Start with the [adapter contract](docs/adapter-contract/README.md) and [adapter examples](docs/adapter-contract/examples.md).
 
-Host-side metadata admission uses `inspect_adapter(config, descriptor)` from
-`nemo-fabric-runtime`. Diagnostic reports are the default; check `result.issues` before changing a deployment. Pass `diagnostics=False` for exception-based rejection. A compatible report provides capability flags in `result.capability_profile`; incompatible reports contain issues and no profile.
-See the [inspection guide](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host)
-for descriptor sources, compatibility limits, and API migration examples.
+[Integration skills](skills/README.md) provide coding-agent guidance for both paths.
 
 ## Documentation
 
-- [Quickstart](docs/getting-started/quickstart.mdx): Run a first agent through the Python SDK.
-- [Invocation system stats](docs/sdk/system-stats.mdx#invocation-system-stats): Select per-invocation metric groups, sampled peaks, and cgroup conditions; disable collection independently of sampling.
-- [Selected software evidence](docs/sdk/software-execution-evidence.mdx#selected-software-evidence): Inspect versions in optional `RunResult.execution` and control collection before initialization.
-- [Conversation telemetry](docs/sdk/configure-agents.mdx#custom-fields-and-adapter-settings): Use `RunRequest.relay_session_root` to group Deep Agents and mini-SWE-agent turns under one NeMo Relay session.
-- [Hermes cold resume](docs/sdk/requests-and-runtimes.mdx#resume-a-hermes-conversation): Retain native state and explicitly reopen a conversation with `SessionRef`.
-- [Installation](docs/getting-started/install.mdx): Install the runtime, adapters, harness dependencies, and telemetry components, and choose a deployment scenario.
-- [Adapter catalog](sdk/python/nemo-fabric-adapter-catalog/README.md): Inspect bundled adapter metadata on a host without installing harness SDKs.
-- [Host admission](docs/sdk/python.mdx#inspect-metadata-on-a-separate-host): Validate requested capabilities and descriptor-declared conditional requirements, then reject host/task descriptor drift before execution. Installed dependencies, native model catalogs, credentials, and endpoint health remain runtime checks.
-- [NeMo Fabric runtime server](sdk/python/nemo-fabric-runtime/src/nemo_fabric/runtime_server/README.md): Manage runtimes, rediscover their recorded status and safe handles, and check server responsiveness inside one sandbox through `fabric-agent-ctl` and one private local socket. Each SDK client keeps at most 128 runtime records, evicting stopped records first and rejecting new starts when active, failed, and pending runtimes fill the limit. Unconfirmed cleanup retains sandbox ownership and blocks replacement servers.
-- [Health checks](docs/sdk/health-checks.mdx): Use `Fabric.check()` for OpenShell runtime-server checks, agent runtime checks, and prepared or attached OpenClaw Gateway service checks. Refer to the [adapter support table](docs/sdk/health-checks.mdx#native-evidence-by-adapter) for supported levels and native evidence. OpenShell server and runtime requests map to `fabric-agent-ctl check`; service checks use the local SDK.
-- [Documentation overview](docs/about-nemo-fabric/overview.mdx): Understand the execution model and choose an interface.
-- [Adapter reference](adapters/README.md): Compare adapter configuration, runtime, and observability support.
-- [Contribution guide](CONTRIBUTING.md): Build, test, and contribute to the project.
+- **[Overview](docs/about-nemo-fabric/overview.mdx):** Understand the execution model and key concepts.
+- **[Quickstart](docs/getting-started/quickstart.mdx):** Run your first agent.
+- **[Consumer integrations](docs/integrations/consumer/overview.mdx):** Use NeMo Fabric from applications, evaluation systems, and rollout platforms.
+- **[Supported harnesses](adapters/README.md):** Configure and run agent harnesses already integrated with NeMo Fabric.
+- **[Harness integrations](docs/adapter-contract/README.md):** Make your harness or custom agent available through NeMo Fabric.
+- **[Contribution guide](CONTRIBUTING.md):** Build, test, and contribute to NeMo Fabric.
 
 ## Roadmap
 
 Planned areas of development include:
 
-- **Refine runtime resource measurements:** Improve CPU, memory, elapsed-time, and available GPU measurements through broader benchmark validation.
-- **Expose task progress and recoverable results:** Provide task state, step progress, plans, pending requests, sandbox task listings, and paginated events, with final results retrievable after invocation ends or the caller disconnects.
-- **Standardize model usage accounting:** Report input, cached, output, and reasoning tokens consistently, distinguish complete, partial, and unknown usage, and attribute delegated work to the correct invocation.
-- **Capture execution provenance:** Record NeMo Fabric and adapter versions, requested models, sanitized MCP configuration, and execution environment, with explicit sources and unknowns.
+- **Task visibility and control:** Monitor agent progress, guide ongoing work, and manage pauses, approvals, and continuation.
+- **Extensible agents and subagents:** Extend custom tools, skills, and middleware to support richer agent workflows and delegation.
+- **Execution observability:** Provide connected run histories, traces, diagnostics, and retained evidence across successful and failed executions.
+- **Usage, cost, and comparison:** Standardize model-usage accounting, add transparent cost estimates, and enable meaningful comparisons across task attempts.
+- **Broader agent coverage:** Expand supported agents and evaluation workflows, including NOOA Atom and Goose.
+- **Simpler integration and setup:** Improve onboarding, configuration validation, and adapter environment setup.
