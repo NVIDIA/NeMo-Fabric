@@ -1718,10 +1718,12 @@
             "models.max_tokens",
             "instructions.system",
             "runtime.max_turns",
+            "runtime.keep_state",
             "tools.definitions",
             "tools.enabled",
             "tools.blocked",
             "mcp",
+            "mcp.auth.oauth2",
             "mcp.auth.service_account",
             "skills"
           ],
@@ -2157,7 +2159,7 @@
         "name": "nemo-fabric-adapters-deepagents",
         "version": "0.8.0"
       },
-      "sha256": "086da805482c7a91497ac162ac5839be9ea3dceb3c7b740ecf3c0e93c03a665a",
+      "sha256": "111752cd0e4715c01d78ddd5c1b9b34e66a612a2edbdaec975e259df10a39bed",
       "source": "adapters/python/deepagents/deepagents.fabric-adapter.json"
     },
     "nvidia.fabric.mini-swe-agent": {

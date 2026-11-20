@@ -12,6 +12,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
+import stat
 import sys
 import uuid
 import warnings
@@ -482,6 +484,99 @@ async def test_mcp_service_account_authentication(api_server, tmp_path):
             }
         ], turn.to_mapping()
     assert secret not in json.dumps(results)
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key")
+async def test_mcp_oauth2_browser_sign_in(api_server, tmp_path):
+    """Sign in through a browser on the first invocation, then reuse the tokens."""
+    pytest.importorskip("deepagents")
+    from examples.code_review_agent import deepagents_config, with_skill_paths
+    from nemo_fabric import (
+        EnvironmentConfig,
+        Fabric,
+        McpAuthenticationConfig,
+        RuntimeConfig,
+    )
+    from nemo_fabric_adapters.common import mcp_oauth
+
+    # The browser: follow the authorization URL, whose server approves at once
+    # and redirects to the adapter's loopback callback.
+    browser = tmp_path / "browser.py"
+    browser.write_text(
+        "import sys, urllib.request\n"
+        "urllib.request.urlopen(sys.argv[1], timeout=10).read()\n"
+    )
+    os.environ["BROWSER"] = shlex.join([sys.executable, str(browser), "%s"])
+
+    def call_mcp_tool_once() -> None:
+        requests.post(
+            f"{api_server}/_scenario",
+            json={"tool_call": {"name": "get_authorization_header", "arguments": {}}},
+            timeout=5,
+        ).raise_for_status()
+
+    def last_tool_result() -> str:
+        last_request = requests.get(f"{api_server}/_requests", timeout=5).json()[-1]
+        (message,) = [m for m in last_request["messages"] if m["role"] == "tool"]
+        content = message["content"]
+        if isinstance(content, list):
+            return "".join(part["text"] for part in content)
+        return content
+
+    config = with_skill_paths(deepagents_config())
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=tmp_path,
+        artifacts=tmp_path / "artifacts",
+    )
+    config.runtime = RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        artifacts=tmp_path / "artifacts",
+        keep_state=True,
+    )
+    config.add_mcp_server(
+        "protected",
+        transport="streamable-http",
+        url=f"{api_server}/mcp-protected",
+        authentication=McpAuthenticationConfig(type="oauth2", scopes=["tools.read"]),
+    )
+
+    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+        call_mcp_tool_once()
+        first = await runtime.invoke(input="Return the MCP Authorization header.")
+        first_header = last_tool_result()
+
+    # A later runtime of the agent reuses the stored tokens without a browser.
+    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+        call_mcp_tool_once()
+        second = await runtime.invoke(input="Return it again.")
+        second_header = last_tool_result()
+
+    results = (first.to_mapping(), second.to_mapping())
+    assert first["status"] == second["status"] == "succeeded", results
+    assert "mcp" not in first["output"] and "mcp" not in second["output"], results
+    (authorization,) = requests.get(
+        f"{api_server}/_oauth2_authorizations", timeout=5
+    ).json()
+    assert authorization["scope"] == "tools.read"
+    assert authorization["code_challenge_method"] == "S256"
+    assert authorization["client_id"] == "registered-client"
+    assert first_header == second_header == "Bearer user-token-1"
+    token_files = sorted(
+        (tmp_path / "artifacts" / ".fabric" / "state").rglob("mcp-tokens/*/*")
+    )
+    assert [path.name for path in token_files] == [
+        "client.json",
+        "metadata.json",
+        "tokens.json",
+    ]
+    assert {path.parent.name for path in token_files} == {
+        mcp_oauth.storage_name("protected", f"{api_server}/mcp-protected")
+    }
+    if os.name == "posix":
+        assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in token_files)
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
