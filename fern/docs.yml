@@ -18,10 +18,10 @@ redirects:
 products:
 - display-name: NeMo Fabric
   slug: /
-  path: ./versions/v0.6.1.yml
+  path: ./versions/v0.7.0.yml
   versions:
-  - display-name: Latest (v0.6.1)
-    path: ./versions/v0.6.1.yml
+  - display-name: Latest (v0.7.0)
+    path: ./versions/v0.7.0.yml
     slug: latest
     availability: stable
   - display-name: dev
@@ -31,7 +31,7 @@ products:
   - display-name: v0.7.0
     path: ./versions/v0.7.0.yml
     slug: v0.7.0
-    availability: beta
+    availability: stable
   - display-name: v0.6.1
     path: ./versions/v0.6.1.yml
     slug: v0.6.1
