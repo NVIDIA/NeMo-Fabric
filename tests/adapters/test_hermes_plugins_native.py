@@ -277,23 +277,22 @@ def check_turn(
     match = re.search(r"process=([^\"}]+)", probe)
     seen = {
         "requests": len(turns),
-        "tool_offered": all(TOOL in json.dumps(turn["tools"]) for turn in turns),
+        # Per request, so a single request that still offers the tool or
+        # carries the hook mark fails the "off" case.
+        "tool_offered": [TOOL in json.dumps(turn["tools"]) for turn in turns],
         "tool_result": f"{DEPENDENCY_RESULT}:{nonce}" in probe,
         "path_dependency": PATH_DEPENDENCY_RESULT in probe,
         "process": match.group(1).strip() if match else None,
-        "hook_mark": all(HOOK_MARK in json.dumps(turn["messages"]) for turn in turns),
+        "hook_mark": [HOOK_MARK in json.dumps(turn["messages"]) for turn in turns],
         "bundled_warning": BUNDLED_WARNING in write,
     }
-    expected = dict.fromkeys(
-        (
-            "tool_offered",
-            "tool_result",
-            "path_dependency",
-            "hook_mark",
-            "bundled_warning",
-        ),
-        enabled,
-    )
+    expected = {
+        "tool_offered": [enabled] * len(turns),
+        "tool_result": enabled,
+        "path_dependency": enabled,
+        "hook_mark": [enabled] * len(turns),
+        "bundled_warning": enabled,
+    }
     assert {key: seen[key] for key in expected} == expected, (seen, probe, write)
     # The write itself always runs; only the hook's warning depends on the plugin.
     assert '"bytes_written"' in write, write

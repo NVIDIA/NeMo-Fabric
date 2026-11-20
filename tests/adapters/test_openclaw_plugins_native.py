@@ -215,18 +215,18 @@ def check_turn(
             f"{DEPENDENCY_RESULT}:{nonce}" in text for text in tools
         ),
         "bundled_result": any(BUNDLED_RESULT in text for text in tools),
-        "hook_mark_in_prompt": HOOK_MARK in prompts,
+        # Per request, so a single request with the mark fails the "off" case.
+        "hook_mark_in_prompt": [
+            HOOK_MARK in json.dumps(turn["messages"]) for turn in turns
+        ],
     }
-    expected = dict.fromkeys(
-        (
-            "external_tool_listed",
-            "bundled_tool_listed",
-            "external_result",
-            "bundled_result",
-            "hook_mark_in_prompt",
-        ),
-        enabled,
-    )
+    expected = {
+        "external_tool_listed": enabled,
+        "bundled_tool_listed": enabled,
+        "external_result": enabled,
+        "bundled_result": enabled,
+        "hook_mark_in_prompt": [enabled] * len(turns),
+    }
     assert searched, f"tool_search returned no tools: {tools}"
     assert {key: seen[key] for key in expected} == expected, (seen, tools)
     if not enabled:
