@@ -18,6 +18,7 @@ Use this skill for docs-only or example-heavy changes.
 
 ## Rules
 
+- Recommend separate, non-code PRs for changes under `docs/` or to the repository-root `README.md`, rather than mixing those changes with code, tests, or executable examples. Link related documentation and code PRs in their descriptions and coordinate their merge timing so the documentation stays aligned with public behavior.
 - Prefer the documented public API, not internal shortcuts
 - Keep package names, repo references, and build commands current
 - Update entry-point docs when examples or reading paths change

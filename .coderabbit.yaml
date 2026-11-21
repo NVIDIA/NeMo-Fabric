@@ -26,6 +26,25 @@ reviews:
       mode: warning
     issue_assessment:
       mode: warning
+    custom_checks:
+      - name: Separate documentation from code
+        mode: warning
+        instructions: |
+          Inspect the full changed-file list, including old and new paths for
+          renames. Determine whether the PR changes files under docs/ or the
+          repository-root README.md and also changes code outside those paths.
+          Code includes application or library source, tests, executable
+          examples, and build or runtime configuration. Documentation snippets,
+          prose, and documentation-only metadata or configuration do not count
+          as code for this check.
+          If both documentation and code are changed, post one concise review
+          comment recommending separate PRs: keep docs/ and root README.md
+          changes in a non-code documentation PR, put code changes in a separate
+          PR, and link the two PRs and coordinate their merge timing so the
+          documentation stays aligned with the implementation.
+          Pass without a split recommendation when only documentation or only
+          code is changed, or when documentation is combined only with other
+          non-code changes. This is advisory guidance, not a merge blocker.
   auto_title_placeholder: "@coderabbitai"
   auto_title_instructions: |
     Generate the PR title using Conventional Commits format:
