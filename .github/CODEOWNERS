@@ -7,13 +7,12 @@
 # Attribution files require dependency approver review due to change in version(s)
 ATTRIBUTIONS-*.md @nvidia/nemo-fabric-dep-approvers
 
-# Request documentation review while allowing Fabric code reviewers to approve.
-/docs/ @nvidia/nemo-fabric-doc-approvers @nvidia/nemo-fabric-reviewers
+# Require documentation approver review, except for generated API reference.
+/docs/ @nvidia/nemo-fabric-doc-approvers
 /docs/reference/api/ @nvidia/nemo-fabric-reviewers
 
-# Request product and code review for the main README and ecosystem page.
-/README.md @nvidia/nemo-fabric-product @nvidia/nemo-fabric-reviewers
-/docs/about-nemo-fabric/ecosystem.mdx @nvidia/nemo-fabric-product @nvidia/nemo-fabric-reviewers
+# Require product or documentation approver review for the main README.
+/README.md @nvidia/nemo-fabric-product @nvidia/nemo-fabric-doc-approvers
 
 # Repository access policy requires Fabric maintainer or admin review.
 /.github/CODEOWNERS @nvidia/nemo-fabric-maintainers @nvidia/nemo-fabric-admins
