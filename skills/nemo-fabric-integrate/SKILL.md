@@ -1,6 +1,6 @@
 ---
 name: nemo-fabric-integrate
-description: Use this skill when integrating NVIDIA NeMo Fabric into a consumer application, service, evaluation harness, or platform through the typed Python SDK — translating the consumer's own application, job, or deployment config into an in-memory FabricConfig, choosing the single-invocation convenience API or an explicitly started runtime, validating with plan and doctor, and consuming normalized results, artifacts, and telemetry.
+description: Integrate NVIDIA NeMo Fabric into a consumer Python application, service, evaluation harness, or platform through its public SDK. Use when application code needs to construct an in-memory FabricConfig, select existing adapters, invoke runtimes, and consume normalized results. Do not use for adapter implementation, changes to Fabric itself, native harness configuration, conceptual product overviews, or analysis of saved results.
 license: Apache-2.0
 metadata:
   author: NVIDIA Corporation and Affiliates
@@ -15,6 +15,8 @@ into an in-memory `FabricConfig`; NeMo Fabric owns adapter selection, the runtim
 lifecycle, and normalized results.
 
 ## Integration Boundary
+
+For third-party adapter implementation, use `nemo-fabric-build-adapter` when available. Changes to Fabric itself belong to the repository's maintainer workflow. Native harness configuration and conceptual product overviews do not require this skill.
 
 Use the public, in-memory contract. These rules keep a consumer integration
 supported and upgrade-safe:
@@ -79,72 +81,9 @@ runtime assumptions but never installs harnesses or credentials at run time.
 
 ## Build The Typed Config From Consumer Config
 
-Map the consumer's application, job, or deployment object into a `FabricConfig`
-with the public models and helper methods:
+Translate the consumer's configuration into a typed `FabricConfig`, then pass it directly to the public SDK. Keep model credentials in named environment variables and omit optional fields the application has not configured.
 
-```python
-from nemo_fabric import (
-    FabricConfig,
-    HarnessConfig,
-    InstructionConfig,
-    InstructionsConfig,
-    MetadataConfig,
-    ModelConfig,
-    RuntimeConfig,
-    ToolsConfig,
-)
-
-
-def to_tools_config(job) -> ToolsConfig | None:
-    enabled = job.enabled_tools
-    blocked = list(job.blocked_tools)
-    if enabled is None and not blocked:
-        return None
-    return ToolsConfig(
-        enabled=None if enabled is None else list(enabled),
-        blocked=blocked,
-    )
-
-
-def to_fabric_config(job) -> FabricConfig:
-    config = FabricConfig(
-        metadata=MetadataConfig(name=job.name),
-        harness=HarnessConfig(adapter_id=job.adapter_id, resolution="preinstalled"),
-        models={
-            "default": ModelConfig(
-                provider=job.provider,
-                model=job.model,
-                api_key_env=job.api_key_env,
-                base_url=job.base_url,
-            )
-        },
-        instructions=(
-            InstructionsConfig(
-                system=InstructionConfig(
-                    content=job.system_instruction,
-                    mode=job.system_instruction_mode,
-                ),
-            )
-            if job.system_instruction is not None
-            else None
-        ),
-        runtime=RuntimeConfig(
-            input_schema="chat",
-            output_schema="message",
-            timeout_seconds=job.timeout_seconds,
-            max_turns=job.max_turns,
-        ),
-        tools=to_tools_config(job),
-    )
-    config.add_skill_path(job.skill_dir)
-    config.add_mcp_server(
-        "github",
-        transport="streamable-http",
-        url="${GITHUB_MCP_URL}",
-        exposure="harness_native",
-    )
-    return config
-```
+Use the complete `to_fabric_config(job)` example in [Build And Shape](references/config-mapping.md#build-and-shape). It includes imports, optional system instructions, tool policy, skill paths, and MCP configuration.
 
 - Shape capabilities with `ToolsConfig`, `add_tool_definition`, `block_tools`, `add_skill_path`,
   `remove_skill_path`,
@@ -276,7 +215,7 @@ according to the application's retry policy.
 
 The lifecycle fragment below shows the available forms. It assumes the caller
 has already set `config = to_fabric_config(job)` and chosen `base`, as described
-in the configuration example above:
+in the [configuration reference](references/config-mapping.md#build-and-shape):
 
 ```python
 import asyncio
