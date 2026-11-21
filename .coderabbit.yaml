@@ -30,7 +30,10 @@ reviews:
       - name: Separate documentation from code
         mode: warning
         instructions: |
-          Inspect the full changed-file list, including old and new paths for
+          Stacked PRs are allowed. Evaluate only this PR's diff against its
+          declared base branch; do not combine changes from separate PRs in a
+          stack or warn merely because a documentation PR depends on a code PR.
+          Inspect the changed-file list, including old and new paths for
           renames. Determine whether the PR changes files under docs/ or the
           repository-root README.md and also changes code outside those paths.
           Code includes application or library source, tests, executable
