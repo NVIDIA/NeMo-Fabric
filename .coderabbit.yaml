@@ -34,15 +34,17 @@ reviews:
           declared base branch; do not combine changes from separate PRs in a
           stack or warn merely because a documentation PR depends on a code PR.
           Inspect the changed-file list, including old and new paths for
-          renames. Determine whether the PR changes files under docs/ or the
-          repository-root README.md and also changes code outside those paths.
+          renames. Exempt docs/reference/api/: generated API reference changes
+          may stay in the same PR as code and must not trigger a split comment.
+          Determine whether the PR changes docs/ files outside that exempt
+          subtree or the repository-root README.md and also changes code.
           Code includes application or library source, tests, executable
           examples, and build or runtime configuration. Documentation snippets,
           prose, and documentation-only metadata or configuration do not count
           as code for this check.
           If both documentation and code are changed, post one concise review
-          comment recommending separate PRs: keep docs/ and root README.md
-          changes in a non-code documentation PR, put code changes in a separate
+          comment recommending separate PRs: keep non-exempt docs/ and root
+          README.md changes in a non-code documentation PR, put code changes in a separate
           PR, and link the two PRs and coordinate their merge timing so the
           documentation stays aligned with the implementation.
           Pass without a split recommendation when only documentation or only

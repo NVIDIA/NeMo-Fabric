@@ -18,7 +18,7 @@ Use this skill for docs-only or example-heavy changes.
 
 ## Rules
 
-- Recommend separate, non-code PRs for changes under `docs/` or to the repository-root `README.md`, rather than mixing those changes with code, tests, or executable examples. Stacked PRs are welcome: keep documentation and code changes in separate PR diffs, and base a dependent PR on the preceding branch when needed. Link related documentation and code PRs in their descriptions and coordinate their merge timing so the documentation stays aligned with public behavior.
+- Recommend separate, non-code PRs for changes under `docs/` or to the repository-root `README.md`, rather than mixing those changes with code, tests, or executable examples. Generated API reference documentation under `docs/reference/api/` is exempt and may be updated in the same PR as code. Stacked PRs are welcome: keep documentation and code changes in separate PR diffs, and base a dependent PR on the preceding branch when needed. Link related documentation and code PRs in their descriptions and coordinate their merge timing so the documentation stays aligned with public behavior.
 - Prefer the documented public API, not internal shortcuts
 - Keep package names, repo references, and build commands current
 - Update entry-point docs when examples or reading paths change
