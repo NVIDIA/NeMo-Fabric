@@ -471,6 +471,54 @@ def validate_plan(plan: dict) -> None:
             if plan["bridge"] != "sdk" or not isinstance(model_settings, dict):
                 raise ValueError("model_settings requires an object and the SDK bridge")
             validate_settings(model_settings)
+        model_config = row.get("model_config")
+        if model_config is not None:
+            # A complete public ModelConfig carries adapter-declared top-level
+            # extensions, such as Pi's api/context_window/cost metadata, that
+            # model_settings cannot express. The bridge validates it against the
+            # descriptor; the plan keeps its existing model fields as the single
+            # identity, so duplicates must match exactly.
+            if (
+                plan["bridge"] != "sdk"
+                or not isinstance(model_config, dict)
+                or any(not isinstance(key, str) for key in model_config)
+            ):
+                raise ValueError("model_config requires an object and the SDK bridge")
+            try:
+                json.dumps(model_config, allow_nan=False)
+            except (TypeError, ValueError, OverflowError, RecursionError):
+                raise ValueError("model_config must contain JSON values") from None
+            validate_settings(
+                {
+                    key: value
+                    for key, value in model_config.items()
+                    if key != "api_key_env"
+                }
+            )
+            if (
+                not isinstance(model_config.get("provider"), str)
+                or not model_config["provider"]
+            ):
+                raise ValueError("model_config requires an explicit provider")
+            for field, planned in (
+                ("model", row["model"]),
+                ("base_url", row.get("base_url") or None),
+                ("api_key_env", row.get("api_key_env") or None),
+            ):
+                if model_config.get(field) != planned:
+                    raise ValueError(
+                        f"model_config.{field} must equal the row's {field}"
+                    )
+            for field, alias in (
+                ("provider", row.get("model_provider")),
+                ("settings", model_settings),
+            ):
+                if alias is not None and alias != model_config.get(
+                    field, {} if field == "settings" else None
+                ):
+                    raise ValueError(
+                        f"model_config.{field} conflicts with the row's model_{field}"
+                    )
         max_turns = row.get("max_turns")
         if max_turns is not None and (
             isinstance(max_turns, bool)
@@ -668,6 +716,8 @@ def harbor_command(
         options["fabric_model_provider"] = row["model_provider"]
     if row.get("model_settings") is not None:
         options["fabric_model_settings"] = row["model_settings"]
+    if row.get("model_config") is not None:
+        options["fabric_model_config"] = row["model_config"]
     if row.get("workflow_target_id") is not None:
         options["fabric_workflow_target_id"] = row["workflow_target_id"]
         options["fabric_workflow_settings"] = row.get("workflow_settings") or {}
@@ -827,6 +877,8 @@ def selection_payload(plan: dict, row: dict) -> dict:
     )
     if row.get("model_settings") is not None:
         provider_options["model_settings"] = row["model_settings"]
+    if row.get("model_config") is not None:
+        provider_options["model_config"] = row["model_config"]
     if row.get("workflow_target_id") is not None:
         provider_options["workflow_target_id"] = row["workflow_target_id"]
         provider_options["workflow_settings"] = row.get("workflow_settings") or {}
@@ -1214,6 +1266,7 @@ def run(plan: dict, environment: dict, output: Path, selected: list[str]) -> int
                     "descriptor_sha256": row["catalog"]["sha256"],
                     "model": row["model"],
                     "provider": row.get("model_provider")
+                    or (row.get("model_config") or {}).get("provider")
                     or (
                         row["model"].split("/", 1)[0]
                         if "/" in row["model"]
@@ -1223,6 +1276,7 @@ def run(plan: dict, environment: dict, output: Path, selected: list[str]) -> int
                     "api_key_env": row.get("api_key_env"),
                     "harness_settings": row["harness_settings"],
                     "model_settings": row.get("model_settings"),
+                    "model_config": row.get("model_config"),
                     "workflow_target_id": row.get("workflow_target_id"),
                     "workflow_settings": row.get("workflow_settings"),
                     "max_turns": row.get("max_turns"),

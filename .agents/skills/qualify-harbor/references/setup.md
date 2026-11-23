@@ -23,7 +23,7 @@ If the user requested only compatible BYOM adapters, skip native-only/protocol-i
 
 Some custom-model routes need metadata beyond a URL and key, such as protocol, token budgets or accepted input formats. First verify that the pinned adapter and public Harbor bridge can express the required fields, then ask only for missing shared metadata. If adapter docs, schema or bridge transport disagree, report a blocked contract mismatch rather than inventing plan fields, fabricated model aliases or zero prices. Pi gateway models are one case to check; a successful known-model profile does not prove arbitrary model registration.
 
-Use the same endpoint, full model ID and credential reference wherever the adapter supports them. Select its real transport/provider, such as an explicit `openai` override for a vendor-prefixed model ID, rather than rewriting the served ID. Prefer the SDK bridge when the requested profiles require its provider, model-settings or workflow options; use the requested bridge when compatible and explain any required change before executing.
+Use the same endpoint, full model ID and credential reference wherever the adapter supports them. Select its real transport/provider, such as an explicit `openai` override for a vendor-prefixed model ID, rather than rewriting the served ID. Prefer the SDK bridge when the requested profiles require its provider, model-settings, model-config or workflow options; use the requested bridge when compatible and explain any required change before executing.
 
 ### Individual Provider Credentials
 
