@@ -685,7 +685,7 @@ else:
                     fabric_python=self._runner_python,
                     spec_path=remote_spec_path,
                     result_path=remote_result_path,
-                    path_prefix=self._runner_path_prefix,
+                    path_fallback=self._runner_path_fallback,
                 ),
                 cwd=self.fabric_cwd,
                 env=self._runner_env,
@@ -873,7 +873,7 @@ else:
             return str(PurePosixPath(self.fabric_venv_path) / "bin" / "python")
 
         @property
-        def _runner_path_prefix(self) -> str | None:
+        def _runner_path_fallback(self) -> str | None:
             runner = PurePosixPath(self._runner_python)
             if not runner.is_absolute():
                 return None
@@ -1224,9 +1224,17 @@ def fabric_runner_command(
     fabric_python: str,
     spec_path: str,
     result_path: str,
-    path_prefix: str | None = None,
+    path_fallback: str | None = None,
 ) -> str:
-    """Build the sandbox-local runner command."""
+    """Build the sandbox-local runner command.
+
+    ``path_fallback`` is appended to the task's ``PATH``, never prepended. The
+    runner starts the adapter host and harness, whose tool subprocesses inherit
+    this ``PATH``; a prefix would make the agent's bare ``pip`` or ``python``
+    resolve to the runner environment instead of the task's own interpreter.
+    Appending still lets Fabric find executables, such as ``nemo-relay``, that
+    only the runner environment provides.
+    """
 
     parts = [
         shlex.quote(fabric_python),
@@ -1238,8 +1246,9 @@ def fabric_runner_command(
         shlex.quote(result_path),
     ]
     command = " ".join(parts)
-    if path_prefix is not None:
-        return f"PATH={shlex.quote(path_prefix)}:$PATH {command}"
+    if path_fallback is not None:
+        # ${PATH:+...} avoids an empty entry (the working directory) when PATH is unset.
+        return f'PATH="${{PATH:+$PATH:}}"{shlex.quote(path_fallback)} {command}'
     return command
 
 

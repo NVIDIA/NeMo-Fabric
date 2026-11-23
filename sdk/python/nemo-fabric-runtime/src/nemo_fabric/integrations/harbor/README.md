@@ -113,6 +113,23 @@ Set `fabric_config_bundle` to upload a host directory to `fabric_config_target` 
 
 When the bundle contains an `adapters` directory, the bridge prepends `adapters` to discovery. An `adapters` child that is a file is invalid. Explicit `fabric_discovery_paths` are preserved in order and resolved inside the task against the configuration base directory, including when the bundle has no adapters. Relative adapter executables retain their descriptor-directory resolution. Missing explicit discovery paths and malformed descriptors still fail during task-side planning.
 
+## Task Runner Interpreter
+
+`fabric_python` selects the task-side interpreter that runs the NeMo Fabric
+runner, for example a separate environment that contains a harness and its
+adapter. With `fabric_package`, the runner uses the interpreter from the
+installed `fabric_venv_path` instead. Unless `ADAPTER_PYTHON` is already set,
+the runner interpreter also starts the adapter host.
+
+When the runner interpreter is an absolute path, its directory is appended to the
+task's `PATH` for the runner process tree. It is not prepended. The harness's
+tool subprocesses inherit this `PATH`, so an agent's bare `pip` or `python`
+keeps resolving to the task environment that the task verifier also uses.
+Executables that exist only in the runner environment, such as a `nemo-relay`
+installed there, remain discoverable. A harness can still run code with its own
+interpreter: for example, Hermes `execute_code` runs Python with the Hermes
+interpreter, so `sys.executable -m pip` installs into the Hermes environment.
+
 ## Host Admission And Task Execution
 
 The `nemo-fabric[harbor]` extra installs a matching
