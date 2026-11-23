@@ -1205,6 +1205,12 @@ def pi_row_fixture(qualification_plan):
             "credentials belong",
         ),
         (
+            lambda plan, row: row["model_config"].update(
+                settings={"headers": {"Authorization": "Bearer credential"}}
+            ),
+            "credentials belong",
+        ),
+        (
             lambda plan, row: row["model_config"].update(max_tokens=float("nan")),
             "JSON values",
         ),
@@ -1223,6 +1229,69 @@ def test_model_config_accepts_matching_duplicates(qualification_plan, pi_row):
     pi_row["model_provider"] = "openai"
     pi_row["model_settings"] = {}
     qualify.validate_plan(qualification_plan)
+
+
+@pytest.mark.usefixtures("clean_qualification_checkout")
+def test_model_config_keeps_token_limits_and_its_credential_reference(
+    qualification_plan, pi_row
+):
+    # max_tokens is not a credential; the root api_key_env reference is allowed.
+    pi_row["model_config"]["settings"] = {"max_tokens": 1}
+    pi_row["model_settings"] = {"max_tokens": 1}
+    qualify.validate_plan(qualification_plan)
+    pi_row["model_config"]["settings"] = {"api_key_env": "OTHER_API_KEY"}
+    pi_row["model_settings"] = None
+    with pytest.raises(ValueError, match="credentials belong"):
+        qualify.validate_plan(qualification_plan)
+
+
+@pytest.mark.usefixtures("clean_qualification_checkout")
+def test_empty_endpoint_aliases_do_not_conflict_with_model_config(
+    qualification_plan, pi_row
+):
+    pi_row.update(base_url="", api_key_env="")
+    for field in ("base_url", "api_key_env"):
+        pi_row["model_config"].pop(field)
+    qualify.validate_plan(qualification_plan)
+    model = qualify.selection_payload(qualification_plan, pi_row)["config"]["models"][
+        "default"
+    ]
+    assert model.get("base_url") is None
+    assert model.get("api_key_env") is None
+    assert model["api"] == "openai-completions"
+
+
+@pytest.mark.parametrize(
+    ("endpoint_kind", "action"),
+    [
+        ("chat-completions", "blocked"),
+        ("anthropic-messages", "blocked"),
+        ("openai-and-anthropic", "run"),
+    ],
+)
+def test_codex_requires_a_responses_capable_endpoint(endpoint_kind, action):
+    plan = qualify.make_plan(
+        argparse.Namespace(
+            task=qualify.ROOT / "examples/harbor/calculator/task",
+            mode="source",
+            version=qualify.load(qualify.ROOT / qualify.CATALOG)["catalog_version"],
+            harbor_version="0.24.0",
+            bridge="sdk",
+            model="nvidia/local-model",
+            base_url="https://model.example.com/v1",
+            api_key_env="MODEL_API_KEY",
+            endpoint_kind=endpoint_kind,
+            trusted_http_host=[],
+            estimated_cost_usd=0,
+            cost_basis="local",
+            timeout=60,
+        )
+    )
+    codex = next(
+        row for row in plan["adapters"] if row["adapter_id"] == "nvidia.fabric.codex"
+    )
+    assert codex["action"] == action
+    assert ("Responses-compatible" in codex["reason"]) == (action == "blocked")
 
 
 @pytest.mark.usefixtures("clean_qualification_checkout")

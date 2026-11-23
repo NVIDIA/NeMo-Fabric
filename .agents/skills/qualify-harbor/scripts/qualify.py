@@ -288,6 +288,36 @@ def unchanged_install(expected: dict, observed: dict) -> bool:
     return True
 
 
+# Harbor's is_sensitive_env_key pattern, which the SDK bridge applies to every
+# fabric_model_config key. Kept local because the gate also runs before Harbor
+# is installed (for example under prepare.py's bootstrap interpreter).
+SENSITIVE_MODEL_KEY = re.compile(
+    r"(KEY|SECRET|TOKEN(?!S)|PASSWORD|CREDENTIAL|AUTH)", re.IGNORECASE
+)
+
+
+def reject_model_credentials(value: object, *, root: bool = True) -> None:
+    """Reject inline credentials anywhere in model_config, as the bridge does.
+
+    Only the root api_key_env reference is allowed; nested keys such as
+    settings.headers.Authorization are rejected by validate_plan, which
+    prepare.py and run call before copying the plan into environment.json, the
+    run's plan.json, or report.json.
+    """
+    if isinstance(value, dict):
+        for name, child in value.items():
+            if not (root and name == "api_key_env") and SENSITIVE_MODEL_KEY.search(
+                str(name)
+            ):
+                raise ValueError(
+                    "credentials belong in an environment variable, not model_config"
+                )
+            reject_model_credentials(child, root=False)
+    elif isinstance(value, list):
+        for child in value:
+            reject_model_credentials(child, root=False)
+
+
 def validate_plan(plan: dict) -> None:
     if plan["format_version"] != 1 or plan["mode"] not in {"source", "registry"}:
         raise ValueError("unsupported qualification plan")
@@ -488,13 +518,7 @@ def validate_plan(plan: dict) -> None:
                 json.dumps(model_config, allow_nan=False)
             except (TypeError, ValueError, OverflowError, RecursionError):
                 raise ValueError("model_config must contain JSON values") from None
-            validate_settings(
-                {
-                    key: value
-                    for key, value in model_config.items()
-                    if key != "api_key_env"
-                }
-            )
+            reject_model_credentials(model_config)
             if (
                 not isinstance(model_config.get("provider"), str)
                 or not model_config["provider"]
@@ -583,6 +607,11 @@ def make_plan(args: argparse.Namespace) -> dict:
             and args.endpoint_kind == "chat-completions"
         ):
             reason = "Claude requires an Anthropic Messages-compatible endpoint; this plan selects Chat Completions."
+        if (
+            adapter_id == "nvidia.fabric.codex"
+            and args.endpoint_kind != "openai-and-anthropic"
+        ):
+            reason = f"Codex requires an OpenAI Responses-compatible endpoint; this plan selects {args.endpoint_kind}."
         accepts = record["descriptor"].get("config", {}).get("accepts", [])
         settings = {}
         if adapter_id == "nvidia.fabric.codex":
@@ -887,8 +916,10 @@ def selection_payload(plan: dict, row: dict) -> dict:
         workspace="/app",
         harness_settings=row["harness_settings"],
         model_name=row["model"],
-        model_base_url=row.get("base_url"),
-        model_api_key_env=row.get("api_key_env"),
+        # validate_plan treats empty values as absent; forward them the same way so
+        # a complete model_config without these fields does not see a conflict.
+        model_base_url=row.get("base_url") or None,
+        model_api_key_env=row.get("api_key_env") or None,
         timeout_seconds=plan["runtime_timeout_seconds"],
         max_turns=row.get("max_turns"),
         enabled_tools=row.get("enabled_tools"),
