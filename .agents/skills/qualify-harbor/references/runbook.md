@@ -172,32 +172,36 @@ projects to `fabric_model_config` and reaches the installed-image preflight and
 uploaded admission check unchanged. Keep the row's `model`, `base_url`, and
 `api_key_env` equal to the object's fields; any `model_provider` or
 `model_settings` on the row must also match. The gate rejects conflicts,
-inline credentials, and a missing provider. For example:
+inline credentials, and a missing provider. For example, with the unmetered
+self-hosted endpoint from the plan example above:
 
 ```json
 {
   "adapter_id": "nvidia.fabric.pi",
-  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
-  "base_url": "https://integrate.api.nvidia.com/v1",
-  "api_key_env": "NVIDIA_API_KEY",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "base_url": "http://model-gateway:8000/v1",
+  "api_key_env": "MODEL_API_KEY",
   "model_config": {
     "provider": "openai",
-    "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
-    "base_url": "https://integrate.api.nvidia.com/v1",
-    "api_key_env": "NVIDIA_API_KEY",
+    "model": "nvidia/nemotron-3-ultra-550b-a55b",
+    "base_url": "http://model-gateway:8000/v1",
+    "api_key_env": "MODEL_API_KEY",
     "api": "openai-completions",
-    "context_window": 131072,
-    "max_tokens": 8192,
+    "context_window": 262144,
+    "max_tokens": 16384,
     "input": ["text"],
     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}
   }
 }
 ```
 
-Replace the limits and rates with the served model's documented values; zero
-rates explicitly mark the model as unpriced. Pi still checks its installed
-catalog and metadata completeness at startup. The bridge must contain the
-complete model-config transport from #591.
+Replace the limits with the served model's values, such as its advertised
+maximum context length. Zero cost rates are valid only for an unmetered endpoint
+like this one, where they explicitly mark the model as unpriced. For a metered
+provider, set the provider's published per-million-token rates: zero rates there
+would report a fabricated $0 harness cost instead of the real cost. Pi still
+checks its installed catalog and metadata completeness at startup. The bridge
+must contain the complete model-config transport from #591.
 
 For a registered workflow, generate the plan with `--bridge sdk` and configure
 that adapter's row with `workflow_target_id` and optional `workflow_settings`.
