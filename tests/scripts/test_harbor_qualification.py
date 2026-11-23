@@ -1245,7 +1245,8 @@ def test_model_config_keeps_token_limits_and_its_credential_reference(
         qualify.validate_plan(qualification_plan)
 
 
-@pytest.mark.usefixtures("clean_qualification_checkout")
+# selection_payload builds a complete model through the Harbor bridge.
+@pytest.mark.usefixtures("requires_harbor", "clean_qualification_checkout")
 def test_empty_endpoint_aliases_do_not_conflict_with_model_config(
     qualification_plan, pi_row
 ):
@@ -1294,7 +1295,8 @@ def test_codex_requires_a_responses_capable_endpoint(endpoint_kind, action):
     assert ("Responses-compatible" in codex["reason"]) == (action == "blocked")
 
 
-@pytest.mark.usefixtures("clean_qualification_checkout")
+# selection_payload builds a complete model through the Harbor bridge.
+@pytest.mark.usefixtures("requires_harbor", "clean_qualification_checkout")
 def test_pi_model_config_reaches_command_preflight_admission_and_report(
     qualification_plan, pi_row, tmp_path
 ):
