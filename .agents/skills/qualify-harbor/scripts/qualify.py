@@ -288,6 +288,36 @@ def unchanged_install(expected: dict, observed: dict) -> bool:
     return True
 
 
+# Harbor's is_sensitive_env_key pattern, which the SDK bridge applies to every
+# fabric_model_config key. Kept local because the gate also runs before Harbor
+# is installed (for example under prepare.py's bootstrap interpreter).
+SENSITIVE_MODEL_KEY = re.compile(
+    r"(KEY|SECRET|TOKEN(?!S)|PASSWORD|CREDENTIAL|AUTH)", re.IGNORECASE
+)
+
+
+def reject_model_credentials(value: object, *, root: bool = True) -> None:
+    """Reject inline credentials anywhere in model_config, as the bridge does.
+
+    Only the root api_key_env reference is allowed; nested keys such as
+    settings.headers.Authorization are rejected by validate_plan, which
+    prepare.py and run call before copying the plan into environment.json, the
+    run's plan.json, or report.json.
+    """
+    if isinstance(value, dict):
+        for name, child in value.items():
+            if not (root and name == "api_key_env") and SENSITIVE_MODEL_KEY.search(
+                str(name)
+            ):
+                raise ValueError(
+                    "credentials belong in an environment variable, not model_config"
+                )
+            reject_model_credentials(child, root=False)
+    elif isinstance(value, list):
+        for child in value:
+            reject_model_credentials(child, root=False)
+
+
 def validate_plan(plan: dict) -> None:
     if plan["format_version"] != 1 or plan["mode"] not in {"source", "registry"}:
         raise ValueError("unsupported qualification plan")
@@ -471,6 +501,48 @@ def validate_plan(plan: dict) -> None:
             if plan["bridge"] != "sdk" or not isinstance(model_settings, dict):
                 raise ValueError("model_settings requires an object and the SDK bridge")
             validate_settings(model_settings)
+        model_config = row.get("model_config")
+        if model_config is not None:
+            # A complete public ModelConfig carries adapter-declared top-level
+            # extensions, such as Pi's api/context_window/cost metadata, that
+            # model_settings cannot express. The bridge validates it against the
+            # descriptor; the plan keeps its existing model fields as the single
+            # identity, so duplicates must match exactly.
+            if (
+                plan["bridge"] != "sdk"
+                or not isinstance(model_config, dict)
+                or any(not isinstance(key, str) for key in model_config)
+            ):
+                raise ValueError("model_config requires an object and the SDK bridge")
+            try:
+                json.dumps(model_config, allow_nan=False)
+            except (TypeError, ValueError, OverflowError, RecursionError):
+                raise ValueError("model_config must contain JSON values") from None
+            reject_model_credentials(model_config)
+            if (
+                not isinstance(model_config.get("provider"), str)
+                or not model_config["provider"]
+            ):
+                raise ValueError("model_config requires an explicit provider")
+            for field, planned in (
+                ("model", row["model"]),
+                ("base_url", row.get("base_url") or None),
+                ("api_key_env", row.get("api_key_env") or None),
+            ):
+                if model_config.get(field) != planned:
+                    raise ValueError(
+                        f"model_config.{field} must equal the row's {field}"
+                    )
+            for field, alias in (
+                ("provider", row.get("model_provider")),
+                ("settings", model_settings),
+            ):
+                if alias is not None and alias != model_config.get(
+                    field, {} if field == "settings" else None
+                ):
+                    raise ValueError(
+                        f"model_config.{field} conflicts with the row's model_{field}"
+                    )
         max_turns = row.get("max_turns")
         if max_turns is not None and (
             isinstance(max_turns, bool)
@@ -535,6 +607,11 @@ def make_plan(args: argparse.Namespace) -> dict:
             and args.endpoint_kind == "chat-completions"
         ):
             reason = "Claude requires an Anthropic Messages-compatible endpoint; this plan selects Chat Completions."
+        if (
+            adapter_id == "nvidia.fabric.codex"
+            and args.endpoint_kind != "openai-and-anthropic"
+        ):
+            reason = f"Codex requires an OpenAI Responses-compatible endpoint; this plan selects {args.endpoint_kind}."
         accepts = record["descriptor"].get("config", {}).get("accepts", [])
         settings = {}
         if adapter_id == "nvidia.fabric.codex":
@@ -668,6 +745,8 @@ def harbor_command(
         options["fabric_model_provider"] = row["model_provider"]
     if row.get("model_settings") is not None:
         options["fabric_model_settings"] = row["model_settings"]
+    if row.get("model_config") is not None:
+        options["fabric_model_config"] = row["model_config"]
     if row.get("workflow_target_id") is not None:
         options["fabric_workflow_target_id"] = row["workflow_target_id"]
         options["fabric_workflow_settings"] = row.get("workflow_settings") or {}
@@ -827,6 +906,8 @@ def selection_payload(plan: dict, row: dict) -> dict:
     )
     if row.get("model_settings") is not None:
         provider_options["model_settings"] = row["model_settings"]
+    if row.get("model_config") is not None:
+        provider_options["model_config"] = row["model_config"]
     if row.get("workflow_target_id") is not None:
         provider_options["workflow_target_id"] = row["workflow_target_id"]
         provider_options["workflow_settings"] = row.get("workflow_settings") or {}
@@ -835,8 +916,10 @@ def selection_payload(plan: dict, row: dict) -> dict:
         workspace="/app",
         harness_settings=row["harness_settings"],
         model_name=row["model"],
-        model_base_url=row.get("base_url"),
-        model_api_key_env=row.get("api_key_env"),
+        # validate_plan treats empty values as absent; forward them the same way so
+        # a complete model_config without these fields does not see a conflict.
+        model_base_url=row.get("base_url") or None,
+        model_api_key_env=row.get("api_key_env") or None,
         timeout_seconds=plan["runtime_timeout_seconds"],
         max_turns=row.get("max_turns"),
         enabled_tools=row.get("enabled_tools"),
@@ -1214,6 +1297,7 @@ def run(plan: dict, environment: dict, output: Path, selected: list[str]) -> int
                     "descriptor_sha256": row["catalog"]["sha256"],
                     "model": row["model"],
                     "provider": row.get("model_provider")
+                    or (row.get("model_config") or {}).get("provider")
                     or (
                         row["model"].split("/", 1)[0]
                         if "/" in row["model"]
@@ -1223,6 +1307,7 @@ def run(plan: dict, environment: dict, output: Path, selected: list[str]) -> int
                     "api_key_env": row.get("api_key_env"),
                     "harness_settings": row["harness_settings"],
                     "model_settings": row.get("model_settings"),
+                    "model_config": row.get("model_config"),
                     "workflow_target_id": row.get("workflow_target_id"),
                     "workflow_settings": row.get("workflow_settings"),
                     "max_turns": row.get("max_turns"),

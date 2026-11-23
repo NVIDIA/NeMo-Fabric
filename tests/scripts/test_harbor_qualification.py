@@ -1142,6 +1142,202 @@ def test_model_settings_and_bound_match_command_selection_and_report(
     assert selected["max_turns"] == 100
 
 
+def pi_model_config(row: dict) -> dict:
+    return {
+        "provider": "openai",
+        "model": row["model"],
+        "base_url": row["base_url"],
+        "api_key_env": row["api_key_env"],
+        "api": "openai-completions",
+        "context_window": 32768,
+        "max_tokens": 2048,
+        "input": ["text"],
+        "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+    }
+
+
+@pytest.fixture(name="pi_row")
+def pi_row_fixture(qualification_plan):
+    qualification_plan["bridge"] = "sdk"
+    row = next(
+        r
+        for r in qualification_plan["adapters"]
+        if r["adapter_id"] == "nvidia.fabric.pi"
+    )
+    row["model_config"] = pi_model_config(row)
+    return row
+
+
+@pytest.mark.usefixtures("clean_qualification_checkout")
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda plan, row: plan.update(bridge="native"), "model_config requires"),
+        (
+            lambda plan, row: row.update(model_config=["openai"]),
+            "model_config requires",
+        ),
+        (lambda plan, row: row["model_config"].pop("provider"), "explicit provider"),
+        (
+            lambda plan, row: row["model_config"].update(model="other/model"),
+            r"model_config\.model must equal",
+        ),
+        (
+            lambda plan, row: row["model_config"].update(
+                base_url="https://other.example.com/v1"
+            ),
+            r"model_config\.base_url must equal",
+        ),
+        (
+            lambda plan, row: row["model_config"].pop("api_key_env"),
+            r"model_config\.api_key_env must equal",
+        ),
+        (
+            lambda plan, row: row.update(model_provider="nvidia"),
+            r"model_config\.provider conflicts",
+        ),
+        (
+            lambda plan, row: row.update(model_settings={"cost_tracking": "disabled"}),
+            r"model_config\.settings conflicts",
+        ),
+        (
+            lambda plan, row: row["model_config"].update(api_key="credential"),
+            "credentials belong",
+        ),
+        (
+            lambda plan, row: row["model_config"].update(
+                settings={"headers": {"Authorization": "Bearer credential"}}
+            ),
+            "credentials belong",
+        ),
+        (
+            lambda plan, row: row["model_config"].update(max_tokens=float("nan")),
+            "JSON values",
+        ),
+    ],
+)
+def test_model_config_requires_sdk_matching_identity_and_no_credentials(
+    qualification_plan, pi_row, mutate, message
+):
+    mutate(qualification_plan, pi_row)
+    with pytest.raises(ValueError, match=message):
+        qualify.validate_plan(qualification_plan)
+
+
+@pytest.mark.usefixtures("clean_qualification_checkout")
+def test_model_config_accepts_matching_duplicates(qualification_plan, pi_row):
+    pi_row["model_provider"] = "openai"
+    pi_row["model_settings"] = {}
+    qualify.validate_plan(qualification_plan)
+
+
+@pytest.mark.usefixtures("clean_qualification_checkout")
+def test_model_config_keeps_token_limits_and_its_credential_reference(
+    qualification_plan, pi_row
+):
+    # max_tokens is not a credential; the root api_key_env reference is allowed.
+    pi_row["model_config"]["settings"] = {"max_tokens": 1}
+    pi_row["model_settings"] = {"max_tokens": 1}
+    qualify.validate_plan(qualification_plan)
+    pi_row["model_config"]["settings"] = {"api_key_env": "OTHER_API_KEY"}
+    pi_row["model_settings"] = None
+    with pytest.raises(ValueError, match="credentials belong"):
+        qualify.validate_plan(qualification_plan)
+
+
+# selection_payload builds a complete model through the Harbor bridge.
+@pytest.mark.usefixtures("requires_harbor", "clean_qualification_checkout")
+def test_empty_endpoint_aliases_do_not_conflict_with_model_config(
+    qualification_plan, pi_row
+):
+    pi_row.update(base_url="", api_key_env="")
+    for field in ("base_url", "api_key_env"):
+        pi_row["model_config"].pop(field)
+    qualify.validate_plan(qualification_plan)
+    model = qualify.selection_payload(qualification_plan, pi_row)["config"]["models"][
+        "default"
+    ]
+    assert model.get("base_url") is None
+    assert model.get("api_key_env") is None
+    assert model["api"] == "openai-completions"
+
+
+@pytest.mark.parametrize(
+    ("endpoint_kind", "action"),
+    [
+        ("chat-completions", "blocked"),
+        ("anthropic-messages", "blocked"),
+        ("openai-and-anthropic", "run"),
+    ],
+)
+def test_codex_requires_a_responses_capable_endpoint(endpoint_kind, action):
+    plan = qualify.make_plan(
+        argparse.Namespace(
+            task=qualify.ROOT / "examples/harbor/calculator/task",
+            mode="source",
+            version=qualify.load(qualify.ROOT / qualify.CATALOG)["catalog_version"],
+            harbor_version="0.24.0",
+            bridge="sdk",
+            model="nvidia/local-model",
+            base_url="https://model.example.com/v1",
+            api_key_env="MODEL_API_KEY",
+            endpoint_kind=endpoint_kind,
+            trusted_http_host=[],
+            estimated_cost_usd=0,
+            cost_basis="local",
+            timeout=60,
+        )
+    )
+    codex = next(
+        row for row in plan["adapters"] if row["adapter_id"] == "nvidia.fabric.codex"
+    )
+    assert codex["action"] == action
+    assert ("Responses-compatible" in codex["reason"]) == (action == "blocked")
+
+
+# selection_payload builds a complete model through the Harbor bridge.
+@pytest.mark.usefixtures("requires_harbor", "clean_qualification_checkout")
+def test_pi_model_config_reaches_command_preflight_admission_and_report(
+    qualification_plan, pi_row, tmp_path
+):
+    qualify.validate_plan(qualification_plan)
+    command = qualify.harbor_command(
+        qualification_plan, pi_row, "python", tmp_path, tmp_path, "trial"
+    )
+    option = next(item for item in command if item.startswith("fabric_model_config="))
+    assert json.loads(option.split("=", 1)[1]) == pi_row["model_config"]
+    assert command[command.index("--model") + 1] == pi_row["model_config"]["model"]
+
+    payload = qualify.selection_payload(qualification_plan, pi_row)
+    model = payload["config"]["models"]["default"]
+    for field in ("provider", "api", "context_window", "max_tokens", "input", "cost"):
+        assert model[field] == pi_row["model_config"][field]
+    # The uploaded config passes the same descriptor admission the gate rechecks.
+    descriptor = pi_row["catalog"]["descriptor"]
+    assert qualify.admission_fingerprint(payload, descriptor)
+    invalid = copy.deepcopy(payload)
+    invalid["config"]["models"]["default"]["api"] = "unsupported-protocol"
+    with pytest.raises(Exception, match="api"):
+        qualify.admission_fingerprint(invalid, descriptor)
+
+    output = tmp_path / "qualification"
+    assert (
+        qualify.run(
+            qualification_plan,
+            {"plan": qualification_plan},
+            output,
+            [pi_row["adapter_id"]],
+        )
+        == 1
+    )
+    report = qualify.load(output / "report.json")
+    selected = next(
+        item for item in report["adapters"] if item["adapter_id"] == "nvidia.fabric.pi"
+    )["selected"]
+    assert selected["model_config"] == pi_row["model_config"]
+    assert selected["provider"] == "openai"
+
+
 @pytest.mark.usefixtures("clean_qualification_checkout")
 def test_provider_override_preserves_model_in_command_selection_and_report(
     qualification_plan, tmp_path, monkeypatch

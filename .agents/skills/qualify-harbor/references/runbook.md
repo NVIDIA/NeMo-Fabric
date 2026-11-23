@@ -53,7 +53,7 @@ A filesystem checkpoint path is not an inference API. Start with an existing ope
 - HTTPS is the default for remote endpoints. For an explicitly trusted private HTTP endpoint, name the exact host with `--trusted-http-host`; it is also forwarded to harnesses that advertise `insecure_http_model_hosts`. This transmits prompts and any credential without TLS to that host.
 - Export the selected credential variable through your usual secret source. Never put the value in the plan, command arguments, Docker build arguments, settings, URLs, or committed files. For a confirmed unauthenticated endpoint, a nonsecret `MODEL_API_KEY=unused` satisfies clients that require a key. It is not an authentication test.
 
-Claude needs Anthropic Messages, Codex normally uses Responses, and most other local coding harnesses use Chat Completions. `--endpoint-kind openai-and-anthropic` permits the same endpoint to be attempted through both families. Kiro requires its native provider, authentication and advertised model. Droid uses provider `factory`; its supported native BYOK profile can route to a custom endpoint without setting normalized model `base_url`.
+Claude needs Anthropic Messages, Codex normally uses Responses, and most other local coding harnesses use Chat Completions. `--endpoint-kind openai-and-anthropic` permits the same endpoint to be attempted through both families. Plans generated with `chat-completions` keep Claude prerequisite-blocked, and plans without `openai-and-anthropic` keep Codex prerequisite-blocked; mark either row runnable only after its protocol route is verified. Kiro requires its native provider, authentication and advertised model. Droid uses provider `factory`; its supported native BYOK profile can route to a custom endpoint without setting normalized model `base_url`.
 
 For Kiro, keep the row prerequisite-blocked (skipped execution) unless the
 native CLI, `KIRO_API_KEY`, and a Kiro-advertised model are available. Kiro does
@@ -152,7 +152,7 @@ python3 "$QUALIFY/prepare.py" --plan "$WORK/plan.json" --work "$WORK/environment
 
 Preparation and execution each require new directories and never overwrite previous evidence. Pass `--host-python /absolute/path/to/python` to `prepare.py` to use an existing Python 3.12+ interpreter rather than downloading Python 3.12. A base installation failure writes `environment.json` and logs before exiting; run the gate with `python3` in that case to produce a fully blocked report. `prepare.py` continues past individual harness installation failures, which become failed matrix rows. Retain the environment directory while inspecting or reproducing a run. Images are tagged with the source revision; record their immutable IDs in the report. No image is pushed.
 
-For a keyed HTTPS provider, export `MODEL_API_KEY` securely, use its model slug and `--base-url https://...`, supply a nonzero cost estimate with token/pricing assumptions, and set the appropriate endpoint kind. Each plan row can override `model`, `model_provider`, `base_url`, `api_key_env`, `harness_settings`, `telemetry`, and `image`. A custom task image must contain the matching runtime/catalog/adapter, its harness, `/qualification/identity.py`, and `/opt/qualification-identity.json` produced by that script. NeMo Fabric packages must be noneditable; supported pinned Hermes source installs follow the provenance rules above. Set a prerequisite row's `action` to `run` only after providing those dependencies. Do not pass a generic local model to a proprietary provider under a fabricated model alias.
+For a keyed HTTPS provider, export `MODEL_API_KEY` securely, use its model slug and `--base-url https://...`, supply a nonzero cost estimate with token/pricing assumptions, and set the appropriate endpoint kind. Each plan row can override `model`, `model_provider`, `base_url`, `api_key_env`, `harness_settings`, `model_settings`, `model_config`, `telemetry`, and `image`. A custom task image must contain the matching runtime/catalog/adapter, its harness, `/qualification/identity.py`, and `/opt/qualification-identity.json` produced by that script. NeMo Fabric packages must be noneditable; supported pinned Hermes source installs follow the provenance rules above. Set a prerequisite row's `action` to `run` only after providing those dependencies. Do not pass a generic local model to a proprietary provider under a fabricated model alias.
 
 Omit `model_provider` to retain provider inference from the model name. Override it only when the selected adapter requires a different value; an OpenAI-compatible endpoint alone is not a reason to set `openai`. For adapters that honor `models.default.provider`, such as Qwen, use `model_provider=openai` for a vendor-prefixed served ID without changing `model`. Mini-SWE and OpenHands construct their LiteLLM model name from both provider and model ID. Provider `nvidia` prepends `nvidia_nim/` unless already present. Other providers prepend `<provider>/` only to slash-free IDs; IDs containing `/` are preserved. Selecting `openai` for `nvidia/nemotron-3-ultra-550b-a55b` prevents adding `nvidia_nim/` without adding `openai/`. LiteLLM cannot infer a provider from that unchanged `nvidia/...` ID, so keep the inferred `nvidia` provider for Mini-SWE and OpenHands in this example. This requires the SDK bridge containing [PR #534](https://github.com/NVIDIA/NeMo-Fabric/pull/534); generate the plan with `--bridge sdk`. Native Harbor’s equivalent option is deferred to a separate upstream change. The selected provider is retained in both admission input and the report. Older SDKs remain usable when the override is omitted.
 
@@ -163,6 +163,45 @@ Mini-SWE model uses `{"cost_tracking":"disabled"}` with a positive `max_turns`
 on the same row. This disables monetary budgeting and keeps cost unavailable;
 it does not report a zero cost. `max_turns` projects to `fabric_max_turns`.
 The bridge and runner must both contain the model-settings transport from #534.
+
+Some adapters declare top-level model fields that `model_settings` cannot carry.
+Pi needs `api`, `context_window`, `max_tokens`, `input`, and all four `cost`
+rates for a model outside its installed catalog. For those, use the SDK bridge
+and set the row's `model_config` to a complete public `ModelConfig` object. It
+projects to `fabric_model_config` and reaches the installed-image preflight and
+uploaded admission check unchanged. Keep the row's `model`, `base_url`, and
+`api_key_env` equal to the object's fields; any `model_provider` or
+`model_settings` on the row must also match. The gate rejects conflicts,
+inline credentials, and a missing provider. For example, with the unmetered
+self-hosted endpoint from the plan example above:
+
+```json
+{
+  "adapter_id": "nvidia.fabric.pi",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "base_url": "http://model-gateway:8000/v1",
+  "api_key_env": "MODEL_API_KEY",
+  "model_config": {
+    "provider": "openai",
+    "model": "nvidia/nemotron-3-ultra-550b-a55b",
+    "base_url": "http://model-gateway:8000/v1",
+    "api_key_env": "MODEL_API_KEY",
+    "api": "openai-completions",
+    "context_window": 262144,
+    "max_tokens": 16384,
+    "input": ["text"],
+    "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}
+  }
+}
+```
+
+Replace the limits with the served model's values, such as its advertised
+maximum context length. Zero cost rates are valid only for an unmetered endpoint
+like this one, where they explicitly mark the model as unpriced. For a metered
+provider, set the provider's published per-million-token rates: zero rates there
+would report a fabricated $0 harness cost instead of the real cost. Pi still
+checks its installed catalog and metadata completeness at startup. The bridge
+must contain the complete model-config transport from #591.
 
 For a registered workflow, generate the plan with `--bridge sdk` and configure
 that adapter's row with `workflow_target_id` and optional `workflow_settings`.
