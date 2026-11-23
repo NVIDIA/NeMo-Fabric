@@ -6,8 +6,8 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
-import shutil
 import subprocess
 import tomllib
 import uuid
@@ -589,7 +589,7 @@ async def test_harbor_custom_install_preserves_explicit_adapter_python(tmp_path:
 
 
 @pytest.mark.skipif(
-    shutil.which("sh") is None, reason="Runner commands are POSIX shell commands"
+    os.name != "posix", reason="Harbor runner commands run in POSIX task shells"
 )
 @pytest.mark.parametrize("task_path", ["task", ""])
 def test_harbor_runner_path_keeps_task_tools_first(tmp_path: Path, task_path: str):
