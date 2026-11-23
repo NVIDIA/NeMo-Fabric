@@ -322,7 +322,7 @@ def _validate_atif_structure(value: Any, path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise TelemetryValidationError(f"ATIF trajectory must be an object: {path}")
     schema_version = value.get("schema_version")
-    supported_versions = {f"ATIF-v1.{minor}" for minor in range(8)}
+    supported_versions = {f"ATIF-v1.{minor}" for minor in range(9)}
     if schema_version not in supported_versions:
         raise TelemetryValidationError(
             f"unsupported ATIF schema_version {schema_version!r}: {path}"
