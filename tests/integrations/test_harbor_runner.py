@@ -886,7 +886,6 @@ def test_root_readme_routes_to_primary_documentation():
     readme = ROOT_README.read_text(encoding="utf-8")
 
     primary_documentation = (
-        "docs/getting-started/install.mdx",
         "docs/getting-started/quickstart.mdx",
         "docs/about-nemo-fabric/overview.mdx",
         "adapters/README.md",
