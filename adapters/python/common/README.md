@@ -271,3 +271,33 @@ MCP server the auth requests a new token and retries the request once. A
 the client credentials. The module imports `httpx` when it needs it, so an
 adapter that uses it must depend on `httpx`. Use `secret_env_names()` to find the
 secret variables an adapter must keep out of agent-run commands.
+
+## MCP Browser Sign-In
+
+Adapters whose MCP client accepts an `httpx.Auth` can implement `oauth2` MCP
+authentication with `nemo_fabric_adapters.common.mcp_oauth`.
+`browser_sign_in_auth()` returns the MCP SDK's OAuth client provider
+(authorization code with PKCE) with tokens stored in owner-only files in the
+given directory and the redirect received on a loopback callback:
+
+```python
+from nemo_fabric_adapters.common import mcp_oauth
+
+auth = mcp_oauth.browser_sign_in_auth(
+    name,
+    url,
+    state_folder / mcp_oauth.TOKEN_DIRECTORY_NAME,
+    client_id=config.client_id,
+    scopes=config.scopes,
+    redirect_uri=config.redirect_uri,
+    authorization_timeout_seconds=config.authorization_timeout_seconds,
+)
+auth.sign_in.interactive = True  # allow a browser sign-in now
+```
+
+Sign-in starts off: until the adapter sets `auth.sign_in.interactive`, a server
+that needs a new sign-in fails with `McpSignInRequired` instead of opening a
+browser, so an adapter can start without waiting for one. Stored tokens are used
+and refreshed either way. `is_sign_in_error()` recognizes the errors that mean a
+server needs a sign-in. The module imports `mcp` and `httpx` when it needs them,
+so an adapter that uses it must depend on both.
