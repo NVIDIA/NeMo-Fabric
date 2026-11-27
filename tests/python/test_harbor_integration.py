@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
+import subprocess
 import tomllib
 import uuid
 from dataclasses import dataclass
@@ -540,7 +542,8 @@ async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):
         if "nemo_fabric.integrations.harbor.runner" in command
     )
     assert runner.startswith(
-        "PATH=/tmp/nemo-fabric-venv/bin:$PATH /tmp/nemo-fabric-venv/bin/python -m "
+        'PATH="${PATH:+$PATH:}"/tmp/nemo-fabric-venv/bin '
+        "/tmp/nemo-fabric-venv/bin/python -m "
     )
     runner_index = environment.commands.index(runner)
     assert environment.environments[runner_index] == {
@@ -576,13 +579,58 @@ async def test_harbor_custom_install_preserves_explicit_adapter_python(tmp_path:
         if "nemo_fabric.integrations.harbor.runner" in command
     )
     assert runner.startswith(
-        "PATH=/tmp/custom-fabric/bin:$PATH /tmp/custom-fabric/bin/python -m "
+        'PATH="${PATH:+$PATH:}"/tmp/custom-fabric/bin /tmp/custom-fabric/bin/python -m '
     )
     runner_index = environment.commands.index(runner)
     assert environment.environments[runner_index] == {
         "NVIDIA_API_KEY": "test-key",
         "ADAPTER_PYTHON": "/opt/hermes-venv/bin/python",
     }
+
+
+@pytest.mark.skipif(
+    os.name != "posix", reason="Harbor runner commands run in POSIX task shells"
+)
+@pytest.mark.parametrize("task_path", ["task", ""])
+def test_harbor_runner_path_keeps_task_tools_first(tmp_path: Path, task_path: str):
+    from nemo_fabric.integrations.harbor.fabric_agent import fabric_runner_command
+
+    def tool(directory: Path, name: str) -> None:
+        directory.mkdir(exist_ok=True)
+        script = directory / name
+        script.write_text(f"#!/bin/sh\necho {directory.name}\n")
+        script.chmod(0o755)
+
+    task, runner = tmp_path / "task", tmp_path / "runner"
+    # Both provide pip; only the runner environment provides nemo-relay.
+    for directory in (task, runner):
+        tool(directory, "pip")
+    tool(runner, "nemo-relay")
+    command = fabric_runner_command(
+        fabric_python=str(runner / "python"),
+        spec_path="/tmp/spec.json",
+        result_path="/tmp/result.json",
+        path_fallback=str(runner),
+    )
+    assignment = command[: command.index(" " + shlex.quote(str(runner / "python")))]
+    probe = (
+        f'{assignment} /bin/sh -c \'printf "%s\\n" "$PATH"; '
+        "command -v pip; command -v nemo-relay'"
+    )
+    # An empty PATH must not gain an empty (working directory) entry.
+    environment = {"PATH": str(task) if task_path else ""}
+    completed = subprocess.run(
+        ["/bin/sh", "-c", probe],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    path, pip, relay = completed.stdout.splitlines()
+    # Task tools win; runner-only executables remain discoverable.
+    assert path == (f"{task}:{runner}" if task_path else str(runner))
+    assert pip == str((task if task_path else runner) / "pip")
+    assert relay == str(runner / "nemo-relay")
 
 
 def test_harbor_keeps_canonical_atif_usage_separate(tmp_path: Path):
