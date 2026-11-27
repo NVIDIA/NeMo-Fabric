@@ -421,6 +421,48 @@ def test_publish_telemetry_rejects_ambiguous_atif(tmp_path: Path):
         publish_telemetry_evidence(result, logs, strict=True)
 
 
+@pytest.mark.parametrize(
+    ("schema_version", "accepted"),
+    [
+        ("ATIF-v1.0", True),
+        ("ATIF-v1.7", True),
+        ("ATIF-v1.8", True),
+        ("ATIF-v1.9", False),
+        ("ATIF-v2.0", False),
+    ],
+)
+def test_publish_telemetry_atif_schema_versions(
+    tmp_path: Path, schema_version: str, accepted: bool
+):
+    logs = tmp_path / "agent"
+    logs.mkdir()
+    atif = logs / "trajectory-run.atif.json"
+    atif.write_text(
+        json.dumps(
+            {
+                "schema_version": schema_version,
+                "session_id": "runtime-1",
+                "agent": {"name": "fabric", "version": "0.1.0"},
+                "steps": [{"step_id": 1, "source": "agent", "message": "done"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = make_result(task_artifact("atif", "atif", atif, logs))
+
+    if not accepted:
+        with pytest.raises(
+            TelemetryValidationError, match="unsupported ATIF schema_version"
+        ):
+            publish_telemetry_evidence(result, logs, strict=True)
+        return
+
+    summary = publish_telemetry_evidence(result, logs, strict=True)
+
+    assert summary["status"] == "succeeded"
+    assert (logs / "trajectory.json").read_bytes() == atif.read_bytes()
+
+
 def test_publish_telemetry_rejects_structurally_invalid_atif(tmp_path: Path):
     logs = tmp_path / "agent"
     logs.mkdir()
