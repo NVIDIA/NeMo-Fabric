@@ -1,0 +1,11 @@
+{
+  "status": "succeeded",
+  "output": {"response": "Review complete"},
+  "error": null,
+  "usage": {"input_tokens": 100, "output_tokens": 20, "total_tokens": 120, "cost_usd": null},
+  "artifacts": [{"kind": "file", "path": "artifacts/review.txt"}],
+  "telemetry": [],
+  "runtime_id": "runtime-a",
+  "invocation_id": "invocation-a",
+  "request_id": "request-a"
+}

@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: 1
+harbor:
+  n_attempts: 1
+  # Keep the full suite below the evaluator auto-scaling cap. Managed runs may shard it.
+  n_concurrent: 2
+  timeout_multiplier: 8.0
+  auto_scale_timeout: true
+  stop_on_pass: false
+  pre_agent_setup:
+    - >-
+      python3 -m venv --without-pip /workspace/.fabric-eval-venv &&
+      python3 -m pip --python /workspace/.fabric-eval-venv/bin/python install
+      --disable-pip-version-check --no-cache-dir --timeout 60 --retries 5
+      nemo-fabric==0.7.0a20261117 nemo-fabric-adapter-catalog==0.7.0a20261117
+      nemo-fabric-adapters-codex==0.7.0a20261117 nemo-fabric-adapters-hermes==0.7.0a20261117
+      pytest==8.4.2 pytest-asyncio==1.2.0
+    - mkdir -p /workspace/repo && cp -R /workspace/input/project/. /workspace/repo/
+    - >-
+      /workspace/.fabric-eval-venv/bin/python -c
+      "from importlib.metadata import version;
+      from nemo_fabric import Fabric, FabricConfig, SessionRef;
+      assert version('nemo-fabric-runtime') == '0.7.0a20261117';
+      print('Fabric evaluation prerequisites ready')"

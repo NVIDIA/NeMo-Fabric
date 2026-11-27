@@ -22,7 +22,8 @@ Import these from the top-level `nemo_fabric` package:
 | `DiscoveryConfig` | Explicit local descriptor files and directories. |
 | `ModelConfig` | Provider, model, credentials (`api_key_env`), endpoint, and sampling. |
 | `InstructionsConfig` / `InstructionConfig` | Portable agent instructions with `replace` or `append` composition. |
-| `RuntimeConfig` | Input/output labels, artifact location, invocation timeout, and harness turn limit. |
+| `RuntimeConfig` | Input/output labels, artifact location, invocation timeout, harness turn limit, state retention, and optional response budgets. |
+| `ResponseLimits` | SDK-enforced response bytes, aggregate artifact bytes, artifact file count, and per-file bytes. |
 | `EnvironmentConfig` | Execution environment, workspace, and harness-visible variables. |
 | `ToolsConfig` / `ToolDefinitionConfig` | Named tool and tool-group definitions plus selection and blocking policy. |
 | `McpConfig` / `McpServerConfig` | MCP transport, network URL or stdio executable, separate stdio process arguments and environment, exposure, and optional per-server tool policy. |
@@ -54,7 +55,7 @@ When present, `InstructionConfig.mode` defaults to `replace`; set it to
 `append` only when the selected adapter descriptor advertises that mode.
 Planning rejects unsupported modes before adapter startup.
 
-`RuntimeConfig.response_limits` opts local invocations into SDK response and artifact budgets. Omit it or use `None` to preserve unbudgeted local results; OpenShell retains default transfer budgets when omitted. A limit failure clears output, artifact references, adapter metadata and events while preserving usage, software execution evidence, telemetry references, system stats and resource snapshots.
+`RuntimeConfig.response_limits` opts local buffered invocations into SDK response and artifact budgets through `ResponseLimits`. Omit it or use `None` to preserve unbudgeted local results; OpenShell retains default transfer budgets when omitted. An empty object selects all default budgets. Raise both `max_artifact_file_bytes` and `max_artifact_bytes` when increasing the permitted size of a single artifact; each budget is independent. These limits need no adapter capability declaration and do not limit intermediate model messages or streaming chunks already delivered. Refer to the [response and artifact limits guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/results-and-errors.mdx#response-and-artifact-limits) for defaults, validation bounds, and transfer constraints. Handle failures as described in [results-and-errors.md](results-and-errors.md).
 
 ## Build And Shape
 
@@ -107,36 +108,70 @@ must be non-blank, and planning rejects a tool that appears in both lists.
 MCP servers requiring authentication additionally require `mcp.auth.oauth2` or
 `mcp.auth.service_account`, matching the configured authentication type.
 
+The following example maps an application-owned job into the public models. Omit the optional skill or MCP helper calls when the job does not require them, and validate the selected adapter's support before execution.
+
 ```python
-config = FabricConfig(
-    metadata=MetadataConfig(name=job.name),
-    harness=HarnessConfig(adapter_id=job.adapter_id, resolution="preinstalled"),
-    models={
-        "default": ModelConfig(
-            provider=job.provider,
-            model=job.model,
-            api_key_env=job.api_key_env,
-            base_url=job.base_url,
-        )
-    },
-    instructions=(
-        InstructionsConfig(
-            system=InstructionConfig(
-                content=job.system_instruction,
-                mode=job.system_instruction_mode,
-            ),
-        )
-        if job.system_instruction is not None
-        else None
-    ),
-    runtime=RuntimeConfig(
-        input_schema="chat",
-        output_schema="message",
-        timeout_seconds=job.timeout_seconds,
-        max_turns=job.max_turns,
-    ),
+from nemo_fabric import (
+    FabricConfig,
+    HarnessConfig,
+    InstructionConfig,
+    InstructionsConfig,
+    MetadataConfig,
+    ModelConfig,
+    RuntimeConfig,
+    ToolsConfig,
 )
-config.add_skill_path(job.skill_dir)
+
+
+def to_tools_config(job) -> ToolsConfig | None:
+    enabled = job.enabled_tools
+    blocked = list(job.blocked_tools)
+    if enabled is None and not blocked:
+        return None
+    return ToolsConfig(
+        enabled=None if enabled is None else list(enabled),
+        blocked=blocked,
+    )
+
+
+def to_fabric_config(job) -> FabricConfig:
+    config = FabricConfig(
+        metadata=MetadataConfig(name=job.name),
+        harness=HarnessConfig(adapter_id=job.adapter_id, resolution="preinstalled"),
+        models={
+            "default": ModelConfig(
+                provider=job.provider,
+                model=job.model,
+                api_key_env=job.api_key_env,
+                base_url=job.base_url,
+            )
+        },
+        instructions=(
+            InstructionsConfig(
+                system=InstructionConfig(
+                    content=job.system_instruction,
+                    mode=job.system_instruction_mode,
+                ),
+            )
+            if job.system_instruction is not None
+            else None
+        ),
+        runtime=RuntimeConfig(
+            input_schema="chat",
+            output_schema="message",
+            timeout_seconds=job.timeout_seconds,
+            max_turns=job.max_turns,
+        ),
+        tools=to_tools_config(job),
+    )
+    config.add_skill_path(job.skill_dir)
+    config.add_mcp_server(
+        "github",
+        transport="streamable-http",
+        url="${GITHUB_MCP_URL}",
+        exposure="harness_native",
+    )
+    return config
 ```
 
 ## Variants Without Files

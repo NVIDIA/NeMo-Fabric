@@ -24,18 +24,23 @@ The following table lists the `Fabric` methods and when to use each:
 | --- | --- | --- | --- |
 | `plan(config, *, base_dir=...)` | No | You need the selected adapter, capability routing, and runtime capabilities before running. | `RunPlan` |
 | `doctor(config, *, base_dir=...)` | Yes | You need preflight diagnostics for adapter resolution, capability routing, declared requirements, and environment assumptions. | `DoctorReport` |
-| `run(config, *, base_dir=..., input=... \| request=...)` | Yes | You need one complete start, invoke, result, and stop cycle. | `RunResult` |
-| `start_runtime(config, *, base_dir=..., overrides=..., streaming=False, launch_collector=None, completion_wait_timeout=1.0)` | Yes | You need state across multiple ordered invocations. Pass `streaming=True` with NVIDIA NeMo Relay enabled only to provision `invoke_stream(...)`. | `Runtime` |
+| `run(config, *, base_dir=..., input=... \| request=..., session_ref=None)` | Yes | You need one complete start, invoke, result, and stop cycle. | `RunResult` |
+| `start_runtime(config, *, base_dir=..., overrides=..., session_ref=None, streaming=False, launch_collector=None, completion_wait_timeout=1.0, service=None)` | Yes | You need state across multiple ordered invocations. Pass `streaming=True` with NVIDIA NeMo Relay enabled only to provision `invoke_stream(...)`. | `Runtime` |
 | `prepare_environment(config, *, base_dir=...)` | Yes | Prepare an environment independently of a runtime; preparation depends on provider support. | `EnvironmentHandle` |
 | `attach_environment(config, reference, *, base_dir=...)` | Yes | Verify a caller-owned resource with a typed `EnvironmentReference` when the provider supports attachment. | `EnvironmentHandle` |
-| `start_runtime_in(config, environment, *, base_dir=..., overrides=..., streaming=False)` | Yes | Start a runtime in a typed environment when the selected runtime provider supports it. | `Runtime` |
+| `start_runtime_in(config, environment, *, base_dir=..., overrides=..., session_ref=None, streaming=False)` | Yes | Start a runtime in a typed environment when the selected runtime provider supports it. | `Runtime` |
+| `check(*, request=..., environment=None, service=None)` | Yes | Obtain fresh server, runtime, or service observations with a typed `CheckRequest`. Unsupported or timed-out probes remain unknown or unsupported. | `CheckReport` |
+| `prepare_service(config, *, base_dir=...)` | Yes | Start a Fabric-owned shared adapter service when supported. Stop connected runtimes before releasing the service. | `Service` |
+| `attach_service(config, reference, *, base_dir=...)` | Yes | Validate a typed `ServiceReference` for a caller-owned service. Release detaches without stopping the external service. | `Service` |
+| `runtime_status(*, runtime_id=..., agent_name=..., environment=None)` | Yes | Read recorded runtime state and a safe discovery handle. This does not probe harness health; use `check()` for fresh observations. | `RuntimeStatusReport` |
+| `invocation_result(*, agent_name=..., runtime_id=..., request_id=..., artifacts=None, environment=None)` | Yes | Retrieve a saved invocation result after an uncertain response. Use the original artifacts directory for a new local client, or an environment for OpenShell. A missing result never authorizes replay. | `RunResult` or `None` |
 | `release_environment(environment)` | Yes | Release the environment separately after runtime stop; local release preserves files. | `None` |
 
 `input` and `request` on `run(...)` are mutually exclusive. Use `input=...` for
 the common case; use `request=RunRequest(...)` when the invocation needs a
 caller-owned `request_id`, `context`, or overrides.
 
-The public `inspect_adapter(config, descriptor)` helper returns `AdapterInspection`,
+The public `inspect_adapter(config, descriptor, target_descriptor=...)` helper returns `AdapterInspection`,
 with an empty `issues` list and an immutable `capability_profile` on success.
 Compatibility failures return structured `AdapterCompatibilityIssue` values with
 `adapter_id`, `field`, and `reason`; incompatible reports have no profile.
@@ -70,6 +75,9 @@ The following table lists the `Runtime` members for driving a stateful runtime.
 | `supports_openai_streaming` | No | `True` when the selected descriptor declares `capabilities.streaming` for native OpenAI Chat Completions chunks. |
 | `supports_streaming` | No | `True` when NeMo Relay ATOF streaming was enabled at runtime startup. |
 | `runtime_id` | No | Opaque identifier for this runtime lifecycle. |
+| `handle` | No | Copied `RuntimeHandle` for this runtime; discovery handles are not invocation or ownership-transfer APIs. |
+| `session_ref` | No | Confirmed durable native `SessionRef`, or `None`. Persist `to_mapping()` with the retained state tree and pass `SessionRef.from_mapping(...)` explicitly at startup to resume. |
+| `recovery_warnings` | No | Structured warnings for an uncertain resumed session. Inspect native and external state before sending a new `RunRequest(acknowledge_recovery=True)`; do not replay interrupted work automatically. |
 | `messages` / `invocations` | No | Copied harness history and per-turn IDs. |
 
 Always use a runtime as an async context manager so cleanup runs on exit.
@@ -106,8 +114,7 @@ FabricConfig -> plan() -> RunPlan -> start_runtime() -> Runtime -> invoke() -> R
                                                             \-> invoke_stream() -> InvokeStream
 ```
 
-- `Fabric` is a lightweight facade; it holds no started state and needs no
-  cleanup.
+- `Fabric` is a reusable facade that records runtimes started through that instance, retaining live objects until successful stop. It is not a lifecycle context manager; stop each runtime explicitly or through its async context manager.
 - A `Runtime` owns stateful execution and shutdown, so it is the object used
   with `async with`.
 - A runtime is a logical execution boundary, not necessarily an operating-system

@@ -1,51 +1,53 @@
 [
   {
     "id": "nemo-fabric-integrate-001-python-service",
-    "question": "Add NeMo Fabric to this Python service so one request path can run either Codex or Hermes Agent. Keep our existing application configuration as the source of truth, validate the resolved setup before execution, and return normalized result data to the caller.",
+    "question": "The supplied /workspace/repo contains settings.py (AppSettings), service.py, and runner.py; each case starts from these independent starter files. The Fabric nightly and test tools are preinstalled; use /workspace/.fabric-eval-venv/bin/python. Use spec'd mocks for public SDK lifecycle calls in tests; do not start real harnesses, call a model, or install packages. Implement service.handle_request(settings, text, request_id) so the existing application settings select Codex or Hermes Agent, map directly into an in-memory FabricConfig, validate readiness before execution, and return the documented normalized result dictionary. Keep settings.py unchanged. Add focused tests for adapter selection, unsuccessful normalized results, and SDK lifecycle errors, then run those tests.",
     "expected_skill": "nemo-fabric-integrate",
     "expected_script": null,
-    "ground_truth": "The agent uses the public nemo_fabric Python SDK, maps the service configuration into an in-memory FabricConfig, selects the adapter through HarnessConfig, validates with plan and doctor, chooses the appropriate runtime lifecycle, and consumes the normalized invocation result without importing internal modules or reimplementing harness control.",
+    "ground_truth": "The agent uses the public nemo_fabric Python SDK, maps the service configuration into an in-memory FabricConfig, selects the adapter through HarnessConfig, validates with plan and doctor, chooses the appropriate runtime lifecycle, and consumes the normalized invocation result without importing internal modules or reimplementing harness control. The supplied starter files and preinstalled dependencies are sufficient for this bounded exercise. Judge the concrete implementation or code/design proposal requested by the prompt; no live model, real harness deployment, or package publication is required.",
     "expected_behavior": [
-      "Routes to nemo-fabric-integrate",
       "Uses only public imports from nemo_fabric",
       "Translates the service configuration into an in-memory FabricConfig",
       "Selects Codex or Hermes Agent through HarnessConfig.adapter_id",
       "Validates the resolved configuration with plan and doctor before execution",
       "Consumes normalized status, output, artifacts, telemetry, and correlation identifiers",
       "Does not import _native or manage adapter processes directly"
-    ]
+    ],
+    "should_trigger": true
   },
   {
     "id": "nemo-fabric-integrate-002-evaluation-platform",
-    "question": "Integrate NeMo Fabric into our evaluation runner. The runner needs repeated invocations, request correlation, artifact collection, telemetry, and an explicit shutdown point. Credentials must stay in environment variables.",
+    "question": "The supplied /workspace/repo contains settings.py (AppSettings), service.py, and runner.py; each case starts from these independent starter files. The Fabric nightly and test tools are preinstalled; use /workspace/.fabric-eval-venv/bin/python. Use spec'd mocks for public SDK lifecycle calls in tests; do not start real harnesses, call a model, or install packages. Implement runner.run_batch(settings, prompts) using one explicitly started runtime for ordered (request_id, text) pairs. Return the documented service result dictionaries, preserving artifact, telemetry, and correlation data. Keep credential values out of code. Add and run focused tests, including an observable shutdown failure.",
     "expected_skill": "nemo-fabric-integrate",
     "expected_script": null,
-    "ground_truth": "The agent follows the long-lived public SDK runtime workflow: construct a typed in-memory FabricConfig, configure credential environment-variable names, inspect plan and doctor results, start Fabric explicitly, use the runtime as an async context manager, invoke repeatedly with request IDs, read normalized results, and handle a possible FabricRuntimeError from shutdown.",
+    "ground_truth": "The agent follows the long-lived public SDK runtime workflow: construct a typed in-memory FabricConfig, configure credential environment-variable names, inspect plan and doctor results, start Fabric explicitly, use the runtime as an async context manager, invoke repeatedly with request IDs, read normalized results, and handle a possible FabricRuntimeError from shutdown. The supplied starter files and preinstalled dependencies are sufficient for this bounded exercise. Judge the concrete implementation or code/design proposal requested by the prompt; no live model, real harness deployment, or package publication is required.",
     "expected_behavior": [
-      "Routes to nemo-fabric-integrate",
       "Uses an explicitly started Fabric runtime as an async context manager for repeated invocations",
       "Keeps credential values out of source and configuration literals",
       "Calls plan and doctor before starting the runtime",
       "Preserves request, invocation, and runtime identifiers as opaque correlation values",
       "Collects normalized artifacts and telemetry from each result",
       "Treats shutdown as attempted cleanup and handles a possible FabricRuntimeError"
-    ]
+    ],
+    "should_trigger": true
   },
   {
     "id": "nemo-fabric-integrate-003-adapter-contribution-negative",
-    "question": "Add a new FooHarness adapter package inside NeMo Fabric, including its descriptor, runner implementation, and repository tests.",
+    "question": "In a planning review, which workflow should own this request: \"Add a FooHarness adapter inside the NeMo Fabric repository, including its runner, catalog packaging, and repository tests\"? Explain the boundary and the next handoff in a short answer. This is workflow triage only: do not implement it, edit files, or invoke an alternate skill; no maintainer skill is installed in this isolated exercise.",
     "expected_skill": null,
     "expected_script": null,
-    "ground_truth": "This is a NeMo Fabric repository-maintainer task, not a consumer Python SDK integration. The agent must not route it to nemo-fabric-integrate and should use the repository's contribute-adapter maintainer workflow instead.",
+    "ground_truth": "Identifies first-party Fabric adapter contribution as the owner and hands off descriptor, packaging, runner, and repository tests without invoking the consumer skill. A short planning answer completes the requested triage. No alternate skill activation, implementation, dependency installation, or source checkout is required.",
     "expected_behavior": [
       "Does not route to nemo-fabric-integrate",
-      "Recognizes the request as repository-internal adapter development",
-      "Routes to the contribute-adapter maintainer workflow when it is available"
-    ]
+      "Identifies the owning workflow as: Repository-maintainer adapter contribution",
+      "Explains the task boundary and next handoff without implementing the out-of-scope task",
+      "Does not edit files, install dependencies, or require an unavailable alternate skill"
+    ],
+    "should_trigger": false
   },
   {
     "id": "nemo-fabric-integrate-004-overview-negative",
-    "question": "Give me a short conceptual overview of NeMo Fabric and explain when a team would use it.",
+    "question": "Give a short conceptual overview of NeMo Fabric and when a team would use it. This is a product explanation; no code edits, dependency installation, or agent execution are requested.",
     "expected_skill": null,
     "expected_script": null,
     "ground_truth": "This is an explanation request rather than an implementation workflow. The agent answers from product documentation and does not invoke the focused nemo-fabric-integrate skill.",
@@ -53,32 +55,32 @@
       "Does not route to nemo-fabric-integrate",
       "Treats the request as product explanation rather than SDK implementation",
       "Does not introduce integration code or configuration unless the user asks for it"
-    ]
+    ],
+    "should_trigger": false
   },
   {
     "id": "nemo-fabric-integrate-005-streaming-boundary",
-    "question": "Add streaming to our NeMo Fabric integration. Use native OpenAI Chat Completions chunks when the selected adapter supports them, but keep NeMo Relay available for raw telemetry records. Make early consumer exit safe and preserve the normalized terminal result.",
+    "question": "The supplied /workspace/repo contains settings.py (AppSettings), service.py, and runner.py; each case starts from these independent starter files. The Fabric nightly and test tools are preinstalled; use /workspace/.fabric-eval-venv/bin/python. Use spec'd mocks for public SDK lifecycle calls in tests; do not start real harnesses, call a model, or install packages. Write streaming.py with consumer helpers for native OpenAI Chat Completions chunks and, separately, raw NeMo Relay records. Validate the selected native capability, handle early iteration exit safely, and preserve each authoritative normalized terminal result. Add and run mocked stream tests; do not implement a transport or start a collector.",
     "expected_skill": "nemo-fabric-integrate",
     "expected_script": null,
-    "ground_truth": "The agent keeps the two streaming paths distinct. For native OpenAI streaming, it checks runtime.supports_openai_streaming, calls runtime.invoke_openai_stream, iterates OpenAIInvokeStream, awaits stream.result(), and calls aclose() after an early exit. For NeMo Relay streaming, it enables Relay in the typed config, starts the runtime with streaming=True, calls runtime.invoke_stream, consumes ATOF records, and separately awaits the normalized terminal result.",
+    "ground_truth": "The agent keeps the two streaming paths distinct. For native OpenAI streaming, it checks runtime.supports_openai_streaming, calls runtime.invoke_openai_stream, iterates OpenAIInvokeStream, awaits stream.result(), and calls aclose() after an early exit. For NeMo Relay streaming, it enables Relay in the typed config, starts the runtime with streaming=True, calls runtime.invoke_stream, consumes ATOF records, and separately awaits the normalized terminal result. The supplied starter files and preinstalled dependencies are sufficient for this bounded exercise. Judge the concrete implementation or code/design proposal requested by the prompt; no live model, real harness deployment, or package publication is required.",
     "expected_behavior": [
-      "Routes to nemo-fabric-integrate",
       "Distinguishes native OpenAI streaming from NeMo Relay ATOF streaming",
       "Checks runtime.supports_openai_streaming before native OpenAI streaming",
       "Uses invoke_openai_stream for OpenAI Chat Completions chunks",
       "Uses enable_relay, streaming=True, and invoke_stream for NeMo Relay records",
       "Awaits stream.result() for the normalized terminal result",
       "Calls aclose() when the consumer stops iterating early"
-    ]
+    ],
+    "should_trigger": true
   },
   {
     "id": "nemo-fabric-integrate-006-system-instruction-modes",
-    "question": "Our platform optionally supplies a system policy to different NeMo Fabric harnesses. Some jobs must preserve the harness-native prompt and append the policy, some must replace it, and jobs without a policy must leave the native prompt untouched. Map this through the public Python SDK and validate compatibility before execution.",
+    "question": "The supplied /workspace/repo contains settings.py (AppSettings), service.py, and runner.py; each case starts from these independent starter files. The Fabric nightly and test tools are preinstalled; use /workspace/.fabric-eval-venv/bin/python. Use spec'd mocks for public SDK lifecycle calls in tests; do not start real harnesses, call a model, or install packages. Write configuration.py with to_fabric_config(settings) using AppSettings. A missing system policy must preserve the native prompt; an explicit policy must map replace or append through the public typed instruction models. Add and run tests for omission, both modes, and unsupported-mode rejection at the public planning boundary. Do not concatenate a harness-native prompt in consumer code.",
     "expected_skill": "nemo-fabric-integrate",
     "expected_script": null,
-    "ground_truth": "The agent maps a present policy to InstructionsConfig(system=InstructionConfig(content=..., mode=...)) and omits instructions entirely when no policy is configured. replace replaces the harness-native instruction; append preserves it and adds the configured policy afterward. The consumer does not concatenate harness prompts itself. It calls plan before startup so the selected adapter descriptor can reject an unsupported mode, and it does not assume every adapter supports append merely because replace is the default.",
+    "ground_truth": "The agent maps a present policy to InstructionsConfig(system=InstructionConfig(content=..., mode=...)) and omits instructions entirely when no policy is configured. replace replaces the harness-native instruction; append preserves it and adds the configured policy afterward. The consumer does not concatenate harness prompts itself. It calls plan before startup so the selected adapter descriptor can reject an unsupported mode, and it does not assume every adapter supports append merely because replace is the default. The supplied starter files and preinstalled dependencies are sufficient for this bounded exercise. Judge the concrete implementation or code/design proposal requested by the prompt; no live model, real harness deployment, or package publication is required.",
     "expected_behavior": [
-      "Routes to nemo-fabric-integrate",
       "Uses public InstructionsConfig and InstructionConfig types",
       "Omits instructions when the platform has no system policy",
       "Maps the platform's explicit replace or append choice to InstructionConfig.mode",
@@ -86,6 +88,114 @@
       "Uses plan before startup to validate the selected adapter's declared instruction modes",
       "Does not assume append is supported by every adapter",
       "Keeps replace and append semantics distinct"
-    ]
+    ],
+    "should_trigger": true
+  },
+  {
+    "id": "nemo-fabric-integrate-007-structured-skill-loading",
+    "question": "The supplied /workspace/repo contains settings.py (AppSettings), service.py, and runner.py; each case starts from these independent starter files. The Fabric nightly and test tools are preinstalled; use /workspace/.fabric-eval-venv/bin/python. Use spec'd mocks for public SDK lifecycle calls in tests; do not start real harnesses, call a model, or install packages. Write a typed configuration helper for one external skill folder and one collection folder, duplicates rejected, and bundled skills disabled. Keep legacy paths empty and validate descriptor support before startup. Add and run model-level tests, and explain separately where mounted-folder checks occur and which result field reports loaded/skipped/conflicting skills. No real harness startup or filesystem discovery is required.",
+    "expected_skill": "nemo-fabric-integrate",
+    "expected_script": null,
+    "ground_truth": "Build SkillConfig with directories containing SkillDirectory(skill=...) and SkillDirectory(folder=...), duplicates=\"reject\", and bundled=BundledSkills(enabled=False). Keep paths empty; add_skill_path cannot be combined with directories. Plan before startup to validate descriptor support. Startup checks mounted folders, and output.skills reports loaded, skipped, and conflicting skills. Descriptor support is not evidence that files exist or loaded. The supplied starter files and preinstalled dependencies are sufficient for this bounded exercise. Judge the concrete implementation or code/design proposal requested by the prompt; no live model, real harness deployment, or package publication is required.",
+    "expected_behavior": [
+      "Uses public SkillConfig, SkillDirectory, and BundledSkills models",
+      "Keeps paths empty when directories is configured and does not call add_skill_path",
+      "Uses a skill entry for the individual skill and a folder entry for the collection",
+      "Selects duplicates=\"reject\" and bundled=BundledSkills(enabled=False)",
+      "Uses plan to reject unsupported descriptor features before startup",
+      "Distinguishes descriptor support from startup filesystem checks and output.skills evidence"
+    ],
+    "should_trigger": true
+  },
+  {
+    "id": "nemo-fabric-integrate-008-hermes-resume-and-status",
+    "question": "The supplied /workspace/repo contains settings.py (AppSettings), service.py, and runner.py; each case starts from these independent starter files. The Fabric nightly and test tools are preinstalled; use /workspace/.fabric-eval-venv/bin/python. Use spec'd mocks for public SDK lifecycle calls in tests; do not start real harnesses, call a model, or install packages. Produce a concrete Python code proposal for explicit Hermes cold resume, using a caller-supplied confirmed saved_reference and retained state tree. Include the startup/recovery call sequence, uncertain-turn acknowledgement policy, recorded runtime status lookup, and focused mocked-test examples. This is an API review: do not claim an actual resume occurred or require a live native session.",
+    "expected_skill": "nemo-fabric-integrate",
+    "expected_script": null,
+    "ground_truth": "Enable runtime.keep_state and the Hermes SDK backend, preserve the complete state tree, and persist Runtime.session_ref.to_mapping(). Restore it with SessionRef.from_mapping and pass session_ref explicitly to startup. Retention or an agent name alone does not select a conversation. Inspect recovery_warnings, verify native and external state, and acknowledge recovery with a new RunRequest only after review; never replay an uncertain turn automatically. Use Fabric.runtime_status with runtime_id and agent_name for recorded state. Direct local lookup uses the owning Fabric instance; later-process server lookup requires an OpenShell environment and a live original server. Status is not a health probe or a replacement invocation handle. The supplied starter files and preinstalled dependencies are sufficient for this bounded exercise. Judge the concrete implementation or code/design proposal requested by the prompt; no live model, real harness deployment, or package publication is required.",
+    "expected_behavior": [
+      "Retains the complete state tree with runtime.keep_state and keeps the Hermes SDK backend enabled",
+      "Persists a confirmed session_ref mapping and explicitly restores SessionRef at startup",
+      "Does not select the latest conversation or use runtime_id or agent name as the session reference",
+      "Inspects recovery_warnings and external side effects before a new acknowledged request",
+      "Does not replay an uncertain prior invocation automatically",
+      "Uses runtime_status for recorded state and distinguishes it from fresh check observations",
+      "Does not promise cross-process direct-local status lookup or invocation from a discovery handle"
+    ],
+    "should_trigger": true
+  },
+  {
+    "id": "nemo-fabric-integrate-009-response-and-artifact-budgets",
+    "question": "Review a consumer integration targeting the current development ResponseLimits contract documented at https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/results-and-errors.mdx#response-and-artifact-limits. The preinstalled 0.7.0a20261117 nightly predates this API, so this task requests a Python code proposal and failure-handling explanation only, not execution. Show explicit response and screenshot-artifact budgets, explain omitted local versus OpenShell limits, and handle a budget breach after the agent has acted without replaying side effects. Do not install or invoke an older SDK as if it implemented the new contract.",
+    "expected_skill": "nemo-fabric-integrate",
+    "expected_script": null,
+    "ground_truth": "Use public ResponseLimits on RuntimeConfig.response_limits. Local omission or None preserves unbudgeted local results, whereas OpenShell keeps default transfer budgets. An empty limits object opts into default budgets locally. For a larger image raise both max_artifact_file_bytes and max_artifact_bytes, return the complete image as a declared artifact instead of base64 output, and keep the normalized result within max_response_bytes. Limits need no adapter capability declaration. A breach returns failed/response_limit_exceeded and clears output, artifact references, adapter metadata and events while preserving usage, execution evidence, telemetry, system stats and resource snapshots. It does not roll back side effects or justify automatic retry. Budgets do not limit streaming chunks already delivered, sandbox memory, or the separate collection deadline. The supplied starter files and preinstalled dependencies are sufficient for this bounded exercise. Judge the concrete implementation or code/design proposal requested by the prompt; no live model, real harness deployment, or package publication is required.",
+    "expected_behavior": [
+      "Uses public ResponseLimits through runtime.response_limits",
+      "Distinguishes omitted local limits, default OpenShell budgets, and an empty limits object",
+      "Raises both per-file and aggregate artifact budgets for a larger screenshot",
+      "Returns an artifact instead of inline base64 and checks the result response budget",
+      "Handles failed status and response_limit_exceeded without silently truncating or retrying",
+      "Preserves retained execution evidence while recognizing that rejected payload fields are cleared",
+      "Does not claim rollback, adapter capability requirements, or limits on delivered stream chunks"
+    ],
+    "should_trigger": true
+  },
+  {
+    "id": "nemo-fabric-integrate-010-third-party-adapter-negative",
+    "question": "Which workflow should own packaging AcmeHarness as an external NeMo Fabric adapter, defining its fabric-adapter.json, wheel discovery metadata, AgentConfig translation, and start/invoke/stop lifecycle? Give the workflow and boundary in a short planning answer. Do not implement the adapter, edit files, or invoke another skill; this isolated exercise has no alternate adapter-authoring skill installed.",
+    "expected_skill": null,
+    "expected_script": null,
+    "ground_truth": "Identifies the portable adapter-authoring workflow and its southbound contract, descriptor, discovery, and lifecycle responsibility without invoking the consumer skill. A short planning answer completes the requested triage. No alternate skill activation, implementation, dependency installation, or source checkout is required.",
+    "expected_behavior": [
+      "Does not route to nemo-fabric-integrate",
+      "Identifies the owning workflow as: Third-party adapter authoring",
+      "Explains the task boundary and next handoff without implementing the out-of-scope task",
+      "Does not edit files, install dependencies, or require an unavailable alternate skill"
+    ],
+    "should_trigger": false
+  },
+  {
+    "id": "nemo-fabric-integrate-011-native-hermes-negative",
+    "question": "A service uses NeMo Fabric in another subsystem, but this request concerns the standalone Hermes terminal UI and native model-provider configuration. Which workflow should own it, and why? This is workflow triage only: do not configure Hermes, edit files, install packages, or add a Fabric SDK wrapper.",
+    "expected_skill": null,
+    "expected_script": null,
+    "ground_truth": "Identifies the harness-native Hermes configuration workflow; the presence of Fabric elsewhere does not require a consumer SDK wrapper. A short planning answer completes the requested triage. No alternate skill activation, implementation, dependency installation, or source checkout is required.",
+    "expected_behavior": [
+      "Does not route to nemo-fabric-integrate",
+      "Identifies the owning workflow as: Native Hermes configuration",
+      "Explains the task boundary and next handoff without implementing the out-of-scope task",
+      "Does not edit files, install dependencies, or require an unavailable alternate skill"
+    ],
+    "should_trigger": false
+  },
+  {
+    "id": "nemo-fabric-integrate-012-core-runtime-fix-negative",
+    "question": "Which workflow should own a fix inside NeMo Fabric's crates/fabric-core so a crashed adapter host invalidates its runtime, with repository regression tests and public behavior documentation? Explain the ownership boundary in a short planning answer. Do not implement it, edit files, or invoke an alternate skill; no Fabric source checkout or maintainer skills are supplied.",
+    "expected_skill": null,
+    "expected_script": null,
+    "ground_truth": "Identifies the repository maintainer bug-fix and validation workflow for core runtime invalidation, rather than consumer integration or a retry wrapper. A short planning answer completes the requested triage. No alternate skill activation, implementation, dependency installation, or source checkout is required.",
+    "expected_behavior": [
+      "Does not route to nemo-fabric-integrate",
+      "Identifies the owning workflow as: Fabric core maintainer bug fix",
+      "Explains the task boundary and next handoff without implementing the out-of-scope task",
+      "Does not edit files, install dependencies, or require an unavailable alternate skill"
+    ],
+    "should_trigger": false
+  },
+  {
+    "id": "nemo-fabric-integrate-013-existing-results-analysis-negative",
+    "question": "Compare /workspace/input/results/run-a.json and /workspace/input/results/run-b.json. Explain status, reported token usage, artifact references, and missing evidence using only those saved results. Do not invoke an agent, edit files, install packages, or build an integration. An artifact reference alone does not establish that its file is present.",
+    "expected_skill": null,
+    "expected_script": null,
+    "ground_truth": "Read the two supplied JSON files. Run A succeeded, reports 100 input/20 output/120 total tokens, has no reported cost, and declares artifacts/review.txt. Run B failed with adapter_failed, reports no usage, and has no artifact or telemetry references. Missing usage and cost remain unknown; references do not prove files exist. This is saved-result analysis rather than consumer SDK implementation; do not activate nemo-fabric-integrate or run an agent.",
+    "expected_behavior": [
+      "Does not route to nemo-fabric-integrate",
+      "Reads both supplied result files and distinguishes succeeded from failed",
+      "Reports run A token counts and leaves run B usage and both costs unknown",
+      "Treats artifact references separately from evidence that files exist",
+      "Does not run an agent, edit files, install dependencies, or scaffold an integration"
+    ],
+    "should_trigger": false
   }
 ]
